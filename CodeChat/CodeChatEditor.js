@@ -1,12 +1,83 @@
+// <details>
+//     <summary>Copyright (C) 2012-2022 Bryan A. Jones.</summary>
+//     <p>This file is part of CodeChat.</p>
+//     <p>CodeChat is free software: you can redistribute it and/or
+//         modify it under the terms of the GNU General Public License as
+//         published by the Free Software Foundation, either version 3 of
+//         the License, or (at your option) any later version.</p>
+//     <p>CodeChat is distributed in the hope that it will be useful, but
+//         WITHOUT ANY WARRANTY; without even the implied warranty of
+//         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+//         GNU General Public License for more details.</p>
+//     <p>You should have received a copy of the GNU General Public
+//         License along with CodeChat. If not, see <a
+//             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
+//     </p>
+// </details>
 // <h1><code>CodeChatEditor.js</code> &mdash; JavaScript which implements
 //     the CodeChat Editor</h1>
 // <p>The CodeChat Editor provides a simple IDE which allows editing of
 //     mixed code and doc blocks.</p>
+// <p>To view the output, run
+//     <code>\Users\bjones\AppData\Roaming\npm\httpserver</code>.</p>
+// <p>TODO: Create a table of contents.</p>
+// <h2>Next steps</h2>
+// <ul>
+//     <li>Look at / experiment with a book build process.</li>
+//     <li>Create a new repo or directory for the CodeChat Editor, with
+//         NPM and webpack set up.</li>
+//     <li>Integrate this into IDEs.</li>
+// </ul>
+// <h2>Thoughts and ideas</h2>
+// <p>Provide three modes: syntax highlight the entire file (no LP),
+//     view, and edit. But...</p>
+// <ul>
+//     <li>Editing mostly makes sense in the context of an IDE.</li>
+//     <li>There might be a performance hit for the new option, waiting
+//         for the JS to hydrate. It would be nice to offer a view-only
+//         option that is static HTML.</li>
+// </ul>
+// <p>Need some sort of book build process. It would:</p>
+// <ul>
+//     <li>Create a list of all ids in all HTML files in the book.</li>
+//     <li>Crossref thingy</li>
+//     <li>Global TOC / page order for the book</li>
+//     <li>Link checker</li>
+//     <li>Need to write some components:
+//         <ul>
+//             <li>Autotitle: like an a, but takes the link&rsquo;s name
+//                 from element linked to. Perhaps this is just an XSLT
+//                 transform? But want to work with local links too, so
+//                 it&rsquo;s partly JS.</li>
+//             <li>A local table of contents</li>
+//             <li>A crossref thingy &ndash; giving a single crossref
+//                 value produces links to all crossrefs but the one
+//                 created.</li>
+//             <li>Insert the name of the file. How to do templates with
+//                 HTML? Perhaps with XSLT? Need to find a nice/easy way
+//                 to theme a book. I&rsquo;d like to use PreTeXt if
+//                 possible.<br>How to specify the book structure with
+//                 maximum simplicity? Probably like Sphinx &ndash; a
+//                 toctree defines structure.</li>
+//         </ul>
+//     </li>
+// </ul>
+// <p>Perhaps mdbook for this?</p>
+// <p>What components should we support/create? Does TinyMCE allow
+//     components?</p>
+// <p>For links to LP files: the old system generated a new name
+//     (appended .html), so that LP files have a unique name. This seems
+//     like a simple solution. (If one file is named foo.c and another is
+//     foo.html, this fails. But, I think it&rsquo;s reasonable to
+//     document this instead of finding a fix.) This would make static
+//     and dynamic work, and seems simple. In the non-project IDE case, a
+//     missing .html link would cause it to look for the raw file without
+//     the .html extension.</p>
 "use strict";
 
 // <h2>DOM ready event</h2>
 // <p>This code instantiates editors/viewers for code and doc blocks.</p>
-const on_dom_content_loaded = (currentScript) => {
+const on_dom_content_loaded = () => {
     // <p>Instantiate the TinyMCE editor for doc blocks.</p>
     tinymce.init({
         inline: true,
@@ -45,7 +116,7 @@ const on_dom_content_loaded = (currentScript) => {
             //             href="CodeToEditor.py#script-param">pass data</a> from the
             //         HTML <code>&lt;script&gt;</code> tag to the
             //         currently-executing script.</span></p>
-            mode: `ace/mode/python`, // TODO: ${currentScript.getAttribute("data-CodeChat-language-name")} -- currentScript doesn't work when called from on_open.
+            mode: `ace/mode/${current_language_lexer[0]}`,
             // <p>TODO: this still allows cursor movement.</p>
             //readOnly: true,
             showPrintMargin: false,
@@ -91,19 +162,6 @@ const doc_block_indent_on_input = event => {
     window.getSelection().setBaseAndExtent(event.currentTarget.childNodes[0], offset, event.currentTarget.childNodes[0], offset);
 }
 
-// <p>From <a
-//         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
-// </p>
-// <p>Loading hasn't finished yet.</p>
-if (document.readyState === 'loading') {
-    // <p>Save the <code>currentScript</code> now, since it will be
-    //     <code>null</code> when the event is fired.</p>
-    const cs = document.currentScript;
-    document.addEventListener('DOMContentLoaded', () => on_dom_content_loaded(cs));
-} else {
-    // <p><code>DOMContentLoaded</code> has already fired.</p>
-    on_dom_content_loaded(document.currentScript);
-}
 
 // <h2>Transforming the editor's contents back to code</h2>
 // <p>This transforms the current editor contents into source code.</p>
@@ -173,43 +231,34 @@ const editor_to_source_code = (
 // <h2>UI</h2>
 // <p>Store the file handle for saves (and eventually opens) here.</p>
 let source_code_file_handle;
+// <p>Store the lexer info for the currently-loaded language.</p>
+let current_language_lexer;
 
 
 const on_open = async () =>
 {
-    // Destructure the one-element array.
+    // <p>Destructure the one-element array.</p>
     [source_code_file_handle] = await window.showOpenFilePicker();
     const file = await source_code_file_handle.getFile();
     const contents = await file.text();
-    // TODO: infer the correct lexer parameters.
-    const classified_lines = source_lexer(contents, ...language_lexer_dict["Python"].slice(1));
+    // <p>TODO -- allow any supported language.</p>
+    current_language_lexer = language_lexers[1];
+    const classified_lines = source_lexer(contents, ...current_language_lexer);
     const html = classified_source_to_html(classified_lines);
-    document.body.innerHTML = html;
-    // Initialize editors for this new content.
+    document.getElementById("CodeChat-body").innerHTML = html;
+    // <p>Initialize editors for this new content.</p>
     on_dom_content_loaded();
-};
-
-// <p>Get the filename and path from the HTML title -- currently, that's
-//     where <code>CodeToEditor.py</code> puts it. In the future, use an
-//     open dialog/drag-n-drop area.</p>
-const get_filename = () => {
-    const filename = document.getElementsByTagName("title")[0].getAttribute("data-CodeChat-filename");
-    const extension = filename.split(".").pop();
-    return [filename, extension];
+    // <p>The Save As and Save buttons now work.</p>
+    document.getElementById("CodeChat-save-as-button").disabled = false;
+    document.getElementById("CodeChat-save-button").disabled = false;
 };
 
 
 const on_save_as = async () => {
-    const [filename, extension] = get_filename();
-    // <p>There's no way to use this currently.</p>
-    //const path = document.title.getAttribute("data-CodeChat-path")
-
     // <p>Save it to a local file. The following comes from a <a
     //         href="https://web.dev/file-system-access/#ask-the-user-to-pick-a-file-to-read">helpful
     //         tutorial</a>.</p>
-    source_code_file_handle = await self.showSaveFilePicker({
-        suggestedName: filename,
-    });
+    source_code_file_handle = await self.showSaveFilePicker();
     await on_save();
 
     // <p>The Save button now works.</p>
@@ -217,24 +266,12 @@ const on_save_as = async () => {
 };
 
 
-// <p>TODO: many missing mappings!</p>
-const file_extension_to_comment = {
-    c: "//",
-    cpp: "//",
-    cc: "//",
-    js: "//",
-    py: "#",
-    // <p>Verilog.</p>
-    v: "//",
-    // <p>Xilinx pin constraints file.</p>
-    xdc: "#",
-}
-
 const on_save = async () => {
-    const [filename, extension] = get_filename();
-    const comment = file_extension_to_comment[extension];
+    // <p>Pick an inline comment from the current lexer. TODO: support block
+    //     comments (CSS, for example, doesn't allow inline comment).</p>
+    const inline_comment = current_language_lexer[2][0];
     // <p>This is the data to write &mdash; the source code.</p>
-    const source_code = editor_to_source_code(comment);
+    const source_code = editor_to_source_code(inline_comment);
 
     // <p>Create a FileSystemWritableFileStream to write to.</p>
     const writable = await source_code_file_handle.createWritable();
@@ -263,6 +300,8 @@ const on_save = async () => {
 // </ul>
 const source_lexer = (
     source_code,
+    language_name,
+    extension_strings,
     inline_comment_strings,
     block_comment_strings,
     long_string_strings,
@@ -285,28 +324,40 @@ const source_lexer = (
     //     </dd>
     // </dl>
 
-    // Construct regex and associated indices from language information provided.
+    // <p>Construct regex and associated indices from language information
+    //     provided.</p>
     let regex_index = 1;
     let regex_strings = [];
     const regex_builder = (strings) => {
-        // Look for a non-empty array. Note that <code>[]</code> is <code>true</code>.
+        // <p>Look for a non-empty array. Note that <code>[]</code> is
+        //     <code>true</code>.</p>
         if (strings.length) {
-            regex_strings.push(strings.join("|"));
+            regex_strings.push(
+                // <p>Escape any regex characters in these strings.</p>
+                strings.map(escapeRegExp).join("|")
+            );
             return regex_index++;
         }
         return null;
     }
-    // Order these by length of the expected strings, since the regex with an or expression will match left to right.
-    let block_comment_index = regex_builder(block_comment_strings);
+    // <p>Order these by length of the expected strings, since the regex with
+    //     an or expression will match left to right.</p>
+    // <p>Include only the opening block comment string (element 0) in the
+    //     regex.</p>
+    let block_comment_index = regex_builder(block_comment_strings.map(element => element[0]));
     let long_string_index = regex_builder(long_string_strings);
     let inline_comment_index = regex_builder(inline_comment_strings);
     let short_string_index = regex_builder(short_string_strings);
-    // <p>Template literals only exist in JavaScript. No other language (that I know of) allows comments inside these, or nesting of template literals.</p>
+    // <p>Template literals only exist in JavaScript. No other language (that
+    //     I know of) allows comments inside these, or nesting of template
+    //     literals.</p>
     let template_literal_index = null;
     if (template_literals) {
-        // If inside a template literal, look for a nested template literal (<code>`</code>) or the end of the current expression (<code>}</code>).
+        // <p>If inside a template literal, look for a nested template literal
+        //     (<code>`</code>) or the end of the current expression
+        //     (<code>}</code>).</p>
         regex_strings.push(template_literals === 1 ? "`" : "`|}");
-        template_literal_index = index++;
+        template_literal_index = regex_index++;
     }
     let classify_regex = new RegExp("(" + regex_strings.join(")|(") + ")");
 
@@ -318,7 +369,7 @@ const source_lexer = (
         // <p>Look for either a comment or a no-comment zone.</p>
         const m = source_code.match(classify_regex);
         if (m) {
-            // Add everything preceding this match to the current code block.
+            // <p>Add everything preceding this match to the current code block.</p>
             code_block_array.push(source_code.substring(0, m.index));
             source_code = source_code.substring(m.index);
             // <p>Figure out which matched.</p>
@@ -329,7 +380,8 @@ const source_lexer = (
                 //     accumulated.</p>
                 let code_block = code_block_array.join("");
                 const split_lines = code_block.split(/\n|\r\n|\r/)
-                // If there's no matching newline, we're at the beginning of the uncategorized source code.
+                // <p>If there's no matching newline, we're at the beginning of the
+                //     uncategorized source code.</p>
                 const last_line = split_lines ? split_lines[split_lines.length - 1] : "";
 
                 // <p>Find the end of this comment. No matching newline means we're at
@@ -369,6 +421,9 @@ const source_lexer = (
                 }
                 // <p>Move to the next block of source code to be lexed.</p>
                 source_code = source_code.substring(full_comment.length);
+            } else if (block_comment_index && m[block_comment_index]) {
+                // <p>TODO!</p>
+                debugger;
             } else if (long_string_index && m[long_string_index]) {
                 // <p>A long string. Find the end of it.</p>
                 code_block_array.push(m[long_string_index]);
@@ -398,8 +453,14 @@ const source_lexer = (
                     code_block_array.push(source_code);
                     source_code = "";
                 }
+            } else if (template_literal_index && m[template_literal_index]) {
+                // <p>TODO! For now, just assume there's no comments in
+                //     here...dangerous!!!</p>
+                code_block_array.push(m[template_literal_index]);
+                source_code = source_code.substring(m[template_literal_index].length);
             } else {
                 console.assert(false);
+                debugger;
             }
         } else {
             // <p>The rest of the source code is in the code block.</p>
@@ -420,19 +481,9 @@ const source_lexer = (
 
 // <h2>Convert lexed code into HTML</h2>
 const classified_source_to_html = (classified_source) => {
-    // An array of strings for the new <code>body</code> of the current HTML page.
-    let html =
-[`<p>
-    <button onclick="on_open();">
-        Open
-    </button>
-    <button onclick="on_save_as();">
-        Save as
-    </button>
-    <button disabled onclick="on_save();" id="CodeChat-save-button">
-        Save
-    </button>
-</p>`];
+    // <p>An array of strings for the new content of the current HTML page.
+    // </p>
+    let html = [];
 
     // <p>Keep track of the current type. Begin with neither comment nor
     //     code.</p>
@@ -498,7 +549,9 @@ const classified_source_to_html = (classified_source) => {
 
         // <p>Update the state.</p>
         current_type = type_
-        // There are an unknown number of newlines in this source string. One was removed <a href="#newline-movement">here</a>, so include that in the count.
+        // <p>There are an unknown number of newlines in this source string. One
+        //     was removed <a href="#newline-movement">here</a>, so include that
+        //     in the count.</p>
         line += 1 + (source_string.match(/\n|\r\n|\r/g) || []).length
     }
 
@@ -525,6 +578,7 @@ const _exit_state = (
     } else if (type_ >= 0) {
         // <p>Close the current doc block without adding any trailing spaces
         //     &mdash; combining this with the next line would add indentation.
+        // </p>
         //</p>
         html.push(
 `</td>
@@ -539,14 +593,27 @@ const _exit_state = (
 }
 
 
-// Given text, escape it so it formats correctly as HTML. Because the solution at https://stackoverflow.com/a/48054293 transforms newlines into <br> (see https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText), it's not usable with code. Instead, this is a translation of Python's <code>html.escape</code> function.
+// <p>Given text, escape it so it formats correctly as HTML. Because the
+//     solution at https://stackoverflow.com/a/48054293 transforms
+//     newlines into <br>(see
+//     https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText),
+//     it's not usable with code. Instead, this is a translation of
+//     Python's <code>html.escape</code> function.</p>
 const escapeHTML = unsafeText => {
-    // Must be done first!
-    unsafeText = unsafeText.replace("&", "&amp;")
-    unsafeText = unsafeText.replace("<", "&lt;")
-    unsafeText = unsafeText.replace(">", "&gt;")
+    // <p>Must be done first!</p>
+    unsafeText = unsafeText.replaceAll("&", "&amp;")
+    unsafeText = unsafeText.replaceAll("<", "&lt;")
+    unsafeText = unsafeText.replaceAll(">", "&gt;")
     return unsafeText;
 };
+
+
+// <p>This function comes from the <a
+//         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping">MDN
+//         docs</a>.</p>
+const escapeRegExp = string => string.replace(/[.*+?^${}()|[\]\\]/g,
+    // <p><code>$&amp;</code> means the whole matched string.</p>
+    '\\$&');
 
 
 // <p>Woefully inadequate, but enough for testing.</p>
@@ -563,24 +630,31 @@ const assert_equals = (a, b) => {
 }
 
 
-// prettier-ignore
-const language_lexer_dict = {
+// <p>prettier-ignore</p>
+const language_lexers = [
     // <dl>
-    //  <dt>IC</dt><dd>inline comment</dd>
-    //  <dt>Heredoc</dt><dd>Here document: an array of <code>[start prefix string, start body regex, start suffix string, stop prefix string, stop suffix string]</code>.</dd>
-    //  <dt>JS tmpl lit</dt><dd>JavaScript template literal: 0 = Language is not JavaScript, 1 = Language is JavaScript</dd>
+    //     <dt>IC</dt>
+    //     <dd>inline comment</dd>
+    //     <dt>Heredoc</dt>
+    //     <dd>Here document: an array of <code>[start prefix string, start
+    //             body regex, start suffix string, stop prefix string, stop
+    //             suffix string]</code>.</dd>
+    //     <dt>JS tmpl lit</dt>
+    //     <dd>JavaScript template literal: 0 = Language is not JavaScript, 1
+    //         = Language is JavaScript</dd>
     // </dl>
     //Language name File extensions IC      Block comment   Long string     Short str   Heredoc JS tmpl lit
-    "Python": [["py"], ["#"], [], ['"""', "'''"], ['"', "'"], [], 0],
-    "JavaScript": [["js"], ["//", [["/*", "*/"]], ['"""', "'''"], ['"', "'"], [], 1]],
-    "C": [["c"], ["//", [["/*", "*/"]], [], ['"'], [], 0]],
-    "C++": [["cc", "cpp"], ["//", [["/*", "*/"]], [], ['"'], [], 0]],
-    "C++11": [["cc", "cpp"], ["//", [["/*", "*/"]], [], ['"'], [['R"'], "(", ")", ""], 0]],
-};
+    ["python", ["py"], ["#"], [], ['"""', "'''"], ['"', "'"], [], 0],
+    ["javascript", ["js"], ["//"], [["/\\*", "\\*/"]], ['"""', "'''"], ['"', "'"], [], 1],
+    // <p>C++11 or newer. Don't worry about supporting C or older C++, since
+    //     the raw string syntax is IMHO so rare we won't encounter it in
+    //     older code.</p>
+    ["c_cpp", ["cc", "cpp"], ["//"], [["/*", "*/"]], [], ['"'], [['R"'], "(", ")", ""], 0],
+];
 
 
 const test_source_lexer_1 = () => {
-    const python_source_lexer = source_code => source_lexer(source_code, ...language_lexer_dict["Python"].slice(1));
+    const python_source_lexer = source_code => source_lexer(source_code, ...language_lexers[0]);
     assert_equals(python_source_lexer(""), []);
     assert_equals(python_source_lexer("\n"), [[-1, "\n", ""]]);
     assert_equals(python_source_lexer("\n# Test"), [[-1, "\n", ""], [0, "Test", "#"]]);
