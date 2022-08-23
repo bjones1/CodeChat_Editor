@@ -20,64 +20,63 @@
 //     mixed code and doc blocks.</p>
 // <p>To view the output, run
 //     <code>\Users\bjones\AppData\Roaming\npm\httpserver</code>.</p>
-// <p>TODO: Create a table of contents.</p>
 // <h2>Next steps</h2>
 // <ul>
 //     <li>Look at / experiment with a book build process.</li>
 //     <li>Create a new repo or directory for the CodeChat Editor, with
-//         NPM and webpack set up.</li>
+//         NPM and webpack set up. Use TypeScript.</li>
 //     <li>Integrate this into IDEs.</li>
 // </ul>
 // <h2>Thoughts and ideas</h2>
 // <p>Provide three modes: syntax highlight the entire file (no LP),
-//     view, and edit. But...</p>
+//     view, and edit. But there might be a performance hit for the view
+//     option, waiting for the JS to hydrate. It would be nice to offer a
+//     view-only option that is static HTML. Hopefully, we could find a
+//     way to ask Ace for the HTML behind its syntax-highlighted code?
+// </p>
+// <p>A simple book build process: a TOC page, where hyperlinks in
+//     <code>&lt;ul&gt;</code> and <code>&lt;ol&gt;</code> elements
+//     define the hierarchy. A config file in YAML.</p>
 // <ul>
-//     <li>Editing mostly makes sense in the context of an IDE.</li>
-//     <li>There might be a performance hit for the new option, waiting
-//         for the JS to hydrate. It would be nice to offer a view-only
-//         option that is static HTML.</li>
-// </ul>
-// <p>Need some sort of book build process. It would:</p>
-// <ul>
-//     <li>Create a list of all ids in all HTML files in the book.</li>
+//     <li>Update all autotitled hyperlinks / references.</li>
 //     <li>Crossref thingy</li>
-//     <li>Global TOC / page order for the book</li>
+//     <li>Potentially, generate static HTML.</li>
 //     <li>Link checker</li>
 //     <li>Need to write some components:
 //         <ul>
 //             <li>Autotitle: like an a, but takes the link&rsquo;s name
-//                 from element linked to. Perhaps this is just an XSLT
-//                 transform? But want to work with local links too, so
-//                 it&rsquo;s partly JS.</li>
+//                 from element linked to. Same for figure references,
+//                 etc.</li>
 //             <li>A local table of contents</li>
 //             <li>A crossref thingy &ndash; giving a single crossref
 //                 value produces links to all crossrefs but the one
 //                 created.</li>
-//             <li>Insert the name of the file. How to do templates with
-//                 HTML? Perhaps with XSLT? Need to find a nice/easy way
-//                 to theme a book. I&rsquo;d like to use PreTeXt if
-//                 possible.<br>How to specify the book structure with
-//                 maximum simplicity? Probably like Sphinx &ndash; a
-//                 toctree defines structure.</li>
+//             <li>Insert the name of the file.</li>
 //         </ul>
 //     </li>
 // </ul>
-// <p>Perhaps mdbook for this?</p>
 // <p>What components should we support/create? Does TinyMCE allow
 //     components?</p>
-// <p>For links to LP files: the old system generated a new name
-//     (appended .html), so that LP files have a unique name. This seems
-//     like a simple solution. (If one file is named foo.c and another is
-//     foo.html, this fails. But, I think it&rsquo;s reasonable to
-//     document this instead of finding a fix.) This would make static
-//     and dynamic work, and seems simple. In the non-project IDE case, a
-//     missing .html link would cause it to look for the raw file without
-//     the .html extension.</p>
+// <p>For links to LP files: use <code>filename.ext.html</code>, so that
+//     LP files have a unique name. This seems like a simple solution.
+//     (If one file is named <code>foo.c</code> and another is
+//     <code>foo.html</code>, this fails. But, I think it&rsquo;s
+//     reasonable to document this instead of finding a fix.) This would
+//     make static and dynamic work, and seems simple. In the non-project
+//     IDE case, a missing <code>.html</code> link would cause it to look
+//     for the raw file without the <code>.html </code>extension. Use
+//     <code>filename-raw.ext.html</code> for a syntax-highlighted,
+//     non-LP flavor of the source code. Use the original filename for
+//     the raw file contents.</p>
+// <p>How to move smoothly from a pure zero-install, web-based editor to
+//     the book build process? Where to load images/other resources from?
+//     Provide a local server? The local server could provide a web-based
+//     GUI, do the book build, etc.</p>
 "use strict";
 
 // <h2>DOM ready event</h2>
 // <p>This code instantiates editors/viewers for code and doc blocks.</p>
-const on_dom_content_loaded = () => {
+const make_editors = () => {
     // <p>Instantiate the TinyMCE editor for doc blocks.</p>
     tinymce.init({
         inline: true,
@@ -241,13 +240,25 @@ const on_open = async () =>
     [source_code_file_handle] = await window.showOpenFilePicker();
     const file = await source_code_file_handle.getFile();
     const contents = await file.text();
-    // <p>TODO -- allow any supported language.</p>
-    current_language_lexer = language_lexers[1];
+
+    // <p>TODO -- less dumb algorithm to select a language. Perhaps even look
+    //     for a special tag on the first line&mdash;perhaps <code>&lt;!--
+    //         CodeChat-language: xxx --&gt;</code>?</p>
+    const extension = source_code_file_handle.name.split(".").pop();
+    let found = false;
+    for (current_language_lexer of language_lexers) {
+        if (current_language_lexer[1].includes(extension)) {
+            found = true;
+            break;
+        }
+    }
+    console.assert(found, "Unable to determine which lexer to use for this language.");
     const classified_lines = source_lexer(contents, ...current_language_lexer);
     const html = classified_source_to_html(classified_lines);
+
     document.getElementById("CodeChat-body").innerHTML = html;
     // <p>Initialize editors for this new content.</p>
-    on_dom_content_loaded();
+    make_editors();
     // <p>The Save As and Save buttons now work.</p>
     document.getElementById("CodeChat-save-as-button").disabled = false;
     document.getElementById("CodeChat-save-button").disabled = false;
@@ -282,6 +293,35 @@ const on_save = async () => {
 };
 
 // <h2>Lexer to split source code into code blocks and doc blocks</h2>
+const language_lexers = [
+    // <dl>
+    //     <dt>IC</dt>
+    //     <dd>inline comment</dd>
+    //     <dt>Heredoc</dt>
+    //     <dd>Here document: an array of <code>[start prefix string, start
+    //             body regex, start suffix string, stop prefix string, stop
+    //             suffix string]</code>.</dd>
+    //     <dt>JS tmpl lit</dt>
+    //     <dd>JavaScript template literal: 0 = Language is not JavaScript, 1
+    //         = Language is JavaScript. (2 = inside a template literal
+    //         should only be used by the lexer itself).</dd>
+    // </dl>
+    //Language name File extensions IC      Block comment       Long string     Short str   Heredoc JS tmpl lit
+    // <p>C++11 or newer. Don't worry about supporting C or older C++ using
+    //     another lexer entry, since the raw string syntax in C++11 and
+    //     newer is IMHO so rare we won't encounter it in older code. See the
+    //     <a
+    //         href="https://en.cppreference.com/w/cpp/language/string_literal">C++
+    //         string literals docs</a> for the reasoning behind the start
+    //     body regex.</p>
+    ["c_cpp",       ["cc", "cpp"],  ["//"], [["/*", "*/"]],     [],             ['"'],      [['R"', "[^()\\ ]", "(", ")", ""]], 0],
+    ["html",        ["html"],       [],     [["<!--", "-->"]],  [],             [],         [],     0],
+    ["javascript",  ["js"],         ["//"], [["/*", "*/"]],     ['"""', "'''"], ['"', "'"], [],     1],
+    ["python",      ["py"],         ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
+    ["verilog",     ["v"],          ["//"], [["/*", "*/"]],     [],             ['"'],      [],     0],
+];
+
+
 // <p>Rather than attempt to lex the entire language, this lexer's only
 //     goal is to categorize all the source code into code blocks or doc
 //     blocks. To do it, it only needs to:</p>
@@ -572,8 +612,8 @@ const _exit_state = (
     html,
 ) => {
 
-    // <p>Code or commentary state</p>
     if (type_ === -1) {
+        // <p>Close the current code block.</p>
         html.push("</div>\n</div>\n");
     } else if (type_ >= 0) {
         // <p>Close the current doc block without adding any trailing spaces
@@ -587,12 +627,12 @@ const _exit_state = (
     </table>
 </div>
 `
-            )
-    // <p>Initial state or non-indented comment. Nothing needed.</p>
+        )
     }
 }
 
 
+// <h2>Helper functions</h2>
 // <p>Given text, escape it so it formats correctly as HTML. Because the
 //     solution at https://stackoverflow.com/a/48054293 transforms
 //     newlines into <br>(see
@@ -616,43 +656,8 @@ const escapeRegExp = string => string.replace(/[.*+?^${}()|[\]\\]/g,
     '\\$&');
 
 
-// <p>Woefully inadequate, but enough for testing.</p>
-const assert_equals = (a, b) => {
-    console.assert(a.length === b.length);
-    for (let index = 0; index < a.length; ++index) {
-        if (a[index] instanceof Array) {
-            console.assert(b[index] instanceof Array);
-            assert_equals(a[index], b[index]);
-        } else {
-            console.assert(a[index] === b[index]);
-        }
-    }
-}
-
-
-// <p>prettier-ignore</p>
-const language_lexers = [
-    // <dl>
-    //     <dt>IC</dt>
-    //     <dd>inline comment</dd>
-    //     <dt>Heredoc</dt>
-    //     <dd>Here document: an array of <code>[start prefix string, start
-    //             body regex, start suffix string, stop prefix string, stop
-    //             suffix string]</code>.</dd>
-    //     <dt>JS tmpl lit</dt>
-    //     <dd>JavaScript template literal: 0 = Language is not JavaScript, 1
-    //         = Language is JavaScript</dd>
-    // </dl>
-    //Language name File extensions IC      Block comment   Long string     Short str   Heredoc JS tmpl lit
-    ["python", ["py"], ["#"], [], ['"""', "'''"], ['"', "'"], [], 0],
-    ["javascript", ["js"], ["//"], [["/\\*", "\\*/"]], ['"""', "'''"], ['"', "'"], [], 1],
-    // <p>C++11 or newer. Don't worry about supporting C or older C++, since
-    //     the raw string syntax is IMHO so rare we won't encounter it in
-    //     older code.</p>
-    ["c_cpp", ["cc", "cpp"], ["//"], [["/*", "*/"]], [], ['"'], [['R"'], "(", ")", ""], 0],
-];
-
-
+// <h2>Unit tests</h2>
+// <p>TODO!</p>
 const test_source_lexer_1 = () => {
     const python_source_lexer = source_code => source_lexer(source_code, ...language_lexers[0]);
     assert_equals(python_source_lexer(""), []);
@@ -686,8 +691,24 @@ const test_source_lexer_1 = () => {
     assert_equals(python_source_lexer("   # Test\n"), [[3, "Test\n", "#"]]);
 };
 
+
 const test_source_lexer = () => {
     test_source_lexer_1();
 };
 
-test_source_lexer();
+
+// <p>Woefully inadequate, but enough for testing.</p>
+const assert_equals = (a, b) => {
+    console.assert(a.length === b.length);
+    for (let index = 0; index < a.length; ++index) {
+        if (a[index] instanceof Array) {
+            console.assert(b[index] instanceof Array);
+            assert_equals(a[index], b[index]);
+        } else {
+            console.assert(a[index] === b[index]);
+        }
+    }
+}
+
+
+//test_source_lexer();
