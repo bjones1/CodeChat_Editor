@@ -245,6 +245,14 @@ const on_open = async () =>
     //     for a special tag on the first line&mdash;perhaps <code>&lt;!--
     //         CodeChat-language: xxx --&gt;</code>?</p>
     const extension = source_code_file_handle.name.split(".").pop();
+    open_lp(contents, extension);
+    // <p>The Save As and Save buttons now work.</p>
+    document.getElementById("CodeChat-save-as-button").disabled = false;
+    document.getElementById("CodeChat-save-button").disabled = false;
+};
+
+
+const open_lp = (source_code, extension) => {
     let found = false;
     for (current_language_lexer of language_lexers) {
         if (current_language_lexer[1].includes(extension)) {
@@ -253,15 +261,12 @@ const on_open = async () =>
         }
     }
     console.assert(found, "Unable to determine which lexer to use for this language.");
-    const classified_lines = source_lexer(contents, ...current_language_lexer);
+    const classified_lines = source_lexer(source_code, ...current_language_lexer);
     const html = classified_source_to_html(classified_lines);
 
     document.getElementById("CodeChat-body").innerHTML = html;
     // <p>Initialize editors for this new content.</p>
     make_editors();
-    // <p>The Save As and Save buttons now work.</p>
-    document.getElementById("CodeChat-save-as-button").disabled = false;
-    document.getElementById("CodeChat-save-button").disabled = false;
 };
 
 
