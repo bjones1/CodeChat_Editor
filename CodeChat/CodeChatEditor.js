@@ -18,8 +18,8 @@
 //     the CodeChat Editor</h1>
 // <p>The CodeChat Editor provides a simple IDE which allows editing of
 //     mixed code and doc blocks.</p>
-// <p>To view the output, run
-//     <code>\Users\bjones\AppData\Roaming\npm\httpserver</code>.</p>
+// <p>To view the output, run <code>python
+//         CodeChatEditorServer.py</code>.</p>
 // <h2>Next steps</h2>
 // <ul>
 //     <li>Look at / experiment with a book build process.</li>
