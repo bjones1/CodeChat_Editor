@@ -1,0 +1,79 @@
+<h1>CodeChat Editor ideas</h1>
+<div>The CodeChat Editor should be a GUI-based programmer's word processor /
+    Jupyter for software developers.</div>
+<h2>Specifications / ideas</h2>
+<div>&nbsp;At a very high level, what should this do? How?</div>
+<div>
+    <ul>
+        <li>View source code as code blocks and doc blocks. Doc blocks are lines
+            of source which contain only comments.</li>
+        <li>Load a document from source code, allow edits in a GUI, then save it
+            back to source code.
+            <ul>
+                <li>Provide word processor GUI tools (insert hyperlink, images,
+                    headings, change font, etc) for doc blocks.</li>
+                <li>Provide text editor/IDE tools (syntax highlighting, line
+                    numbers, show linter feedback) for code blocks.</li>
+            </ul>
+        </li>
+        <li>Ideally, be a zero-install environment. Practically, I don't think
+            this is possible without a server. If so, make the server as easy to
+            install as possible. I suspect that updates to an IDE's plugin will
+            happen frequently, while users won't update the server very often,
+            so push as much code into the JavaScript as possible. The current
+            zero-install code would make a nice web demo -- paste in / drag and
+            drop / open your code, click on the other tab to edit it in the GUI.
+        </li>
+        <li>Doc block markup should be readable and well-known.
+            <ul>
+                <li>For any markup, must either have:
+                    <ul>
+                        <li>Round-trip capable conversion: from x to HTML
+                            (load), then from HTML back to x (save).</li>
+                        <li>A GUI editor that works on this markup language. I
+                            don't know of any (except for HTML).</li>
+                    </ul>
+                </li>
+                <li>HTML is simple to implement (already done). However, it's
+                    less readable.</li>
+                <li>Markdown is very well known, dut to GitHub's use of it, and
+                    is more readable (IMHO). It seems like a possible candidate
+                    -- anything that can't be translated from HTML from Markdown
+                    can simply be left as HTML, since Markdown allows HTML as a
+                    part of its syntax. Markdown has a JavaScript implementation
+                    for markdown to HTML. Pandoc can translate HTML back to
+                    Markdown, but this requires installation of another program
+                    and adds to the server-side complexity. The <a
+                        href="https://github.com/commonmark/commonmark.js/blob/master/lib/render/html.js">code</a>
+                    that CommonMark uses to translate from their AST into HTML
+                    looks pretty straightforward, so the inverse shouldn't be
+                    too hard.</li>
+            </ul>
+        </li>
+        <li>How does this integrate with a book build process? The current code
+            would actually build in Sphinx using Markdown. How to toggle between
+            edit mode, and book view mode? The two will be visually quite
+            distinct. I could imagine saving the code, then switching to the
+            "book view" after the Sphinx build finishes. Long term, I'd like to
+            have a very rapid book build.</li>
+        <li>I would ideally like to use a programming language that runs both on
+            the desktop, with minimal dependencies, and in the browser.
+            JavaScript + Node.js is one possibility (but the install process
+            isn't nice). vlang seems pretty good as well -- everything compiles
+            to an executable, and also builds to WebAssembly.</li>
+    </ul>
+</div>
+<h2>Minimally-viable product</h2>
+<div>The CodeChat repository's <a
+        href="https://github.com/bjones1/CodeChat/tree/CodeChat-Editor/CodeChat">CodeChat-Editor
+        branch</a> contains the code for this idea. To try it out:</div>
+<div>
+    <ol>
+        <li><a
+                href="https://github.com/vlang/v#installing-v---from-source-preferred-method">Install
+                the V language</a>.</li>
+        <li><a href="https://github.com/vlang/v#symlinking">Symlink V</a>.</li>
+        <li>In this directory, exeute <code>v run CodeChatEditorServer.v</code>.
+        </li>
+    </ol>
+</div>
