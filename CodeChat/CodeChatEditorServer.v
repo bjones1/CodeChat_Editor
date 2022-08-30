@@ -189,6 +189,7 @@ fn codechat_editor_html(source_code string, path string) string {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
         <script src="/static/CodeChatEditor.js"></script>
         <script>
+            const on_save = on_save_codechat;
             on_dom_content_loaded(() => open_lp(
 "${quote_script_string(source_code)}",
 "${quote_string(ext)}"));
@@ -196,14 +197,14 @@ fn codechat_editor_html(source_code string, path string) string {
 
         <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
     </head>
-    <body>
+    <body onkeydown="on_keydown(event);">
         <p>
             $name - $dir -
             <button disabled onclick="on_save_as(on_save_codechat);" id="CodeChat-save-as-button">
                 Save as
             </button>
-            <button onclick="on_save_codechat();" id="CodeChat-save-button">
-                Save
+            <button onclick="on_save();" id="CodeChat-save-button">
+                <span class="CodeChat-hotkey">S</span>ave
             </button>
         </p>
         <div id="CodeChat-body">
@@ -230,19 +231,20 @@ fn codechat_doc_editor_html(source_code string, path string) string {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
         <script src="/static/CodeChatEditor.js"></script>
         <script>
+            const on_save = on_save_doc;
             on_dom_content_loaded(make_editors);
         </script>
 
         <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
     </head>
-    <body>
+    <body onkeydown="on_keydown(event);">
         <p>
             $name - $dir -
             <button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
                 Save as
             </button>
-            <button onclick="on_save_doc();" id="CodeChat-save-button">
-                Save
+            <button onclick="on_save();" id="CodeChat-save-button">
+                <span class="CodeChat-hotkey">S</span>ave
             </button>
         </p>
         <div id="CodeChat-body">

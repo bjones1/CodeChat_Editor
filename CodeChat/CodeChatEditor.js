@@ -245,29 +245,8 @@ const editor_to_source_code = (
 
 
 // <h2>UI</h2>
-// <p>The file handle for saves and opens.</p>
-let code_chat_file_handle;
 // <p>Store the lexer info for the currently-loaded language.</p>
 let current_language_lexer;
-
-
-const on_open = async () =>
-{
-    // <p>Destructure the one-element array. TODO: currently, this ignore
-    //     multiple files picked for opening. Fix!</p>
-    [code_chat_file_handle] = await window.showOpenFilePicker();
-    const file = await code_chat_file_handle.getFile();
-    const contents = await file.text();
-
-    // <p>TODO -- less dumb algorithm to select a language. Perhaps even look
-    //     for a special tag on the first line&mdash;perhaps <code>&lt;!--
-    //         CodeChat-language: xxx --&gt;</code>?</p>
-    const extension = "." + code_chat_file_handle.name.split(".").pop();
-    open_lp(contents, extension);
-    // <p>The Save As and Save buttons now work.</p>
-    document.getElementById("CodeChat-save-as-button").disabled = false;
-    document.getElementById("CodeChat-save-button").disabled = false;
-};
 
 
 const open_lp = (source_code, extension) => {
@@ -319,25 +298,48 @@ const on_save_doc = async () => {
 };
 
 
+// <p>Per <a
+//         href="https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples">MDN</a>,
+//     here's the least bad way to choose between the control key and the
+//     command key.</p>
+const os_is_osx = (navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone") ? true : false;
+
+
+// <p>Provide a shortcut of ctrl-s (or command-s) to save the current
+//     file.</p>
+const on_keydown = (event) => {
+    if ((event.key === "s") && ((event.ctrlKey && !os_is_osx) || (event.metaKey && os_is_osx)) && !event.altKey) {
+        on_save();
+        event.preventDefault();
+    }
+}
+
+
 // <p><a id="save"></a>Save the provided contents back to th filesystem,
 //     by sending a <code>PUT</code> request to the server. See the <a
 //         href="CodeChatEditorServer.v.html#save_file">save_file
 //         endpoint</a>.</p>
 const save = async contents => {
-    const response = await window.fetch(window.location, {
-        method: "PUT",
-        body: contents,
-    });
+    let response;
+    try {
+        response = await window.fetch(window.location, {
+            method: "PUT",
+            body: contents,
+        });
+    } catch (error) {
+        window.alert(`Save failed -- ${error}.`);
+        return;
+    }
     if (response.ok) {
         const response_body = await response.json()
         if (response_body.success !== true) {
             window.alert("Save failed.");
         }
         return;
-    } else {
-        window.alert(`Save failed -- server returned ${response.status}, ${response.statusText}.`);
     }
+    window.alert(`Save failed -- server returned ${response.status}, ${response.statusText}.`);
 };
+
 
 // <h2>Lexer to split source code into code blocks and doc blocks</h2>
 const language_lexers = [
