@@ -75,6 +75,21 @@
 "use strict";
 
 // <h2>DOM ready event</h2>
+// <p>This is copied from <a
+//         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>
+// </p>
+// <p>.</p>
+const on_dom_content_loaded = on_load_func => {
+    if (document.readyState === "loading") {
+        // <p>Loading hasn't finished yet.</p>
+        document.addEventListener("DOMContentLoaded", on_load_func);
+    } else {
+        // <p><code>DOMContentLoaded</code> has already fired.</p>
+        on_load_func();
+    }
+}
+
+
 // <p>This code instantiates editors/viewers for code and doc blocks.</p>
 const make_editors = () => {
     // <p>Instantiate the TinyMCE editor for doc blocks.</p>
@@ -101,27 +116,30 @@ const make_editors = () => {
         image_title: true,
     });
 
-    // <p>Instantiate the Ace editor for code blocks.</p>
-    ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.5');
-    for (const ace_tag of document.querySelectorAll(".CodeChat-ACE")) {
-        ace.edit(ace_tag, {
-            // <p>The leading <code>+</code> converts the line number from a string
-            //     (since all HTML attributes are strings) to a number.</p>
-            firstLineNumber: +ace_tag.getAttribute("data-CodeChat-firstLineNumber"),
-            highlightActiveLine: false,
-            highlightGutterLine: false,
-            maxLines: 1e10,
-            // <p><span id="script-param">A convenient way to <a
-            //             href="CodeToEditor.py#script-param">pass data</a> from the
-            //         HTML <code>&lt;script&gt;</code> tag to the
-            //         currently-executing script.</span></p>
-            mode: `ace/mode/${current_language_lexer[0]}`,
-            // <p>TODO: this still allows cursor movement.</p>
-            //readOnly: true,
-            showPrintMargin: false,
-            theme: "ace/theme/textmate",
-            wrap: true,
-        });
+    // <p>The CodeChat Document Editor doesn't include ACE.</p>
+    if (window.ace !== undefined) {
+        // <p>Instantiate the Ace editor for code blocks.</p>
+        ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.5');
+        for (const ace_tag of document.querySelectorAll(".CodeChat-ACE")) {
+            ace.edit(ace_tag, {
+                // <p>The leading <code>+</code> converts the line number from a string
+                //     (since all HTML attributes are strings) to a number.</p>
+                firstLineNumber: +ace_tag.getAttribute("data-CodeChat-firstLineNumber"),
+                highlightActiveLine: false,
+                highlightGutterLine: false,
+                maxLines: 1e10,
+                // <p><span id="script-param">A convenient way to <a
+                //             href="CodeToEditor.py#script-param">pass data</a> from the
+                //         HTML <code>&lt;script&gt;</code> tag to the
+                //         currently-executing script.</span></p>
+                mode: `ace/mode/${current_language_lexer[0]}`,
+                // <p>TODO: this still allows cursor movement.</p>
+                //readOnly: true,
+                showPrintMargin: false,
+                theme: "ace/theme/textmate",
+                wrap: true,
+            });
+        }
     }
 
     // <p>Set up for editing the indent of doc blocks.</p>
@@ -228,23 +246,24 @@ const editor_to_source_code = (
 
 
 // <h2>UI</h2>
-// <p>Store the file handle for saves (and eventually opens) here.</p>
-let source_code_file_handle;
+// <p>The file handle for saves and opens.</p>
+let code_chat_file_handle;
 // <p>Store the lexer info for the currently-loaded language.</p>
 let current_language_lexer;
 
 
 const on_open = async () =>
 {
-    // <p>Destructure the one-element array.</p>
-    [source_code_file_handle] = await window.showOpenFilePicker();
-    const file = await source_code_file_handle.getFile();
+    // <p>Destructure the one-element array. TODO: currently, this ignore
+    //     multiple files picked for opening. Fix!</p>
+    [code_chat_file_handle] = await window.showOpenFilePicker();
+    const file = await code_chat_file_handle.getFile();
     const contents = await file.text();
 
     // <p>TODO -- less dumb algorithm to select a language. Perhaps even look
     //     for a special tag on the first line&mdash;perhaps <code>&lt;!--
     //         CodeChat-language: xxx --&gt;</code>?</p>
-    const extension = source_code_file_handle.name.split(".").pop();
+    const extension = code_chat_file_handle.name.split(".").pop();
     open_lp(contents, extension);
     // <p>The Save As and Save buttons now work.</p>
     document.getElementById("CodeChat-save-as-button").disabled = false;
@@ -270,28 +289,80 @@ const open_lp = (source_code, extension) => {
 };
 
 
-const on_save_as = async () => {
+const on_save_as = async on_save_func => {
     // <p>Save it to a local file. The following comes from a <a
     //         href="https://web.dev/file-system-access/#ask-the-user-to-pick-a-file-to-read">helpful
     //         tutorial</a>.</p>
-    source_code_file_handle = await self.showSaveFilePicker();
-    await on_save();
+    code_chat_file_handle = await self.showSaveFilePicker();
+    await on_save_func();
 
     // <p>The Save button now works.</p>
     document.getElementById("CodeChat-save-button").disabled = false;
 };
 
 
-const on_save = async () => {
+// <p>Save CodeChat Editor contents.</p>
+const on_save_codechat = async () => {
     // <p>Pick an inline comment from the current lexer. TODO: support block
     //     comments (CSS, for example, doesn't allow inline comment).</p>
     const inline_comment = current_language_lexer[2][0];
     // <p>This is the data to write &mdash; the source code.</p>
     const source_code = editor_to_source_code(inline_comment);
+    await save(source_code);
+};
 
+
+// <p>Save CodeChat Document contents.</p>
+const on_save_doc = async () => {
+    const tiny = document.querySelector(".CodeChat-TinyMCE");
+    const raw_tiny_html = tinymce.get(tiny.id).getContent();
+    // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters.</p>
+    const clean_tiny_html = html_beautify(raw_tiny_html, { "wrap_line_length": 80 });
+    const html = `<!-- <h1><code>CodeChatDocEditor.html</code>&mdash;the CodeChat Document Editor HTML frontend</h1> -->
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>The CodeChat Editor</title>
+
+        <script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
+        <script src="CodeChatEditor.js"></script>
+        <script>
+            on_dom_content_loaded(make_editors);
+        </script>
+
+        <link rel="stylesheet" href="css/CodeChatEditor.css">
+    </head>
+    <body>
+        <p>
+            </button>
+            <button onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
+                Save as
+            </button>
+            <button disabled onclick="on_save_doc();" id="CodeChat-save-button">
+                Save
+            </button>
+        </p>
+        <div id="CodeChat-body">
+            <div class="CodeChat-TinyMCE">
+                <p>
+${clean_tiny_html}
+                </p>
+            </div>
+        </div>
+    </body>
+</html>
+`;
+    save(html);
+};
+
+
+const save = async contents => {
     // <p>Create a FileSystemWritableFileStream to write to.</p>
-    const writable = await source_code_file_handle.createWritable();
-    await writable.write(source_code);
+    const writable = await code_chat_file_handle.createWritable();
+    await writable.write(contents);
     // <p>Close the file and write the contents to disk. <em>Important</em>:
     //     the write is only performed <em>after</em> the file is closed!</p>
     await writable.close();

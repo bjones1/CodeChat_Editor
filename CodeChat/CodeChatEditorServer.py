@@ -62,25 +62,25 @@ def codechat_open(path, *args, **kwargs):
                     <script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
                     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
                     <script src="{path_to_js}"></script>
+                    <script>
+                        on_dom_content_loaded(() => open_lp(
+                    {"</scr'+'ipt>".join(repr(source_code).split("</script>"))}
+                        , {repr(s[-2][1:])}));
+                    </script>
 
                     <link rel="stylesheet" href="css/CodeChatEditor.css">
                 </head>
                 <body>
                     <p>
-                        <button onclick="on_save_as();" id="CodeChat-save-as-button">
+                        <button onclick="on_save_as(on_save_codechat);" id="CodeChat-save-as-button">
                             Save as
                         </button>
-                        <button disabled onclick="on_save();" id="CodeChat-save-button">
+                        <button disabled onclick="on_save_codechat();" id="CodeChat-save-button">
                             Save
                         </button>
                     </p>
                     <div id="CodeChat-body">
                     </div>
-                    <script>
-                        open_lp(
-                    {"</scr'+'ipt>".join(repr(source_code).split("</script>"))}
-                        , {repr(s[-2][1:])});
-                    </script>
                 </body>
             </html>
             """)
