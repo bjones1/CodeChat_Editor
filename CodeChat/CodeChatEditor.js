@@ -262,7 +262,7 @@ const on_open = async () =>
     // <p>TODO -- less dumb algorithm to select a language. Perhaps even look
     //     for a special tag on the first line&mdash;perhaps <code>&lt;!--
     //         CodeChat-language: xxx --&gt;</code>?</p>
-    const extension = code_chat_file_handle.name.split(".").pop();
+    const extension = "." + code_chat_file_handle.name.split(".").pop();
     open_lp(contents, extension);
     // <p>The Save As and Save buttons now work.</p>
     document.getElementById("CodeChat-save-as-button").disabled = false;
@@ -353,7 +353,7 @@ const language_lexers = [
     //         = Language is JavaScript. (2 = inside a template literal
     //         should only be used by the lexer itself).</dd>
     // </dl>
-    //Language name File extensions IC      Block comment       Long string     Short str   Heredoc JS tmpl lit
+    //Language name File extensions     IC      Block comment       Long string     Short str   Heredoc JS tmpl lit
     // <p>C++11 or newer. Don't worry about supporting C or older C++ using
     //     another lexer entry, since the raw string syntax in C++11 and
     //     newer is IMHO so rare we won't encounter it in older code. See the
@@ -361,12 +361,12 @@ const language_lexers = [
     //         href="https://en.cppreference.com/w/cpp/language/string_literal">C++
     //         string literals docs</a> for the reasoning behind the start
     //     body regex.</p>
-    ["c_cpp",       ["cc", "cpp"],  ["//"], [["/*", "*/"]],     [],             ['"'],      [['R"', "[^()\\ ]", "(", ")", ""]], 0],
-    ["html",        ["html"],       [],     [["<!--", "-->"]],  [],             [],         [],     0],
-    ["javascript",  ["js"],         ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
-    ["python",      ["py"],         ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
-    ["verilog",     ["v"],          ["//"], [["/*", "*/"]],     [],             ['"'],      [],     0],
-    ["vlang",       ["v"],          ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
+    ["c_cpp",       [".cc", ".cpp"],    ["//"], [["/*", "*/"]],     [],             ['"'],      [['R"', "[^()\\ ]", "(", ")", ""]], 0],
+    ["html",        [".html"],          [],     [["<!--", "-->"]],  [],             [],         [],     0],
+    ["javascript",  [".js"],            ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
+    ["python",      [".py"],            ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
+    ["verilog",     [".v"],             ["//"], [["/*", "*/"]],     [],             ['"'],      [],     0],
+    ["vlang",       [".v"],             ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
 ];
 
 

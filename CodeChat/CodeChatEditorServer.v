@@ -55,20 +55,15 @@ struct ErrorResponse {
 
 // <p><a id="save_file"></a>A <code>PUT</code> to a filename writes the
 //     provided data to that file; this is used by the <a
-//         href="CodeChatEditor.js.html#save">save function</a>.</p>
+//         href="CodeChatEditor.js#save">save function</a>.</p>
 ["/fs/:path..."; put]
 fn (mut app App) save_file(path string) vweb.Result {
     abs_path := os.abs_path(path)
-    if abs_path[abs_path.len - 5..abs_path.len] == ".html" {
-        actual_path := abs_path[0..abs_path.len - 5]
-        os.write_file(actual_path, app.req.data) or {
-            // <p>TODO: Return an ErrorResponse.</p>
-            return app.json(ErrorResponse{success: false, message: "Unable to write file."})
-        }
-        return app.json({"success": true})
-    } else {
-        return app.json(ErrorResponse{success: false, message: "Unexpected file extension."})
+    os.write_file(abs_path, app.req.data) or {
+        // <p>TODO: Return an ErrorResponse.</p>
+        return app.json(ErrorResponse{success: false, message: "Unable to write file."})
     }
+    return app.json({"success": true})
 }
 
 
@@ -77,7 +72,7 @@ fn (mut app App) save_file(path string) vweb.Result {
 // </p>
 fn (mut app App) serve_fs_(path string) vweb.Result {
     codechat_extensions := [
-        "cc", "cpp", "html", "js", "py", "v", "cchtml"
+        ".cc", ".cpp", ".html", ".js", ".py", ".v", ".cchtml"
     ]
 
     // <p>The provided <code>path</code> may need fixing, since it lacks an
@@ -139,18 +134,15 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
                 //     even if it's there!</p>
                 ret += '<li><a href="/fs/${path}/${urllib.path_escape(f)}/">$f/</a></li>\n'
             } else {
-                // <p>Get the extension of the file.</p>
-                splits := f.split(".")
-                extension := if splits.len > 0 { splits[splits.len - 1] } else { "" }
+                extension := os.file_ext(f)
                 html_path := "/fs/${path}/${urllib.path_escape(f)}"
                 // <p>See if it's a CodeChat Editor file.</p>
-                if !os.is_file(full_path + ".html") && extension in codechat_extensions {
-                    // <p>Yes. Provide a link to the CodeChat Editor flavor and the raw
-                    //     flavor.</p>
-                    ret += '<li><a href="${html_path}.html" target="_blank">$f</a> <a href="$html_path" target="_blank">(raw)</a></li>\n'
+                if extension in codechat_extensions {
+                    // <p>Yes. Provide a link to the CodeChat Editor for this file.</p>
+                    ret += '<li><a href="${html_path}" target="_blank">$f</a></li>\n'
                 } else {
-                    // <p>No. Just link directly to the file.</p>
-                    ret += '<li><a href="$html_path" target="_blank">$f</a></li>\n'
+                    // <p>No. Only list the file, but don't link to it.</p>
+                    ret += '<li>$f</li>\n'
                 }
             }
         }
@@ -158,44 +150,39 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
     </body>
 </html>")
     } else {
-        // <p>This is a file. Serve it.</p>
-        file_contents := os.read_file(abs_path) or {
-            // <p>Open failed, perhaps because it's a CodeChat Editor file?</p>
-            extensions := os.base(abs_path).split(".")
-            if extensions.len >= 2 && extensions[extensions.len - 1] == "html" && extensions[extensions.len - 2] in codechat_extensions {
-                // <p>Open the file without the <code>.html</code> extension.</p>
-                codechat_file_contents := os.read_file(abs_path[0..abs_path.len - 5]) or {
-                    return app.not_found()
-                }
-                // <p>Transform this into a CodeChat (Doc?) Editor webpage.</p>
-                source_extension := extensions[extensions.len - 2]
-                return app.html(
-                    if source_extension == "cchtml" {
-                        codechat_doc_editor_html(codechat_file_contents, source_extension)
-                    } else {
-                        codechat_editor_html(codechat_file_contents, source_extension)
-                    }
-                )
+        ext := os.file_ext(abs_path)
+        if ext in codechat_extensions {
+            codechat_file_contents := os.read_file(abs_path) or {
+                return app.not_found()
             }
-            // <p>It's not a CodeChat Editor file -- give up.</p>
-            return app.not_found()
+            // <p>Transform this into a CodeChat (Doc?) Editor webpage.</p>
+            return app.html(
+                if ext == ".cchtml" {
+                    codechat_doc_editor_html(codechat_file_contents, abs_path)
+                } else {
+                    codechat_editor_html(codechat_file_contents, abs_path)
+                }
+            )
         }
-        // <p>The read_file succeeded; return the contents.</p>
-        return app.text(file_contents)
+        // <p>It's not a CodeChat Editor file -- give up.</p>
+        return app.not_found()
     }
 }
 
 
 // <h2>CodeChat Editor support</h2>
-// <p>Given the source code for a file and its extension, return the HTML
-//     to present this in the CodeChat Editor.</p>
-fn codechat_editor_html(source_code string, extension string) string {
+// <p>Given the source code for a file and its path, return the HTML to
+//     present this in the CodeChat Editor.</p>
+fn codechat_editor_html(source_code string, path string) string {
+    dir := escape_html(os.dir(path))
+    name := escape_html(os.base(path))
+    ext := os.file_ext(path)
     return '<!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>The CodeChat Editor</title>
+        <title>$name - The CodeChat Editor</title>
 
         <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.5/ace.min.js"></script>
         <script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
@@ -204,13 +191,14 @@ fn codechat_editor_html(source_code string, extension string) string {
         <script>
             on_dom_content_loaded(() => open_lp(
 "${quote_script_string(source_code)}",
-"${quote_string(extension)}"));
+"${quote_string(ext)}"));
         </script>
 
         <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
     </head>
     <body>
         <p>
+            $name - $dir -
             <button disabled onclick="on_save_as(on_save_codechat);" id="CodeChat-save-as-button">
                 Save as
             </button>
@@ -226,15 +214,17 @@ fn codechat_editor_html(source_code string, extension string) string {
 }
 
 
-// <p>Given the source code for a file and its extension, return the HTML
-//     to present this in the CodeChat Document Editor.</p>
-fn codechat_doc_editor_html(source_code string, extension string) string {
+// <p>Given the source code for a file and its path, return the HTML to
+//     present this in the CodeChat Document Editor.</p>
+fn codechat_doc_editor_html(source_code string, path string) string {
+    dir := escape_html(os.dir(path))
+    name := escape_html(os.base(path))
     return '<!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>The CodeChat Editor</title>
+        <title>$name - The CodeChat Editor</title>
 
         <script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
@@ -247,7 +237,7 @@ fn codechat_doc_editor_html(source_code string, extension string) string {
     </head>
     <body>
         <p>
-            </button>
+            $name - $dir -
             <button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
                 Save as
             </button>
@@ -279,6 +269,14 @@ fn quote_string(s string) string {
 fn quote_script_string(source_code string) string {
     return (quote_string(source_code).split("</script>")).join('</scr"+"ipt>')
 }
+
+
+// <p>Given text, escape it so it formats correctly as HTML. This is a
+//     translation of Python's <code>html.escape</code> function.</p>
+fn escape_html(unsafe_text string) string {
+    return unsafe_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+}
+
 
 // <h2>Main&mdash;run the webserver</h2>
 fn main() {
