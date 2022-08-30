@@ -76,9 +76,8 @@
 
 // <h2>DOM ready event</h2>
 // <p>This is copied from <a
-//         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>
+//         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
 // </p>
-// <p>.</p>
 const on_dom_content_loaded = on_load_func => {
     if (document.readyState === "loading") {
         // <p>Loading hasn't finished yet.</p>
@@ -272,12 +271,13 @@ const on_open = async () =>
 
 
 const open_lp = (source_code, extension) => {
-    // See if the first line of the file specifies a lexer.
+    // <p>See if the first line of the file specifies a lexer.</p>
     const m = source_code.match(/^.*CodeChat-lexer:\s*(\w+)/);
     const lexer_name = m ? m[1] : "";
     let found = false;
     for (current_language_lexer of language_lexers) {
-        // If the source code provided a lexer name, match only on that; otherwise, match based on file extension.
+        // <p>If the source code provided a lexer name, match only on that;
+        //     otherwise, match based on file extension.</p>
         if ((current_language_lexer[0] === lexer_name) || (!lexer_name && current_language_lexer[1].includes(extension))) {
             found = true;
             break;
@@ -294,14 +294,7 @@ const open_lp = (source_code, extension) => {
 
 
 const on_save_as = async on_save_func => {
-    // <p>Save it to a local file. The following comes from a <a
-    //         href="https://web.dev/file-system-access/#ask-the-user-to-pick-a-file-to-read">helpful
-    //         tutorial</a>.</p>
-    code_chat_file_handle = await self.showSaveFilePicker();
-    await on_save_func();
-
-    // <p>The Save button now works.</p>
-    document.getElementById("CodeChat-save-button").disabled = false;
+    // <p>TODO!</p>
 };
 
 
@@ -322,54 +315,28 @@ const on_save_doc = async () => {
     const raw_tiny_html = tinymce.get(tiny.id).getContent();
     // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters.</p>
     const clean_tiny_html = html_beautify(raw_tiny_html, { "wrap_line_length": 80 });
-    const html = `<!-- <h1><code>CodeChatDocEditor.html</code>&mdash;the CodeChat Document Editor HTML frontend</h1> -->
-<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>The CodeChat Editor</title>
-
-        <script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
-        <script src="CodeChatEditor.js"></script>
-        <script>
-            on_dom_content_loaded(make_editors);
-        </script>
-
-        <link rel="stylesheet" href="css/CodeChatEditor.css">
-    </head>
-    <body>
-        <p>
-            </button>
-            <button onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
-                Save as
-            </button>
-            <button disabled onclick="on_save_doc();" id="CodeChat-save-button">
-                Save
-            </button>
-        </p>
-        <div id="CodeChat-body">
-            <div class="CodeChat-TinyMCE">
-                <p>
-${clean_tiny_html}
-                </p>
-            </div>
-        </div>
-    </body>
-</html>
-`;
-    save(html);
+    await save(clean_tiny_html);
 };
 
 
+// <p><a id="save"></a>Save the provided contents back to th filesystem,
+//     by sending a <code>PUT</code> request to the server. See the <a
+//         href="CodeChatEditorServer.v.html#save_file">save_file
+//         endpoint</a>.</p>
 const save = async contents => {
-    // <p>Create a FileSystemWritableFileStream to write to.</p>
-    const writable = await code_chat_file_handle.createWritable();
-    await writable.write(contents);
-    // <p>Close the file and write the contents to disk. <em>Important</em>:
-    //     the write is only performed <em>after</em> the file is closed!</p>
-    await writable.close();
+    const response = await window.fetch(window.location, {
+        method: "PUT",
+        body: contents,
+    });
+    if (response.ok) {
+        const response_body = await response.json()
+        if (response_body.success !== true) {
+            window.alert("Save failed.");
+        }
+        return;
+    } else {
+        window.alert(`Save failed -- server returned ${response.status}, ${response.statusText}.`);
+    }
 };
 
 // <h2>Lexer to split source code into code blocks and doc blocks</h2>
@@ -419,6 +386,20 @@ const language_lexers = [
 //     <li>After finding either an inline or block comment, determine if
 //         this is a doc block.</li>
 // </ul>
+// <p>It returns a list of <code>indent, string, indent_type</code>
+//     where:</p>
+// <dl>
+//     <dt><code>indent</code></dt>
+//     <dd>The indent of a doc block, in spaces, or -1 for a code block.
+//     </dd>
+//     <dt><code>string</code></dt>
+//     <dd>The classified string; for doc blocks, this does not include
+//         the indenting spaces or the inline/block comment prefix/suffix
+//     </dd>
+//     <dt><code>indent_type</code></dt>
+//     <dd>The comment string for a doc block, or "" for a code block.
+//     </dd>
+// </dl>
 const source_lexer = (
     source_code,
     language_name,
@@ -430,21 +411,6 @@ const source_lexer = (
     here_text_strings,
     template_literals,
 ) => {
-    // <p>This will be a list of <code>indent, string, indent_type</code>
-    //     where:</p>
-    // <dl>
-    //     <dt>indent</dt>
-    //     <dd>The indent of a doc block, in spaces, or -1 for a code block.
-    //     </dd>
-    //     <dt>string</dt>
-    //     <dd>The classified string; for doc blocks, this does not include
-    //         the indenting spaces or the inline/block comment prefix/suffix
-    //     </dd>
-    //     <dt>indent_type</dt>
-    //     <dd>The comment string for a doc block, or "" for a code block.
-    //     </dd>
-    // </dl>
-
     // <p>Construct regex and associated indices from language information
     //     provided.</p>
     let regex_index = 1;
