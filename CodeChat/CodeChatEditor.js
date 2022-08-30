@@ -272,9 +272,13 @@ const on_open = async () =>
 
 
 const open_lp = (source_code, extension) => {
+    // See if the first line of the file specifies a lexer.
+    const m = source_code.match(/^.*CodeChat-lexer:\s*(\w+)/);
+    const lexer_name = m ? m[1] : "";
     let found = false;
     for (current_language_lexer of language_lexers) {
-        if (current_language_lexer[1].includes(extension)) {
+        // If the source code provided a lexer name, match only on that; otherwise, match based on file extension.
+        if ((current_language_lexer[0] === lexer_name) || (!lexer_name && current_language_lexer[1].includes(extension))) {
             found = true;
             break;
         }
@@ -392,9 +396,10 @@ const language_lexers = [
     //     body regex.</p>
     ["c_cpp",       ["cc", "cpp"],  ["//"], [["/*", "*/"]],     [],             ['"'],      [['R"', "[^()\\ ]", "(", ")", ""]], 0],
     ["html",        ["html"],       [],     [["<!--", "-->"]],  [],             [],         [],     0],
-    ["javascript",  ["js"],         ["//"], [["/*", "*/"]],     ['"""', "'''"], ['"', "'"], [],     1],
+    ["javascript",  ["js"],         ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
     ["python",      ["py"],         ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
     ["verilog",     ["v"],          ["//"], [["/*", "*/"]],     [],             ['"'],      [],     0],
+    ["vlang",       ["v"],          ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
 ];
 
 
