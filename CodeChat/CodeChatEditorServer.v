@@ -11,11 +11,21 @@ import net.urllib
 import regex
 import vweb
 
+
 // <h2>Types</h2>
 // <p>This stores web server state.</p>
 struct App {
     vweb.Context
 }
+
+
+// <h2>Constants</h2>
+const (
+	codechat_extensions = [
+        ".cc", ".cpp", ".html", ".js", ".py", ".v", ".cchtml"
+    ]
+)
+
 
 // <h2>Endpoints</h2>
 // <p>Redirect from the root endpoint to the filesystem.</p>
@@ -47,6 +57,7 @@ fn (mut app App) serve_fs(path string) vweb.Result {
 }
 
 
+// This is used by endpoints when reporting an error.
 struct ErrorResponse {
     success bool
     message string
@@ -71,10 +82,6 @@ fn (mut app App) save_file(path string) vweb.Result {
 //     Editor files, or serve a CodeChat Editor file or a normal file.
 // </p>
 fn (mut app App) serve_fs_(path string) vweb.Result {
-    codechat_extensions := [
-        ".cc", ".cpp", ".html", ".js", ".py", ".v", ".cchtml"
-    ]
-
     // <p>The provided <code>path</code> may need fixing, since it lacks an
     //     initial <code>/</code>.</p>
     mut fixed_path := path
