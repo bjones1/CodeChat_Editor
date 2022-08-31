@@ -120,8 +120,15 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
             ret += "<p>But it's not valid.</p>"
             []
         }
-        // <p>Sort it case-insensitively.</p>
-        ls.sort_with_compare(fn (a &string, b &string) int {
+        // <p>Sort it case-insensitively; put directoris before files.</p>
+        ls.sort_with_compare(fn [abs_path] (a &string, b &string) int {
+            // If both a and b aren't directories, sort on that basis.
+            a_is_dir := os.is_dir(os.join_path(abs_path, *a))
+            b_is_dir := os.is_dir(os.join_path(abs_path, *b))
+            if a_is_dir != b_is_dir {
+                return if a_is_dir { -1 } else { 1 }
+            }
+            // Otherwise, sort on the name.
             return compare_strings(a.to_lower(), b.to_lower())
         })
         // <p>Write out HTML for each file/directory.</p>
@@ -164,8 +171,8 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
                 }
             )
         }
-        // <p>It's not a CodeChat Editor file -- give up.</p>
-        return app.not_found()
+        // <p>It's not a CodeChat Editor file -- just serve the file.</p>
+        return app.file(abs_path)
     }
 }
 
