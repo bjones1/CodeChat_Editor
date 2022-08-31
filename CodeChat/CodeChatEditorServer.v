@@ -68,7 +68,8 @@ struct ErrorResponse {
 //         href="CodeChatEditor.js#save">save function</a>.</p>
 ['/fs/:path...'; put]
 fn (mut app App) save_file(path string) vweb.Result {
-	abs_path := os.abs_path(path)
+	fixed_path := (if os.user_os() != 'windows' { "/" } else { "" }) + path
+	abs_path := os.abs_path(fixed_path)
 	os.write_file(abs_path, app.req.data) or {
 		// <p>TODO: Return an ErrorResponse.</p>
 		return app.json(ErrorResponse{ success: false, message: 'Unable to write file.' })
