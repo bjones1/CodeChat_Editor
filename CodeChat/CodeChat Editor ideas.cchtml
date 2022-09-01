@@ -88,8 +88,8 @@
                 href="https://github.com/vlang/v#v-nethttp-netwebsocket-v-install">install
                 OpenSSL libraries</a>.</li>
         <li><a href="https://github.com/vlang/v#symlinking">Symlink V</a>.</li>
-        <li>In this directory, execute <code>v run CodeChatEditorServer.v</code>.
-        </li>
+        <li>In this directory, execute <code>v crun
+                CodeChatEditorServer.v</code>.</li>
         <li>Open http://localhost:8080 in your browser.</li>
     </ol>
 </div>

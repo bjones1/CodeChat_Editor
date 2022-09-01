@@ -57,7 +57,7 @@ fn (mut app App) serve_fs(path string) vweb.Result {
 	return app.serve_fs_(path)
 }
 
-// This is used by endpoints when reporting an error.
+// <p>This is used by endpoints when reporting an error.</p>
 struct ErrorResponse {
 	success bool
 	message string
@@ -69,7 +69,7 @@ struct ErrorResponse {
 ['/fs/:path...'; put]
 fn (mut app App) save_file(path string) vweb.Result {
 	// For Unix, restore the leading <code>/</code> to the beginning of the path.
-	fixed_path := (if os.user_os() != 'windows' { "/" } else { "" }) + path
+	fixed_path := (if os.user_os() != 'windows' { '/' } else { '' }) + path
 	abs_path := os.abs_path(fixed_path)
 	os.write_file(abs_path, app.req.data) or {
 		// <p>TODO: Return an ErrorResponse.</p>
@@ -218,7 +218,11 @@ fn codechat_editor_html(source_code string, path string) string {
                 <span class="CodeChat-hotkey">S</span>ave
             </button>
         </p>
+        <div id="CodeChat-top">
+        </div>
         <div id="CodeChat-body">
+        </div>
+        <div id="CodeChat-bottom">
         </div>
     </body>
 </html>
@@ -257,10 +261,14 @@ fn codechat_doc_editor_html(source_code string, path string) string {
                 <span class="CodeChat-hotkey">S</span>ave
             </button>
         </p>
+        <div id="CodeChat-top">
+        </div>
         <div id="CodeChat-body">
             <div class="CodeChat-TinyMCE">
 $source_code
             </div>
+        </div>
+        <div id="CodeChat-bottom">
         </div>
     </body>
 </html>
@@ -292,5 +300,6 @@ fn main() {
 	mut app := &App{}
 	// <p>Serve static files from the <code>/static</code> endpoint.</p>
 	app.mount_static_folder_at(os.resource_abs_path('.'), '/static')
+	print('Open http://localhost:8080/ in a browser.\n')
 	vweb.run(app, 8080)
 }
