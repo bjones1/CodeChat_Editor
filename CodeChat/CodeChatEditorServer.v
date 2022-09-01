@@ -68,6 +68,7 @@ struct ErrorResponse {
 //         href="CodeChatEditor.js#save">save function</a>.</p>
 ['/fs/:path...'; put]
 fn (mut app App) save_file(path string) vweb.Result {
+	// For Unix, restore the leading <code>/</code> to the beginning of the path.
 	fixed_path := (if os.user_os() != 'windows' { "/" } else { "" }) + path
 	abs_path := os.abs_path(fixed_path)
 	os.write_file(abs_path, app.req.data) or {
