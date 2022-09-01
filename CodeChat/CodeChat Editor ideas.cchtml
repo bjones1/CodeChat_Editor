@@ -1,8 +1,21 @@
 <h1>CodeChat Editor ideas</h1>
 <div>The CodeChat Editor should be a GUI-based programmer's word processor /
     Jupyter for software developers.</div>
+<h2>Next steps</h2>
+<ol>
+    <li>Set up a good development environment for JavaScript: use npm,
+        TypeScript, a good unit-testing library, etc.</li>
+    <li>Sketch out a long-term path for book builds. Goal: very rapid builds.
+    </li>
+    <li>Define the architecture for IDE extensions/plug-ins. Goal: minimize
+        extension/plug-in complexity.</li>
+    <li>Define desired UI behavior. Priority: auto-reload; dirty document
+        detection; auto-backup.</li>
+    <li>Implement Markdown support.</li>
+    <li>Propose visual styling, dark mode, etc.</li>
+</ol>
 <h2>Specifications / ideas</h2>
-<div>&nbsp;At a very high level, what should this do? How?</div>
+<div>At a very high level, what should this do? How?</div>
 <div>
     <ul>
         <li>View source code as code blocks and doc blocks. Doc blocks are lines
@@ -71,9 +84,12 @@
     <ol>
         <li><a
                 href="https://github.com/vlang/v#installing-v---from-source-preferred-method">Install
-                the V language</a>.</li>
+                the V language</a>. On non-Windows systems, <a
+                href="https://github.com/vlang/v#v-nethttp-netwebsocket-v-install">install
+                OpenSSL libraries</a>.</li>
         <li><a href="https://github.com/vlang/v#symlinking">Symlink V</a>.</li>
-        <li>In this directory, exeute <code>v run CodeChatEditorServer.v</code>.
+        <li>In this directory, execute <code>v run CodeChatEditorServer.v</code>.
         </li>
+        <li>Open http://localhost:8080 in your browser.</li>
     </ol>
 </div>
