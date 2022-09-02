@@ -413,8 +413,11 @@ const source_lexer = (
     here_text_strings,
     template_literals,
 ) => {
-    // <p>Construct regex and associated indices from language information
-    //     provided.</p>
+    // <p>Construct <a
+    //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions">regex</a>
+    //     and associated indices from language information provided.
+    //     <strong>This code makes heavy use of regexes -- read the previous
+    //         link thoroughly.</strong></p>
     let regex_index = 1;
     let regex_strings = [];
     const regex_builder = (strings) => {
@@ -474,8 +477,11 @@ const source_lexer = (
                 const last_line = split_lines ? split_lines[split_lines.length - 1] : "";
 
                 // <p>Find the end of this comment. No matching newline means we're at
-                //     the end of the file.</p>
-                const inline_m = source_code.match(/(?<!\\)(\n|\r\n|\r)/);
+                //     the end of the file. Note that using a negative lookbehind
+                //     assertion would make this much simpler:
+                //     <code>/(?&lt;!\\)(\n|\r\n|\r)/</code>. However, V doesn't support
+                //     this.</p>
+                const inline_m = source_code.match(/(\\\r\n|\\\n|\\\r|[^\\\n\r])*(\n|\r\n|\r)/);
                 const full_comment = inline_m ? source_code.substring(0, inline_m.index + inline_m[0].length) : source_code;
 
                 // <p>Criteria for doc blocks for an inline comment:</p>
@@ -532,8 +538,40 @@ const source_lexer = (
                 // <p>A short string. Find the end of it.</p>
                 code_block_array.push(m[short_string_index]);
                 source_code = source_code.substring(m[short_string_index].length);
-                // <p>Quoting hell: backticks does one level of replacement.</p>
-                const string_m = source_code.match(`((?<!\\\\)|\\\\\\\\)(${m[short_string_index]}|\\n|\\r\\n|\\r)`);
+                const string_m = source_code.match(
+                    // <p>Use <a
+                    //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/raw"><code>String.raw</code></a>
+                    //     so we don't have to double the number of backslashes in this
+                    //     regex. Joining regex literals doesn't work &ndash; <code>/.a/ +
+                    //         /b/</code> produces the string <code>'/.a//b/'</code>, not a
+                    //     regex. The regex is:</p>
+                    // <p>Look for anything that doesn't terminate a string:</p>
+                    "(" +
+                        // <p>a backslash followed by a newline (in all three newline styles);
+                        // </p>
+                        String.raw`\\\r\n|\\\n|\\\r|` +
+                        // <p>a backslash followed by any non-newline character (note that the
+                        //     <code>.</code> character class <a
+                        //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions/Character_Classes#types">doesn't
+                        //         match newlines</a>; using the <code>s</code> or
+                        //     <code>dotAll</code> flag causes it to match <a
+                        //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Lexical_grammar#line_terminators">line
+                        //         terminators</a> that we don't recognize, plus not match a
+                        //     <code>\r\n</code> sequence);</p>
+                        String.raw`\\.|` +
+                        // <p>anything that's not a backslash, quote mark, or newline.</p>
+                        String.raw`[^\\${m[short_string_index]}\n\r]` +
+                    // <p>Find as many of these as possible. Therefore, the next token will
+                    //     be the end of the string.</p>
+                    ")*" +
+                    // <p>A string is terminated by either a quote mark or a newline. (We
+                    //     can't just put <code>.</code>, because one flavor of newline is
+                    //     two characters; in addition, that character class doesn't match
+                    //     newlines, as stated above.) Terminating strings at a newline helps
+                    //     avoid miscategorizing large chunks of code that the compiler
+                    //     likewise flags as a syntax error.</p>
+                    String.raw`(${m[short_string_index]}|\r\n|\n|\r)`
+                );
                 if (string_m) {
                     const index = string_m.index + string_m[0].length;
                     code_block_array.push(source_code.substring(0, index));
@@ -708,7 +746,7 @@ const escapeRegExp = string => string.replace(/[.*+?^${}()|[\]\\]/g,
 // <h2>Unit tests</h2>
 // <p>TODO!</p>
 const test_source_lexer_1 = () => {
-    const python_source_lexer = source_code => source_lexer(source_code, ...language_lexers[0]);
+    const python_source_lexer = source_code => source_lexer(source_code, ...language_lexers[3]);
     assert_equals(python_source_lexer(""), []);
     assert_equals(python_source_lexer("\n"), [[-1, "\n", ""]]);
     assert_equals(python_source_lexer("\n# Test"), [[-1, "\n", ""], [0, "Test", "#"]]);
@@ -760,4 +798,4 @@ const assert_equals = (a, b) => {
 }
 
 
-//test_source_lexer();
+test_source_lexer();
