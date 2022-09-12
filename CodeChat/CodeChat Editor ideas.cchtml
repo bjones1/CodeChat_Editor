@@ -63,20 +63,78 @@
                     too hard.</li>
             </ul>
         </li>
-        <li>How does this integrate with a book build process? The current code
-            would actually build in Sphinx using Markdown. How to toggle between
-            edit mode, and book view mode? The two will be visually quite
-            distinct. I could imagine saving the code, then switching to the
-            "book view" after the Sphinx build finishes. Long term, I'd like to
-            have a very rapid book build.</li>
+        <li>To support creating a web site / book / project, the server needs to
+            serve one (simpler) flavor of web page for a single-file build, and
+            another for a project build. However, the rendering of code and doc
+            blocks is still dynamic, not static. Basically, a project build
+            would include a template with a table of contents, prev/next
+            buttons, search, etc. Need to architect this; what does it mean to
+            do a project build? What about supporting ReadTheDocs / a
+            server-free build?
+            <ul>
+                <li>One approach: code most of this in V. Then, we can run the
+                    code on the desktop for a static, zero-hydration build, or
+                    in the browser where editing can happen.</li>
+                <li>Need to segment code between editing/UI (web only) and
+                    rendering (web/desktop).</li>
+                <li>A project is a template, a TOC and associated numbering,
+                    global crossrefs, and search terms (which could be
+                    dynamically computed by the server).
+                    <ul>
+                        <li>Perhaps there's a single project config file as
+                            YAML/XML/whatever that defines the TOC, book build
+                            params, etc.</li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
         <li>I would ideally like to use a programming language that runs both on
             the desktop, with minimal dependencies, and in the browser.
             JavaScript + Node.js is one possibility (but the install process
             isn't nice). vlang seems pretty good as well -- everything compiles
             to an executable, and also builds to WebAssembly.</li>
     </ul>
+    <h2>Core development priorities</h2>
+    <ol>
+        <li>IDE integration</li>
+        <li>Editor functionality</li>
+        <li>Project support</li>
+    </ol>
+    <h2>Project support</h2>
+    <ul>
+        <li>A project is a specific directory tree, probably identified by the
+            presence of a project configuration file.</li>
+        <li>The project configuration file contains the author-specified table
+            of contents (TOC).</li>
+        <li>A page in a project build is a single-file page plus:
+            <ul>
+                <li>A TOC, along with previous/next/up navigation.</li>
+                <li>Numbering comes from the current page's location within the
+                    TOC. Pages not in the TOC aren't numbered.</li>
+                <li>The ability to search the project, ideally using an
+                    i-search. A search over the text in all headings and index
+                    terms, then over all text, would be good.</li>
+            </ul>
+        </li>
+        <li>The project build system computes a DAG of all hyperlinks:
+            <ul>
+                <li>It can identify any unconnected files, then warn the author
+                    about these "orphans."</li>
+                <li>Changing the text of a heading causes quick updates to all
+                    references to these hyperlinks based on the nearest neighbor
+                    in the DAG. Similar support for renaming/moving files,
+                    deleting a referenced item, finding broken hyperlinks to
+                    nonexistent locations, etc.</li>
+                <li>Index terms are a flavor of hyperlink: from the index page
+                    to the page(s) which use that term. Perhaps also provide an
+                    in-place crossref: interacting with an index term on a page
+                    would produce a hyperlinked list of other pages which
+                    contain that same term.</li>
+            </ul>
+        </li>
+    </ul>
 </div>
-<h2>Minimally-viable product</h2>
+<h2>How to run</h2>
 <div>The CodeChat repository's <a
         href="https://github.com/bjones1/CodeChat/tree/CodeChat-Editor/CodeChat">CodeChat-Editor
         branch</a> contains the code for this idea. To try it out:</div>
