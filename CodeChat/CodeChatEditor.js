@@ -93,6 +93,8 @@ const on_dom_content_loaded = on_load_func => {
 const make_editors = () => {
     // <p>Instantiate the TinyMCE editor for doc blocks.</p>
     tinymce.init({
+        // Place the Tiny MCE menu bar at the top of the screen; otherwise, it floats in front of text, sometimes obscuring what the user wants to edit. See the <a href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
+        fixed_toolbar_container: "#CodeChat-menu",
         inline: true,
         plugins: 'advlist anchor charmap emoticons image link lists media nonbreaking quickbars searchreplace visualblocks visualchars table',
         // <p>When true, this still prevents hyperlinks to anchors on the current
@@ -124,6 +126,7 @@ const make_editors = () => {
                 // <p>The leading <code>+</code> converts the line number from a string
                 //     (since all HTML attributes are strings) to a number.</p>
                 firstLineNumber: +ace_tag.getAttribute("data-CodeChat-firstLineNumber"),
+                // This is distracting, since it highlights one line for each ACE editor instance on the screen. Better: only show this if the editor has focus.
                 highlightActiveLine: false,
                 highlightGutterLine: false,
                 maxLines: 1e10,

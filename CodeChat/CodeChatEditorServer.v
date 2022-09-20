@@ -112,16 +112,16 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 		//     Create the text of a web page with this listing.</p>
 		mut ret := '<!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>The CodeChat Editor</title>
-    </head>
-    <body>
-        <h1>
-            Directory of $abs_path
-        </h1>
-        <ul>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>The CodeChat Editor</title>
+	</head>
+	<body>
+		<h1>
+			Directory of $abs_path
+		</h1>
+		<ul>
 '
 
 		// <p>List each file/directory with appropriate links.</p>
@@ -163,7 +163,7 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 			}
 		}
 		return app.html(ret + '        </ul>
-    </body>
+	</body>
 </html>')
 	} else {
 		ext := os.file_ext(abs_path)
@@ -190,41 +190,44 @@ fn codechat_editor_html(source_code string, path string) string {
 	ext := os.file_ext(path)
 	return '<!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>$name - The CodeChat Editor</title>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>$name - The CodeChat Editor</title>
 
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.5/ace.min.js"></script>
-        <script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
-        <script src="/static/CodeChatEditor.js"></script>
-        <script>
-            const on_save = on_save_codechat;
-            on_dom_content_loaded(() => open_lp(
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.5/ace.min.js"></script>
+		<script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
+		<script src="/static/CodeChatEditor.js"></script>
+		<script>
+			const on_save = on_save_codechat;
+			on_dom_content_loaded(() => open_lp(
 "${quote_script_string(source_code)}",
 "${quote_string(ext)}"));
-        </script>
+		</script>
 
-        <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
-    </head>
-    <body onkeydown="on_keydown(event);">
-        <p>
-            $name - $dir -
-            <button disabled onclick="on_save_as(on_save_codechat);" id="CodeChat-save-as-button">
-                Save as
-            </button>
-            <button onclick="on_save();" id="CodeChat-save-button">
-                <span class="CodeChat-hotkey">S</span>ave
-            </button>
-        </p>
-        <div id="CodeChat-top">
-        </div>
-        <div id="CodeChat-body">
-        </div>
-        <div id="CodeChat-bottom">
-        </div>
-    </body>
+		<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
+	</head>
+	<body onkeydown="on_keydown(event);">
+		<div id="CodeChat-top">
+			<div id="CodeChat-filename">
+				<p>
+					$name - $dir -
+					<button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
+						Save as
+					</button>
+					<button onclick="on_save();" id="CodeChat-save-button">
+						<span class="CodeChat-hotkey">S</span>ave
+					</button>
+				</p>
+			</div>
+			<div id="CodeChat-menu"></div>
+		</div>
+		<div id="CodeChat-body">
+		</div>
+		<div id="CodeChat-bottom">
+		</div>
+	</body>
 </html>
 '
 }
@@ -236,41 +239,44 @@ fn codechat_doc_editor_html(source_code string, path string) string {
 	name := escape_html(os.base(path))
 	return '<!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>$name - The CodeChat Editor</title>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>$name - The CodeChat Editor</title>
 
-        <script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
-        <script src="/static/CodeChatEditor.js"></script>
-        <script>
-            const on_save = on_save_doc;
-            on_dom_content_loaded(make_editors);
-        </script>
+		<script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
+		<script src="/static/CodeChatEditor.js"></script>
+		<script>
+			const on_save = on_save_doc;
+			on_dom_content_loaded(make_editors);
+		</script>
 
-        <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
-    </head>
-    <body onkeydown="on_keydown(event);">
-        <p>
-            $name - $dir -
-            <button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
-                Save as
-            </button>
-            <button onclick="on_save();" id="CodeChat-save-button">
-                <span class="CodeChat-hotkey">S</span>ave
-            </button>
-        </p>
-        <div id="CodeChat-top">
-        </div>
-        <div id="CodeChat-body">
-            <div class="CodeChat-TinyMCE">
+		<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
+	</head>
+	<body onkeydown="on_keydown(event);">
+		<div id="CodeChat-top">
+			<div id="CodeChat-filename">
+				<p>
+					$name - $dir -
+					<button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
+						Save as
+					</button>
+					<button onclick="on_save();" id="CodeChat-save-button">
+						<span class="CodeChat-hotkey">S</span>ave
+					</button>
+				</p>
+			</div>
+			<div id="CodeChat-menu"></div>
+		</div>
+		<div id="CodeChat-body">
+			<div class="CodeChat-TinyMCE">
 $source_code
-            </div>
-        </div>
-        <div id="CodeChat-bottom">
-        </div>
-    </body>
+			</div>
+		</div>
+		<div id="CodeChat-bottom">
+		</div>
+	</body>
 </html>
 '
 }
