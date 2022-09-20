@@ -96,7 +96,8 @@ const make_editors = () => {
         // Place the Tiny MCE menu bar at the top of the screen; otherwise, it floats in front of text, sometimes obscuring what the user wants to edit. See the <a href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
         fixed_toolbar_container: "#CodeChat-menu",
         inline: true,
-        plugins: 'advlist anchor charmap emoticons image link lists media nonbreaking quickbars searchreplace visualblocks visualchars table',
+        // I would like to add to this: noneditable paste textpattern
+        plugins: 'advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars',
         // <p>When true, this still prevents hyperlinks to anchors on the current
         //     page from working correctly. There's an onClick handler that
         //     prevents links in the current page from working -- need to look
@@ -106,7 +107,8 @@ const make_editors = () => {
         //readonly: true,
         relative_urls: true,
         selector: '.CodeChat-TinyMCE',
-        toolbar: 'numlist bullist',
+        // This combines the <a href="https://www.tiny.cloud/blog/tinymce-toolbar/">default TinyMCE toolbar buttons</a> with a few more from plugins.
+        toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
 
         // <h3>Settings for plugins</h3>
         // <h4><a
