@@ -71,13 +71,20 @@ body {
     padding-left: 4px;
 }
 
+/* Preserve whitespace in the indent of a doc block. */
+.CodeChat-doc-indent
+{
+    white-space: pre;
+    tab-size: 4;
+}
+
 /* Hide the ACE Editor's cursor when it's inactive. */
 .ace_hidden-cursors
 {
     opacity: 0;
 }
 
-/* <h2>TDoc block styling</h2> */
+/* <h2>Doc block styling</h2> */
 .CodeChat-doc > table
 {
     /* A <a href="../CodeToEditor.py#one-row-table">one-row table</a> is used to lay out a doc block. Therefore, it should have no borders. */

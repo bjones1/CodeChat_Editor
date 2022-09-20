@@ -176,8 +176,6 @@ const doc_block_indent_on_input = event => {
     // <p>Save the current cursor position. Setting <code>innerHTML</code>
     //     loses it.</p>
     const offset = window.getSelection().anchorOffset;
-    // <p>Replace any spaces with non-breaking spaces.</p>
-    event.currentTarget.innerHTML = event.currentTarget.innerHTML.replaceAll(" ", "&nbsp;");
     // <p>Restore the current cursor position -- an offset into the text node
     //     inside this <code>&lt;tr&gt; element.</code></p>
     window.getSelection().setBaseAndExtent(event.currentTarget.childNodes[0], offset, event.currentTarget.childNodes[0], offset);
@@ -196,7 +194,7 @@ const editor_to_source_code = (
     //     placing it in <code>classified_lines</code>.</p>
     let classified_lines = [];
     for (const code_or_doc_tag of document.querySelectorAll(".CodeChat-ACE, .CodeChat-TinyMCE")) {
-        // <p>The type of this block: -1 for code, or &gt;= 0 for doc (the value
+        // <p>The type of this block: <code>null</code> for code, or &gt;= 0 for doc (the value
         //     of n specifies the indent in spaces).</p>
         let type_;
         // <p>A string containing all the code/docs in this block.</p>
@@ -204,12 +202,11 @@ const editor_to_source_code = (
 
         // <p>Get the type of this block and its contents.</p>
         if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
-            type_ = -1;
+            type_ = null;
             full_string = ace.edit(code_or_doc_tag).getValue();
         } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
             // <p>Get the indent from the previous table cell.</p>
-            const indent_html = code_or_doc_tag.parentElement.previousElementSibling.innerHTML;
-            type_ = indent_html.replaceAll("&nbsp;", " ").length;
+            type_ = code_or_doc_tag.parentElement.previousElementSibling.textContent;
             // <p>See <a
             //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get"><code>get</code></a>
             //     and <a
@@ -235,13 +232,13 @@ const editor_to_source_code = (
     // <p>Transform these classified lines into source code.</p>
     let lines = [];
     for (const [type_, string] of classified_lines) {
-        if (type_ === -1) {
+        if (type_ === null) {
             // <p>Just dump code out!</p>
             lines.push(string);
         } else {
             // <p>Prefix comments with the indent and the comment string.</p>
             // <p>TODO: allow the use of block comments.</p>
-            lines.push(`${" ".repeat(type_)}${comment_string} ${string}`);
+            lines.push(`${type_}${comment_string} ${string}`);
         }
     }
 
@@ -397,7 +394,7 @@ const language_lexers = [
 //     where:</p>
 // <dl>
 //     <dt><code>indent</code></dt>
-//     <dd>The indent of a doc block, in spaces, or -1 for a code block.
+//     <dd>The indent of a doc block (a string of whitespace), or <code>null</code> for a code block.
 //     </dd>
 //     <dt><code>string</code></dt>
 //     <dd>The classified string; for doc blocks, this does not include
@@ -492,7 +489,7 @@ const source_lexer = (
                 // <p>Criteria for doc blocks for an inline comment:</p>
                 // <ul>
                 //     <li>All characters preceding the comment on the current line must
-                //         be spaces.</li>
+                //         be whitespace.</li>
                 //     <li>Either:
                 //         <ul>
                 //             <li>The comment is immediately followed by a space, or
@@ -504,17 +501,17 @@ const source_lexer = (
                 // </ul>
                 // <p>Doc block comments have a space after the comment string or are
                 //     empty, and only spaces before the comment.</p>
-                if ((full_comment.startsWith(inline_comment_string + " ") || full_comment === inline_comment_string + (inline_m ? inline_m[1] : "")) && last_line === " ".repeat(last_line.length)) {
+                if ((full_comment.startsWith(inline_comment_string + " ") || full_comment === inline_comment_string + (inline_m ? inline_m[1] : "")) && last_line.match(/^\s*$/)) {
                     // <p>Transition from a code block to this doc block.</p>
                     code_block = code_block.substring(0, code_block.length - last_line.length)
                     if (code_block) {
                         // <p>Save only code blocks with some content.</p>
-                        classified_source.push([-1, code_block, ""]);
+                        classified_source.push([null, code_block, ""]);
                     }
                     code_block_array = [];
                     // <p>Add this doc block.</p>
                     const has_space_after_comment = full_comment[inline_comment_string.length] === " ";
-                    classified_source.push([last_line.length, full_comment.substring(inline_comment_string.length + (has_space_after_comment ? 1 : 0)), inline_comment_string]);
+                    classified_source.push([last_line, full_comment.substring(inline_comment_string.length + (has_space_after_comment ? 1 : 0)), inline_comment_string]);
                 } else {
                     // <p>This is still code.</p>
                     code_block_array.push(full_comment);
@@ -604,7 +601,7 @@ const source_lexer = (
     // <p>Include any accumulated code in the classification.</p>
     const code = code_block_array.join("")
     if (code) {
-        classified_source.push([-1, code, ""]);
+        classified_source.push([null, code, ""]);
     }
 
     return classified_source;
@@ -643,7 +640,7 @@ const classified_source_to_html = (classified_source) => {
             _exit_state(current_type, html)
 
             // <p>Enter the new state.</p>
-            if (type_ === -1) {
+            if (type_ === null) {
                 // <p>Code state: emit the beginning of an ACE editor block.</p>
                 html.push(
 `
@@ -665,9 +662,9 @@ const classified_source_to_html = (classified_source) => {
             <tr>
                 <!-- Spaces matching the number of digits in the ACE gutter's line number. TODO: fix this to match the number of digits of the last line of the last code block. Fix ACE to display this number of digits in all gutters. See https://stackoverflow.com/questions/56601362/manually-change-ace-line-numbers. -->
                 <td class="CodeChat-ACE-gutter-padding ace_editor">&nbsp;&nbsp;&nbsp</td>
-                <td class="CodeChat-ACE-padding"</td>
+                <td class="CodeChat-ACE-padding"></td>
                 <!-- This doc block's indent. TODO: allow paste, but must only allow pasting spaces. -->
-                <td class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${'&nbsp;'.repeat(type_)}</td>
+                <td class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${type_}</td>
                 <td class="CodeChat-TinyMCE-td"><div class="CodeChat-TinyMCE">`,
                     source_string,
                 )
@@ -676,7 +673,7 @@ const classified_source_to_html = (classified_source) => {
             // <p><span id="newline-prepend"><a href="#newline-movement">Newline
             //             movement</a>: prepend the newline removed from the
             //         previous line to the current line</span>.</p>
-            html.push(m[0], type_ === -1 ? escapeHTML(source_string) : source_string);
+            html.push(m[0], type_ === null ? escapeHTML(source_string) : source_string);
         }
 
         // <p>Update the state.</p>
@@ -704,10 +701,10 @@ const _exit_state = (
     html,
 ) => {
 
-    if (type_ === -1) {
+    if (type_ === null) {
         // <p>Close the current code block.</p>
         html.push("</div>\n</div>\n");
-    } else if (type_ >= 0) {
+    } else if (typeof type_ === "string") {
         // <p>Close the current doc block without adding any trailing spaces
         //     &mdash; combining this with the next line would add indentation.
         // </p>
@@ -753,34 +750,34 @@ const escapeRegExp = string => string.replace(/[.*+?^${}()|[\]\\]/g,
 const test_source_lexer_1 = () => {
     const python_source_lexer = source_code => source_lexer(source_code, ...language_lexers[3]);
     assert_equals(python_source_lexer(""), []);
-    assert_equals(python_source_lexer("\n"), [[-1, "\n", ""]]);
-    assert_equals(python_source_lexer("\n# Test"), [[-1, "\n", ""], [0, "Test", "#"]]);
-    assert_equals(python_source_lexer("\n# Test\n"), [[-1, "\n", ""], [0, "Test\n", "#"]]);
-    assert_equals(python_source_lexer("# Test"), [[0, "Test", "#"]]);
-    assert_equals(python_source_lexer("# Test\n"), [[0, "Test\n", "#"]]);
-    assert_equals(python_source_lexer("# Test\n\n"), [[0, "Test\n", "#"], [-1, "\n", ""]]);
+    assert_equals(python_source_lexer("\n"), [[null, "\n", ""]]);
+    assert_equals(python_source_lexer("\n# Test"), [[null, "\n", ""], ["", "Test", "#"]]);
+    assert_equals(python_source_lexer("\n# Test\n"), [[null, "\n", ""], ["", "Test\n", "#"]]);
+    assert_equals(python_source_lexer("# Test"), [["", "Test", "#"]]);
+    assert_equals(python_source_lexer("# Test\n"), [["", "Test\n", "#"]]);
+    assert_equals(python_source_lexer("# Test\n\n"), [["", "Test\n", "#"], [null, "\n", ""]]);
     // <p>Short string with line join.</p>
-    assert_equals(python_source_lexer("'\\\n# Test'\n"), [[-1, "'\\\n# Test'\n", ""]]);
-    assert_equals(python_source_lexer('"\\\n# Test"\n'), [[-1, '"\\\n# Test"\n', ""]]);
+    assert_equals(python_source_lexer("'\\\n# Test'\n"), [[null, "'\\\n# Test'\n", ""]]);
+    assert_equals(python_source_lexer('"\\\n# Test"\n'), [[null, '"\\\n# Test"\n', ""]]);
     // <p>Short string terminated with newline (syntax error) followed by a
     //     comment.</p>
-    assert_equals(python_source_lexer("'\\\\\n# Test'\n"), [[-1, "'\\\\\n", ""], [0, "Test'\n", "#"]]);
-    assert_equals(python_source_lexer('"\\\\\n# Test"\n'), [[-1, '"\\\\\n', ""], [0, 'Test"\n', "#"]]);
+    assert_equals(python_source_lexer("'\\\\\n# Test'\n"), [[null, "'\\\\\n", ""], ["", "Test'\n", "#"]]);
+    assert_equals(python_source_lexer('"\\\\\n# Test"\n'), [[null, '"\\\\\n', ""], ["", 'Test"\n', "#"]]);
     // <p>Long string with newlines around comment.</p>
-    assert_equals(python_source_lexer('"""\n# Test\n"""'), [[-1, '"""\n# Test\n"""', ""]]);
-    assert_equals(python_source_lexer("'''\n# Test\n'''"), [[-1, "'''\n# Test\n'''", ""]]);
+    assert_equals(python_source_lexer('"""\n# Test\n"""'), [[null, '"""\n# Test\n"""', ""]]);
+    assert_equals(python_source_lexer("'''\n# Test\n'''"), [[null, "'''\n# Test\n'''", ""]]);
     // <p>Unterminated long strings.</p>
-    assert_equals(python_source_lexer('"""\n# Test\n'), [[-1, '"""\n# Test\n', ""]]);
-    assert_equals(python_source_lexer("'''\n# Test\n"), [[-1, "'''\n# Test\n", ""]]);
+    assert_equals(python_source_lexer('"""\n# Test\n'), [[null, '"""\n# Test\n', ""]]);
+    assert_equals(python_source_lexer("'''\n# Test\n"), [[null, "'''\n# Test\n", ""]]);
     // <p>Comments that aren't doc blocks.</p>
-    assert_equals(python_source_lexer("  a = 1 # Test"), [[-1, "  a = 1 # Test", ""]]);
-    assert_equals(python_source_lexer("\n  a = 1 # Test"), [[-1, "\n  a = 1 # Test", ""]]);
-    assert_equals(python_source_lexer("  a = 1 # Test\n"), [[-1, "  a = 1 # Test\n", ""]]);
+    assert_equals(python_source_lexer("  a = 1 # Test"), [[null, "  a = 1 # Test", ""]]);
+    assert_equals(python_source_lexer("\n  a = 1 # Test"), [[null, "\n  a = 1 # Test", ""]]);
+    assert_equals(python_source_lexer("  a = 1 # Test\n"), [[null, "  a = 1 # Test\n", ""]]);
     // <p>Doc blocks.</p>
-    assert_equals(python_source_lexer("   # Test"), [[3, "Test", "#"]]);
-    assert_equals(python_source_lexer("\n   # Test"), [[-1, "\n", ""], [3, "Test", "#"]]);
+    assert_equals(python_source_lexer("   # Test"), [["   ", "Test", "#"]]);
+    assert_equals(python_source_lexer("\n   # Test"), [[null, "\n", ""], ["   ", "Test", "#"]]);
 
-    assert_equals(python_source_lexer("   # Test\n"), [[3, "Test\n", "#"]]);
+    assert_equals(python_source_lexer("   # Test\n"), [["   ", "Test\n", "#"]]);
 };
 
 
