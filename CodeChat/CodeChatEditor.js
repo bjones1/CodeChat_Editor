@@ -93,10 +93,18 @@ const on_dom_content_loaded = on_load_func => {
 const make_editors = () => {
     // <p>Instantiate the TinyMCE editor for doc blocks.</p>
     tinymce.init({
-        // Place the Tiny MCE menu bar at the top of the screen; otherwise, it floats in front of text, sometimes obscuring what the user wants to edit. See the <a href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
+        // <p>See the <a
+        //         href="https://www.tiny.cloud/docs/ui-components/contextmenu/">contextmenu
+        //         docs</a> for the default value. TODO: this doesn't work!</p>
+        context_menu: "align | forecolor backcolor | bold italic underline superscript subscript codeformat | image link lists table",
+        // <p>Place the Tiny MCE menu bar at the top of the screen; otherwise, it
+        //     floats in front of text, sometimes obscuring what the user wants
+        //     to edit. See the <a
+        //         href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
+        // </p>
         fixed_toolbar_container: "#CodeChat-menu",
         inline: true,
-        // I would like to add to this: noneditable paste textpattern
+        // <p>I would like to add to this: noneditable paste textpattern</p>
         plugins: 'advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars',
         // <p>When true, this still prevents hyperlinks to anchors on the current
         //     page from working correctly. There's an onClick handler that
@@ -107,7 +115,9 @@ const make_editors = () => {
         //readonly: true,
         relative_urls: true,
         selector: '.CodeChat-TinyMCE',
-        // This combines the <a href="https://www.tiny.cloud/blog/tinymce-toolbar/">default TinyMCE toolbar buttons</a> with a few more from plugins.
+        // <p>This combines the <a
+        //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
+        //         TinyMCE toolbar buttons</a> with a few more from plugins.</p>
         toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
 
         // <h3>Settings for plugins</h3>
@@ -128,7 +138,9 @@ const make_editors = () => {
                 // <p>The leading <code>+</code> converts the line number from a string
                 //     (since all HTML attributes are strings) to a number.</p>
                 firstLineNumber: +ace_tag.getAttribute("data-CodeChat-firstLineNumber"),
-                // This is distracting, since it highlights one line for each ACE editor instance on the screen. Better: only show this if the editor has focus.
+                // <p>This is distracting, since it highlights one line for each ACE
+                //     editor instance on the screen. Better: only show this if the
+                //     editor has focus.</p>
                 highlightActiveLine: false,
                 highlightGutterLine: false,
                 maxLines: 1e10,
@@ -194,8 +206,8 @@ const editor_to_source_code = (
     //     placing it in <code>classified_lines</code>.</p>
     let classified_lines = [];
     for (const code_or_doc_tag of document.querySelectorAll(".CodeChat-ACE, .CodeChat-TinyMCE")) {
-        // <p>The type of this block: <code>null</code> for code, or &gt;= 0 for doc (the value
-        //     of n specifies the indent in spaces).</p>
+        // <p>The type of this block: <code>null</code> for code, or &gt;= 0 for
+        //     doc (the value of n specifies the indent in spaces).</p>
         let type_;
         // <p>A string containing all the code/docs in this block.</p>
         let full_string;
@@ -394,8 +406,8 @@ const language_lexers = [
 //     where:</p>
 // <dl>
 //     <dt><code>indent</code></dt>
-//     <dd>The indent of a doc block (a string of whitespace), or <code>null</code> for a code block.
-//     </dd>
+//     <dd>The indent of a doc block (a string of whitespace), or
+//         <code>null</code> for a code block.</dd>
 //     <dt><code>string</code></dt>
 //     <dd>The classified string; for doc blocks, this does not include
 //         the indenting spaces or the inline/block comment prefix/suffix

@@ -68,7 +68,8 @@ struct ErrorResponse {
 //         href="CodeChatEditor.js#save">save function</a>.</p>
 ['/fs/:path...'; put]
 fn (mut app App) save_file(path string) vweb.Result {
-	// For Unix, restore the leading <code>/</code> to the beginning of the path.
+	// <p>For Unix, restore the leading <code>/</code> to the beginning of
+	//     the path.</p>
 	fixed_path := (if os.user_os() != 'windows' { '/' } else { '' }) + path
 	abs_path := os.abs_path(fixed_path)
 	os.write_file(abs_path, app.req.data) or {
@@ -131,13 +132,13 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 		}
 		// <p>Sort it case-insensitively; put directoris before files.</p>
 		ls.sort_with_compare(fn [abs_path] (a &string, b &string) int {
-			// If both a and b aren't directories, sort on that basis.
+			// <p>If both a and b aren't directories, sort on that basis.</p>
 			a_is_dir := os.is_dir(os.join_path(abs_path, *a))
 			b_is_dir := os.is_dir(os.join_path(abs_path, *b))
 			if a_is_dir != b_is_dir {
 				return if a_is_dir { -1 } else { 1 }
 			}
-			// Otherwise, sort on the name.
+			// <p>Otherwise, sort on the name.</p>
 			return compare_strings(a.to_lower(), b.to_lower())
 		})
 		// <p>Write out HTML for each file/directory.</p>
