@@ -68,7 +68,7 @@ body {
 /* The ACE editor puts a bit of left padding in; match this so that code and doc blocks line up. */
 .CodeChat-ACE-padding
 {
-    padding-left: 4px;
+    padding-left: 3px;
 }
 
 /* Preserve whitespace in the indent of a doc block. */
