@@ -65,7 +65,7 @@ struct ErrorResponse {
 
 // <p><a id="save_file"></a>A <code>PUT</code> to a filename writes the
 //     provided data to that file; this is used by the <a
-//         href="CodeChatEditor.js#save">save function</a>.</p>
+//         href="static/js/CodeChatEditor.js#save">save function</a>.</p>
 ['/fs/:path...'; put]
 fn (mut app App) save_file(path string) vweb.Result {
 	// <p>For Unix, restore the leading <code>/</code> to the beginning of
@@ -199,7 +199,7 @@ fn codechat_editor_html(source_code string, path string) string {
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.5/ace.min.js"></script>
 		<script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
-		<script src="/static/CodeChatEditor.js"></script>
+		<script src="/static/js/CodeChatEditor.js"></script>
 		<script>
 			const on_save = on_save_codechat;
 			on_dom_content_loaded(() => open_lp(
@@ -247,7 +247,7 @@ fn codechat_doc_editor_html(source_code string, path string) string {
 
 		<script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
-		<script src="/static/CodeChatEditor.js"></script>
+		<script src="/static/js/CodeChatEditor.js"></script>
 		<script>
 			const on_save = on_save_doc;
 			on_dom_content_loaded(make_editors);
@@ -305,8 +305,8 @@ fn escape_html(unsafe_text string) string {
 // <h2>Main&mdash;run the webserver</h2>
 fn main() {
 	mut app := &App{}
-	// <p>Serve static files from the <code>/static</code> endpoint.</p>
-	app.mount_static_folder_at(os.resource_abs_path('.'), '/static')
+	// <p>Serve static files in the <code>static/</code> subdirectory from the <code>/static</code> endpoint.</p>
+	app.mount_static_folder_at(os.resource_abs_path('static'), '/static')
 	print('Open http://localhost:8080/ in a browser.\n')
 	vweb.run(app, 8080)
 }
