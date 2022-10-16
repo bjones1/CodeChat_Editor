@@ -102,10 +102,9 @@
     </ol>
     <h2>Project support</h2>
     <ul>
-        <li>A project is a specific directory tree, probably identified by the
-            presence of a project configuration file.</li>
-        <li>The project configuration file contains the author-specified table
-            of contents (TOC).</li>
+        <li>A project is a specific directory tree, identified by the presence
+            of a project configuration file named
+            <code>codechat_project.????</code>.</li>
         <li>A page in a project build is a single-file page plus:
             <ul>
                 <li>A TOC, along with previous/next/up navigation.</li>
@@ -113,23 +112,156 @@
                     TOC. Pages not in the TOC aren't numbered.</li>
                 <li>The ability to search the project, ideally using an
                     i-search. A search over the text in all headings and index
-                    terms, then over all text, would be good.</li>
+                    terms, then over all text, would be good. This requires
+                    keeping a dict of all words in all files; the words must be
+                    separated into headings/link text and all other text. It
+                    should exclude common programing terms (keywords such as if,
+                    for, case, etc.) and discard non-word characters. This seems
+                    reasonably doable. This should be updated whenever a file is
+                    saved. For now, leave searches with the IDE.</li>
             </ul>
         </li>
-        <li>The project build system computes a DAG of all hyperlinks:
+        <li>Eliminate the traditional project build process -- make it almost
+            instantaneous. Instead, on save, the system should update all
+            affected files; any opened files should also be updated in the
+            browser. For example, editing the TOC then saving should cause the
+            new TOC to auto-update in all open files. Opening another file would
+            also show the updated TOC. Likewise, changing
+            <code>&lt;h1&gt;</code> heading text in a file referenced by the TOC
+            then saving would cause the TOC to update globally.
             <ul>
-                <li>It can identify any unconnected files, then warn the author
-                    about these "orphans."</li>
-                <li>Changing the text of a heading causes quick updates to all
-                    references to these hyperlinks based on the nearest neighbor
-                    in the DAG. Similar support for renaming/moving files,
-                    deleting a referenced item, finding broken hyperlinks to
-                    nonexistent locations, etc.</li>
-                <li>Index terms are a flavor of hyperlink: from the index page
-                    to the page(s) which use that term. Perhaps also provide an
-                    in-place crossref: interacting with an index term on a page
-                    would produce a hyperlinked list of other pages which
-                    contain that same term.</li>
+                <li>This seems like a good server-side templating opportunity.
+                    When the server loads a file which refers to text from
+                    external files, it templates in the necessary text by
+                    opening these linked files and reading the necessary text;
+                    it also keeps track of what links are being edited, so it
+                    can push live updates to these files.</li>
+                <li>A tricker case: editing the id of a link target should
+                    ideally update this id in the links of all referring files.
+                    Likewise, renaming a file should update all links in
+                    referring files. This requires a DAG and global state -- a
+                    feature for later.&nbsp;As a bonus, the DAG can identify any
+                    unconnected files or unused ids/bookmarks, then warn the
+                    author about these "orphans." It can also identify any
+                    broken links to project files. The DAG could be
+                    incrementally updated on a save, with occasional scans of
+                    the project's subdirectory tree to find any edits made
+                    outside of the CodeChat Editor.</li>
+            </ul>
+        </li>
+        <li>TOC
+            <ul>
+                <li>Example: I like&nbsp;<a
+                        href="https://rust-lang.github.io/mdBook/format/summary.html">mdbook's
+                        approach</a>, but don't want to parse Markdown.</li>
+                <li>Browsing to any page of the project should automatically
+                    scroll to portion of the TOC that links to the page.</li>
+                <li>A given page needs to know the section number assigned to it
+                    by the TOC.</li>
+                <li>While the TOC file, must be placed in the root of the
+                    project, it will be served alongside pages served from
+                    subdirectories. What's the best approach? An iframe;
+                    otherwise, need to rewrite all url (images, links, etc.)
+                    which sounds hard.</li>
+                <li>Implementation: have the TOC just be HTML. It should be
+                    wrapped in a <a
+                        href="https://developer.mozilla.org/en-US/docs/Web/HTML/Element/nav">&lt;nav&gt;
+                        tag</a>. Require that numbered sections be expressed as
+                    nested ordered lists, with links to each section inside
+                    these lists.
+                    <ul>
+                        <li>Then,&nbsp;<code>document.querySelector('[href="https://example.com"]')</code>
+                            finds the first instance of the current page's link,
+                            which takes care of scrolling the TOC.</li>
+                        <li>Given the a element in the TOC, looking through its
+                            parents provides the section number. Given an array
+                            of section numbers, use CSS to style all the
+                            headings. One approach, which makes it easy for a
+                            style sheet to include or exclude section numbers,
+                            by making them CSS variables:<br>
+                            <p><code>:root {</code><br><code>&nbsp;
+                                    --section-counter-reset: s1 4 s2
+                                    5;</code><br><code>&nbsp;
+                                    --section-counter-content: counter(s1,
+                                    numeric) '-' counter(s2,
+                                    numeric);</code><br><code>}</code></p>
+                            <p><code>h1::before {</code><br><code>&nbsp;
+                                    counter-reset:
+                                    var(--section-counter-reset);</code><br><code>&nbsp;
+                                    content:
+                                    var(--section-counter-content);</code><br><code>}</code>
+                            </p>
+                        </li>
+                        <li>Side note: ideally, we'd ask the DOM for the
+                            marker/number preceeding an ordered list item. JS
+                            can find the index of each item in an ordered list,
+                            but it won't get the actual marker used (Roman
+                            numbers, bullets, or things generated by <a
+                                href="https://developer.mozilla.org/en-US/docs/Web/CSS/list-style-type">list-style-type</a>).
+                            There's a CSS&nbsp;<a
+                                href="https://developer.mozilla.org/en-US/docs/Web/CSS/::marker">::marker</a>
+                            selector, but not way to get the rendered text. Even
+                            <a
+                                href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText">innerText</a>
+                            doesn't include the marker in the resulting text --
+                            ack!</li>
+                        <li>Plan:
+                            <ol>
+                                <li>Implement a view mode, since the TOC should
+                                    be viewable, but not editable. (To edit the
+                                    TOC, open it in the main window, not just
+                                    the TOC sidebar.)</li>
+                                <li>Implement a project finder -- starting at
+                                    the current directory, ascend to the root
+                                    looking for the project file. If so, return
+                                    a web page which includes the TOC as a
+                                    sidebar plus some navigation (prev/next/up)
+                                    placeholders.</li>
+                                <li>Implement TOC scroll (on the client -- easy
+                                    there). This means finding the first
+                                    hyperlink to the current page. Given that,
+                                    it's fairly easy to determine prev/next/up
+                                    and section numbers. Implement all these.
+                                </li>
+                            </ol>
+                        </li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+        <li>Implementation
+            <ul>
+                <li>The load/save code needs to run on the server if we do
+                    server-side templating, or if we want the server to be able
+                    to produce a static build. It needs to run on the client, so
+                    that the client can detect comments in a code block or
+                    switch between raw and editor/viewer modes. What other code
+                    needs to be shared? For now, the idea of compiling V to
+                    Javascript isn't very appealing, but I need to at least test
+                    it out. Another option: the client calls a server endpoint
+                    to update needed links, but still does all parsing on the
+                    client. That seems fairly easy.</li>
+            </ul>
+        </li>
+        <li>Open questions
+            <ul>
+                <li>How to enable affecting the <code>&lt;head&gt;</code> of a
+                    page? Of the entire project?</li>
+                <li>Config file format: I really like and prefer Python's
+                    strictyaml. Basically, I want something that includes type
+                    validation and allows comments withing the config file.
+                    Perhaps JSON with a pre-parse step to discard comments
+                    then&nbsp;<a href="https://jsontypedef.com/">JSON
+                        Typedef</a>? Possibly, vlang can do this somewhat, since
+                    it wants to decode JSON into a V struct.)</li>
+                <li>Config file contents: need to think through what belongs
+                    here. How to keep it as simple as possible? Perhaps provide
+                    a web-based GUI to make this easier to configure?</li>
+                <li>How to specify the language for a doc block? Currently, we
+                    only support HTML. However, I'd like to support Markdown,
+                    and possibly also reST. Ideas: extensions, plus a default
+                    setting in a project file or the GUI; include a comment in
+                    the file.</li>
             </ul>
         </li>
     </ul>
