@@ -14,67 +14,28 @@
 //             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 //     </p>
 // </details>
-// <h1><code>CodeChatEditor.js</code> &mdash; JavaScript which implements
-//     the CodeChat Editor</h1>
+// <h1><code>CodeChatEditor.js</code> &mdash; <strong>JavaScrip</strong>t
+//     which implements the client-side portion of the CodeChat Editor
+// </h1>
 // <p>The CodeChat Editor provides a simple IDE which allows editing of
 //     mixed code and doc blocks.</p>
-// <p>To view the output, run <code>python
-//         CodeChatEditorServer.py</code>.</p>
 // <h2>Next steps</h2>
 // <ul>
-//     <li>Look at / experiment with a book build process.</li>
 //     <li>Create a new repo or directory for the CodeChat Editor, with
 //         NPM and webpack set up. Use TypeScript.</li>
-//     <li>Integrate this into IDEs.</li>
 // </ul>
 // <h2>Thoughts and ideas</h2>
-// <p>Provide three modes: syntax highlight the entire file (no LP),
-//     view, and edit. But there might be a performance hit for the view
-//     option, waiting for the JS to hydrate. It would be nice to offer a
-//     view-only option that is static HTML. Hopefully, we could find a
-//     way to ask Ace for the HTML behind its syntax-highlighted code?
-// </p>
-// <p>A simple book build process: a TOC page, where hyperlinks in
-//     <code>&lt;ul&gt;</code> and <code>&lt;ol&gt;</code> elements
-//     define the hierarchy. A config file in YAML.</p>
+// <p>Need to write some components:</p>
 // <ul>
-//     <li>Update all autotitled hyperlinks / references.</li>
-//     <li>Crossref thingy</li>
-//     <li>Potentially, generate static HTML.</li>
-//     <li>Link checker</li>
-//     <li>Need to write some components:
-//         <ul>
-//             <li>Autotitle: like an a, but takes the link&rsquo;s name
-//                 from element linked to. Same for figure references,
-//                 etc.</li>
-//             <li>A local table of contents</li>
-//             <li>A crossref thingy &ndash; giving a single crossref
-//                 value produces links to all crossrefs but the one
-//                 created.</li>
-//             <li>Insert the name of the file.</li>
-//         </ul>
-//     </li>
+//     <li>Autotitle: like an a, but takes the link&rsquo;s name from
+//         element linked to. Same for figure references, etc.</li>
+//     <li>A index tool -- provides links to all instances of the given
+//         term, plus a index page with all these terms.</li>
+//     <li>Insert the name of the file.</li>
 // </ul>
-// <p>What components should we support/create? Does TinyMCE allow
-//     components?</p>
-// <p>For links to LP files: use <code>filename.ext.html</code>, so that
-//     LP files have a unique name. This seems like a simple solution.
-//     (If one file is named <code>foo.c</code> and another is
-//     <code>foo.html</code>, this fails. But, I think it&rsquo;s
-//     reasonable to document this instead of finding a fix.) This would
-//     make static and dynamic work, and seems simple. In the non-project
-//     IDE case, a missing <code>.html</code> link would cause it to look
-//     for the raw file without the <code>.html </code>extension. Use
-//     <code>filename-raw.ext.html</code> for a syntax-highlighted,
-//     non-LP flavor of the source code. Use the original filename for
-//     the raw file contents.</p>
-// <p>How to move smoothly from a pure zero-install, web-based editor to
-//     the book build process? Where to load images/other resources from?
-//     Provide a local server? The local server could provide a web-based
-//     GUI, do the book build, etc.</p>
 "use strict";
 
-// <h2>DOM ready event</h2>
+// <h2>Constructor - DOM ready event</h2>
 // <p>This is copied from <a
 //         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
 // </p>
@@ -96,7 +57,7 @@ const make_editors = () => {
         // <p>See the <a
         //         href="https://www.tiny.cloud/docs/ui-components/contextmenu/">contextmenu
         //         docs</a> for the default value. TODO: this doesn't work!</p>
-        context_menu: "align | forecolor backcolor | bold italic underline superscript subscript codeformat | image link lists table",
+        contextmenu: "align | forecolor backcolor | bold italic underline superscript subscript codeformat | image link lists table",
         // <p>Place the Tiny MCE menu bar at the top of the screen; otherwise, it
         //     floats in front of text, sometimes obscuring what the user wants
         //     to edit. See the <a
@@ -144,10 +105,6 @@ const make_editors = () => {
                 highlightActiveLine: false,
                 highlightGutterLine: false,
                 maxLines: 1e10,
-                // <p><span id="script-param">A convenient way to <a
-                //             href="CodeToEditor.py#script-param">pass data</a> from the
-                //         HTML <code>&lt;script&gt;</code> tag to the
-                //         currently-executing script.</span></p>
                 mode: `ace/mode/${current_language_lexer[0]}`,
                 // <p>TODO: this still allows cursor movement.</p>
                 //readOnly: true,
@@ -166,20 +123,6 @@ const make_editors = () => {
 };
 
 
-// <h3>Doc block indent editor</h3>
-// <p>Allow only spaces and delete/backspaces when editing the indent of
-//     a doc block.</p>
-const doc_block_indent_on_before_input = event => {
-    // <p>Only modify the behavior of inserts.</p>
-    if (event.data) {
-        // <p>Block any insert that's not an insert of spaces.</p>
-        if (event.data !== " ".repeat(event.data.length)) {
-            event.preventDefault();
-        }
-    }
-}
-
-
 // <p>After an edit, the editor by default changes some non-breaking
 //     spaces into normal spaces. Undo this, since it breaks the layout.
 //     This is because normal spaces wrap, while non-breaking spaces
@@ -194,73 +137,23 @@ const doc_block_indent_on_input = event => {
 }
 
 
-// <h2>Transforming the editor's contents back to code</h2>
-// <p>This transforms the current editor contents into source code.</p>
-const editor_to_source_code = (
-    // <p>A string specifying the comment character(s) for the current
-    //     programming language. A space will be added after this string
-    //     before appending a line of doc block contents.</p>
-    comment_string
-) => {
-    // <p>Walk through each code and doc block, extracting its contents then
-    //     placing it in <code>classified_lines</code>.</p>
-    let classified_lines = [];
-    for (const code_or_doc_tag of document.querySelectorAll(".CodeChat-ACE, .CodeChat-TinyMCE")) {
-        // <p>The type of this block: <code>null</code> for code, or &gt;= 0 for
-        //     doc (the value of n specifies the indent in spaces).</p>
-        let type_;
-        // <p>A string containing all the code/docs in this block.</p>
-        let full_string;
-
-        // <p>Get the type of this block and its contents.</p>
-        if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
-            type_ = null;
-            full_string = ace.edit(code_or_doc_tag).getValue();
-        } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
-            // <p>Get the indent from the previous table cell.</p>
-            type_ = code_or_doc_tag.parentElement.previousElementSibling.textContent;
-            // <p>See <a
-            //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get"><code>get</code></a>
-            //     and <a
-            //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.editor/#getContent"><code>getContent()</code></a>.
-            //     Fortunately, it looks like TinyMCE assigns a unique ID if one's no
-            //     provided, since it only operates on an ID instead of the element
-            //     itself.</p>
-            full_string = tinymce.get(code_or_doc_tag.id).getContent();
-            // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters, including
-            //     the length of the indent and comment string.</p>
-            full_string = html_beautify(full_string, { "wrap_line_length": 70 });
-        } else {
-            console.assert(false, `Unexpected class for code or doc block ${code_or_doc_tag}.`);
-        }
-
-        // <p>Split the <code>full_string</code> into individual lines; each one
-        //     corresponds to an element of <code>classified_lines</code>.</p>
-        for (const string of full_string.split(/\r?\n/)) {
-            classified_lines.push([type_, string + "\n"]);
-        }
-    }
-
-    // <p>Transform these classified lines into source code.</p>
-    let lines = [];
-    for (const [type_, string] of classified_lines) {
-        if (type_ === null) {
-            // <p>Just dump code out!</p>
-            lines.push(string);
-        } else {
-            // <p>Prefix comments with the indent and the comment string.</p>
-            // <p>TODO: allow the use of block comments.</p>
-            lines.push(`${type_}${comment_string} ${string}`);
-        }
-    }
-
-    return lines.join("");
-};
-
-
 // <h2>UI</h2>
 // <p>Store the lexer info for the currently-loaded language.</p>
 let current_language_lexer;
+
+
+// <h3>Doc block indent editor</h3>
+// <p>Allow only spaces and delete/backspaces when editing the indent of
+//     a doc block.</p>
+const doc_block_indent_on_before_input = event => {
+    // <p>Only modify the behavior of inserts.</p>
+    if (event.data) {
+        // <p>Block any insert that's not an insert of spaces.</p>
+        if (event.data !== " ".repeat(event.data.length)) {
+            event.preventDefault();
+        }
+    }
+}
 
 
 const open_lp = (source_code, extension) => {
@@ -329,7 +222,7 @@ const on_keydown = (event) => {
 }
 
 
-// <p><a id="save"></a>Save the provided contents back to th filesystem,
+// <p><a id="save"></a>Save the provided contents back to the filesystem,
 //     by sending a <code>PUT</code> request to the server. See the <a
 //         href="CodeChatEditorServer.v.html#save_file">save_file
 //         endpoint</a>.</p>
@@ -355,7 +248,15 @@ const save = async contents => {
 };
 
 
-// <h2>Lexer to split source code into code blocks and doc blocks</h2>
+// <h2>Load editor contents from source code</h2>
+// <p>This process is split between two functions: first, <a
+//         href="#source_lexer">split the source code into code blocks
+//         and doc blocks</a>; next, <a
+//         href="#classified_source_to_html">transform this into its
+//         web-editable form</a>.</p>
+// <p>Both the load and save routines need information about the
+//     programming language in order to load/save code in that language.
+// </p>
 const language_lexers = [
     // <dl>
     //     <dt>IC</dt>
@@ -386,6 +287,7 @@ const language_lexers = [
 ];
 
 
+// <h2>Source lexer</h2>
 // <p>Rather than attempt to lex the entire language, this lexer's only
 //     goal is to categorize all the source code into code blocks or doc
 //     blocks. To do it, it only needs to:</p>
@@ -620,7 +522,7 @@ const source_lexer = (
 };
 
 
-// <h2>Convert lexed code into HTML</h2>
+// <h2 id="classified_source_to_html">Convert lexed code into HTML</h2>
 const classified_source_to_html = (classified_source) => {
     // <p>An array of strings for the new content of the current HTML page.
     // </p>
@@ -731,6 +633,70 @@ const _exit_state = (
         )
     }
 }
+
+
+// <h2>Save editor contents to source code</h2>
+// <p>This transforms the current editor contents into source code.</p>
+const editor_to_source_code = (
+    // <p>A string specifying the comment character(s) for the current
+    //     programming language. A space will be added after this string
+    //     before appending a line of doc block contents.</p>
+    comment_string
+) => {
+    // <p>Walk through each code and doc block, extracting its contents then
+    //     placing it in <code>classified_lines</code>.</p>
+    let classified_lines = [];
+    for (const code_or_doc_tag of document.querySelectorAll(".CodeChat-ACE, .CodeChat-TinyMCE")) {
+        // <p>The type of this block: <code>null</code> for code, or &gt;= 0 for
+        //     doc (the value of n specifies the indent in spaces).</p>
+        let type_;
+        // <p>A string containing all the code/docs in this block.</p>
+        let full_string;
+
+        // <p>Get the type of this block and its contents.</p>
+        if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
+            type_ = null;
+            full_string = ace.edit(code_or_doc_tag).getValue();
+        } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
+            // <p>Get the indent from the previous table cell.</p>
+            type_ = code_or_doc_tag.parentElement.previousElementSibling.textContent;
+            // <p>See <a
+            //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get"><code>get</code></a>
+            //     and <a
+            //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.editor/#getContent"><code>getContent()</code></a>.
+            //     Fortunately, it looks like TinyMCE assigns a unique ID if one's no
+            //     provided, since it only operates on an ID instead of the element
+            //     itself.</p>
+            full_string = tinymce.get(code_or_doc_tag.id).getContent();
+            // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters, including
+            //     the length of the indent and comment string.</p>
+            full_string = html_beautify(full_string, { "wrap_line_length": 70 });
+        } else {
+            console.assert(false, `Unexpected class for code or doc block ${code_or_doc_tag}.`);
+        }
+
+        // <p>Split the <code>full_string</code> into individual lines; each one
+        //     corresponds to an element of <code>classified_lines</code>.</p>
+        for (const string of full_string.split(/\r?\n/)) {
+            classified_lines.push([type_, string + "\n"]);
+        }
+    }
+
+    // <p>Transform these classified lines into source code.</p>
+    let lines = [];
+    for (const [type_, string] of classified_lines) {
+        if (type_ === null) {
+            // <p>Just dump code out!</p>
+            lines.push(string);
+        } else {
+            // <p>Prefix comments with the indent and the comment string.</p>
+            // <p>TODO: allow the use of block comments.</p>
+            lines.push(`${type_}${comment_string} ${string}`);
+        }
+    }
+
+    return lines.join("");
+};
 
 
 // <h2>Helper functions</h2>
