@@ -196,7 +196,7 @@ fn codechat_editor_html(source_code string, path string) string {
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>$name - The CodeChat Editor</title>
 
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.5/ace.min.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.11.2/ace.min.js" integrity="sha512-+jXgMZfP8zMr7zRDS+ScdX0kJUX6jzTKDkQH+Kt4Tojp0u22z7IVaa1Gb9bXT1+l04vnmZCrTLr6hLBcaF41NQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 		<script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
 		<script src="/static/js/CodeChatEditor.js"></script>
