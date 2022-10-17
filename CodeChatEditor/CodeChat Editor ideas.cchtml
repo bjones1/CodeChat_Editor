@@ -18,10 +18,10 @@
 <div>At a very high level, what should this do? How?</div>
 <div>
     <ul>
-        <li>View source code as code blocks and doc blocks. Doc blocks are lines
-            of source which contain only comments.</li>
-        <li>Load a document from source code, allow edits in a GUI, then save it
-            back to source code.
+        <li>View source code as code blocks and doc blocks. Doc blocks are
+            lines of source which contain only comments.</li>
+        <li>Load a document from source code, allow edits in a GUI, then save
+            it back to source code.
             <ul>
                 <li>Provide word processor GUI tools (insert hyperlink, images,
                     headings, change font, etc) for doc blocks.</li>
@@ -30,13 +30,13 @@
             </ul>
         </li>
         <li>Ideally, be a zero-install environment. Practically, I don't think
-            this is possible without a server. If so, make the server as easy to
-            install as possible. I suspect that updates to an IDE's plugin will
-            happen frequently, while users won't update the server very often,
-            so push as much code into the JavaScript as possible. The current
-            zero-install code would make a nice web demo -- paste in / drag and
-            drop / open your code, click on the other tab to edit it in the GUI.
-        </li>
+            this is possible without a server. If so, make the server as easy
+            to install as possible. I suspect that updates to an IDE's plugin
+            will happen frequently, while users won't update the server very
+            often, so push as much code into the JavaScript as possible. The
+            current zero-install code would make a nice web demo -- paste in /
+            drag and drop / open your code, click on the other tab to edit it
+            in the GUI.</li>
         <li>Doc block markup should be readable and well-known.
             <ul>
                 <li>For any markup, must either have:
@@ -51,22 +51,23 @@
                     less readable.</li>
                 <li>Markdown is very well known, dut to GitHub's use of it, and
                     is more readable (IMHO). It seems like a possible candidate
-                    -- anything that can't be translated from HTML from Markdown
-                    can simply be left as HTML, since Markdown allows HTML as a
-                    part of its syntax. Markdown has a JavaScript implementation
-                    for markdown to HTML. Pandoc can translate HTML back to
-                    Markdown, but this requires installation of another program
-                    and adds to the server-side complexity. The <a
+                    -- anything that can't be translated from HTML from
+                    Markdown can simply be left as HTML, since Markdown allows
+                    HTML as a part of its syntax. Markdown has a JavaScript
+                    implementation for markdown to HTML. Pandoc can translate
+                    HTML back to Markdown, but this requires installation of
+                    another program and adds to the server-side complexity. The
+                    <a
                         href="https://github.com/commonmark/commonmark.js/blob/master/lib/render/html.js">code</a>
                     that CommonMark uses to translate from their AST into HTML
                     looks pretty straightforward, so the inverse shouldn't be
                     too hard.</li>
             </ul>
         </li>
-        <li>To support creating a web site / book / project, the server needs to
-            serve one (simpler) flavor of web page for a single-file build, and
-            another for a project build. However, the rendering of code and doc
-            blocks is still dynamic, not static. Basically, a project build
+        <li>To support creating a web site / book / project, the server needs
+            to serve one (simpler) flavor of web page for a single-file build,
+            and another for a project build. However, the rendering of code and
+            doc blocks is still dynamic, not static. Basically, a project build
             would include a template with a table of contents, prev/next
             buttons, search, etc. Need to architect this; what does it mean to
             do a project build? What about supporting ReadTheDocs / a
@@ -88,8 +89,8 @@
                 </li>
             </ul>
         </li>
-        <li>I would ideally like to use a programming language that runs both on
-            the desktop, with minimal dependencies, and in the browser.
+        <li>I would ideally like to use a programming language that runs both
+            on the desktop, with minimal dependencies, and in the browser.
             JavaScript + Node.js is one possibility (but the install process
             isn't nice). vlang seems pretty good as well -- everything compiles
             to an executable, and also builds to WebAssembly.</li>
@@ -115,20 +116,20 @@
                     terms, then over all text, would be good. This requires
                     keeping a dict of all words in all files; the words must be
                     separated into headings/link text and all other text. It
-                    should exclude common programing terms (keywords such as if,
-                    for, case, etc.) and discard non-word characters. This seems
-                    reasonably doable. This should be updated whenever a file is
-                    saved. For now, leave searches with the IDE.</li>
+                    should exclude common programing terms (keywords such as
+                    if, for, case, etc.) and discard non-word characters. This
+                    seems reasonably doable. This should be updated whenever a
+                    file is saved. For now, leave searches with the IDE.</li>
             </ul>
         </li>
         <li>Eliminate the traditional project build process -- make it almost
             instantaneous. Instead, on save, the system should update all
             affected files; any opened files should also be updated in the
             browser. For example, editing the TOC then saving should cause the
-            new TOC to auto-update in all open files. Opening another file would
-            also show the updated TOC. Likewise, changing
-            <code>&lt;h1&gt;</code> heading text in a file referenced by the TOC
-            then saving would cause the TOC to update globally.
+            new TOC to auto-update in all open files. Opening another file
+            would also show the updated TOC. Likewise, changing
+            <code>&lt;h1&gt;</code> heading text in a file referenced by the
+            TOC then saving would cause the TOC to update globally.
             <ul>
                 <li>This seems like a good server-side templating opportunity.
                     When the server loads a file which refers to text from
@@ -140,9 +141,9 @@
                     ideally update this id in the links of all referring files.
                     Likewise, renaming a file should update all links in
                     referring files. This requires a DAG and global state -- a
-                    feature for later.&nbsp;As a bonus, the DAG can identify any
-                    unconnected files or unused ids/bookmarks, then warn the
-                    author about these "orphans." It can also identify any
+                    feature for later.&nbsp;As a bonus, the DAG can identify
+                    any unconnected files or unused ids/bookmarks, then warn
+                    the author about these "orphans." It can also identify any
                     broken links to project files. The DAG could be
                     incrementally updated on a save, with occasional scans of
                     the project's subdirectory tree to find any edits made
@@ -156,8 +157,8 @@
                         approach</a>, but don't want to parse Markdown.</li>
                 <li>Browsing to any page of the project should automatically
                     scroll to portion of the TOC that links to the page.</li>
-                <li>A given page needs to know the section number assigned to it
-                    by the TOC.</li>
+                <li>A given page needs to know the section number assigned to
+                    it by the TOC.</li>
                 <li>While the TOC file, must be placed in the root of the
                     project, it will be served alongside pages served from
                     subdirectories. What's the best approach? An iframe;
@@ -171,8 +172,8 @@
                     these lists.
                     <ul>
                         <li>Then,&nbsp;<code>document.querySelector('[href="https://example.com"]')</code>
-                            finds the first instance of the current page's link,
-                            which takes care of scrolling the TOC.</li>
+                            finds the first instance of the current page's
+                            link, which takes care of scrolling the TOC.</li>
                         <li>Given the a element in the TOC, looking through its
                             parents provides the section number. Given an array
                             of section numbers, use CSS to style all the
@@ -182,10 +183,12 @@
                             <p><code>:root {</code><br><code>&nbsp;
                                     --section-counter-reset: s1 4 s2
                                     5;</code><br><code>&nbsp;
-                                    --section-counter-content: counter(s1,
+                                    --section-counter-content:
+                                    counter(s1,
                                     numeric) '-' counter(s2,
                                     numeric);</code><br><code>}</code></p>
-                            <p><code>h1::before {</code><br><code>&nbsp;
+                            <p><code>h1::before
+                                    {</code><br><code>&nbsp;
                                     counter-reset:
                                     var(--section-counter-reset);</code><br><code>&nbsp;
                                     content:
@@ -200,8 +203,8 @@
                                 href="https://developer.mozilla.org/en-US/docs/Web/CSS/list-style-type">list-style-type</a>).
                             There's a CSS&nbsp;<a
                                 href="https://developer.mozilla.org/en-US/docs/Web/CSS/::marker">::marker</a>
-                            selector, but not way to get the rendered text. Even
-                            <a
+                            selector, but not way to get the rendered text.
+                            Even <a
                                 href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText">innerText</a>
                             doesn't include the marker in the resulting text --
                             ack!</li>
@@ -233,14 +236,14 @@
             <ul>
                 <li>The load/save code needs to run on the server if we do
                     server-side templating, or if we want the server to be able
-                    to produce a static build. It needs to run on the client, so
-                    that the client can detect comments in a code block or
+                    to produce a static build. It needs to run on the client,
+                    so that the client can detect comments in a code block or
                     switch between raw and editor/viewer modes. What other code
                     needs to be shared? For now, the idea of compiling V to
-                    Javascript isn't very appealing, but I need to at least test
-                    it out. Another option: the client calls a server endpoint
-                    to update needed links, but still does all parsing on the
-                    client. That seems fairly easy.</li>
+                    Javascript isn't very appealing, but I need to at least
+                    test it out. Another option: the client calls a server
+                    endpoint to update needed links, but still does all parsing
+                    on the client. That seems fairly easy.</li>
             </ul>
         </li>
         <li>Open questions
@@ -252,8 +255,8 @@
                     validation and allows comments withing the config file.
                     Perhaps JSON with a pre-parse step to discard comments
                     then&nbsp;<a href="https://jsontypedef.com/">JSON
-                        Typedef</a>? Possibly, vlang can do this somewhat, since
-                    it wants to decode JSON into a V struct.)</li>
+                        Typedef</a>? Possibly, vlang can do this somewhat,
+                    since it wants to decode JSON into a V struct.)</li>
                 <li>Config file contents: need to think through what belongs
                     here. How to keep it as simple as possible? Perhaps provide
                     a web-based GUI to make this easier to configure?</li>

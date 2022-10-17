@@ -1,10 +1,10 @@
 // <!-- CodeChat-lexer: vlang -->
 // <h1><code>CodeChatEditorServer.v</code>&mdash;A simple server for the
 //     CodeChat Editor</h1>
-// <p>This server provides the user the ability to browse the local
-//     filesystem; clicking on a CodeChat Editor-supported source file
-//     then loads it in the CodeChat Editor. It also enables the CodeChat
-//     Editor to save modified files back to the local filesystem.</p>
+// <p>This server provides the user the ability to browse the local filesystem;
+//     clicking on a CodeChat Editor-supported source file then loads it in the
+//     CodeChat Editor. It also enables the CodeChat Editor to save modified
+//     files back to the local filesystem.</p>
 // <h2>Imports</h2>
 import os
 import net.urllib
@@ -37,15 +37,13 @@ fn (mut app App) root_redirect() vweb.Result {
 	return app.redirect('/fs')
 }
 
-// <p>This endpoint serves files from the local filesystem. vweb requires
-//     me to declare it twice in order to get an empty path (here) or a
-//     path with something after <code>/fs</code> (in the following
-//     function).</p>
+// <p>This endpoint serves files from the local filesystem. vweb requires me to
+//     declare it twice in order to get an empty path (here) or a path with
+//     something after <code>/fs</code> (in the following function).</p>
 ['/fs']
 fn (mut app App) serve_fs_bare() vweb.Result {
 	// <p>On Windows, assume the C drive as the root of the filesystem. TODO:
-	//     provide some way to list drives / change drives from the HTML GUI.
-	// </p>
+	//     provide some way to list drives / change drives from the HTML GUI.</p>
 	if os.user_os() == 'windows' {
 		return app.redirect('/fs/${urllib.path_escape('C:')}/')
 	}
@@ -63,13 +61,13 @@ struct ErrorResponse {
 	message string
 }
 
-// <p><a id="save_file"></a>A <code>PUT</code> to a filename writes the
-//     provided data to that file; this is used by the <a
+// <p><a id="save_file"></a>A <code>PUT</code> to a filename writes the provided
+//     data to that file; this is used by the <a
 //         href="static/js/CodeChatEditor.js#save">save function</a>.</p>
 ['/fs/:path...'; put]
 fn (mut app App) save_file(path string) vweb.Result {
-	// <p>For Unix, restore the leading <code>/</code> to the beginning of
-	//     the path.</p>
+	// <p>For Unix, restore the leading <code>/</code> to the beginning of the
+	//     path.</p>
 	fixed_path := (if os.user_os() != 'windows' { '/' } else { '' }) + path
 	abs_path := os.abs_path(fixed_path)
 	os.write_file(abs_path, app.req.data) or {
@@ -81,28 +79,26 @@ fn (mut app App) save_file(path string) vweb.Result {
 	})
 }
 
-// <p>Serve either a directory listing, with special links for CodeChat
-//     Editor files, or serve a CodeChat Editor file or a normal file.
-// </p>
+// <p>Serve either a directory listing, with special links for CodeChat Editor
+//     files, or serve a CodeChat Editor file or a normal file.</p>
 fn (mut app App) serve_fs_(path string) vweb.Result {
-	// <p>The provided <code>path</code> may need fixing, since it lacks an
-	//     initial <code>/</code>.</p>
+	// <p>The provided <code>path</code> may need fixing, since it lacks an initial
+	//     <code>/</code>.</p>
 	mut fixed_path := path
 	if os.user_os() == 'windows' {
-		// <p>On Windows, a path of <code>drive_letter:</code> needs a
-		//     <code>/</code> appended.</p>
+		// <p>On Windows, a path of <code>drive_letter:</code> needs a <code>/</code>
+		//     appended.</p>
 		mut regex_drive_letter := regex.regex_opt('^[a-zA-Z]:$') or {
 			panic('Regex failed to compile.')
 		}
 		if regex_drive_letter.matches_string(path) {
 			fixed_path += '/'
 		}
-		// <p>All other cases (for example, <code>C:\a\path\to\file.txt</code>)
-		//     are OK.</p>
+		// <p>All other cases (for example, <code>C:\a\path\to\file.txt</code>) are
+		//     OK.</p>
 	} else {
-		// <p>For Linux/OS X, prepend a slash, so that
-		//     <code>a/path/to/file.txt</code> becomes
-		//     <code>/a/path/to/file.txt</code>.</p>
+		// <p>For Linux/OS X, prepend a slash, so that <code>a/path/to/file.txt</code>
+		//     becomes <code>/a/path/to/file.txt</code>.</p>
 		fixed_path = '/' + fixed_path
 	}
 	// <p>Normalize path as well as making it absolute.</p>
@@ -145,10 +141,10 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 		for f in ls {
 			full_path := os.join_path(abs_path, f)
 			if os.is_dir(full_path) {
-				// <p>Use an absolute path, instead of a relative path, in case the URL
-				//     of this directory doesn't end with a <code>/</code>. Detecting
-				//     this case is hard, since vweb removes the trailing <code>/</code>
-				//     even if it's there!</p>
+				// <p>Use an absolute path, instead of a relative path, in case the URL of
+				//     this directory doesn't end with a <code>/</code>. Detecting this case
+				//     is hard, since vweb removes the trailing <code>/</code> even if it's
+				//     there!</p>
 				ret += '<li><a href="/fs/$path/${urllib.path_escape(f)}/">$f/</a></li>\n'
 			} else {
 				extension := os.file_ext(f)
@@ -179,8 +175,8 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 }
 
 // <h2>CodeChat Editor support</h2>
-// <p>Given the source code for a file and its path, return the HTML to
-//     present this in the CodeChat Editor.</p>
+// <p>Given the source code for a file and its path, return the HTML to present
+//     this in the CodeChat Editor.</p>
 fn codechat_editor_html(source_code string, path string) string {
 	dir := escape_html(os.dir(path))
 	name := escape_html(os.base(path))
@@ -229,16 +225,16 @@ fn codechat_editor_html(source_code string, path string) string {
 '
 }
 
-// <p>For JavaScript, escape any double quotes and convert newlines, so
-//     it's safe to enclose the returned string in double quotes.</p>
+// <p>For JavaScript, escape any double quotes and convert newlines, so it's
+//     safe to enclose the returned string in double quotes.</p>
 fn quote_string(s string) string {
 	return s.replace(r'\', r'\\').replace('"', r'\"').replace('\r\n', r'\n').replace('\r',
 		r'\n').replace('\n', r'\n')
 }
 
 // <p>In addition to quoting strings, also split up an ending
-//     <code>&lt;/script&gt;</code> tags, since this string is placed
-//     inside a <code>&lt;script&gt;</code> tag.</p>
+//     <code>&lt;/script&gt;</code> tags, since this string is placed inside a
+//     <code>&lt;script&gt;</code> tag.</p>
 fn quote_script_string(source_code string) string {
 	return (quote_string(source_code).split('</script>')).join('</scr"+"ipt>')
 }
@@ -252,7 +248,8 @@ fn escape_html(unsafe_text string) string {
 // <h2>Main&mdash;run the webserver</h2>
 fn main() {
 	mut app := &App{}
-	// <p>Serve static files in the <code>static/</code> subdirectory from the <code>/static</code> endpoint.</p>
+	// <p>Serve static files in the <code>static/</code> subdirectory from the
+	//     <code>/static</code> endpoint.</p>
 	app.mount_static_folder_at(os.resource_abs_path('static'), '/static')
 	print('Open http://localhost:8080/ in a browser.\n')
 	vweb.run(app, 8080)

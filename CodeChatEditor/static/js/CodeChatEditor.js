@@ -1,36 +1,35 @@
 // <details>
 //     <summary>Copyright (C) 2012-2022 Bryan A. Jones.</summary>
 //     <p>This file is part of CodeChat.</p>
-//     <p>CodeChat is free software: you can redistribute it and/or
-//         modify it under the terms of the GNU General Public License as
-//         published by the Free Software Foundation, either version 3 of
-//         the License, or (at your option) any later version.</p>
+//     <p>CodeChat is free software: you can redistribute it and/or modify it
+//         under the terms of the GNU General Public License as published by the
+//         Free Software Foundation, either version 3 of the License, or (at
+//         your option) any later version.</p>
 //     <p>CodeChat is distributed in the hope that it will be useful, but
 //         WITHOUT ANY WARRANTY; without even the implied warranty of
-//         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-//         GNU General Public License for more details.</p>
-//     <p>You should have received a copy of the GNU General Public
-//         License along with CodeChat. If not, see <a
+//         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+//         General Public License for more details.</p>
+//     <p>You should have received a copy of the GNU General Public License
+//         along with CodeChat. If not, see <a
 //             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 //     </p>
 // </details>
-// <h1><code>CodeChatEditor.js</code> &mdash; <strong>JavaScrip</strong>t
-//     which implements the client-side portion of the CodeChat Editor
-// </h1>
-// <p>The CodeChat Editor provides a simple IDE which allows editing of
-//     mixed code and doc blocks.</p>
+// <h1><code>CodeChatEditor.js</code> &mdash; <strong>JavaScrip</strong>t which
+//     implements the client-side portion of the CodeChat Editor</h1>
+// <p>The CodeChat Editor provides a simple IDE which allows editing of mixed
+//     code and doc blocks.</p>
 // <h2>Next steps</h2>
 // <ul>
-//     <li>Create a new repo or directory for the CodeChat Editor, with
-//         NPM and webpack set up. Use TypeScript.</li>
+//     <li>Create a new repo or directory for the CodeChat Editor, with NPM and
+//         webpack set up. Use TypeScript.</li>
 // </ul>
 // <h2>Thoughts and ideas</h2>
 // <p>Need to write some components:</p>
 // <ul>
-//     <li>Autotitle: like an a, but takes the link&rsquo;s name from
-//         element linked to. Same for figure references, etc.</li>
-//     <li>A index tool -- provides links to all instances of the given
-//         term, plus a index page with all these terms.</li>
+//     <li>Autotitle: like an a, but takes the link&rsquo;s name from element
+//         linked to. Same for figure references, etc.</li>
+//     <li>A index tool -- provides links to all instances of the given term,
+//         plus a index page with all these terms.</li>
 //     <li>Insert the name of the file.</li>
 // </ul>
 "use strict";
@@ -71,29 +70,29 @@ const make_editors = (
     // <p>A instance of the <code>EditorMode</code> enum.</p>
     editorMode
 ) => {
-    // <p>In view mode, don't use TinyMCE, since we already have HTML. Raw
-    //     mode doesn't use TinyMCE at all, or even render doc blocks as
-    //     HTML.</p>
+    // <p>In view mode, don't use TinyMCE, since we already have HTML. Raw mode
+    //     doesn't use TinyMCE at all, or even render doc blocks as HTML.</p>
     if (editorMode === EditorMode.edit) {
         // <p>Instantiate the TinyMCE editor for doc blocks.</p>
         tinymce.init({
             // <p>See the <a
             //         href="https://www.tiny.cloud/docs/ui-components/contextmenu/">contextmenu
-            //         docs</a> for the default value. TODO: this doesn't work!</p>
+            //         docs</a> for the default value. TODO: this doesn't work!
+            // </p>
             contextmenu: "align | forecolor backcolor | bold italic underline superscript subscript codeformat | image link lists table",
-            // <p>Place the Tiny MCE menu bar at the top of the screen; otherwise, it
-            //     floats in front of text, sometimes obscuring what the user wants
-            //     to edit. See the <a
+            // <p>Place the Tiny MCE menu bar at the top of the screen;
+            //     otherwise, it floats in front of text, sometimes obscuring
+            //     what the user wants to edit. See the <a
             //         href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
             // </p>
             fixed_toolbar_container: "#CodeChat-menu",
             inline: true,
             // <p>I would like to add to this: noneditable paste textpattern</p>
             plugins: 'advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars',
-            // <p>When true, this still prevents hyperlinks to anchors on the current
-            //     page from working correctly. There's an onClick handler that
-            //     prevents links in the current page from working -- need to look
-            //     into this. See also <a
+            // <p>When true, this still prevents hyperlinks to anchors on the
+            //     current page from working correctly. There's an onClick
+            //     handler that prevents links in the current page from working
+            //     -- need to look into this. See also <a
             //         href="https://github.com/tinymce/tinymce/issues/3836">a
             //         related GitHub issue</a>.</p>
             //readonly: true,
@@ -101,7 +100,8 @@ const make_editors = (
             selector: '.CodeChat-TinyMCE',
             // <p>This combines the <a
             //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
-            //         TinyMCE toolbar buttons</a> with a few more from plugins.</p>
+            //         TinyMCE toolbar buttons</a> with a few more from plugins.
+            // </p>
             toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
 
             // <h3>Settings for plugins</h3>
@@ -120,19 +120,21 @@ const make_editors = (
         ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.5');
         for (const ace_tag of document.querySelectorAll(".CodeChat-ACE")) {
             ace.edit(ace_tag, {
-                // <p>The leading <code>+</code> converts the line number from a string
-                //     (since all HTML attributes are strings) to a number.</p>
+                // <p>The leading <code>+</code> converts the line number from a
+                //     string (since all HTML attributes are strings) to a
+                //     number.</p>
                 firstLineNumber: +ace_tag.getAttribute("data-CodeChat-firstLineNumber"),
-                // <p>This is distracting, since it highlights one line for each ACE
-                //     editor instance on the screen. Better: only show this if the
-                //     editor has focus.</p>
+                // <p>This is distracting, since it highlights one line for each
+                //     ACE editor instance on the screen. Better: only show this
+                //     if the editor has focus.</p>
                 highlightActiveLine: false,
                 highlightGutterLine: false,
                 maxLines: 1e10,
                 mode: `ace/mode/${current_language_lexer[0]}`,
-                // <p>TODO: this still allows cursor movement. Need something that
-                //     doesn't show an edit cursor / can't be selected; arrow keys should
-                //     scroll the display, not move the cursor around in the editor.</p>
+                // <p>TODO: this still allows cursor movement. Need something
+                //     that doesn't show an edit cursor / can't be selected;
+                //     arrow keys should scroll the display, not move the cursor
+                //     around in the editor.</p>
                 readOnly: editorMode === EditorMode.view,
                 showPrintMargin: false,
                 theme: "ace/theme/textmate",
@@ -149,13 +151,13 @@ const make_editors = (
 };
 
 
-// <p>After an edit, the editor by default changes some non-breaking
-//     spaces into normal spaces. Undo this, since it breaks the layout.
-//     This is because normal spaces wrap, while non-breaking spaces
-//     don't; we need no wrapping to correctly set the indent.</p>
+// <p>After an edit, the editor by default changes some non-breaking spaces into
+//     normal spaces. Undo this, since it breaks the layout. This is because
+//     normal spaces wrap, while non-breaking spaces don't; we need no wrapping
+//     to correctly set the indent.</p>
 const doc_block_indent_on_input = event => {
-    // <p>Save the current cursor position. Setting <code>innerHTML</code>
-    //     loses it.</p>
+    // <p>Save the current cursor position. Setting <code>innerHTML</code> loses
+    //     it.</p>
     const offset = window.getSelection().anchorOffset;
     // <p>Restore the current cursor position -- an offset into the text node
     //     inside this <code>&lt;tr&gt; element.</code></p>
@@ -169,8 +171,8 @@ let current_language_lexer;
 
 
 // <h3>Doc block indent editor</h3>
-// <p>Allow only spaces and delete/backspaces when editing the indent of
-//     a doc block.</p>
+// <p>Allow only spaces and delete/backspaces when editing the indent of a doc
+//     block.</p>
 const doc_block_indent_on_before_input = event => {
     // <p>Only modify the behavior of inserts.</p>
     if (event.data) {
@@ -238,8 +240,7 @@ const on_save_doc = async () => {
 const os_is_osx = (navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone") ? true : false;
 
 
-// <p>Provide a shortcut of ctrl-s (or command-s) to save the current
-//     file.</p>
+// <p>Provide a shortcut of ctrl-s (or command-s) to save the current file.</p>
 const on_keydown = (event) => {
     if ((event.key === "s") && ((event.ctrlKey && !os_is_osx) || (event.metaKey && os_is_osx)) && !event.altKey) {
         on_save();
@@ -248,10 +249,10 @@ const on_keydown = (event) => {
 }
 
 
-// <p><a id="save"></a>Save the provided contents back to the filesystem,
-//     by sending a <code>PUT</code> request to the server. See the <a
-//         href="CodeChatEditorServer.v.html#save_file">save_file
-//         endpoint</a>.</p>
+// <p><a id="save"></a>Save the provided contents back to the filesystem, by
+//     sending a <code>PUT</code> request to the server. See the <a
+//         href="CodeChatEditorServer.v.html#save_file">save_file endpoint</a>.
+// </p>
 const save = async contents => {
     let response;
     try {
@@ -276,13 +277,11 @@ const save = async contents => {
 
 // <h2>Load editor contents from source code</h2>
 // <p>This process is split between two functions: first, <a
-//         href="#source_lexer">split the source code into code blocks
-//         and doc blocks</a>; next, <a
-//         href="#classified_source_to_html">transform this into its
-//         web-editable form</a>.</p>
-// <p>Both the load and save routines need information about the
-//     programming language in order to load/save code in that language.
-// </p>
+//         href="#source_lexer">split the source code into code blocks and doc
+//         blocks</a>; next, <a href="#classified_source_to_html">transform this
+//         into its web-editable form</a>.</p>
+// <p>Both the load and save routines need information about the programming
+//     language in order to load/save code in that language.</p>
 const language_lexers = [
     // <dl>
     //     <dt>IC</dt>
@@ -292,17 +291,16 @@ const language_lexers = [
     //             body regex, start suffix string, stop prefix string, stop
     //             suffix string]</code>.</dd>
     //     <dt>JS tmpl lit</dt>
-    //     <dd>JavaScript template literal: 0 = Language is not JavaScript, 1
-    //         = Language is JavaScript. (2 = inside a template literal
-    //         should only be used by the lexer itself).</dd>
+    //     <dd>JavaScript template literal: 0 = Language is not JavaScript, 1 =
+    //         Language is JavaScript. (2 = inside a template literal should
+    //         only be used by the lexer itself).</dd>
     // </dl>
     // <p>C++11 or newer. Don't worry about supporting C or older C++ using
-    //     another lexer entry, since the raw string syntax in C++11 and
-    //     newer is IMHO so rare we won't encounter it in older code. See the
-    //     <a
+    //     another lexer entry, since the raw string syntax in C++11 and newer
+    //     is IMHO so rare we won't encounter it in older code. See the <a
     //         href="https://en.cppreference.com/w/cpp/language/string_literal">C++
-    //         string literals docs</a> for the reasoning behind the start
-    //     body regex.</p>
+    //         string literals docs</a> for the reasoning behind the start body
+    //     regex.</p>
     //Language name File extensions     IC      Block comment       Long string     Short str   Heredoc JS tmpl lit
     ["c_cpp",       [".cc", ".cpp"],    ["//"], [["/*", "*/"]],     [],             ['"'],      [['R"', "[^()\\ ]", "(", ")", ""]], 0],
     ["html",        [".html"],          [],     [["<!--", "-->"]],  [],             [],         [],     0],
@@ -315,35 +313,31 @@ const language_lexers = [
 
 
 // <h2>Source lexer</h2>
-// <p>Rather than attempt to lex the entire language, this lexer's only
-//     goal is to categorize all the source code into code blocks or doc
-//     blocks. To do it, it only needs to:</p>
+// <p>Rather than attempt to lex the entire language, this lexer's only goal is
+//     to categorize all the source code into code blocks or doc blocks. To do
+//     it, it only needs to:</p>
 // <ul>
 //     <li>Recognize where comments can't be&mdash;inside strings, <a
-//             href="https://en.wikipedia.org/wiki/Here_document">here
-//             text</a>, or <a
+//             href="https://en.wikipedia.org/wiki/Here_document">here text</a>,
+//         or <a
 //             href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals">template
-//             literals</a>. These are always part of a code block and
-//         can never contain a comment or (by implication) a doc block.
-//     </li>
-//     <li>Outside of these special cases, look for inline or block
-//         comments, categorizing everything else as code.</li>
-//     <li>After finding either an inline or block comment, determine if
-//         this is a doc block.</li>
+//             literals</a>. These are always part of a code block and can never
+//         contain a comment or (by implication) a doc block.</li>
+//     <li>Outside of these special cases, look for inline or block comments,
+//         categorizing everything else as code.</li>
+//     <li>After finding either an inline or block comment, determine if this is
+//         a doc block.</li>
 // </ul>
-// <p>It returns a list of <code>indent, string, indent_type</code>
-//     where:</p>
+// <p>It returns a list of <code>indent, string, indent_type</code> where:</p>
 // <dl>
 //     <dt><code>indent</code></dt>
 //     <dd>The indent of a doc block (a string of whitespace), or
 //         <code>null</code> for a code block.</dd>
 //     <dt><code>string</code></dt>
-//     <dd>The classified string; for doc blocks, this does not include
-//         the indenting spaces or the inline/block comment prefix/suffix
-//     </dd>
+//     <dd>The classified string; for doc blocks, this does not include the
+//         indenting spaces or the inline/block comment prefix/suffix</dd>
 //     <dt><code>indent_type</code></dt>
-//     <dd>The comment string for a doc block, or "" for a code block.
-//     </dd>
+//     <dd>The comment string for a doc block, or "" for a code block.</dd>
 // </dl>
 const source_lexer = (
     source_code,
@@ -356,8 +350,8 @@ const source_lexer = (
     here_text_strings,
     template_literals,
 ) => {
-    // <p>A special case -- CodeChat documents are already a single doc
-    //     block. Return that.</p>
+    // <p>A special case -- CodeChat documents are already a single doc block.
+    //     Return that.</p>
     if (language_name === "codechat-html") {
         return [["", source_code, ""]];
     }
@@ -381,16 +375,16 @@ const source_lexer = (
         }
         return null;
     }
-    // <p>Order these by length of the expected strings, since the regex with
-    //     an or expression will match left to right.</p>
+    // <p>Order these by length of the expected strings, since the regex with an
+    //     or expression will match left to right.</p>
     // <p>Include only the opening block comment string (element 0) in the
     //     regex.</p>
     let block_comment_index = regex_builder(block_comment_strings.map(element => element[0]));
     let long_string_index = regex_builder(long_string_strings);
     let inline_comment_index = regex_builder(inline_comment_strings);
     let short_string_index = regex_builder(short_string_strings);
-    // <p>Template literals only exist in JavaScript. No other language (that
-    //     I know of) allows comments inside these, or nesting of template
+    // <p>Template literals only exist in JavaScript. No other language (that I
+    //     know of) allows comments inside these, or nesting of template
     //     literals.</p>
     let template_literal_index = null;
     if (template_literals) {
@@ -403,51 +397,51 @@ const source_lexer = (
     let classify_regex = new RegExp("(" + regex_strings.join(")|(") + ")");
 
     let classified_source = [];
-    // <p>An accumulating array of strings composing the current code block.
-    // </p>
+    // <p>An accumulating array of strings composing the current code block.</p>
     let code_block_array = [];
     while (source_code.length) {
         // <p>Look for either a comment or a no-comment zone.</p>
         const m = source_code.match(classify_regex);
         if (m) {
-            // <p>Add everything preceding this match to the current code block.</p>
+            // <p>Add everything preceding this match to the current code block.
+            // </p>
             code_block_array.push(source_code.substring(0, m.index));
             source_code = source_code.substring(m.index);
             // <p>Figure out which matched.</p>
             if (inline_comment_index && m[inline_comment_index]) {
                 // <p>A comment matched.</p>
                 const inline_comment_string = m[inline_comment_index];
-                // <p>Look at the last line of code by examining the code block being
-                //     accumulated.</p>
+                // <p>Look at the last line of code by examining the code block
+                //     being accumulated.</p>
                 let code_block = code_block_array.join("");
                 const split_lines = code_block.split(/\n|\r\n|\r/)
-                // <p>If there's no matching newline, we're at the beginning of the
-                //     uncategorized source code.</p>
+                // <p>If there's no matching newline, we're at the beginning of
+                //     the uncategorized source code.</p>
                 const last_line = split_lines ? split_lines[split_lines.length - 1] : "";
 
-                // <p>Find the end of this comment. No matching newline means we're at
-                //     the end of the file. Note that using a negative lookbehind
-                //     assertion would make this much simpler:
-                //     <code>/(?&lt;!\\)(\n|\r\n|\r)/</code>. However, V doesn't support
-                //     this.</p>
+                // <p>Find the end of this comment. No matching newline means
+                //     we're at the end of the file. Note that using a negative
+                //     lookbehind assertion would make this much simpler:
+                //     <code>/(?&lt;!\\)(\n|\r\n|\r)/</code>. However, V doesn't
+                //     support this.</p>
                 const inline_m = source_code.match(/(\\\r\n|\\\n|\\\r|[^\\\n\r])*(\n|\r\n|\r)/);
                 const full_comment = inline_m ? source_code.substring(0, inline_m.index + inline_m[0].length) : source_code;
 
                 // <p>Criteria for doc blocks for an inline comment:</p>
                 // <ul>
-                //     <li>All characters preceding the comment on the current line must
-                //         be whitespace.</li>
+                //     <li>All characters preceding the comment on the current
+                //         line must be whitespace.</li>
                 //     <li>Either:
                 //         <ul>
-                //             <li>The comment is immediately followed by a space, or
-                //             </li>
-                //             <li>the comment is followed by a newline or the end of
-                //                 file.</li>
+                //             <li>The comment is immediately followed by a
+                //                 space, or</li>
+                //             <li>the comment is followed by a newline or the
+                //                 end of file.</li>
                 //         </ul>
                 //     </li>
                 // </ul>
-                // <p>Doc block comments have a space after the comment string or are
-                //     empty, and only spaces before the comment.</p>
+                // <p>Doc block comments have a space after the comment string
+                //     or are empty, and only spaces before the comment.</p>
                 if ((full_comment.startsWith(inline_comment_string + " ") || full_comment === inline_comment_string + (inline_m ? inline_m[1] : "")) && last_line.match(/^\s*$/)) {
                     // <p>Transition from a code block to this doc block.</p>
                     code_block = code_block.substring(0, code_block.length - last_line.length)
@@ -473,8 +467,9 @@ const source_lexer = (
                 code_block_array.push(m[long_string_index]);
                 source_code = source_code.substring(m[long_string_index].length);
                 const string_m = source_code.match(m[long_string_index]);
-                // <p>Add this to the code block, then move forward. If it's not found,
-                //     the quote wasn't properly closed; add the rest of the code.</p>
+                // <p>Add this to the code block, then move forward. If it's not
+                //     found, the quote wasn't properly closed; add the rest of
+                //     the code.</p>
                 if (string_m) {
                     const index = string_m.index + string_m[0].length;
                     code_block_array.push(source_code.substring(0, index));
@@ -490,35 +485,39 @@ const source_lexer = (
                 const string_m = source_code.match(
                     // <p>Use <a
                     //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/raw"><code>String.raw</code></a>
-                    //     so we don't have to double the number of backslashes in this
-                    //     regex. Joining regex literals doesn't work &ndash; <code>/.a/ +
-                    //         /b/</code> produces the string <code>'/.a//b/'</code>, not a
-                    //     regex. The regex is:</p>
+                    //     so we don't have to double the number of backslashes
+                    //     in this regex. Joining regex literals doesn't work
+                    //     &ndash; <code>/.a/ +
+                    //         /b/</code> produces the string
+                    //     <code>'/.a//b/'</code>, not a regex. The regex is:
+                    // </p>
                     // <p>Look for anything that doesn't terminate a string:</p>
                     "(" +
-                        // <p>a backslash followed by a newline (in all three newline styles);
-                        // </p>
+                        // <p>a backslash followed by a newline (in all three
+                        //     newline styles);</p>
                         String.raw`\\\r\n|\\\n|\\\r|` +
-                        // <p>a backslash followed by any non-newline character (note that the
-                        //     <code>.</code> character class <a
+                        // <p>a backslash followed by any non-newline character
+                        //     (note that the <code>.</code> character class <a
                         //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions/Character_Classes#types">doesn't
-                        //         match newlines</a>; using the <code>s</code> or
-                        //     <code>dotAll</code> flag causes it to match <a
+                        //         match newlines</a>; using the <code>s</code>
+                        //     or <code>dotAll</code> flag causes it to match <a
                         //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Lexical_grammar#line_terminators">line
-                        //         terminators</a> that we don't recognize, plus not match a
-                        //     <code>\r\n</code> sequence);</p>
+                        //         terminators</a> that we don't recognize, plus
+                        //     not match a <code>\r\n</code> sequence);</p>
                         String.raw`\\.|` +
-                        // <p>anything that's not a backslash, quote mark, or newline.</p>
+                        // <p>anything that's not a backslash, quote mark, or
+                        //     newline.</p>
                         String.raw`[^\\${m[short_string_index]}\n\r]` +
-                    // <p>Find as many of these as possible. Therefore, the next token will
-                    //     be the end of the string.</p>
+                    // <p>Find as many of these as possible. Therefore, the next
+                    //     token will be the end of the string.</p>
                     ")*" +
-                    // <p>A string is terminated by either a quote mark or a newline. (We
-                    //     can't just put <code>.</code>, because one flavor of newline is
-                    //     two characters; in addition, that character class doesn't match
-                    //     newlines, as stated above.) Terminating strings at a newline helps
-                    //     avoid miscategorizing large chunks of code that the compiler
-                    //     likewise flags as a syntax error.</p>
+                    // <p>A string is terminated by either a quote mark or a
+                    //     newline. (We can't just put <code>.</code>, because
+                    //     one flavor of newline is two characters; in addition,
+                    //     that character class doesn't match newlines, as
+                    //     stated above.) Terminating strings at a newline helps
+                    //     avoid miscategorizing large chunks of code that the
+                    //     compiler likewise flags as a syntax error.</p>
                     String.raw`(${m[short_string_index]}|\r\n|\n|\r)`
                 );
                 if (string_m) {
@@ -557,12 +556,11 @@ const source_lexer = (
 
 // <h2 id="classified_source_to_html">Convert lexed code into HTML</h2>
 const classified_source_to_html = (classified_source) => {
-    // <p>An array of strings for the new content of the current HTML page.
-    // </p>
+    // <p>An array of strings for the new content of the current HTML page.</p>
     let html = [];
 
-    // <p>Keep track of the current type. Begin with neither comment nor
-    //     code.</p>
+    // <p>Keep track of the current type. Begin with neither comment nor code.
+    // </p>
     let current_indent = -2
 
     // <p>Keep track of the current line number.</p>
@@ -570,8 +568,8 @@ const classified_source_to_html = (classified_source) => {
 
     for (let [indent, source_string, comment_string] of classified_source) {
         // <p><span id="newline-movement">In a code or doc block, omit the last
-        //         newline; otherwise, code blocks would show an extra newline at
-        //         the end of the block. (Doc blocks ending in a
+        //         newline; otherwise, code blocks would show an extra newline
+        //         at the end of the block. (Doc blocks ending in a
         //         <code>&lt;pre&gt;</code> tag or something similar would also
         //         have this problem). To do this, remove the newline from the
         //         end of the current line, then prepend it to the beginning of
@@ -597,11 +595,11 @@ const classified_source_to_html = (classified_source) => {
                 )
 
             } else {
-                // <p>Comment state: emit an opening indent for non-zero indents; insert
-                //     a TinyMCE editor.</p>
-                // <p><span id="one-row-table">Use a one-row table to lay out a doc
-                //         block, so that it aligns properly with a code block.</span>
-                // </p>
+                // <p>Comment state: emit an opening indent for non-zero
+                //     indents; insert a TinyMCE editor.</p>
+                // <p><span id="one-row-table">Use a one-row table to lay out a
+                //         doc block, so that it aligns properly with a code
+                //         block.</span></p>
                 html.push(
 `<div class="CodeChat-doc">
     <table>
@@ -672,8 +670,8 @@ const _exit_state = (
 // <p>This transforms the current editor contents into source code.</p>
 const editor_to_source_code = (
     // <p>A string specifying the comment character(s) for the current
-    //     programming language. A space will be added after this string
-    //     before appending a line of doc block contents.</p>
+    //     programming language. A space will be added after this string before
+    //     appending a line of doc block contents.</p>
     comment_string
 ) => {
     // <p>Walk through each code and doc block, extracting its contents then
@@ -697,12 +695,12 @@ const editor_to_source_code = (
             //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get"><code>get</code></a>
             //     and <a
             //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.editor/#getContent"><code>getContent()</code></a>.
-            //     Fortunately, it looks like TinyMCE assigns a unique ID if one's no
-            //     provided, since it only operates on an ID instead of the element
-            //     itself.</p>
+            //     Fortunately, it looks like TinyMCE assigns a unique ID if
+            //     one's no provided, since it only operates on an ID instead of
+            //     the element itself.</p>
             full_string = tinymce.get(code_or_doc_tag.id).getContent();
-            // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters, including
-            //     the length of the indent and comment string.</p>
+            // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters,
+            //     including the length of the indent and comment string.</p>
             full_string = html_beautify(full_string, { "wrap_line_length": 80 - indent.length - comment_string.length - 1 });
         } else {
             console.assert(false, `Unexpected class for code or doc block ${code_or_doc_tag}.`);
@@ -717,9 +715,9 @@ const editor_to_source_code = (
 
     // <p>Transform these classified lines into source code.</p>
     let lines = [];
-    // <p>If there comment string is empty, assume this is a CodeChat
-    //     document (raw HTML/Markdown/etc.), so drop the space after the
-    //     empty comment string.</p>
+    // <p>If there comment string is empty, assume this is a CodeChat document
+    //     (raw HTML/Markdown/etc.), so drop the space after the empty comment
+    //     string.</p>
     let space = comment_string === "" ? "" : " ";
     for (const [indent, string] of classified_lines) {
         if (indent === null) {
@@ -738,11 +736,11 @@ const editor_to_source_code = (
 
 // <h2>Helper functions</h2>
 // <p>Given text, escape it so it formats correctly as HTML. Because the
-//     solution at https://stackoverflow.com/a/48054293 transforms
-//     newlines into <br>(see
+//     solution at https://stackoverflow.com/a/48054293 transforms newlines into
+//     <br>(see
 //     https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText),
-//     it's not usable with code. Instead, this is a translation of
-//     Python's <code>html.escape</code> function.</p>
+//     it's not usable with code. Instead, this is a translation of Python's
+//     <code>html.escape</code> function.</p>
 const escapeHTML = unsafeText => {
     // <p>Must be done first!</p>
     unsafeText = unsafeText.replaceAll("&", "&amp;")
