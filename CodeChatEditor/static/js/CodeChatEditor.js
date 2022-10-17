@@ -18,6 +18,12 @@
 //     implements the client-side portion of the CodeChat Editor</h1>
 // <p>The CodeChat Editor provides a simple IDE which allows editing of mixed
 //     code and doc blocks.</p>
+// <h2>TODO</h2>
+// <ul>
+//     <li>Document modes.</li>
+//     <li>Implement raw mode; add a GUI to switch between view, edit, and raw
+//         modes.</li>
+// </ul>
 // <h2>Next steps</h2>
 // <ul>
 //     <li>Create a new repo or directory for the CodeChat Editor, with NPM and
@@ -159,23 +165,8 @@ const make_editors = (
     // <p>Set up for editing the indent of doc blocks.</p>
     for (const td of document.querySelectorAll(".CodeChat-doc-indent")) {
         td.addEventListener("beforeinput", doc_block_indent_on_before_input);
-        td.addEventListener("input", doc_block_indent_on_input);
     }
 };
-
-
-// <p>After an edit, the editor by default changes some non-breaking spaces into
-//     normal spaces. Undo this, since it breaks the layout. This is because
-//     normal spaces wrap, while non-breaking spaces don't; we need no wrapping
-//     to correctly set the indent.</p>
-const doc_block_indent_on_input = event => {
-    // <p>Save the current cursor position. Setting <code>innerHTML</code> loses
-    //     it.</p>
-    const offset = window.getSelection().anchorOffset;
-    // <p>Restore the current cursor position -- an offset into the text node
-    //     inside this <code>&lt;tr&gt; element.</code></p>
-    window.getSelection().setBaseAndExtent(event.currentTarget.childNodes[0], offset, event.currentTarget.childNodes[0], offset);
-}
 
 
 // <p>Store the lexer info for the currently-loaded language.</p>
