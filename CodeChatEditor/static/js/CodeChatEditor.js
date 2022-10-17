@@ -34,7 +34,8 @@
 // </ul>
 "use strict";
 
-// <h2>Constructor - DOM ready event</h2>
+// <h2>UI</h2>
+// <h3>DOM ready event</h3>
 // <p>This is copied from <a
 //         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
 // </p>
@@ -63,6 +64,18 @@ const EditorMode = Object.freeze({
     //     code.</p>
     raw: 2
 });
+
+
+// <p>Load code when the DOM is ready.</p>
+const page_init = (source_code, ext) => {
+    // <p>Get the mode from the page's query parameters. Default to edit using
+    //     the <a
+    //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator">nullish
+    //         coalescing operator</a>.</p>
+    const urlParams = new URLSearchParams(window.location.search);
+    const mode = EditorMode[urlParams.get("mode")] ?? EditorMode.edit;
+    on_dom_content_loaded(() => open_lp(source_code, ext, mode));
+};
 
 
 // <p>This code instantiates editors/viewers for code and doc blocks.</p>
@@ -165,7 +178,6 @@ const doc_block_indent_on_input = event => {
 }
 
 
-// <h2>UI</h2>
 // <p>Store the lexer info for the currently-loaded language.</p>
 let current_language_lexer;
 
@@ -176,7 +188,8 @@ let current_language_lexer;
 const doc_block_indent_on_before_input = event => {
     // <p>Only modify the behavior of inserts.</p>
     if (event.data) {
-        // <p>Block any insert that's not an insert of spaces.</p>
+        // <p>Block any insert that's not an insert of spaces. TODO: need to
+        //     support tabs.</p>
         if (event.data !== " ".repeat(event.data.length)) {
             event.preventDefault();
         }
@@ -184,7 +197,7 @@ const doc_block_indent_on_before_input = event => {
 }
 
 
-const open_lp = (source_code, extension) => {
+const open_lp = (source_code, extension, mode) => {
     // <p>See if the first line of the file specifies a lexer.</p>
     const m = source_code.match(/^.*CodeChat-lexer:\s*(\w+)/);
     const lexer_name = m ? m[1] : "";
@@ -203,33 +216,26 @@ const open_lp = (source_code, extension) => {
 
     document.getElementById("CodeChat-body").innerHTML = html;
     // <p>Initialize editors for this new content.</p>
-    make_editors(EditorMode.edit);
+    make_editors(mode);
 };
 
 
 const on_save_as = async on_save_func => {
     // <p>TODO!</p>
+    msg = "Save as is not implemented.";
+    window.alert(msg);
+    throw msg;
 };
 
 
 // <p>Save CodeChat Editor contents.</p>
-const on_save_codechat = async () => {
+const on_save = async () => {
     // <p>Pick an inline comment from the current lexer. TODO: support block
     //     comments (CSS, for example, doesn't allow inline comment).</p>
     const inline_comment = current_language_lexer[2][0];
     // <p>This is the data to write &mdash; the source code.</p>
     const source_code = editor_to_source_code(inline_comment);
     await save(source_code);
-};
-
-
-// <p>Save CodeChat Document contents.</p>
-const on_save_doc = async () => {
-    const tiny = document.querySelector(".CodeChat-TinyMCE");
-    const raw_tiny_html = tinymce.get(tiny.id).getContent();
-    // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters.</p>
-    const clean_tiny_html = html_beautify(raw_tiny_html, { "wrap_line_length": 80 });
-    await save(clean_tiny_html);
 };
 
 
@@ -461,7 +467,9 @@ const source_lexer = (
                 source_code = source_code.substring(full_comment.length);
             } else if (block_comment_index && m[block_comment_index]) {
                 // <p>TODO!</p>
-                debugger;
+                const msg = "Block comments not implemented.";
+                window.alert(msg);
+                throw msg;
             } else if (long_string_index && m[long_string_index]) {
                 // <p>A long string. Find the end of it.</p>
                 code_block_array.push(m[long_string_index]);

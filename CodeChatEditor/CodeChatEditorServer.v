@@ -193,10 +193,9 @@ fn codechat_editor_html(source_code string, path string) string {
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
 		<script src="/static/js/CodeChatEditor.js"></script>
 		<script>
-			const on_save = on_save_codechat;
-			on_dom_content_loaded(() => open_lp(
+			page_init(
 "${quote_script_string(source_code)}",
-"${quote_string(ext)}"));
+"${quote_string(ext)}");
 		</script>
 
 		<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
