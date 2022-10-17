@@ -50,45 +50,69 @@ const on_dom_content_loaded = on_load_func => {
 }
 
 
-// <p>This code instantiates editors/viewers for code and doc blocks.</p>
-const make_editors = () => {
-    // <p>Instantiate the TinyMCE editor for doc blocks.</p>
-    tinymce.init({
-        // <p>See the <a
-        //         href="https://www.tiny.cloud/docs/ui-components/contextmenu/">contextmenu
-        //         docs</a> for the default value. TODO: this doesn't work!</p>
-        contextmenu: "align | forecolor backcolor | bold italic underline superscript subscript codeformat | image link lists table",
-        // <p>Place the Tiny MCE menu bar at the top of the screen; otherwise, it
-        //     floats in front of text, sometimes obscuring what the user wants
-        //     to edit. See the <a
-        //         href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
-        // </p>
-        fixed_toolbar_container: "#CodeChat-menu",
-        inline: true,
-        // <p>I would like to add to this: noneditable paste textpattern</p>
-        plugins: 'advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars',
-        // <p>When true, this still prevents hyperlinks to anchors on the current
-        //     page from working correctly. There's an onClick handler that
-        //     prevents links in the current page from working -- need to look
-        //     into this. See also <a
-        //         href="https://github.com/tinymce/tinymce/issues/3836">a
-        //         related GitHub issue</a>.</p>
-        //readonly: true,
-        relative_urls: true,
-        selector: '.CodeChat-TinyMCE',
-        // <p>This combines the <a
-        //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
-        //         TinyMCE toolbar buttons</a> with a few more from plugins.</p>
-        toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
+// <p>Emulate an enum. <a
+//         href="https://www.30secondsofcode.org/articles/s/javascript-enum">This</a>
+//     seems like a simple-enough approach; see also <a
+//         href="https://masteringjs.io/tutorials/fundamentals/enum">JavaScript
+//         Enums</a> for other options.</p>
+const EditorMode = Object.freeze({
+    // <p>Display the source code using CodeChat, but disallow editing.</p>
+    view: 0,
+    // <p>The full CodeChat editor.</p>
+    edit: 1,
+    // <p>Show only raw source code; ignore doc blocks, treating them also as
+    //     code.</p>
+    raw: 2
+});
 
-        // <h3>Settings for plugins</h3>
-        // <h4><a
-        //         href="https://www.tiny.cloud/docs/plugins/opensource/image/">Image</a>
-        // </h4>
-        image_caption: true,
-        image_advtab: true,
-        image_title: true,
-    });
+
+// <p>This code instantiates editors/viewers for code and doc blocks.</p>
+const make_editors = (
+    // <p>A instance of the <code>EditorMode</code> enum.</p>
+    editorMode
+) => {
+    // <p>In view mode, don't use TinyMCE, since we already have HTML. Raw
+    //     mode doesn't use TinyMCE at all, or even render doc blocks as
+    //     HTML.</p>
+    if (editorMode === EditorMode.edit) {
+        // <p>Instantiate the TinyMCE editor for doc blocks.</p>
+        tinymce.init({
+            // <p>See the <a
+            //         href="https://www.tiny.cloud/docs/ui-components/contextmenu/">contextmenu
+            //         docs</a> for the default value. TODO: this doesn't work!</p>
+            contextmenu: "align | forecolor backcolor | bold italic underline superscript subscript codeformat | image link lists table",
+            // <p>Place the Tiny MCE menu bar at the top of the screen; otherwise, it
+            //     floats in front of text, sometimes obscuring what the user wants
+            //     to edit. See the <a
+            //         href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
+            // </p>
+            fixed_toolbar_container: "#CodeChat-menu",
+            inline: true,
+            // <p>I would like to add to this: noneditable paste textpattern</p>
+            plugins: 'advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars',
+            // <p>When true, this still prevents hyperlinks to anchors on the current
+            //     page from working correctly. There's an onClick handler that
+            //     prevents links in the current page from working -- need to look
+            //     into this. See also <a
+            //         href="https://github.com/tinymce/tinymce/issues/3836">a
+            //         related GitHub issue</a>.</p>
+            //readonly: true,
+            relative_urls: true,
+            selector: '.CodeChat-TinyMCE',
+            // <p>This combines the <a
+            //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
+            //         TinyMCE toolbar buttons</a> with a few more from plugins.</p>
+            toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
+
+            // <h3>Settings for plugins</h3>
+            // <h4><a
+            //         href="https://www.tiny.cloud/docs/plugins/opensource/image/">Image</a>
+            // </h4>
+            image_caption: true,
+            image_advtab: true,
+            image_title: true,
+        });
+    }
 
     // <p>The CodeChat Document Editor doesn't include ACE.</p>
     if (window.ace !== undefined) {
@@ -106,8 +130,10 @@ const make_editors = () => {
                 highlightGutterLine: false,
                 maxLines: 1e10,
                 mode: `ace/mode/${current_language_lexer[0]}`,
-                // <p>TODO: this still allows cursor movement.</p>
-                //readOnly: true,
+                // <p>TODO: this still allows cursor movement. Need something that
+                //     doesn't show an edit cursor / can't be selected; arrow keys should
+                //     scroll the display, not move the cursor around in the editor.</p>
+                readOnly: editorMode === EditorMode.view,
                 showPrintMargin: false,
                 theme: "ace/theme/textmate",
                 wrap: true,
@@ -175,7 +201,7 @@ const open_lp = (source_code, extension) => {
 
     document.getElementById("CodeChat-body").innerHTML = html;
     // <p>Initialize editors for this new content.</p>
-    make_editors();
+    make_editors(EditorMode.edit);
 };
 
 
@@ -270,7 +296,6 @@ const language_lexers = [
     //         = Language is JavaScript. (2 = inside a template literal
     //         should only be used by the lexer itself).</dd>
     // </dl>
-    //Language name File extensions     IC      Block comment       Long string     Short str   Heredoc JS tmpl lit
     // <p>C++11 or newer. Don't worry about supporting C or older C++ using
     //     another lexer entry, since the raw string syntax in C++11 and
     //     newer is IMHO so rare we won't encounter it in older code. See the
@@ -278,12 +303,14 @@ const language_lexers = [
     //         href="https://en.cppreference.com/w/cpp/language/string_literal">C++
     //         string literals docs</a> for the reasoning behind the start
     //     body regex.</p>
+    //Language name File extensions     IC      Block comment       Long string     Short str   Heredoc JS tmpl lit
     ["c_cpp",       [".cc", ".cpp"],    ["//"], [["/*", "*/"]],     [],             ['"'],      [['R"', "[^()\\ ]", "(", ")", ""]], 0],
     ["html",        [".html"],          [],     [["<!--", "-->"]],  [],             [],         [],     0],
     ["javascript",  [".js"],            ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
     ["python",      [".py"],            ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
     ["verilog",     [".v"],             ["//"], [["/*", "*/"]],     [],             ['"'],      [],     0],
     ["vlang",       [".v"],             ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
+    ["codechat-html", [".cchtml"],      [""],   [],                 [],             [],         [],     0],
 ];
 
 
@@ -329,6 +356,12 @@ const source_lexer = (
     here_text_strings,
     template_literals,
 ) => {
+    // <p>A special case -- CodeChat documents are already a single doc
+    //     block. Return that.</p>
+    if (language_name === "codechat-html") {
+        return [["", source_code, ""]];
+    }
+
     // <p>Construct <a
     //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions">regex</a>
     //     and associated indices from language information provided.
@@ -530,12 +563,12 @@ const classified_source_to_html = (classified_source) => {
 
     // <p>Keep track of the current type. Begin with neither comment nor
     //     code.</p>
-    let current_type = -2
+    let current_indent = -2
 
     // <p>Keep track of the current line number.</p>
     let line = 1
 
-    for (let [type_, source_string, comment_string] of classified_source) {
+    for (let [indent, source_string, comment_string] of classified_source) {
         // <p><span id="newline-movement">In a code or doc block, omit the last
         //         newline; otherwise, code blocks would show an extra newline at
         //         the end of the block. (Doc blocks ending in a
@@ -549,12 +582,12 @@ const classified_source_to_html = (classified_source) => {
         }
 
         // <p>See if there's a change in state.</p>
-        if (current_type !== type_) {
+        if (current_indent !== indent) {
             // <p>Exit the current state.</p>
-            _exit_state(current_type, html)
+            _exit_state(current_indent, html)
 
             // <p>Enter the new state.</p>
-            if (type_ === null) {
+            if (indent === null) {
                 // <p>Code state: emit the beginning of an ACE editor block.</p>
                 html.push(
 `
@@ -578,7 +611,7 @@ const classified_source_to_html = (classified_source) => {
                 <td class="CodeChat-ACE-gutter-padding ace_editor">&nbsp;&nbsp;&nbsp</td>
                 <td class="CodeChat-ACE-padding"></td>
                 <!-- This doc block's indent. TODO: allow paste, but must only allow pasting spaces. -->
-                <td class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${type_}</td>
+                <td class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${indent}</td>
                 <td class="CodeChat-TinyMCE-td"><div class="CodeChat-TinyMCE">`,
                     source_string,
                 )
@@ -587,11 +620,11 @@ const classified_source_to_html = (classified_source) => {
             // <p><span id="newline-prepend"><a href="#newline-movement">Newline
             //             movement</a>: prepend the newline removed from the
             //         previous line to the current line</span>.</p>
-            html.push(m[0], type_ === null ? escapeHTML(source_string) : source_string);
+            html.push(m[0], indent === null ? escapeHTML(source_string) : source_string);
         }
 
         // <p>Update the state.</p>
-        current_type = type_
+        current_indent = indent
         // <p>There are an unknown number of newlines in this source string. One
         //     was removed <a href="#newline-movement">here</a>, so include that
         //     in the count.</p>
@@ -599,7 +632,7 @@ const classified_source_to_html = (classified_source) => {
     }
 
     // <p>When done, exit the last state.</p>
-    _exit_state(current_type, html)
+    _exit_state(current_indent, html)
     return html.join("");
 };
 
@@ -610,15 +643,15 @@ const classified_source_to_html = (classified_source) => {
 // </p>
 const _exit_state = (
     // <p>The type (classification) of the last line.</p>
-    type_,
+    indent,
     // <p>An array of string to store output in.</p>
     html,
 ) => {
 
-    if (type_ === null) {
+    if (indent === null) {
         // <p>Close the current code block.</p>
         html.push("</div>\n</div>\n");
-    } else if (typeof type_ === "string") {
+    } else if (typeof indent === "string") {
         // <p>Close the current doc block without adding any trailing spaces
         //     &mdash; combining this with the next line would add indentation.
         // </p>
@@ -649,17 +682,17 @@ const editor_to_source_code = (
     for (const code_or_doc_tag of document.querySelectorAll(".CodeChat-ACE, .CodeChat-TinyMCE")) {
         // <p>The type of this block: <code>null</code> for code, or &gt;= 0 for
         //     doc (the value of n specifies the indent in spaces).</p>
-        let type_;
+        let indent;
         // <p>A string containing all the code/docs in this block.</p>
         let full_string;
 
         // <p>Get the type of this block and its contents.</p>
         if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
-            type_ = null;
+            indent = null;
             full_string = ace.edit(code_or_doc_tag).getValue();
         } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
             // <p>Get the indent from the previous table cell.</p>
-            type_ = code_or_doc_tag.parentElement.previousElementSibling.textContent;
+            indent = code_or_doc_tag.parentElement.previousElementSibling.textContent;
             // <p>See <a
             //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get"><code>get</code></a>
             //     and <a
@@ -670,7 +703,7 @@ const editor_to_source_code = (
             full_string = tinymce.get(code_or_doc_tag.id).getContent();
             // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters, including
             //     the length of the indent and comment string.</p>
-            full_string = html_beautify(full_string, { "wrap_line_length": 70 });
+            full_string = html_beautify(full_string, { "wrap_line_length": 80 - indent.length - comment_string.length - 1 });
         } else {
             console.assert(false, `Unexpected class for code or doc block ${code_or_doc_tag}.`);
         }
@@ -678,20 +711,24 @@ const editor_to_source_code = (
         // <p>Split the <code>full_string</code> into individual lines; each one
         //     corresponds to an element of <code>classified_lines</code>.</p>
         for (const string of full_string.split(/\r?\n/)) {
-            classified_lines.push([type_, string + "\n"]);
+            classified_lines.push([indent, string + "\n"]);
         }
     }
 
     // <p>Transform these classified lines into source code.</p>
     let lines = [];
-    for (const [type_, string] of classified_lines) {
-        if (type_ === null) {
+    // <p>If there comment string is empty, assume this is a CodeChat
+    //     document (raw HTML/Markdown/etc.), so drop the space after the
+    //     empty comment string.</p>
+    let space = comment_string === "" ? "" : " ";
+    for (const [indent, string] of classified_lines) {
+        if (indent === null) {
             // <p>Just dump code out!</p>
             lines.push(string);
         } else {
             // <p>Prefix comments with the indent and the comment string.</p>
             // <p>TODO: allow the use of block comments.</p>
-            lines.push(`${type_}${comment_string} ${string}`);
+            lines.push(`${indent}${comment_string}${space}${string}`);
         }
     }
 

@@ -170,12 +170,8 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 		ext := os.file_ext(abs_path)
 		if ext in codechat_extensions {
 			codechat_file_contents := os.read_file(abs_path) or { return app.not_found() }
-			// <p>Transform this into a CodeChat (Doc?) Editor webpage.</p>
-			return app.html(if ext == '.cchtml' {
-				codechat_doc_editor_html(codechat_file_contents, abs_path)
-			} else {
-				codechat_editor_html(codechat_file_contents, abs_path)
-			})
+			// <p>Transform this into a CodeChat Editor webpage.</p>
+			return app.html(codechat_editor_html(codechat_file_contents, abs_path))
 		}
 		// <p>It's not a CodeChat Editor file -- just serve the file.</p>
 		return app.file(abs_path)
@@ -225,55 +221,6 @@ fn codechat_editor_html(source_code string, path string) string {
 			<div id="CodeChat-menu"></div>
 		</div>
 		<div id="CodeChat-body">
-		</div>
-		<div id="CodeChat-bottom">
-		</div>
-	</body>
-</html>
-'
-}
-
-// <p>Given the source code for a file and its path, return the HTML to
-//     present this in the CodeChat Document Editor.</p>
-fn codechat_doc_editor_html(source_code string, path string) string {
-	dir := escape_html(os.dir(path))
-	name := escape_html(os.base(path))
-	return '<!DOCTYPE html>
-<html lang="en">
-	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<title>$name - The CodeChat Editor</title>
-
-		<script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
-		<script src="/static/js/CodeChatEditor.js"></script>
-		<script>
-			const on_save = on_save_doc;
-			on_dom_content_loaded(make_editors);
-		</script>
-
-		<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
-	</head>
-	<body onkeydown="on_keydown(event);">
-		<div id="CodeChat-top">
-			<div id="CodeChat-filename">
-				<p>
-					$name - $dir -
-					<button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
-						Save as
-					</button>
-					<button onclick="on_save();" id="CodeChat-save-button">
-						<span class="CodeChat-hotkey">S</span>ave
-					</button>
-				</p>
-			</div>
-			<div id="CodeChat-menu"></div>
-		</div>
-		<div id="CodeChat-body">
-			<div class="CodeChat-TinyMCE">
-$source_code
-			</div>
 		</div>
 		<div id="CodeChat-bottom">
 		</div>
