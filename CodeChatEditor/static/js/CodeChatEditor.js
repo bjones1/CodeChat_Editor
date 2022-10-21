@@ -225,8 +225,14 @@ const open_lp = (source_code, extension, mode) => {
         }
     }
     console.assert(found, "Unable to determine which lexer to use for this language.");
-    const classified_lines = source_lexer(source_code, ...current_language_lexer);
-    const html = classified_source_to_html(classified_lines);
+    // Special case: a CodeChat Editor document's HTML doesn't need lexing.
+    let html;
+    if (is_doc_only()) {
+        html = `<div class="CodeChat-TinyMCE">${source_code}</div>`;
+    } else {
+        const classified_lines = source_lexer(source_code, ...current_language_lexer);
+        html = classified_source_to_html(classified_lines);
+    }
 
     document.getElementById("CodeChat-body").innerHTML = html;
     // <p>Initialize editors for this new content.</p>
@@ -370,12 +376,6 @@ const source_lexer = (
     here_text_strings,
     template_literals,
 ) => {
-    // <p>A special case -- CodeChat documents are already a single doc block.
-    //     Return that.</p>
-    if (language_name === "codechat-html") {
-        return [["", source_code, ""]];
-    }
-
     // <p>Construct <a
     //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions">regex</a>
     //     and associated indices from language information provided.
@@ -578,12 +578,6 @@ const source_lexer = (
 
 // <h2 id="classified_source_to_html">Convert lexed code into HTML</h2>
 const classified_source_to_html = (classified_source) => {
-    // <p>A quick shortcut: if this is just a doc block, return a simplified
-    //     structure that omits the line number bar on the left.</p>
-    if (is_doc_only()) {
-        return `<div class="CodeChat-TinyMCE">${classified_source[0][1]}</div>`
-    }
-
     // <p>An array of strings for the new content of the current HTML page.</p>
     let html = [];
 
@@ -745,9 +739,6 @@ const editor_to_source_code = (
 
     // <p>Transform these classified lines into source code.</p>
     let lines = [];
-    // <p>If there comment string is empty, assume this is a CodeChat document
-    //     (raw HTML/Markdown/etc.), so drop the space after the empty comment
-    //     string.</p>
     for (const [indent, string] of classified_lines) {
         if (indent === null) {
             // <p>Just dump code out! Or a CodeChat Editor document, where the
