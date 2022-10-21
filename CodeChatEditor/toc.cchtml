@@ -1,0 +1,32 @@
+<h1>The CodeChat Editor</h1>
+<h2>Design</h2>
+<ol>
+    <li><a href="CodeChat Editor ideas.cchtml">CodeChat Editor ideas.cchtml</a>
+    </li>
+    <li><a href="toc.cchtml">toc.cchtml</a></li>
+</ol>
+<h2>Implementation</h2>
+<ol>
+    <li>Server
+        <ol>
+            <li><a href="CodeChatEditorServer.v">CodeChatEditorServer.v</a>
+            </li>
+        </ol>
+    </li>
+    <li>Client
+        <ol>
+            <li><a href="static/js/CodeChatEditor.js">CodeChatEditor.js</a>
+            </li>
+            <li>Styles
+                <ol>
+                    <li><a
+                            href="static/css/CodeChatEditor.css">CodeChatEditor.css</a>
+                    </li>
+                    <li><a
+                            href="static/css/CodeChatEditorProject.css">CodeChatEditorProject.css</a>
+                    </li>
+                </ol>
+            </li>
+        </ol>
+    </li>
+</ol>

@@ -167,7 +167,7 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 		if ext in codechat_extensions {
 			codechat_file_contents := os.read_file(abs_path) or { return app.not_found() }
 			// <p>Transform this into a CodeChat Editor webpage.</p>
-			return app.html(codechat_editor_html(codechat_file_contents, abs_path))
+			return app.html(codechat_editor_html(codechat_file_contents, abs_path, app.query["mode"] == "toc"))
 		}
 		// <p>It's not a CodeChat Editor file -- just serve the file.</p>
 		return app.file(abs_path)
@@ -177,10 +177,70 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 // <h2>CodeChat Editor support</h2>
 // <p>Given the source code for a file and its path, return the HTML to present
 //     this in the CodeChat Editor.</p>
-fn codechat_editor_html(source_code string, path string) string {
-	dir := escape_html(os.dir(path))
+fn codechat_editor_html(source_code string, path string, is_toc bool) string {
+    mut raw_dir := os.dir(path)
+	dir := escape_html(raw_dir)
 	name := escape_html(os.base(path))
 	ext := os.file_ext(path)
+
+	// <p>The TOC is a simplified web page requiring no additional processing. The
+	//     script ensures that all hyperlinks target the enclosing page, not just
+	//     the iframe containing this page.</p>
+	if is_toc {
+		return '<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>$name - The CodeChat Editor</title>
+
+		<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
+		<link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
+		<script>
+			addEventListener("DOMContentLoaded", (event) => {
+				document.querySelectorAll("a").forEach((a_element) => {
+					a_element.target = "_parent"
+				});
+			});
+		</script>
+	</head>
+	<body>
+${source_code}
+	</body>
+</html>
+'
+	}
+
+    // <p>Look for a project file by searching the current directory, then all
+    //     its parents, for a file named <code>toc.cchtml</code>.</p>
+    mut is_project := false
+	// <p>The number of directories between this file to serve (in
+	//     <code>path</code>) and the toc file.</p>
+	mut num_dir := 0
+	// <p>Using v 0.3.1, on Windows, os.dir("C:\\a_directory") == "C:" (this is
+	//     wrong! TODO: as a workaround, need to check C:\ instead) and
+	//     os.dir("C:") == "." (nonsensical). But use this as a termination
+	//     condition. Linux results are more expected.</p>
+	for (raw_dir != ".") {
+		project_file := os.join_path(raw_dir, "toc.cchtml")
+		if os.is_file(project_file) {
+			is_project = true
+			break
+		}
+		// <p>On Linux, we're done if we just checked the root directory.</p>
+		if raw_dir == "/" {
+			break
+		}
+		raw_dir = os.dir(raw_dir)
+		num_dir += 1
+	}
+	sidebar_iframe, sidebar_css := if is_project {
+		'<iframe src="${"../".repeat(num_dir)}toc.cchtml?mode=toc" id="CodeChat-sidebar"></iframe>',
+		'<link rel="stylesheet" href="/static/css/CodeChatEditorProject.css">'
+	} else {
+		"", ""
+	}
+
 	return '<!DOCTYPE html>
 <html lang="en">
 	<head>
@@ -197,27 +257,28 @@ fn codechat_editor_html(source_code string, path string) string {
 "${quote_script_string(source_code)}",
 "${quote_string(ext)}");
 		</script>
-
 		<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
+		${sidebar_css}
 	</head>
 	<body onkeydown="on_keydown(event);">
-		<div id="CodeChat-top">
-			<div id="CodeChat-filename">
-				<p>
-					$name - $dir -
-					<button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
-						Save as
-					</button>
-					<button onclick="on_save();" id="CodeChat-save-button">
-						<span class="CodeChat-hotkey">S</span>ave
-					</button>
-				</p>
+		${sidebar_iframe}
+		<div id="CodeChat-contents">
+			<div id="CodeChat-top">
+				<div id="CodeChat-filename">
+					<p>
+						$name - $dir -
+						<button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
+							Save as
+						</button>
+						<button onclick="on_save();" id="CodeChat-save-button">
+							<span class="CodeChat-hotkey">S</span>ave
+						</button>
+					</p>
+				</div>
+				<div id="CodeChat-menu"></div>
 			</div>
-			<div id="CodeChat-menu"></div>
-		</div>
-		<div id="CodeChat-body">
-		</div>
-		<div id="CodeChat-bottom">
+			<div id="CodeChat-body"></div>
+			<div id="CodeChat-bottom"></div>
 		</div>
 	</body>
 </html>

@@ -1,0 +1,7 @@
+/* <h1>CodeChatEditorSidebar.css &mdash; Styles for the CodeChat Editor's project sidebar */
+
+/* Make lists more compact. */
+ol {
+    /* Provide approximately enough space for two digits. */
+    padding-inline-start: 1.5rem;
+}

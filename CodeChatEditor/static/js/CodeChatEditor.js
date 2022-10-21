@@ -35,7 +35,21 @@
 //     <li>Autotitle: like an a, but takes the link&rsquo;s name from element
 //         linked to. Same for figure references, etc.</li>
 //     <li>A index tool -- provides links to all instances of the given term,
-//         plus a index page with all these terms.</li>
+//         plus a index page with all these terms. How to do this? It requires
+//         global state.
+//         <ul>
+//             <li>An index item is a link to a specific file (an index file;
+//                 it's possible to have multiple index files).</li>
+//             <li>Creating an index link involves adding the back link to the
+//                 index file. Saving a file with an index link updates the
+//                 index page as well.</li>
+//             <li>Need to track changes -- probably only allow deleting/editing
+//                 index links in the file they are defined, rather than in the
+//                 index.</li>
+//             <li>We need a way that enables easy nagivation through index
+//                 links.</li>
+//         </ul>
+//     </li>
 //     <li>Insert the name of the file.</li>
 // </ul>
 "use strict";
@@ -64,11 +78,14 @@ const on_dom_content_loaded = on_load_func => {
 const EditorMode = Object.freeze({
     // <p>Display the source code using CodeChat, but disallow editing.</p>
     view: 0,
+    // <p>For this source, the same a view; the server uses this to avoid
+    //     recursive iframes of the table of contents.</p>
+    toc: 1,
     // <p>The full CodeChat editor.</p>
-    edit: 1,
+    edit: 2,
     // <p>Show only raw source code; ignore doc blocks, treating them also as
     //     code.</p>
-    raw: 2
+    raw: 3
 });
 
 
@@ -154,7 +171,7 @@ const make_editors = (
                 //     that doesn't show an edit cursor / can't be selected;
                 //     arrow keys should scroll the display, not move the cursor
                 //     around in the editor.</p>
-                readOnly: editorMode === EditorMode.view,
+                readOnly: editorMode === EditorMode.view || editorMode == EditorMode.toc,
                 showPrintMargin: false,
                 theme: "ace/theme/textmate",
                 wrap: true,
@@ -171,6 +188,12 @@ const make_editors = (
 
 // <p>Store the lexer info for the currently-loaded language.</p>
 let current_language_lexer;
+
+
+// <p>True if this is a CodeChat Editor document (not a source file).</p>
+const is_doc_only = () => {
+    return current_language_lexer[0] === "codechat-html";
+};
 
 
 // <h3>Doc block indent editor</h3>
@@ -555,6 +578,12 @@ const source_lexer = (
 
 // <h2 id="classified_source_to_html">Convert lexed code into HTML</h2>
 const classified_source_to_html = (classified_source) => {
+    // <p>A quick shortcut: if this is just a doc block, return a simplified
+    //     structure that omits the line number bar on the left.</p>
+    if (is_doc_only()) {
+        return `<div class="CodeChat-TinyMCE">${classified_source[0][1]}</div>`
+    }
+
     // <p>An array of strings for the new content of the current HTML page.</p>
     let html = [];
 
@@ -688,8 +717,10 @@ const editor_to_source_code = (
             indent = null;
             full_string = ace.edit(code_or_doc_tag).getValue();
         } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
-            // <p>Get the indent from the previous table cell.</p>
-            indent = code_or_doc_tag.parentElement.previousElementSibling.textContent;
+            // <p>Get the indent from the previous table cell. For a CodeChat
+            //     Editor document, there's no indent (it's just a doc block).
+            // </p>
+            indent = is_doc_only() ? null : code_or_doc_tag.parentElement.previousElementSibling.textContent;
             // <p>See <a
             //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get"><code>get</code></a>
             //     and <a
@@ -700,7 +731,7 @@ const editor_to_source_code = (
             full_string = tinymce.get(code_or_doc_tag.id).getContent();
             // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters,
             //     including the length of the indent and comment string.</p>
-            full_string = html_beautify(full_string, { "wrap_line_length": 80 - indent.length - comment_string.length - 1 });
+            full_string = html_beautify(full_string, { "wrap_line_length": 80 - (indent || "").length - comment_string.length - 1 });
         } else {
             console.assert(false, `Unexpected class for code or doc block ${code_or_doc_tag}.`);
         }
@@ -717,15 +748,15 @@ const editor_to_source_code = (
     // <p>If there comment string is empty, assume this is a CodeChat document
     //     (raw HTML/Markdown/etc.), so drop the space after the empty comment
     //     string.</p>
-    let space = comment_string === "" ? "" : " ";
     for (const [indent, string] of classified_lines) {
         if (indent === null) {
-            // <p>Just dump code out!</p>
+            // <p>Just dump code out! Or a CodeChat Editor document, where the
+            //     indent doesn't matter.</p>
             lines.push(string);
         } else {
             // <p>Prefix comments with the indent and the comment string.</p>
             // <p>TODO: allow the use of block comments.</p>
-            lines.push(`${indent}${comment_string}${space}${string}`);
+            lines.push(`${indent}${comment_string} ${string}`);
         }
     }
 

@@ -1,0 +1,19 @@
+/* <h1>CodeChatEditorProject.css &mdash; Styles for the CodeChat Editor for projects */
+
+:root {
+    --sidebar-width: 15rem;
+}
+
+
+/* TODO: This is a overly simple, non-responsive layout to create a sidebar. Fix. */
+#CodeChat-sidebar {
+    width: var(--sidebar-width);
+    /* The body padding applies to the page this iframe is in, plus the body of the iframe itself. */
+    height: calc(100vh - 4*var(--body-padding));
+    border: 0px;
+}
+
+#CodeChat-contents {
+    float: right;
+    width: calc(100vw - var(--sidebar-width) - 2*var(--body-padding));
+}
