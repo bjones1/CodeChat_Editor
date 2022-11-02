@@ -55,6 +55,7 @@ body {
 #CodeChat-filename p
 {
     margin: 0px;
+    white-space: nowrap;
 }
 
 /* <h2>Code block styling</h2>

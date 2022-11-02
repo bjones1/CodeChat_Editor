@@ -266,13 +266,13 @@ ${source_code}
 			<div id="CodeChat-top">
 				<div id="CodeChat-filename">
 					<p>
-						$name - $dir -
 						<button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
 							Save as
 						</button>
 						<button onclick="on_save();" id="CodeChat-save-button">
 							<span class="CodeChat-hotkey">S</span>ave
 						</button>
+						- $name - $dir
 					</p>
 				</div>
 				<div id="CodeChat-menu"></div>
