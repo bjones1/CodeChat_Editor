@@ -1,25 +1,14 @@
-<h1>CodeChat Editor ideas</h1>
+<h1>CodeChat Editor overview</h1>
 <div>The CodeChat Editor should be a GUI-based programmer's word processor /
-    Jupyter for software developers.</div>
-<h2>Next steps</h2>
-<ol>
-    <li>Set up a good development environment for JavaScript: use npm,
-        TypeScript, a good unit-testing library, etc.</li>
-    <li>Sketch out a long-term path for book builds. Goal: very rapid builds.
-    </li>
-    <li>Define the architecture for IDE extensions/plug-ins. Goal: minimize
-        extension/plug-in complexity.</li>
-    <li>Define desired UI behavior. Priority: auto-reload; dirty document
-        detection; auto-backup.</li>
-    <li>Implement Markdown support.</li>
-    <li>Propose visual styling, dark mode, etc.</li>
-</ol>
-<h2>Specifications / ideas</h2>
-<div>At a very high level, what should this do? How?</div>
+    Jupyter for software developers. This document records its overall design.
+</div>
+<h2>Vision</h2>
 <div>
     <ul>
         <li>View source code as code blocks and doc blocks. Doc blocks are
             lines of source which contain only comments.</li>
+        <li>Provide support for a wide variety of programming languages.</li>
+        <li>Provide integration with a wide variety of IDEs/text editors.</li>
         <li>Load a document from source code, allow edits in a GUI, then save
             it back to source code.
             <ul>
@@ -29,15 +18,59 @@
                     numbers, show linter feedback) for code blocks.</li>
             </ul>
         </li>
-        <li>Ideally, be a zero-install environment. Practically, I don't think
-            this is possible without a server. If so, make the server as easy
-            to install as possible. I suspect that updates to an IDE's plugin
-            will happen frequently, while users won't update the server very
-            often, so push as much code into the JavaScript as possible. The
-            current zero-install code would make a nice web demo -- paste in /
-            drag and drop / open your code, click on the other tab to edit it
-            in the GUI.</li>
-        <li>Doc block markup should be readable and well-known.
+        <li>Eliminate the traditional project build process -- make it almost
+            instantaneous. Instead, on save, the system should update all
+            affected files; any opened files should also be updated in the GUI.
+        </li>
+        <li>Doc block markup should be readable and well-known.</li>
+        <li>Support either a single-file mode or a project mode.
+            <ul>
+                <li>A project is a specific directory tree, identified by the
+                    presence of a TOC.&nbsp;I like&nbsp;<a
+                        href="https://rust-lang.github.io/mdBook/format/summary.html">mdbook's
+                        appearance</a>,</li>
+                <li>A page in a project build is a single-file page plus:
+                    <ul>
+                        <li>A TOC, along with previous/next/up navigation. The
+                            TOC is synchronized to the current page.</li>
+                        <li>Numbering comes from the current page's location
+                            within the TOC. Pages not in the TOC aren't
+                            numbered.</li>
+                    </ul>
+                </li>
+            </ul>
+        </li>
+        <li><a id="authoring-support"></a>Proivde authoring support for:
+            <ul>
+                <li>Auto-titled links: the link text is automatically derived
+                    from the link's destination (the heading text at the link's
+                    destination, for example).</li>
+                <li>Bidirectional links</li>
+                <li>Named anchors.</li>
+            </ul>
+        </li>
+        <li>Allow picking files/anchors from a list in a GUI.</li>
+    </ul>
+    <h3>Nice to have features</h3>
+    <ul>
+        <li>Simple to install locally; support some sort of web-based IDE.
+            Ideas: allow editing a GitHub repo directly.</li>
+        <li>Support a static build: producing a set of view-only HTML files
+            which don't need a server for a project, or a single HTML file
+            outside a project.</li>
+        <li>Keep an updated DAG of all links.
+            <ul>
+                <li>Warn of any orphans (unlinked pages), broken links.</li>
+                <li>Provide the ablity to rename a file/directory and update
+                    links in any referring files.</li>
+                <li>Provide the ability to move link targets from one file to
+                    another, updating links in any referring file.</li>
+            </ul>
+        </li>
+    </ul>
+    <h2>Implementation</h2>
+    <ul>
+        <li>Doc block markup thoughts:
             <ul>
                 <li>For any markup, must either have:
                     <ul>
@@ -64,102 +97,20 @@
                     too hard.</li>
             </ul>
         </li>
-        <li>To support creating a web site / book / project, the server needs
-            to serve one (simpler) flavor of web page for a single-file build,
-            and another for a project build. However, the rendering of code and
-            doc blocks is still dynamic, not static. Basically, a project build
-            would include a template with a table of contents, prev/next
-            buttons, search, etc. Need to architect this; what does it mean to
-            do a project build? What about supporting ReadTheDocs / a
-            server-free build?
+        <li>Picking anchors from a list implies the ability to look through
+            docs blocks in a given source file and identify all links and
+            anchors. Likewise, author support imples similar abilities. Does
+            this happen on the server or the client?
             <ul>
-                <li>One approach: code most of this in V. Then, we can run the
-                    code on the desktop for a static, zero-hydration build, or
-                    in the browser where editing can happen.</li>
-                <li>Need to segment code between editing/UI (web only) and
-                    rendering (web/desktop).</li>
-                <li>A project is a template, a TOC and associated numbering,
-                    global crossrefs, and search terms (which could be
-                    dynamically computed by the server).
-                    <ul>
-                        <li>Perhaps there's a single project config file as
-                            YAML/XML/whatever that defines the TOC, book build
-                            params, etc.</li>
-                    </ul>
+                <li>Server: this seems the most obvious. This also makes a
+                    static build easier to implement.</li>
+                <li>The best tools for looking at the DOM are on the client.
                 </li>
-            </ul>
-        </li>
-        <li>I would ideally like to use a programming language that runs both
-            on the desktop, with minimal dependencies, and in the browser.
-            JavaScript + Node.js is one possibility (but the install process
-            isn't nice). vlang seems pretty good as well -- everything compiles
-            to an executable, and also builds to WebAssembly.</li>
-    </ul>
-    <h2>Core development priorities</h2>
-    <ol>
-        <li>IDE integration</li>
-        <li>Editor functionality</li>
-        <li>Project support</li>
-    </ol>
-    <h2>Project support</h2>
-    <ul>
-        <li>A project is a specific directory tree, identified by the presence
-            of a project configuration file named
-            <code>codechat_project.????</code>.</li>
-        <li>A page in a project build is a single-file page plus:
-            <ul>
-                <li>A TOC, along with previous/next/up navigation.</li>
-                <li>Numbering comes from the current page's location within the
-                    TOC. Pages not in the TOC aren't numbered.</li>
-                <li>The ability to search the project, ideally using an
-                    i-search. A search over the text in all headings and index
-                    terms, then over all text, would be good. This requires
-                    keeping a dict of all words in all files; the words must be
-                    separated into headings/link text and all other text. It
-                    should exclude common programing terms (keywords such as
-                    if, for, case, etc.) and discard non-word characters. This
-                    seems reasonably doable. This should be updated whenever a
-                    file is saved. For now, leave searches with the IDE.</li>
-            </ul>
-        </li>
-        <li>Eliminate the traditional project build process -- make it almost
-            instantaneous. Instead, on save, the system should update all
-            affected files; any opened files should also be updated in the
-            browser. For example, editing the TOC then saving should cause the
-            new TOC to auto-update in all open files. Opening another file
-            would also show the updated TOC. Likewise, changing
-            <code>&lt;h1&gt;</code> heading text in a file referenced by the
-            TOC then saving would cause the TOC to update globally.
-            <ul>
-                <li>This seems like a good server-side templating opportunity.
-                    When the server loads a file which refers to text from
-                    external files, it templates in the necessary text by
-                    opening these linked files and reading the necessary text;
-                    it also keeps track of what links are being edited, so it
-                    can push live updates to these files.</li>
-                <li>A tricker case: editing the id of a link target should
-                    ideally update this id in the links of all referring files.
-                    Likewise, renaming a file should update all links in
-                    referring files. This requires a DAG and global state -- a
-                    feature for later.&nbsp;As a bonus, the DAG can identify
-                    any unconnected files or unused ids/bookmarks, then warn
-                    the author about these "orphans." It can also identify any
-                    broken links to project files. The DAG could be
-                    incrementally updated on a save, with occasional scans of
-                    the project's subdirectory tree to find any edits made
-                    outside of the CodeChat Editor.</li>
             </ul>
         </li>
         <li>TOC
             <ul>
-                <li>Example: I like&nbsp;<a
-                        href="https://rust-lang.github.io/mdBook/format/summary.html">mdbook's
-                        approach</a>, but don't want to parse Markdown.</li>
-                <li>Browsing to any page of the project should automatically
-                    scroll to portion of the TOC that links to the page.</li>
-                <li>A given page needs to know the section number assigned to
-                    it by the TOC.</li>
-                <li>While the TOC file, must be placed in the root of the
+                <li>While the TOC file must be placed in the root of the
                     project, it will be served alongside pages served from
                     subdirectories. What's the best approach? An iframe;
                     otherwise, need to rewrite all url (images, links, etc.)
@@ -210,16 +161,25 @@
                             ack!</li>
                         <li>Plan:
                             <ol>
-                                <li>Implement a view mode, since the TOC should
-                                    be viewable, but not editable. (To edit the
-                                    TOC, open it in the main window, not just
-                                    the TOC sidebar.)</li>
                                 <li>Implement a project finder -- starting at
                                     the current directory, ascend to the root
                                     looking for the project file. If so, return
                                     a web page which includes the TOC as a
                                     sidebar plus some navigation (prev/next/up)
-                                    placeholders.</li>
+                                    placeholders. For prev/next, use
+                                    this:<br><code>t =
+                                        document.createTreeWalker(document.body,
+                                        NodeFilter.SHOW_ELEMENT,
+                                        {&nbsp;</code><br><code>&nbsp;
+                                        acceptNode(node)
+                                        {</code><br><code>&nbsp; &nbsp; return
+                                        node.nodeName === "A" ?
+                                        NodeFilter.FILTER_ACCEPT :
+                                        NodeFilter.FILTER_SKIP;</code><br><code>&nbsp;
+                                        }&nbsp;</code><br><code>});</code><br><code>t.currentNode
+                                        = &lt;link corresponding to current
+                                        page&gt;</code><br><code>next =
+                                        t.nextNode();</code></li>
                                 <li>Implement TOC scroll (on the client -- easy
                                     there). This means finding the first
                                     hyperlink to the current page. Given that,
@@ -232,41 +192,44 @@
                 </li>
             </ul>
         </li>
-        <li>Implementation
-            <ul>
-                <li>The load/save code needs to run on the server if we do
-                    server-side templating, or if we want the server to be able
-                    to produce a static build. It needs to run on the client,
-                    so that the client can detect comments in a code block or
-                    switch between raw and editor/viewer modes. What other code
-                    needs to be shared? For now, the idea of compiling V to
-                    Javascript isn't very appealing, but I need to at least
-                    test it out. Another option: the client calls a server
-                    endpoint to update needed links, but still does all parsing
-                    on the client. That seems fairly easy.</li>
-            </ul>
-        </li>
-        <li>Open questions
-            <ul>
-                <li>How to enable affecting the <code>&lt;head&gt;</code> of a
-                    page? Of the entire project?</li>
-                <li>Config file format: I really like and prefer Python's
-                    strictyaml. Basically, I want something that includes type
-                    validation and allows comments withing the config file.
-                    Perhaps JSON with a pre-parse step to discard comments
-                    then&nbsp;<a href="https://jsontypedef.com/">JSON
-                        Typedef</a>? Possibly, vlang can do this somewhat,
-                    since it wants to decode JSON into a V struct.)</li>
-                <li>Config file contents: need to think through what belongs
-                    here. How to keep it as simple as possible? Perhaps provide
-                    a web-based GUI to make this easier to configure?</li>
-                <li>How to specify the language for a doc block? Currently, we
-                    only support HTML. However, I'd like to support Markdown,
-                    and possibly also reST. Ideas: extensions, plus a default
-                    setting in a project file or the GUI; include a comment in
-                    the file.</li>
-            </ul>
-        </li>
+        <li>Currently, creating multiple instances of the Ace editor is really
+            slow, and starts a thread per editor. Find another approach.</li>
+    </ul>
+    <h3>Core development priorities</h3>
+    <ol>
+        <li>IDE integration</li>
+        <li>Editor functionality</li>
+        <li>Project support</li>
+    </ol>
+    <h3>Next steps</h3>
+    <ol>
+        <li>Set up a good development environment for JavaScript: use npm,
+            TypeScript, a good unit-testing library, etc.</li>
+        <li>Define the architecture for IDE extensions/plug-ins. Goal: minimize
+            extension/plug-in complexity.</li>
+        <li>Define desired UI behavior. Priority: auto-reload; dirty document
+            detection; auto-backup.</li>
+        <li>Implement Markdown support.</li>
+        <li>Propose visual styling, dark mode, etc.</li>
+    </ol>
+    <h2>Open questions</h2>
+    <ul>
+        <li>How to enable affecting the <code>&lt;head&gt;</code> of a page? Of
+            the entire project?</li>
+        <li>Config file format: I really like and prefer Python's strictyaml.
+            Basically, I want something that includes type validation and
+            allows comments withing the config file. Perhaps JSON with a
+            pre-parse step to discard comments then&nbsp;<a
+                href="https://jsontypedef.com/">JSON Typedef</a>? Possibly,
+            vlang can do this somewhat, since it wants to decode JSON into a V
+            struct.)</li>
+        <li>Config file contents: need to think through what belongs here. How
+            to keep it as simple as possible? Perhaps provide a web-based GUI
+            to make this easier to configure?</li>
+        <li>How to specify the language for a doc block? Currently, we only
+            support HTML. However, I'd like to support Markdown, and possibly
+            also reST. Ideas: extensions, plus a default setting in a project
+            file or the GUI; include a comment in the file.</li>
     </ul>
 </div>
 <h2>How to run</h2>

@@ -3,7 +3,6 @@
 <ol>
     <li><a href="CodeChat Editor ideas.cchtml">CodeChat Editor ideas.cchtml</a>
     </li>
-    <li><a href="toc.cchtml">toc.cchtml</a></li>
 </ol>
 <h2>Implementation</h2>
 <ol>
@@ -30,3 +29,7 @@
         </ol>
     </li>
 </ol>
+<h2>Misc</h2>
+<ul>
+    <li><a href="toc.cchtml">toc.cchtml</a></li>
+</ul>
