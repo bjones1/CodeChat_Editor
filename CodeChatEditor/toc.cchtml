@@ -1,8 +1,7 @@
 <h1>The CodeChat Editor</h1>
 <h2>Design</h2>
 <ol>
-    <li><a href="CodeChat Editor ideas.cchtml">CodeChat Editor ideas.cchtml</a>
-    </li>
+    <li><a href="README.cchtml">CodeChat Editor Overview</a></li>
 </ol>
 <h2>Implementation</h2>
 <ol>
@@ -32,4 +31,8 @@
 <h2>Misc</h2>
 <ul>
     <li><a href="toc.cchtml">toc.cchtml</a></li>
+</ul>
+<h2>Notes</h2>
+<ul>
+    <li>TODO: all links here should be auto-titled.</li>
 </ul>
