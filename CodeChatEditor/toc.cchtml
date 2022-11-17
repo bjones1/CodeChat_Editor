@@ -1,7 +1,15 @@
 <h1>The CodeChat Editor</h1>
 <h2>Design</h2>
 <ol>
-    <li><a href="README.cchtml">CodeChat Editor Overview</a></li>
+    <li><a href="README.cchtml">CodeChat Editor Overview</a>
+        <ol>
+            <li><a href="README.cchtml#how-to-run">How to run</a></li>
+            <li><a href="README.cchtml#vision">Vision</a></li>
+            <li><a href="README.cchtml#specification">Specification</a></li>
+            <li><a href="README.cchtml#an-implementation">Implementation</a>
+            </li>
+        </ol>
+    </li>
 </ol>
 <h2>Implementation</h2>
 <ol>
@@ -30,9 +38,11 @@
 </ol>
 <h2>Misc</h2>
 <ul>
-    <li><a href="toc.cchtml">toc.cchtml</a></li>
+    <li><a href="toc.cchtml">Table of contents</a></li>
+    <li><a href="index.cchtml">Index</a></li>
 </ul>
 <h2>Notes</h2>
 <ul>
-    <li>TODO: all links here should be auto-titled.</li>
+    <li><a id="auto-title"></a>TODO: all links here should be auto-titled and
+        autogenerate the page-local TOC.</li>
 </ul>
