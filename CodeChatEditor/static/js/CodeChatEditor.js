@@ -18,40 +18,6 @@
 //     implements the client-side portion of the CodeChat Editor</h1>
 // <p>The CodeChat Editor provides a simple IDE which allows editing of mixed
 //     code and doc blocks.</p>
-// <h2>TODO</h2>
-// <ul>
-//     <li>Document modes.</li>
-//     <li>Implement raw mode; add a GUI to switch between view, edit, and raw
-//         modes.</li>
-// </ul>
-// <h2>Next steps</h2>
-// <ul>
-//     <li>Create a new repo or directory for the CodeChat Editor, with NPM and
-//         webpack set up. Use TypeScript.</li>
-// </ul>
-// <h2>Thoughts and ideas</h2>
-// <p>Need to write some components:</p>
-// <ul>
-//     <li>Autotitle: like an a, but takes the link&rsquo;s name from element
-//         linked to. Same for figure references, etc.</li>
-//     <li>A index tool -- provides links to all instances of the given term,
-//         plus a index page with all these terms. How to do this? It requires
-//         global state.
-//         <ul>
-//             <li>An index item is a link to a specific file (an index file;
-//                 it's possible to have multiple index files).</li>
-//             <li>Creating an index link involves adding the back link to the
-//                 index file. Saving a file with an index link updates the
-//                 index page as well.</li>
-//             <li>Need to track changes -- probably only allow deleting/editing
-//                 index links in the file they are defined, rather than in the
-//                 index.</li>
-//             <li>We need a way that enables easy nagivation through index
-//                 links.</li>
-//         </ul>
-//     </li>
-//     <li>Insert the name of the file.</li>
-// </ul>
 "use strict";
 
 // <h2>UI</h2>
@@ -111,11 +77,19 @@ const make_editors = (
     if (editorMode === EditorMode.edit) {
         // <p>Instantiate the TinyMCE editor for doc blocks.</p>
         tinymce.init({
-            // <p>See the <a
-            //         href="https://www.tiny.cloud/docs/ui-components/contextmenu/">contextmenu
-            //         docs</a> for the default value. TODO: this doesn't work!
-            // </p>
-            contextmenu: "align | forecolor backcolor | bold italic underline superscript subscript codeformat | image link lists table",
+            // <p>Enable the <a
+            //         href="https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck">browser-supplied
+            //         spellchecker</a>, since TinyMCE's spellchecker is a
+            //     premium feature.</p>
+            browser_spellcheck: true,
+            // <p>Put more buttons on the <a
+            //         href="https://www.tiny.cloud/docs/tinymce/6/quickbars/">quick
+            //         toolbar</a> that appears when text is selected. TODO: add
+            //     a button for code format (can't find this one -- it's only on
+            //     the <a
+            //         href="https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items">list
+            //         of menu items</a> as <code>codeformat</code>).</p>
+            quickbars_selection_toolbar: "align | bold italic underline | quicklink h2 h3 blockquote",
             // <p>Place the Tiny MCE menu bar at the top of the screen;
             //     otherwise, it floats in front of text, sometimes obscuring
             //     what the user wants to edit. See the <a
@@ -123,7 +97,9 @@ const make_editors = (
             // </p>
             fixed_toolbar_container: "#CodeChat-menu",
             inline: true,
-            // <p>I would like to add to this: noneditable paste textpattern</p>
+            // <p>See the list of <a
+            //         href="https://www.tiny.cloud/docs/tinymce/6/plugins/">plugins</a>.
+            // </p>
             plugins: 'advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars',
             // <p>When true, this still prevents hyperlinks to anchors on the
             //     current page from working correctly. There's an onClick
@@ -137,8 +113,8 @@ const make_editors = (
             // <p>This combines the <a
             //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
             //         TinyMCE toolbar buttons</a> with a few more from plugins.
-            // </p>
-            toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
+            //     I like the default, so this is currently disabled.</p>
+            //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
 
             // <h3>Settings for plugins</h3>
             // <h4><a
@@ -225,7 +201,8 @@ const open_lp = (source_code, extension, mode) => {
         }
     }
     console.assert(found, "Unable to determine which lexer to use for this language.");
-    // Special case: a CodeChat Editor document's HTML doesn't need lexing.
+    // <p>Special case: a CodeChat Editor document's HTML doesn't need lexing.
+    // </p>
     let html;
     if (is_doc_only()) {
         html = `<div class="CodeChat-TinyMCE">${source_code}</div>`;
