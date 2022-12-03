@@ -15,21 +15,23 @@
 <ol>
     <li>Server
         <ol>
-            <li><a href="CodeChatEditorServer.v">CodeChatEditorServer.v</a>
+            <li><a
+                    href="server/CodeChatEditorServer.v">CodeChatEditorServer.v</a>
             </li>
         </ol>
     </li>
     <li>Client
         <ol>
-            <li><a href="static/js/CodeChatEditor.js">CodeChatEditor.js</a>
+            <li><a
+                    href="client/static/js/CodeChatEditor.js">CodeChatEditor.js</a>
             </li>
             <li>Styles
                 <ol>
                     <li><a
-                            href="static/css/CodeChatEditor.css">CodeChatEditor.css</a>
+                            href="client/static/css/CodeChatEditor.css">CodeChatEditor.css</a>
                     </li>
                     <li><a
-                            href="static/css/CodeChatEditorProject.css">CodeChatEditorProject.css</a>
+                            href="client/static/css/CodeChatEditorProject.css">CodeChatEditorProject.css</a>
                     </li>
                 </ol>
             </li>
@@ -39,10 +41,11 @@
 <h2>Misc</h2>
 <ul>
     <li><a href="toc.cchtml">Table of contents</a></li>
-    <li><a href="index.cchtml">Index</a></li>
+    <li><a href="docs/index.cchtml">Index</a></li>
 </ul>
 <h2>Notes</h2>
 <ul>
     <li><a id="auto-title"></a>TODO: all links here should be auto-titled and
         autogenerate the page-local TOC.</li>
 </ul>
+<h2><a href="LICENSE.html">License</a></h2>
