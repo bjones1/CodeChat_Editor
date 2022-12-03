@@ -308,9 +308,9 @@ fn escape_html(unsafe_text string) string {
 // <h2>Main&mdash;run the webserver</h2>
 fn main() {
 	mut app := &App{}
-	// <p>Serve static files in the <code>static/</code> subdirectory from the
-	//     <code>/static</code> endpoint.</p>
-	app.mount_static_folder_at(os.resource_abs_path('static'), '/static')
+	// <p>Serve static files in the&nbsp;<code>../client/static/</code>
+	//     subdirectory from the <code>/static</code> endpoint.</p>
+	app.mount_static_folder_at(os.resource_abs_path('../client/static'), '/static')
 	print('Open http://localhost:8080/ in a browser.\n')
 	vweb.run(app, 8080)
 }
