@@ -22,8 +22,7 @@
             <li>In this directory, execute <code>v crun
                     CodeChatEditorServer.v</code>.</li>
             <li>Open <code>http://localhost:8080</code> in your browser.</li>
-            <li>Open the file
-                <code>CodeChat/CodeChatEditor/README.cchtml</code>.</li>
+            <li>Open the file <code>README.cchtml</code>.</li>
         </ol>
     </div>
 </div>
@@ -128,29 +127,29 @@
     <p>A code block consists of all lines in a source file which aren't
         classified as a doc block. Note that code blocks may consist entirely
         of a comment, as illustrated below.</p>
-    <p>A doc block consists of a comment (inline or block) optinally preceeded
+    <p>A doc block consists of a comment (inline or block) optionally preceded
         by whitespace and optionally succeeded by whitespace. At least one
         whitespace character must separate the opening comment delimiter from
         the doc block text. Some examples in C:</p>
-    <pre>void foo(); // This is not a doc block, because these comments are preceeded<br>void bar(); // by non-whitespace characters. Instead, they're a code block.<br>//This is not a doc block, because these inline comments lack<br>//whitespace after the opening comment delimiter //. They're also a code block.<br>/*This is not a doc block, because this block comment lacks<br>  whitespace after the opening comment delimiter /*. It's also a code block. */<br>/* This is not a doc block, because non-whitespace <br>   characters follow the closing comment delimiter. <br>   It's also a code block. */ void food();<br><br>// This is a doc block. It has no whitespace preceeding the inline<br>// comment delimiers and one character of whitespace following it.<br>  // This is also a doc block. It has two characters of whitespace <br>  // preceeding the comment delimiters and one character of whitespace following it.<br>/* This is a doc block. Because it's based on<br>   a block comment, a single comment can span multiple lines. */<br>/* This is also a doc block, even without the visual alignment<br>or a whitespace before the closing comment delimiter.*/<br>  /* This is a doc block<br>     as well. */</pre>
+    <pre>void foo(); // This is not a doc block, because these comments are preceded<br>void bar(); // by non-whitespace characters. Instead, they're a code block.<br>//This is not a doc block, because these inline comments lack<br>//whitespace after the opening comment delimiter //. They're also a code block.<br>/*This is not a doc block, because this block comment lacks<br>  whitespace after the opening comment delimiter /*. It's also a code block. */<br>/* This is not a doc block, because non-whitespace <br>   characters follow the closing comment delimiter. <br>   It's also a code block. */ void food();<br><br>// This is a doc block. It has no whitespace preceding the inline<br>// comment delimiters and one character of whitespace following it.<br>  // This is also a doc block. It has two characters of whitespace <br>  // preceding the comment delimiters and one character of whitespace following it.<br>/* This is a doc block. Because it's based on<br>   a block comment, a single comment can span multiple lines. */<br>/* This is also a doc block, even without the visual alignment<br>or a whitespace before the closing comment delimiter.*/<br>  /* This is a doc block<br>     as well. */</pre>
     <p>&nbsp;Doc blocks are differentiated by their indent: the whitespace
-        characters preceeding the opening comment delimiter. Adjacent doc
-        blocks with identical indents are combined into a single, larger doc
-        block.</p>
-    <pre>// This is all one doc block, since only the preceeding<br>//   whitespace (there is none) matters, not the amount of <br>// whitespace following the opening comment delimiters.<br>  // This is the beginning of a different doc<br>  // block, since the indent is different.<br>    // Here's a third doc block; inline and block comments<br>    /* combine as long as the whitespace preceeding the comment<br>delimiters is identical. Whitespace inside the comment doesn't affect<br>       the classification. */<br>// These are two separate doc blocks,<br>void foo();<br>// since they are separated by a code block.</pre>
+        characters preceding the opening comment delimiter. Adjacent doc blocks
+        with identical indents are combined into a single, larger doc block.
+    </p>
+    <pre>// This is all one doc block, since only the preceding<br>//   whitespace (there is none) matters, not the amount of <br>// whitespace following the opening comment delimiters.<br>  // This is the beginning of a different doc<br>  // block, since the indent is different.<br>    // Here's a third doc block; inline and block comments<br>    /* combine as long as the whitespace preceeing the comment<br>delimiters is identical. Whitespace inside the comment doesn't affect<br>       the classification. */<br>// These are two separate doc blocks,<br>void foo();<br>// since they are separated by a code block.</pre>
     <h3><a id="implementation-programming-language-support"></a><a
             href="index.cchtml#programming-language-support">Programming
             language support</a></h3>
-    <p>Initial targets come from the Stack Overflow Developer Suvery 2022's
-        section on <a
+    <p>Initial targets come from the Stack Overflow Developer Survey 2022's
+        section on&nbsp;<a
             href="https://survey.stackoverflow.co/2022/#section-most-popular-technologies-programming-scripting-and-markup-languages">programming,
             scripting, and markup languages</a> and IEEE Spectrum's <a
             href="https://spectrum.ieee.org/top-programming-languages-2022">Top
             Programming Languages 2022</a>.</p>
     <h3><a id="specification-ide-integration"></a>IDE/text editor integration
     </h3>
-    <p>Initial targets come from the Stack Overflow Developer Suvery 2022's
-        section on <a
+    <p>Initial targets come from the Stack Overflow Developer Survey 2022's
+        section on&nbsp;<a
             href="https://survey.stackoverflow.co/2022/#section-most-popular-technologies-integrated-development-environment">integrated
             development environments</a>.</p>
     <h3>Zero-build support</h3>
@@ -165,7 +164,7 @@
         tag-produced content should be immediately added.</p>
     <h4>Counters</h4>
     <p>Counters are not global; they're local to a page. Instead, they take the
-        prefix from the TOC value assigned to the preceeding heading tag.</p>
+        prefix from the TOC value assigned to the preceding heading tag.</p>
     <h4>References (auto-titled links)</h4>
     <p>The link text is automatically derived from the link's destination (the
         heading text at the link's destination, for example). The text must not
@@ -205,7 +204,7 @@
     <h4>Movable files/anchors</h4>
     <p>To make moving files/anchors (or anything an anchor is attached to --
         headings, figures, etc.) easy, require that all anchor be unique across
-        the entire project, intead of unique just in the current file. Then,
+        the entire project, instead of unique just in the current file. Then,
         internal links can be reduced to the anchor; during hydration, the path
         to the file containing that anchor) is fetched from the cache. Place an
         anchor at the top of every file to uniquely identify it, and change
@@ -216,7 +215,7 @@
         background.&nbsp;</p>
     <h3>Hyperlink support</h3>
     <p>This system relies on the user to create a lot of meaningful links; it
-        must make the creation and maintainence of links simple:</p>
+        must make the creation and maintainance of links simple:</p>
     <ul>
         <li>Make it easy to create a link to another file/anchor via GUI
             support.
@@ -321,7 +320,7 @@
                     </p>
                 </li>
                 <li>Side note: ideally, we'd ask the DOM for the marker/number
-                    preceeding an ordered list item. JS can find the index of
+                    preceding an ordered list item. JS can find the index of
                     each item in an ordered list, but it won't get the actual
                     marker used (Roman numbers, bullets, or things generated by
                     <a
@@ -400,8 +399,8 @@
                             <ul>
                                 <li>The outer HTML of its next sibling, for use
                                     with bidirectional links.</li>
-                                <li>Its numbering withing the current page,
-                                    also for use with bidirectional links.</li>
+                                <li>Its numbering within the current page, also
+                                    for use with bidirectional links.</li>
                             </ul>
                         </li>
                     </ul>
@@ -475,7 +474,7 @@
     </ol>
     <h3>To do</h3>
     <ol>
-        <li>Improve accessibilty -- use a <code>&lt;main&gt;</code> tag,
+        <li>Improve accessibility -- use a <code>&lt;main&gt;</code> tag,
             <code>&lt;nav&gt;</code> tags, etc.</li>
         <li>Get a page's title from its <code>&lt;h1&gt;</code> tag.</li>
         <li>Open the TOC as a single-file edit? If not, at least hide the
@@ -525,4 +524,18 @@
         <li>Use http for plugin/server connection. Websockets would be better,
             but not sure how supported this is.</li>
     </ul>
+    <h2>License</h2>
+    <p>This file is part of the CodeChat Editor.</p>
+    <p>The CodeChat Editor is free software: you can redistribute it and/or
+        modify it under the terms of the GNU General Public License as
+        published by the Free Software Foundation, either version 3 of the
+        License, or (at your option) any later version.</p>
+    <p>The CodeChat Editor is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+        General Public License for more details.</p>
+    <p>You should have received a <a href="LICENSE.html">copy</a> of the GNU
+        General Public License along with the CodeChat Editor. If not, see <a
+            href="https://www.gnu.org/licenses/">https://www.gnu.org/licenses/</a>.
+    </p>
 </div>
