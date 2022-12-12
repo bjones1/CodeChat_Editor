@@ -1,0 +1,51 @@
+{
+    "name": "codechat-editor",
+    "version": "1.0.0",
+    "description": "The client-side code for the CodeChat Editor",
+    "homepage": "https://github.com/bjones1/CodeChat_Editor",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "check-env": "node -e 'console.log(process.env)' | grep npm",
+        "build": "webpack --mode=development",
+        "buildj": "webpack --mode=development --profile --json > stats.json",
+        "dist": "webpack --mode=production",
+        "analyze": "webpack-bundle-analyzer stats.json dist"
+    },
+    "keywords": [],
+    "author": "Bryan A. Jones",
+    "license": "GPL-3.0-or-later",
+    "devDependencies": {
+        "copy-webpack-plugin": "^9.0.0",
+        "compression-webpack-plugin": "^9.0.0",
+        "css-loader": "^6.0.0",
+        "css-minimizer-webpack-plugin": "^3.0.0",
+        "eslint": "^7.0.0",
+        "eslint-config-prettier": "^8.5.0",
+        "eslint-config-standard": "^16.0.0",
+        "eslint-plugin-import": "^2.0.0",
+        "eslint-plugin-node": "^11.0.0",
+        "eslint-plugin-promise": "^5.0.0",
+        "html-loader": "^3.0.0",
+        "html-webpack-plugin": "^5.0.0",
+        "mini-css-extract-plugin": "^2.0.0",
+        "ts-loader": "^9",
+        "typescript": "4.9.4",
+        "webpack": "^5.61.0",
+        "webpack-bundle-analyzer": "^4.0.0",
+        "webpack-cli": "^4.0.0",
+        "@types/ace": ">0.0.1",
+        "@typescript-eslint/eslint-plugin": "^5.0.0",
+        "@typescript-eslint/parser": "^5.0.0"
+    },
+    "dependencies": {
+        "tinymce": "^6",
+        "ace-code": "^1"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/bjones1/CodeChat_editor"
+    },
+    "prettier": {
+        "tabWidth": 4
+    }
+}
