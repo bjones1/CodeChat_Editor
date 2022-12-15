@@ -20,22 +20,6 @@
 //     code and doc blocks.</p>
 "use strict";
 
-// <h2>UI</h2>
-// <h3>DOM ready event</h3>
-// <p>This is copied from <a
-//         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
-// </p>
-const on_dom_content_loaded = on_load_func => {
-    if (document.readyState === "loading") {
-        // <p>Loading hasn't finished yet.</p>
-        document.addEventListener("DOMContentLoaded", on_load_func);
-    } else {
-        // <p><code>DOMContentLoaded</code> has already fired.</p>
-        on_load_func();
-    }
-}
-
-
 // <p>Emulate an enum. <a
 //         href="https://www.30secondsofcode.org/articles/s/javascript-enum">This</a>
 //     seems like a simple-enough approach; see also <a

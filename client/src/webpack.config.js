@@ -26,7 +26,7 @@ module.exports = (env, argv) => {
         // Per the `docs <https://webpack.js.org/concepts/entry-points/>`__, the main source file.
         entry: "./src/CodeChat-editor.ts",
         // See `mode <https://webpack.js.org/configuration/mode/>`_ for the conditional statement below.
-        devtool: is_dev_mode ? "inline-source-map" : "source-map",
+        devtool: is_dev_mode ? "eval-source-map" : "source-map",
         module: {
             rules: [
                 {

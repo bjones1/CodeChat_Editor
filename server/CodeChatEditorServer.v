@@ -6,6 +6,7 @@
 //     CodeChat Editor. It also enables the CodeChat Editor to save modified
 //     files back to the local filesystem.</p>
 // <h2>Imports</h2>
+import json
 import os
 import net.urllib
 import regex
@@ -16,6 +17,13 @@ import vweb
 struct App {
 	vweb.Context
 }
+
+// This defines the JSON file produced by webpack.
+struct WebpackJson {
+	js []string
+	css []string
+}
+
 
 // <h2>Constants</h2>
 const (
@@ -243,6 +251,21 @@ ${source_code}
 		"", ""
 	}
 
+	// Load webpacked JavaScript and CSS filenames.
+	webpack_mapping_file_path := "../client/static/webpack/webpack_static_imports.json"
+	json_str := os.read_file(webpack_mapping_file_path) or { panic("Unable to read Webpack mapping file ${webpack_mapping_file_path}: ${err}") }
+	webpacked_json := json.decode(WebpackJson, json_str) or { panic("Error decoding Webpack mapping file ${webpack_mapping_file_path}: ${err}") }
+
+	// Transform them in HTML tags.
+	mut js_css_tags := ""
+	for js in webpacked_json.js {
+		js_css_tags += "        <script src='/static/webpack/${js}'></script>\n"
+	}
+	for css in webpacked_json.css {
+		js_css_tags += "        <link rel='stylesheet' href='/static/webpack/${css}'>\n"
+	}
+
+
 	return '<!DOCTYPE html>
 <html lang="en">
 	<head>
@@ -250,8 +273,8 @@ ${source_code}
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>$name - The CodeChat Editor</title>
 
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.11.2/ace.min.js" integrity="sha512-+jXgMZfP8zMr7zRDS+ScdX0kJUX6jzTKDkQH+Kt4Tojp0u22z7IVaa1Gb9bXT1+l04vnmZCrTLr6hLBcaF41NQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-		<script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/6/tinymce.min.js" referrerpolicy="origin"></script>
+${js_css_tags}
+
 		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
 		<script src="/static/js/CodeChatEditor.js"></script>
 		<script>

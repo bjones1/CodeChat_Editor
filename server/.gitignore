@@ -15,7 +15,9 @@
 #      </p>
 #  </details>
 # <h1>.gitignore</code> &mdash; files for Git to ignore
-# <p>NPM</p>
-node_modules/
-# Output from <code>npx run buildj</code>
-stats.json
+# <p>The name of the binary on Windows</p>
+CodeChatEditorServer.exe
+# <p>The name of the binary on Linux</p>
+CodeChatEditorServer
+# <p>But don't ignore the source file (which the preceeding pattern does).</p>
+!CodeChatEditorServer.v
