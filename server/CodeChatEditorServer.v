@@ -162,7 +162,7 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 		return app.html(ret + '        </ul>
 	</body>
 </html>')
-	} else {
+	} else if os.is_file(abs_path) {
 		ext := os.file_ext(abs_path)
 		if ext in codechat_extensions {
 			codechat_file_contents := os.read_file(abs_path) or { return app.not_found() }
@@ -171,6 +171,8 @@ fn (mut app App) serve_fs_(path string) vweb.Result {
 		}
 		// <p>It's not a CodeChat Editor file -- just serve the file.</p>
 		return app.file(abs_path)
+	} else {
+		return app.not_found()
 	}
 }
 
