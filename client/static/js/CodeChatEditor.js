@@ -316,22 +316,8 @@ const language_lexers = [
 
 
 // <h2>Source lexer</h2>
-// <p>Rather than attempt to lex the entire language, this lexer's only goal is
-//     to categorize all the source code into code blocks or doc blocks. To do
-//     it, it only needs to:</p>
-// <ul>
-//     <li>Recognize where comments can't be&mdash;inside strings, <a
-//             href="https://en.wikipedia.org/wiki/Here_document">here text</a>,
-//         or <a
-//             href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals">template
-//             literals</a>. These are always part of a code block and can never
-//         contain a comment or (by implication) a doc block.</li>
-//     <li>Outside of these special cases, look for inline or block comments,
-//         categorizing everything else as code.</li>
-//     <li>After finding either an inline or block comment, determine if this is
-//         a doc block.</li>
-// </ul>
-// <p>It returns a list of <code>indent, string, indent_type</code> where:</p>
+// <p>This lexer categorizes source code into code blocks or doc blocks.&nbsp;It
+//     returns a list of <code>indent, string, indent_type</code> where:</p>
 // <dl>
 //     <dt><code>indent</code></dt>
 //     <dd>The indent of a doc block (a string of whitespace), or
@@ -343,7 +329,10 @@ const language_lexers = [
 //     <dd>The comment string for a doc block, or "" for a code block.</dd>
 // </dl>
 const source_lexer = (
+    // <p>The source code to lex.</p>
     source_code,
+    // <p>The following parameters are sequential entries from one element of
+    //     the <code>language_lexers</code> array.</p>
     language_name,
     extension_strings,
     inline_comment_strings,
@@ -353,13 +342,51 @@ const source_lexer = (
     here_text_strings,
     template_literals,
 ) => {
-    // <p>Construct <a
+    // <p>Rather than attempt to lex the entire language, this lexer's only goal
+    //     is to categorize all the source code into code blocks or doc blocks.
+    //     To do it, it only needs to:</p>
+    // <ul>
+    //     <li>Recognize where comments can't be&mdash;inside strings, <a
+    //             href="https://en.wikipedia.org/wiki/Here_document">here
+    //             text</a>, or <a
+    //             href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals">template
+    //             literals</a>. These are always part of a code block and can
+    //         never contain a comment or (by implication) a doc block.</li>
+    //     <li>Outside of these special cases, look for inline or block
+    //         comments, categorizing everything else as plain code.</li>
+    //     <li>After finding either an inline or block comment, determine if
+    //         this is a doc block.</li>
+    // </ul>
+    // <p>To accomplish this goal, construct a <a
     //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions">regex</a>
-    //     and associated indices from language information provided.
+    //     named <code>classify_regex</code> and associated indices from the
+    //     language information provided (<code>language_name</code>,
+    //     <code>extension_strings</code>, etc.). It&nbsp;divides source code
+    //     into two categories: plain code and special cases. The special cases
+    //     consist of:</p>
+    // <ul>
+    //     <li>String-like code (strings, here text, template literals). In this
+    //         case, the lexer must find the end of the string-like element
+    //         before it can return to plain code.</li>
+    //     <li>Comments (inline or block). In this case, the lexer must find the
+    //         end of the comment before it can return to plain code.</li>
+    // </ul>
+    // <p>This regex assumes the string it analyzes was preceded by plain code;
+    //     its purpose is to identify the start of the next special case.
     //     <strong>This code makes heavy use of regexes -- read the previous
     //         link thoroughly.</strong></p>
+    // <p>Use an index, since we need to know which special case (a string,
+    //     inline comment, etc.) the regex found.</p>
     let regex_index = 1;
+    // <p>Produce the overall regex from regexes which find a specific special
+    //     case.</p>
     let regex_strings = [];
+    // <p>Given an array of strings containing unescaped characters which
+    //     identifies the start of one of the special cases, combine them into a
+    //     single string separated by an or operator. Return the index of the
+    //     resulting string in <code>regex_strings</code>, or <code>null</code>
+    //     if the array is empty (indicating that this language doesn't support
+    //     the provided special case).</p>
     const regex_builder = (strings) => {
         // <p>Look for a non-empty array. Note that <code>[]</code> is
         //     <code>true</code>.</p>
@@ -372,8 +399,8 @@ const source_lexer = (
         }
         return null;
     }
-    // <p>Order these by length of the expected strings, since the regex with an
-    //     or expression will match left to right.</p>
+    // <p>Order these statements by length of the expected strings, since the
+    //     regex with an or expression will match left to right.</p>
     // <p>Include only the opening block comment string (element 0) in the
     //     regex.</p>
     let block_comment_index = regex_builder(block_comment_strings.map(element => element[0]));
@@ -397,71 +424,106 @@ const source_lexer = (
     // <p>An accumulating array of strings composing the current code block.</p>
     let code_block_array = [];
     while (source_code.length) {
-        // <p>Look for either a comment or a no-comment zone.</p>
+        // <p>Look for the next special case. Per the earlier discussion, this
+        //     assumes that the text immediately
+        //     preceding&nbsp;<code>source_code</code> was plain code.</p>
         const m = source_code.match(classify_regex);
         if (m) {
-            // <p>Add everything preceding this match to the current code block.
-            // </p>
+            // <p>Move everything preceding this match from
+            //     <code>source_code</code> to the current code block, since per
+            //     the assumptions this is code. Per the <a
+            //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/exec#return_value">docs</a>,
+            //     <code>m.index</code> is the index of the beginning of the
+            //     match.</p>
             code_block_array.push(source_code.substring(0, m.index));
             source_code = source_code.substring(m.index);
-            // <p>Figure out which matched.</p>
-            if (inline_comment_index && m[inline_comment_index]) {
-                // <p>A comment matched.</p>
-                const inline_comment_string = m[inline_comment_index];
-                // <p>Look at the last line of code by examining the code block
-                //     being accumulated.</p>
-                let code_block = code_block_array.join("");
-                const split_lines = code_block.split(/\n|\r\n|\r/)
-                // <p>If there's no matching newline, we're at the beginning of
-                //     the uncategorized source code.</p>
-                const last_line = split_lines ? split_lines[split_lines.length - 1] : "";
 
-                // <p>Find the end of this comment. No matching newline means
-                //     we're at the end of the file. Note that using a negative
-                //     lookbehind assertion would make this much simpler:
+            // <h3>Determine which special case matched</h3>
+            // <p>Was this special case a comment? If so, then
+            //     <code>m[inline_comment_index]</code> will be true
+            //     (non-empty). Note that&nbsp;<code>inline_comment_index</code>
+            //     is non-null only when this language contains inline comments.
+            //     Otherwise, <code>m[null]</code> is always <code>false</code>,
+            //     skipping this case.</p>
+            if (m[inline_comment_index]) {
+                // <p>An inline comment delimiter matched.</p>
+                // <p><strong>First</strong>, find the end of this comment: a
+                //     newline that's not escaped by a line continuation
+                //     character (which is&nbsp;<code>\</code> in C/C++/many
+                //     languages). Note that using a negative lookbehind
+                //     assertion would make this much simpler:
                 //     <code>/(?&lt;!\\)(\n|\r\n|\r)/</code>. However, V doesn't
                 //     support this.</p>
-                const inline_m = source_code.match(/(\\\r\n|\\\n|\\\r|[^\\\n\r])*(\n|\r\n|\r)/);
-                const full_comment = inline_m ? source_code.substring(0, inline_m.index + inline_m[0].length) : source_code;
+                const end_of_comment_match = source_code.match(
+                    /(\\\r\n|\\\n|\\\r|[^\\\n\r])*(\n|\r\n|\r)/
+                );
+                // <p>Assign <code>full_comment</code> to contain the entire
+                //     comment, from the inline comment delimiter until the
+                //     newline which ends the comment. No matching newline means
+                //     we're at the end of the file, so the comment is all the
+                //     remaining <code>source_code</code>.</p>
+                const full_comment = end_of_comment_match
+                    ? source_code.substring(0, end_of_comment_match.index + end_of_comment_match[0].length)
+                    : source_code;
+                // <p>Move to the next block of source code to be lexed.</p>
+                source_code = source_code.substring(full_comment.length);
 
-                // <p>Criteria for doc blocks for an inline comment:</p>
+                // <p><strong>Next</strong>, determine if this comment is a doc
+                //     block. Criteria for doc blocks for an inline comment:</p>
                 // <ul>
-                //     <li>All characters preceding the comment on the current
-                //         line must be whitespace.</li>
+                //     <li>All characters preceding the comment on the line
+                //         containing the comment must be whitespace.</li>
                 //     <li>Either:
                 //         <ul>
-                //             <li>The comment is immediately followed by a
-                //                 space, or</li>
-                //             <li>the comment is followed by a newline or the
-                //                 end of file.</li>
+                //             <li>The inline comment delimiter is immediately
+                //                 followed by a space, or</li>
+                //             <li>the inline comment delimiter is followed by a
+                //                 newline or the end of the file.</li>
                 //         </ul>
                 //     </li>
                 // </ul>
-                // <p>Doc block comments have a space after the comment string
-                //     or are empty, and only spaces before the comment.</p>
-                if ((full_comment.startsWith(inline_comment_string + " ") || full_comment === inline_comment_string + (inline_m ? inline_m[1] : "")) && last_line.match(/^\s*$/)) {
-                    // <p>Transition from a code block to this doc block.</p>
-                    code_block = code_block.substring(0, code_block.length - last_line.length)
+                // <p><code>code_block_array</code> contains preceding code
+                //     (which might be multiple lines) until the inline comment
+                //     delimiter. Therefore, we only need to examine its last
+                //     line.</p>
+                let code_block = code_block_array.join("");
+                const last_line_until_comment = code_block.split(/\n|\r\n|\r/).at(-1);
+                // <p>With this last line located, apply the doc block criteria.
+                // </p>
+                const inline_comment_string = m[inline_comment_index];
+                if (last_line_until_comment.match(/^\s*$/) && (
+                    full_comment.startsWith(inline_comment_string + " ")
+                    || full_comment === inline_comment_string + (end_of_comment_match ? end_of_comment_match[1] : "")
+                )) {
+                    // <p>This is a doc block. Transition from a code block to
+                    //     this doc block.</p>
+                    code_block = code_block.substring(0, code_block.length - last_line_until_comment.length);
                     if (code_block) {
                         // <p>Save only code blocks with some content.</p>
                         classified_source.push([null, code_block, ""]);
                     }
                     code_block_array = [];
-                    // <p>Add this doc block.</p>
+                    // <p>Add this doc block by pushing the array [whitespace
+                    //     before the inline comment, inline comment contents,
+                    //     inline comment delimiter]. Since it's a doc block,
+                    //     then <code>last_line_until_comment</code> contains
+                    //     the whitespace before this comment.
+                    //     <code>inline_comment_string</code> contains the
+                    //     inline comment delimiter. For the contents, omit the
+                    //     leading space it it's there (this might be just a
+                    //     newline or an EOF).</p>
                     const has_space_after_comment = full_comment[inline_comment_string.length] === " ";
-                    classified_source.push([last_line, full_comment.substring(inline_comment_string.length + (has_space_after_comment ? 1 : 0)), inline_comment_string]);
+                    classified_source.push([last_line_until_comment, full_comment.substring(inline_comment_string.length + (has_space_after_comment ? 1 : 0)), inline_comment_string]);
                 } else {
                     // <p>This is still code.</p>
                     code_block_array.push(full_comment);
                 }
-                // <p>Move to the next block of source code to be lexed.</p>
-                source_code = source_code.substring(full_comment.length);
-            } else if (block_comment_index && m[block_comment_index]) {
+            } else if (m[block_comment_index]) {
                 // <p>TODO!</p>
                 const msg = "Block comments not implemented.";
                 window.alert(msg);
                 throw msg;
-            } else if (long_string_index && m[long_string_index]) {
+            } else if (m[long_string_index]) {
                 // <p>A long string. Find the end of it.</p>
                 code_block_array.push(m[long_string_index]);
                 source_code = source_code.substring(m[long_string_index].length);
@@ -477,7 +539,7 @@ const source_lexer = (
                     code_block_array.push(source_code);
                     source_code = "";
                 }
-            } else if (short_string_index && m[short_string_index]) {
+            } else if (m[short_string_index]) {
                 // <p>A short string. Find the end of it.</p>
                 code_block_array.push(m[short_string_index]);
                 source_code = source_code.substring(m[short_string_index].length);
@@ -527,7 +589,7 @@ const source_lexer = (
                     code_block_array.push(source_code);
                     source_code = "";
                 }
-            } else if (template_literal_index && m[template_literal_index]) {
+            } else if (m[template_literal_index]) {
                 // <p>TODO! For now, just assume there's no comments in
                 //     here...dangerous!!!</p>
                 code_block_array.push(m[template_literal_index]);
@@ -587,7 +649,7 @@ const classified_source_to_html = (classified_source) => {
             if (indent === null) {
                 // <p>Code state: emit the beginning of an ACE editor block.</p>
                 html.push(
-`
+                    `
 <div class="CodeChat-code">
     <div class="CodeChat-ACE" data-CodeChat-firstLineNumber="${line}">`,
                     escapeHTML(source_string),
@@ -600,7 +662,7 @@ const classified_source_to_html = (classified_source) => {
                 //         doc block, so that it aligns properly with a code
                 //         block.</span></p>
                 html.push(
-`<div class="CodeChat-doc">
+                    `<div class="CodeChat-doc">
     <table>
         <tbody>
             <tr>
@@ -654,7 +716,7 @@ const _exit_state = (
         // </p>
         //</p>
         html.push(
-`</td>
+            `</td>
             </tr>
         </tbody>
     </table>
