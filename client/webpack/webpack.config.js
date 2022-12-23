@@ -20,11 +20,11 @@ module.exports = (env, argv) => {
         // Cache build results between builds in development mode, per the `docs <https://webpack.js.org/configuration/cache/>`__.
         cache: is_dev_mode
             ? {
-                  type: "filesystem",
-              }
+                type: "filesystem",
+            }
             : false,
         // Per the `docs <https://webpack.js.org/concepts/entry-points/>`__, the main source file.
-        entry: "./src/CodeChat-editor.ts",
+        entry: "./src/CodeChat-editor.mts",
         // See `mode <https://webpack.js.org/configuration/mode/>`_ for the conditional statement below.
         devtool: is_dev_mode ? "eval-source-map" : "source-map",
         module: {
@@ -40,7 +40,7 @@ module.exports = (env, argv) => {
                 },
                 {
                     // See the `Webpack TypeScript docs <https://webpack.js.org/guides/typescript/>`_.
-                    test: /\.tsx?$/,
+                    test: /\.m?tsx?$/,
                     use: 'ts-loader',
                     exclude: /node_modules/,
                 },

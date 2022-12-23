@@ -107,6 +107,10 @@ const make_editors = (
             image_caption: true,
             image_advtab: true,
             image_title: true,
+            // Needed to allow custom elements.
+            extended_valid_elements:
+                "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale]",
+            custom_elements: "graphviz-graph,graphviz-script-editor,graphviz-combined",
         });
     }
 

@@ -39,7 +39,8 @@
     },
     "dependencies": {
         "tinymce": "^6",
-        "ace-code": "^1"
+        "ace-code": "^1",
+        "graphviz-webcomponent": "^1"
     },
     "repository": {
         "type": "git",

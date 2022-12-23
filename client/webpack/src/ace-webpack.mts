@@ -40,15 +40,15 @@ interface ConfigAll extends Ace.Config {
     setLoader(loader: (moduleName: string, callback: Callback) => void) : void;
 };
 
-// Set up for dynamic webpack imports.
-const dynamicAceImports: {[moduleName: string]: (() => Promise<void>)} = {
-    // Note: all these dynamic imports rely on typing.d.ts to fix the lack of types for these files.
-    "./theme/textmate": () => import('ace-code/src/theme/textmate'),
-    "ace/theme/textmate": () => import('ace-code/src/theme/textmate'),
-};
-
 // Define a new loader which uses the webpack dynamic import system.
 (config as ConfigAll).setLoader((moduleName: string, callback: Callback) => {
+    const dynamicAceImports: {[moduleName: string]: (() => Promise<void>)} = {
+        // Note: all these dynamic imports rely on typing.d.ts to fix the lack of types for these files.
+        "./theme/textmate": () => import('ace-code/src/theme/textmate'),
+        "ace/theme/textmate": () => import('ace-code/src/theme/textmate'),
+        "ace/mode/javascript": () => import('ace-code/src/mode/javascript'),
+    };
+
     // Look up the module name. If nothing is found, output a warning message.
     const dynamic_import = dynamicAceImports[moduleName];
     if (dynamic_import) {

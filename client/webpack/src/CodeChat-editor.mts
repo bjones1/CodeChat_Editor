@@ -34,9 +34,46 @@ const on_dom_content_loaded = (on_load_func: (() => void)) => {
     }
 }
 // Export this to the browser's Window object. Use a typecast to allow the assignment.
-(<any>window).on_dom_content_loaded = on_dom_content_loaded;
+(window as any).on_dom_content_loaded = on_dom_content_loaded;
 
-import { init } from "./tinymce-webpack"
+import { init } from "./tinymce-webpack.mjs"
 init({});
 
-import "./ace-webpack";
+import "./ace-webpack.mts";
+
+class GraphVizElement extends HTMLElement {
+    constructor() {
+        super();
+        // Dynamically import the graphviz package, then finish construction.
+        import("graphviz-webcomponent/bundled").then(this.async_constructor);
+    }
+
+    async_constructor = async (_module: Promise<any>) => {
+        // Create the shadow DOM.
+        const shadowRoot = this.attachShadow({ mode: "open" });
+        const editor = document.createElement("graphviz-script-editor");
+        const graph = document.createElement("graphviz-graph");
+
+        // TODO: Copy other attributes (scale, tabs, etc.) which the editor and graph renderer support.
+
+        // Propagate the initial value on this tag to the tags in the shadow DOM.
+        const dot = this.getAttribute("graph") ?? ""
+        graph.setAttribute("graph", dot);
+        editor.setAttribute("value", dot);
+
+        // Send edits to both this tag and the graphviz rendering tag.
+        editor.addEventListener("input", event => {
+            // Ignore InputEvents -- we want the custom event sent by this component, which contains new text for the graph.
+            if (event instanceof CustomEvent) {
+                const dot = (event as any).detail;
+                graph.setAttribute("graph", dot)
+                // Update the root component as well, so that this value will be correct when the user saves.
+                this.setAttribute("graph", dot)
+            }
+        });
+
+        // Populate the shadow DOM now that everything is ready.
+        shadowRoot.append(editor, graph);
+    }
+}
+customElements.define("graphviz-combined", GraphVizElement);
