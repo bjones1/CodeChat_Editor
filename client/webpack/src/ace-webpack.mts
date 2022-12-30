@@ -15,7 +15,7 @@
 //     </p>
 // </details>
 // <h1><code>ace-webpack.ts</code> &mdash; imports the Ace editor from NPM packages using webpack</h1>
-import { Ace, config, edit } from 'ace-code';
+import { Ace, config, edit } from "ace-code";
 
 // Export ace.edit globally.
 (window as any).ace = {};
@@ -25,7 +25,7 @@ import { Ace, config, edit } from 'ace-code';
 export { edit, config };
 
 // Import the Ace theme to use.
-import 'ace-code/src/theme/textmate';
+import "ace-code/src/theme/textmate";
 
 // Optionally,  import a keyboard binding. (The default binding is Ace, which is built in.) See the <a href="https://ace.c9.io/build/kitchen-sink.html">Ace kitchen sink</a> demo for the available options.
 
@@ -33,27 +33,30 @@ import 'ace-code/src/theme/textmate';
 
 // <h2>Dynamic imports</h2>
 // This is the type of a callback for the Ace editor's import system.
-type Callback = ((err: string | null, module: any) => Promise<void>);
+type Callback = (err: string | null, module: any) => Promise<void>;
 
 // The Ace type definitions omit this function, which we need to call to use a dynamic loader.
 interface ConfigAll extends Ace.Config {
-    setLoader(loader: (moduleName: string, callback: Callback) => void) : void;
-};
+    setLoader(loader: (moduleName: string, callback: Callback) => void): void;
+}
 
 // Define a new loader which uses the webpack dynamic import system.
 (config as ConfigAll).setLoader((moduleName: string, callback: Callback) => {
-    const dynamicAceImports: {[moduleName: string]: (() => Promise<void>)} = {
+    const dynamicAceImports: { [moduleName: string]: () => Promise<void> } = {
         // Note: all these dynamic imports rely on typing.d.ts to fix the lack of types for these files.
-        "./theme/textmate": () => import('ace-code/src/theme/textmate'),
-        "ace/theme/textmate": () => import('ace-code/src/theme/textmate'),
-        "ace/mode/javascript": () => import('ace-code/src/mode/javascript'),
+        "./theme/textmate": () => import("ace-code/src/theme/textmate"),
+        "ace/theme/textmate": () => import("ace-code/src/theme/textmate"),
+        "ace/mode/javascript": () => import("ace-code/src/mode/javascript"),
     };
 
     // Look up the module name. If nothing is found, output a warning message.
     const dynamic_import = dynamicAceImports[moduleName];
     if (dynamic_import) {
         // Given the promised results of an import(), invoke a callback when the promise resolves or rejects.
-        return dynamic_import().then(module => callback(null, module), err => callback(err, null));
+        return dynamic_import().then(
+            (module) => callback(null, module),
+            (err) => callback(err, null)
+        );
     } else {
         // Complain if we don't recognize this import.
         const err = `Unknown Ace dynamic import of ${moduleName}`;

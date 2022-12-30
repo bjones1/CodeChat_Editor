@@ -25,7 +25,7 @@
 // <p>This is copied from <a
 //         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
 // </p>
-const on_dom_content_loaded = (on_load_func: (() => void)) => {
+const on_dom_content_loaded = (on_load_func: () => void) => {
     if (document.readyState === "loading") {
         // <p>Loading hasn't finished yet.</p>
         document.addEventListener("DOMContentLoaded", on_load_func);
@@ -33,12 +33,12 @@ const on_dom_content_loaded = (on_load_func: (() => void)) => {
         // <p><code>DOMContentLoaded</code> has already fired.</p>
         on_load_func();
     }
-}
+};
 // <p>Export this to the browser's Window object. Use a typecast to allow the
 //     assignment.</p>
 (window as any).on_dom_content_loaded = on_dom_content_loaded;
 
-import { init } from "./tinymce-webpack.mjs"
+import { init } from "./tinymce-webpack.mjs";
 init({});
 
 import "./ace-webpack.mts";
@@ -62,25 +62,25 @@ class GraphVizElement extends HTMLElement {
 
         // <p>Propagate the initial value on this tag to the tags in the shadow
         //     DOM.</p>
-        const dot = this.getAttribute("graph") ?? ""
+        const dot = this.getAttribute("graph") ?? "";
         graph.setAttribute("graph", dot);
         editor.setAttribute("value", dot);
 
         // <p>Send edits to both this tag and the graphviz rendering tag.</p>
-        editor.addEventListener("input", event => {
+        editor.addEventListener("input", (event) => {
             // <p>Ignore InputEvents -- we want the custom event sent by this
             //     component, which contains new text for the graph.</p>
             if (event instanceof CustomEvent) {
                 const dot = (event as any).detail;
-                graph.setAttribute("graph", dot)
+                graph.setAttribute("graph", dot);
                 // <p>Update the root component as well, so that this value will
                 //     be correct when the user saves.</p>
-                this.setAttribute("graph", dot)
+                this.setAttribute("graph", dot);
             }
         });
 
         // <p>Populate the shadow DOM now that everything is ready.</p>
         shadowRoot.append(editor, graph);
-    }
+    };
 }
 customElements.define("graphviz-combined", GraphVizElement);

@@ -1,14 +1,14 @@
 // <h1>.tsconfig.json - TypeScript configuration</h1>
 {
-	"compilerOptions": {
+    "compilerOptions": {
         "allowJs": true,
-		"module": "ES2020",
+        "module": "ES2020",
         "moduleResolution": "node",
-		"outDir": "out",
+        "outDir": "out",
         "rootDir": "",
-		"sourceMap": true,
-		"strict": true,
-		"target": "ES2020",
-	},
-	"exclude": ["node_modules"]
+        "sourceMap": true,
+        "strict": true,
+        "target": "ES2020"
+    },
+    "exclude": ["node_modules"]
 }

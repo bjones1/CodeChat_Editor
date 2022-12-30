@@ -11,11 +11,11 @@ body {
 /* TODO: This is a overly simple, non-responsive layout to create a sidebar. Fix. */
 #CodeChat-sidebar {
     width: var(--sidebar-width);
-    height: calc(100vh - 2*var(--body-padding));
+    height: calc(100vh - 2 * var(--body-padding));
     border: 0px;
 }
 
 #CodeChat-contents {
     float: right;
-    width: calc(100vw - var(--sidebar-width) - 2*var(--body-padding));
+    width: calc(100vw - var(--sidebar-width) - 2 * var(--body-padding));
 }

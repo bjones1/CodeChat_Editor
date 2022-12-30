@@ -16,8 +16,8 @@ module.exports = (env, argv) => {
         // </p>
         cache: is_dev_mode
             ? {
-                type: "filesystem",
-            }
+                  type: "filesystem",
+              }
             : false,
         // <p>Per the <a
         //         href="https://webpack.js.org/concepts/entry-points/">docs</a>,
@@ -44,7 +44,7 @@ module.exports = (env, argv) => {
                     //         href="https://webpack.js.org/guides/typescript/">Webpack
                     //         TypeScript docs</a>.</p>
                     test: /\.m?tsx?$/,
-                    use: 'ts-loader',
+                    use: "ts-loader",
                     exclude: /node_modules/,
                 },
             ],
@@ -98,7 +98,7 @@ module.exports = (env, argv) => {
                     //         webpack docs</a>.</p>
                     tinymceVendor: {
                         test: /[\\/]node_modules[\\/](tinymce)[\\/](.*js|.*skin.css)|[\\/]plugins[\\/]/,
-                        name: 'tinymce',
+                        name: "tinymce",
                     },
                 },
                 chunks: "all",
@@ -134,7 +134,7 @@ module.exports = (env, argv) => {
         ],
         resolve: {
             // <p>Otherwise, TypeScript modules aren't found.</p>
-            extensions: ['.ts', '.js'],
+            extensions: [".ts", ".js"],
         },
     };
 };
