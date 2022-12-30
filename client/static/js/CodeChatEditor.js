@@ -952,7 +952,7 @@ const escapeRegExp = (string) =>
 // <p>TODO!</p>
 const test_source_lexer_1 = () => {
     const python_source_lexer = (source_code) =>
-        source_lexer(source_code, ...language_lexers[3]);
+        source_lexer(source_code, ...language_lexers[4]);
     assert_equals(python_source_lexer(""), []);
     assert_equals(python_source_lexer("\n"), [[null, "\n", ""]]);
     assert_equals(python_source_lexer("\n# Test"), [
