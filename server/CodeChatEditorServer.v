@@ -18,7 +18,7 @@ struct App {
 	vweb.Context
 }
 
-// This defines the JSON file produced by webpack.
+// <p>This defines the JSON file produced by webpack.</p>
 struct WebpackJson {
 	js []string
 	css []string
@@ -28,12 +28,19 @@ struct WebpackJson {
 // <h2>Constants</h2>
 const (
 	codechat_extensions = [
+		'.c',
 		'.cc',
 		'.cpp',
 		'.html',
 		'.js',
+		'.mjs',
+		'.json',
 		'.py',
+		'.ts',
+		'.mts',
 		'.v',
+		'.yaml',
+		'.yml',
 		'.cchtml',
 	]
 )
@@ -251,12 +258,12 @@ ${source_code}
 		"", ""
 	}
 
-	// Load webpacked JavaScript and CSS filenames.
+	// <p>Load webpacked JavaScript and CSS filenames.</p>
 	webpack_mapping_file_path := "../client/static/webpack/webpack_static_imports.json"
 	json_str := os.read_file(webpack_mapping_file_path) or { panic("Unable to read Webpack mapping file ${webpack_mapping_file_path}: ${err}") }
 	webpacked_json := json.decode(WebpackJson, json_str) or { panic("Error decoding Webpack mapping file ${webpack_mapping_file_path}: ${err}") }
 
-	// Transform them in HTML tags.
+	// <p>Transform them in HTML tags.</p>
 	mut js_css_tags := ""
 	for js in webpacked_json.js {
 		js_css_tags += "        <script src='/static/webpack/${js}'></script>\n"

@@ -14,8 +14,9 @@
 //             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 //     </p>
 // </details>
-// <h1><code>CodeChatEditor.js</code> &mdash; <strong>JavaScrip</strong>t which
-//     implements the client-side portion of the CodeChat Editor</h1>
+// <h1><code>CodeChat-editor.mts</code> &mdash; <strong>JavaScrip</strong>t
+//     which implements part of the client-side portion of the CodeChat Editor
+// </h1>
 // <p>The CodeChat Editor provides a simple IDE which allows editing of mixed
 //     code and doc blocks.</p>
 //
@@ -33,7 +34,8 @@ const on_dom_content_loaded = (on_load_func: (() => void)) => {
         on_load_func();
     }
 }
-// Export this to the browser's Window object. Use a typecast to allow the assignment.
+// <p>Export this to the browser's Window object. Use a typecast to allow the
+//     assignment.</p>
 (window as any).on_dom_content_loaded = on_dom_content_loaded;
 
 import { init } from "./tinymce-webpack.mjs"
@@ -44,35 +46,40 @@ import "./ace-webpack.mts";
 class GraphVizElement extends HTMLElement {
     constructor() {
         super();
-        // Dynamically import the graphviz package, then finish construction.
+        // <p>Dynamically import the graphviz package, then finish construction.
+        // </p>
         import("graphviz-webcomponent/bundled").then(this.async_constructor);
     }
 
     async_constructor = async (_module: Promise<any>) => {
-        // Create the shadow DOM.
+        // <p>Create the shadow DOM.</p>
         const shadowRoot = this.attachShadow({ mode: "open" });
         const editor = document.createElement("graphviz-script-editor");
         const graph = document.createElement("graphviz-graph");
 
-        // TODO: Copy other attributes (scale, tabs, etc.) which the editor and graph renderer support.
+        // <p>TODO: Copy other attributes (scale, tabs, etc.) which the editor
+        //     and graph renderer support.</p>
 
-        // Propagate the initial value on this tag to the tags in the shadow DOM.
+        // <p>Propagate the initial value on this tag to the tags in the shadow
+        //     DOM.</p>
         const dot = this.getAttribute("graph") ?? ""
         graph.setAttribute("graph", dot);
         editor.setAttribute("value", dot);
 
-        // Send edits to both this tag and the graphviz rendering tag.
+        // <p>Send edits to both this tag and the graphviz rendering tag.</p>
         editor.addEventListener("input", event => {
-            // Ignore InputEvents -- we want the custom event sent by this component, which contains new text for the graph.
+            // <p>Ignore InputEvents -- we want the custom event sent by this
+            //     component, which contains new text for the graph.</p>
             if (event instanceof CustomEvent) {
                 const dot = (event as any).detail;
                 graph.setAttribute("graph", dot)
-                // Update the root component as well, so that this value will be correct when the user saves.
+                // <p>Update the root component as well, so that this value will
+                //     be correct when the user saves.</p>
                 this.setAttribute("graph", dot)
             }
         });
 
-        // Populate the shadow DOM now that everything is ready.
+        // <p>Populate the shadow DOM now that everything is ready.</p>
         shadowRoot.append(editor, graph);
     }
 }

@@ -1,3 +1,4 @@
+// <h1>.tsconfig.json - TypeScript configuration</h1>
 {
 	"compilerOptions": {
         "allowJs": true,

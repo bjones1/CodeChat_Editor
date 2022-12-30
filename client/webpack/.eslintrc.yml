@@ -1,12 +1,14 @@
-# *********************************************
-# |docname| - Configure ESLint for this project
-# *********************************************
+# <h1>.eslintrc.yml - Configure ESLint for this project</h1>
 env:
   browser: true
   es2020: true
 extends:
   - standard
-  # See the `ESLint config prettier docs <https://github.com/prettier/eslint-config-prettier#installation>`_ and its parent link, `integrating Prettier with linters <https://prettier.io/docs/en/integrating-with-linters.html>`_.
+  # <p>See the <a
+  #         href="https://github.com/prettier/eslint-config-prettier#installation">ESLint
+  #         config prettier docs</a> and its parent link, <a
+  #         href="https://prettier.io/docs/en/integrating-with-linters.html">integrating
+  #         Prettier with linters</a>.</p>
   - prettier
 parser: '@typescript-eslint/parser'
 parserOptions:
@@ -15,5 +17,8 @@ plugins:
   - '@typescript-eslint'
 rules:
   camelcase: off
-  # TypeScript already enforces this; otherwise, eslint complains that ``NodeJS`` is undefined. See `this GitHub issue <https://github.com/Chatie/eslint-config/issues/45#issuecomment-1003990077>`_.
+  # <p>TypeScript already enforces this; otherwise, eslint complains that
+  #     <code>NodeJS</code> is undefined. See <a
+  #         href="https://github.com/Chatie/eslint-config/issues/45#issuecomment-1003990077">this
+  #         GitHub issue</a>.</p>
   no-undef: off

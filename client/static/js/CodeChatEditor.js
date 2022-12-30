@@ -275,6 +275,8 @@ const save = async contents => {
 //     language in order to load/save code in that language.</p>
 const language_lexers = [
     // <dl>
+    //     <dt>Language name</dt>
+    //     <dd>The Ace mode to use for this language.</dd>
     //     <dt>IC</dt>
     //     <dd>inline comment</dd>
     //     <dt>Heredoc</dt>
@@ -286,19 +288,24 @@ const language_lexers = [
     //         Language is JavaScript. (2 = inside a template literal should
     //         only be used by the lexer itself).</dd>
     // </dl>
-    // <p>C++11 or newer. Don't worry about supporting C or older C++ using
-    //     another lexer entry, since the raw string syntax in C++11 and newer
-    //     is IMHO so rare we won't encounter it in older code. See the <a
+    // <p>Note: the C/C++ support expects C++11 or newer. Don't worry about
+    //     supporting C or older C++ using another lexer entry, since the raw
+    //     string syntax in C++11 and newer is IMHO so rare we won't encounter
+    //     it in older code. See the&nbsp;<a
     //         href="https://en.cppreference.com/w/cpp/language/string_literal">C++
     //         string literals docs</a> for the reasoning behind the start body
     //     regex.</p>
+    
     //Language name File extensions     IC      Block comment       Long string     Short str   Heredoc JS tmpl lit
     ["c_cpp",       [".cc", ".cpp"],    ["//"], [["/*", "*/"]],     [],             ['"'],      [['R"', "[^()\\ ]", "(", ")", ""]], 0],
     ["html",        [".html"],          [],     [["<!--", "-->"]],  [],             [],         [],     0],
-    ["javascript",  [".js"],            ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
+    ["javascript",  [".js", ".mjs"],    ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
+    ["json5",       [".json"],          ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
     ["python",      [".py"],            ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
+    ["typescript",  [".ts", ".mts"],    ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
     ["verilog",     [".v"],             ["//"], [["/*", "*/"]],     [],             ['"'],      [],     0],
     ["vlang",       [".v"],             ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
+    ["yaml",        [".yaml",".yml"],   ["#"],  [],                 [],             ['"', "'"], [],     0],
     ["codechat-html", [".cchtml"],      [""],   [],                 [],             [],         [],     0],
 ];
 
