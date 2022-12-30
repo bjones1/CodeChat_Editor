@@ -554,7 +554,85 @@ const source_lexer = (
                     code_block_array.push(full_comment);
                 }
             } else if (m[block_comment_index]) {
-                // <p>TODO!</p>
+                // <p>A block comment. Find the end of it.</p>
+                // for now just match c++ style comments Start with /* and end with */
+                const end_of_comment_match = source_code.match(/\*\//);
+                // <p>Assign <code>full_comment</code> to contain the entire
+                //     comment, from the block comment start until the block
+                //     comment end. No matching end means we're at the end of the
+                //     file, so the comment is all the remaining
+                //     <code>source_code</code>.</p>
+
+                const full_comment = end_of_comment_match
+                    ? source_code.substring(
+                          0,
+                          end_of_comment_match.index +
+                              end_of_comment_match[0].length
+                      )
+                    : source_code;
+
+                // starting at the block comment closing delimiter add everything until the next newline
+                const after_close = source_code
+                    .substring(full_comment.length)
+                    .match(/(\\\r\n|\\\n|\\\r|[^\\\n\r])*(\n|\r\n|\r)/);
+                // <p>Move to the next block of source code to be lexed.</p>
+                source_code = source_code.substring(full_comment.length);
+
+                let code_block = code_block_array.join("");
+                const last_line_until_comment = code_block
+                    .split(/\n|\r\n|\r/)
+                    .at(-1);
+                // <p>With this last line located, apply the doc block criteria.
+                // </p>
+                const block_comment_string = m[block_comment_index];
+
+                // doc block criteria for a block comment:
+                // 1. must have whitespace after the opening comment delimiter
+                // 2. must not have anything besides whitespace before the opening comment delimiter on the same line
+                // 3. must not have anything besides whitespace after the closing comment delimiter on the same line
+                // 4. MAY have whitespace before the closing comment delimiter on the same line
+
+                /* This is not a doc block, because non-whitespace
+                characters follow the closing comment delimiter.
+                It's also a code block. */ /*void food();*/
+
+                // check after_close for non-whitespace characters
+
+                if (
+                    last_line_until_comment.match(/^\s*$/) &&
+                    full_comment.startsWith(block_comment_string + " ") &&
+                    full_comment.endsWith("*/") &&
+                    (!after_close || after_close[0].match(/^\s*$/))
+                ) {
+                    // <p>This is a doc block. Transition from a code block to
+                    //     this doc block.</p>
+                    code_block = code_block.substring(
+                        0,
+                        code_block.length - last_line_until_comment.length
+                    );
+                    if (code_block) {
+                        // <p>Save only code blocks with some content.</p>
+                        classified_source.push([null, code_block, ""]);
+                    }
+                    code_block_array = [];
+                    const has_space_after_comment =
+                        full_comment[block_comment_string.length] === " ";
+                    // don't add the closing */ to the comment
+                    classified_source.push([
+                        last_line_until_comment,
+                        full_comment.substring(
+                            block_comment_string.length +
+                                (has_space_after_comment ? 1 : 0),
+                            full_comment.length - 2
+                        ),
+                        block_comment_string,
+                    ]);
+                } else {
+                    // <p>This is still code.</p>
+                    code_block_array.push(full_comment);
+                }
+
+                /*
                 const msg = "Block comments not implemented.";
                 window.alert(msg);
                 throw msg;
