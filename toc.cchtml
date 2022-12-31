@@ -6,10 +6,9 @@
             <li><a href="README.cchtml#how-to-run">How to run</a></li>
             <li><a href="README.cchtml#vision">Vision</a></li>
             <li><a href="README.cchtml#specification">Specification</a></li>
-            <li><a href="README.cchtml#an-implementation">Implementation</a>
-            </li>
         </ol>
     </li>
+    <li><a href="docs/implementation.cchtml">Implementation</a></li>
 </ol>
 <h2>Implementation</h2>
 <ol>

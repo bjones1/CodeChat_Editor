@@ -1,0 +1,302 @@
+<h1>Implementation</h1>
+<h2><a id="an-implementation"></a>1.4 Architecture</h2>
+<h3>Doc block markup</h3>
+<ul>
+    <li>For any markup, must either have:
+        <ul>
+            <li>Round-trip capable conversion: from x to HTML (load), then from
+                HTML back to x (save).</li>
+            <li>A GUI editor that works on this markup language. I don't know
+                of any (except for HTML).</li>
+        </ul>
+    </li>
+    <li>HTML is simple to implement (already done). However, it's less
+        readable.</li>
+    <li>If we make Pandoc a depedency, then supporting a wide variety of markup
+        languages is easy. However, any candidate language must be able to
+        preserve arbitrary HTML, which may be problematic.</li>
+    <li>Markdown is very well known, due to GitHub's use of it, and is more
+        readable (IMHO). It seems like a possible candidate -- anything that
+        can't be translated from HTML from Markdown can simply be left as HTML,
+        since Markdown allows HTML as a part of its syntax. Markdown has a
+        JavaScript implementation for markdown to HTML. Pandoc can translate
+        HTML back to Markdown, but this requires installation of another
+        program and adds to the server-side complexity. The <a
+            href="https://github.com/commonmark/commonmark.js/blob/master/lib/render/html.js">code</a>
+        that CommonMark uses to translate from their AST into HTML looks pretty
+        straightforward, so the inverse shouldn't be too hard.</li>
+</ul>
+<h3>Client/server partitioning</h3>
+<p>Code blocks consist of standard HTML augmented with custom HTML elements
+    which provide authoring support. Some of these elements depend only on
+    information in the current page. For example, a GraphViz graph tag
+    transforms the graph provided in its tag into an SVG; it doesn't&nbsp; need
+    information from other files. Other elements, such as a cross-reference
+    tag, depend on information from other pages (in this case, the page
+    containing the referenced item). The client lacks the ability to access
+    other files, while the server has direct access to these files. Therefore,
+    the overall strategy is:</p>
+<ul>
+    <li>On page load, the server transforms custom tags which depend on
+        information from other pages into tags which include this information.
+        For example, a cross-reference tag might be transformed into a
+        hyperlink whose link text comes from the cross-reference on another
+        page.</li>
+    <li>The client them defines a set of <a
+            href="https://developer.mozilla.org/en-US/docs/Web/Web_Components">Web
+            Components</a> which implement custom tags which only need local
+        information. For example, a GraphViz custom tag renders graphs based on
+        a description of the graph inside the tag.</li>
+    <li>The client sends edits (including creating a tag or deleting it) to
+        tags which depend on server-side information to the server for
+        transformation.</li>
+    <li>On save, the client sends its text back to the server, which
+        de-transforms custom tags which depend on information from other pages.
+    </li>
+</ul>
+<p>Page processing pipeline</p>
+<p>On load:</p>
+<ul>
+    <li>Server:
+        <ul>
+            <li>Run pre-parse hooks: they receive source code, file metadata
+            </li>
+            <li>Parse the file into code and doc blocks.</li>
+            <li>If the cached data is stale, walk the doc blocks to update the
+                cache.</li>
+            <li>Run post-parse hooks: they receive code/docs blocks, file
+                metadata.</li>
+            <li>Run tree-walk hooks: given a list of tags, their callback is
+                run when this tag is encountered.</li>
+            <li>Determine next/prev/up hyperlinks based on this file's location
+                in the TOC.</li>
+        </ul>
+    </li>
+    <li>Client:
+        <ul>
+            <li>Any edits to items with a specific class are sent to the server
+                for processing/rendering.</li>
+        </ul>
+    </li>
+</ul>
+<p>On save: the same process in reverse.</p>
+<h3>Table of contents</h3>
+<ul>
+    <li>While the TOC file must be placed in the root of the project, it will
+        be served alongside pages served from subdirectories. What's the best
+        approach? An iframe; otherwise, need to rewrite all URLs (images,
+        links, etc.) which sounds hard.</li>
+    <li>The TOC is just HTML. Numbered sections are expressed as nested ordered
+        lists, with links to each section inside these lists.</li>
+    <li>All numbering is stored internally as a number, instead of the
+        corresponding marker (I, II, III, etc.). This allows styles to
+        customize numbering easily. In addition, while&nbsp;JavaScript can find
+        the index of each item in an ordered list, but it can't get the actual
+        marker used (Roman numbers, bullets, or things generated by <a
+            href="https://developer.mozilla.org/en-US/docs/Web/CSS/list-style-type">list-style-type</a>).
+        There's a CSS&nbsp;<a
+            href="https://developer.mozilla.org/en-US/docs/Web/CSS/::marker">::marker</a>
+        selector, but not way to get the rendered text. Even <a
+            href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText">innerText</a>
+        doesn't include the marker in the resulting text.</li>
+    <li>&nbsp;Old notes:
+        <ul>
+            <li>Then,&nbsp;<code>document.querySelector('[href="https://example.com"]')</code>
+                finds the first instance of the current page's link, which
+                takes care of scrolling the TOC.</li>
+            <li>Given the a element in the TOC, looking through its parents
+                provides the section number. Given an array of section numbers,
+                use CSS to style all the headings. One approach, which makes it
+                easy for a style sheet to include or exclude section numbers,
+                by making them CSS variables:<br>
+                <p><code>:root {</code><br><code>&nbsp;
+                        --section-counter-reset: s1 4 s2
+                        5;</code><br><code>&nbsp;
+                        --section-counter-content:
+                        counter(s1,
+                        numeric) '-' counter(s2,
+                        numeric);</code><br><code>}</code></p>
+                <p><code>h1::before
+                        {</code><br><code>&nbsp;
+                        counter-reset:
+                        var(--section-counter-reset);</code><br><code>&nbsp;
+                        content:
+                        var(--section-counter-content);</code><br><code>}</code>
+                </p>
+            </li>
+            <li>Plan:
+                <ol>
+                    <li>Implement a project finder -- starting at the current
+                        directory, ascend to the root looking for the project
+                        file. If so, return a web page which includes the TOC
+                        as a sidebar plus some navigation (prev/next/up)
+                        placeholders. For prev/next, use this:<br><code>t =
+                            document.createTreeWalker(document.body,
+                            NodeFilter.SHOW_ELEMENT,
+                            {&nbsp;</code><br><code>&nbsp;
+                            acceptNode(node)
+                            {</code><br><code>&nbsp; &nbsp; return
+                            node.nodeName === "A" ?
+                            NodeFilter.FILTER_ACCEPT :
+                            NodeFilter.FILTER_SKIP;</code><br><code>&nbsp;
+                            }&nbsp;</code><br><code>});</code><br><code>t.currentNode
+                            = &lt;link corresponding to current
+                            page&gt;</code><br><code>next =
+                            t.nextNode();</code></li>
+                    <li>Implement TOC scroll (on the client -- easy there).
+                        This means finding the first hyperlink to the current
+                        page. Given that, it's fairly easy to determine
+                        prev/next/up and section numbers. Implement all these.
+                    </li>
+                </ol>
+            </li>
+        </ul>
+    </li>
+</ul>
+<h3><a id="combined-code-document-editor"></a>Combined code/document editor
+</h3>
+<ul>
+    <li>Need to find some way to allow syntax highlighting, code folding, etc.
+        to work across code blocks. Need to have just the code blocks, along
+        with a way to map these code back to the resulting document.</li>
+</ul>
+<h3>Cached state</h3>
+<p>When hydrating a page (transforming all custom tags into standard HTML) on
+    the server, all needed hydration data should be stored in the cache.</p>
+<h4>Data and format</h4>
+<ul>
+    <li>For each file (including anything linkable -- images, videos, etc.),
+        stored as the relative path from the project's root directory to that
+        file:
+        <ul>
+            <li>A time/date stamp to determine if this cached data is stale or
+                not.</li>
+            <li>The global TOC numbering.</li>
+            <li>A nested list of headings, represented by their anchor. For
+                headings without an anchor, assign one.</li>
+        </ul>
+    </li>
+    <li>For each anchor:
+        <ul>
+            <li>The page it's in, as a path to the file containing this page.
+            </li>
+            <li>The outer HTML of the item it refers to (self/sibling/etc.),
+                for use with references.</li>
+            <li>Its numbering within the current page, also for use with
+                references.&nbsp;</li>
+            <li>A list of referring links, represented by their anchor. For
+                links without an anchor, assign one.</li>
+        </ul>
+    </li>
+</ul>
+<h4>Editing and cached state</h4>
+<p>Edits to the document of any cached items cause the browser to push this
+    edit to the server; the server then propagates the edits to open windows
+    and updates its state. If a modified file is closed without saving it
+    (meaning the cached state for this file is now invalid), then all that
+    cache state must be flushed. To flush, simply set the date/time stamp of
+    that file to something old/invalid.</p>
+<h3>TOC custom tag</h3>
+<p>Options:</p>
+<ul>
+    <li>Path to linked file</li>
+    <li>Depth of numbering</li>
+</ul>
+<h4>Example</h4>
+<div class="CodeChat-toc mceNonEditable"
+    data-codechat-path="static/css/CodeChatEditor.css" data-codechat-depth="">
+    <p>asdf</p>
+</div>
+<h3>Numbering</h3>
+<p>On a page, the local TOC numbering comes only from heading tags. The CSS
+    (which would adding numbering to selected headings) must be kept in sync
+    with the code which infers the numbering. A simple value (4, meaning h1-h4
+    are numbered) is all the code needs. How to do this?</p>
+<p>On the TOC, numbering may come from both heading tags and ordered lists,
+    again based on the CSS. Numbered headings should be included in the
+    numbering, followed by ordered list numbering.&nbsp;</p>
+<h3>Settings</h3>
+<p>The settings should be configurable from a nice GUI. I like the VSCode idea
+    -- make it easy to add more config values. Settings should also be
+    available for plug-ins. Store the config values in a bare JSON file;
+    provide a web-based GUI with descriptions of each setting.</p>
+<ul>
+    <li>Files/directories to process/ignore</li>
+    <li>Header/footer info (name, version, copyright, etc.)</li>
+    <li>The programming language, markup language, and spellchecker language
+        for each source file.</li>
+    <li>Text wrap width when saving.</li>
+    <li>Visual styling (theme/style sheets, color, fonts, size of TOC sidebar,
+        location of sidebar, etc.).</li>
+    <li>HTML <code>&lt;head&gt;</code> modifications: CSS/JS to add to all
+        pages/a set of pages.</li>
+    <li>Depth of headings to include in the page-local TOC.</li>
+    <li>Auto-reload if modified externally or not</li>
+    <li>Tabs vs spaces; newline type</li>
+    <li>Substitutions</li>
+</ul>
+<h3><a id="core-developmnt-priorities"></a>Core development priorities</h3>
+<ol>
+    <li>IDE integration</li>
+    <li>Editor functionality</li>
+    <li>Project support</li>
+</ol>
+<h3><a id="next-steps"></a>Next steps</h3>
+<ol>
+    <li>Define the architecture for IDE extensions/plug-ins. Goal: minimize
+        extension/plug-in complexity.</li>
+    <li>Define desired UI behavior. Priority: auto-reload; dirty document
+        detection; auto-backup.</li>
+    <li>Implement Markdown support.</li>
+    <li>Propose visual styling, dark mode, etc.</li>
+</ol>
+<h3>To do</h3>
+<ol>
+    <li>Improve accessibility -- use a <code>&lt;main&gt;</code> tag,
+        <code>&lt;nav&gt;</code> tags, etc.</li>
+    <li>Open the TOC as a single-file edit? If not, at least hide the sidebar,
+        since that's redundant.</li>
+</ol>
+<h3>Open questions</h3>
+<ul>
+    <li>I'd like to be able to wrap a heading and associated content in a
+        <code>&lt;section&gt;</code> tag. This is hard to do -- if a heading
+        appears in the middle of an indented comment, then need special
+        processing (close the section, then the indent, then restart a new
+        indent and section). In addition, it requires that code is nested
+        inside doc blocks, which is tricky. However, I would like to do this.
+    </li>
+    <li>How to handle images/videos/PDFs/etc. when file are moved? Currently,
+        we expect the user to move them as well. There's not an easy way to tag
+        them with an unique ID, then refer to them using that ID than I can
+        think of.</li>
+    <li>Config file format: I really like and prefer Python's strictyaml.
+        Basically, I want something that includes type validation and allows
+        comments within the config file. Perhaps JSON with a pre-parse step to
+        discard comments then <a href="https://jsontypedef.com/">JSON
+            Typedef</a>? Possibly, vlang can do this somewhat, since it wants
+        to decode JSON into a V struct.)</li>
+</ul>
+<h2>1.5 Organization</h2>
+<h3>Client</h3>
+<ul>
+    <li>Written in TypeScript</li>
+    <li>npm for library management</li>
+    <li>webpack</li>
+</ul>
+<h3>Server</h3>
+<ul>
+    <li>Written in vlang</li>
+</ul>
+<h3>Plugins/extensions</h3>
+<ul>
+    <li>Language determined by host environment</li>
+</ul>
+<h3>Communication</h3>
+<ul>
+    <li>Use http for client web page loading. Provide /fs path for filesystem
+        access.</li>
+    <li>Use websockets for client/server connection.</li>
+    <li>Use http for plugin/server connection. Websockets would be better, but
+        not sure how supported this is.</li>
+</ul>
