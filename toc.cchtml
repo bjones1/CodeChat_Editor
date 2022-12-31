@@ -33,6 +33,9 @@
                             <li><a
                                     href="client/webpack/src/tinymce-webpack.mjs">tinymce-webpack.mjs</a>
                             </li>
+                            <li><a
+                                    href="client/webpack/src/typings.d.ts">typings.d.ts</a>
+                            </li>
                         </ol>
                     </li>
                     <li><a
