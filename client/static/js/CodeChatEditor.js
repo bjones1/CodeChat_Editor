@@ -468,6 +468,8 @@ const source_lexer = (
                 //     <code>/(?&lt;!\\)(\n|\r\n|\r)/</code>. However, V doesn't
                 //     support this.</p>
                 const end_of_comment_match = source_code.match(
+                    // Match groups are:
+                    /// ---Match-group 1--------- -M.-group 2-
                     /(\\\r\n|\\\n|\\\r|[^\\\n\r])*(\n|\r\n|\r)/
                 );
                 // <p>Assign <code>full_comment</code> to contain the entire
@@ -478,6 +480,7 @@ const source_lexer = (
                 const full_comment = end_of_comment_match
                     ? source_code.substring(
                           0,
+                          // The index of the end of the match = the index of the start of the match + the length of the match.
                           end_of_comment_match.index +
                               end_of_comment_match[0].length
                       )
@@ -516,7 +519,8 @@ const source_lexer = (
                         full_comment ===
                             inline_comment_string +
                                 (end_of_comment_match
-                                    ? end_of_comment_match[1]
+                                    ? // Match group 2 contains only the newline character(s); see match group comments earlier.
+                                      end_of_comment_match[2]
                                     : ""))
                 ) {
                     // <p>This is a doc block. Transition from a code block to
@@ -1016,8 +1020,20 @@ const test_source_lexer_1 = () => {
         [null, "\n", ""],
         ["   ", "Test", "#"],
     ]);
-
     assert_equals(python_source_lexer("   # Test\n"), [["   ", "Test\n", "#"]]);
+    // Doc blocks containing comments followed immediately by a newline.
+    assert_equals(python_source_lexer("#"), [["", "", "#"]]);
+    assert_equals(python_source_lexer("#\n"), [["", "\n", "#"]]);
+    assert_equals(python_source_lexer("# Test\n#\n# Test"), [
+        ["", "Test\n", "#"],
+        ["", "\n", "#"],
+        ["", "Test", "#"],
+    ]);
+    assert_equals(python_source_lexer("  # Test\n  #\n  # Test"), [
+        ["  ", "Test\n", "#"],
+        ["  ", "\n", "#"],
+        ["  ", "Test", "#"],
+    ]);
 };
 
 const test_source_lexer = () => {
