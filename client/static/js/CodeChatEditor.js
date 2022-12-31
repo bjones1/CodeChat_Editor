@@ -957,6 +957,7 @@ const escapeRegExp = (string) =>
 const test_source_lexer_1 = () => {
     const python_source_lexer = (source_code) =>
         source_lexer(source_code, ...language_lexers[4]);
+
     assert_equals(python_source_lexer(""), []);
     assert_equals(python_source_lexer("\n"), [[null, "\n", ""]]);
     assert_equals(python_source_lexer("\n# Test"), [
@@ -1036,8 +1037,20 @@ const test_source_lexer_1 = () => {
     ]);
 };
 
+const test_source_lexer_2 = () => {
+    const c_cpp_source_lexer = (source_code) =>
+        source_lexer(source_code, ...language_lexers[0]);
+
+    // TODO: The newline is outside a comment, but should still be considered a part of the doc block.
+    assert_equals(c_cpp_source_lexer("/* Test */\n// Test"), [
+        ["", "Test\n", "/*"],
+        ["", "Test", "//"],
+    ]);
+};
+
 const test_source_lexer = () => {
     test_source_lexer_1();
+    test_source_lexer_2();
 };
 
 // <p>Woefully inadequate, but enough for testing.</p>
