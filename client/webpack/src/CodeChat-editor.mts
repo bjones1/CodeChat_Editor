@@ -19,7 +19,17 @@
 // </h1>
 // <p>The CodeChat Editor provides a simple IDE which allows editing of mixed
 //     code and doc blocks.</p>
-//
+// <h2>Imports</h2>
+import { init } from "./tinymce-webpack.mjs";
+import "./ace-webpack.mts";
+
+// Configure the Graphviz web component to load the (large) renderer only when a Graphviz web component is found on a page. See the <a href="https://github.com/prantlf/graphviz-webcomponent#configuration">docs</a>.
+(window as any).graphvizWebComponent = {
+    rendererUrl: "/static/graphviz-webcomponent/renderer.min.js",
+    delayWorkerLoading: true,
+};
+import "graphviz-webcomponent";
+
 // <h2>UI</h2>
 // <h3>DOM ready event</h3>
 // <p>This is copied from <a
@@ -38,20 +48,12 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
 //     assignment.</p>
 (window as any).on_dom_content_loaded = on_dom_content_loaded;
 
-import { init } from "./tinymce-webpack.mjs";
 init({});
 
-import "./ace-webpack.mts";
-
+// Create a combined editor/renderer component. It's not currently used, since TinyMCE doesn't allow the editor to be focused.
 class GraphVizElement extends HTMLElement {
     constructor() {
         super();
-        // <p>Dynamically import the graphviz package, then finish construction.
-        // </p>
-        import("graphviz-webcomponent/bundled").then(this.async_constructor);
-    }
-
-    async_constructor = async (_module: Promise<any>) => {
         // <p>Create the shadow DOM.</p>
         const shadowRoot = this.attachShadow({ mode: "open" });
         const editor = document.createElement("graphviz-script-editor");
@@ -81,6 +83,6 @@ class GraphVizElement extends HTMLElement {
 
         // <p>Populate the shadow DOM now that everything is ready.</p>
         shadowRoot.append(editor, graph);
-    };
+    }
 }
 customElements.define("graphviz-combined", GraphVizElement);
