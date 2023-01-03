@@ -1,5 +1,4 @@
 <h1>1. CodeChat Editor overview</h1>
-<graphviz-combined graph="digraph { a -&gt; ba }"></graphviz-combined>
 <p>The CodeChat Editor should be a GUI-based programmer's word processor /
     Jupyter for software developers. This document records its overall design.
 </p>

@@ -59,15 +59,20 @@
 <ul>
     <li>Server:
         <ul>
-            <li>Run pre-parse hooks: they receive source code, file metadata
-            </li>
+            <li>Run pre-parse hooks: they receive source code, file metadata.
+                Examples: code formatters. Skip if cache is up to date.</li>
             <li>Parse the file into code and doc blocks.</li>
-            <li>If the cached data is stale, walk the doc blocks to update the
-                cache.</li>
-            <li>Run post-parse hooks: they receive code/docs blocks, file
-                metadata.</li>
-            <li>Run tree-walk hooks: given a list of tags, their callback is
-                run when this tag is encountered.</li>
+            <li>Run post-parse hooks: they receive an array of code and doc
+                blocks. I can't think of any sort of processing to do here,
+                though.</li>
+            <li>Update the cache for the current file only if the current
+                file's cache is stale. To do this, walk the DOM of each doc
+                block. The hook specifies which tags it wants, and the tree
+                walked calls the hook when it encounters these.</li>
+            <li>Update tags whose content depend on data from other files.
+                Hooks work the same as the cache updates, but have a different
+                role. They're always run, while the cache update is skipped
+                when the cache is current.</li>
             <li>Determine next/prev/up hyperlinks based on this file's location
                 in the TOC.</li>
         </ul>
@@ -279,14 +284,57 @@
 </ul>
 <h2>1.5 Organization</h2>
 <h3>Client</h3>
-<ul>
-    <li>Written in TypeScript</li>
-    <li>npm for library management</li>
-    <li>webpack</li>
-</ul>
+<p>As shown in the figure below, the CodeChat Editor client starts with
+    <code>client/webpack/package.json</code>, which tells <a
+        href="https://en.wikipedia.org/wiki/Npm_(software)">NPM</a> which
+    JavaScript libraries are used in this project. Running <code>npm
+        update</code> (or <code>npm install</code>) copies these libraries and
+    all their dependencies to the <code>client/webpack/node_modules</code>
+    directory. The CodeChat Editor client source code (see <a
+        href="../client/webpack/CodeChat-editor.mts">CodeChat-editor.mts</a>)
+    imports these libraries.</p>
+<p>Next, <a href="https://webpack.js.org/">webpack</a> analyzes the CodeChat
+    Editor client based on the configuration in <a
+        href="client/webpack/webpack.config.js">webpack.config.js</a> by
+    transforming any <a href="https://www.typescriptlang.org/">TypeScript</a>
+    into JavaScript then packaging all dependencies (JavaScript, CSS, images,
+    etc.) into a smaller set of files. At a user's request, the CodeChat Editor
+    server generates HTML which creates an editor around the user-requested
+    file. This HTML loads the packaged dependencies to create the CodeChat
+    Editor webpage.</p>
+<graphviz-graph graph="digraph {
+    JS_lib [label = &quot;JavaScript libraries&quot;];
+    &quot;package.json&quot; -&gt; JS_lib [label = &quot;npm update&quot;];
+    JS_lib -&gt; webpack;
+    CCE_source [label = &quot;CodeChat Editor\lclient-side source&quot;];
+    JS_lib -&gt; CCE_source [label = &quot;imports&quot;];
+    &quot;webpack.config.js&quot; -&gt; webpack;
+    &quot;webpack.config.js&quot; -&gt; CCE_source;
+    CCE_source -&gt; webpack;
+    webpack -&gt; &quot;Packaged JavaScript&quot;;
+    CCE_webpage [label = &quot;CodeChat Editor\lwebpage&quot;];
+    &quot;Packaged JavaScript&quot; -&gt; CCE_webpage;
+    server_HTML [label = &quot;CodeChat Editor\lServer-generated\lHTML&quot;];
+    server_HTML -&gt; CCE_webpage;
+}"></graphviz-graph>
+<p>TODO: Try esbuild. Command line: <code>.\node_modules\.bin\esbuild
+        src\CodeChat-editor.mts --bundle --outdir=out --sourcemap --analyze
+        --splitting --format=esm</code></p>
+<p>However, code splitting doesn't work with dynamic imports -- the splitter
+    always picks Node-style default imports, while the Ace editor expects
+    Babel-style imports.</p>
+<p>TODO: GUIs using TinyMCE. See the <a
+        href="https://www.tiny.cloud/docs/tinymce/6/dialog-components/#panel-components">how-to
+        guide</a>.</p>
 <h3>Server</h3>
 <ul>
     <li>Written in vlang</li>
+    <li>Here's a bug I <a
+            href="https://github.com/vlang/v/issues/16700">reported</a> in
+        vweb.</li>
+    <li>For server plugins, here's how to <a
+            href="https://github.com/vlang/v/issues/2379">produce a dll/so</a>.
+    </li>
 </ul>
 <h3>Plugins/extensions</h3>
 <ul>
@@ -300,3 +348,10 @@
     <li>Use http for plugin/server connection. Websockets would be better, but
         not sure how supported this is.</li>
 </ul>
+<h2>Code style</h2>
+<p>JavaScript functions are a <a
+        href="https://dmitripavlutin.com/differences-between-arrow-and-regular-functions/">disaster</a>.
+    Therefore, we use only arrow functions for this codebase.</p>
+<p>Other than that, follow the <a
+        href="https://developer.mozilla.org/en-US/docs/MDN/Writing_guidelines/Writing_style_guide/Code_style_guide/JavaScript">MDN
+        style guide</a>.</p>
