@@ -288,41 +288,35 @@
     <code>client/webpack/package.json</code>, which tells <a
         href="https://en.wikipedia.org/wiki/Npm_(software)">NPM</a> which
     JavaScript libraries are used in this project. Running <code>npm
-        update</code> (or <code>npm install</code>) copies these libraries and
-    all their dependencies to the <code>client/webpack/node_modules</code>
-    directory. The CodeChat Editor client source code (see <a
+        update</code>&nbsp;copies these libraries and all their dependencies to
+    the <code>client/webpack/node_modules</code> directory. The CodeChat Editor
+    client source code (see <a
         href="../client/webpack/CodeChat-editor.mts">CodeChat-editor.mts</a>)
     imports these libraries.</p>
-<p>Next, <a href="https://webpack.js.org/">webpack</a> analyzes the CodeChat
-    Editor client based on the configuration in <a
-        href="client/webpack/webpack.config.js">webpack.config.js</a> by
-    transforming any <a href="https://www.typescriptlang.org/">TypeScript</a>
-    into JavaScript then packaging all dependencies (JavaScript, CSS, images,
-    etc.) into a smaller set of files. At a user's request, the CodeChat Editor
-    server generates HTML which creates an editor around the user-requested
-    file. This HTML loads the packaged dependencies to create the CodeChat
-    Editor webpage.</p>
+<p>Next, <a href="https://esbuild.github.io/">esbuild</a> analyzes the CodeChat
+    Editor client based&nbsp;by transforming any <a
+        href="https://www.typescriptlang.org/">TypeScript</a> into JavaScript
+    then packaging all dependencies (JavaScript, CSS, images, etc.) into a
+    smaller set of files. At a user's request, the CodeChat Editor server
+    generates HTML which creates an editor around the user-requested file. This
+    HTML loads the packaged dependencies to create the CodeChat Editor webpage.
+</p>
 <graphviz-graph graph="digraph {
     JS_lib [label = &quot;JavaScript libraries&quot;];
     &quot;package.json&quot; -&gt; JS_lib [label = &quot;npm update&quot;];
-    JS_lib -&gt; webpack;
+    JS_lib -&gt; esbuild;
     CCE_source [label = &quot;CodeChat Editor\lclient-side source&quot;];
     JS_lib -&gt; CCE_source [label = &quot;imports&quot;];
-    &quot;webpack.config.js&quot; -&gt; webpack;
-    &quot;webpack.config.js&quot; -&gt; CCE_source;
-    CCE_source -&gt; webpack;
-    webpack -&gt; &quot;Packaged JavaScript&quot;;
+    CCE_source -&gt; esbuild;
+    esbuild -&gt; &quot;Packaged JavaScript&quot;;
     CCE_webpage [label = &quot;CodeChat Editor\lwebpage&quot;];
     &quot;Packaged JavaScript&quot; -&gt; CCE_webpage;
-    server_HTML [label = &quot;CodeChat Editor\lServer-generated\lHTML&quot;];
+    server_HTML [label = &quot;CodeChat Editor\lserver-generated\lHTML&quot;];
     server_HTML -&gt; CCE_webpage;
 }"></graphviz-graph>
-<p>TODO: Try esbuild. Command line: <code>.\node_modules\.bin\esbuild
-        src\CodeChat-editor.mts --bundle --outdir=out --sourcemap --analyze
-        --splitting --format=esm</code></p>
-<p>However, code splitting doesn't work with dynamic imports -- the splitter
-    always picks Node-style default imports, while the Ace editor expects
-    Babel-style imports.</p>
+<p>However, esbuild's code splitting doesn't work with dynamic imports -- the
+    splitter always picks Node-style default imports, while the Ace editor
+    expects Babel-style imports.</p>
 <p>TODO: GUIs using TinyMCE. See the <a
         href="https://www.tiny.cloud/docs/tinymce/6/dialog-components/#panel-components">how-to
         guide</a>.</p>
