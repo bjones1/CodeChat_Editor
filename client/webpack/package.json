@@ -6,10 +6,10 @@
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
         "check-env": "node -e 'console.log(process.env)' | grep npm",
-        "build": "webpack --mode=development",
-        "buildj": "webpack --mode=development --profile --json > stats.json",
-        "dist": "webpack --mode=production",
-        "analyze": "webpack-bundle-analyzer stats.json dist"
+        "build": "run-script-os",
+        "build:win32": "node_modules\\.bin\\esbuild src/CodeChat-editor.mts --bundle --outdir=../static/webpack --sourcemap --format=esm",
+        "build:default": "node_modules/.bin/esbuild src/CodeChat-editor.mts --bundle --outdir=../static/webpack --sourcemap --format=esm",
+        "dist": "TODO"
     },
     "keywords": [],
     "author": "Bryan A. Jones",
@@ -17,23 +17,14 @@
     "devDependencies": {
         "@typescript-eslint/eslint-plugin": "^5.0.0",
         "@typescript-eslint/parser": "^5.0.0",
-        "compression-webpack-plugin": "^9.0.0",
-        "copy-webpack-plugin": "^9.0.0",
-        "css-loader": "^6.0.0",
-        "css-minimizer-webpack-plugin": "^3.0.0",
+        "esbuild": "^0.16",
         "eslint": "^7.0.0",
         "eslint-config-prettier": "^8.0.0",
         "eslint-plugin-import": "^2.0.0",
         "eslint-plugin-prettier": "^4",
-        "html-loader": "^3.0.0",
-        "html-webpack-plugin": "^5.0.0",
-        "mini-css-extract-plugin": "^2.0.0",
         "prettier": "^2",
-        "ts-loader": "^9",
-        "typescript": "4.9.4",
-        "webpack": "^5.61.0",
-        "webpack-bundle-analyzer": "^4.0.0",
-        "webpack-cli": "^4.0.0"
+        "run-script-os": "^1",
+        "typescript": "4.9.4"
     },
     "dependencies": {
         "ace-code": "^1",

@@ -1,4 +1,20 @@
 // <!-- CodeChat-lexer: vlang -->
+// <details>
+//     <summary>Copyright (C) 2022 Bryan A. Jones.</summary>
+//     <p>This file is part of the CodeChat Editor.</p>
+//     <p>The CodeChat Editor is free software: you can redistribute it and/or
+//         modify it under the terms of the GNU General Public License as
+//         published by the Free Software Foundation, either version 3 of the
+//         License, or (at your option) any later version.</p>
+//     <p>The CodeChat Editor is distributed in the hope that it will be useful,
+//         but WITHOUT ANY WARRANTY; without even the implied warranty of
+//         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+//         General Public License for more details.</p>
+//     <p>You should have received a copy of the GNU General Public License
+//         along with the CodeChat Editor. If not, see <a
+//             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
+//     </p>
+// </details>
 // <h1><code>CodeChatEditorServer.v</code>&mdash;A simple server for the
 //     CodeChat Editor</h1>
 // <p>This server provides the user the ability to browse the local filesystem;
@@ -6,7 +22,6 @@
 //     CodeChat Editor. It also enables the CodeChat Editor to save modified
 //     files back to the local filesystem.</p>
 // <h2>Imports</h2>
-import json
 import os
 import net.urllib
 import regex
@@ -258,21 +273,6 @@ ${source_code}
 		"", ""
 	}
 
-	// <p>Load webpacked JavaScript and CSS filenames.</p>
-	webpack_mapping_file_path := "../client/static/webpack/webpack_static_imports.json"
-	json_str := os.read_file(webpack_mapping_file_path) or { panic("Unable to read Webpack mapping file ${webpack_mapping_file_path}: ${err}") }
-	webpacked_json := json.decode(WebpackJson, json_str) or { panic("Error decoding Webpack mapping file ${webpack_mapping_file_path}: ${err}") }
-
-	// <p>Transform them in HTML tags.</p>
-	mut js_css_tags := ""
-	for js in webpacked_json.js {
-		js_css_tags += "        <script src='/static/webpack/${js}'></script>\n"
-	}
-	for css in webpacked_json.css {
-		js_css_tags += "        <link rel='stylesheet' href='/static/webpack/${css}'>\n"
-	}
-
-
 	return '<!DOCTYPE html>
 <html lang="en">
 	<head>
@@ -280,12 +280,12 @@ ${source_code}
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>$name - The CodeChat Editor</title>
 
-${js_css_tags}
-
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js"></script>
-		<script src="/static/js/CodeChatEditor.js"></script>
+        <script src="/static/webpack/CodeChat-editor.js" type="module"></script>
+        <link rel="stylesheet" href="/static/webpack/CodeChat-editor.css">
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js" defer></script>
+		<script src="/static/js/CodeChatEditor.js" defer></script>
 		<script>
-			page_init(
+			const _page_init = () => page_init(
 "${quote_script_string(source_code)}",
 "${quote_string(ext)}");
 		</script>

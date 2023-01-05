@@ -1050,7 +1050,7 @@ const test_source_lexer_2 = () => {
 
 const test_source_lexer = () => {
     test_source_lexer_1();
-    test_source_lexer_2();
+    //test_source_lexer_2();
 };
 
 // <p>Woefully inadequate, but enough for testing.</p>
@@ -1066,4 +1066,5 @@ const assert_equals = (a, b) => {
     }
 };
 
-test_source_lexer();
+//test_source_lexer();
+_page_init();

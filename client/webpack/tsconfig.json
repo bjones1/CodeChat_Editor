@@ -2,6 +2,10 @@
 {
     "compilerOptions": {
         "allowJs": true,
+        // Required by ESBuild per their <a href="https://esbuild.github.io/content-types/#es-module-interop">docs</a>; see also <a href="https://www.typescriptlang.org/tsconfig#esModuleInterop">the TypeScript docs</a>.
+        "esModuleInterop": true,
+        // Required by ESBuild per their <a href="https://esbuild.github.io/content-types/#isolated-modules">docs</a>; see also <a href="https://www.typescriptlang.org/tsconfig#isolatedModules">the TypeScript docs</a>.
+        "isolatedModules": true,
         "module": "ES2020",
         "moduleResolution": "node",
         "outDir": "out",
