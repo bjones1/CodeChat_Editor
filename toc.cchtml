@@ -24,7 +24,7 @@
             <li>Editor
                 <ol>
                     <li><a
-                            href="client/static/js/CodeChatEditor.js">CodeChatEditor.js</a>
+                            href="client/src/CodeChatEditor.mjs">CodeChatEditor.mjs</a>
                         <ol>
                             <li><a
                                     href="client/src/CodeChat-editor.mts">CodeChat-editor.mts</a>
