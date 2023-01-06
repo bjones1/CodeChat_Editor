@@ -26,6 +26,60 @@
         that CommonMark uses to translate from their AST into HTML looks pretty
         straightforward, so the inverse shouldn't be too hard.</li>
 </ul>
+<h3>Lexing</h3>
+<p>The lexer needs to be more flexible. Some challenges:</p>
+<ul>
+    <li>Some languages (C/C++/Python/etc.) support line continuation characters
+        both inside strings and outside strings. Others (Verilog) don't. Both
+        types of languages&nbsp;allow <code>\"</code> to escape a double quote.
+    </li>
+    <li>Some languages (TOML, YAML) allow escape sequences in some string types
+        but not in other string types. There is no line continuation character
+        for non-strings.
+        <ul>
+            <li>YAML:
+                <ul>
+                    <li><a
+                            href="https://yaml.org/spec/1.2.2/#double-quoted-style">Double-quoted
+                            strings</a> allow <code>\"</code> to escape a
+                        double quote. They can contain multiple lines.</li>
+                    <li><a
+                            href="https://yaml.org/spec/1.2.2/#single-quoted-style">Single
+                            quotes</a> allow <code>''</code> to escape a single
+                        quote. They can also contain multiple lines.</li>
+                    <li>Something I don't understand and will probably ignore:
+                        "Single- and double-quoted scalars are restricted to a
+                        single line when contained inside an implicit key."
+                    </li>
+                </ul>
+            </li>
+            <li><a href="https://toml.io/en/">TOML</a>
+                <ul>
+                    <li>Basic strings allow <code>\"</code> to escape a double
+                        quote. A line continuation is required to include a
+                        newline.</li>
+                    <li>Multi-line basic strings also&nbsp;allow
+                        <code>\"</code> to escape a double quote. They can
+                        contain multiple lines.</li>
+                    <li>Literal strings have no escaping and must be a single
+                        line; there's no line continuation character.</li>
+                    <li>Multi-line linter strings have no escaping, but can
+                        contain multiple lines.</li>
+                </ul>
+            </li>
+        </ul>
+    </li>
+</ul>
+<p>Conclusions:</p>
+<ul>
+    <li>Must support an optional line continuation character for non-strings.
+    </li>
+    <li>There are multiple types of string delimiters, not just two.</li>
+    <li>Each type of string delimiter has an optional escape sequence for the
+        delimiter.</li>
+    <li>Each type of string delimiter may be multi-line or single-line.
+        Single-line types have an optional line continuation character.</li>
+</ul>
 <h3>Client/server partitioning</h3>
 <p>Code blocks consist of standard HTML augmented with custom HTML elements
     which provide authoring support. Some of these elements depend only on
@@ -320,33 +374,33 @@
 <p>TODO: GUIs using TinyMCE. See the <a
         href="https://www.tiny.cloud/docs/tinymce/6/dialog-components/#panel-components">how-to
         guide</a>.</p>
-<h3>Server</h3>
-<graphviz-graph graph='digraph {
+<h3>System architecture</h3>
+<graphviz-graph graph="digraph {
     bgcolor = transparent;
     compound = true;
     node [shape = box];
     subgraph cluster_text_editor {
-        label = "Text editor/IDE";
-        source_code [label = "Source\ncode", style = dashed];
-        CodeChat_plugin [label = "CodeChat\nEditor plugin"];
+        label = &quot;Text editor/IDE&quot;;
+        source_code [label = &quot;Source\ncode&quot;, style = dashed];
+        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];
     }
 
     subgraph cluster_server {
-        label = <CodeChat Editor Server>;
-        websocket_server [label = "Websocket\nserver"];
-        web_server [label = "Web\nserver"];
+        label = &lt;CodeChat Editor Server&gt;;
+        websocket_server [label = &quot;Websocket\nserver&quot;];
+        web_server [label = &quot;Web\nserver&quot;];
     }
 
     subgraph cluster_client {
-        label = "CodeChat Editor Client";
-        rendered_code [label = "Rendered code", style = dashed];
+        label = &quot;CodeChat Editor Client&quot;;
+        rendered_code [label = &quot;Rendered code&quot;, style = dashed];
         JavaScript;
     }
 
-    CodeChat_plugin -> websocket_server [dir = both];
-    websocket_server -> JavaScript [dir = both];
-    web_server -> JavaScript [label = "HTTP", dir = both, lhead = cluster_client];
-}'></graphviz-graph>
+    CodeChat_plugin -&gt; websocket_server [dir = both];
+    websocket_server -&gt; JavaScript [dir = both];
+    web_server -&gt; JavaScript [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client];
+}"></graphviz-graph>
 <p>Note: this second diagram will be the same as the first until <a
         href="https://github.com/prantlf/graphviz-webcomponent/pull/4">this
         fix</a> is merged.</p>
