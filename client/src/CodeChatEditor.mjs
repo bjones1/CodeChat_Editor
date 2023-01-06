@@ -22,7 +22,7 @@
 "use strict";
 
 import { on_dom_content_loaded } from "./CodeChat-editor.mjs";
-import "js-beautify";
+import { html_beautify } from "js-beautify";
 
 // <p>Emulate an enum. <a
 //         href="https://www.30secondsofcode.org/articles/s/javascript-enum">This</a>
@@ -293,7 +293,7 @@ const save = async (contents) => {
 //         into its web-editable form</a>.</p>
 // <p>Both the load and save routines need information about the programming
 //     language in order to load/save code in that language.</p>
-// <p>prettier-ignore</p>
+// prettier-ignore
 const language_lexers = [
     // <dl>
     //     <dt>Language name</dt>
@@ -675,7 +675,7 @@ const source_lexer = (
                 source_code = source_code.substring(
                     m[short_string_index].length
                 );
-                // <p>prettier-ignore</p>
+                // prettier-ignore
                 const string_m = source_code.match(
                     // <p>Use <a
                     //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/raw"><code>String.raw</code></a>

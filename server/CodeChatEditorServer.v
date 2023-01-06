@@ -285,6 +285,10 @@ ${source_code}
         <link rel="stylesheet" href="/static/webpack/CodeChatEditor.css">
 		<script type="module">
 		    import { page_init, on_keydown, on_save, on_save_as } from "/static/webpack/CodeChatEditor.js"
+			// <p>Make these accesible on the onxxx handlers below. See <a
+			//         href="https://stackoverflow.com/questions/44590393/es6-modules-undefined-onclick-function-after-import">SO</a>.
+			// </p>
+			window.CodeChatEditor = { on_keydown, on_save, on_save_as };
 
 			page_init(
 "${quote_script_string(source_code)}",
@@ -293,16 +297,16 @@ ${source_code}
 		<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
 		${sidebar_css}
 	</head>
-	<body onkeydown="on_keydown(event);">
+	<body onkeydown="CodeChatEditor.on_keydown(event);">
 		${sidebar_iframe}
 		<div id="CodeChat-contents">
 			<div id="CodeChat-top">
 				<div id="CodeChat-filename">
 					<p>
-						<button disabled onclick="on_save_as(on_save_doc);" id="CodeChat-save-as-button">
+						<button disabled onclick="CodeChatEditor.on_save_as(on_save_doc);" id="CodeChat-save-as-button">
 							Save as
 						</button>
-						<button onclick="on_save();" id="CodeChat-save-button">
+						<button onclick="CodeChatEditor.on_save();" id="CodeChat-save-button">
 							<span class="CodeChat-hotkey">S</span>ave
 						</button>
 						- $name - $dir

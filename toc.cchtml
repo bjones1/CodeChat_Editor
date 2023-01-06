@@ -24,21 +24,23 @@
             <li>Editor
                 <ol>
                     <li><a
-                            href="client/webpack/src/CodeChat-editor.mts">CodeChat-editor.mts</a>
+                            href="client/static/js/CodeChatEditor.js">CodeChatEditor.js</a>
                         <ol>
                             <li><a
-                                    href="client/webpack/src/ace-webpack.mts">ace-webpack.mts</a>
-                            </li>
-                            <li><a
-                                    href="client/webpack/src/tinymce-webpack.mjs">tinymce-webpack.mjs</a>
-                            </li>
-                            <li><a
-                                    href="client/webpack/src/typings.d.ts">typings.d.ts</a>
+                                    href="client/src/CodeChat-editor.mts">CodeChat-editor.mts</a>
+                                <ol>
+                                    <li><a
+                                            href="client/src/ace-webpack.mts">ace-webpack.mts</a>
+                                    </li>
+                                    <li><a
+                                            href="client/src/tinymce-webpack.mjs">tinymce-webpack.mjs</a>
+                                    </li>
+                                    <li><a
+                                            href="client/src/typings.d.ts">typings.d.ts</a>
+                                    </li>
+                                </ol>
                             </li>
                         </ol>
-                    </li>
-                    <li><a
-                            href="client/static/js/CodeChatEditor.js">CodeChatEditor.js</a>
                     </li>
                 </ol>
             </li>
@@ -60,21 +62,14 @@
                 <ol>
                     <li>server/.gitignore</li>
                     <li>client/static/.gitignore</li>
-                    <li>client/webpack/.gitignore</li>
+                    <li>client/.gitignore</li>
                 </ol>
             </li>
-            <li>NPM/Webpack
+            <li>NPM/esbuild
                 <ol>
                     <li>package.json</li>
-                    <li><a
-                            href="client/webpack/webpack.config.js">webpack.config.js</a>
-                    </li>
-                    <li><a
-                            href="client/webpack/tsconfig.json">tsconfig.json</a>
-                    </li>
-                    <li><a
-                            href="client/webpack/.eslintrc.yml">.eslintrc.yml</a>
-                    </li>
+                    <li><a href="client/tsconfig.json">tsconfig.json</a></li>
+                    <li><a href="client/.eslintrc.yml">.eslintrc.yml</a></li>
                 </ol>
             </li>
         </ol>
