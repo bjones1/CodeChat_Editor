@@ -51,6 +51,7 @@ const (
 		'.mjs',
 		'.json',
 		'.py',
+		'.toml',
 		'.ts',
 		'.mts',
 		'.v',

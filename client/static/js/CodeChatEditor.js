@@ -289,8 +289,7 @@ const save = async (contents) => {
 //         into its web-editable form</a>.</p>
 // <p>Both the load and save routines need information about the programming
 //     language in order to load/save code in that language.</p>
-//
-// prettier-ignore
+// <p>prettier-ignore</p>
 const language_lexers = [
     // <dl>
     //     <dt>Language name</dt>
@@ -319,6 +318,7 @@ const language_lexers = [
     ["javascript",  [".js", ".mjs"],    ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
     ["json5",       [".json"],          ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
     ["python",      [".py"],            ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
+    ["toml",        [".toml"],          ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
     ["typescript",  [".ts", ".mts"],    ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
     ["verilog",     [".v"],             ["//"], [["/*", "*/"]],     [],             ['"'],      [],     0],
     ["vlang",       [".v"],             ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
@@ -468,7 +468,7 @@ const source_lexer = (
                 //     <code>/(?&lt;!\\)(\n|\r\n|\r)/</code>. However, V doesn't
                 //     support this.</p>
                 const end_of_comment_match = source_code.match(
-                    // Match groups are:
+                    // <p>Match groups are:</p>
                     /// ---Match-group 1--------- -M.-group 2-
                     /(\\\r\n|\\\n|\\\r|[^\\\n\r])*(\n|\r\n|\r)/
                 );
@@ -480,7 +480,9 @@ const source_lexer = (
                 const full_comment = end_of_comment_match
                     ? source_code.substring(
                           0,
-                          // The index of the end of the match = the index of the start of the match + the length of the match.
+                          // <p>The index of the end of the match = the index of
+                          //     the start of the match + the length of the
+                          //     match.</p>
                           end_of_comment_match.index +
                               end_of_comment_match[0].length
                       )
@@ -559,12 +561,13 @@ const source_lexer = (
                 }
             } else if (m[block_comment_index]) {
                 // <p>A block comment. Find the end of it.</p>
-                // for now just match c++ style comments Start with /* and end with */
+                // <p>for now just match c++ style comments Start with /* and
+                //     end with */</p>
                 const end_of_comment_match = source_code.match(/\*\//);
                 // <p>Assign <code>full_comment</code> to contain the entire
                 //     comment, from the block comment start until the block
-                //     comment end. No matching end means we're at the end of the
-                //     file, so the comment is all the remaining
+                //     comment end. No matching end means we're at the end of
+                //     the file, so the comment is all the remaining
                 //     <code>source_code</code>.</p>
 
                 const full_comment = end_of_comment_match
@@ -575,7 +578,8 @@ const source_lexer = (
                       )
                     : source_code;
 
-                // starting at the block comment closing delimiter add everything until the next newline
+                // <p>starting at the block comment closing delimiter add
+                //     everything until the next newline</p>
                 const after_close = source_code
                     .substring(full_comment.length)
                     .match(/(\\\r\n|\\\n|\\\r|[^\\\n\r])*(\n|\r\n|\r)/);
@@ -590,17 +594,19 @@ const source_lexer = (
                 // </p>
                 const block_comment_string = m[block_comment_index];
 
-                // doc block criteria for a block comment:
-                // 1. must have whitespace after the opening comment delimiter
-                // 2. must not have anything besides whitespace before the opening comment delimiter on the same line
-                // 3. must not have anything besides whitespace after the closing comment delimiter on the same line
-                // 4. MAY have whitespace before the closing comment delimiter on the same line
+                // <p>doc block criteria for a block comment: 1. must have
+                //     whitespace after the opening comment delimiter 2. must
+                //     not have anything besides whitespace before the opening
+                //     comment delimiter on the same line 3. must not have
+                //     anything besides whitespace after the closing comment
+                //     delimiter on the same line 4. MAY have whitespace before
+                //     the closing comment delimiter on the same line</p>
 
                 /* This is not a doc block, because non-whitespace
                 characters follow the closing comment delimiter.
                 It's also a code block. */ /*void food();*/
 
-                // check after_close for non-whitespace characters
+                // <p>check after_close for non-whitespace characters</p>
 
                 if (
                     last_line_until_comment.match(/^\s*$/) &&
@@ -621,7 +627,7 @@ const source_lexer = (
                     code_block_array = [];
                     const has_space_after_comment =
                         full_comment[block_comment_string.length] === " ";
-                    // don't add the closing */ to the comment
+                    // <p>don't add the closing */ to the comment</p>
                     classified_source.push([
                         last_line_until_comment,
                         full_comment.substring(
@@ -665,7 +671,7 @@ const source_lexer = (
                 source_code = source_code.substring(
                     m[short_string_index].length
                 );
-                // prettier-ignore
+                // <p>prettier-ignore</p>
                 const string_m = source_code.match(
                     // <p>Use <a
                     //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/raw"><code>String.raw</code></a>
@@ -692,8 +698,8 @@ const source_lexer = (
                         // <p>anything that's not a backslash, quote mark, or
                         //     newline.</p>
                         String.raw`[^\\${m[short_string_index]}\n\r]` +
-                        // <p>Find as many of these as possible. Therefore, the next
-                        //     token will be the end of the string.</p>
+                        // <p>Find as many of these as possible. Therefore, the
+                        //     next token will be the end of the string.</p>
                     ")*" +
                     // <p>A string is terminated by either a quote mark or a
                     //     newline. (We can't just put <code>.</code>, because
@@ -1022,7 +1028,7 @@ const test_source_lexer_1 = () => {
         ["   ", "Test", "#"],
     ]);
     assert_equals(python_source_lexer("   # Test\n"), [["   ", "Test\n", "#"]]);
-    // Doc blocks containing comments followed immediately by a newline.
+    // <p>Doc blocks containing comments followed immediately by a newline.</p>
     assert_equals(python_source_lexer("#"), [["", "", "#"]]);
     assert_equals(python_source_lexer("#\n"), [["", "\n", "#"]]);
     assert_equals(python_source_lexer("# Test\n#\n# Test"), [
@@ -1041,7 +1047,8 @@ const test_source_lexer_2 = () => {
     const c_cpp_source_lexer = (source_code) =>
         source_lexer(source_code, ...language_lexers[0]);
 
-    // TODO: The newline is outside a comment, but should still be considered a part of the doc block.
+    // <p>TODO: The newline is outside a comment, but should still be considered
+    //     a part of the doc block.</p>
     assert_equals(c_cpp_source_lexer("/* Test */\n// Test"), [
         ["", "Test\n", "/*"],
         ["", "Test", "//"],
