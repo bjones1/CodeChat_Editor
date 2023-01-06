@@ -21,7 +21,7 @@
 //     code and doc blocks.</p>
 "use strict";
 
-import { on_dom_content_loaded } from "./CodeChat-editor.mjs";
+import { ace, on_dom_content_loaded } from "./CodeChat-editor.mjs";
 import { html_beautify } from "js-beautify";
 
 // <p>Emulate an enum. <a
@@ -120,7 +120,7 @@ const make_editors = (
     }
 
     // <p>The CodeChat Document Editor doesn't include ACE.</p>
-    if (window.ace !== undefined) {
+    if (ace !== undefined) {
         // <p>Instantiate the Ace editor for code blocks.</p>
         ace.config.set(
             "basePath",

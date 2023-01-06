@@ -21,7 +21,10 @@
 //     code and doc blocks.</p>
 // <h2>Imports</h2>
 import { init } from "./tinymce-webpack.mjs";
-import "./ace-webpack.mts";
+// I don't know how to fix this, and don't understand why it's wrong.
+/// @ts-ignore
+import { ace } from "./ace-webpack.mts";
+export { ace };
 
 // Configure the Graphviz web component to load the (large) renderer only when a Graphviz web component is found on a page. See the <a href="https://github.com/prantlf/graphviz-webcomponent#configuration">docs</a>.
 (window as any).graphvizWebComponent = {

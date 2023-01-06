@@ -16,14 +16,9 @@
 // </details>
 // <h1><code>ace-webpack.ts</code> &mdash; imports the Ace editor from NPM
 //     packages using webpack</h1>
-import { Ace, config, edit } from "ace-code";
+import ace, { Ace, config } from "ace-code";
 
-// <p>Export ace.edit globally.</p>
-(window as any).ace = {};
-(window as any).ace.edit = edit;
-(window as any).ace.config = config;
-
-export { edit, config };
+export { ace };
 
 // <p>Import the Ace theme to use.</p>
 import "ace-code/src/theme/textmate";
