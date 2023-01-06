@@ -21,6 +21,9 @@
 //     code and doc blocks.</p>
 "use strict";
 
+import { on_dom_content_loaded } from "./CodeChat-editor.mjs";
+import "js-beautify";
+
 // <p>Emulate an enum. <a
 //         href="https://www.30secondsofcode.org/articles/s/javascript-enum">This</a>
 //     seems like a simple-enough approach; see also <a
@@ -40,7 +43,7 @@ const EditorMode = Object.freeze({
 });
 
 // <p>Load code when the DOM is ready.</p>
-const page_init = (source_code, ext) => {
+export const page_init = (source_code, ext) => {
     // <p>Get the mode from the page's query parameters. Default to edit using
     //     the <a
     //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator">nullish
@@ -218,7 +221,7 @@ const open_lp = (source_code, extension, mode) => {
     make_editors(mode);
 };
 
-const on_save_as = async (on_save_func) => {
+export const on_save_as = async (on_save_func) => {
     // <p>TODO!</p>
     msg = "Save as is not implemented.";
     window.alert(msg);
@@ -226,7 +229,7 @@ const on_save_as = async (on_save_func) => {
 };
 
 // <p>Save CodeChat Editor contents.</p>
-const on_save = async () => {
+export const on_save = async () => {
     // <p>Pick an inline comment from the current lexer. TODO: support block
     //     comments (CSS, for example, doesn't allow inline comment).</p>
     const inline_comment = current_language_lexer[2][0];
@@ -245,7 +248,7 @@ const os_is_osx =
         : false;
 
 // <p>Provide a shortcut of ctrl-s (or command-s) to save the current file.</p>
-const on_keydown = (event) => {
+export const on_keydown = (event) => {
     if (
         event.key === "s" &&
         ((event.ctrlKey && !os_is_osx) || (event.metaKey && os_is_osx)) &&
@@ -1075,4 +1078,3 @@ const assert_equals = (a, b) => {
 };
 
 //test_source_lexer();
-_page_init();

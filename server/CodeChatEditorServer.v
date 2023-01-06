@@ -282,12 +282,11 @@ ${source_code}
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>$name - The CodeChat Editor</title>
 
-        <script src="/static/webpack/CodeChat-editor.js" type="module"></script>
-        <link rel="stylesheet" href="/static/webpack/CodeChat-editor.css">
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.5/beautify-html.min.js" defer></script>
-		<script src="/static/js/CodeChatEditor.js" defer></script>
-		<script>
-			const _page_init = () => page_init(
+        <link rel="stylesheet" href="/static/webpack/CodeChatEditor.css">
+		<script type="module">
+		    import { page_init, on_keydown, on_save, on_save_as } from "/static/webpack/CodeChatEditor.js"
+
+			page_init(
 "${quote_script_string(source_code)}",
 "${quote_string(ext)}");
 		</script>

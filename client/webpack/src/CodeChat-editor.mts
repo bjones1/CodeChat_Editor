@@ -35,7 +35,7 @@ import "graphviz-webcomponent";
 // <p>This is copied from <a
 //         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
 // </p>
-const on_dom_content_loaded = (on_load_func: () => void) => {
+export const on_dom_content_loaded = (on_load_func: () => void) => {
     if (document.readyState === "loading") {
         // <p>Loading hasn't finished yet.</p>
         document.addEventListener("DOMContentLoaded", on_load_func);
@@ -44,9 +44,6 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
         on_load_func();
     }
 };
-// <p>Export this to the browser's Window object. Use a typecast to allow the
-//     assignment.</p>
-(window as any).on_dom_content_loaded = on_dom_content_loaded;
 
 init({});
 
