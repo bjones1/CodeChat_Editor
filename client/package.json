@@ -7,8 +7,8 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "check-env": "node -e 'console.log(process.env)' | grep npm",
         "build": "run-script-os",
-        "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mjs --bundle --outdir=./static/webpack --sourcemap --format=esm",
-        "build:default": "node_modules/.bin/esbuild src/CodeChatEditor.mjs --bundle --outdir=./static/webpack --sourcemap --format=esm",
+        "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mjs --bundle --outdir=./static/webpack --sourcemap --format=esm && tsc -noEmit",
+        "build:default": "node_modules/.bin/esbuild src/CodeChatEditor.mjs --bundle --outdir=./static/webpack --sourcemap --format=esm && tsc -noEmit",
         "dist": "TODO"
     },
     "keywords": [],
