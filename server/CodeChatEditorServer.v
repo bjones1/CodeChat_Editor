@@ -1,6 +1,7 @@
 // <!-- CodeChat-lexer: vlang -->
 // <details>
-//     <summary>Copyright (C) 2022 Bryan A. Jones.</summary>
+//     <summary>License</summary>
+//     <p>Copyright (C) 2022 Bryan A. Jones.</p>
 //     <p>This file is part of the CodeChat Editor.</p>
 //     <p>The CodeChat Editor is free software: you can redistribute it and/or
 //         modify it under the terms of the GNU General Public License as

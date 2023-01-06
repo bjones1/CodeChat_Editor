@@ -14,7 +14,7 @@
 #              href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 #      </p>
 #  </details>
-# <h1>.gitignore</code> &mdash; files for Git to ignore
+# <h1><code>.gitignore</code> &mdash; files for Git to ignore</h1>
 # <p>The name of the binary on Windows</p>
 CodeChatEditorServer.exe
 # <p>The name of the binary on Linux</p>
