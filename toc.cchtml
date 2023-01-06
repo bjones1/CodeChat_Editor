@@ -14,9 +14,11 @@
 <ol>
     <li>Server
         <ol>
+            <li><a href="server/src/main.rs">main.rs</a></li>
+            <li><a href="server/Cargo.toml">Cargo.toml</a></li>
             <li><a
                     href="server/CodeChatEditorServer.v">CodeChatEditorServer.v</a>
-            </li>
+                (old)</li>
         </ol>
     </li>
     <li>Client

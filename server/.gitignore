@@ -21,3 +21,5 @@ CodeChatEditorServer.exe
 CodeChatEditorServer
 # <p>But don't ignore the source file (which the preceeding pattern does).</p>
 !CodeChatEditorServer.v
+# Rust build output
+target/

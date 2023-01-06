@@ -5,6 +5,7 @@
 declare module "ace-code/src/theme/textmate";
 declare module "ace-code/src/mode/javascript";
 declare module "ace-code/src/mode/json5";
+declare module "ace-code/src/mode/rust";
 declare module "ace-code/src/mode/typescript";
 declare module "ace-code/src/mode/toml";
 declare module "ace-code/src/mode/yaml";

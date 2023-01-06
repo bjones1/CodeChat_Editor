@@ -316,18 +316,19 @@ const language_lexers = [
     //         href="https://en.cppreference.com/w/cpp/language/string_literal">C++
     //         string literals docs</a> for the reasoning behind the start body
     //     regex.</p>
-    //Language name File extensions     IC      Block comment       Long string     Short str   Heredoc JS tmpl lit
-    ["c_cpp",       [".cc", ".cpp"],    ["//"], [["/*", "*/"]],     [],             ['"'],      [['R"', "[^()\\ ]", "(", ")", ""]], 0],
-    ["html",        [".html"],          [],     [["<!--", "-->"]],  [],             [],         [],     0],
-    ["javascript",  [".js", ".mjs"],    ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
-    ["json5",       [".json"],          ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
-    ["python",      [".py"],            ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
-    ["toml",        [".toml"],          ["#"],  [],                 ['"""', "'''"], ['"', "'"], [],     0],
-    ["typescript",  [".ts", ".mts"],    ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     1],
-    ["verilog",     [".v"],             ["//"], [["/*", "*/"]],     [],             ['"'],      [],     0],
-    ["vlang",       [".v"],             ["//"], [["/*", "*/"]],     [],             ['"', "'"], [],     0],
-    ["yaml",        [".yaml",".yml"],   ["#"],  [],                 [],             ['"', "'"], [],     0],
-    ["codechat-html", [".cchtml"],      [""],   [],                 [],             [],         [],     0],
+    //Language name File extensions     IC          Block comment       Long string     Short str   Heredoc JS tmpl lit
+    ["c_cpp",       [".cc", ".cpp"],    ["//"],     [["/*", "*/"]],     [],             ['"'],      [['R"', "[^()\\ ]", "(", ")", ""]], 0],
+    ["html",        [".html"],          [],         [["<!--", "-->"]],  [],             [],         [],     0],
+    ["javascript",  [".js", ".mjs"],    ["//"],     [["/*", "*/"]],     [],             ['"', "'"], [],     1],
+    ["json5",       [".json"],          ["//"],     [["/*", "*/"]],     [],             ['"', "'"], [],     0],
+    ["python",      [".py"],            ["#"],      [],                 ['"""', "'''"], ['"', "'"], [],     0],
+    ["rust",        [".rs"],            ["///", "//"],    [],                 ['"'],          [],         [],     0],
+    ["toml",        [".toml"],          ["#"],      [],                 ['"""', "'''"], ['"', "'"], [],     0],
+    ["typescript",  [".ts", ".mts"],    ["//"],     [["/*", "*/"]],     [],             ['"', "'"], [],     1],
+    ["verilog",     [".v"],             ["//"],     [["/*", "*/"]],     [],             ['"'],      [],     0],
+    ["vlang",       [".v"],             ["//"],     [["/*", "*/"]],     [],             ['"', "'"], [],     0],
+    ["yaml",        [".yaml",".yml"],   ["#"],      [],                 [],             ['"', "'"], [],     0],
+    ["codechat-html", [".cchtml"],      [""],       [],                 [],             [],         [],     0],
 ];
 
 // <h2>Source lexer</h2>
