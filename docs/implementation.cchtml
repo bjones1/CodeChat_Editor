@@ -305,13 +305,13 @@
     JS_lib [label = &quot;JavaScript libraries&quot;];
     &quot;package.json&quot; -&gt; JS_lib [label = &quot;npm update&quot;];
     JS_lib -&gt; esbuild;
-    CCE_source [label = &quot;CodeChat Editor\lclient-side source&quot;];
+    CCE_source [label = &quot;CodeChat Editor\nclient-side source&quot;];
     JS_lib -&gt; CCE_source [label = &quot;imports&quot;];
     CCE_source -&gt; esbuild;
     esbuild -&gt; &quot;Packaged JavaScript&quot;;
-    CCE_webpage [label = &quot;CodeChat Editor\lwebpage&quot;];
+    CCE_webpage [label = &quot;CodeChat Editor\nwebpage&quot;];
     &quot;Packaged JavaScript&quot; -&gt; CCE_webpage;
-    server_HTML [label = &quot;CodeChat Editor\lserver-generated\lHTML&quot;];
+    server_HTML [label = &quot;CodeChat Editor\nserver-generated\nHTML&quot;];
     server_HTML -&gt; CCE_webpage;
 }"></graphviz-graph>
 <p>However, esbuild's code splitting doesn't work with dynamic imports -- the
@@ -321,27 +321,35 @@
         href="https://www.tiny.cloud/docs/tinymce/6/dialog-components/#panel-components">how-to
         guide</a>.</p>
 <h3>Server</h3>
-<ul>
-    <li>Written in vlang</li>
-    <li>Here's a bug I <a
-            href="https://github.com/vlang/v/issues/16700">reported</a> in
-        vweb.</li>
-    <li>For server plugins, here's how to <a
-            href="https://github.com/vlang/v/issues/2379">produce a dll/so</a>.
-    </li>
-</ul>
-<h3>Plugins/extensions</h3>
-<ul>
-    <li>Language determined by host environment</li>
-</ul>
-<h3>Communication</h3>
-<ul>
-    <li>Use http for client web page loading. Provide /fs path for filesystem
-        access.</li>
-    <li>Use websockets for client/server connection.</li>
-    <li>Use http for plugin/server connection. Websockets would be better, but
-        not sure how supported this is.</li>
-</ul>
+<graphviz-graph graph='digraph {
+    bgcolor = transparent;
+    compound = true;
+    node [shape = box];
+    subgraph cluster_text_editor {
+        label = "Text editor/IDE";
+        source_code [label = "Source\ncode", style = dashed];
+        CodeChat_plugin [label = "CodeChat\nEditor plugin"];
+    }
+
+    subgraph cluster_server {
+        label = <CodeChat Editor Server>;
+        websocket_server [label = "Websocket\nserver"];
+        web_server [label = "Web\nserver"];
+    }
+
+    subgraph cluster_client {
+        label = "CodeChat Editor Client";
+        rendered_code [label = "Rendered code", style = dashed];
+        JavaScript;
+    }
+
+    CodeChat_plugin -> websocket_server [dir = both];
+    websocket_server -> JavaScript [dir = both];
+    web_server -> JavaScript [label = "HTTP", dir = both, lhead = cluster_client];
+}'></graphviz-graph>
+<p>Note: this second diagram will be the same as the first until <a
+        href="https://github.com/prantlf/graphviz-webcomponent/pull/4">this
+        fix</a> is merged.</p>
 <h2>Code style</h2>
 <p>JavaScript functions are a <a
         href="https://dmitripavlutin.com/differences-between-arrow-and-regular-functions/">disaster</a>.
