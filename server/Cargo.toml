@@ -21,7 +21,13 @@ name = "server"
 version = "0.1.0"
 edition = "2021"
 
+# This library allows other packages to use core CodeChat Editor features.
+[lib]
+name = "code_chat_editor"
+
 # <p>See more <a
 #         href="https://doc.rust-lang.org/cargo/reference/manifest.html">keys
 #         and their definitions</a>.</p>
 [dependencies]
+lazy_static = "^1"
+regex = "^1"

@@ -15,6 +15,10 @@
 ///      </p>
 ///  </details>
 /// <h1><code>lexer.rs</code> &mdash; Lex source code into code and doc blocks</h1>
-use code_chat_editor;
+pub mod lexer;
+use lexer::source_lexer;
+use lexer::supported_languages::LANGUAGE_LEXER_ARR;
 
-fn main() {}
+pub fn foo() {
+    source_lexer("a = 1\n# Test", &LANGUAGE_LEXER_ARR[4]);
+}
