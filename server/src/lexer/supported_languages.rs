@@ -21,19 +21,26 @@ use super::HeredocDelim;
 use super::LanguageLexer;
 use super::NewlineSupport;
 use super::StringDelimiterSpec;
-use super::TemplateLiteral;
 
+// <p>Thoughts on line continuation characters: I think we can ignore these. In C/C++, this is a two-line comment:</p>
+//// // A weird\
+//// two-line comment.
+// <p>However, this is such odd syntax that we can safely ignore it, since few developers would do something so odd. (A block comment would make more sense.)</p>
+// <p>While C can technically treat a line as code that looks like a comment, it's probably a syntax error. For example,
+//// if (foo) \
+//// // This is a syntax error!
+// <p>I can't think of any cases, outside strings (which the lexer handles properly), where this would be valid syntax.</p>
 // <p>Ordering matters: all these delimiters end up in a large regex separated by an or operator. The regex or operator matches from left to right. So, longer Python string delimiters must be specified first (leftmost): <code>"""</code> (a multi-line Python string) must come before <code>"</code>. The resulting regex will then have <code>"""|"</code>, which will first search for the multi-line triple quote, then if that's not found, the single quote. A regex of <code>"|"""</code> would never match the triple quote, since the single quote would match first.
 pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // C/C++
     LanguageLexer {
         ace_mode: "c_cpp",
         ext_arr: &[".c", ".cc", ".cpp"],
-        line_continuation: "\\",
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
             closing: "*/",
+            is_nestable: false,
         }],
         string_delim_spec_arr: &[StringDelimiterSpec {
             delimiter: "\"",
@@ -54,17 +61,17 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             stop_prefix: ")",
             stop_suffix: "",
         }),
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
     // HTML
     LanguageLexer {
         ace_mode: "html",
         ext_arr: &[".html", ".htm"],
-        line_continuation: "",
         inline_comment_delim_arr: &[],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "<!--",
             closing: "-->",
+            is_nestable: false,
         }],
         string_delim_spec_arr: &[
             StringDelimiterSpec {
@@ -79,17 +86,17 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
     // JavaScript
     LanguageLexer {
         ace_mode: "javascript",
         ext_arr: &[".js", ".mjs"],
-        line_continuation: "",
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
             closing: "*/",
+            is_nestable: false,
         }],
         string_delim_spec_arr: &[
             StringDelimiterSpec {
@@ -104,17 +111,17 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::Yes,
+        template_literal: true,
     },
     // JSON5
     LanguageLexer {
         ace_mode: "json5",
         ext_arr: &[".json"],
-        line_continuation: "",
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
             closing: "*/",
+            is_nestable: false,
         }],
         string_delim_spec_arr: &[
             StringDelimiterSpec {
@@ -129,13 +136,12 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
     // Python
     LanguageLexer {
         ace_mode: "python",
         ext_arr: &[".py"],
-        line_continuation: "\\",
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
@@ -162,18 +168,18 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
     // <a href="https://doc.rust-lang.org/reference/tokens.html#literals">Rust</a>
     LanguageLexer {
         ace_mode: "rust",
         ext_arr: &[".rs"],
-        line_continuation: "\\",
         // Since Rust complains about <code>///</code> comments on items that rustdoc ignores, support both styles.
         inline_comment_delim_arr: &["///", "//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
             closing: "*/",
+            is_nestable: true,
         }],
         string_delim_spec_arr: &[
             // Note that raw byte strings behave identically to raw strings from this lexer's perspective.
@@ -190,13 +196,12 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
     // <a href="https://toml.io/en/">TOML</a>
     LanguageLexer {
         ace_mode: "toml",
         ext_arr: &[".toml"],
-        line_continuation: "",
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
@@ -226,17 +231,17 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
     // TypeScript
     LanguageLexer {
         ace_mode: "typescript",
         ext_arr: &[".ts", ".mts"],
-        line_continuation: "",
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
             closing: "*/",
+            is_nestable: false,
         }],
         string_delim_spec_arr: &[
             StringDelimiterSpec {
@@ -251,17 +256,17 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::Yes,
+        template_literal: true,
     },
     // Verilog
     LanguageLexer {
         ace_mode: "verilog",
         ext_arr: &[".v"],
-        line_continuation: "",
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
             closing: "*/",
+            is_nestable: false,
         }],
         string_delim_spec_arr: &[StringDelimiterSpec {
             delimiter: "\"",
@@ -269,18 +274,18 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             newline_support: NewlineSupport::Escaped,
         }],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
     // V
     LanguageLexer {
         // Ace doesn't support V yet.
         ace_mode: "",
         ext_arr: &[".v"],
-        line_continuation: "",
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
             closing: "*/",
+            is_nestable: false,
         }],
         string_delim_spec_arr: &[
             StringDelimiterSpec {
@@ -295,13 +300,12 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
     // YAML
     LanguageLexer {
         ace_mode: "yaml",
         ext_arr: &[".yaml"],
-        line_continuation: "",
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
@@ -319,17 +323,16 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
     // CodeChat HTML
     LanguageLexer {
         ace_mode: "codechat-html",
         ext_arr: &[".cchtml"],
-        line_continuation: "",
         inline_comment_delim_arr: &[],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[],
         heredoc_delim: None,
-        template_literal: TemplateLiteral::No,
+        template_literal: false,
     },
 ];

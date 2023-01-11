@@ -15,7 +15,13 @@
     <li>Server
         <ol>
             <li><a href="server/src/main.rs">main.rs</a></li>
-            <li><a href="server/src/lexer.rs">lexer.rs</a></li>
+            <li><a href="server/src/lexer.rs">lexer.rs</a>
+                <ol>
+                    <li><a
+                            href="server/src/lexer/supported_languages.rs">supported_languages.rs</a>
+                    </li>
+                </ol>
+            </li>
             <li><a href="server/Cargo.toml">Cargo.toml</a></li>
             <li><a
                     href="server/CodeChatEditorServer.v">CodeChatEditorServer.v</a>
