@@ -401,11 +401,16 @@ pub fn source_lexer(
     // <p>An accumulating string composing the current code block.</p>
     let mut current_code_block = String::new();
     // Normalize all line endings.
-    let source_code_normalized = source_code.replace("\r\n", "\n").replace("\r", "\n");
+    let source_code_normalized = source_code.replace("\r\n", "\n").replace('\r', "\n");
     let mut source_code = source_code_normalized.as_str();
 
     // Main loop: lexer the provided source code.
     while !source_code.is_empty() {
+        #[cfg(feature = "lexer_explain")]
+        println!(
+            "Searching the following source_code using the pattern {:?}:\n'{}'\n\nThe current_code_block is '{}'\n",
+            language_lexer_compiled.next_token, source_code, current_code_block
+        );
         // <p>Look for the next special case. Per the earlier discussion, this
         //     assumes that the text immediately
         //     preceding&nbsp;<code>source_code</code> was plain code.</p>
@@ -431,20 +436,42 @@ pub fn source_lexer(
                 + 1;
             let matching_group_str = &classify_match[matching_group_index];
 
-            let mut append_code = |closing_regex: &Regex| {
+            #[cfg(feature = "lexer_explain")]
+            println!(
+                "Matched the string {} in group {}. The current_code_block is now\n'{}'\n",
+                matching_group_str, matching_group_index, current_code_block
+            );
+
+            // Append code to <code>current_code_block</code> based on the provided regex.
+            let mut append_code =
+                                   // The regex; code up to the end of this match will be appended to <code>current_code_block</code>.
+                                   |closing_regex: &Regex| {
+                #[cfg(feature = "lexer_explain")]
+                println!("Searching for the end of this token using the pattern '{:?}'.", closing_regex);
+
                 // Add the opening delimiter to the code.
                 current_code_block += matching_group_str;
                 source_code = &source_code[matching_group_str.len()..];
                 // Find the closing delimiter.
                 if let Some(closing_match) = closing_regex.find(source_code) {
+                    #[cfg(feature = "lexer_explain")]
+                    println!("Found; adding source_code up to and including this token to current_code_block.");
+
                     // Include this in code.
                     current_code_block += &source_code[..closing_match.end()];
                     source_code = &source_code[closing_match.end()..];
                 } else {
+                    #[cfg(feature = "lexer_explain")]
+                    println!("Not found; adding all the source_code to current_code_block.");
+
                     // Then the rest of the code is a string.
-                    current_code_block += &source_code;
+                    current_code_block += source_code;
                     source_code = "";
                 }
+                #[cfg(feature = "lexer_explain")]
+                println!("The current_code_block is now\n\
+                    '{}'\n", current_code_block);
+
             };
 
             // In the map, index 0 refers to group 1 (since group 0 matches are skipped). Adjust the index for this.
@@ -455,7 +482,7 @@ pub fn source_lexer(
                     // <p>An inline comment delimiter matched.</p>
                     // <p><strong>First</strong>, find the end of this comment: a
                     //     newline.</p>
-                    let end_of_comment_index = source_code.find("\n");
+                    let end_of_comment_index = source_code.find('\n');
 
                     // <p>Assign <code>full_comment</code> to contain the entire
                     //     comment, from the inline comment delimiter until the
@@ -475,9 +502,17 @@ pub fn source_lexer(
                     // Currently, <code>current_code_block</code> contains preceding code
                     //     (which might be multiple lines) until the inline comment
                     //     delimiter. Split this on newlines, grouping all the lines before the last line into <code>code_lines_before_comment</code> (which is all code), and everything else (from the beginning of the last line to where the inline comment delimiter appears) into <code>comment_line_prefix</code>. For example, consider the fragment <code>a = 1\nb = 2 // Doc</code>. After processing, <code>code_lines_before_comment == "a = 1\n"</code> and <code>comment_line_prefix == "b = 2 "</code>.
-                    let comment_line_prefix = current_code_block.rsplit("\n").next().unwrap();
+                    let comment_line_prefix = current_code_block.rsplit('\n').next().unwrap();
                     let code_lines_before_comment =
                         &current_code_block[..current_code_block.len() - comment_line_prefix.len()];
+
+                    #[cfg(feature = "lexer_explain")]
+                    println!(
+                        "This is an inline comment. Source code before the line containing this comment is:\n'{}'\n\
+                        The text preceding this comment is: '{}'.\n\
+                        The comment is: '{}'\n",
+                        code_lines_before_comment, comment_line_prefix, full_comment
+                    );
 
                     // <p><strong>Next</strong>, determine if this comment is a doc
                     //     block. Criteria for doc blocks for an inline comment:</p>
@@ -500,13 +535,13 @@ pub fn source_lexer(
                     if ws_only
                         && (
                             // Criteria 2.1
-                            full_comment.starts_with(&(matching_group_str.to_string() + &" ")) ||
+                            full_comment.starts_with(&(matching_group_str.to_string() + " ")) ||
                             // Criteria 2.2
-                            (full_comment == &(matching_group_str.to_string() + if end_of_comment_index.is_some() {
+                            (full_comment == (matching_group_str.to_string() + if end_of_comment_index.is_some() {
                             // Compare with a newline if it was found; the group of the found newline is 8.
-                            &"\n" } else {
+                            "\n" } else {
                             // Compare with an empty string if there's no newline.
-                            &""
+                            ""
                         }))
                         )
                     {
@@ -524,19 +559,25 @@ pub fn source_lexer(
                         //     leading space it it's there (this might be just a
                         //     newline or an EOF).</p>
                         let has_space_after_comment =
-                            full_comment.starts_with(&(matching_group_str.to_string() + &" "));
-                        append_code_doc_block(
-                            comment_line_prefix,
-                            matching_group_str,
-                            &full_comment[matching_group_str.len()
-                                + if has_space_after_comment { 1 } else { 0 }..],
+                            full_comment.starts_with(&(matching_group_str.to_string() + " "));
+                        let contents = &full_comment[matching_group_str.len()
+                            + if has_space_after_comment { 1 } else { 0 }..];
+                        append_code_doc_block(comment_line_prefix, matching_group_str, contents);
+
+                        #[cfg(feature = "lexer_explain")]
+                        println!(
+                            "This is a doc block. Possibly added the preceding code block\n\
+                            '{}'.\n\
+                            Added a doc block with indent = '{}', delimiter = '{}', and contents =\n\
+                            '{}'.\n",
+                            current_code_block, comment_line_prefix, matching_group_str, contents
                         );
 
                         // We've now stored the current code block in <code>classified_lines</code>.
                         current_code_block.clear();
                     } else {
                         // <p>This comment is not a doc block. Add it to the current code block.</p>
-                        current_code_block += &full_comment;
+                        current_code_block += full_comment;
                     }
                 }
 
@@ -544,9 +585,22 @@ pub fn source_lexer(
                     panic!("Unimplemented.")
                 }
 
-                RegexDelimType::String(closing_regex) => append_code(closing_regex),
-                RegexDelimType::TemplateLiteral => append_code(&TEMPLATE_LITERAL_CLOSING_REGEX),
+                RegexDelimType::String(closing_regex) => {
+                    #[cfg(feature = "lexer_explain")]
+                    print!("This is a string. ");
+                    append_code(closing_regex)
+                }
+
+                RegexDelimType::TemplateLiteral => {
+                    #[cfg(feature = "lexer_explain")]
+                    print!("This is a template literal. ");
+                    append_code(&TEMPLATE_LITERAL_CLOSING_REGEX);
+                }
+
                 RegexDelimType::Heredoc(stop_prefix, stop_suffix) => {
+                    #[cfg(feature = "lexer_explain")]
+                    print!("This is a heredoc. ");
+
                     // Get the string from the source code which (along with the stop prefix/suffix) defines the end of the heredoc.
                     let heredoc_string = &classify_match[language_lexer_compiled.map.len() + 1];
                     // Make a regex from it.

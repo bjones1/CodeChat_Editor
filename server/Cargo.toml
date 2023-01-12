@@ -29,5 +29,14 @@ name = "code_chat_editor"
 #         href="https://doc.rust-lang.org/cargo/reference/manifest.html">keys
 #         and their definitions</a>.</p>
 [dependencies]
-lazy_static = "^1"
-regex = "^1"
+lazy_static = "1"
+regex = "1"
+
+[dev-dependencies]
+#clippy = "0.0.302"
+
+# See https://doc.rust-lang.org/cargo/reference/features.html.
+[features]
+default = ["lexer_explain"]
+# Enable this to show an explanation of the lexing process.
+lexer_explain = []
