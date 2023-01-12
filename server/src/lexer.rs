@@ -24,107 +24,127 @@ use regex::Regex;
 /// <h2>Data structures</h2>
 /// <p>This struct defines the delimiters for a block comment.</p>
 struct BlockCommentDelim<'a> {
-    // <p>A string specifying the opening comment delimiter for a block comment.
-    // </p>
+    /// <p>A string specifying the opening comment delimiter for a block comment.
+    /// </p>
     opening: &'a str,
-    // <p>A string specifying the closing comment delimiter for a block comment.
-    // </p>
+    /// <p>A string specifying the closing comment delimiter for a block comment.
+    /// </p>
     closing: &'a str,
-    // True if block comment may be nested.
+    /// True if block comment may be nested.
     is_nestable: bool,
 }
 
-// Define the types of newlines supported in a string.
+/// Define the types of newlines supported in a string.
 enum NewlineSupport {
-    // This string delimiter allows unescaped newlines. This is a multiline string.
+    /// This string delimiter allows unescaped newlines. This is a multiline string.
     Unescaped,
-    // This string delimiter only allows newlines when preceded by the string escape character. This is (mostly) a single-line string.
+    /// This string delimiter only allows newlines when preceded by the string escape character. This is (mostly) a single-line string.
     Escaped,
-    // This string delimiter does not allow newlines. This is strictly a single-line string.
+    /// This string delimiter does not allow newlines. This is strictly a single-line string.
     None,
 }
 
-// Define a string from the lexer's perspective.
+/// Define a string from the lexer's perspective.
 struct StringDelimiterSpec<'a> {
-    // Delimiter to indicate the start and end of a string.
+    /// Delimiter to indicate the start and end of a string.
     delimiter: &'a str,
-    // Escape character, to allow inserting the string delimiter into the string. Empty if this string delimiter doesn't provide an escape character.
+    /// Escape character, to allow inserting the string delimiter into the string. Empty if this string delimiter doesn't provide an escape character.
     escape_char: &'a str,
-    // <p>Newline handling. This value cannot be <code>Escaped</code> if the <code>escape_char</code> is empty.
+    /// <p>Newline handling. This value cannot be <code>Escaped</code> if the <code>escape_char</code> is empty.
     newline_support: NewlineSupport,
 }
 
-// <p>This defines the delimiters for a <a
-//         href="https://en.wikipedia.org/wiki/Here_document">heredoc</a> (or
-//     heredoc-like literal).</p>
+/// <p>This defines the delimiters for a <a
+///         href="https://en.wikipedia.org/wiki/Here_document">heredoc</a> (or
+///     heredoc-like literal).</p>
 struct HeredocDelim<'a> {
-    // <p>The prefix before the heredoc's delimiting identifier.</p>
+    /// <p>The prefix before the heredoc's delimiting identifier.</p>
     start_prefix: &'a str,
-    // <p>A regex which matches the delimiting identifier.</p>
+    /// <p>A regex which matches the delimiting identifier.</p>
     delim_ident_regex: &'a str,
-    // <p>The suffix after the delimiting identifier.</p>
+    /// <p>The suffix after the delimiting identifier.</p>
     start_suffix: &'a str,
-    // <p>The prefix before the second (closing) delimiting identifier.</p>
+    /// <p>The prefix before the second (closing) delimiting identifier.</p>
     stop_prefix: &'a str,
-    // <p>The suffix after the heredoc's closing delimiting identifier.</p>
+    /// <p>The suffix after the heredoc's closing delimiting identifier.</p>
     stop_suffix: &'a str,
 }
 
-// Define a language by providing everything this lexer needs in order to split it into code and doc blocks.
+/// Define a language by providing everything this lexer needs in order to split it into code and doc blocks.
 pub struct LanguageLexer<'a> {
-    // <p>The Ace mode to use for this language</p>
+    /// <p>The Ace mode to use for this language</p>
     ace_mode: &'a str,
-    // <p>An array of file extensions for this language. They begin with a period,
-    //     such as <code>.rs</code>.</p>
+    /// <p>An array of file extensions for this language. They begin with a period,
+    ///     such as <code>.rs</code>.</p>
     ext_arr: &'a [&'a str],
-    // <p>An array of strings which specify inline comment delimiters. Empty if this language doesn't provide inline comments.</p>
+    /// <p>An array of strings which specify inline comment delimiters. Empty if this language doesn't provide inline comments.</p>
     inline_comment_delim_arr: &'a [&'a str],
-    // <p>An array which specifies opening and closing block comment delimiters. Empty if this language doesn't provide block comments.
-    // </p>
+    /// <p>An array which specifies opening and closing block comment delimiters. Empty if this language doesn't provide block comments.
+    /// </p>
     block_comment_delim_arr: &'a [BlockCommentDelim<'a>],
-    // Specify the strings supported by this language. While this could be empty, such a language would be very odd.
+    /// Specify the strings supported by this language. While this could be empty, such a language would be very odd.
     string_delim_spec_arr: &'a [StringDelimiterSpec<'a>],
-    // <p>A heredoc delimiter; <code>None</code> if heredocs aren't supported.</p>
+    /// <p>A heredoc delimiter; <code>None</code> if heredocs aren't supported.</p>
     heredoc_delim: Option<&'a HeredocDelim<'a>>,
-    // <p>Template literal support (for languages such as JavaScript, TypeScript,
-    //     etc.).
+    /// <p>Template literal support (for languages such as JavaScript, TypeScript,
+    ///     etc.).
     template_literal: bool,
 }
 
-// Define which delimiter corresponds to a given regex group.
+/// Define which delimiter corresponds to a given regex group.
 enum RegexDelimType {
     InlineComment,
     BlockComment(
-        // The regex used to find the closing delimiter. If the regex contains groups, then this is a language that supports nested block comments. Group 1 must match an opening comment, while group 2 must match the closing comment.
+        /// The regex used to find the closing delimiter. If the regex contains groups, then this is a language that supports nested block comments. Group 1 must match an opening comment, while group 2 must match the closing comment.
         Regex,
     ),
     String(
         // The regex used to find the closing delimiter for this string type.
         Regex,
     ),
-    Heredoc,
+    Heredoc(
+        /// The regex-escaped <code>HeredocDelim.stop_prefix</code>.
+        String,
+        /// The regex-escaped <code>HeredocDelim.stop_suffix</code>.
+        String,
+    ),
     TemplateLiteral,
     // TODO: Will need more options for nested template literals. Match on opening brace, closing brace, closing template literal, etc.
 }
 
-// This struct store the results of "compiling" a <code>LanguageLexer</code> into a set of regexes and a map. For example, the JavaScript lexer becomes:
+/// This struct store the results of "compiling" a <code>LanguageLexer</code> into a set of regexes and a map. For example, the JavaScript lexer becomes:
 //// Regex          (//)     |    (/*)      |        (")           |         (')          |       (`)
 //// Group            0             1                 2                       3                    4
 ////  Map       InlineComment   BlockComment   String(double-quote)   String(single-quote)   TemplateLiteral
-// <p>The Regex in the table is stored in <code>next_token</code>, which is used to search for the next token. The group is both the group number of the regex - 1 (in other words, a match of <code>//<code> is group 1 of the regex) and the index into <code>map</code>. Map is <code>map</code>, which labeled each group with a <code>RegexDelimType</code>. The lexer uses this to decide how to handle the token it just found -- as a inline comment, block comment, etc. Note: this is a slightly simplified regex, the group <code>(/*)</code> would actually be <code>(/\*)</code>, since the <code>*</code> must be escaped.</p>
+/// <p>The Regex in the table is stored in <code>next_token</code>, which is used to search for the next token. The group is both the group number of the regex - 1 (in other words, a match of <code>//<code> is group 1 of the regex) and the index into <code>map</code>. Map is <code>map</code>, which labeled each group with a <code>RegexDelimType</code>. The lexer uses this to decide how to handle the token it just found -- as a inline comment, block comment, etc. Note: this is a slightly simplified regex; group 1, <code>(/*)</code>, would actually be <code>(/\*)</code>, since the <code>*</code> must be escaped.</p>
 struct LanguageLexerCompiled {
-    // A regex used to identify the next token when in a code block.
+    /// A regex used to identify the next token when in a code block.
     next_token: Regex,
-    // A mapping from groups in this regex to the corresponding delimiter type matched.
+    /// A mapping from groups in this regex to the corresponding delimiter type matched.
     map: Vec<RegexDelimType>,
 }
 
 // Create constant regexes needed by the lexer, following the <a href="https://docs.rs/regex/1.6.0/regex/index.html#example-avoid-compiling-the-same-regex-in-a-loop">Regex docs recommendation</a>.
 lazy_static! {
-    static ref WHITESPACE_ONLY_REGEX: Regex = Regex::new("^\\s*$").unwrap();
+    static ref WHITESPACE_ONLY_REGEX: Regex = Regex::new("^[[:space:]]*$").unwrap();
+    /// TODO: This regex should also allow termination on an unescaped <code>${</code> sequence, which then must count matching braces to find the end of the expression.
+    static ref TEMPLATE_LITERAL_CLOSING_REGEX: Regex = Regex::new(
+        // Allow <code>.</code> to match <em>any</em> character, including a newline. See the <a href="https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags">regex docs</a>.
+        &("(?s)".to_string() +
+        // Start at the beginning of the string, and require a match of every character. Allowing the regex to start matching in the middle means it can skip over escape characters.
+        "^(" +
+            //  Allow any non-special character,
+            "[^\\\\`]|" +
+            // or anything following an escape character (since whatever it is, it can't be the end of the string).
+            "\\\\." +
+        // Look for an arbitrary number of these non-string-ending characters.
+        ")*" +
+        // Now, find the end of the string: the string delimiter.
+        "`"),
+    ).unwrap();
 }
 
-// "Compile" a language description into regexes used to lex the language.
+/// "Compile" a language description into regexes used to lex the language.
 fn build_lexer_regex(
     // The language description to build regexes for.
     language_lexer: &LanguageLexer,
@@ -166,20 +186,17 @@ fn build_lexer_regex(
             &block_comment_opening_delim,
             // Determine the block closing regex:
             RegexDelimType::BlockComment(
-                Regex::new(
-                    if block_comment_delim.is_nestable {
-                        // If nested, look for another opening delimiter or the closing delimiter.
-                        format!(
-                            "({})|({})",
-                            regex::escape(block_comment_delim.opening),
-                            regex::escape(block_comment_delim.closing)
-                        )
-                    } else {
-                        // Otherwise, just look for the closing delimiter.
+                Regex::new(&if block_comment_delim.is_nestable {
+                    // If nested, look for another opening delimiter or the closing delimiter.
+                    format!(
+                        "({})|({})",
+                        regex::escape(block_comment_delim.opening),
                         regex::escape(block_comment_delim.closing)
-                    }
-                    .as_str(),
-                )
+                    )
+                } else {
+                    // Otherwise, just look for the closing delimiter.
+                    regex::escape(block_comment_delim.closing)
+                })
                 .unwrap(),
             ),
         );
@@ -199,50 +216,47 @@ fn build_lexer_regex(
             // This is the most complex case. This type of string can be terminated by an unescaped newline or an unescaped delimiter. Escaped newlines or terminators should be included in the string.
             (true, NewlineSupport::Escaped) => Regex::new(
                 // Allow <code>.</code> to match <em>any</em> character, including a newline. See the <a href="https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags">regex docs</a>.
-                ("(?s)".to_string() +
+                &("(?s)".to_string() +
                 // Start at the beginning of the string, and require a match of every character. Allowing the regex to start matching in the middle means it can skip over escape characters.
                 "^(" +
                     //  Allow any non-special character,
-                    format!("[^\n{}{}]|", escaped_delimiter, escaped_escape_char).as_str() +
+                    &format!("[^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
                     // or anything following an escape character (since whatever it is, it can't be the end of the string).
                     &escaped_escape_char + "." +
                 // Look for an arbitrary number of these non-string-ending characters.
                 ")*" +
                 // Now, find the end of the string: a newline or the string delimiter.
-                format!("(\n|{})", escaped_delimiter).as_str())
-                .as_str(),
+                &format!("(\n|{})", escaped_delimiter)),
             ),
 
             // A bit simpler: this type of string can be terminated by a newline or an unescaped delimiter. Escaped terminators should be included in the string.
             (true, NewlineSupport::None) => Regex::new(
                 // Start at the beginning of the string, and require a match of every character. Allowing the regex to start matching in the middle means it can skip over escape characters.
-                ("^(".to_string() +
+                &("^(".to_string() +
                     //  Allow any non-special character
-                    format!("[^{}{}]|", escaped_delimiter, escaped_escape_char).as_str() +
+                    &format!("[^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
                     // or anything following an escape character except a newline.
                     &escaped_escape_char + "[^\n]" +
                 // Look for an arbitrary number of these non-string-ending characters.
                 ")*" +
-                // Now, find the end of the string: a newline (any type) or the string delimiter.
-                format!("(\n|{})", escaped_delimiter).as_str())
-                .as_str(),
+                // Now, find the end of the string: a newline optinally preceded by the escape char or the string delimiter.
+                &format!("({}?\n|{})", escaped_escape_char, escaped_delimiter)),
             ),
 
             // Even simpler: look for an unescaped string delimiter.
             (true, NewlineSupport::Unescaped) => Regex::new(
                 // Allow <code>.</code> to match <em>any</em> character, including a newline. See the <a href="https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags">regex docs</a>.
-                ("(?s)".to_string() +
+                &("(?s)".to_string() +
                 // Start at the beginning of the string, and require a match of every character. Allowing the regex to start matching in the middle means it can skip over escape characters.
                 "^(" +
                     //  Allow any non-special character,
-                    format!("[^{}{}]|", escaped_delimiter, escaped_escape_char).as_str() +
+                    &format!("[^{}{}]|", escaped_delimiter, escaped_escape_char) +
                     // or anything following an escape character (since whatever it is, it can't be the end of the string).
                     &escaped_escape_char + "." +
                 // Look for an arbitrary number of these non-string-ending characters.
                 ")*" +
                 // Now, find the end of the string: the string delimiter.
-                &escaped_delimiter)
-                    .as_str(),
+                &escaped_delimiter),
             ),
 
             // This case makes no sense: there's no escape character, yet the string allows escaped newlines?
@@ -255,9 +269,7 @@ fn build_lexer_regex(
             (false, NewlineSupport::Unescaped) => Regex::new(&escaped_delimiter),
 
             // Look for either the delimiter or a newline to terminate the string.
-            (false, NewlineSupport::None) => {
-                Regex::new(format!("{}|\n", &escaped_delimiter).as_str())
-            }
+            (false, NewlineSupport::None) => Regex::new(&format!("{}|\n", &escaped_delimiter)),
         }
         .unwrap();
         regex_builder(
@@ -270,15 +282,12 @@ fn build_lexer_regex(
     //     literals.</p>
     // <p>Build a regex for template strings.</p>
     // TODO: this is broken! Lexing nested template literals means matching braces, yikes. For now, don't support this.
-    let mut tmp: Vec<&str> = Vec::new();
     if language_lexer.template_literal {
         // TODO: match either an unescaped <code>${</code> -- which causes a nested parse -- or the closing backtick (which must be unescaped).
-        tmp.push("`");
-        regex_builder(&tmp, RegexDelimType::TemplateLiteral);
+        regex_builder(&["`"].to_vec(), RegexDelimType::TemplateLiteral);
     }
     // This must be last, since it includes one group (so the index of all future items will be off by 1). Build a regex for a heredoc start.
     let &regex_str;
-    tmp.clear();
     if let Some(heredoc_delim) = language_lexer.heredoc_delim {
         // First, create the string which defines the regex.
         regex_str = format!(
@@ -287,14 +296,16 @@ fn build_lexer_regex(
             heredoc_delim.delim_ident_regex,
             regex::escape(heredoc_delim.start_suffix)
         );
-        // Then add it.
-        regex_builder(&[regex_str.as_str()].to_vec(), RegexDelimType::Heredoc);
+        // Then add it. Do this manually, since we don't want the regex escaped.
+        regex_strings_arr.push(regex_str);
+        regex_group_map.push(RegexDelimType::Heredoc(
+            regex::escape(heredoc_delim.stop_prefix),
+            regex::escape(heredoc_delim.stop_suffix),
+        ));
     }
 
     // Combine all this into a single regex, which is this or of each delimiter's regex. Create a capturing group for each delimiter.
-    let tmp = format!("({})", regex_strings_arr.join(")|("));
-    let classify_regex = Regex::new(tmp.as_str()).unwrap();
-    println!("{:?}", classify_regex);
+    let classify_regex = Regex::new(&format!("({})", regex_strings_arr.join(")|("))).unwrap();
 
     LanguageLexerCompiled {
         next_token: classify_regex,
@@ -306,12 +317,13 @@ fn build_lexer_regex(
 #[derive(PartialEq)]
 // To allow printing with <code>println!</code>.
 #[derive(Debug)]
+/// This defines either a code block or a doc block.
 pub struct CodeDocBlock {
-    // For a doc block, the whitespace characters which created the indent for this doc block. For a code block, an empty string.
+    /// For a doc block, the whitespace characters which created the indent for this doc block. For a code block, an empty string.
     indent: String,
-    // For a doc block, the opening comment delimiter. For a code block, an empty string.
+    /// For a doc block, the opening comment delimiter. For a code block, an empty string.
     delimiter: String,
-    // The contents of this block -- documentation (with the comment delimiters removed) or code.
+    /// The contents of this block -- documentation (with the comment delimiters removed) or code.
     contents: String,
 }
 
@@ -391,6 +403,8 @@ pub fn source_lexer(
     // Normalize all line endings.
     let source_code_normalized = source_code.replace("\r\n", "\n").replace("\r", "\n");
     let mut source_code = source_code_normalized.as_str();
+
+    // Main loop: lexer the provided source code.
     while !source_code.is_empty() {
         // <p>Look for the next special case. Per the earlier discussion, this
         //     assumes that the text immediately
@@ -416,6 +430,23 @@ pub fn source_lexer(
                 // Correct the resulting group index, since we skipped group 0.
                 + 1;
             let matching_group_str = &classify_match[matching_group_index];
+
+            let mut append_code = |closing_regex: &Regex| {
+                // Add the opening delimiter to the code.
+                current_code_block += matching_group_str;
+                source_code = &source_code[matching_group_str.len()..];
+                // Find the closing delimiter.
+                if let Some(closing_match) = closing_regex.find(source_code) {
+                    // Include this in code.
+                    current_code_block += &source_code[..closing_match.end()];
+                    source_code = &source_code[closing_match.end()..];
+                } else {
+                    // Then the rest of the code is a string.
+                    current_code_block += &source_code;
+                    source_code = "";
+                }
+            };
+
             // In the map, index 0 refers to group 1 (since group 0 matches are skipped). Adjust the index for this.
             match &language_lexer_compiled.map[matching_group_index - 1] {
                 // <h3>Inline comment</h3>
@@ -469,7 +500,7 @@ pub fn source_lexer(
                     if ws_only
                         && (
                             // Criteria 2.1
-                            full_comment.starts_with((matching_group_str.to_string() + &" ").as_str()) ||
+                            full_comment.starts_with(&(matching_group_str.to_string() + &" ")) ||
                             // Criteria 2.2
                             (full_comment == &(matching_group_str.to_string() + if end_of_comment_index.is_some() {
                             // Compare with a newline if it was found; the group of the found newline is 8.
@@ -492,8 +523,8 @@ pub fn source_lexer(
                         //     inline comment delimiter. For the contents, omit the
                         //     leading space it it's there (this might be just a
                         //     newline or an EOF).</p>
-                        let has_space_after_comment = full_comment
-                            .starts_with((matching_group_str.to_string() + &" ").as_str());
+                        let has_space_after_comment =
+                            full_comment.starts_with(&(matching_group_str.to_string() + &" "));
                         append_code_doc_block(
                             comment_line_prefix,
                             matching_group_str,
@@ -513,23 +544,19 @@ pub fn source_lexer(
                     panic!("Unimplemented.")
                 }
 
-                RegexDelimType::String(closing_regex) => {
-                    // Add the opening delimiter to the code.
-                    current_code_block += matching_group_str;
-                    source_code = &source_code[matching_group_str.len()..];
-                    // Find the closing delimiter.
-                    if let Some(closing_match) = closing_regex.find(source_code) {
-                        // Include this in code.
-                        current_code_block += &source_code[..closing_match.end()];
-                        source_code = &source_code[closing_match.end()..];
-                    } else {
-                        // Then the rest of the code is a string.
-                        current_code_block += &source_code;
-                        source_code = "";
-                    }
+                RegexDelimType::String(closing_regex) => append_code(closing_regex),
+                RegexDelimType::TemplateLiteral => append_code(&TEMPLATE_LITERAL_CLOSING_REGEX),
+                RegexDelimType::Heredoc(stop_prefix, stop_suffix) => {
+                    // Get the string from the source code which (along with the stop prefix/suffix) defines the end of the heredoc.
+                    let heredoc_string = &classify_match[language_lexer_compiled.map.len() + 1];
+                    // Make a regex from it.
+                    let closing_regex = Regex::new(
+                        &(stop_prefix.to_owned() + &regex::escape(heredoc_string) + stop_suffix),
+                    )
+                    .unwrap();
+                    // Use this to find the end of the heredoc and add that to <code>current_source_code</code>.
+                    append_code(&closing_regex);
                 }
-                // TODO: handle block comments, strings, heredocs, template literals.
-                _ => panic!("Unimplemented."),
             }
         } else {
             // <p>There's no match, so the rest of the source code belongs in the current code block.</p>
@@ -560,9 +587,9 @@ mod tests {
     }
 
     #[test]
-    fn test_1() {
-        // Test with the Python lexer.
+    fn test_py() {
         let py = &LANGUAGE_LEXER_ARR[4];
+        assert_eq!(py.ace_mode, "python");
 
         // Try basic cases: make sure than newlines are processed correctly.
         assert_eq!(source_lexer("", py), []);
@@ -752,7 +779,99 @@ mod tests {
                 "'''\n# Test 1\\\\\\'''\n# Test 2"
             ),]
         );
+    }
 
-        // Test everything. TODO.
+    #[test]
+    fn test_js() {
+        let js = &LANGUAGE_LEXER_ARR[2];
+        assert_eq!(js.ace_mode, "javascript");
+
+        // JavaScript tests. TODO: block comments
+        assert_eq!(
+            source_lexer("// Test", js),
+            [build_code_doc_block("", "//", "Test"),]
+        );
+
+        // Some basic template literal tests. Comments inside template literal expressions aren't parsed correctly; neither are nested template literals.
+        assert_eq!(
+            source_lexer("``", js),
+            [build_code_doc_block("", "", "``"),]
+        );
+        assert_eq!(source_lexer("`", js), [build_code_doc_block("", "", "`"),]);
+        assert_eq!(
+            source_lexer("`\n// Test`", js),
+            [build_code_doc_block("", "", "`\n// Test`"),]
+        );
+        assert_eq!(
+            source_lexer("`\\`\n// Test`", js),
+            [build_code_doc_block("", "", "`\\`\n// Test`"),]
+        );
+        assert_eq!(
+            source_lexer("`\n// Test 1`\n// Test 2", js),
+            [
+                build_code_doc_block("", "", "`\n// Test 1`\n"),
+                build_code_doc_block("", "//", "Test 2")
+            ]
+        );
+        assert_eq!(
+            source_lexer("`\n// Test 1\\`\n// Test 2`\n// Test 3", js),
+            [
+                build_code_doc_block("", "", "`\n// Test 1\\`\n// Test 2`\n"),
+                build_code_doc_block("", "//", "Test 3")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_cpp() {
+        let cpp = &LANGUAGE_LEXER_ARR[0];
+        assert_eq!(cpp.ace_mode, "c_cpp");
+
+        // Try out a C++ heredoc.
+        assert_eq!(
+            source_lexer("R\"heredoc(\n// Test 1)heredoc\"\n// Test 2", cpp),
+            [
+                build_code_doc_block("", "", "R\"heredoc(\n// Test 1)heredoc\"\n"),
+                build_code_doc_block("", "//", "Test 2")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_toml() {
+        let toml = &LANGUAGE_LEXER_ARR[6];
+        assert_eq!(toml.ace_mode, "toml");
+
+        // Multi-line literal strings don't have escapes.
+        assert_eq!(
+            source_lexer("'''\n# Test 1\\'''\n# Test 2", toml),
+            [
+                build_code_doc_block("", "", "'''\n# Test 1\\'''\n"),
+                build_code_doc_block("", "#", "Test 2")
+            ]
+        );
+        // Basic strings have an escape, but don't allow newlines.
+        assert_eq!(
+            source_lexer("\"\\\n# Test 1\"", toml),
+            [
+                build_code_doc_block("", "", "\"\\\n"),
+                build_code_doc_block("", "#", "Test 1\"")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_rust() {
+        let rust = &LANGUAGE_LEXER_ARR[5];
+        assert_eq!(rust.ace_mode, "rust");
+
+        // Test Rust raw strings.
+        assert_eq!(
+            source_lexer("r###\"\n// Test 1\"###\n// Test 2", rust),
+            [
+                build_code_doc_block("", "", "r###\"\n// Test 1\"###\n"),
+                build_code_doc_block("", "//", "Test 2")
+            ]
+        );
     }
 }

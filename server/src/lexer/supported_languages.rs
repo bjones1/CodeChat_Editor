@@ -56,10 +56,10 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         //     regex.</p>
         heredoc_delim: Some(&HeredocDelim {
             start_prefix: "R\"",
-            delim_ident_regex: "[^()\\ ]",
+            delim_ident_regex: "[^()\\\\[[:space:]]]*",
             start_suffix: "(",
             stop_prefix: ")",
-            stop_suffix: "",
+            stop_suffix: "\"",
         }),
         template_literal: false,
     },
@@ -102,12 +102,12 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             StringDelimiterSpec {
                 delimiter: "\"",
                 escape_char: "\\",
-                newline_support: NewlineSupport::Unescaped,
+                newline_support: NewlineSupport::Escaped,
             },
             StringDelimiterSpec {
                 delimiter: "'",
                 escape_char: "\\",
-                newline_support: NewlineSupport::Unescaped,
+                newline_support: NewlineSupport::Escaped,
             },
         ],
         heredoc_delim: None,
@@ -182,20 +182,21 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             is_nestable: true,
         }],
         string_delim_spec_arr: &[
-            // Note that raw byte strings behave identically to raw strings from this lexer's perspective.
-            StringDelimiterSpec {
-                delimiter: "r#\"",
-                escape_char: "",
-                newline_support: NewlineSupport::Unescaped,
-            },
-            // Likewise, byte strings behave like strings for this lexer.
+            // Byte strings behave like strings for this lexer.
             StringDelimiterSpec {
                 delimiter: "\"",
                 escape_char: "\\",
                 newline_support: NewlineSupport::Unescaped,
             },
         ],
-        heredoc_delim: None,
+        // Likewise, raw byte strings behave identically to raw strings from this lexer's perspective.
+        heredoc_delim: Some(&HeredocDelim {
+            start_prefix: "r",
+            delim_ident_regex: "#+",
+            stop_prefix: "\"",
+            start_suffix: "\"",
+            stop_suffix: "",
+        }),
         template_literal: false,
     },
     // <a href="https://toml.io/en/">TOML</a>
