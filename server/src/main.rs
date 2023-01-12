@@ -15,4 +15,7 @@
 ///      </p>
 ///  </details>
 /// <h1><code>lexer.rs</code> &mdash; Lex source code into code and doc blocks</h1>
-fn main() {}
+use code_chat_editor::webserver;
+fn main() {
+    webserver::main().unwrap();
+}
