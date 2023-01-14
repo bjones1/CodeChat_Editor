@@ -522,6 +522,7 @@ const source_lexer = (
                 const inline_comment_string = m[inline_comment_index];
                 if (
                     last_line_until_comment.match(/^\s*$/) &&
+                    !full_comment.includes("prettier-ignore") &&
                     (full_comment.startsWith(inline_comment_string + " ") ||
                         full_comment ===
                             inline_comment_string +
@@ -795,17 +796,19 @@ const classified_source_to_html = (classified_source) => {
                 // <p><span id="one-row-table">Use a one-row table to lay out a
                 //         doc block, so that it aligns properly with a code
                 //         block.</span></p>
+                // prettier-ignore
                 html.push(
                     `<div class="CodeChat-doc">
     <table>
         <tbody>
             <tr>
-                <!-- Spaces matching the number of digits in the ACE gutter's line number. TODO: fix this to match the number of digits of the last line of the last code block. Fix ACE to display this number of digits in all gutters. See https://stackoverflow.com/questions/56601362/manually-change-ace-line-numbers. -->
-                <td class="CodeChat-ACE-gutter-padding ace_editor">&nbsp;&nbsp;&nbsp</td>
-                <td class="CodeChat-ACE-padding"></td>
-                <!-- This doc block's indent. TODO: allow paste, but must only allow pasting spaces. -->
-                <td class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${indent}</td>
-                <td class="CodeChat-TinyMCE-td"><div class="CodeChat-TinyMCE">`,
+` +
+                // Spaces matching the number of digits in the ACE gutter's line number. TODO: fix this to match the number of digits of the last line of the last code block. Fix ACE to display this number of digits in all gutters. See https://stackoverflow.com/questions/56601362/manually-change-ace-line-numbers. -->
+`                <td class="CodeChat-ACE-gutter-padding ace_editor">&nbsp;&nbsp;&nbsp</td>
+                <td class="CodeChat-ACE-padding"></td>` +
+                // This doc block's indent. TODO: allow paste, but must only allow pasting whitespace.
+`                <td class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${indent}</td>
+                <td class="CodeChat-TinyMCE-td"><div class="CodeChat-TinyMCE" data-CodeChat-comment="${comment_string}">`,
                     source_string
                 );
             }
@@ -877,22 +880,28 @@ const editor_to_source_code = (
     )) {
         // <p>The type of this block: <code>null</code> for code, or &gt;= 0 for
         //     doc (the value of n specifies the indent in spaces).</p>
-        let indent;
+        let indent = "";
+        // The delimiter for a comment block, or an empty string for a code block.
+        let delimiter = "";
         // <p>A string containing all the code/docs in this block.</p>
         let full_string;
 
         // <p>Get the type of this block and its contents.</p>
         if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
-            indent = null;
             full_string = ace.edit(code_or_doc_tag).getValue();
         } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
             // <p>Get the indent from the previous table cell. For a CodeChat
-            //     Editor document, there's no indent (it's just a doc block).
+            //     Editor document, there's no indent (it's just a doc block). Likewise, get the delimiter; leaving it blank for a CodeChat Editor document causes the next block of code to leave off the comment delimiter, which is what we want.
             // </p>
-            indent = is_doc_only()
-                ? null
-                : code_or_doc_tag.parentElement.previousElementSibling
-                      .textContent;
+            if (!is_doc_only()) {
+                indent =
+                    code_or_doc_tag.parentElement.previousElementSibling
+                        .textContent;
+                // Use the pre-existing delimiter for this block if it exists; otherwise, use the default delimiter.
+                delimiter =
+                    code_or_doc_tag.getAttribute("data-CodeChat-comment") ??
+                    comment_string;
+            }
             // <p>See <a
             //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get"><code>get</code></a>
             //     and <a
@@ -904,8 +913,7 @@ const editor_to_source_code = (
             // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters,
             //     including the length of the indent and comment string.</p>
             full_string = html_beautify(full_string, {
-                wrap_line_length:
-                    80 - (indent || "").length - comment_string.length - 1,
+                wrap_line_length: 80 - indent.length - delimiter.length - 1,
             });
         } else {
             console.assert(
@@ -917,22 +925,18 @@ const editor_to_source_code = (
         // <p>Split the <code>full_string</code> into individual lines; each one
         //     corresponds to an element of <code>classified_lines</code>.</p>
         for (const string of full_string.split(/\r?\n/)) {
-            classified_lines.push([indent, string + "\n"]);
+            classified_lines.push([indent, delimiter, string + "\n"]);
         }
     }
 
     // <p>Transform these classified lines into source code.</p>
     let lines = [];
-    for (const [indent, string] of classified_lines) {
-        if (indent === null) {
-            // <p>Just dump code out! Or a CodeChat Editor document, where the
-            //     indent doesn't matter.</p>
-            lines.push(string);
-        } else {
-            // <p>Prefix comments with the indent and the comment string.</p>
-            // <p>TODO: allow the use of block comments.</p>
-            lines.push(`${indent}${comment_string} ${string}`);
-        }
+    for (const [indent, delimiter, string] of classified_lines) {
+        // <p>Prefix comments with the indent and the comment string. Only put a space after the delimiter when the delimiter isn't empty.</p>
+        // <p>TODO: allow the use of block comments.</p>
+        lines.push(
+            `${indent}${delimiter}${delimiter === "" ? "" : " "}${string}`
+        );
     }
 
     return lines.join("");
