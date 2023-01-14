@@ -1,38 +1,56 @@
 /// <details>
-///      <summary>Copyright (C) 2022 Bryan A. Jones.</summary>
-///      <p>This file is part of the CodeChat Editor.</p>
-///      <p>The CodeChat Editor is free software: you can redistribute it and/or
-///          modify it under the terms of the GNU General Public License as
-///          published by the Free Software Foundation, either version 3 of the
-///          License, or (at your option) any later version.</p>
-///      <p>The CodeChat Editor is distributed in the hope that it will be useful,
-///          but WITHOUT ANY WARRANTY; without even the implied warranty of
-///          MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-///          General Public License for more details.</p>
-///      <p>You should have received a copy of the GNU General Public License
-///          along with the CodeChat Editor. If not, see <a
-///              href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
-///      </p>
-///  </details>
-/// <h1><code>supported_languages.rs</code> &mdash; Provide lexer info for all supported languages</h1>
-// Define lexers for each supported language.
+///     <summary>Copyright (C) 2022 Bryan A. Jones.</summary>
+///     <p>This file is part of the CodeChat Editor.</p>
+///     <p>The CodeChat Editor is free software: you can redistribute it and/or
+///         modify it under the terms of the GNU General Public License as
+///         published by the Free Software Foundation, either version 3 of the
+///         License, or (at your option) any later version.</p>
+///     <p>The CodeChat Editor is distributed in the hope that it will be
+///         useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+///         of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+///         General Public License for more details.</p>
+///     <p>You should have received a copy of the GNU General Public License
+///         along with the CodeChat Editor. If not, see <a
+///             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
+///     </p>
+/// </details>
+/// <h1><code>supported_languages.rs</code> &mdash; Provide lexer info for all
+///     supported languages</h1>
+/// <p>Thoughts on line continuation characters: I think we can ignore these. In
+///     C/C++, this is a two-line comment:</p>
+//// // A weird\
+//// two-line comment.
+/// <p>However, this is such odd syntax that we can safely ignore it, since few
+///     developers would do something so odd. (A block comment would make more
+///     sense.)</p>
+/// <p>While C can technically treat a line as code that looks like a comment,
+///     it's probably a syntax error. For example,</p>
+//// if (foo) \
+//// // This is a syntax error!
+/// <p>I can't think of any cases, outside strings (which the lexer handles
+///     properly), where this would be valid syntax.</p>
+/// <p>Ordering matters: all these delimiters end up in a large regex separated
+///     by an or operator. The regex or operator matches from left to right. So,
+///     longer Python string delimiters must be specified first (leftmost):
+///     <code>"""</code> (a multi-line Python string) must come before
+///     <code>"</code>. The resulting regex will then have <code>"""|"</code>,
+///     which will first search for the multi-line triple quote, then if that's
+///     not found, the single quote. A regex of <code>"|"""</code> would never
+///     match the triple quote, since the single quote would match first.</p>
+/// <h2>Imports</h2>
+/// <h3>Local</h3>
 use super::BlockCommentDelim;
 use super::HeredocDelim;
 use super::LanguageLexer;
 use super::NewlineSupport;
 use super::StringDelimiterSpec;
 
-// <p>Thoughts on line continuation characters: I think we can ignore these. In C/C++, this is a two-line comment:</p>
-//// // A weird\
-//// two-line comment.
-// <p>However, this is such odd syntax that we can safely ignore it, since few developers would do something so odd. (A block comment would make more sense.)</p>
-// <p>While C can technically treat a line as code that looks like a comment, it's probably a syntax error. For example,
-//// if (foo) \
-//// // This is a syntax error!
-// <p>I can't think of any cases, outside strings (which the lexer handles properly), where this would be valid syntax.</p>
-// <p>Ordering matters: all these delimiters end up in a large regex separated by an or operator. The regex or operator matches from left to right. So, longer Python string delimiters must be specified first (leftmost): <code>"""</code> (a multi-line Python string) must come before <code>"</code>. The resulting regex will then have <code>"""|"</code>, which will first search for the multi-line triple quote, then if that's not found, the single quote. A regex of <code>"|"""</code> would never match the triple quote, since the single quote would match first.
+// <h2>Compile lexers</h2>
+// <p>TODO.</p>
+
+// <h2>Define lexers for each supported language.</h2>
 pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
-    // C/C++
+    // <p>C/C++</p>
     LanguageLexer {
         ace_mode: "c_cpp",
         ext_arr: &[".c", ".cc", ".cpp"],
@@ -52,8 +70,9 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         //     string syntax in C++11 and newer is IMHO so rare we won't encounter
         //     it in older code. See the <a
         //         href="https://en.cppreference.com/w/cpp/language/string_literal">C++
-        //         string literals docs</a> for the reasoning behind the start body
+        // <p>string literals docs for the reasoning behind the start body
         //     regex.</p>
+        // <p>&nbsp;</p>
         heredoc_delim: Some(&HeredocDelim {
             start_prefix: "R\"",
             delim_ident_regex: "[^()\\\\[[:space:]]]*",
@@ -63,7 +82,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         }),
         template_literal: false,
     },
-    // HTML
+    // <p>HTML</p>
     LanguageLexer {
         ace_mode: "html",
         ext_arr: &[".html", ".htm"],
@@ -174,7 +193,8 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     LanguageLexer {
         ace_mode: "rust",
         ext_arr: &[".rs"],
-        // Since Rust complains about <code>///</code> comments on items that rustdoc ignores, support both styles.
+        // <p>Since Rust complains about <code>///</code> comments on items that
+        //     rustdoc ignores, support both styles.</p>
         inline_comment_delim_arr: &["///", "//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
@@ -182,7 +202,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             is_nestable: true,
         }],
         string_delim_spec_arr: &[
-            // Byte strings behave like strings for this lexer.
+            // <p>Byte strings behave like strings for this lexer.</p>
             StringDelimiterSpec {
                 delimiter: "\"",
                 escape_char: "\\",
@@ -206,13 +226,14 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
-            // Multi-line literal strings (as described by the link above).
+            // <p>Multi-line literal strings (as described by the link above).
+            // </p>
             StringDelimiterSpec {
                 delimiter: "'''",
                 escape_char: "",
                 newline_support: NewlineSupport::Unescaped,
             },
-            // Multi-line basic strings
+            // <p>Multi-line basic strings</p>
             StringDelimiterSpec {
                 delimiter: "\"\"\"",
                 escape_char: "\\",
@@ -224,7 +245,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
                 escape_char: "\\",
                 newline_support: NewlineSupport::None,
             },
-            // Literal strings
+            // <p>Literal strings</p>
             StringDelimiterSpec {
                 delimiter: "'",
                 escape_char: "\\",
@@ -234,7 +255,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         template_literal: false,
     },
-    // TypeScript
+    // <p>TypeScript</p>
     LanguageLexer {
         ace_mode: "typescript",
         ext_arr: &[".ts", ".mts"],
@@ -326,7 +347,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         template_literal: false,
     },
-    // CodeChat HTML
+    // <p>CodeChat HTML</p>
     LanguageLexer {
         ace_mode: "codechat-html",
         ext_arr: &[".cchtml"],

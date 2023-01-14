@@ -14,7 +14,7 @@
 ///              href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 ///      </p>
 ///  </details>
-/// <h1><code>lexer.rs</code> &mdash; Lex source code into code and doc blocks</h1>
+/// <h1><code>lib.rs</code> &mdash; Define library modules for the CodeChat Editor Server.</h1>
 pub mod lexer;
 /// The webserver
 pub mod webserver;
