@@ -54,7 +54,8 @@ struct SourceFileMetadata {
 #[derive(Serialize, Deserialize)]
 struct ClientSourceFile {
     metadata: SourceFileMetadata,
-    // TODO: implement a serdes deserializer that would convert this directly to a CodeDocBlock?
+    // <p>TODO: implement a serdes deserializer that would convert this directly
+    //     to a CodeDocBlock?</p>
     code_doc_block_arr: Vec<(String, Option<String>, String)>,
 }
 
@@ -83,7 +84,7 @@ async fn save_source(
     client_source_file: web::Json<ClientSourceFile>,
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
-    // Given the mode, find the lexer.
+    // <p>Given the mode, find the lexer.</p>
     let lexer = match language_lexers_compiled
         .map_mode_to_lexer
         .get(client_source_file.metadata.mode.as_str())
@@ -92,7 +93,7 @@ async fn save_source(
         None => return save_source_response(false, "Invalid mode"),
     };
 
-    // Turn this back into code and doc blocks
+    // <p>Turn this back into code and doc blocks</p>
     let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
@@ -101,7 +102,8 @@ async fn save_source(
             indent: cdb.0.to_string(),
             delimiter: match &cdb.1 {
                 Some(v) => v.to_string(),
-                // If no delimiter is provided, use an inline comment (if available), then a block comment.
+                // <p>If no delimiter is provided, use an inline comment (if
+                //     available), then a block comment.</p>
                 None => {
                     if let Some(ic) = inline_comment {
                         ic.to_string()
@@ -121,7 +123,7 @@ async fn save_source(
         });
     }
 
-    // Turn this into a string.
+    // <p>Turn this into a string.</p>
     let mut contents = String::new();
     for code_doc_block in code_doc_block_vec {
         contents.push_str(&format!(
@@ -137,7 +139,7 @@ async fn save_source(
         ));
     }
 
-    // Save this string to a file
+    // <p>Save this string to a file</p>
     let save_file_path = if cfg!(windows) {
         "".to_string()
     } else {
@@ -323,7 +325,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         );
     }
 
-    // List files second.
+    // <p>List files second.</p>
     let mut file_html = String::new();
     for file in files {
         let file_name = match file.file_name().into_string() {
@@ -367,7 +369,8 @@ async fn serve_file(
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> HttpResponse {
     let raw_dir = file_path.parent().unwrap();
-    // Use a lossy conversion, since this is UI display, not filesystem access.
+    // <p>Use a lossy conversion, since this is UI display, not filesystem
+    //     access.</p>
     let dir = escape_html(path_display(raw_dir).as_str());
     let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
     let ext = &file_path
@@ -375,14 +378,14 @@ async fn serve_file(
         .unwrap_or_else(|| OsStr::new(""))
         .to_string_lossy();
 
-    // Get the <code>mode</code> query parameter.
+    // <p>Get the <code>mode</code> query parameter.</p>
     let empty_string = "".to_string();
     let mode = match web::Query::<HashMap<String, String>>::from_query(req.query_string()) {
         Ok(query) => query.get("mode").unwrap_or(&empty_string).clone(),
         Err(_err) => empty_string,
     };
 
-    // Read the file.
+    // <p>Read the file.</p>
     let mut file_contents = String::new();
     let read_ret = match File::open(file_path).await {
         Ok(fc) => fc,
@@ -404,9 +407,9 @@ async fn serve_file(
         ));
     }
 
-    // <p>The TOC is a simplified web page requiring no additional processing. The
-    //     script ensures that all hyperlinks target the enclosing page, not just
-    //     the iframe containing this page.</p>
+    // <p>The TOC is a simplified web page requiring no additional processing.
+    //     The script ensures that all hyperlinks target the enclosing page, not
+    //     just the iframe containing this page.</p>
     if mode == "toc" {
         return HttpResponse::Ok().body(format!(
             r##"<!DOCTYPE html>
@@ -435,17 +438,17 @@ async fn serve_file(
         ));
     }
 
-    // Look for a special tag to specify the lexer.
+    // <p>Look for a special tag to specify the lexer.</p>
     let lexer = if ext == "cchtml" {
         language_lexers_compiled
             .map_mode_to_lexer
             .get("codechat-html")
             .unwrap()
     } else if let Some(index) = file_contents.find("CodeChat Editor lexer: ") {
-        // TODO: look for newline, space, or EOF, and pick out Ace mode?
+        // <p>TODO: look for newline, space, or EOF, and pick out Ace mode?</p>
         &language_lexers_compiled.language_lexer_compiled_vec[0]
     } else {
-        // Otherwise, look up the lexer by the file's extension.
+        // <p>Otherwise, look up the lexer by the file's extension.</p>
         if let Some(llc) = language_lexers_compiled
             .map_ext_to_lexer_vec
             .get(ext.as_ref())
@@ -459,7 +462,7 @@ async fn serve_file(
         }
     };
 
-    // Lex the code and put it in a JSON structure.
+    // <p>Lex the code and put it in a JSON structure.</p>
     let code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
         vec![CodeDocBlock {
             indent: "".to_string(),
@@ -484,7 +487,7 @@ async fn serve_file(
             ))
         }
     };
-    // Look for any script tags and prevent these from causing problems.
+    // <p>Look for any script tags and prevent these from causing problems.</p>
     let lexed_source_file_string = lexed_source_file_string.replace("</script>", "<\\/script>");
 
     // <p>Look for a project file by searching the current directory, then all
@@ -568,7 +571,7 @@ async fn serve_file(
 }
 
 // <h2>Utilities</h2>
-// Given a <code>Path</code>, transform it into a displayable string.
+// <p>Given a <code>Path</code>, transform it into a displayable string.</p>
 fn path_display(p: &Path) -> String {
     let path_orig = p.to_string_lossy();
     #[cfg(target_os = "windows")]
@@ -577,12 +580,12 @@ fn path_display(p: &Path) -> String {
     path_orig
 }
 
-// Return a Not Found (404) errors with the provided HTML body.
+// <p>Return a Not Found (404) errors with the provided HTML body.</p>
 fn html_not_found(msg: &str) -> HttpResponse {
     HttpResponse::NotFound().body(html_wrapper(msg))
 }
 
-// Wrap the provided HTML body in DOCTYPE/html/head tags.
+// <p>Wrap the provided HTML body in DOCTYPE/html/head tags.</p>
 fn html_wrapper(body: &str) -> String {
     format!(
         "<!DOCTYPE html>
