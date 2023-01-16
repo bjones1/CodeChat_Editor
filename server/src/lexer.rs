@@ -16,21 +16,59 @@
 /// </details>
 /// <h1><code>lexer.rs</code> &mdash; Lex source code into code and doc blocks
 /// </h1>
+/// <h2>Submodule definitions</h2>
 pub mod supported_languages;
 
+/// <h2>Imports</h2>
+/// <h3>Standard library</h3>
+use std::collections::HashMap;
+use std::sync::Arc;
+
+// <h3>Third-party</h3>
 use lazy_static::lazy_static;
 use regex;
 use regex::Regex;
+use serde::ser::{Serialize, SerializeSeq, Serializer};
 
 /// <h2>Data structures</h2>
+/// <p>These data structures define everything the lexer needs in order to
+///     analyze a programming language:</p>
+/// <ul>
+///     <li>It defines block and inline comment delimiters; these (when
+///         correctly formatted) become doc blocks.</li>
+///     <li>It defines strings: what is the escape character? Are newlines
+///         allowed? If so, must newlines be escaped?</li>
+///     <li>It defines heredocs in a flexible form (see
+///         <code>HeredocDelim</code> for more details).</li>
+///     <li>It associates an Ace mode and filename extensions with the lexer.
+///     </li>
+/// </ul>
+/// <p>This lexer ignores line continuation characters; in C/C++/Python, it's a
+///     <code>\</code> character followed immediately by a newline (<a
+///         href="https://www.open-std.org/jtc1/sc22/WG14/www/docs/n1256.pdf#page22">C
+///         reference</a>, <a
+///         href="https://docs.python.org/3/reference/lexical_analysis.html#explicit-line-joining">Python
+///         reference</a>). From a lexer perspective, supporting these adds
+///     little value:</p>
+/// <ol>
+///     <li>It would allow the lexer to recognize the following C/C++ snippet as
+///         a doc block:<br><code>// This is an odd\</code><br><code>two-line
+///             inline comment.</code><br>However, this such such unusual syntax
+///         (most authors would instead use either a block comment or another
+///         inline comment) that recognizing it adds little value.</li>
+///     <li>I'm unaware of any valid syntax in which ignoring a line
+///         continuation would cause the lexer to mis-recognize code as a
+///         comment. (Escaped newlines in strings, a separate case, are handled
+///         correctly).</li>
+/// </ol>
 /// <p>This struct defines the delimiters for a block comment.</p>
-struct BlockCommentDelim<'a> {
+pub struct BlockCommentDelim<'a> {
     /// <p>A string specifying the opening comment delimiter for a block
     ///     comment.</p>
-    opening: &'a str,
+    pub opening: &'a str,
     /// <p>A string specifying the closing comment delimiter for a block
     ///     comment.</p>
-    closing: &'a str,
+    pub closing: &'a str,
     /// <p>True if block comment may be nested.</p>
     is_nestable: bool,
 }
@@ -80,30 +118,54 @@ struct HeredocDelim<'a> {
 /// <p>Define a language by providing everything this lexer needs in order to
 ///     split it into code and doc blocks.</p>
 pub struct LanguageLexer<'a> {
-    /// <p>The Ace mode to use for this language</p>
-    ace_mode: &'a str,
-    /// <p>An array of file extensions for this language. They begin with a
-    ///     period, such as <code>.rs</code>.</p>
+    /// <p>The <a href="https://ace.c9.io/">Ace</a> <a
+    ///         href="https://github.com/ajaxorg/ace/tree/master/src/mode">mode</a>
+    ///     to use for this language. The CodeChat Editor Client uses this to
+    ///     tell Ace the mode to use. It's can also be used in a
+    ///     specially-formatted comment in a source file to override the lexer
+    ///     chosen by looking at the file's extension.</p>
+    pub ace_mode: &'a str,
+    /// <p>An array of file extensions for this language. They <em>do not</em>begin with a
+    ///     period, such as <code>rs</code>. This is the typical way that the
+    ///     CodeChat Editor uses to determine which lexer to use for a given
+    ///     source file.</p>
     ext_arr: &'a [&'a str],
     /// <p>An array of strings which specify inline comment delimiters. Empty if
     ///     this language doesn't provide inline comments.</p>
-    inline_comment_delim_arr: &'a [&'a str],
+    pub inline_comment_delim_arr: &'a [&'a str],
     /// <p>An array which specifies opening and closing block comment
     ///     delimiters. Empty if this language doesn't provide block comments.
     /// </p>
-    block_comment_delim_arr: &'a [BlockCommentDelim<'a>],
+    pub block_comment_delim_arr: &'a [BlockCommentDelim<'a>],
     /// <p>Specify the strings supported by this language. While this could be
     ///     empty, such a language would be very odd.</p>
     string_delim_spec_arr: &'a [StringDelimiterSpec<'a>],
-    /// <p>A heredoc delimiter; <code>None</code> if heredocs aren't supported.
-    /// </p>
+    /// <p>A <a href="https://en.wikipedia.org/wiki/Here_document">heredoc</a>
+    ///     delimiter; <code>None</code> if heredocs aren't supported.</p>
     heredoc_delim: Option<&'a HeredocDelim<'a>>,
-    /// <p>Template literal support (for languages such as JavaScript,
+    /// <p><a
+    ///         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals">Template
+    ///         literal</a> support (for languages such as JavaScript,
     ///     TypeScript, etc.).</p>
     template_literal: bool,
 }
 
 /// <p>Define which delimiter corresponds to a given regex group.</p>
+/// <p>This struct stores the results of "compiling" a
+///     <code>LanguageLexer</code> into a set of regexes and a map. For example,
+///     the JavaScript lexer becomes:</p>
+//// Regex          (//)     |    (/*)      |        (")           |         (')          |       (`)
+//// Group            1             2                 3                       4                    5
+////  Map       InlineComment   BlockComment   String(double-quote)   String(single-quote)   TemplateLiteral
+/// <p>The Regex in the table is stored in <code>next_token</code>, which is
+///     used to search for the next token. The group is both the group number of
+///     the regex - 1 (in other words, a match of <code>//</code> is group 1 of
+///     the regex) and the index into <code>map</code>. Map is <code>map</code>,
+///     which labeled each group with a <code>RegexDelimType</code>. The lexer
+///     uses this to decide how to handle the token it just found -- as a inline
+///     comment, block comment, etc. Note: this is a slightly simplified regex;
+///     group 1, <code>(/*)</code>, would actually be <code>(/\*)</code>, since
+///     the <code>*</code> must be escaped.</p>
 enum RegexDelimType {
     InlineComment,
     BlockComment(
@@ -114,8 +176,8 @@ enum RegexDelimType {
         Regex,
     ),
     String(
-        /// <p>The regex used to find the closing delimiter for this string type.
-        /// </p>
+        /// <p>The regex used to find the closing delimiter for this string
+        ///     type.</p>
         Regex,
     ),
     Heredoc(
@@ -129,23 +191,27 @@ enum RegexDelimType {
     //     opening brace, closing brace, closing template literal, etc.</p>
 }
 
-/// <p>This struct store the results of "compiling" a <code>LanguageLexer</code>
-///     into a set of regexes and a map. For example, the JavaScript lexer
-///     becomes:</p>
-//// Regex          (//)     |    (/*)      |        (")           |         (')          |       (`)
-//// Group            0             1                 2                       3                    4
-////  Map       InlineComment   BlockComment   String(double-quote)   String(single-quote)   TemplateLiteral
-/// <p>The Regex in the table is stored in <code>next_token</code>, which is
-///     used to search for the next token. The group is both the group number of
-///     the regex - 1 (in other words, a match of <code>//<code> is group 1 of
-///             the regex) and the index into <code>map</code>. Map is
-///             <code>map</code>, which labeled each group with a
-///             <code>RegexDelimType</code>. The lexer uses this to decide how
-///             to handle the token it just found -- as a inline comment, block
-///             comment, etc. Note: this is a slightly simplified regex; group
-///             1, <code>(/*)</code>, would actually be <code>(/\*)</code>,
-///             since the <code>*</code> must be escaped.</code></code></p>
-struct LanguageLexerCompiled {
+// <p>To allow comparison for unit tests.</p>
+#[derive(PartialEq)]
+// <p>To allow printing with <code>println!</code>.</p>
+#[derive(Debug)]
+/// <p>This defines either a code block or a doc block.</p>
+pub struct CodeDocBlock {
+    /// <p>For a doc block, the whitespace characters which created the indent
+    ///     for this doc block. For a code block, an empty string.</p>
+    pub indent: String,
+    /// <p>For a doc block, the opening comment delimiter. For a code block, an
+    ///     empty string.</p>
+    pub delimiter: String,
+    /// <p>The contents of this block -- documentation (with the comment
+    ///     delimiters removed) or code.</p>
+    pub contents: String,
+}
+
+// Store the results of compiling a language lexer.
+pub struct LanguageLexerCompiled<'a> {
+    /// A copy of LanguageLexer::ace_mode.
+    pub language_lexer: &'a LanguageLexer<'a>,
     /// <p>A regex used to identify the next token when in a code block.</p>
     next_token: Regex,
     /// <p>A mapping from groups in this regex to the corresponding delimiter
@@ -153,7 +219,18 @@ struct LanguageLexerCompiled {
     map: Vec<RegexDelimType>,
 }
 
-// <p>Create constant regexes needed by the lexer, following the <a
+// Store all lexers and their associated maps after they're compiled.
+pub struct LanguageLexersCompiled<'a> {
+    // <p>The resulting compiled lexers.</p>
+    pub language_lexer_compiled_vec: Vec<Arc<LanguageLexerCompiled<'a>>>,
+    // <p>Maps a file extension to indices into the lexers vector.</p>
+    pub map_ext_to_lexer_vec: HashMap<&'a str, Vec<Arc<LanguageLexerCompiled<'a>>>>,
+    // <p>Maps an Ace mode to an index into the lexers vector.</p>
+    pub map_mode_to_lexer: HashMap<&'a str, Arc<LanguageLexerCompiled<'a>>>,
+}
+
+// <h2>Globals</h2>
+// <p>Create constant regexes needed by the lexer, following the&nbsp;<a
 //         href="https://docs.rs/regex/1.6.0/regex/index.html#example-avoid-compiling-the-same-regex-in-a-loop">Regex
 //         docs recommendation</a>.</p>
 lazy_static! {
@@ -184,13 +261,30 @@ lazy_static! {
     ).unwrap();
 }
 
+/// <h2>Functions</h2>
+/// Provide a way to turn a <code>CodeDocBlock</code> into JSON.
+impl Serialize for CodeDocBlock {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // 3 is the number of fields in the seq.
+        let mut seq = serializer.serialize_seq(Some(3))?;
+        seq.serialize_element(&self.indent)?;
+        seq.serialize_element(&self.delimiter)?;
+        seq.serialize_element(&self.contents)?;
+        seq.end()
+    }
+}
+
+/// <h3>Language "compiler"</h3>
 /// <p>"Compile" a language description into regexes used to lex the language.
 /// </p>
-fn build_lexer_regex(
+fn build_lexer_regex<'a>(
     // <p>The language description to build regexes for.</p>
-    language_lexer: &LanguageLexer,
+    language_lexer: &'a LanguageLexer,
     // <p>The "compiled" form of this language lexer.</p>
-) -> LanguageLexerCompiled {
+) -> LanguageLexerCompiled<'a> {
     // <p>Produce the overall regex from regexes which find a specific special
     //     case. TODO: explain this and the next variable.</p>
     let mut regex_strings_arr: Vec<String> = Vec::new();
@@ -395,26 +489,49 @@ fn build_lexer_regex(
     let classify_regex = Regex::new(&format!("({})", regex_strings_arr.join(")|("))).unwrap();
 
     LanguageLexerCompiled {
+        language_lexer: language_lexer,
         next_token: classify_regex,
         map: regex_group_map,
     }
 }
 
-// <p>To allow comparison for unit tests.</p>
-#[derive(PartialEq)]
-// <p>To allow printing with <code>println!</code>.</p>
-#[derive(Debug)]
-/// <p>This defines either a code block or a doc block.</p>
-pub struct CodeDocBlock {
-    /// <p>For a doc block, the whitespace characters which created the indent
-    ///     for this doc block. For a code block, an empty string.</p>
-    indent: String,
-    /// <p>For a doc block, the opening comment delimiter. For a code block, an
-    ///     empty string.</p>
-    delimiter: String,
-    /// <p>The contents of this block -- documentation (with the comment
-    ///     delimiters removed) or code.</p>
-    contents: String,
+// <h2>Compile lexers</h2>
+pub fn compile_lexers<'a>(
+    language_lexer_arr: &'a [LanguageLexer<'a>],
+) -> LanguageLexersCompiled<'a> {
+    let mut language_lexers_compiled = LanguageLexersCompiled {
+        language_lexer_compiled_vec: Vec::new(),
+        map_ext_to_lexer_vec: HashMap::new(),
+        map_mode_to_lexer: HashMap::new(),
+    };
+    // <p>Walk through each lexer.</p>
+    for language_lexer in language_lexer_arr {
+        // <p>Compile and add it.</p>
+        let llc = Arc::new(build_lexer_regex(language_lexer));
+        language_lexers_compiled
+            .language_lexer_compiled_vec
+            .push(Arc::clone(&llc));
+
+        // <p>Add all its extensions to the extension map.</p>
+        for ext in language_lexer.ext_arr {
+            match language_lexers_compiled.map_ext_to_lexer_vec.get_mut(ext) {
+                None => {
+                    let new_lexer_vec = vec![Arc::clone(&llc)];
+                    language_lexers_compiled
+                        .map_ext_to_lexer_vec
+                        .insert(ext, new_lexer_vec);
+                }
+                Some(v) => v.push(Arc::clone(&llc)),
+            }
+        }
+
+        // <p>Add its mode to the mode map.</p>
+        language_lexers_compiled
+            .map_mode_to_lexer
+            .insert(language_lexer.ace_mode, llc);
+    }
+
+    language_lexers_compiled
 }
 
 /// <h2>Source lexer</h2>
@@ -424,7 +541,7 @@ pub fn source_lexer(
     source_code: &str,
     // <p>A description of the language, used to lex the
     //     <code>source_code</code>.</p>
-    language_lexer: &LanguageLexer,
+    language_lexer_compiled: &LanguageLexerCompiled,
     // <p>The return value is an array of code and doc blocks. The contents of
     //     these blocks contain slices from <code>source_code</code>, so these
     //     have the same lifetime.</p>
@@ -463,7 +580,6 @@ pub fn source_lexer(
     //     its purpose is to identify the start of the next special case.
     //     <strong>This code makes heavy use of regexes -- read the previous
     //         link thoroughly.</strong></p>
-    let language_lexer_compiled = build_lexer_regex(language_lexer);
     let mut classified_source: Vec<CodeDocBlock> = Vec::new();
 
     // <p>Provide a method to intelligently append to the code/doc block vec.
@@ -750,7 +866,8 @@ pub fn source_lexer(
     classified_source
 }
 
-// <p>Rust <a
+// <h2>Tests</h2>
+// <p>Rust&nbsp;<a
 //         href="https://doc.rust-lang.org/book/ch11-03-test-organization.html">almost
 //         mandates</a> putting tests in the same file as the source, which I
 //     dislike. Here's a <a
@@ -760,7 +877,7 @@ pub fn source_lexer(
 #[cfg(test)]
 mod tests {
     use super::supported_languages::LANGUAGE_LEXER_ARR;
-    use super::{source_lexer, CodeDocBlock};
+    use super::{compile_lexers, source_lexer, CodeDocBlock};
 
     // <p>Provide a compact way to create a <code>CodeDocBlock</code>.</p>
     fn build_code_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {
@@ -771,10 +888,12 @@ mod tests {
         };
     }
 
+    // <h3>Source lexer tests</h3>
     #[test]
     fn test_py() {
-        let py = &LANGUAGE_LEXER_ARR[4];
-        assert_eq!(py.ace_mode, "python");
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+        let py = &llc.language_lexer_compiled_vec[4];
+        assert_eq!(py.language_lexer.ace_mode, "python");
 
         // <p>Try basic cases: make sure than newlines are processed correctly.
         // </p>
@@ -975,8 +1094,9 @@ mod tests {
 
     #[test]
     fn test_js() {
-        let js = &LANGUAGE_LEXER_ARR[2];
-        assert_eq!(js.ace_mode, "javascript");
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+        let js = &llc.language_lexer_compiled_vec[2];
+        assert_eq!(js.language_lexer.ace_mode, "javascript");
 
         // <p>JavaScript tests. TODO: block comments</p>
         assert_eq!(
@@ -1018,8 +1138,9 @@ mod tests {
 
     #[test]
     fn test_cpp() {
-        let cpp = &LANGUAGE_LEXER_ARR[0];
-        assert_eq!(cpp.ace_mode, "c_cpp");
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+        let cpp = &llc.language_lexer_compiled_vec[0];
+        assert_eq!(cpp.language_lexer.ace_mode, "c_cpp");
 
         // <p>Try out a C++ heredoc.</p>
         assert_eq!(
@@ -1033,8 +1154,9 @@ mod tests {
 
     #[test]
     fn test_toml() {
-        let toml = &LANGUAGE_LEXER_ARR[6];
-        assert_eq!(toml.ace_mode, "toml");
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+        let toml = &llc.language_lexer_compiled_vec[6];
+        assert_eq!(toml.language_lexer.ace_mode, "toml");
 
         // <p>Multi-line literal strings don't have escapes.</p>
         assert_eq!(
@@ -1056,8 +1178,9 @@ mod tests {
 
     #[test]
     fn test_rust() {
-        let rust = &LANGUAGE_LEXER_ARR[5];
-        assert_eq!(rust.ace_mode, "rust");
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+        let rust = &llc.language_lexer_compiled_vec[5];
+        assert_eq!(rust.language_lexer.ace_mode, "rust");
 
         // <p>Test Rust raw strings.</p>
         assert_eq!(
@@ -1066,6 +1189,24 @@ mod tests {
                 build_code_doc_block("", "", "r###\"\n// Test 1\"###\n"),
                 build_code_doc_block("", "//", "Test 2")
             ]
+        );
+    }
+
+    // <h3>Compiler tests</h3>
+    #[test]
+    fn test_compiler() {
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+
+        let c_ext_lexer_arr = llc.map_ext_to_lexer_vec.get("c").unwrap();
+        assert_eq!(c_ext_lexer_arr.len(), 1);
+        assert_eq!(c_ext_lexer_arr[0].language_lexer.ace_mode, "c_cpp");
+        assert_eq!(
+            llc.map_mode_to_lexer
+                .get("verilog")
+                .unwrap()
+                .language_lexer
+                .ace_mode,
+            "verilog"
         );
     }
 }

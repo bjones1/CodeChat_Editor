@@ -16,19 +16,6 @@
 /// </details>
 /// <h1><code>supported_languages.rs</code> &mdash; Provide lexer info for all
 ///     supported languages</h1>
-/// <p>Thoughts on line continuation characters: I think we can ignore these. In
-///     C/C++, this is a two-line comment:</p>
-//// // A weird\
-//// two-line comment.
-/// <p>However, this is such odd syntax that we can safely ignore it, since few
-///     developers would do something so odd. (A block comment would make more
-///     sense.)</p>
-/// <p>While C can technically treat a line as code that looks like a comment,
-///     it's probably a syntax error. For example,</p>
-//// if (foo) \
-//// // This is a syntax error!
-/// <p>I can't think of any cases, outside strings (which the lexer handles
-///     properly), where this would be valid syntax.</p>
 /// <p>Ordering matters: all these delimiters end up in a large regex separated
 ///     by an or operator. The regex or operator matches from left to right. So,
 ///     longer Python string delimiters must be specified first (leftmost):
@@ -45,15 +32,12 @@ use super::LanguageLexer;
 use super::NewlineSupport;
 use super::StringDelimiterSpec;
 
-// <h2>Compile lexers</h2>
-// <p>TODO.</p>
-
 // <h2>Define lexers for each supported language.</h2>
 pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // <p>C/C++</p>
     LanguageLexer {
         ace_mode: "c_cpp",
-        ext_arr: &[".c", ".cc", ".cpp"],
+        ext_arr: &["c", "cc", "cpp"],
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
@@ -85,7 +69,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // <p>HTML</p>
     LanguageLexer {
         ace_mode: "html",
-        ext_arr: &[".html", ".htm"],
+        ext_arr: &["html", "htm"],
         inline_comment_delim_arr: &[],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "<!--",
@@ -110,7 +94,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // JavaScript
     LanguageLexer {
         ace_mode: "javascript",
-        ext_arr: &[".js", ".mjs"],
+        ext_arr: &["js", "mjs"],
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
@@ -135,7 +119,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // JSON5
     LanguageLexer {
         ace_mode: "json5",
-        ext_arr: &[".json"],
+        ext_arr: &["json"],
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
@@ -160,7 +144,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // Python
     LanguageLexer {
         ace_mode: "python",
-        ext_arr: &[".py"],
+        ext_arr: &["py"],
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
@@ -192,7 +176,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // <a href="https://doc.rust-lang.org/reference/tokens.html#literals">Rust</a>
     LanguageLexer {
         ace_mode: "rust",
-        ext_arr: &[".rs"],
+        ext_arr: &["rs"],
         // <p>Since Rust complains about <code>///</code> comments on items that
         //     rustdoc ignores, support both styles.</p>
         inline_comment_delim_arr: &["///", "//"],
@@ -213,8 +197,8 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: Some(&HeredocDelim {
             start_prefix: "r",
             delim_ident_regex: "#+",
-            stop_prefix: "\"",
             start_suffix: "\"",
+            stop_prefix: "\"",
             stop_suffix: "",
         }),
         template_literal: false,
@@ -222,7 +206,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // <a href="https://toml.io/en/">TOML</a>
     LanguageLexer {
         ace_mode: "toml",
-        ext_arr: &[".toml"],
+        ext_arr: &["toml"],
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
@@ -258,7 +242,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // <p>TypeScript</p>
     LanguageLexer {
         ace_mode: "typescript",
-        ext_arr: &[".ts", ".mts"],
+        ext_arr: &["ts", "mts"],
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
@@ -283,7 +267,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // Verilog
     LanguageLexer {
         ace_mode: "verilog",
-        ext_arr: &[".v"],
+        ext_arr: &["v"],
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
@@ -302,7 +286,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     LanguageLexer {
         // Ace doesn't support V yet.
         ace_mode: "",
-        ext_arr: &[".v"],
+        ext_arr: &["v"],
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
@@ -327,7 +311,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // YAML
     LanguageLexer {
         ace_mode: "yaml",
-        ext_arr: &[".yaml"],
+        ext_arr: &["yaml"],
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
@@ -350,7 +334,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // <p>CodeChat HTML</p>
     LanguageLexer {
         ace_mode: "codechat-html",
-        ext_arr: &[".cchtml"],
+        ext_arr: &["cchtml"],
         inline_comment_delim_arr: &[],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[],

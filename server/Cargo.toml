@@ -33,6 +33,8 @@ actix-files = "0.6"
 actix-web = "4"
 lazy_static = "1"
 regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
 
@@ -42,5 +44,5 @@ urlencoding = "2"
 # See https://doc.rust-lang.org/cargo/reference/features.html.
 [features]
 # Uncomment this to show an explanation of the lexing process.
-default = ["lexer_explain"]
+#default = ["lexer_explain"]
 lexer_explain = []
