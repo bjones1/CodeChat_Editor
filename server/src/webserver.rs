@@ -484,7 +484,8 @@ async fn serve_file(
             ))
         }
     };
-    // TODO: replace closing script tags.
+    // Look for any script tags and prevent these from causing problems.
+    let lexed_source_file_string = lexed_source_file_string.replace("</script>", "<\\/script>");
 
     // <p>Look for a project file by searching the current directory, then all
     //     its parents, for a file named <code>toc.cchtml</code>.</p>

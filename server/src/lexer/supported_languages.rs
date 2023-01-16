@@ -320,7 +320,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // <p>YAML</p>
     LanguageLexer {
         ace_mode: "yaml",
-        ext_arr: &["yaml"],
+        ext_arr: &["yaml", "yml"],
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
