@@ -107,15 +107,13 @@ async fn save_source(
                 None => {
                     if let Some(ic) = inline_comment {
                         ic.to_string()
+                    } else if let Some(bc) = block_comment {
+                        bc.opening.to_string()
                     } else {
-                        if let Some(bc) = block_comment {
-                            bc.opening.to_string()
-                        } else {
-                            return save_source_response(
-                                false,
-                                "Neither inline nor block comments are defined for this language.",
-                            );
-                        }
+                        return save_source_response(
+                            false,
+                            "Neither inline nor block comments are defined for this language.",
+                        );
                     }
                 }
             },
@@ -130,7 +128,7 @@ async fn save_source(
             "{}{}{}{}",
             code_doc_block.indent,
             code_doc_block.delimiter,
-            if code_doc_block.delimiter == "" {
+            if code_doc_block.delimiter.is_empty() {
                 ""
             } else {
                 " "
@@ -476,7 +474,7 @@ async fn serve_file(
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),
         },
-        code_doc_block_arr: code_doc_block_arr,
+        code_doc_block_arr,
     };
     let lexed_source_file_string = match serde_json::to_string(&lexed_source_file) {
         Ok(v) => v,

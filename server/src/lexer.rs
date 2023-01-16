@@ -489,7 +489,7 @@ fn build_lexer_regex<'a>(
     let classify_regex = Regex::new(&format!("({})", regex_strings_arr.join(")|("))).unwrap();
 
     LanguageLexerCompiled {
-        language_lexer: language_lexer,
+        language_lexer,
         next_token: classify_regex,
         map: regex_group_map,
     }
