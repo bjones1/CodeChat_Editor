@@ -10,8 +10,8 @@
 #         but WITHOUT ANY WARRANTY; without even the implied warranty of
 #         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
 #         General Public License for more details.</p>
-#     <p>You should have received a copy of the GNU General Public License
-#         along with the CodeChat Editor. If not, see <a
+#     <p>You should have received a copy of the GNU General Public License along
+#         with the CodeChat Editor. If not, see <a
 #             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 #     </p>
 # </details>
@@ -21,7 +21,8 @@ name = "server"
 version = "0.1.0"
 edition = "2021"
 
-# This library allows other packages to use core CodeChat Editor features.
+# <p>This library allows other packages to use core CodeChat Editor features.
+# </p>
 [lib]
 name = "code_chat_editor"
 
@@ -41,8 +42,8 @@ urlencoding = "2"
 [dev-dependencies]
 #clippy = "0.0.302"
 
-# See https://doc.rust-lang.org/cargo/reference/features.html.
+# <p>See https://doc.rust-lang.org/cargo/reference/features.html.</p>
 [features]
-# Uncomment this to show an explanation of the lexing process.
+# <p>Uncomment this to show an explanation of the lexing process.</p>
 #default = ["lexer_explain"]
 lexer_explain = []

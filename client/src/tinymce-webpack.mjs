@@ -14,24 +14,27 @@
 //             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 //     </p>
 // </details>
-// <h1><code>tinymce-webpack.ts</code> &mdash; imports the TinyMCE editor from NPM packages using webpack</h1>
-// Import TinyMCE. Note: I can't get this to compile as a TypeScript file. ???
+// <h1><code>tinymce-webpack.ts</code> &mdash; imports the TinyMCE editor from
+//     NPM packages using webpack</h1>
+// <p>Import TinyMCE. Note: I can't get this to compile as a TypeScript file.
+//     ???</p>
 import tinymce, { RawEditorOptions } from "tinymce";
 
-// Default icons are required for TinyMCE 5.3 or above.
+// <p>Default icons are required for TinyMCE 5.3 or above.</p>
 import "tinymce/icons/default/index.js";
 
-// A theme is also required.
+// <p>A theme is also required.</p>
 import "tinymce/themes/silver/index.js";
 
-// Import the skin to use; use're using an inline editor, so load the inline CSS.
+// <p>Import the skin to use; use're using an inline editor, so load the inline
+//     CSS.</p>
 import "tinymce/skins/ui/oxide/skin.css";
 import "tinymce/skins/ui/oxide/content.inline.css";
 
-// Without this, TinyMCE produces errors.
+// <p>Without this, TinyMCE produces errors.</p>
 import "tinymce/models/dom/index.js";
 
-// Import plugins.
+// <p>Import plugins.</p>
 import "tinymce/plugins/advlist/index.js";
 import "tinymce/plugins/anchor/index.js";
 import "tinymce/plugins/charmap/index.js";
@@ -53,22 +56,25 @@ import "tinymce/plugins/table/index.js";
 import "tinymce/plugins/visualblocks/index.js";
 import "tinymce/plugins/visualchars/index.js";
 
-// Import premium plugins.
-// NOTE: Download separately and add these to /src/plugins.
+// <p>Import premium plugins. NOTE: Download separately and add these to
+//     /src/plugins.</p>
 /// import './plugins/checklist/plugin';
 /// import './plugins/powerpaste/plugin';
 /// import './plugins/powerpaste/js/wordimport';
 
-// Initialize TinyMCE.
+// <p>Initialize TinyMCE.</p>
 export function init(
-    // Provide editor options; don't set ``plugins`` or ``skin``, since these must be accompanied by the correct imports.
+    // <p>Provide editor options; don't set ``plugins`` or ``skin``, since these
+    //     must be accompanied by the correct imports.</p>
     options
 ) {
     tinymce.init(
         Object.assign({}, options, {
             plugins:
                 "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
-            // The imports above apply the skins; don't try to dynamically load the skin's CSS. However, this still tries to load the default skin.
+            // <p>The imports above apply the skins; don't try to dynamically
+            //     load the skin's CSS. However, this still tries to load the
+            //     default skin.</p>
             skin: false,
         })
     );

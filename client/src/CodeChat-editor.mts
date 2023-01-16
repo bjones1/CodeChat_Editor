@@ -21,12 +21,15 @@
 //     code and doc blocks.</p>
 // <h2>Imports</h2>
 import { init } from "./tinymce-webpack.mjs";
-// I don't know how to fix this, and don't understand why it's wrong.
+// <p>I don't know how to fix this, and don't understand why it's wrong.</p>
 /// @ts-ignore
 import { ace } from "./ace-webpack.mts";
 export { ace };
 
-// Configure the Graphviz web component to load the (large) renderer only when a Graphviz web component is found on a page. See the <a href="https://github.com/prantlf/graphviz-webcomponent#configuration">docs</a>.
+// <p>Configure the Graphviz web component to load the (large) renderer only
+//     when a Graphviz web component is found on a page. See the <a
+//         href="https://github.com/prantlf/graphviz-webcomponent#configuration">docs</a>.
+// </p>
 (window as any).graphvizWebComponent = {
     rendererUrl: "/static/graphviz-webcomponent/renderer.min.js",
     delayWorkerLoading: true,
@@ -50,7 +53,8 @@ export const on_dom_content_loaded = (on_load_func: () => void) => {
 
 init({});
 
-// Create a combined editor/renderer component. It's not currently used, since TinyMCE doesn't allow the editor to be focused.
+// <p>Create a combined editor/renderer component. It's not currently used,
+//     since TinyMCE doesn't allow the editor to be focused.</p>
 class GraphVizElement extends HTMLElement {
     constructor() {
         super();

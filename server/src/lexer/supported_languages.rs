@@ -50,13 +50,18 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             newline_support: NewlineSupport::Escaped,
         }],
         // <p>Note: the C/C++ support expects C++11 or newer. Don't worry about
-        //     supporting C or older C++ using another lexer entry, since the raw
-        //     string syntax in C++11 and newer is IMHO so rare we won't encounter
-        //     it in older code. See the <a
+        //     supporting C or older C++ using another lexer entry, since the
+        //     raw string syntax in C++11 and newer is IMHO so rare we won't
+        //     encounter it in older code. See the <a
         //         href="https://en.cppreference.com/w/cpp/language/string_literal">C++
-        // <p>string literals docs for the reasoning behind the start body
-        //     regex.</p>
-        // <p>&nbsp;</p>
+        //     </a></p>
+        // <p><a
+        //         href="https://en.cppreference.com/w/cpp/language/string_literal">string
+        //         literals docs for the reasoning behind the start body
+        //         regex.</a></p>
+        // <a href="https://en.cppreference.com/w/cpp/language/string_literal">
+        //     <p>&nbsp;</p>
+        // </a>
         heredoc_delim: Some(&HeredocDelim {
             start_prefix: "R\"",
             delim_ident_regex: "[^()\\\\[[:space:]]]*",
@@ -91,7 +96,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         template_literal: false,
     },
-    // JavaScript
+    // <p>JavaScript</p>
     LanguageLexer {
         ace_mode: "javascript",
         ext_arr: &["js", "mjs"],
@@ -116,7 +121,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         template_literal: true,
     },
-    // JSON5
+    // <p>JSON5</p>
     LanguageLexer {
         ace_mode: "json5",
         ext_arr: &["json"],
@@ -141,14 +146,15 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         template_literal: false,
     },
-    // Python
+    // <p>Python</p>
     LanguageLexer {
         ace_mode: "python",
         ext_arr: &["py"],
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
-            // Note that raw strings still allow escaping the single/double quote.
+            // <p>Note that raw strings still allow escaping the single/double
+            //     quote.</p>
             StringDelimiterSpec {
                 delimiter: "\"\"\"",
                 escape_char: "\\",
@@ -173,7 +179,9 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         template_literal: false,
     },
-    // <a href="https://doc.rust-lang.org/reference/tokens.html#literals">Rust</a>
+    // <p><a
+    //         href="https://doc.rust-lang.org/reference/tokens.html#literals">Rust</a>
+    // </p>
     LanguageLexer {
         ace_mode: "rust",
         ext_arr: &["rs"],
@@ -193,7 +201,8 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
                 newline_support: NewlineSupport::Unescaped,
             },
         ],
-        // Likewise, raw byte strings behave identically to raw strings from this lexer's perspective.
+        // <p>Likewise, raw byte strings behave identically to raw strings from
+        //     this lexer's perspective.</p>
         heredoc_delim: Some(&HeredocDelim {
             start_prefix: "r",
             delim_ident_regex: "#+",
@@ -203,7 +212,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         }),
         template_literal: false,
     },
-    // <a href="https://toml.io/en/">TOML</a>
+    // <p><a href="https://toml.io/en/">TOML</a></p>
     LanguageLexer {
         ace_mode: "toml",
         ext_arr: &["toml"],
@@ -223,7 +232,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
                 escape_char: "\\",
                 newline_support: NewlineSupport::Unescaped,
             },
-            // Basic strings
+            // <p>Basic strings</p>
             StringDelimiterSpec {
                 delimiter: "\"",
                 escape_char: "\\",
@@ -264,7 +273,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         template_literal: true,
     },
-    // Verilog
+    // <p>Verilog</p>
     LanguageLexer {
         ace_mode: "verilog",
         ext_arr: &["v"],
@@ -282,9 +291,9 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         template_literal: false,
     },
-    // V
+    // <p>V</p>
     LanguageLexer {
-        // Ace doesn't support V yet.
+        // <p>Ace doesn't support V yet.</p>
         ace_mode: "",
         ext_arr: &["v"],
         inline_comment_delim_arr: &["//"],
@@ -308,20 +317,32 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         template_literal: false,
     },
-    // YAML
+    // <p>YAML</p>
     LanguageLexer {
         ace_mode: "yaml",
         ext_arr: &["yaml"],
         inline_comment_delim_arr: &["#"],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[
-            // See <a href="https://yaml.org/spec/1.2.2/#double-quoted-style">double-quoted style</a>. Something I don't understand and will probably ignore: "Single- and double-quoted scalars are restricted to a single line when contained inside an implicit key."
+            // <p>See <a
+            //         href="https://yaml.org/spec/1.2.2/#double-quoted-style">double-quoted
+            //         style</a>. Something I don't understand and will probably
+            //     ignore: "Single- and double-quoted scalars are restricted to
+            //     a single line when contained inside an implicit key."</p>
             StringDelimiterSpec {
                 delimiter: "\"",
                 escape_char: "\\",
                 newline_support: NewlineSupport::Unescaped,
             },
-            // See <a href="https://yaml.org/spec/1.2.2/#single-quoted-style">single-quoted style</a>. Single-quoted strings escape a single quote by repeating it twice: <code>'That''s unusual.'</code> Rather than try to parse this, treat it as two back-to-back strings: <code>'That'</code> and <code>'s unusual.'</code> We don't care about getting the correct value for strings; the only purpose is to avoid interpreting string contents as inline or block comments.
+            // <p>See <a
+            //         href="https://yaml.org/spec/1.2.2/#single-quoted-style">single-quoted
+            //         style</a>. Single-quoted strings escape a single quote by
+            //     repeating it twice: <code>'That''s unusual.'</code> Rather
+            //     than try to parse this, treat it as two back-to-back strings:
+            //     <code>'That'</code> and <code>'s unusual.'</code> We don't
+            //     care about getting the correct value for strings; the only
+            //     purpose is to avoid interpreting string contents as inline or
+            //     block comments.</p>
             StringDelimiterSpec {
                 delimiter: "'",
                 escape_char: "",

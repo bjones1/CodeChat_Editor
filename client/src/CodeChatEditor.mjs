@@ -308,17 +308,23 @@ const classified_source_to_html = (classified_source) => {
                 // <p><span id="one-row-table">Use a one-row table to lay out a
                 //         doc block, so that it aligns properly with a code
                 //         block.</span></p>
-                // prettier-ignore
+                // <p>prettier-ignore</p>
                 html.push(
                     `<div class="CodeChat-doc">
     <table>
         <tbody>
             <tr>
 ` +
-                // Spaces matching the number of digits in the ACE gutter's line number. TODO: fix this to match the number of digits of the last line of the last code block. Fix ACE to display this number of digits in all gutters. See https://stackoverflow.com/questions/56601362/manually-change-ace-line-numbers. -->
+                // <p>Spaces matching the number of digits in the ACE gutter's
+                //     line number. TODO: fix this to match the number of digits
+                //     of the last line of the last code block. Fix ACE to
+                //     display this number of digits in all gutters. See
+                //     https://stackoverflow.com/questions/56601362/manually-change-ace-line-numbers.
+                //     --&gt;</p>
 `                <td class="CodeChat-ACE-gutter-padding ace_editor">&nbsp;&nbsp;&nbsp</td>
                 <td class="CodeChat-ACE-padding"></td>` +
-                // This doc block's indent. TODO: allow paste, but must only allow pasting whitespace.
+                // <p>This doc block's indent. TODO: allow paste, but must only
+                //     allow pasting whitespace.</p>
 `                <td class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${indent}</td>
                 <td class="CodeChat-TinyMCE-td"><div class="CodeChat-TinyMCE" data-CodeChat-comment="${delimiter}">`,
                     contents
@@ -385,7 +391,8 @@ const editor_to_code_doc_blocks = () => {
         // <p>The type of this block: <code>null</code> for code, or &gt;= 0 for
         //     doc (the value of n specifies the indent in spaces).</p>
         let indent = "";
-        // The delimiter for a comment block, or an empty string for a code block.
+        // <p>The delimiter for a comment block, or an empty string for a code
+        //     block.</p>
         let delimiter = "";
         // <p>A string containing all the code/docs in this block.</p>
         let full_string;
@@ -395,13 +402,16 @@ const editor_to_code_doc_blocks = () => {
             full_string = ace.edit(code_or_doc_tag).getValue();
         } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
             // <p>Get the indent from the previous table cell. For a CodeChat
-            //     Editor document, there's no indent (it's just a doc block). Likewise, get the delimiter; leaving it blank for a CodeChat Editor document causes the next block of code to leave off the comment delimiter, which is what we want.
-            // </p>
+            //     Editor document, there's no indent (it's just a doc block).
+            //     Likewise, get the delimiter; leaving it blank for a CodeChat
+            //     Editor document causes the next block of code to leave off
+            //     the comment delimiter, which is what we want.</p>
             if (!is_doc_only()) {
                 indent =
                     code_or_doc_tag.parentElement.previousElementSibling
                         .textContent;
-                // Use the pre-existing delimiter for this block if it exists; otherwise, use the default delimiter.
+                // <p>Use the pre-existing delimiter for this block if it
+                //     exists; otherwise, use the default delimiter.</p>
                 delimiter =
                     code_or_doc_tag.getAttribute("data-CodeChat-comment") ??
                     null;

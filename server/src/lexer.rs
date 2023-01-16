@@ -125,10 +125,10 @@ pub struct LanguageLexer<'a> {
     ///     specially-formatted comment in a source file to override the lexer
     ///     chosen by looking at the file's extension.</p>
     pub ace_mode: &'a str,
-    /// <p>An array of file extensions for this language. They <em>do not</em>begin with a
-    ///     period, such as <code>rs</code>. This is the typical way that the
-    ///     CodeChat Editor uses to determine which lexer to use for a given
-    ///     source file.</p>
+    /// <p>An array of file extensions for this language. They <em>do
+    ///         not</em>begin with a period, such as <code>rs</code>. This is
+    ///     the typical way that the CodeChat Editor uses to determine which
+    ///     lexer to use for a given source file.</p>
     ext_arr: &'a [&'a str],
     /// <p>An array of strings which specify inline comment delimiters. Empty if
     ///     this language doesn't provide inline comments.</p>
@@ -208,9 +208,9 @@ pub struct CodeDocBlock {
     pub contents: String,
 }
 
-// Store the results of compiling a language lexer.
+// <p>Store the results of compiling a language lexer.</p>
 pub struct LanguageLexerCompiled<'a> {
-    /// A copy of LanguageLexer::ace_mode.
+    /// <p>A copy of LanguageLexer::ace_mode.</p>
     pub language_lexer: &'a LanguageLexer<'a>,
     /// <p>A regex used to identify the next token when in a code block.</p>
     next_token: Regex,
@@ -219,7 +219,7 @@ pub struct LanguageLexerCompiled<'a> {
     map: Vec<RegexDelimType>,
 }
 
-// Store all lexers and their associated maps after they're compiled.
+// <p>Store all lexers and their associated maps after they're compiled.</p>
 pub struct LanguageLexersCompiled<'a> {
     // <p>The resulting compiled lexers.</p>
     pub language_lexer_compiled_vec: Vec<Arc<LanguageLexerCompiled<'a>>>,
@@ -262,13 +262,13 @@ lazy_static! {
 }
 
 /// <h2>Functions</h2>
-/// Provide a way to turn a <code>CodeDocBlock</code> into JSON.
+/// <p>Provide a way to turn a <code>CodeDocBlock</code> into JSON.</p>
 impl Serialize for CodeDocBlock {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        // 3 is the number of fields in the seq.
+        // <p>3 is the number of fields in the seq.</p>
         let mut seq = serializer.serialize_seq(Some(3))?;
         seq.serialize_element(&self.indent)?;
         seq.serialize_element(&self.delimiter)?;
