@@ -5,26 +5,23 @@
 <p>These headings are manually numbered; they will be automatically numbered.
 </p>
 <h2><a id="how-to-run"></a>1.1 How to run</h2>
-<p>The CodeChat repository's <a
-        href="https://github.com/bjones1/CodeChat/tree/CodeChat-Editor/CodeChat">CodeChat-Editor
-        branch</a> contains the code for this idea. To try it out:</p>
+<p>The <a href="https://github.com/bjones1/CodeChat_Editor">CodeChat Editor
+        repository</a>&nbsp;contains the code for this application. To try it
+    out:</p>
 <ol>
-    <li><a
-            href="https://github.com/vlang/v#installing-v---from-source-preferred-method">Install
-            the V language</a>. On non-Windows systems, <a
-            href="https://github.com/vlang/v#v-nethttp-netwebsocket-v-install">install
-            OpenSSL libraries</a>.</li>
-    <li><a href="https://github.com/vlang/v#symlinking">Symlink V</a>.</li>
+    <li>Clone or download the repository.</li>
+    <li><a href="https://www.rust-lang.org/tools/install">Install the Rust
+            language</a>. I recommend the 64-bit toolset for Windows.</li>
     <li><a
             href="https://docs.npmjs.com/downloading-and-installing-node-js-and-npm">Install
             NPM</a> (the Node.js package manager).</li>
-    <li>Install all NPM dependencies: in the <code>client/webpack</code>
-        directory, run <code>npm install</code>.</li>
+    <li>Install all NPM dependencies: in the
+        <code>client/</code>&nbsp;directory, run <code>npm install</code>.</li>
     <li>Package all JavaScript dependencies from NPM: also in
-        the&nbsp;<code>client/webpack</code> directory, run <code>npm run
+        the&nbsp;<code>client/</code>&nbsp;directory, run <code>npm run
             build</code>.</li>
-    <li>In the <code>server/</code> directory, execute <code>v crun
-            CodeChatEditorServer.v</code>.</li>
+    <li>In the <code>server/</code> directory, execute <code>cargo run</code>.
+    </li>
     <li>Open <code>http://localhost:8080</code> in your browser.</li>
     <li>Open the file <code>README.cchtml</code>.</li>
 </ol>
