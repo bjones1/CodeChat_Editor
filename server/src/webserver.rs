@@ -187,12 +187,12 @@ async fn _root_fs_redirect() -> impl Responder {
     // <p>On Windows, assume the C drive as the root of the filesystem. TODO:
     //     provide some way to list drives / change drives from the HTML GUI.
     // </p>
-    #[cfg(target_os = "windows")]
-    let redirect_location = urlencoding::encode("C:").into_owned() + "/";
-
     // <p>On Linux, redirect to the root of the filesystem.</p>
-    #[cfg(not(target_os = "windows"))]
-    let redirect_location = "";
+    let redirect_location = if cfg!(windows) {
+        urlencoding::encode("C:").into_owned() + "/"
+    } else {
+        "".to_string()
+    };
 
     HttpResponse::TemporaryRedirect()
         .insert_header((header::LOCATION, "/fs/".to_string() + &redirect_location))
@@ -209,21 +209,19 @@ async fn serve_fs(
 ) -> impl Responder {
     let mut fixed_path = orig_path.to_string();
     #[cfg(target_os = "windows")]
-    {
-        // <p>On Windows, a path of <code>drive_letter:</code> needs a
-        //     <code>/</code> appended.</p>
-        if DRIVE_LETTER_REGEX.is_match(&fixed_path) {
-            fixed_path += "/";
-        }
-        // <p>All other cases (for example, <code>C:\a\path\to\file.txt</code>)
-        //     are OK.</p>
+    // <p>On Windows, a path of <code>drive_letter:</code> needs a
+    //     <code>/</code> appended.</p>
+    if DRIVE_LETTER_REGEX.is_match(&fixed_path) {
+        fixed_path += "/";
     }
+    // <p>All other cases (for example, <code>C:\a\path\to\file.txt</code>)
+    //     are OK.</p>
 
     // <p>For Linux/OS X, prepend a slash, so that
     //     <code>a/path/to/file.txt</code> becomes
     //     <code>/a/path/to/file.txt</code>.</p>
     #[cfg(not(target_os = "windows"))]
-    let mut fixed_path = "/".to_string() + fixed_path;
+    let fixed_path = "/".to_string() + &fixed_path;
 
     // <p>On Windows, the returned path starts with <code>\\?\</code> per the <a
     //         href="https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces">docs</a>.
@@ -453,9 +451,12 @@ async fn serve_file(
             .unwrap()
     } else if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
         ace_mode = captures[1].to_string();
-        match language_lexers_compiled.map_mode_to_lexer.get(&ace_mode.as_ref()) {
+        match language_lexers_compiled
+            .map_mode_to_lexer
+            .get(&ace_mode.as_ref())
+        {
             Some(v) => v,
-            None => return html_not_found(&format!("<p>Unknown lexer type {}.</p>", &ace_mode))
+            None => return html_not_found(&format!("<p>Unknown lexer type {}.</p>", &ace_mode)),
         }
     } else {
         // <p>Otherwise, look up the lexer by the file's extension.</p>
@@ -584,10 +585,11 @@ async fn serve_file(
 // <p>Given a <code>Path</code>, transform it into a displayable string.</p>
 fn path_display(p: &Path) -> String {
     let path_orig = p.to_string_lossy();
-    #[cfg(target_os = "windows")]
-    return path_orig[4..].to_string();
-    #[cfg(not(target_os = "windows"))]
-    path_orig
+    if cfg!(windows) {
+        path_orig[4..].to_string()
+    } else {
+        path_orig.to_string()
+    }
 }
 
 // <p>Return a Not Found (404) errors with the provided HTML body.</p>
