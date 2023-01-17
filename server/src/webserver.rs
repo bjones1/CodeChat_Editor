@@ -47,11 +47,13 @@ use crate::lexer::{source_lexer, CodeDocBlock, LanguageLexersCompiled};
 
 // <h2>Data structures</h2>
 #[derive(Serialize, Deserialize)]
+// Metadata about a source file sent along with it both to and from the client.
 struct SourceFileMetadata {
     mode: String,
 }
 
 #[derive(Serialize, Deserialize)]
+// A simple structure for accepting JSON input to the <code>save_source</code> endpoint. Use a tuple since serdes can auto-generate a deserializer for it.
 struct ClientSourceFile {
     metadata: SourceFileMetadata,
     // <p>TODO: implement a serdes deserializer that would convert this directly
@@ -60,11 +62,13 @@ struct ClientSourceFile {
 }
 
 #[derive(Serialize)]
+// Define the structure of JSON responses when sending a source file from the <code>/fs</code> endpoint.
 struct LexedSourceFile {
     metadata: SourceFileMetadata,
     code_doc_block_arr: Vec<CodeDocBlock>,
 }
 
+// This defined the structure of JSON responses from the <code>save_source</code> endpoint.
 #[derive(Serialize)]
 struct ErrorResponse {
     success: bool,
@@ -81,6 +85,7 @@ lazy_static! {
 
 /// <h2>Endpoints</h2>
 #[put("/fs/{path:.*}")]
+// The Save button in the CodeCHat Editor Client posts to this endpoint with the path of the file to save.
 async fn save_source(
     encoded_path: web::Path<String>,
     client_source_file: web::Json<ClientSourceFile>,
@@ -158,6 +163,7 @@ async fn save_source(
     save_source_response(true, "")
 }
 
+// A convenience method to fill out then return the <code>ErrorResponse</code> struct from the <code>save_source</code> endpoint.
 fn save_source_response(success: bool, message: &str) -> HttpResponse {
     let response = ErrorResponse {
         success,

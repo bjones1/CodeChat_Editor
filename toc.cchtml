@@ -24,9 +24,6 @@
             </li>
             <li><a href="server/src/webserver.rs">webserver.rs</a></li>
             <li><a href="server/Cargo.toml">Cargo.toml</a></li>
-            <li><a
-                    href="server/CodeChatEditorServer.v">CodeChatEditorServer.v</a>
-                (old)</li>
         </ol>
     </li>
     <li>Client
