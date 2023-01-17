@@ -75,6 +75,8 @@ struct ErrorResponse {
 lazy_static! {
     /// <p>Matches a bare drive letter.</p>
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
+    /// <p>Match the lexer directive in a source file.</p>
+    static ref LEXER_DIRECTIVE: Regex = Regex::new("CodeChat Editor lexer\\\\: (\\\\w)+").unwrap();
 }
 
 /// <h2>Endpoints</h2>
@@ -437,14 +439,18 @@ async fn serve_file(
     }
 
     // <p>Look for a special tag to specify the lexer.</p>
+    let ace_mode;
     let lexer = if ext == "cchtml" {
         language_lexers_compiled
             .map_mode_to_lexer
             .get("codechat-html")
             .unwrap()
-    } else if let Some(index) = file_contents.find("CodeChat Editor lexer: ") {
-        // <p>TODO: look for newline, space, or EOF, and pick out Ace mode?</p>
-        &language_lexers_compiled.language_lexer_compiled_vec[0]
+    } else if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
+        ace_mode = captures[1].to_string();
+        match language_lexers_compiled.map_mode_to_lexer.get(&ace_mode.as_ref()) {
+            Some(v) => v,
+            None => return html_not_found(&format!("<p>Unknown lexer type {}.</p>", &ace_mode))
+        }
     } else {
         // <p>Otherwise, look up the lexer by the file's extension.</p>
         if let Some(llc) = language_lexers_compiled
