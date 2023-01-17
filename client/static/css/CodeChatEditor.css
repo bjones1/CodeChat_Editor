@@ -85,6 +85,12 @@ body {
     tab-size: 4;
 }
 
+/* Before the ACE Editor loads, use a monotype font. */
+.CodeChat-ACE {
+    font-family: monospace;
+    white-space: pre;
+}
+
 /* Hide the ACE Editor's cursor when it's inactive. */
 .ace_hidden-cursors {
     opacity: 0;
