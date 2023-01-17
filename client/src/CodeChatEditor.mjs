@@ -122,10 +122,6 @@ const make_editors = (
     // <p>The CodeChat Document Editor doesn't include ACE.</p>
     if (ace !== undefined) {
         // <p>Instantiate the Ace editor for code blocks.</p>
-        ace.config.set(
-            "basePath",
-            "https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.5"
-        );
         for (const ace_tag of document.querySelectorAll(".CodeChat-ACE")) {
             ace.edit(ace_tag, {
                 // <p>The leading <code>+</code> converts the line number from a
@@ -342,7 +338,7 @@ const classified_source_to_html = (classified_source) => {
         // <p>There are an unknown number of newlines in this source string. One
         //     was removed <a href="#newline-movement">here</a>, so include that
         //     in the count.</p>
-        line += 1 + (contents.match(/\n|\r\n|\r/g) || []).length;
+        line += 1 + (contents.match(/\n/g) || []).length;
     }
 
     // <p>When done, exit the last state.</p>
@@ -438,7 +434,7 @@ const editor_to_code_doc_blocks = () => {
 
         // <p>Split the <code>full_string</code> into individual lines; each one
         //     corresponds to an element of <code>classified_lines</code>.</p>
-        for (const string of full_string.split(/\r?\n/)) {
+        for (const string of full_string.split("\n")) {
             classified_lines.push([indent, delimiter, string + "\n"]);
         }
     }
