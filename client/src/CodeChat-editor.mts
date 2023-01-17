@@ -34,7 +34,7 @@ export { ace };
     rendererUrl: "/static/graphviz-webcomponent/renderer.min.js",
     delayWorkerLoading: true,
 };
-import "graphviz-webcomponent";
+import "./graphviz-webcomponent/index.min.mjs";
 
 // <h2>UI</h2>
 // <h3>DOM ready event</h3>

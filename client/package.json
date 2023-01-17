@@ -28,7 +28,6 @@
     },
     "dependencies": {
         "ace-code": "^1",
-        "graphviz-webcomponent": "^1",
         "js-beautify": "^1",
         "tinymce": "^6"
     },
