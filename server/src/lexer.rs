@@ -764,7 +764,10 @@ pub fn source_lexer(
                     //     criteria.</p>
                     let ws_only = WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix);
                     // <p>Criteria 1 -- the whitespace matched.</p>
-                    if ws_only
+                    if ws_only &&
+                        // <p>TODO: generalize this to specific lines that are
+                        //     never doc blocks.</p>
+                        full_comment != "// prettier-ignore\n"
                         && (
                             // <p>Criteria 2.1</p>
                             full_comment.starts_with(&(matching_group_str.to_string() + " ")) ||
