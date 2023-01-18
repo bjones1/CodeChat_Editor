@@ -1,6 +1,5 @@
 // <details>
-//     <summary>License</summary>
-//     <p>Copyright (C) 2022 Bryan A. Jones.</p>
+//     <summary>Copyright (C) 2022 Bryan A. Jones.</summary>
 //     <p>This file is part of the CodeChat Editor.</p>
 //     <p>The CodeChat Editor is free software: you can redistribute it and/or
 //         modify it under the terms of the GNU General Public License as
@@ -15,54 +14,121 @@
 //             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 //     </p>
 // </details>
-// <h1><code>CodeChatEditor.js</code> &mdash; <strong>JavaScrip</strong>t which
-//     implements the client-side portion of the CodeChat Editor</h1>
+// <h1><code>CodeChat-editor.mts</code> &mdash; JavaScript which implements part
+//     of the client-side portion of the CodeChat Editor</h1>
 // <p>The CodeChat Editor provides a simple IDE which allows editing of mixed
 //     code and doc blocks.</p>
-"use strict";
-
-import { ace, on_dom_content_loaded } from "./CodeChat-editor.mjs";
+// <h2>Imports</h2>
+// <p>I don't know how to fix this, and don't understand why it's wrong.</p>
+/// @ts-ignore
+import { ace } from "./ace-webpack.mts";
 import { html_beautify } from "js-beautify";
+import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
+
+// <p>Configure the Graphviz web component to load the (large) renderer only
+//     when a Graphviz web component is found on a page. See the <a
+//         href="https://github.com/prantlf/graphviz-webcomponent#configuration">docs</a>.
+// </p>
+(window as any).graphvizWebComponent = {
+    rendererUrl: "/static/graphviz-webcomponent/renderer.min.js",
+    delayWorkerLoading: true,
+};
+import "./graphviz-webcomponent/index.min.mjs";
+
+// <h2>UI</h2>
+// <h3>DOM ready event</h3>
+// <p>This is copied from <a
+//         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
+// </p>
+const on_dom_content_loaded = (on_load_func: () => void) => {
+    if (document.readyState === "loading") {
+        // <p>Loading hasn't finished yet.</p>
+        document.addEventListener("DOMContentLoaded", on_load_func);
+    } else {
+        // <p><code>DOMContentLoaded</code> has already fired.</p>
+        on_load_func();
+    }
+};
+
+// <p>Create a combined editor/renderer component. It's not currently used,
+//     since TinyMCE doesn't allow the editor to be focused.</p>
+class GraphVizElement extends HTMLElement {
+    constructor() {
+        super();
+        // <p>Create the shadow DOM.</p>
+        const shadowRoot = this.attachShadow({ mode: "open" });
+        const editor = document.createElement("graphviz-script-editor");
+        const graph = document.createElement("graphviz-graph");
+
+        // <p>TODO: Copy other attributes (scale, tabs, etc.) which the editor
+        //     and graph renderer support.</p>
+
+        // <p>Propagate the initial value on this tag to the tags in the shadow
+        //     DOM.</p>
+        const dot = this.getAttribute("graph") ?? "";
+        graph.setAttribute("graph", dot);
+        editor.setAttribute("value", dot);
+
+        // <p>Send edits to both this tag and the graphviz rendering tag.</p>
+        editor.addEventListener("input", (event) => {
+            // <p>Ignore InputEvents -- we want the custom event sent by this
+            //     component, which contains new text for the graph.</p>
+            if (event instanceof CustomEvent) {
+                const dot = (event as any).detail;
+                graph.setAttribute("graph", dot);
+                // <p>Update the root component as well, so that this value will
+                //     be correct when the user saves.</p>
+                this.setAttribute("graph", dot);
+            }
+        });
+
+        // <p>Populate the shadow DOM now that everything is ready.</p>
+        shadowRoot.append(editor, graph);
+    }
+}
+customElements.define("graphviz-combined", GraphVizElement);
 
 // <p>Emulate an enum. <a
 //         href="https://www.30secondsofcode.org/articles/s/javascript-enum">This</a>
 //     seems like a simple-enough approach; see also <a
 //         href="https://masteringjs.io/tutorials/fundamentals/enum">JavaScript
 //         Enums</a> for other options.</p>
-const EditorMode = Object.freeze({
+enum EditorMode {
     // <p>Display the source code using CodeChat, but disallow editing.</p>
-    view: 0,
+    view,
     // <p>For this source, the same a view; the server uses this to avoid
     //     recursive iframes of the table of contents.</p>
-    toc: 1,
+    toc,
     // <p>The full CodeChat editor.</p>
-    edit: 2,
+    edit,
     // <p>Show only raw source code; ignore doc blocks, treating them also as
     //     code.</p>
-    raw: 3,
-});
+    raw,
+}
 
 // <p>Load code when the DOM is ready.</p>
-export const page_init = (all_source) => {
+export const page_init = (all_source: any) => {
     // <p>Get the mode from the page's query parameters. Default to edit using
     //     the <a
     //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator">nullish
     //         coalescing operator</a>.</p>
     const urlParams = new URLSearchParams(window.location.search);
-    const editorMode = EditorMode[urlParams.get("mode")] ?? EditorMode.edit;
+    // <p>This works, but TypeScript doesn't appreciate it.</p>
+    /// @ts-ignore
+    const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
     on_dom_content_loaded(() => open_lp(all_source, editorMode));
 };
 
 // <p>This code instantiates editors/viewers for code and doc blocks.</p>
 const make_editors = (
     // <p>A instance of the <code>EditorMode</code> enum.</p>
-    editorMode
+    editorMode: EditorMode
 ) => {
     // <p>In view mode, don't use TinyMCE, since we already have HTML. Raw mode
     //     doesn't use TinyMCE at all, or even render doc blocks as HTML.</p>
     if (editorMode === EditorMode.edit) {
         // <p>Instantiate the TinyMCE editor for doc blocks.</p>
-        tinymce.init({
+        tinymce_init({
             // <p>Enable the <a
             //         href="https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck">browser-supplied
             //         spellchecker</a>, since TinyMCE's spellchecker is a
@@ -84,11 +150,6 @@ const make_editors = (
             // </p>
             fixed_toolbar_container: "#CodeChat-menu",
             inline: true,
-            // <p>See the list of <a
-            //         href="https://www.tiny.cloud/docs/tinymce/6/plugins/">plugins</a>.
-            // </p>
-            plugins:
-                "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
             // <p>When true, this still prevents hyperlinks to anchors on the
             //     current page from working correctly. There's an onClick
             //     handler that prevents links in the current page from working
@@ -127,8 +188,8 @@ const make_editors = (
                 // <p>The leading <code>+</code> converts the line number from a
                 //     string (since all HTML attributes are strings) to a
                 //     number.</p>
-                firstLineNumber: +ace_tag.getAttribute(
-                    "data-CodeChat-firstLineNumber"
+                firstLineNumber: +(
+                    ace_tag.getAttribute("data-CodeChat-firstLineNumber") ?? 0
                 ),
                 // <p>This is distracting, since it highlights one line for each
                 //     ACE editor instance on the screen. Better: only show this
@@ -153,12 +214,15 @@ const make_editors = (
 
     // <p>Set up for editing the indent of doc blocks.</p>
     for (const td of document.querySelectorAll(".CodeChat-doc-indent")) {
+        /// @ts-ignore
         td.addEventListener("beforeinput", doc_block_indent_on_before_input);
     }
 };
 
 // <p>Store the lexer info for the currently-loaded language.</p>
-let current_metadata;
+let current_metadata: {
+    mode: string;
+};
 
 // <p>True if this is a CodeChat Editor document (not a source file).</p>
 const is_doc_only = () => {
@@ -168,7 +232,7 @@ const is_doc_only = () => {
 // <h3>Doc block indent editor</h3>
 // <p>Allow only spaces and delete/backspaces when editing the indent of a doc
 //     block.</p>
-const doc_block_indent_on_before_input = (event) => {
+const doc_block_indent_on_before_input = (event: InputEvent) => {
     // <p>Only modify the behavior of inserts.</p>
     if (event.data) {
         // <p>Block any insert that's not an insert of spaces. TODO: need to
@@ -179,7 +243,12 @@ const doc_block_indent_on_before_input = (event) => {
     }
 };
 
-const open_lp = (all_source, editorMode) => {
+type AllSource = {
+    metadata: { mode: string };
+    code_doc_block_arr: [string, string | null, string][];
+};
+
+const open_lp = (all_source: AllSource, editorMode: EditorMode) => {
     current_metadata = all_source["metadata"];
     const code_doc_block_arr = all_source["code_doc_block_arr"];
     // <p>Special case: a CodeChat Editor document's HTML doesn't need lexing.
@@ -191,6 +260,7 @@ const open_lp = (all_source, editorMode) => {
         html = classified_source_to_html(code_doc_block_arr);
     }
 
+    /// @ts-ignore
     document.getElementById("CodeChat-body").innerHTML = html;
     // <p>Initialize editors for this new content.</p>
     make_editors(editorMode);
@@ -218,7 +288,7 @@ const os_is_osx =
         : false;
 
 // <p>Provide a shortcut of ctrl-s (or command-s) to save the current file.</p>
-export const on_keydown = (event) => {
+export const on_keydown = (event: KeyboardEvent) => {
     if (
         event.key === "s" &&
         ((event.ctrlKey && !os_is_osx) || (event.metaKey && os_is_osx)) &&
@@ -233,9 +303,10 @@ export const on_keydown = (event) => {
 //     sending a <code>PUT</code> request to the server. See the <a
 //         href="CodeChatEditorServer.v.html#save_file">save_file endpoint</a>.
 // </p>
-const save = async (contents) => {
+const save = async (contents: AllSource) => {
     let response;
     try {
+        /// @ts-ignore
         response = await window.fetch(window.location, {
             method: "PUT",
             headers: {
@@ -260,13 +331,15 @@ const save = async (contents) => {
 };
 
 // <h2 id="classified_source_to_html">Convert lexed code into HTML</h2>
-const classified_source_to_html = (classified_source) => {
+const classified_source_to_html = (
+    classified_source: [string, string | null, string][]
+) => {
     // <p>An array of strings for the new content of the current HTML page.</p>
     let html = [];
 
     // <p>Keep track of the current type. Begin with neither comment nor code.
     // </p>
-    let current_delimiter = -2;
+    let current_delimiter: string | null = null;
 
     // <p>Keep track of the current line number.</p>
     let line = 1;
@@ -304,7 +377,7 @@ const classified_source_to_html = (classified_source) => {
                 // <p><span id="one-row-table">Use a one-row table to lay out a
                 //         doc block, so that it aligns properly with a code
                 //         block.</span></p>
-                // <p>prettier-ignore</p>
+                // prettier-ignore
                 html.push(
                     `<div class="CodeChat-doc">
     <table>
@@ -330,7 +403,10 @@ const classified_source_to_html = (classified_source) => {
             // <p><span id="newline-prepend"><a href="#newline-movement">Newline
             //             movement</a>: prepend the newline removed from the
             //         previous line to the current line</span>.</p>
-            html.push(m[0], delimiter === "" ? escapeHTML(contents) : contents);
+            html.push(
+                m ? m[0] : "",
+                delimiter === "" ? escapeHTML(contents) : contents
+            );
         }
 
         // <p>Update the state.</p>
@@ -352,9 +428,9 @@ const classified_source_to_html = (classified_source) => {
 // </p>
 const _exit_state = (
     // <p>The type (classification) of the last line.</p>
-    delimiter,
+    delimiter: string | null,
     // <p>An array of string to store output in.</p>
-    html
+    html: string[]
 ) => {
     if (delimiter === "") {
         // <p>Close the current code block.</p>
@@ -380,7 +456,7 @@ const _exit_state = (
 const editor_to_code_doc_blocks = () => {
     // <p>Walk through each code and doc block, extracting its contents then
     //     placing it in <code>classified_lines</code>.</p>
-    let classified_lines = [];
+    let classified_lines: [string, string | null, string][] = [];
     for (const code_or_doc_tag of document.querySelectorAll(
         ".CodeChat-ACE, .CodeChat-TinyMCE"
     )) {
@@ -389,7 +465,7 @@ const editor_to_code_doc_blocks = () => {
         let indent = "";
         // <p>The delimiter for a comment block, or an empty string for a code
         //     block.</p>
-        let delimiter = "";
+        let delimiter: string | null = "";
         // <p>A string containing all the code/docs in this block.</p>
         let full_string;
 
@@ -404,8 +480,8 @@ const editor_to_code_doc_blocks = () => {
             //     the comment delimiter, which is what we want.</p>
             if (!is_doc_only()) {
                 indent =
-                    code_or_doc_tag.parentElement.previousElementSibling
-                        .textContent;
+                    code_or_doc_tag.parentElement!.previousElementSibling!
+                        .textContent ?? "";
                 // <p>Use the pre-existing delimiter for this block if it
                 //     exists; otherwise, use the default delimiter.</p>
                 delimiter =
@@ -419,11 +495,15 @@ const editor_to_code_doc_blocks = () => {
             //     Fortunately, it looks like TinyMCE assigns a unique ID if
             //     one's no provided, since it only operates on an ID instead of
             //     the element itself.</p>
+            // <p>TinyMCE assigns every element an ID, so we're guaranteed that
+            //     this works.</p>
+            /// @ts-ignore
             full_string = tinymce.get(code_or_doc_tag.id).getContent();
             // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters,
             //     including the length of the indent and comment string.</p>
             full_string = html_beautify(full_string, {
-                wrap_line_length: 80 - indent.length - delimiter.length - 1,
+                wrap_line_length:
+                    80 - indent.length - (delimiter?.length ?? 1) - 1,
             });
         } else {
             console.assert(
@@ -449,7 +529,7 @@ const editor_to_code_doc_blocks = () => {
 //     https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText),
 //     it's not usable with code. Instead, this is a translation of Python's
 //     <code>html.escape</code> function.</p>
-const escapeHTML = (unsafeText) => {
+const escapeHTML = (unsafeText: string) => {
     // <p>Must be done first!</p>
     unsafeText = unsafeText.replaceAll("&", "&amp;");
     unsafeText = unsafeText.replaceAll("<", "&lt;");

@@ -31,12 +31,12 @@
         //         href="https://www.typescriptlang.org/tsconfig#isolatedModules">the
         //         TypeScript docs</a>.</p>
         "isolatedModules": true,
-        "module": "ES2020",
+        "module": "ES2022",
         "moduleResolution": "node",
         "outDir": "out",
         "rootDir": "src",
         "strict": true,
-        "target": "ES2020"
+        "target": "ES2022"
     },
     "exclude": ["node_modules", "static"]
 }

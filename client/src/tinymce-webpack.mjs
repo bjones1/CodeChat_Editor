@@ -19,6 +19,7 @@
 // <p>Import TinyMCE. Note: I can't get this to compile as a TypeScript file.
 //     ???</p>
 import tinymce, { RawEditorOptions } from "tinymce";
+export { tinymce };
 
 // <p>Default icons are required for TinyMCE 5.3 or above.</p>
 import "tinymce/icons/default/index.js";
@@ -63,13 +64,16 @@ import "tinymce/plugins/visualchars/index.js";
 /// import './plugins/powerpaste/js/wordimport';
 
 // <p>Initialize TinyMCE.</p>
-export function init(
+export function tinymce_init(
     // <p>Provide editor options; don't set ``plugins`` or ``skin``, since these
     //     must be accompanied by the correct imports.</p>
     options
 ) {
     tinymce.init(
         Object.assign({}, options, {
+            // <p>See the list of <a
+            //         href="https://www.tiny.cloud/docs/tinymce/6/plugins/">plugins</a>.
+            // </p>
             plugins:
                 "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
             // <p>The imports above apply the skins; don't try to dynamically

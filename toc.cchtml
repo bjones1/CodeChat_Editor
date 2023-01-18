@@ -31,21 +31,16 @@
             <li>Editor
                 <ol>
                     <li><a
-                            href="client/src/CodeChatEditor.mjs">CodeChatEditor.mjs</a>
+                            href="client/src/CodeChatEditor.mts">CodeChatEditor.mts</a><br>
                         <ol>
                             <li><a
-                                    href="client/src/CodeChat-editor.mts">CodeChat-editor.mts</a>
-                                <ol>
-                                    <li><a
-                                            href="client/src/ace-webpack.mts">ace-webpack.mts</a>
-                                    </li>
-                                    <li><a
-                                            href="client/src/tinymce-webpack.mjs">tinymce-webpack.mjs</a>
-                                    </li>
-                                    <li><a
-                                            href="client/src/typings.d.ts">typings.d.ts</a>
-                                    </li>
-                                </ol>
+                                    href="client/src/ace-webpack.mts">ace-webpack.mts</a>
+                            </li>
+                            <li><a
+                                    href="client/src/tinymce-webpack.mjs">tinymce-webpack.mjs</a>
+                            </li>
+                            <li><a
+                                    href="client/src/typings.d.ts">typings.d.ts</a>
                             </li>
                         </ol>
                     </li>

@@ -7,14 +7,15 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "check-env": "node -e 'console.log(process.env)' | grep npm",
         "build": "run-script-os",
-        "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mjs --bundle --outdir=./static/webpack --sourcemap --format=esm && tsc -noEmit",
-        "build:default": "node_modules/.bin/esbuild src/CodeChatEditor.mjs --bundle --outdir=./static/webpack --sourcemap --format=esm && tsc -noEmit",
+        "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mts --bundle --outdir=./static/webpack --sourcemap --format=esm && tsc -noEmit",
+        "build:default": "node_modules/.bin/esbuild src/CodeChatEditor.mts --bundle --outdir=./static/webpack --sourcemap --format=esm && tsc -noEmit",
         "dist": "TODO"
     },
     "keywords": [],
     "author": "Bryan A. Jones",
     "license": "GPL-3.0-or-later",
     "devDependencies": {
+        "@types/js-beautify": "^1",
         "@typescript-eslint/eslint-plugin": "^5.0.0",
         "@typescript-eslint/parser": "^5.0.0",
         "esbuild": "^0.16",
