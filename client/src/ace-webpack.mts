@@ -45,7 +45,8 @@ interface ConfigAll extends Ace.Config {
 (config as ConfigAll).setLoader((moduleName: string, callback: Callback) => {
     const dynamicAceImports: { [moduleName: string]: () => Promise<void> } = {
         // <p>Note: all these dynamic imports rely on typing.d.ts to fix the
-        //     lack of types for these files. Themes</p>
+        //     lack of types for these files.</p>
+        // <p>Themes</p>
         "./theme/textmate": () => import("ace-code/src/theme/textmate"),
         "ace/theme/textmate": () => import("ace-code/src/theme/textmate"),
 

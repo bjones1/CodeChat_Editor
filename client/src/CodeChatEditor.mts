@@ -214,6 +214,10 @@ const make_editors = (
 
     // <p>Set up for editing the indent of doc blocks.</p>
     for (const td of document.querySelectorAll(".CodeChat-doc-indent")) {
+        // <p>I don't know why TypeScript doesn't allow this. This follows the
+        //     <a
+        //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event">MDN
+        //         docs</a> and also works.</p>
         /// @ts-ignore
         td.addEventListener("beforeinput", doc_block_indent_on_before_input);
     }
