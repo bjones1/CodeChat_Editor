@@ -19,21 +19,18 @@
 // <p>The CodeChat Editor provides a simple IDE which allows editing of mixed
 //     code and doc blocks.</p>
 // <h2>Imports</h2>
-// <p>I don't know how to fix this, and don't understand why it's wrong.</p>
+// <h3>JavaScript/TypeScript</h3>
+// <p>I don't know how to fix this, and don't understand why it's wrong. Perhaps
+//     because the Ace imports are really node-style requires?</p>
 /// @ts-ignore
 import { ace } from "./ace-webpack.mts";
+import "./graphviz-webcomponent-setup.mts";
+import "./graphviz-webcomponent/index.min.mjs";
 import { html_beautify } from "js-beautify";
 import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
 
-// <p>Configure the Graphviz web component to load the (large) renderer only
-//     when a Graphviz web component is found on a page. See the <a
-//         href="https://github.com/prantlf/graphviz-webcomponent#configuration">docs</a>.
-// </p>
-(window as any).graphvizWebComponent = {
-    rendererUrl: "/static/graphviz-webcomponent/renderer.min.js",
-    delayWorkerLoading: true,
-};
-import "./graphviz-webcomponent/index.min.mjs";
+// <h3>CSS</h3>
+import "./../static/css/CodeChatEditor.css";
 
 // <h2>UI</h2>
 // <h3>DOM ready event</h3>

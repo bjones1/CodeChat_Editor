@@ -555,7 +555,6 @@ async fn serve_file(
 {},
 );
         </script>
-        <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
         {}
     </head>
     <body onkeydown="CodeChatEditor.on_keydown(event);">

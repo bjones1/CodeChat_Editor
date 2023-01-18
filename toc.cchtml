@@ -40,6 +40,9 @@
                                     href="client/src/tinymce-webpack.mjs">tinymce-webpack.mjs</a>
                             </li>
                             <li><a
+                                    href="client/src/graphviz-webcomponent-setup.mts">graphviz-webcomponent-setup.mts</a>
+                            </li>
+                            <li><a
                                     href="client/src/typings.d.ts">typings.d.ts</a>
                             </li>
                         </ol>
