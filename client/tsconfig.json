@@ -32,7 +32,7 @@
         //         TypeScript docs</a>.</p>
         "isolatedModules": true,
         "module": "ES2022",
-        "moduleResolution": "node",
+        "moduleResolution": "nodenext",
         "outDir": "out",
         "rootDir": "src",
         "strict": true,
