@@ -266,8 +266,9 @@ const open_lp = (all_source: AllSource, editorMode: EditorMode) => {
 
     /// @ts-ignore
     document.getElementById("CodeChat-body").innerHTML = html;
-    // <p>Initialize editors for this new content.</p>
-    make_editors(editorMode);
+    // <p>Initialize editors for this new content. Postpone this event using a
+    //     timer, to get a faster initial paint.</p>
+    setTimeout(() => make_editors(editorMode));
 };
 
 // <p>Save CodeChat Editor contents.</p>
