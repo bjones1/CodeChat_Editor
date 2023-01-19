@@ -117,15 +117,15 @@ export const page_init = (all_source: any) => {
 };
 
 // <p>This code instantiates editors/viewers for code and doc blocks.</p>
-const make_editors = (
+const make_editors = async (
     // <p>A instance of the <code>EditorMode</code> enum.</p>
     editorMode: EditorMode
 ) => {
     // <p>In view mode, don't use TinyMCE, since we already have HTML. Raw mode
     //     doesn't use TinyMCE at all, or even render doc blocks as HTML.</p>
     if (editorMode === EditorMode.edit) {
-        // <p>Instantiate the TinyMCE editor for doc blocks.</p>
-        tinymce_init({
+        // <p>Instantiate the TinyMCE editor for doc blocks. Wait until this finishes before calling anything else, to help keep the UI responsive. TODO: break this up to apply to each doc block, instead of doing them all at once.</p>
+        await tinymce_init({
             // <p>Enable the <a
             //         href="https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck">browser-supplied
             //         spellchecker</a>, since TinyMCE's spellchecker is a
@@ -181,31 +181,39 @@ const make_editors = (
     if (ace !== undefined) {
         // <p>Instantiate the Ace editor for code blocks.</p>
         for (const ace_tag of document.querySelectorAll(".CodeChat-ACE")) {
-            ace.edit(ace_tag, {
-                // <p>The leading <code>+</code> converts the line number from a
-                //     string (since all HTML attributes are strings) to a
-                //     number.</p>
-                firstLineNumber: +(
-                    ace_tag.getAttribute("data-CodeChat-firstLineNumber") ?? 0
-                ),
-                // <p>This is distracting, since it highlights one line for each
-                //     ACE editor instance on the screen. Better: only show this
-                //     if the editor has focus.</p>
-                highlightActiveLine: false,
-                highlightGutterLine: false,
-                maxLines: 1e10,
-                mode: `ace/mode/${current_metadata["mode"]}`,
-                // <p>TODO: this still allows cursor movement. Need something
-                //     that doesn't show an edit cursor / can't be selected;
-                //     arrow keys should scroll the display, not move the cursor
-                //     around in the editor.</p>
-                readOnly:
-                    editorMode === EditorMode.view ||
-                    editorMode == EditorMode.toc,
-                showPrintMargin: false,
-                theme: "ace/theme/textmate",
-                wrap: true,
-            });
+            // Perform each init, then allow UI updates to try and keep the UI responsive.
+            await new Promise((accept) =>
+                setTimeout(() => {
+                    ace.edit(ace_tag, {
+                        // <p>The leading <code>+</code> converts the line number from a
+                        //     string (since all HTML attributes are strings) to a
+                        //     number.</p>
+                        firstLineNumber: +(
+                            ace_tag.getAttribute(
+                                "data-CodeChat-firstLineNumber"
+                            ) ?? 0
+                        ),
+                        // <p>This is distracting, since it highlights one line for each
+                        //     ACE editor instance on the screen. Better: only show this
+                        //     if the editor has focus.</p>
+                        highlightActiveLine: false,
+                        highlightGutterLine: false,
+                        maxLines: 1e10,
+                        mode: `ace/mode/${current_metadata["mode"]}`,
+                        // <p>TODO: this still allows cursor movement. Need something
+                        //     that doesn't show an edit cursor / can't be selected;
+                        //     arrow keys should scroll the display, not move the cursor
+                        //     around in the editor.</p>
+                        readOnly:
+                            editorMode === EditorMode.view ||
+                            editorMode == EditorMode.toc,
+                        showPrintMargin: false,
+                        theme: "ace/theme/textmate",
+                        wrap: true,
+                    });
+                    accept("");
+                })
+            );
         }
     }
 
