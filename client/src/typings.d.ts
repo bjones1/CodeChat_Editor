@@ -4,6 +4,8 @@
 //         href="ace-webpack.mts">ace-webpack.mts</a>.</p>
 declare module "ace-code/src/theme/textmate";
 declare module "ace-code/src/mode/c_cpp";
+declare module "ace-code/src/mode/golang";
+declare module "ace-code/src/mode/java";
 declare module "ace-code/src/mode/javascript";
 declare module "ace-code/src/mode/json5";
 declare module "ace-code/src/mode/html";
