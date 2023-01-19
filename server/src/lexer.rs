@@ -545,9 +545,7 @@ pub fn source_lexer(
     // <p>A description of the language, used to lex the
     //     <code>source_code</code>.</p>
     language_lexer_compiled: &LanguageLexerCompiled,
-    // <p>The return value is an array of code and doc blocks. The contents of
-    //     these blocks contain slices from <code>source_code</code>, so these
-    //     have the same lifetime.</p>
+    // <p>The return value is an array of code and doc blocks.</p>
 ) -> Vec<CodeDocBlock> {
     // <p>Rather than attempt to lex the entire language, this lexer's only goal
     //     is to categorize all the source code into code blocks or doc blocks.
@@ -583,6 +581,176 @@ pub fn source_lexer(
     //     its purpose is to identify the start of the next special case.
     //     <strong>This code makes heavy use of regexes -- read the previous
     //         link thoroughly.</strong></p>
+    // <p>To better explain the operation of the lexer, the following provides a
+    //     high-level walkthrough.</p>
+    // <h3>Lexer walkthrough</h3>
+    // <p>This walkthrough shows how the lexer parses the following Python code
+    //     fragment:</p>
+    // <p><code>print(<span
+    //             style="color: rgb(224, 62, 45);">"""&para;</span></code><br><code><span
+    //             style="color: rgb(224, 62, 45);"># This is not a comment!
+    //             It's a multi-line string.&para;</span></code><br><code><span
+    //             style="color: rgb(224, 62, 45);">"""</span>)&para;</code><br>&nbsp;
+    //     <code><span style="color: rgb(45, 194, 107);"># This is a
+    //             comment.</span></code></p>
+    // <p>Paragraph marks (the &para; character) are included to show how the
+    //     lexer handles newlines. To explain the operation of the lexer, the
+    //     code will be highlighted in yellow to represent the <span
+    //         style="background-color: rgb(251, 238, 184);">unlexed source
+    //         code</span>, represented by the contents of the
+    //     variable&nbsp;<code>source_code[source_code_unlexed_index..]</code>
+    //     and in green for the <span
+    //         style="background-color: rgb(191, 237, 210);">current code
+    //         block</span>, defined by
+    //     <code>source_code[current_code_block_index..source_code_unlexed_index]</code>.
+    //     Code that is classified by the lexer will be placed in the
+    //     <code>classified_code</code> array.</p>
+    // <h4>Start of parse</h4>
+    // <p>The <span style="background-color: rgb(251, 238, 184);">unlexed source
+    //         code</span> holds all the code (everything is highlighted in
+    //     yellow); the <span
+    //         style="background-color: rgb(191, 237, 210);">current code
+    //         block</span> is empty (there is no green highlight).&nbsp;</p>
+    // <p><span style="background-color: rgb(251, 238, 184);"><code>print(<span
+    //                 style="color: rgb(224, 62, 45);">"""&para;</span></code></span><br><span
+    //         style="background-color: rgb(251, 238, 184);"><code><span
+    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
+    //                 It's a multi-line
+    //                 string.&para;</span></code></span><br><span
+    //         style="background-color: rgb(251, 238, 184);"><code><span
+    //                 style="color: rgb(224, 62, 45);">"""</span>)&para;</code></span><br><code><span
+    //             style="background-color: rgb(251, 238, 184);">&nbsp; <span
+    //                 style="color: rgb(45, 194, 107);"># This is a
+    //                 comment.</span></span></code></p>
+    // <p><code>classified_code = [</code><br><code>]</code><span
+    //         style="background-color: rgb(191, 237, 210);"><br></span></p>
+    // <h4>Search for a token</h4>
+    // <p>The lexer begins by searching for the regex in
+    //     <code>language_lexer_compiled.next_token</code>, which is
+    //     <code>(\#)|(""")|(''')|(")|(')</code>. The first token found is <span
+    //         style="color: rgb(224, 62, 45);"><code>"""</code></span>.
+    //     Everything up to the match is moved from the unlexed source code to
+    //     the current code block, giving:</p>
+    // <p><code><span
+    //             style="background-color: rgb(191, 237, 210);">print(</span><span
+    //             style="color: rgb(224, 62, 45); background-color: rgb(251, 238, 184);">"""&para;</span></code><br><span
+    //         style="background-color: rgb(251, 238, 184);"><code><span
+    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
+    //                 It's a multi-line
+    //                 string.&para;</span></code></span><br><span
+    //         style="background-color: rgb(251, 238, 184);"><code><span
+    //                 style="color: rgb(224, 62, 45);">"""</span>)&para;</code></span><br><code><span
+    //             style="background-color: rgb(251, 238, 184);">&nbsp; <span
+    //                 style="color: rgb(45, 194, 107);"># This is a
+    //                 comment.</span></span></code></p>
+    // <p><code>classified_code = [</code><br><code>]</code><span
+    //         style="background-color: rgb(191, 237, 210);"><br></span></p>
+    // <h4>String processing</h4>
+    // <p>The regex is accompanied by a map named
+    //     <code>language_lexer_compiled.map</code>, which connects the mapped
+    //     group to which token it matched (see <code>struct
+    //         RegexDelimType</code>):<br>Regex:&nbsp; &nbsp; &nbsp; &nbsp;
+    //     &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;(#)&nbsp; &nbsp;
+    //     &nbsp; &nbsp; &nbsp;|&nbsp; (""") |&nbsp; &nbsp; (''')&nbsp; &nbsp;
+    //     |&nbsp; &nbsp; (")&nbsp; &nbsp; |&nbsp; &nbsp; (')<br>Mapping: &nbsp;
+    //     &nbsp;Inline comment &nbsp; String &nbsp; String &nbsp; String &nbsp;
+    //     String<br>Group:&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
+    //     &nbsp; &nbsp; &nbsp; &nbsp; 1&nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
+    //     &nbsp; &nbsp; &nbsp; 2&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;3
+    //     &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; 4&nbsp; &nbsp; &nbsp; &nbsp;
+    //     &nbsp; 5</p>
+    // <p>Since group 2 matched, looking up this group in the map tells the
+    //     lexer it&rsquo;s a string, and also gives a regex which identifies
+    //     the end of the string . This regex identifies the end of the string,
+    //     moving it from the <span
+    //         style="background-color: rgb(251, 238, 184);">(unclassified)
+    //         source code</span> to the (classified) <span
+    //         style="background-color: rgb(191, 237, 210);">current code
+    //         block</span>. It correctly skips what looks like a comment but is
+    //     not a comment. After this step, the lexer&rsquo;s state is:</p>
+    // <p><span style="background-color: rgb(191, 237, 210);"><code>print(<span
+    //                 style="color: rgb(224, 62, 45);">"""&para;</span></code></span><br><span
+    //         style="background-color: rgb(191, 237, 210);"><code><span
+    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
+    //                 It's a multi-line
+    //                 string.&para;</span></code></span><br><code><span
+    //             style="color: rgb(224, 62, 45); background-color: rgb(191, 237, 210);">"""</span><span
+    //             style="background-color: rgb(251, 238, 184);">)&para;</span></code><br><code><span
+    //             style="background-color: rgb(251, 238, 184);">&nbsp; <span
+    //                 style="color: rgb(45, 194, 107);"># This is a
+    //                 comment.</span></span></code></p>
+    // <p><code>classified_code = [</code><br><code>]</code></p>
+    // <h4>Search for a token (second time)</h4>
+    // <p>Now, the lexer is back to its state of looking through code (as
+    //     opposed to looking inside a string, comment, etc.). It uses the
+    //     <code>next_token</code> regex as before to identify the next token
+    //     <span style="color: rgb(45, 194, 107);"><code>#</code></span> and
+    //     moves all the preceding characters from source code to the current
+    //     code block. The lexer state is now:</p>
+    // <p><code><span style="background-color: rgb(191, 237, 210);">print(<span
+    //                 style="color: rgb(224, 62, 45);">"""&para;</span></span></code><br><span
+    //         style="background-color: rgb(191, 237, 210);"><code><span
+    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
+    //                 It's a multi-line
+    //                 string.&para;</span></code></span><br><span
+    //         style="background-color: rgb(191, 237, 210);"><code><span
+    //                 style="color: rgb(224, 62, 45);">"""</span>)&para;</code></span><br><code><span
+    //             style="background-color: rgb(191, 237, 210);">&nbsp;
+    //         </span><span style="color: rgb(45, 194, 107);"><span
+    //                 style="background-color: rgb(251, 238, 184);"><code>#
+    //                     This is a
+    //                     comment.</code></span></span></code></p>
+    // <p><code>classified_code = [</code><br><code>]</code></p>
+    // <h4>Inline comment lex</h4>
+    // <p>Based on the map, the lexer identifies this as an inline comment. The
+    //     inline comment lexer first identifies the end of the comment (the
+    //     next newline or, as in this case, the end of the file), putting the
+    //     entire inline comment except for the comment opening delimiter <span
+    //         style="color: rgb(45, 194, 107);"><code>#</code></span>&nbsp;into
+    //     <span
+    //         style="background-color: rgb(236, 240, 241);"><code>full_comment</code></span>.
+    //     It then splits the current code block into two groups:&nbsp;<span
+    //         style="background-color: rgb(236, 202, 250);"><code>code_lines_before_comment</code></span>
+    //     (lines in the current code block which come before the current line)
+    //     and the <span
+    //         style="background-color: rgb(194, 224, 244);"><code>comment_line_prefix</code></span>
+    //     (the current line up to the start of the comment). The classification
+    //     is:</p>
+    // <p><code><span style="background-color: rgb(236, 202, 250);">print(<span
+    //                 style="color: rgb(224, 62, 45);">"""&para;</span></span></code><br><span
+    //         style="background-color: rgb(236, 202, 250);"><code><span
+    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
+    //                 It's a multi-line
+    //                 string.&para;</span></code></span><br><span
+    //         style="background-color: rgb(236, 202, 250);"><code><span
+    //                 style="color: rgb(224, 62, 45);">"""</span>)&para;</code></span><br><code><span
+    //             style="background-color: rgb(194, 224, 244);">&nbsp;
+    //         </span><span style="color: rgb(45, 194, 107);">#<span
+    //                 style="background-color: rgb(236, 240, 241);"> This is a
+    //                 comment.</span></span></code></p>
+    // <p><code>classified_code = [</code><br><code>]</code></p>
+    // <h4>Code/doc block classification</h4>
+    // <p>Because <code><span
+    //             style="background-color: rgb(194, 224, 244);">comment_line_prefix</span></code>
+    //     contains only whitespace and <span
+    //         style="background-color: rgb(236, 240, 241);">full_comment</span>
+    //     has a space after the comment delimiter, the lexer classifies this as
+    //     a doc block. It adds&nbsp;<span
+    //         style="background-color: rgb(236, 202, 250);">code_lines_before_comment</span>
+    //     as a code block, then the text of the comment as a doc block:</p>
+    // <p><code>classified_code = [</code><br><code>&nbsp; Item 0 = CodeDocBlock
+    //         { <br>&nbsp; &nbsp; </code><code>indent: "", delimiter: "",
+    //         contents = "print("""&para;</code><br><code># This is not a
+    //         comment! It's a multi-line
+    //         string.&para;</code><br><code>""")&para;</code><br>&nbsp; &nbsp;
+    //     &nbsp; &nbsp; <code>" },</code></p>
+    // <p><code>&nbsp; &nbsp;Item 1 = CodeDocBlock { indent: " &nbsp;",
+    //         delimiter: "#", contents = "This is a comment"
+    //         }</code><br><code>]</code></p>
+    // <h3>Done</h3>
+    // <p>After this, the unlexed source code is empty since the inline comment
+    //     classified moved the remainder of its contents into
+    //     <code>classified_code</code>. The function exits.</p>
     let mut classified_source: Vec<CodeDocBlock> = Vec::new();
 
     // <p>Provide a method to intelligently append to the code/doc block vec.
@@ -640,13 +808,12 @@ pub fn source_lexer(
         {
             // <p>Move everything preceding this match from
             //     <code>source_code</code> to the current code block, since per
-            //     the assumptions this is code. Per the <a
-            //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/exec#return_value">docs</a>,
-            //     <code>m.index</code> is the index of the beginning of the
-            //     match.</p>
+            //     the assumptions this is code. Match group 0 refers to the
+            //     entire match; the start of that group is a simple way to ask
+            //     for the start index of the overall match.</p>
             source_code_unlexed_index += classify_match.get(0).unwrap().start();
 
-            // <p>Find the first group that matches.</p>
+            // <p>Find the first group in the regex that matched.</p>
             let matching_group_index = classify_match
                 .iter()
                 // <p>Group 0 is the entire match, which is always true. Skip
@@ -667,8 +834,8 @@ pub fn source_lexer(
                 &source_code[current_code_block_index..source_code_unlexed_index]
             );
 
-            // <p>Move code from unlexed source code to the current code block
-            //     based on the provided regex.</p>
+            // <p>This helper function moves code from unlexed source code to
+            //     the current code block based on the provided regex.</p>
             let mut append_code =
                                    // <p>The regex; code up to the end of this
                                    //     match will be appended to the current
@@ -703,12 +870,10 @@ pub fn source_lexer(
             //     are skipped). Adjust the index for this.</p>
             match &language_lexer_compiled.map[matching_group_index - 1] {
                 // <h3>Inline comment</h3>
-                // <p>Was this a comment, assuming the selected language
-                //     supports inline comments?</p>
+                // <p>Was this an inline comment?</p>
                 RegexDelimType::InlineComment => {
-                    // <p>An inline comment delimiter matched.</p>
-                    // <p><strong>First</strong>, find the end of this comment:
-                    //     a newline.</p>
+                    // <p>Yes. <strong>First</strong>, find the end of this
+                    //     comment: a newline.</p>
                     let end_of_comment_rel_index =
                         source_code[source_code_unlexed_index..].find('\n');
 
@@ -817,13 +982,16 @@ pub fn source_lexer(
                             current_code_block, comment_line_prefix, matching_group_str, contents
                         );
 
-                        // <p>We've now stored the current code block in
-                        //     <code>classified_lines</code>.</p>
+                        // <p>We've now stored the current code block (which was
+                        //     classified as a doc block) in
+                        //     <code>classified_lines</code>. Make the current
+                        //     code block empty by moving its index up to the
+                        //     unlexed code.</p>
                         current_code_block_index = source_code_unlexed_index;
                     } else {
                         // <p>This comment is not a doc block; instead, treat it
-                        //     as code. It's already in the current code block,
-                        //     so we're done.</p>
+                        //     as code. This code is already in the current code
+                        //     block, so we're done.</p>
                     }
                 }
 
