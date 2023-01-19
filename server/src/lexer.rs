@@ -151,6 +151,29 @@ pub struct LanguageLexer<'a> {
     template_literal: bool,
 }
 
+/// <h3>Compiled language definition</h3>
+// <p>Store the results of compiling a language lexer.</p>
+pub struct LanguageLexerCompiled<'a> {
+    /// <p>Provide a reference back to the language definition this came from.
+    /// </p>
+    pub language_lexer: &'a LanguageLexer<'a>,
+    /// <p>A regex used to identify the next token when in a code block.</p>
+    next_token: Regex,
+    /// <p>A mapping from groups in this regex to the corresponding delimiter
+    ///     type matched.</p>
+    map: Vec<RegexDelimType>,
+}
+
+// <p>Store all lexers and their associated maps after they're compiled.</p>
+pub struct LanguageLexersCompiled<'a> {
+    // <p>The resulting compiled lexers.</p>
+    pub language_lexer_compiled_vec: Vec<Arc<LanguageLexerCompiled<'a>>>,
+    // <p>Maps a file extension to indices into the lexers vector.</p>
+    pub map_ext_to_lexer_vec: HashMap<&'a str, Vec<Arc<LanguageLexerCompiled<'a>>>>,
+    // <p>Maps an Ace mode to an index into the lexers vector.</p>
+    pub map_mode_to_lexer: HashMap<&'a str, Arc<LanguageLexerCompiled<'a>>>,
+}
+
 /// <p>Define which delimiter corresponds to a given regex group.</p>
 /// <p>This struct stores the results of "compiling" a
 ///     <code>LanguageLexer</code> into a set of regexes and a map. For example,
@@ -197,6 +220,7 @@ enum RegexDelimType {
 #[derive(PartialEq)]
 // <p>To allow printing with <code>println!</code>.</p>
 #[derive(Debug)]
+/// <h3>Code/doc blocks</h3>
 /// <p>This defines either a code block or a doc block.</p>
 pub struct CodeDocBlock {
     /// <p>For a doc block, the whitespace characters which created the indent
@@ -208,28 +232,6 @@ pub struct CodeDocBlock {
     /// <p>The contents of this block -- documentation (with the comment
     ///     delimiters removed) or code.</p>
     pub contents: String,
-}
-
-// <p>Store the results of compiling a language lexer.</p>
-pub struct LanguageLexerCompiled<'a> {
-    /// <p>Provide a reference back to the language definition this came from.
-    /// </p>
-    pub language_lexer: &'a LanguageLexer<'a>,
-    /// <p>A regex used to identify the next token when in a code block.</p>
-    next_token: Regex,
-    /// <p>A mapping from groups in this regex to the corresponding delimiter
-    ///     type matched.</p>
-    map: Vec<RegexDelimType>,
-}
-
-// <p>Store all lexers and their associated maps after they're compiled.</p>
-pub struct LanguageLexersCompiled<'a> {
-    // <p>The resulting compiled lexers.</p>
-    pub language_lexer_compiled_vec: Vec<Arc<LanguageLexerCompiled<'a>>>,
-    // <p>Maps a file extension to indices into the lexers vector.</p>
-    pub map_ext_to_lexer_vec: HashMap<&'a str, Vec<Arc<LanguageLexerCompiled<'a>>>>,
-    // <p>Maps an Ace mode to an index into the lexers vector.</p>
-    pub map_mode_to_lexer: HashMap<&'a str, Arc<LanguageLexerCompiled<'a>>>,
 }
 
 // <h2>Globals</h2>
@@ -747,15 +749,15 @@ pub fn source_lexer(
     // <p><code>&nbsp; &nbsp;Item 1 = CodeDocBlock { indent: " &nbsp;",
     //         delimiter: "#", contents = "This is a comment"
     //         }</code><br><code>]</code></p>
-    // <h3>Done</h3>
+    // <h4>Done</h4>
     // <p>After this, the unlexed source code is empty since the inline comment
     //     classified moved the remainder of its contents into
     //     <code>classified_code</code>. The function exits.</p>
-    let mut classified_source: Vec<CodeDocBlock> = Vec::new();
-
+    // <h3>Helper function</h3>
     // <p>Provide a method to intelligently append to the code/doc block vec.
     //     Empty appends are ignored; appends of the same type append to
     //     <code>contents</code> instead of creating a new entry.</p>
+    let mut classified_source: Vec<CodeDocBlock> = Vec::new();
     let mut append_code_doc_block = |indent: &str, delimiter: &str, contents: &str| {
         // <p>Don't append empty entries.</p>
         if delimiter.is_empty() && contents.is_empty() {
@@ -782,6 +784,7 @@ pub fn source_lexer(
         });
     };
 
+    // <h3>Main loop</h3>
     // <p>Normalize all line endings.</p>
     let source_code = source_code.replace("\r\n", "\n").replace('\r', "\n");
     // <p>This index marks the start of code that hasn't been lexed.</p>
@@ -792,13 +795,14 @@ pub fn source_lexer(
     // </p>
     let mut current_code_block_index: usize = 0;
 
-    // <p>Main loop: lexer the provided source code.</p>
+    // <p>Main loop: lex the provided source code.</p>
     while source_code_unlexed_index < source_code.len() {
         #[cfg(feature = "lexer_explain")]
         println!(
             "Searching the following source_code using the pattern {:?}:\n'{}'\n\nThe current code block is '{}'\n",
             language_lexer_compiled.next_token, &source_code[source_code_unlexed_index..], &source_code[current_code_block_index..source_code_unlexed_index]
         );
+        // <h4>Find the next token</h4>
         // <p>Look for the next special case. Per the earlier discussion, this
         //     assumes that the text immediately preceding
         //     <code>source_code</code> was plain code.</p>
@@ -869,11 +873,10 @@ pub fn source_lexer(
             // <p>In the map, index 0 refers to group 1 (since group 0 matches
             //     are skipped). Adjust the index for this.</p>
             match &language_lexer_compiled.map[matching_group_index - 1] {
-                // <h3>Inline comment</h3>
-                // <p>Was this an inline comment?</p>
+                // <h4>Inline comment</h4>
                 RegexDelimType::InlineComment => {
-                    // <p>Yes. <strong>First</strong>, find the end of this
-                    //     comment: a newline.</p>
+                    // <p><strong>First</strong>, find the end of this comment:
+                    //     a newline.</p>
                     let end_of_comment_rel_index =
                         source_code[source_code_unlexed_index..].find('\n');
 
@@ -882,10 +885,10 @@ pub fn source_lexer(
                     //     until the newline which ends the comment.</p>
                     let full_comment_index = source_code_unlexed_index + matching_group_str.len();
 
-                    // <p>Currently, <code>current_code_block</code> contains
-                    //     preceding code (which might be multiple lines) until
-                    //     the inline comment delimiter. Split this on newlines,
-                    //     grouping all the lines before the last line into
+                    // <p>The current code block contains preceding code (which
+                    //     might be multiple lines) until the inline comment
+                    //     delimiter. Split this on newlines, grouping all the
+                    //     lines before the last line into
                     //     <code>code_lines_before_comment</code> (which is all
                     //     code), and everything else (from the beginning of the
                     //     last line to where the inline comment delimiter
@@ -925,18 +928,18 @@ pub fn source_lexer(
                     // <p><strong>Next</strong>, determine if this comment is a
                     //     doc block. Criteria for doc blocks for an inline
                     //     comment:</p>
-                    // <ul>
+                    // <ol>
                     //     <li>All characters preceding the comment on the line
                     //         containing the comment must be whitespace.</li>
                     //     <li>Either:
-                    //         <ul>
+                    //         <ol>
                     //             <li>The inline comment delimiter is
                     //                 immediately followed by a space, or</li>
                     //             <li>the inline comment delimiter is followed
                     //                 by a newline or the end of the file.</li>
-                    //         </ul>
+                    //         </ol>
                     //     </li>
-                    // </ul>
+                    // </ol>
                     // <p>With this last line located, apply the doc block
                     //     criteria.</p>
                     let ws_only = WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix);
@@ -956,8 +959,8 @@ pub fn source_lexer(
                             full_comment.is_empty())
                         )
                     {
-                        // <p>This is a doc block. Transition from a code block
-                        //     to this doc block.</p>
+                        // <p>This is a doc block. Transition from the preceding
+                        //     code block to this doc block.</p>
                         append_code_doc_block("", "", code_lines_before_comment);
 
                         // <p>Add this doc block by pushing the array
@@ -965,10 +968,10 @@ pub fn source_lexer(
                         //     comment contents, inline comment delimiter].
                         //     Since it's a doc block, then
                         //     <code>comment_line_prefix</code> contains the
-                        //     whitespace before this comment.
-                        //     <code>inline_comment_string</code> contains the
+                        //     whitespace before this comment and
+                        //     <code>matching_group_string</code> contains the
                         //     inline comment delimiter. For the contents, omit
-                        //     the leading space it it's there (this might be
+                        //     the leading space if it's there (this might be
                         //     just a newline or an EOF).</p>
                         let contents = &full_comment[if has_space_after_comment { 1 } else { 0 }..];
                         append_code_doc_block(comment_line_prefix, matching_group_str, contents);
@@ -995,10 +998,12 @@ pub fn source_lexer(
                     }
                 }
 
+                // <h4>Block comment</h4>
                 RegexDelimType::BlockComment(closing_regex) => {
                     panic!("Unimplemented.")
                 }
 
+                // <h4>String-like syntax</h4>
                 RegexDelimType::String(closing_regex) => {
                     #[cfg(feature = "lexer_explain")]
                     print!("This is a string. ");

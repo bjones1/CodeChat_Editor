@@ -24,6 +24,7 @@
 //     because the Ace imports are really node-style requires?</p>
 /// @ts-ignore
 import { ace } from "./ace-webpack.mts";
+import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 import "./graphviz-webcomponent/index.min.mjs";
 import { html_beautify } from "js-beautify";
@@ -32,8 +33,20 @@ import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
 // <h3>CSS</h3>
 import "./../static/css/CodeChatEditor.css";
 
-// <h2>UI</h2>
-// <h3>DOM ready event</h3>
+// <h2>Initialization</h2>
+// <p>Load code when the DOM is ready.</p>
+export const page_init = (all_source: any) => {
+    // <p>Get the mode from the page's query parameters. Default to edit using
+    //     the <a
+    //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator">nullish
+    //         coalescing operator</a>.</p>
+    const urlParams = new URLSearchParams(window.location.search);
+    // <p>This works, but TypeScript doesn't appreciate it.</p>
+    /// @ts-ignore
+    const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
+    on_dom_content_loaded(() => open_lp(all_source, editorMode));
+};
+
 // <p>This is copied from <a
 //         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
 // </p>
@@ -46,44 +59,6 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
         on_load_func();
     }
 };
-
-// <p>Create a combined editor/renderer component. It's not currently used,
-//     since TinyMCE doesn't allow the editor to be focused.</p>
-class GraphVizElement extends HTMLElement {
-    constructor() {
-        super();
-        // <p>Create the shadow DOM.</p>
-        const shadowRoot = this.attachShadow({ mode: "open" });
-        const editor = document.createElement("graphviz-script-editor");
-        const graph = document.createElement("graphviz-graph");
-
-        // <p>TODO: Copy other attributes (scale, tabs, etc.) which the editor
-        //     and graph renderer support.</p>
-
-        // <p>Propagate the initial value on this tag to the tags in the shadow
-        //     DOM.</p>
-        const dot = this.getAttribute("graph") ?? "";
-        graph.setAttribute("graph", dot);
-        editor.setAttribute("value", dot);
-
-        // <p>Send edits to both this tag and the graphviz rendering tag.</p>
-        editor.addEventListener("input", (event) => {
-            // <p>Ignore InputEvents -- we want the custom event sent by this
-            //     component, which contains new text for the graph.</p>
-            if (event instanceof CustomEvent) {
-                const dot = (event as any).detail;
-                graph.setAttribute("graph", dot);
-                // <p>Update the root component as well, so that this value will
-                //     be correct when the user saves.</p>
-                this.setAttribute("graph", dot);
-            }
-        });
-
-        // <p>Populate the shadow DOM now that everything is ready.</p>
-        shadowRoot.append(editor, graph);
-    }
-}
-customElements.define("graphviz-combined", GraphVizElement);
 
 // <p>Emulate an enum. <a
 //         href="https://www.30secondsofcode.org/articles/s/javascript-enum">This</a>
@@ -103,17 +78,33 @@ enum EditorMode {
     raw,
 }
 
-// <p>Load code when the DOM is ready.</p>
-export const page_init = (all_source: any) => {
-    // <p>Get the mode from the page's query parameters. Default to edit using
-    //     the <a
-    //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator">nullish
-    //         coalescing operator</a>.</p>
-    const urlParams = new URLSearchParams(window.location.search);
-    // <p>This works, but TypeScript doesn't appreciate it.</p>
+const open_lp = (all_source: AllSource, editorMode: EditorMode) => {
+    current_metadata = all_source["metadata"];
+    const code_doc_block_arr = all_source["code_doc_block_arr"];
+    // <p>Special case: a CodeChat Editor document's HTML doesn't need lexing.
+    // </p>
+    let html;
+    if (is_doc_only()) {
+        html = `<div class="CodeChat-TinyMCE">${code_doc_block_arr[0][2]}</div>`;
+    } else {
+        html = classified_source_to_html(code_doc_block_arr);
+    }
+
     /// @ts-ignore
-    const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
-    on_dom_content_loaded(() => open_lp(all_source, editorMode));
+    document.getElementById("CodeChat-body").innerHTML = html;
+    // <p>Initialize editors for this new content. Postpone this event using a
+    //     timer, to get a faster initial paint.</p>
+    setTimeout(() => make_editors(editorMode));
+};
+
+type AllSource = {
+    metadata: { mode: string };
+    code_doc_block_arr: [string, string | null, string][];
+};
+
+// <p>Store the lexer info for the currently-loaded language.</p>
+let current_metadata: {
+    mode: string;
 };
 
 // <p>This code instantiates editors/viewers for code and doc blocks.</p>
@@ -124,7 +115,10 @@ const make_editors = async (
     // <p>In view mode, don't use TinyMCE, since we already have HTML. Raw mode
     //     doesn't use TinyMCE at all, or even render doc blocks as HTML.</p>
     if (editorMode === EditorMode.edit) {
-        // <p>Instantiate the TinyMCE editor for doc blocks. Wait until this finishes before calling anything else, to help keep the UI responsive. TODO: break this up to apply to each doc block, instead of doing them all at once.</p>
+        // <p>Instantiate the TinyMCE editor for doc blocks. Wait until this
+        //     finishes before calling anything else, to help keep the UI
+        //     responsive. TODO: break this up to apply to each doc block,
+        //     instead of doing them all at once.</p>
         await tinymce_init({
             // <p>Enable the <a
             //         href="https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck">browser-supplied
@@ -162,10 +156,10 @@ const make_editors = async (
             //     I like the default, so this is currently disabled.</p>
             //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
 
-            // <h3>Settings for plugins</h3>
-            // <h4><a
+            // <p>Settings for plugins</p>
+            // <p><a
             //         href="https://www.tiny.cloud/docs/plugins/opensource/image/">Image</a>
-            // </h4>
+            // </p>
             image_caption: true,
             image_advtab: true,
             image_title: true,
@@ -181,29 +175,32 @@ const make_editors = async (
     if (ace !== undefined) {
         // <p>Instantiate the Ace editor for code blocks.</p>
         for (const ace_tag of document.querySelectorAll(".CodeChat-ACE")) {
-            // Perform each init, then allow UI updates to try and keep the UI responsive.
+            // <p>Perform each init, then allow UI updates to try and keep the
+            //     UI responsive.</p>
             await new Promise((accept) =>
                 setTimeout(() => {
                     ace.edit(ace_tag, {
-                        // <p>The leading <code>+</code> converts the line number from a
-                        //     string (since all HTML attributes are strings) to a
-                        //     number.</p>
+                        // <p>The leading <code>+</code> converts the line
+                        //     number from a string (since all HTML attributes
+                        //     are strings) to a number.</p>
                         firstLineNumber: +(
                             ace_tag.getAttribute(
                                 "data-CodeChat-firstLineNumber"
                             ) ?? 0
                         ),
-                        // <p>This is distracting, since it highlights one line for each
-                        //     ACE editor instance on the screen. Better: only show this
-                        //     if the editor has focus.</p>
+                        // <p>This is distracting, since it highlights one line
+                        //     for each ACE editor instance on the screen.
+                        //     Better: only show this if the editor has focus.
+                        // </p>
                         highlightActiveLine: false,
                         highlightGutterLine: false,
                         maxLines: 1e10,
                         mode: `ace/mode/${current_metadata["mode"]}`,
-                        // <p>TODO: this still allows cursor movement. Need something
-                        //     that doesn't show an edit cursor / can't be selected;
-                        //     arrow keys should scroll the display, not move the cursor
-                        //     around in the editor.</p>
+                        // <p>TODO: this still allows cursor movement. Need
+                        //     something that doesn't show an edit cursor /
+                        //     can't be selected; arrow keys should scroll the
+                        //     display, not move the cursor around in the
+                        //     editor.</p>
                         readOnly:
                             editorMode === EditorMode.view ||
                             editorMode == EditorMode.toc,
@@ -228,17 +225,7 @@ const make_editors = async (
     }
 };
 
-// <p>Store the lexer info for the currently-loaded language.</p>
-let current_metadata: {
-    mode: string;
-};
-
-// <p>True if this is a CodeChat Editor document (not a source file).</p>
-const is_doc_only = () => {
-    return current_metadata["mode"] === "codechat-html";
-};
-
-// <h3>Doc block indent editor</h3>
+// <h2>UI</h2>
 // <p>Allow only spaces and delete/backspaces when editing the indent of a doc
 //     block.</p>
 const doc_block_indent_on_before_input = (event: InputEvent) => {
@@ -252,28 +239,16 @@ const doc_block_indent_on_before_input = (event: InputEvent) => {
     }
 };
 
-type AllSource = {
-    metadata: { mode: string };
-    code_doc_block_arr: [string, string | null, string][];
-};
-
-const open_lp = (all_source: AllSource, editorMode: EditorMode) => {
-    current_metadata = all_source["metadata"];
-    const code_doc_block_arr = all_source["code_doc_block_arr"];
-    // <p>Special case: a CodeChat Editor document's HTML doesn't need lexing.
-    // </p>
-    let html;
-    if (is_doc_only()) {
-        html = `<div class="CodeChat-TinyMCE">${code_doc_block_arr[0][2]}</div>`;
-    } else {
-        html = classified_source_to_html(code_doc_block_arr);
+// <p>Provide a shortcut of ctrl-s (or command-s) to save the current file.</p>
+export const on_keydown = (event: KeyboardEvent) => {
+    if (
+        event.key === "s" &&
+        ((event.ctrlKey && !os_is_osx) || (event.metaKey && os_is_osx)) &&
+        !event.altKey
+    ) {
+        on_save();
+        event.preventDefault();
     }
-
-    /// @ts-ignore
-    document.getElementById("CodeChat-body").innerHTML = html;
-    // <p>Initialize editors for this new content. Postpone this event using a
-    //     timer, to get a faster initial paint.</p>
-    setTimeout(() => make_editors(editorMode));
 };
 
 // <p>Save CodeChat Editor contents.</p>
@@ -286,27 +261,6 @@ export const on_save = async () => {
         metadata: current_metadata,
         code_doc_block_arr: source_code,
     });
-};
-
-// <p>Per <a
-//         href="https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples">MDN</a>,
-//     here's the least bad way to choose between the control key and the
-//     command key.</p>
-const os_is_osx =
-    navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
-        ? true
-        : false;
-
-// <p>Provide a shortcut of ctrl-s (or command-s) to save the current file.</p>
-export const on_keydown = (event: KeyboardEvent) => {
-    if (
-        event.key === "s" &&
-        ((event.ctrlKey && !os_is_osx) || (event.metaKey && os_is_osx)) &&
-        !event.altKey
-    ) {
-        on_save();
-        event.preventDefault();
-    }
 };
 
 // <p><a id="save"></a>Save the provided contents back to the filesystem, by
@@ -433,9 +387,7 @@ const classified_source_to_html = (
 };
 
 // <h3>_exit_state</h3>
-// <p>Output text produced when exiting a state. Supports <a
-//         href="#_generate_web_editable"><code>_generate_web_editable</code></a>.
-// </p>
+// <p>Output text produced when exiting a state.</p>
 const _exit_state = (
     // <p>The type (classification) of the last line.</p>
     delimiter: string | null,
@@ -461,8 +413,8 @@ const _exit_state = (
     }
 };
 
-// <h2>Save editor contents to source code</h2>
-// <p>This transforms the current editor contents into source code.</p>
+// <h2>Convert HTML to lexed code</h2>
+// <p>This transforms the current editor contents into code and doc blocks.</p>
 const editor_to_code_doc_blocks = () => {
     // <p>Walk through each code and doc block, extracting its contents then
     //     placing it in <code>classified_lines</code>.</p>
@@ -534,9 +486,9 @@ const editor_to_code_doc_blocks = () => {
 
 // <h2>Helper functions</h2>
 // <p>Given text, escape it so it formats correctly as HTML. Because the
-//     solution at https://stackoverflow.com/a/48054293 transforms newlines into
-//     <br>(see
-//     https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText),
+//     solution at <a href="https://stackoverflow.com/a/48054293">SO</a>
+//     transforms newlines in odd ways&nbsp;(see <a
+//         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText">innerText</a>),
 //     it's not usable with code. Instead, this is a translation of Python's
 //     <code>html.escape</code> function.</p>
 const escapeHTML = (unsafeText: string) => {
@@ -546,3 +498,17 @@ const escapeHTML = (unsafeText: string) => {
     unsafeText = unsafeText.replaceAll(">", "&gt;");
     return unsafeText;
 };
+
+// <p>True if this is a CodeChat Editor document (not a source file).</p>
+const is_doc_only = () => {
+    return current_metadata["mode"] === "codechat-html";
+};
+
+// <p>Per <a
+//         href="https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples">MDN</a>,
+//     here's the least bad way to choose between the control key and the
+//     command key.</p>
+const os_is_osx =
+    navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
+        ? true
+        : false;
