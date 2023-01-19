@@ -71,6 +71,31 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         }),
         template_literal: false,
     },
+    // <p>CSS</p>
+    LanguageLexer {
+        ace_mode: "css",
+        ext_arr: &["css"],
+        inline_comment_delim_arr: &[],
+        block_comment_delim_arr: &[BlockCommentDelim {
+            opening: "/*",
+            closing: "*/",
+            is_nestable: false,
+        }],
+        string_delim_spec_arr: &[
+            StringDelimiterSpec {
+                delimiter: "\"",
+                escape_char: "\\",
+                newline_support: NewlineSupport::Unescaped,
+            },
+            StringDelimiterSpec {
+                delimiter: "'",
+                escape_char: "\\",
+                newline_support: NewlineSupport::Unescaped,
+            },
+        ],
+        heredoc_delim: None,
+        template_literal: false,
+    },
     // <p>HTML</p>
     LanguageLexer {
         ace_mode: "html",

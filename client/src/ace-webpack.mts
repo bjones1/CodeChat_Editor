@@ -51,11 +51,15 @@ interface ConfigAll extends Ace.Config {
         "ace/theme/textmate": () => import("ace-code/src/theme/textmate"),
 
         // <p>Modes</p>
+        "ace/mode/c_cpp": () => import("ace-code/src/mode/c_cpp"),
         "ace/mode/javascript": () => import("ace-code/src/mode/javascript"),
         "ace/mode/json5": () => import("ace-code/src/mode/json5"),
+        "ace/mode/html": () => import("ace-code/src/mode/html"),
+        "ace/mode/python": () => import("ace-code/src/mode/python"),
         "ace/mode/rust": () => import("ace-code/src/mode/rust"),
         "ace/mode/toml": () => import("ace-code/src/mode/toml"),
         "ace/mode/typescript": () => import("ace-code/src/mode/typescript"),
+        "ace/mode/verilog": () => import("ace-code/src/mode/verilog"),
         "ace/mode/yaml": () => import("ace-code/src/mode/yaml"),
     };
 

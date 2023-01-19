@@ -1068,8 +1068,7 @@ mod tests {
     #[test]
     fn test_py() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let py = &llc.language_lexer_compiled_vec[4];
-        assert_eq!(py.language_lexer.ace_mode, "python");
+        let py = &llc.map_mode_to_lexer.get("python").unwrap();
 
         // <p>Try basic cases: make sure than newlines are processed correctly.
         // </p>
@@ -1271,8 +1270,7 @@ mod tests {
     #[test]
     fn test_js() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let js = &llc.language_lexer_compiled_vec[2];
-        assert_eq!(js.language_lexer.ace_mode, "javascript");
+        let js = &llc.map_mode_to_lexer.get("javascript").unwrap();
 
         // <p>JavaScript tests. TODO: block comments</p>
         assert_eq!(
@@ -1315,8 +1313,7 @@ mod tests {
     #[test]
     fn test_cpp() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let cpp = &llc.language_lexer_compiled_vec[0];
-        assert_eq!(cpp.language_lexer.ace_mode, "c_cpp");
+        let cpp = &llc.map_mode_to_lexer.get("c_cpp").unwrap();
 
         // <p>Try out a C++ heredoc.</p>
         assert_eq!(
@@ -1331,7 +1328,7 @@ mod tests {
     #[test]
     fn test_toml() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let toml = &llc.language_lexer_compiled_vec[6];
+        let toml = &llc.map_mode_to_lexer.get("toml").unwrap();
         assert_eq!(toml.language_lexer.ace_mode, "toml");
 
         // <p>Multi-line literal strings don't have escapes.</p>
@@ -1355,7 +1352,7 @@ mod tests {
     #[test]
     fn test_rust() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let rust = &llc.language_lexer_compiled_vec[5];
+        let rust = &llc.map_mode_to_lexer.get("rust").unwrap();
         assert_eq!(rust.language_lexer.ace_mode, "rust");
 
         // <p>Test Rust raw strings.</p>
