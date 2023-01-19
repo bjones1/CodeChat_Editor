@@ -403,12 +403,29 @@ async fn serve_file(
     }
     .read_to_string(&mut file_contents)
     .await;
-    if let Err(err) = read_ret {
+    if let Err(_err) = read_ret {
+        // TODO: make a better decision, don't duplicate code.
+        // The file type is unknown. Serve it raw, assuming it's an image/video/etc.
+        match actix_files::NamedFile::open_async(file_path).await {
+            Ok(v) => {
+                let res = v.into_response(req);
+                return res;
+            }
+            Err(err) => {
+                return html_not_found(&format!(
+                    "<p>Error opening file {}: {}.",
+                    path_display(file_path),
+                    err
+                ))
+            }
+        }
+        /****
         return html_not_found(&format!(
             "<p>Error reading file {}: {}</p>",
             path_display(file_path),
             err
         ));
+        */
     }
 
     // <p>The TOC is a simplified web page requiring no additional processing.
@@ -466,10 +483,20 @@ async fn serve_file(
         {
             llc.first().unwrap()
         } else {
-            return html_not_found(&format!(
-                "<p>Unknown file type for file {}.</p>",
-                path_display(file_path)
-            ));
+            // The file type is unknown. Serve it raw, assuming it's an image/video/etc.
+            match actix_files::NamedFile::open_async(file_path).await {
+                Ok(v) => {
+                    let res = v.into_response(req);
+                    return res;
+                }
+                Err(err) => {
+                    return html_not_found(&format!(
+                        "<p>Error opening file {}: {}.",
+                        path_display(file_path),
+                        err
+                    ))
+                }
+            }
         }
     };
 
