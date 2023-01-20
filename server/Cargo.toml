@@ -45,5 +45,5 @@ urlencoding = "2"
 # <p>See https://doc.rust-lang.org/cargo/reference/features.html.</p>
 [features]
 # <p>Uncomment this to show an explanation of the lexing process.</p>
-#default = ["lexer_explain"]
+default = ["lexer_explain"]
 lexer_explain = []
