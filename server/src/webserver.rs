@@ -45,15 +45,18 @@ use super::lexer::compile_lexers;
 use super::lexer::supported_languages::LANGUAGE_LEXER_ARR;
 use crate::lexer::{source_lexer, CodeDocBlock, LanguageLexersCompiled};
 
-// <h2>Data structures</h2>
+/// <h2>Data structures</h2>
 #[derive(Serialize, Deserialize)]
-// Metadata about a source file sent along with it both to and from the client.
+/// <p>Metadata about a source file sent along with it both to and from the
+///     client.</p>
 struct SourceFileMetadata {
     mode: String,
 }
 
 #[derive(Serialize, Deserialize)]
-// A simple structure for accepting JSON input to the <code>save_source</code> endpoint. Use a tuple since serdes can auto-generate a deserializer for it.
+/// <p>A simple structure for accepting JSON input to the
+///     <code>save_source</code> endpoint. Use a tuple since serdes can
+///     auto-generate a deserializer for it.</p>
 struct ClientSourceFile {
     metadata: SourceFileMetadata,
     // <p>TODO: implement a serdes deserializer that would convert this directly
@@ -62,13 +65,15 @@ struct ClientSourceFile {
 }
 
 #[derive(Serialize)]
-// Define the structure of JSON responses when sending a source file from the <code>/fs</code> endpoint.
+/// <p>Define the structure of JSON responses when sending a source file from
+///     the <code>/fs</code> endpoint.</p>
 struct LexedSourceFile {
     metadata: SourceFileMetadata,
     code_doc_block_arr: Vec<CodeDocBlock>,
 }
 
-// This defined the structure of JSON responses from the <code>save_source</code> endpoint.
+/// <p>This defines the structure of JSON responses from the
+///     <code>save_source</code> endpoint.</p>
 #[derive(Serialize)]
 struct ErrorResponse {
     success: bool,
@@ -83,12 +88,18 @@ lazy_static! {
     static ref LEXER_DIRECTIVE: Regex = Regex::new("CodeChat Editor lexer\\\\: (\\\\w)+").unwrap();
 }
 
-/// <h2>Endpoints</h2>
+/// <h2>Save endpoint</h2>
 #[put("/fs/{path:.*}")]
-// The Save button in the CodeCHat Editor Client posts to this endpoint with the path of the file to save.
+/// <p>The Save button in the CodeCHat Editor Client posts to this endpoint with
+///     the path of the file to save.</p>
 async fn save_source(
+    // <p>The path to save this file to.</p>
     encoded_path: web::Path<String>,
+    // <p>The file to save plus metadata, stored in the
+    //     <code>ClientSourceFile</code></p>
     client_source_file: web::Json<ClientSourceFile>,
+    // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
+    //     source code.</p>
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
     // <p>Given the mode, find the lexer.</p>
@@ -107,10 +118,12 @@ async fn save_source(
     for cdb in &client_source_file.code_doc_block_arr {
         code_doc_block_vec.push(CodeDocBlock {
             indent: cdb.0.to_string(),
+            // <p>If no delimiter is provided, use an inline comment (if
+            //     available), then a block comment.</p>
             delimiter: match &cdb.1 {
+                // <p>The delimiter was provided. Simply use that.</p>
                 Some(v) => v.to_string(),
-                // <p>If no delimiter is provided, use an inline comment (if
-                //     available), then a block comment.</p>
+                // <p>No delimiter was provided -- fill one in.</p>
                 None => {
                     if let Some(ic) = inline_comment {
                         ic.to_string()
@@ -129,13 +142,19 @@ async fn save_source(
     }
 
     // <p>Turn this into a string.</p>
-    let mut contents = String::new();
+    let mut file_contents = String::new();
     for code_doc_block in code_doc_block_vec {
-        contents.push_str(&format!(
+        file_contents.push_str(&format!(
             "{}{}{}{}",
             code_doc_block.indent,
             code_doc_block.delimiter,
-            if code_doc_block.delimiter.is_empty() {
+            // <p>If we have a delimiter, this is a doc block. Add a space
+            //     between the delimiter and comment body, unless the comment
+            //     was a newline or we're at the end of the file.</p>
+            if code_doc_block.delimiter.is_empty()
+                || code_doc_block.contents.is_empty()
+                || code_doc_block.contents == "\n"
+            {
                 ""
             } else {
                 " "
@@ -144,13 +163,16 @@ async fn save_source(
         ));
     }
 
-    // <p>Save this string to a file</p>
+    // <p>Save this string to a file. Add a leading slash for Linux: this
+    //     changes from <code>foo/bar.c</code> to <code>/foo/bar.c</code>.
+    //     Windows already starts with a drive letter, such as
+    //     <code>C:\foo\bar.c</code>, so no changes are needed.</p>
     let save_file_path = if cfg!(windows) {
         "".to_string()
     } else {
         "/".to_string()
     } + &encoded_path;
-    match fs::write(save_file_path.to_string(), contents).await {
+    match fs::write(save_file_path.to_string(), file_contents).await {
         Ok(v) => v,
         Err(err) => {
             return save_source_response(
@@ -163,7 +185,9 @@ async fn save_source(
     save_source_response(true, "")
 }
 
-// A convenience method to fill out then return the <code>ErrorResponse</code> struct from the <code>save_source</code> endpoint.
+/// <p>A convenience method to fill out then return the
+///     <code>ErrorResponse</code> struct from the <code>save_source</code>
+///     endpoint.</p>
 fn save_source_response(success: bool, message: &str) -> HttpResponse {
     let response = ErrorResponse {
         success,
@@ -181,6 +205,7 @@ fn save_source_response(success: bool, message: &str) -> HttpResponse {
     }
 }
 
+/// <h2>Load endpoints</h2>
 /// <p>Redirect from the root of the filesystem to the actual root path on this
 ///     OS.</p>
 async fn _root_fs_redirect() -> impl Responder {
@@ -188,19 +213,15 @@ async fn _root_fs_redirect() -> impl Responder {
     //     provide some way to list drives / change drives from the HTML GUI.
     // </p>
     // <p>On Linux, redirect to the root of the filesystem.</p>
-    let redirect_location = if cfg!(windows) {
-        urlencoding::encode("C:").into_owned() + "/"
-    } else {
-        "".to_string()
-    };
+    let redirect_location = if cfg!(windows) { "C:/" } else { "" };
 
     HttpResponse::TemporaryRedirect()
-        .insert_header((header::LOCATION, "/fs/".to_string() + &redirect_location))
+        .insert_header((header::LOCATION, "/fs/".to_string() + redirect_location))
         .finish()
 }
 
-/// <p>Serve either a directory listing, with special links for CodeChat Editor
-///     files, or serve a CodeChat Editor file or a normal file.</p>
+/// <p>The load endpoint: dispatch to support functions which serve either a
+///     directory listing, a CodeChat Editor file, or a normal file.</p>
 #[get("/fs/{path:.*}")]
 async fn serve_fs(
     req: HttpRequest,
@@ -214,8 +235,8 @@ async fn serve_fs(
     if DRIVE_LETTER_REGEX.is_match(&fixed_path) {
         fixed_path += "/";
     }
-    // <p>All other cases (for example, <code>C:\a\path\to\file.txt</code>)
-    //     are OK.</p>
+    // <p>All other cases (for example, <code>C:\a\path\to\file.txt</code>) are
+    //     OK.</p>
 
     // <p>For Linux/OS X, prepend a slash, so that
     //     <code>a/path/to/file.txt</code> becomes
@@ -243,8 +264,8 @@ async fn serve_fs(
         return serve_file(&canon_path, &req, language_lexers_compiled).await;
     }
 
-    // <p>It's not a directory or a file...we give up. TODO: remove the odd
-    //     prefix.</p>
+    // <p>It's not a directory or a file...we give up. For simplicity, don't
+    //     handle symbolic links.</p>
     html_not_found(&format!(
         "<p>The requested path <code>{}</code> is not a directory or a file.</p>",
         path_display(&canon_path)
@@ -404,8 +425,8 @@ async fn serve_file(
     .read_to_string(&mut file_contents)
     .await;
     if let Err(_err) = read_ret {
-        // TODO: make a better decision, don't duplicate code.
-        // The file type is unknown. Serve it raw, assuming it's an image/video/etc.
+        // <p>TODO: make a better decision, don't duplicate code. The file type
+        //     is unknown. Serve it raw, assuming it's an image/video/etc.</p>
         match actix_files::NamedFile::open_async(file_path).await {
             Ok(v) => {
                 let res = v.into_response(req);
@@ -419,13 +440,6 @@ async fn serve_file(
                 ))
             }
         }
-        /****
-        return html_not_found(&format!(
-            "<p>Error reading file {}: {}</p>",
-            path_display(file_path),
-            err
-        ));
-        */
     }
 
     // <p>The TOC is a simplified web page requiring no additional processing.
@@ -459,14 +473,10 @@ async fn serve_file(
         ));
     }
 
-    // <p>Look for a special tag to specify the lexer.</p>
+    // <p>Determine the lexer to use for this file.</p>
     let ace_mode;
-    let lexer = if ext == "cchtml" {
-        language_lexers_compiled
-            .map_mode_to_lexer
-            .get("codechat-html")
-            .unwrap()
-    } else if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
+    // <p>First, search for a lexer directive in the file contents.</p>
+    let lexer = if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
         ace_mode = captures[1].to_string();
         match language_lexers_compiled
             .map_mode_to_lexer
@@ -483,7 +493,8 @@ async fn serve_file(
         {
             llc.first().unwrap()
         } else {
-            // The file type is unknown. Serve it raw, assuming it's an image/video/etc.
+            // <p>The file type is unknown. Serve it raw, assuming it's an
+            //     image/video/etc.</p>
             match actix_files::NamedFile::open_async(file_path).await {
                 Ok(v) => {
                     let res = v.into_response(req);
@@ -550,6 +561,7 @@ async fn serve_file(
         path_to_toc.push("../");
     }
 
+    // <p>For project files, add in the sidebar.</p>
     let (sidebar_iframe, sidebar_css) = if is_project {
         (
             format!(
@@ -562,6 +574,7 @@ async fn serve_file(
         ("".to_string(), "".to_string())
     };
 
+    // <p>Build and return the webpage.</p>
     return HttpResponse::Ok().body(format!(
         r##"<!DOCTYPE html>
 <html lang="en">
