@@ -52,6 +52,7 @@ interface ConfigAll extends Ace.Config {
 
         // <p>Modes</p>
         "ace/mode/c_cpp": () => import("ace-code/src/mode/c_cpp"),
+        "ace/mode/csharp": () => import("ace-code/src/mode/csharp"),
         "ace/mode/golang": () => import("ace-code/src/mode/golang"),
         "ace/mode/java": () => import("ace-code/src/mode/java"),
         "ace/mode/javascript": () => import("ace-code/src/mode/javascript"),
@@ -59,6 +60,7 @@ interface ConfigAll extends Ace.Config {
         "ace/mode/html": () => import("ace-code/src/mode/html"),
         "ace/mode/python": () => import("ace-code/src/mode/python"),
         "ace/mode/rust": () => import("ace-code/src/mode/rust"),
+        "ace/mode/sql": () => import("ace-code/src/mode/sql"),
         "ace/mode/toml": () => import("ace-code/src/mode/toml"),
         "ace/mode/typescript": () => import("ace-code/src/mode/typescript"),
         "ace/mode/verilog": () => import("ace-code/src/mode/verilog"),

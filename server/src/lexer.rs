@@ -116,6 +116,22 @@ struct HeredocDelim<'a> {
     stop_suffix: &'a str,
 }
 
+/// <p>Provide a method to handle special cases that don't fit within the
+///     current lexing strategy.</p>
+enum SpecialCase {
+    /// <p>There are no special cases for this language.</p>
+    None,
+    /// <p><a
+    ///         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals">Template
+    ///         literal</a> support (for languages such as JavaScript,
+    ///     TypeScript, etc.).</p>
+    TemplateLiteral,
+    // <p>C#'s verbatim string literal -- see <a
+    //         href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals">6.4.5.6
+    //         String literals</a>.</p>
+    CSharpVerbatimStringLiteral,
+}
+
 /// <p>Define a language by providing everything this lexer needs in order to
 ///     split it into code and doc blocks.</p>
 pub struct LanguageLexer<'a> {
@@ -144,11 +160,8 @@ pub struct LanguageLexer<'a> {
     /// <p>A <a href="https://en.wikipedia.org/wiki/Here_document">heredoc</a>
     ///     delimiter; <code>None</code> if heredocs aren't supported.</p>
     heredoc_delim: Option<&'a HeredocDelim<'a>>,
-    /// <p><a
-    ///         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals">Template
-    ///         literal</a> support (for languages such as JavaScript,
-    ///     TypeScript, etc.).</p>
-    template_literal: bool,
+    /// <p>Any special case treatment for this language.</p>
+    special_case: SpecialCase,
 }
 
 /// <h3>Compiled language definition</h3>
@@ -265,6 +278,13 @@ lazy_static! {
         "`"),
     ).unwrap();
 }
+
+// <p>Support C# verbatim string literals, which end with a <code>"</code>; a
+//     <code>""</code> inserts a single " in the string.</p>
+const C_SHARP_VERBATIM_STRING_CLOSING: &str =
+    // <p>Allow anything except for a lone double quote as the contents of the
+    //     string, followed by a double quote to end the string.</p>
+    r#"([^"]|"")*""#;
 
 /// <h2>Functions</h2>
 /// <p>Provide a way to turn a <code>CodeDocBlock</code> into JSON.</p>
@@ -456,18 +476,32 @@ fn build_lexer_regex<'a>(
             RegexDelimType::String(end_of_string_regex),
         );
     }
-    // <p>Template literals only exist in JavaScript. No other language (that I
-    //     know of) allows comments inside these, or nesting of template
-    //     literals.</p>
-    // <p>Build a regex for template strings.</p>
-    // <p>TODO: this is broken! Lexing nested template literals means matching
-    //     braces, yikes. For now, don't support this.</p>
-    if language_lexer.template_literal {
-        // <p>TODO: match either an unescaped <code>${</code> -- which causes a
-        //     nested parse -- or the closing backtick (which must be
-        //     unescaped).</p>
-        regex_builder(&["`"].to_vec(), RegexDelimType::TemplateLiteral);
-    }
+
+    match language_lexer.special_case {
+        SpecialCase::None => (),
+        // <p>A C# verbatim string has asymmetric opening and closing
+        //     delimiters, making it a special case.</p>
+        SpecialCase::CSharpVerbatimStringLiteral => {
+            regex_builder(
+                &["@\""].to_vec(),
+                RegexDelimType::String(Regex::new(C_SHARP_VERBATIM_STRING_CLOSING).unwrap()),
+            )
+            // <p>TODO: It's just a string literal with a special regex.</p>
+        }
+        SpecialCase::TemplateLiteral => {
+            // <p>Template literals only exist in JavaScript. No other language
+            //     (that I know of) allows comments inside these, or nesting of
+            //     template literals.</p>
+            // <p>Build a regex for template strings.</p>
+            // <p>TODO: this is broken! Lexing nested template literals means
+            //     matching braces, yikes. For now, don't support this.</p>
+            // <p>TODO: match either an unescaped <code>${</code> -- which
+            //     causes a nested parse -- or the closing backtick (which must
+            //     be unescaped).</p>
+            regex_builder(&["`"].to_vec(), RegexDelimType::TemplateLiteral);
+        }
+    };
+
     // <p>This must be last, since it includes one group (so the index of all
     //     future items will be off by 1). Build a regex for a heredoc start.
     // </p>
@@ -1073,7 +1107,7 @@ mod tests {
     #[test]
     fn test_py() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let py = &llc.map_mode_to_lexer.get("python").unwrap();
+        let py = llc.map_mode_to_lexer.get("python").unwrap();
 
         // <p>Try basic cases: make sure than newlines are processed correctly.
         // </p>
@@ -1275,7 +1309,7 @@ mod tests {
     #[test]
     fn test_js() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let js = &llc.map_mode_to_lexer.get("javascript").unwrap();
+        let js = llc.map_mode_to_lexer.get("javascript").unwrap();
 
         // <p>JavaScript tests. TODO: block comments</p>
         assert_eq!(
@@ -1318,7 +1352,7 @@ mod tests {
     #[test]
     fn test_cpp() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let cpp = &llc.map_mode_to_lexer.get("c_cpp").unwrap();
+        let cpp = llc.map_mode_to_lexer.get("c_cpp").unwrap();
 
         // <p>Try out a C++ heredoc.</p>
         assert_eq!(
@@ -1331,9 +1365,54 @@ mod tests {
     }
 
     #[test]
+    fn test_csharp() {
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+        let csharp = llc.map_mode_to_lexer.get("csharp").unwrap();
+
+        // <p>Try out a verbatim string literal with embedded double quotes.</p>
+        assert_eq!(
+            source_lexer("// Test 1\n@\"\n// Test 2\"\"\n// Test 3\"", csharp),
+            [
+                build_code_doc_block("", "//", "Test 1\n"),
+                build_code_doc_block("", "", "@\"\n// Test 2\"\"\n// Test 3\"")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_rust() {
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+        let rust = llc.map_mode_to_lexer.get("rust").unwrap();
+
+        // <p>Test Rust raw strings.</p>
+        assert_eq!(
+            source_lexer("r###\"\n// Test 1\"###\n// Test 2", rust),
+            [
+                build_code_doc_block("", "", "r###\"\n// Test 1\"###\n"),
+                build_code_doc_block("", "//", "Test 2")
+            ]
+        );
+    }
+
+    #[test]
+    fn test_sql() {
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+        let sql = llc.map_mode_to_lexer.get("sql").unwrap();
+
+        // <p>Test strings with embedded single quotes.</p>
+        assert_eq!(
+            source_lexer("-- Test 1\n'\n-- Test 2''\n-- Test 3'", sql),
+            [
+                build_code_doc_block("", "--", "Test 1\n"),
+                build_code_doc_block("", "", "'\n-- Test 2''\n-- Test 3'")
+            ]
+        );
+    }
+
+    #[test]
     fn test_toml() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let toml = &llc.map_mode_to_lexer.get("toml").unwrap();
+        let toml = llc.map_mode_to_lexer.get("toml").unwrap();
         assert_eq!(toml.language_lexer.ace_mode, "toml");
 
         // <p>Multi-line literal strings don't have escapes.</p>
@@ -1350,22 +1429,6 @@ mod tests {
             [
                 build_code_doc_block("", "", "\"\\\n"),
                 build_code_doc_block("", "#", "Test 1\"")
-            ]
-        );
-    }
-
-    #[test]
-    fn test_rust() {
-        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-        let rust = &llc.map_mode_to_lexer.get("rust").unwrap();
-        assert_eq!(rust.language_lexer.ace_mode, "rust");
-
-        // <p>Test Rust raw strings.</p>
-        assert_eq!(
-            source_lexer("r###\"\n// Test 1\"###\n// Test 2", rust),
-            [
-                build_code_doc_block("", "", "r###\"\n// Test 1\"###\n"),
-                build_code_doc_block("", "//", "Test 2")
             ]
         );
     }

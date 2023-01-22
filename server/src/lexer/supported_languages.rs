@@ -33,6 +33,7 @@ use super::BlockCommentDelim;
 use super::HeredocDelim;
 use super::LanguageLexer;
 use super::NewlineSupport;
+use super::SpecialCase;
 use super::StringDelimiterSpec;
 
 // <h2>Define lexers for each supported language</h2>
@@ -66,12 +67,46 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             stop_prefix: ")",
             stop_suffix: "\"",
         }),
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p>TODO: C# and its <a
     //         href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/builtin-types/reference-types#string-literals">String
     //         literals</a></p>
-    // <p>CSS</p>
+    // <p>C#</p>
+    LanguageLexer {
+        ace_mode: "csharp",
+        ext_arr: &["cs"],
+        // See <a href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#633-comments">6.3.3 Comments</a>. Also provide support for <a href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/documentation-comments">documentation comments</a>.
+        inline_comment_delim_arr: &["//", "///"],
+        block_comment_delim_arr: &[
+            BlockCommentDelim {
+                opening: "/*",
+                closing: "*/",
+                is_nestable: false,
+            },
+            BlockCommentDelim {
+                opening: "/**",
+                closing: "*/",
+                is_nestable: false,
+            },
+        ],
+        // See <a href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals">6.4.5.6 String literals</a>.
+        string_delim_spec_arr: &[StringDelimiterSpec {
+            delimiter: "\"",
+            escape_char: "\\",
+            newline_support: NewlineSupport::None,
+        }],
+        // Since the opening and closing delimiters of verbatim string literals are asymmetric, specify this as a heredoc, which has the flexibility to handle this case. TODO: however, it doesn't correctly handle an escaped quote (two double quotes in a row): instead, it ends the string at the first double quote, then begins a regular string literal immediately after it. This doesn't fully work, since regular string literals don't allow newlines and use a backslash to escape a double quote. TODO -- how to fix this? Offer a string type with asymmetric delimiters? See <a href="https://en.wikipedia.org/wiki/String_literal#Paired_delimiters">paired delimiters</a>, where several languages do this as well.
+        heredoc_delim: Some(&HeredocDelim {
+            start_prefix: "@",
+            delim_ident_regex: "\"",
+            start_suffix: "",
+            stop_prefix: "",
+            stop_suffix: "",
+        }),
+        special_case: SpecialCase::CSharpVerbatimStringLiteral,
+    },
+    // CSS
     LanguageLexer {
         ace_mode: "css",
         ext_arr: &["css"],
@@ -94,7 +129,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p>Go</p>
     LanguageLexer {
@@ -124,7 +159,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p>HTML</p>
     LanguageLexer {
@@ -149,7 +184,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p>Java</p>
     LanguageLexer {
@@ -191,7 +226,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p>JavaScript</p>
     LanguageLexer {
@@ -222,7 +257,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: true,
+        special_case: SpecialCase::TemplateLiteral,
     },
     // <p>JSON5</p>
     LanguageLexer {
@@ -247,7 +282,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p>Python</p>
     LanguageLexer {
@@ -282,7 +317,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p><a
     //         href="https://doc.rust-lang.org/reference/tokens.html#literals">Rust</a>
@@ -314,7 +349,30 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             stop_prefix: "\"",
             stop_suffix: "",
         }),
-        template_literal: false,
+        special_case: SpecialCase::None,
+    },
+    // SQL
+    LanguageLexer {
+        ace_mode: "sql",
+        ext_arr: &["sql"],
+        // See <a href="https://en.wikipedia.org/wiki/SQL_syntax#Comments">Wikipedia</a>. The <a href="https://en.wikipedia.org/wiki/SQL#Standardization_history">SQL specification isn't free</a>, sadly. Oracle publishes their flavor of the 2016 spec; see <a href="https://docs.oracle.com/database/121/SQLRF/sql_elements006.htm#SQLRF51099">Comments within SQL statements</a>. Postgresql defines <a href="https://www.postgresql.org/docs/15/sql-syntax-lexical.html#SQL-SYNTAX-COMMENTS">comments</a> as well.
+        inline_comment_delim_arr: &["--"],
+        block_comment_delim_arr: &[BlockCommentDelim {
+            opening: "/*",
+            closing: "*/",
+            is_nestable: false,
+        }],
+        string_delim_spec_arr: &[
+            // <p>SQL standard strings allow newlines and don't provide an escape character. To insert a single quote, double it: <code>'She''s here.'</code>, for example. From a lexer perspective, we don't need extra logic to handle this; instead, it's treated as two back-to-back strings. In this case, they would be <code>'She'</code> and <code>'s here.'</code>. While this doesn't parse the string correctly, it does correctly identify where comments can't be, which is all that the lexer needs to do.</p>
+            // <p>Unfortunately, each variant of SQL also supports their custom definition of strings; these must be handled by vendor-specific flavors of this basic lexer definition.</p>
+            StringDelimiterSpec {
+                delimiter: "'",
+                escape_char: "",
+                newline_support: NewlineSupport::Unescaped,
+            },
+        ],
+        heredoc_delim: None,
+        special_case: SpecialCase::None,
     },
     // <p><a href="https://toml.io/en/">TOML</a></p>
     LanguageLexer {
@@ -350,7 +408,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p>TypeScript</p>
     LanguageLexer {
@@ -375,7 +433,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: true,
+        special_case: SpecialCase::TemplateLiteral,
     },
     // <p>Verilog</p>
     LanguageLexer {
@@ -393,7 +451,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             newline_support: NewlineSupport::Escaped,
         }],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p><a href="https://vlang.io/">V</a></p>
     LanguageLexer {
@@ -425,7 +483,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p>YAML</p>
     LanguageLexer {
@@ -460,7 +518,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             },
         ],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
     // <p>CodeChat HTML</p>
     LanguageLexer {
@@ -470,6 +528,6 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[],
         heredoc_delim: None,
-        template_literal: false,
+        special_case: SpecialCase::None,
     },
 ];
