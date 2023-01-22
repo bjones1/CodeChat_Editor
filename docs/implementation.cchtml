@@ -44,59 +44,8 @@
         straightforward, so the inverse shouldn't be too hard.</li>
 </ul>
 <h3>Lexing</h3>
-<p>The lexer needs to be more flexible. Some challenges:</p>
-<ul>
-    <li>Some languages (C/C++/Python/etc.) support line continuation characters
-        both inside strings and outside strings. Others (Verilog) don't. Both
-        types of languages&nbsp;allow <code>\"</code> to escape a double quote.
-    </li>
-    <li>Some languages (TOML, YAML) allow escape sequences in some string types
-        but not in other string types. There is no line continuation character
-        for non-strings.
-        <ul>
-            <li>YAML:
-                <ul>
-                    <li><a
-                            href="https://yaml.org/spec/1.2.2/#double-quoted-style">Double-quoted
-                            strings</a> allow <code>\"</code> to escape a
-                        double quote. They can contain multiple lines.</li>
-                    <li><a
-                            href="https://yaml.org/spec/1.2.2/#single-quoted-style">Single
-                            quotes</a> allow <code>''</code> to escape a single
-                        quote. They can also contain multiple lines.</li>
-                    <li>Something I don't understand and will probably ignore:
-                        "Single- and double-quoted scalars are restricted to a
-                        single line when contained inside an implicit key."
-                    </li>
-                </ul>
-            </li>
-            <li><a href="https://toml.io/en/">TOML</a>
-                <ul>
-                    <li>Basic strings allow <code>\"</code> to escape a double
-                        quote. A line continuation is required to include a
-                        newline.</li>
-                    <li>Multi-line basic strings also&nbsp;allow
-                        <code>\"</code> to escape a double quote. They can
-                        contain multiple lines.</li>
-                    <li>Literal strings have no escaping and must be a single
-                        line; there's no line continuation character.</li>
-                    <li>Multi-line linter strings have no escaping, but can
-                        contain multiple lines.</li>
-                </ul>
-            </li>
-        </ul>
-    </li>
-</ul>
-<p>Conclusions:</p>
-<ul>
-    <li>Must support an optional line continuation character for non-strings.
-    </li>
-    <li>There are multiple types of string delimiters, not just two.</li>
-    <li>Each type of string delimiter has an optional escape sequence for the
-        delimiter.</li>
-    <li>Each type of string delimiter may be multi-line or single-line.
-        Single-line types have an optional line continuation character.</li>
-</ul>
+<p>TODO: describe the lexer implementation. Link to the walkthrough, discuss
+    the language specification, etc.</p>
 <h3>Client/server partitioning</h3>
 <p>Code blocks consist of standard HTML augmented with custom HTML elements
     which provide authoring support. Some of these elements depend only on
@@ -315,10 +264,27 @@
 <ol>
     <li>IDE integration</li>
     <li>Editor functionality</li>
-    <li>Project support</li>
 </ol>
 <h3><a id="next-steps"></a>Next steps</h3>
 <ol>
+    <li>Implement Markdown. Use <a
+            href="https://docs.rs/pulldown-cmark/latest/pulldown_cmark/">pulldown-cmark</a>
+        to transform Markdown to HTML. <a
+            href="https://github.com/mixmark-io/turndown">Turndown</a> has all
+        the features we want, but is written in JavaScript. <a
+            href="https://crates.io/crates/html2md">html2md</a> is written in
+        Rust, but doesn't support CommonMark or have the feature set we need.
+        Another option is to use <a href="https://pandoc.org">Pandoc</a>.</li>
+    <li>Refactor the webserver to pull out the processing step (converting
+        source code to code/doc blocks). Run this in a separate thread -- see
+        the <a
+            href="https://docs.rs/tokio/latest/tokio/#cpu-bound-tasks-and-blocking-code">Tokio
+            docs</a> on how to await a task running in another thread.</li>
+    <li>Implement caching for all anchors/headings.</li>
+    <li>Implement author support: TOC, auto-titled links.</li>
+    <li>Implement a good GUI for inserting hyperlinks.</li>
+    <li>Better support for template literals.</li>
+    <li>Decide how to handle nested block comments.</li>
     <li>Define the architecture for IDE extensions/plug-ins. Goal: minimize
         extension/plug-in complexity.</li>
     <li>Define desired UI behavior. Priority: auto-reload; dirty document
