@@ -798,11 +798,14 @@ pub fn source_lexer(
         #[cfg(feature = "lexer_explain")]
         println!("\n\n");
 
+        /*
         #[cfg(feature = "lexer_explain")]
         println!(
             "Searching the following source_code using the pattern {:?}:\n'{}'\n\nThe current code block is '{}'\n",
             language_lexer_compiled.next_token, &source_code[source_code_unlexed_index..], &source_code[current_code_block_index..source_code_unlexed_index]
         );
+        */
+        
         // <p>Look for the next special case. Per the earlier discussion, this
         //     assumes that the text immediately preceding
         //     <code>source_code</code> was plain code.</p>
@@ -838,13 +841,13 @@ pub fn source_lexer(
                 matching_group_index,
                 &source_code[current_code_block_index..source_code_unlexed_index]
             );
-            */
-
+            
             #[cfg(feature = "lexer_explain")]
             println!(
                 "Matched the string {} in group {}.\n",
                 matching_group_str, matching_group_index,
             );
+            */
 
             // <p>This helper function moves code from unlexed source code to
             //     the current code block based on the provided regex.</p>
@@ -1077,17 +1080,24 @@ pub fn source_lexer(
                     #[cfg(feature = "lexer_explain")]
                     println!("\nBlock Comment Found.");
                     
+
+                    
+
+                    // print source code
+                    #[cfg(feature = "lexer_explain")]
+                    println!("Source code received: '{}'\n", source_code);
+                    
+                    // print length of source code
+                    #[cfg(feature = "lexer_explain")]
+                    println!("Length of source code: {}\n", source_code.len());
+                    
+                    
                     // print source_code_unlexed_index
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "source_code_unlexed_index is {}",
                         source_code_unlexed_index
                     );
-                    
-
-                    // print source code
-                    #[cfg(feature = "lexer_explain")]
-                    println!("Source code received: '{}'", source_code);
 
                     // find the location of the opening delimiter
                     let opening_delimiter_index = source_code_unlexed_index;
@@ -1119,10 +1129,25 @@ pub fn source_lexer(
                     
                     // if not unclosed, set closing_delimiter_index to the index of the closing delimiter, else set it to None
                     let closing_delimiter_index = if !is_unclosed {
-                        closing_delimiter_match.unwrap().start()
+                        Some(closing_delimiter_match.unwrap().start())
                     } else {
-                        999
+                        None
                     };
+                    
+                    // print whether the block comment is unclosed. if it isn't then print the index of the closing delimiter
+                    #[cfg(feature = "lexer_explain")]
+                    if is_unclosed {
+                        println!("The block comment is unclosed.");
+                    } else {
+                        println!("The block comment is closed.");
+                        println!(
+                            "The closing delimiter is at index {}.",
+                            closing_delimiter_index.unwrap() + source_code_unlexed_index
+                        );
+                    }
+                    
+                    
+                    /*
 
                     // print whether the block comment is unclosed. if it isn't then print the index of the closing delimiter
                     #[cfg(feature = "lexer_explain")]
@@ -1135,13 +1160,51 @@ pub fn source_lexer(
                             closing_delimiter_index + source_code_unlexed_index
                         );
                     }
+                    */
 
                     // define newline regex
+                    // TODO: handle both windows and unix newlines
                     let newline_regex = Regex::new(r"\n").unwrap();
 
-                    // now find the first \n after the closing delimiter
-                    let newline_after_closing_delimiter_match =
-                        newline_regex.find(&source_code[source_code_unlexed_index..]);
+                    // if the comment is closed
+                    // find the first \n after the closing delimiter
+                    let newline_after_closing_delimiter_match = if !is_unclosed {
+                        newline_regex.find(&source_code[closing_delimiter_index.unwrap()..])
+                    } else {
+                        None
+                    };
+                    
+                    // if the comment is closed AND there is a newline after the closing delimiter
+                    // set newline_after_closing_delimiter_index to the index of the first newline after the closing delimiter
+                    // else set it to None
+                    let newline_after_closing_delimiter_index = if !is_unclosed && newline_after_closing_delimiter_match.is_some() {
+                        Some(newline_after_closing_delimiter_match.unwrap().start() + closing_delimiter_index.unwrap())
+                    } else {
+                        None
+                    };
+                    
+
+                    /*    
+                    // add this to the closing delimiter index to get the index of the first newline after the closing delimiter
+                    let newline_after_closing_delimiter_index = if newline_after_closing_delimiter_match.is_some() {
+                        newline_after_closing_delimiter_match.unwrap().start() + closing_delimiter_index
+                    } else {
+                        999
+                    };
+                    */
+                    
+                        
+                    // print position of first newline after closing delimiter
+                    #[cfg(feature = "lexer_explain")]
+                    if newline_after_closing_delimiter_match.is_some() {
+                        println!(
+                            "The first newline after the closing delimiter is at index {}.",
+                            newline_after_closing_delimiter_index.unwrap() + source_code_unlexed_index
+                            );
+                    } else {
+                        println!("There is no newline after the closing delimiter.");
+                    }
+
 
                     // if there is no newline after the closing delimiter then the block comment extends to the end of the file
                     // create a boolean to indicate this
@@ -1164,8 +1227,7 @@ pub fn source_lexer(
                         ..(if extends_to_end_of_file {
                             source_code.len()
                         } else {
-                            source_code_unlexed_index
-                                + newline_after_closing_delimiter_match.unwrap().start()
+                            newline_after_closing_delimiter_index.unwrap() + source_code_unlexed_index + 1
                         })];
 
                     // print full_comment
@@ -1292,45 +1354,7 @@ pub fn source_lexer(
                         #[cfg(feature = "lexer_explain")]
                         println!("full_comment is now '{}'", full_comment);
                         
-                        
-                        // let contents = full_comment[opening_delimiter_index + opening_delimiter.len() + 1..closing_delimiter_index].trim_start().to_owned();
-                        
-                        // let contents = full_comment[opening_delimiter_index + opening_delimiter.len()..closing_delimiter_index].trim_start().trim_start_matches(" ").to_owned();
-                        
-                        /* let mut contents = full_comment[opening_delimiter_index + opening_delimiter.len()..closing_delimiter_index].trim_start().chars().collect::<Vec<char>>();
-                        contents.drain(..1);
-                        let contents = contents.into_iter().collect::<String>();
-                        
-                        let contents = full_comment[opening_delimiter_index + opening_delimiter.len()..closing_delimiter_index]
-                        .trim_start()
-                        .trim_start_matches(|c| c == ' ')
-                        .to_owned();
-                        
-                        // remove whitespace before opening delimiter
-                        let mut content = full_comment[opening_delimiter_index..].trim_start();
-
-                        // remove opening delimiter
-                        content = content.replace(opening_delimiter, "");
-                        
-                        // remove only one space after opening delimiter
-                        content = content.trim_start();
-                        
-                        // leave all other whitespaces between the delimiters alone
-                        // leave all trailing spaces alone.
-                        let contents = content[..closing_delimiter_index-opening_delimiter_index-1].to_string();
-                        
-                        let contents = full_comment[opening_delimiter_index + opening_delimiter.len() + 1..closing_delimiter_index].trim_start_matches(&[' ', '\t', '\n', '\r'] as &[char]).trim_end();
-                        
-                        let contents = full_comment[opening_delimiter_index + opening_delimiter.len()..closing_delimiter_index].trim_start_matches(&[' ', '\t', '\n', '\r'] as &[char]).to_owned();
-                        
-                        
-                        let mut contents = full_comment[opening_delimiter_index + opening_delimiter.len()..closing_delimiter_index].trim_start_matches(&[' ', '\t', '\n', '\r'] as &[char]).to_owned();
-                        
-                        let mut contents = full_comment[opening_delimiter_index + opening_delimiter.len()..closing_delimiter_index].trim_start_matches(&[' ', '\t', '\n', '\r'] as &[char]).to_owned();
-                        
-                        let mut contents = full_comment[opening_delimiter_index + opening_delimiter.len()..].to_owned();
-                        contents = contents.trim_start().to_owned();
-                        */
+                                              
                         
                         let mut contents = full_comment[opening_delimiter_index + opening_delimiter.len() + 1..].to_owned();
                         
@@ -1360,9 +1384,7 @@ pub fn source_lexer(
                     source_code_unlexed_index = if is_unclosed {
                         source_code.len()
                     } else {
-                        source_code_unlexed_index
-                            + closing_delimiter_match.unwrap().start()
-                            + closing_delimiter.len() - 1
+                        source_code_unlexed_index + full_comment.len()
                     };
                     // print source_code_unlexed_index
                     #[cfg(feature = "lexer_explain")]
@@ -1490,13 +1512,6 @@ mod tests {
             [build_code_doc_block("", "/*", "No Whitespace Close"),]
         );
 
-
-        // No closing delimiter
-        assert_eq!(
-            source_lexer("/* No Closing Delimiter", js),
-            [build_code_doc_block("", "", "/* No Closing Delimiter"),]
-        );
-
         // newline in comment
         assert_eq!(
             source_lexer("/* Newline\nIn Comment */", js),
@@ -1519,6 +1534,13 @@ mod tests {
         assert_eq!(
             source_lexer("/* Another Important Case */\n", js),
             [build_code_doc_block("", "/*", "Another Important Case \n"),]
+        );
+        
+        
+        // No closing delimiter
+        assert_eq!(
+            source_lexer("/* No Closing Delimiter", js),
+            [build_code_doc_block("", "", "/* No Closing Delimiter"),]
         );
 
        
