@@ -207,7 +207,7 @@ async fn serve_fs(
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
     orig_path: web::Path<String>,
 ) -> impl Responder {
-    let mut fixed_path = orig_path.to_string();
+    let fixed_path = orig_path.to_string();
     #[cfg(target_os = "windows")]
     // <p>On Windows, a path of <code>drive_letter:</code> needs a
     //     <code>/</code> appended.</p>
