@@ -1021,10 +1021,6 @@ pub fn source_lexer(
                         matching_group_str, closing_regex
                     );
 
-                    // remove this
-                    // set closing delimiter to an &str
-                    let closing_delimiter = &closing_regex.to_string();
-
                     // print opening_delimiter_index
                     #[cfg(feature = "lexer_explain")]
                     println!(
@@ -1033,7 +1029,7 @@ pub fn source_lexer(
                     );
 
                     // get the index of the first closing delimiter
-                    let mut closing_delimiter_match =
+                    let closing_delimiter_match =
                         closing_regex.find(&source_code[source_code_unlexed_index..]);
 
                     // if there is no closing regex match, then the block comment is unclosed
@@ -1059,23 +1055,8 @@ pub fn source_lexer(
                         );
                     }
 
-                    /*
-
-                    // print whether the block comment is unclosed. if it isn't then print the index of the closing delimiter
-                    #[cfg(feature = "lexer_explain")]
-                    if is_unclosed {
-                        println!("The block comment is unclosed.");
-                    } else {
-                        println!("The block comment is closed.");
-                        println!(
-                            "The closing delimiter is at index {}.",
-                            closing_delimiter_index + source_code_unlexed_index
-                        );
-                    }
-                    */
-
                     // define newline regex
-                    // TODO: handle both windows and unix newlines
+                    // TODO: handle both windows and unix newlines?
                     let newline_regex = Regex::new(r"\n").unwrap();
 
                     // if the comment is closed
@@ -1098,15 +1079,6 @@ pub fn source_lexer(
                         } else {
                             None
                         };
-
-                    /*
-                    // add this to the closing delimiter index to get the index of the first newline after the closing delimiter
-                    let newline_after_closing_delimiter_index = if newline_after_closing_delimiter_match.is_some() {
-                        newline_after_closing_delimiter_match.unwrap().start() + closing_delimiter_index
-                    } else {
-                        999
-                    };
-                    */
 
                     // print position of first newline after closing delimiter
                     #[cfg(feature = "lexer_explain")]
@@ -1150,7 +1122,7 @@ pub fn source_lexer(
                     #[cfg(feature = "lexer_explain")]
                     println!("The full comment is '{}'.", full_comment);
 
-                    // Currently current_code_block contains preceding code (which might be multiple lines) until the block comment delimiter. Split this on newlines, grouping all the lines before the last line into <code>code_lines_before_comment</code> (which is all code), and everything else (from the beginning of the last line to where the block comment delimiter appears) into <code>comment_line_prefix</code>. For example, consider the fragment: a = 1\nb = 2 /* comment */. After processing, code_lines_before_comment will be "a = 1\n" and comment_line_prefix will be "b = 2 ".
+                    // Set current_code_block to contain preceding code (which might be multiple lines) until the block comment delimiter. Split this on newlines, grouping all the lines before the last line into <code>code_lines_before_comment</code> (which is all code), and everything else (from the beginning of the last line to where the block comment delimiter appears) into <code>comment_line_prefix</code>. For example, consider the fragment: a = 1\nb = 2 /* comment */. After processing, code_lines_before_comment will be "a = 1\n" and comment_line_prefix will be "b = 2 ".
 
                     let current_code_block =
                         &source_code[current_code_block_index..source_code_unlexed_index];
@@ -1242,17 +1214,7 @@ pub fn source_lexer(
 
                         let opening_delimiter = matching_group_str;
 
-                        /*
-                        let contents = full_comment[opening_delimiter.len() + 1
-                            ..full_comment.len() - closing_delimiter.len() + 1]
-                            .to_owned();
-                        */
-
-                        // let contents = full_comment[..closing_delimiter_index + closing_delimiter.len() - 1].to_owned();
-
                         let full_comment = comment_line_prefix.to_owned() + full_comment;
-
-                        // let contents = full_comment[opening_delimiter_index + opening_delimiter.len() + 1..closing_delimiter_index].to_owned();
 
                         // print full_comment
                         #[cfg(feature = "lexer_explain")]
@@ -1265,22 +1227,6 @@ pub fn source_lexer(
                         // use a regex to find the first closing delimiter in contents
                         let closing_delimiter_match = closing_regex.find(&contents);
 
-                        // remove the closing delimiter only
-                        /* /*
-                        if let Some(closing_delimiter_match) = closing_delimiter_match {
-                            contents = contents[..closing_delimiter_match.start()].to_owned();
-                        }
-                        // print closing delimiter length
-                        #[cfg(feature = "lexer_explain")]
-                        println!("closing_delimiter length is {}", closing_delimiter.len());
-
-
-                        // remove the closing delimiter but keep all whitespace after it
-                        // thus if the contents is originally "comment */" then it will be "comment "
-                        if let Some(closing_delimiter_match) = closing_delimiter_match {
-                            contents = contents[..closing_delimiter_match.start() + closing_delimiter.len() - 1].to_owned();
-                        }
-                        */
                         // replace closing_delimiter_match with ""
                         if let Some(closing_delimiter_match) = closing_delimiter_match {
                             contents = contents.replace(
@@ -1290,9 +1236,6 @@ pub fn source_lexer(
                             );
                         }
 
-                        // contents = contents.replace("*/", "");
-
-                        // contents = contents.trim_end().to_owned() + " ";
                         // push the array with append_code_doc_block
                         append_code_doc_block(indent, delimiter, &contents);
 
@@ -1320,6 +1263,7 @@ pub fn source_lexer(
                         source_code_unlexed_index
                     );
 
+                    // advance current_code_block_index to source_code_unlexed_index
                     current_code_block_index = source_code_unlexed_index;
                 }
 
