@@ -1034,7 +1034,275 @@ pub fn source_lexer(
 
                 // <h4>Block comment</h4>
                 RegexDelimType::BlockComment(closing_regex) => {
-                    panic!("Unimplemented.")
+                    #[cfg(feature = "lexer_explain")]
+                    println!("\nBlock Comment Found.");
+
+                    // print source code
+                    #[cfg(feature = "lexer_explain")]
+                    println!("Source code received: '{}'\n", source_code);
+
+                    // print length of source code
+                    #[cfg(feature = "lexer_explain")]
+                    println!("Length of source code: {}\n", source_code.len());
+
+                    // print source_code_unlexed_index
+                    #[cfg(feature = "lexer_explain")]
+                    println!("source_code_unlexed_index is {}", source_code_unlexed_index);
+
+                    // find the location of the opening delimiter
+                    let opening_delimiter_index = source_code_unlexed_index;
+
+                    // print the opening and closing delimiters
+                    #[cfg(feature = "lexer_explain")]
+                    println!(
+                        "The opening delimiter is '{}', and the closing delimiter is '{}'.",
+                        matching_group_str, closing_regex
+                    );
+
+                    // print opening_delimiter_index
+                    #[cfg(feature = "lexer_explain")]
+                    println!(
+                        "The opening delimiter is at index {}.",
+                        opening_delimiter_index
+                    );
+
+                    // get the index of the first closing delimiter
+                    let closing_delimiter_match =
+                        closing_regex.find(&source_code[source_code_unlexed_index..]);
+
+                    // if there is no closing regex match, then the block comment is unclosed
+                    // create a boolean to indicate this
+                    let is_unclosed = closing_delimiter_match.is_none();
+
+                    // if not unclosed, set closing_delimiter_index to the index of the closing delimiter, else set it to None
+                    let closing_delimiter_index = if !is_unclosed {
+                        Some(closing_delimiter_match.unwrap().start())
+                    } else {
+                        None
+                    };
+
+                    // print whether the block comment is unclosed. if it isn't then print the index of the closing delimiter
+                    #[cfg(feature = "lexer_explain")]
+                    if is_unclosed {
+                        println!("The block comment is unclosed.");
+                    } else {
+                        println!("The block comment is closed.");
+                        println!(
+                            "The closing delimiter is at index {}.",
+                            closing_delimiter_index.unwrap() + source_code_unlexed_index
+                        );
+                    }
+
+                    // define newline regex
+                    // TODO: handle both windows and unix newlines?
+                    let newline_regex = Regex::new(r"\n").unwrap();
+
+                    // if the comment is closed
+                    // find the first \n after the closing delimiter
+                    let newline_after_closing_delimiter_match = if !is_unclosed {
+                        newline_regex.find(&source_code[closing_delimiter_index.unwrap()..])
+                    } else {
+                        None
+                    };
+
+                    // if the comment is closed AND there is a newline after the closing delimiter
+                    // set newline_after_closing_delimiter_index to the index of the first newline after the closing delimiter
+                    // else set it to None
+                    let newline_after_closing_delimiter_index =
+                        if !is_unclosed && newline_after_closing_delimiter_match.is_some() {
+                            Some(
+                                newline_after_closing_delimiter_match.unwrap().start()
+                                    + closing_delimiter_index.unwrap(),
+                            )
+                        } else {
+                            None
+                        };
+
+                    // print position of first newline after closing delimiter
+                    #[cfg(feature = "lexer_explain")]
+                    if newline_after_closing_delimiter_match.is_some() {
+                        println!(
+                            "The first newline after the closing delimiter is at index {}.",
+                            newline_after_closing_delimiter_index.unwrap()
+                                + source_code_unlexed_index
+                        );
+                    } else {
+                        println!("There is no newline after the closing delimiter.");
+                    }
+
+                    // if there is no newline after the closing delimiter then the block comment extends to the end of the file
+                    // create a boolean to indicate this
+                    let extends_to_end_of_file = newline_after_closing_delimiter_match.is_none();
+
+                    // print whether the block comment extends to the end of the file
+                    #[cfg(feature = "lexer_explain")]
+                    if extends_to_end_of_file {
+                        println!("The block comment extends to the end of the file.");
+                    } else {
+                        println!("The block comment does not extend to the end of the file.");
+                    }
+
+                    // now we create full_comment
+                    // full_comment begins at the opening delimiter (and includes it)
+                    // full_comment extends to the first newline after the closing delimiter (and includes it)
+                    // if there is no newline after the closing delimiter, then full_comment extends to the end of the file
+                    // if there is no closing delimiter, then full_comment extends to the end of the file
+                    let full_comment = &source_code[opening_delimiter_index
+                        ..(if extends_to_end_of_file {
+                            source_code.len()
+                        } else {
+                            newline_after_closing_delimiter_index.unwrap()
+                                + source_code_unlexed_index
+                                + 1
+                        })];
+
+                    // print full_comment
+                    #[cfg(feature = "lexer_explain")]
+                    println!("The full comment is '{}'.", full_comment);
+
+                    // Set current_code_block to contain preceding code (which might be multiple lines) until the block comment delimiter. Split this on newlines, grouping all the lines before the last line into <code>code_lines_before_comment</code> (which is all code), and everything else (from the beginning of the last line to where the block comment delimiter appears) into <code>comment_line_prefix</code>. For example, consider the fragment: a = 1\nb = 2 /* comment */. After processing, code_lines_before_comment will be "a = 1\n" and comment_line_prefix will be "b = 2 ".
+
+                    let current_code_block =
+                        &source_code[current_code_block_index..source_code_unlexed_index];
+                    let comment_line_prefix = current_code_block.rsplit('\n').next().unwrap();
+                    let code_lines_before_comment =
+                        &current_code_block[..current_code_block.len() - comment_line_prefix.len()];
+
+                    // print current_code_block
+                    #[cfg(feature = "lexer_explain")]
+                    println!("current_code_block is '{}'", current_code_block);
+
+                    // print comment_line_prefix
+                    #[cfg(feature = "lexer_explain")]
+                    println!("comment_line_prefix is '{}'", comment_line_prefix);
+
+                    // print code_lines_before_comment
+                    #[cfg(feature = "lexer_explain")]
+                    println!(
+                        "code_lines_before_comment is '{}'",
+                        code_lines_before_comment
+                    );
+
+                    // next we have to determine if this is a doc block
+                    // criteria for doc blocks for a block comment:
+                    // 0. the block comment is closed
+                    // 1. must have whitespace after the opening delimiter
+                    // 2. must not have anything besides whitespace before the opening comment delimiter on the same line
+                    // 3. must not have anything besides whitespace after the closing comment delimiter on the same line
+
+                    // set criteria to false
+                    let mut is_doc_block = false;
+
+                    let mut criteria_0 = false;
+                    let mut criteria_1 = false;
+                    let mut criteria_2 = false;
+                    let mut criteria_3 = false;
+
+                    // if the block comment is closed, then set criteria_0 to true
+                    if !is_unclosed {
+                        criteria_0 = true;
+                    }
+
+                    // if there is whitespace after the opening delimiter, then set criteria_1 to true
+                    // this is done by checking if the first character after the opening delimiter is a space
+
+                    if full_comment[matching_group_str.len()..].starts_with(' ') {
+                        criteria_1 = true;
+                    }
+
+                    // check the opening delimiter line for criteria 2
+                    if WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix) {
+                        criteria_2 = true;
+                    }
+
+                    // check the closing delimiter line for criteria 3
+                    if let Some(closing_delimiter_match) = closing_delimiter_match {
+                        let closing_delimiter_line = &full_comment[closing_delimiter_match.end()..];
+                        if WHITESPACE_ONLY_REGEX.is_match(closing_delimiter_line) {
+                            criteria_3 = true;
+                        }
+                    }
+
+                    // if all criteria are met, then set is_doc_block to true
+                    if criteria_0 && criteria_1 && criteria_2 && criteria_3 {
+                        is_doc_block = true;
+                        // print doc block
+                        #[cfg(feature = "lexer_explain")]
+                        println!("This is a doc block.");
+                    } else {
+                        // print not doc block
+                        #[cfg(feature = "lexer_explain")]
+                        println!("This is not a doc block.");
+                    }
+
+                    if is_doc_block {
+                        // put the code_lines_before_comment into the code block
+                        append_code_doc_block("", "", code_lines_before_comment);
+
+                        // set indent to comment_line_prefix
+                        let indent = comment_line_prefix;
+
+                        // set delimiter to the opening delimiter
+                        let delimiter = matching_group_str;
+
+                        // set contents to the contents of the doc block
+                        // drop opening delimiter and the subsequent whitespace
+                        // drop closing delimiter but keep all other whitespace
+                        // so if full_comment is "/* comment */" then contents is "comment "
+
+                        let opening_delimiter = matching_group_str;
+
+                        let full_comment = comment_line_prefix.to_owned() + full_comment;
+
+                        // print full_comment
+                        #[cfg(feature = "lexer_explain")]
+                        println!("full_comment is now '{}'", full_comment);
+
+                        let mut contents = full_comment
+                            [opening_delimiter_index + opening_delimiter.len() + 1..]
+                            .to_owned();
+
+                        // use a regex to find the first closing delimiter in contents
+                        let closing_delimiter_match = closing_regex.find(&contents);
+
+                        // replace closing_delimiter_match with ""
+                        if let Some(closing_delimiter_match) = closing_delimiter_match {
+                            contents = contents.replace(
+                                &contents[closing_delimiter_match.start()
+                                    ..closing_delimiter_match.end()],
+                                "",
+                            );
+                        }
+
+                        // push the array with append_code_doc_block
+                        append_code_doc_block(indent, delimiter, &contents);
+
+                        // print the doc block
+                        #[cfg(feature = "lexer_explain")]
+                        println!("Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.", indent, delimiter, contents);
+                    } else {
+                        // add comment_line_prefix to full comment
+                        let full_comment = comment_line_prefix.to_owned() + full_comment;
+
+                        // put current_code_block into the code block
+                        append_code_doc_block("", "", &full_comment);
+                    }
+                    // advance source_code_unlexed_index to the end of the comment
+                    // if there is no closing delimiter, then the comment extends to the end of the file
+                    source_code_unlexed_index = if is_unclosed {
+                        source_code.len()
+                    } else {
+                        source_code_unlexed_index + full_comment.len()
+                    };
+                    // print source_code_unlexed_index
+                    #[cfg(feature = "lexer_explain")]
+                    println!(
+                        "source_code_unlexed_index is now {}.",
+                        source_code_unlexed_index
+                    );
+
+                    // advance current_code_block_index to source_code_unlexed_index
+                    current_code_block_index = source_code_unlexed_index;
                 }
 
                 // <h4>String-like syntax</h4>
@@ -1311,10 +1579,86 @@ mod tests {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
         let js = llc.map_mode_to_lexer.get("javascript").unwrap();
 
-        // <p>JavaScript tests. TODO: block comments</p>
+        // <p>JavaScript tests.</p>
+        // simple inline comment
         assert_eq!(
             source_lexer("// Test", js),
             [build_code_doc_block("", "//", "Test"),]
+        );
+
+        // basic test
+        assert_eq!(
+            source_lexer("/* Basic Test */", js),
+            [build_code_doc_block("", "/*", "Basic Test "),]
+        );
+
+        // no space after opening delimiter (criteria 1)
+        assert_eq!(
+            source_lexer("/*Test */", js),
+            [build_code_doc_block("", "", "/*Test */"),]
+        );
+
+        // extra spaces after opening delimiter (ok, drop 1)
+        assert_eq!(
+            source_lexer("/*   Extra Space */", js),
+            [build_code_doc_block("", "/*", "  Extra Space "),]
+        );
+
+        // code before opening delimiter (criteria 2)
+        assert_eq!(
+            source_lexer("a = 1 /* Code Before */", js),
+            [build_code_doc_block("", "", "a = 1 /* Code Before */"),]
+        );
+
+        // 4 spaces before opening delimiter (criteria 2 ok)
+        assert_eq!(
+            source_lexer("    /* Space Before */", js),
+            [build_code_doc_block("    ", "/*", "Space Before "),]
+        );
+
+        // no whitespace before closing delimiter (criteria 4 ok)
+        assert_eq!(
+            source_lexer("/* No Whitespace Close*/", js),
+            [build_code_doc_block("", "/*", "No Whitespace Close"),]
+        );
+
+        // newline in comment
+        assert_eq!(
+            source_lexer("/* Newline\nIn Comment */", js),
+            [build_code_doc_block("", "/*", "Newline\nIn Comment "),]
+        );
+
+        // 3 trailing whitespaces (criteria 3 ok)
+        assert_eq!(
+            source_lexer("/* Trailing Whitespace  */  ", js),
+            [build_code_doc_block("", "/*", "Trailing Whitespace    "),]
+        );
+
+        // code after closing delimiter (criteria 3)
+        assert_eq!(
+            source_lexer("/* Code After */ a = 1", js),
+            [build_code_doc_block("", "", "/* Code After */ a = 1"),]
+        );
+
+        // Another important case:
+        assert_eq!(
+            source_lexer("/* Another Important Case */\n", js),
+            [build_code_doc_block("", "/*", "Another Important Case \n"),]
+        );
+
+        // No closing delimiter
+        assert_eq!(
+            source_lexer("/* No Closing Delimiter", js),
+            [build_code_doc_block("", "", "/* No Closing Delimiter"),]
+        );
+
+        // Two closing delimiters
+        assert_eq!(
+            source_lexer("/* Two Closing Delimiters */ \n */", js),
+            [
+                build_code_doc_block("", "/*", "Two Closing Delimiters  \n"),
+                build_code_doc_block("", "", " */"),
+            ]
         );
 
         // <p>Some basic template literal tests. Comments inside template
