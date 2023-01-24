@@ -1079,9 +1079,7 @@ pub fn source_lexer(
                 RegexDelimType::BlockComment(closing_regex) => {
                     #[cfg(feature = "lexer_explain")]
                     println!("\nBlock Comment Found.");
-                    
-
-                    
+                                
 
                     // print source code
                     #[cfg(feature = "lexer_explain")]
@@ -1108,7 +1106,8 @@ pub fn source_lexer(
                         "The opening delimiter is '{}', and the closing delimiter is '{}'.",
                         matching_group_str, closing_regex
                     );
-
+                    
+                    // remove this
                     // set closing delimiter to an &str
                     let closing_delimiter = &closing_regex.to_string();
 
@@ -1120,7 +1119,7 @@ pub fn source_lexer(
                     );
 
                     // get the index of the first closing delimiter
-                    let closing_delimiter_match =
+                    let mut closing_delimiter_match =
                         closing_regex.find(&source_code[source_code_unlexed_index..]);
 
                     // if there is no closing regex match, then the block comment is unclosed
@@ -1354,7 +1353,36 @@ pub fn source_lexer(
                         
                         let mut contents = full_comment[opening_delimiter_index + opening_delimiter.len() + 1..].to_owned();
                         
-                        contents = contents.replace("*/", "");
+                        
+                        // use a regex to find the first closing delimiter in contents
+                        let closing_delimiter_match = closing_regex.find(&contents);
+                        
+                        // remove the closing delimiter only
+                        /* /*
+                        if let Some(closing_delimiter_match) = closing_delimiter_match {
+                            contents = contents[..closing_delimiter_match.start()].to_owned();
+                        }
+                        // print closing delimiter length
+                        #[cfg(feature = "lexer_explain")]
+                        println!("closing_delimiter length is {}", closing_delimiter.len());
+                        
+                        
+                        // remove the closing delimiter but keep all whitespace after it
+                        // thus if the contents is originally "comment */" then it will be "comment "
+                        if let Some(closing_delimiter_match) = closing_delimiter_match {
+                            contents = contents[..closing_delimiter_match.start() + closing_delimiter.len() - 1].to_owned();
+                        }
+                        */
+                        // replace closing_delimiter_match with ""
+                        if let Some(closing_delimiter_match) = closing_delimiter_match {
+                            contents = contents.replace(&contents[closing_delimiter_match.start()..closing_delimiter_match.end()], "");
+                        }
+                        
+           
+                        
+                        
+                        
+                        // contents = contents.replace("*/", "");
 
 
                         // contents = contents.trim_end().to_owned() + " ";
@@ -1537,6 +1565,13 @@ mod tests {
         assert_eq!(
             source_lexer("/* No Closing Delimiter", js),
             [build_code_doc_block("", "", "/* No Closing Delimiter"),]
+        );
+        
+        // Two closing delimiters
+        assert_eq!(
+            source_lexer("/* Two Closing Delimiters */ \n */", js),
+            [build_code_doc_block("", "/*", "Two Closing Delimiters  \n"),
+             build_code_doc_block("", "", " */"),]
         );
 
        
