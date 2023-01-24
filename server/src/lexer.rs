@@ -1235,10 +1235,6 @@ pub fn source_lexer(
                     println!("The full comment is '{}'.", full_comment);
                     
 
-                    
-
-
-
                     // Currently current_code_block contains preceding code (which might be multiple lines) until the block comment delimiter. Split this on newlines, grouping all the lines before the last line into <code>code_lines_before_comment</code> (which is all code), and everything else (from the beginning of the last line to where the block comment delimiter appears) into <code>comment_line_prefix</code>. For example, consider the fragment: a = 1\nb = 2 /* comment */. After processing, code_lines_before_comment will be "a = 1\n" and comment_line_prefix will be "b = 2 ".
 
                     let current_code_block =
