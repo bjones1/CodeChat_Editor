@@ -1033,14 +1033,13 @@ pub fn source_lexer(
                 }
 
                 // <h4>Block comment</h4>
-                RegexDelimType::BlockComment(closing_regex) => {
+                RegexDelimType::BlockComment(closing_regex) => 'block_comment: {
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "\nBlock Comment Found.\
                         Source code received: '{}'\
                         Length of source code: {}\
-                        source_code_unlexed_index is {}\
-                        ",
+                        source_code_unlexed_index is {}",
                         source_code,
                         source_code.len(),
                         source_code_unlexed_index
@@ -1057,19 +1056,32 @@ pub fn source_lexer(
                     );
 
                     // <p>get the index of the first closing delimiter</p>
-                    let closing_delimiter_match =
-                        closing_regex.find(&source_code[source_code_unlexed_index..]);
+                    let closing_delimiter_match = if let Some(index) =
+                        closing_regex.find(&source_code[source_code_unlexed_index..])
+                    {
+                        index
+                    } else {
+                        // <p>If there's no closing delimiter, this is not a doc
+                        //     block; it's a syntax error. The safe route is to
+                        //     assume the contents are code, which this program
+                        //     won't edit; it does edit comments by cleaning up
+                        //     HTML tags, word-wrapping, etc. which would be a
+                        //     disaster if this was applied to code.</p>
+                        source_code_unlexed_index = source_code.len();
+                        // <p>Exit the block comment processing code here.</p>
+                        break 'block_comment;
+                    };
 
                     // <p>if there is no closing regex match, then the block
                     //     comment is unclosed. Create a boolean to indicate
                     //     this</p>
-                    let is_unclosed = closing_delimiter_match.is_none();
+                    let is_unclosed = false;
 
                     // <p>if not unclosed, set closing_delimiter_index to the
                     //     index of the closing delimiter, else set it to None
                     // </p>
                     let closing_delimiter_index = if !is_unclosed {
-                        Some(closing_delimiter_match.unwrap().start())
+                        Some(closing_delimiter_match.start())
                     } else {
                         None
                     };
@@ -1229,11 +1241,9 @@ pub fn source_lexer(
                     }
 
                     // <p>check the closing delimiter line for criteria 3</p>
-                    if let Some(closing_delimiter_match) = closing_delimiter_match {
-                        let closing_delimiter_line = &full_comment[closing_delimiter_match.end()..];
-                        if WHITESPACE_ONLY_REGEX.is_match(closing_delimiter_line) {
-                            criteria_3 = true;
-                        }
+                    let closing_delimiter_line = &full_comment[closing_delimiter_match.end()..];
+                    if WHITESPACE_ONLY_REGEX.is_match(closing_delimiter_line) {
+                        criteria_3 = true;
                     }
 
                     // <p>if all criteria are met, then set is_doc_block to true
