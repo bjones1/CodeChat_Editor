@@ -1660,6 +1660,18 @@ mod tests {
                 build_code_doc_block("", "", " */"),
             ]
         );
+        // Stuff before a block comment.
+        assert_eq!(
+            source_lexer(
+                "foo();\
+                /* Test */\n",
+                js
+            ),
+            [
+                build_code_doc_block("", "", "foo()\n"),
+                build_code_doc_block("", "/*", "Test \n"),
+            ]
+        );
 
         // <p>Some basic template literal tests. Comments inside template
         //     literal expressions aren't parsed correctly; neither are nested
