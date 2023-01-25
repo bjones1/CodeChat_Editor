@@ -29,6 +29,7 @@ use lazy_static::lazy_static;
 use regex;
 use regex::Regex;
 use serde::ser::{Serialize, SerializeSeq, Serializer};
+//
 
 /// <h2>Data structures</h2>
 /// <h3>Language definition</h3>
@@ -1072,46 +1073,27 @@ pub fn source_lexer(
                         break 'block_comment;
                     };
 
-                    // <p>if there is no closing regex match, then the block
-                    //     comment is unclosed. Create a boolean to indicate
-                    //     this</p>
-                    let is_unclosed = false;
-
-                    // <p>if not unclosed, set closing_delimiter_index to the
-                    //     index of the closing delimiter, else set it to None
-                    // </p>
-                    let closing_delimiter_index = if !is_unclosed {
-                        Some(closing_delimiter_match.start())
-                    } else {
-                        None
-                    };
+                    // <p>set closing_delimiter_index to the index of the
+                    //     closing delimiter</p>
+                    let closing_delimiter_index = Some(closing_delimiter_match.start());
 
                     #[cfg(feature = "lexer_explain")]
-                    if is_unclosed {
-                        println!("The block comment is unclosed.");
-                    } else {
-                        println!("The block comment is closed.");
-                        println!(
-                            "The closing delimiter is at index {}.",
-                            closing_delimiter_index.unwrap() + source_code_unlexed_index
-                        );
-                    }
+                    println!(
+                        "The closing delimiter is at index {}.",
+                        closing_delimiter_index.unwrap() + source_code_unlexed_index
+                    );
 
                     // <p>if the comment is closed find the first \n after the
                     //     closing delimiter</p>
-                    let newline_after_closing_delimiter_match = if !is_unclosed {
-                        source_code[closing_delimiter_index.unwrap()..].find('\n')
-                    } else {
-                        None
-                    };
+                    let newline_after_closing_delimiter_match =
+                        source_code[closing_delimiter_index.unwrap()..].find('\n');
 
-                    // <p>if the comment is closed AND there is a newline after
-                    //     the closing delimiter set
+                    // <p>if there is a newline after the closing delimiter set
                     //     newline_after_closing_delimiter_index to the index of
                     //     the first newline after the closing delimiter else
                     //     set it to None</p>
                     let newline_after_closing_delimiter_index =
-                        if !is_unclosed && newline_after_closing_delimiter_match.is_some() {
+                        if newline_after_closing_delimiter_match.is_some() {
                             Some(
                                 newline_after_closing_delimiter_match.unwrap()
                                     + closing_delimiter_index.unwrap(),
@@ -1215,16 +1197,9 @@ pub fn source_lexer(
                     // <p>set criteria to false</p>
                     let mut is_doc_block = false;
 
-                    let mut criteria_0 = false;
                     let mut criteria_1 = false;
                     let mut criteria_2 = false;
                     let mut criteria_3 = false;
-
-                    // <p>if the block comment is closed, then set criteria_0 to
-                    //     true</p>
-                    if !is_unclosed {
-                        criteria_0 = true;
-                    }
 
                     // <p>if there is whitespace after the opening delimiter,
                     //     then set criteria_1 to true this is done by checking
@@ -1248,7 +1223,7 @@ pub fn source_lexer(
 
                     // <p>if all criteria are met, then set is_doc_block to true
                     // </p>
-                    if criteria_0 && criteria_1 && criteria_2 && criteria_3 {
+                    if criteria_1 && criteria_2 && criteria_3 {
                         is_doc_block = true;
                         // <p>print doc block</p>
                         #[cfg(feature = "lexer_explain")]
@@ -1317,11 +1292,7 @@ pub fn source_lexer(
                     // <p>advance source_code_unlexed_index to the end of the
                     //     comment if there is no closing delimiter, then the
                     //     comment extends to the end of the file</p>
-                    source_code_unlexed_index = if is_unclosed {
-                        source_code.len()
-                    } else {
-                        source_code_unlexed_index + full_comment.len()
-                    };
+                    source_code_unlexed_index = source_code_unlexed_index + full_comment.len();
                     // <p>print source_code_unlexed_index</p>
                     #[cfg(feature = "lexer_explain")]
                     println!(
