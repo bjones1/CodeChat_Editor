@@ -1037,9 +1037,9 @@ pub fn source_lexer(
                 RegexDelimType::BlockComment(closing_regex) => 'block_comment: {
                     #[cfg(feature = "lexer_explain")]
                     println!(
-                        "\nBlock Comment Found.\
-                        Source code received: '{}'\
-                        Length of source code: {}\
+                        "\nBlock Comment Found.\n
+                        Source code received: '{}'\n
+                        Length of source code: {}\n
                         source_code_unlexed_index is {}",
                         source_code,
                         source_code.len(),
@@ -1075,18 +1075,18 @@ pub fn source_lexer(
 
                     // <p>set closing_delimiter_index to the index of the
                     //     closing delimiter</p>
-                    let closing_delimiter_index = Some(closing_delimiter_match.start());
+                    let closing_delimiter_index = closing_delimiter_match.start();
 
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "The closing delimiter is at index {}.",
-                        closing_delimiter_index.unwrap() + source_code_unlexed_index
+                        closing_delimiter_index + source_code_unlexed_index
                     );
 
                     // <p>if the comment is closed find the first \n after the
                     //     closing delimiter</p>
                     let newline_after_closing_delimiter_match =
-                        source_code[closing_delimiter_index.unwrap()..].find('\n');
+                        source_code[closing_delimiter_index..].find('\n');
 
                     // <p>if there is a newline after the closing delimiter set
                     //     newline_after_closing_delimiter_index to the index of
@@ -1096,7 +1096,7 @@ pub fn source_lexer(
                         if newline_after_closing_delimiter_match.is_some() {
                             Some(
                                 newline_after_closing_delimiter_match.unwrap()
-                                    + closing_delimiter_index.unwrap(),
+                                    + closing_delimiter_index,
                             )
                         } else {
                             None
@@ -1145,9 +1145,8 @@ pub fn source_lexer(
                         ..(if extends_to_end_of_file {
                             source_code.len()
                         } else {
-                            newline_after_closing_delimiter_index.unwrap()
-                                + source_code_unlexed_index
-                                + 1
+                            newline_after_closing_delimiter_index.unwrap() + 1
+                            // + source_code_unlexed_index + 1
                         })];
 
                     // <p>print full_comment</p>
@@ -1173,9 +1172,11 @@ pub fn source_lexer(
                     let code_lines_before_comment =
                         &current_code_block[..current_code_block.len() - comment_line_prefix.len()];
 
+                    // <p>divide full comment into 3 components</p>
+                    #[cfg(feature = "lexer_explain")]
                     println!(
-                        "current_code_block is '{}'\
-                        comment_line_prefix is '{}'\
+                        "current_code_block is '{}'\n
+                        comment_line_prefix is '{}'\n
                         code_lines_before_comment is '{}'",
                         current_code_block, comment_line_prefix, code_lines_before_comment
                     );
@@ -1259,9 +1260,12 @@ pub fn source_lexer(
                         #[cfg(feature = "lexer_explain")]
                         println!("full_comment is now '{}'", full_comment);
 
-                        let mut contents = full_comment
-                            [opening_delimiter_index + opening_delimiter.len() + 1..]
-                            .to_owned();
+                        let mut contents =
+                            full_comment[indent.len() + opening_delimiter.len() + 1..].to_owned();
+
+                        // <p>print contents</p>
+                        #[cfg(feature = "lexer_explain")]
+                        println!("contents is now '{}'", contents);
 
                         // <p>use a regex to find the first closing delimiter in
                         //     contents</p>
@@ -1662,13 +1666,9 @@ mod tests {
         );
         // Stuff before a block comment.
         assert_eq!(
-            source_lexer(
-                "foo();\
-                /* Test */\n",
-                js
-            ),
+            source_lexer("foo();\n/* Test */\n", js),
             [
-                build_code_doc_block("", "", "foo()\n"),
+                build_code_doc_block("", "", "foo();\n"),
                 build_code_doc_block("", "/*", "Test \n"),
             ]
         );
