@@ -39,6 +39,10 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
 
+# <a href="https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies">Windows-only dependencies</a>.
+[target.'cfg(windows)'.dependencies]
+win_partitions = "0.3.0"
+
 [dev-dependencies]
 #clippy = "0.0.302"
 

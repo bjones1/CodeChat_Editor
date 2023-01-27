@@ -39,6 +39,8 @@ use tokio::{
     io::AsyncReadExt,
 };
 use urlencoding::{self, encode};
+#[cfg(target_os = "windows")]
+use win_partitions::win_api::get_logical_drive;
 
 // <h3>Local</h3>
 use super::lexer::compile_lexers;
@@ -90,7 +92,7 @@ lazy_static! {
 
 /// <h2>Save endpoint</h2>
 #[put("/fs/{path:.*}")]
-/// <p>The Save button in the CodeCHat Editor Client posts to this endpoint with
+/// <p>The Save button in the CodeChat Editor Client posts to this endpoint with
 ///     the path of the file to save.</p>
 async fn save_source(
     // <p>The path to save this file to.</p>
@@ -209,14 +211,8 @@ fn save_source_response(success: bool, message: &str) -> HttpResponse {
 /// <p>Redirect from the root of the filesystem to the actual root path on this
 ///     OS.</p>
 async fn _root_fs_redirect() -> impl Responder {
-    // <p>On Windows, assume the C drive as the root of the filesystem. TODO:
-    //     provide some way to list drives / change drives from the HTML GUI.
-    // </p>
-    // <p>On Linux, redirect to the root of the filesystem.</p>
-    let redirect_location = if cfg!(windows) { "C:/" } else { "" };
-
     HttpResponse::TemporaryRedirect()
-        .insert_header((header::LOCATION, "/fs/".to_string() + redirect_location))
+        .insert_header((header::LOCATION, "/fs/"))
         .finish()
 }
 
@@ -234,6 +230,10 @@ async fn serve_fs(
     //     <code>/</code> appended.</p>
     if DRIVE_LETTER_REGEX.is_match(&fixed_path) {
         fixed_path += "/";
+    } else if fixed_path.is_empty() {
+        // <p>If there's no drive letter yet, we will always use
+        //     <code>dir_listing</code> to select a drive.</p>
+        return dir_listing("", Path::new("")).await;
     }
     // <p>All other cases (for example, <code>C:\a\path\to\file.txt</code>) are
     //     OK.</p>
@@ -276,6 +276,31 @@ async fn serve_fs(
 /// <p>Create a web page listing all files and subdirectories of the provided
 ///     directory.</p>
 async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
+    // <p>Special case on Windows: list drive letters.</p>
+    if dir_path == Path::new("") {
+        // <p>List drive letters in Windows</p>
+        let mut drive_html = String::new();
+        let logical_drives = match get_logical_drive() {
+            Ok(v) => v,
+            Err(err) => return html_not_found(&format!("Unable to list drive letters: {}.", err)),
+        };
+        for drive_letter in logical_drives {
+            drive_html.push_str(&format!(
+                "<li><a href='/fs/{}:/'>{}:</a></li>\n",
+                drive_letter, drive_letter
+            ));
+        }
+
+        return HttpResponse::Ok().body(html_wrapper(&format!(
+            "<h1>Drives</h1>
+<ul>
+{}
+</ul>
+",
+            drive_html
+        )));
+    }
+
     // <p>List each file/directory with appropriate links.</p>
     let mut unwrapped_read_dir = match fs::read_dir(dir_path).await {
         Ok(p) => p,
@@ -345,8 +370,15 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         };
         let encoded_dir = encode(&dir_name);
         dir_html += &format!(
-            "<li><a href='/fs/{}/{}'>{}</a></li>\n",
-            web_path, encoded_dir, dir_name
+            "<li><a href='/fs/{}{}{}'>{}</a></li>\n",
+            web_path,
+            // <p>If this is a raw drive letter, then the path already ends with
+            //     a slash, such as <code>C:/</code>. Don't add a second slash
+            //     in this case. Otherwise, add a slash to make
+            //     <code>C:/foo</code> into <code>C:/foo/</code>.</p>
+            if web_path.ends_with("/") { "" } else { "/" },
+            encoded_dir,
+            dir_name
         );
     }
 
