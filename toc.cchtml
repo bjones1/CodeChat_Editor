@@ -15,6 +15,7 @@
     <li>Server
         <ol>
             <li><a href="server/src/main.rs">main.rs</a></li>
+            <li><a href="server/src/lib.rs">lib.rs</a></li>
             <li><a href="server/src/lexer.rs">lexer.rs</a>
                 <ol>
                     <li><a

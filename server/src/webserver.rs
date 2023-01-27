@@ -16,6 +16,8 @@
 /// </details>
 /// <h1><code>webserver.rs</code> &mdash; Serve CodeChat Editor Client webpages
 /// </h1>
+/// <p>TODO: auto-reload when the current file changes on disk. Use <a
+///         href="https://docs.rs/notify/latest/notify/">notify</a>.</p>
 /// <h2>Imports</h2>
 /// <h3>Standard library</h3>
 use std::{
