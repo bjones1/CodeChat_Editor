@@ -378,7 +378,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             //     a slash, such as <code>C:/</code>. Don't add a second slash
             //     in this case. Otherwise, add a slash to make
             //     <code>C:/foo</code> into <code>C:/foo/</code>.</p>
-            if web_path.ends_with("/") { "" } else { "/" },
+            if web_path.ends_with('/') { "" } else { "/" },
             encoded_dir,
             dir_name
         );
@@ -437,11 +437,15 @@ async fn serve_file(
         .unwrap_or_else(|| OsStr::new(""))
         .to_string_lossy();
 
-    // <p>Get the <code>mode</code> query parameter.</p>
+    // <p>Get the <code>mode</code> and <code>test</code> query parameters.</p>
     let empty_string = "".to_string();
-    let mode = match web::Query::<HashMap<String, String>>::from_query(req.query_string()) {
-        Ok(query) => query.get("mode").unwrap_or(&empty_string).clone(),
-        Err(_err) => empty_string,
+    let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
+    let (mode, is_test_mode) = match query_params {
+        Ok(query) => (
+            query.get("mode").unwrap_or(&empty_string).clone(),
+            query.get("test").is_some(),
+        ),
+        Err(_err) => (empty_string, false),
     };
 
     // <p>Read the file.</p>
@@ -481,7 +485,7 @@ async fn serve_file(
     //     just the iframe containing this page.</p>
     if mode == "toc" {
         return HttpResponse::Ok().body(format!(
-            r##"<!DOCTYPE html>
+            r#"<!DOCTYPE html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8">
@@ -502,7 +506,7 @@ async fn serve_file(
 {}
 	</body>
 </html>
-"##,
+"#,
             name, file_contents
         ));
     }
@@ -602,10 +606,21 @@ async fn serve_file(
                 r##"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"##,
                 path_to_toc.to_string_lossy()
             ),
-            r##"<link rel="stylesheet" href="/static/css/CodeChatEditorProject.css">"##.to_string(),
+            r#"<link rel="stylesheet" href="/static/css/CodeChatEditorProject.css">"#,
         )
     } else {
-        ("".to_string(), "".to_string())
+        ("".to_string(), "")
+    };
+
+    // <p>Add in content when testing.</p>
+    let testing_src = if is_test_mode {
+        r#"
+        <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
+        <script src="https://unpkg.com/mocha/mocha.js"></script>
+        <script src="/static/webpack/CodeChatEditor-test.js" type="module"></script>
+        "#
+    } else {
+        ""
     };
 
     // <p>Build and return the webpage.</p>
@@ -630,6 +645,7 @@ async fn serve_file(
 );
         </script>
         {}
+        {}
     </head>
     <body onkeydown="CodeChatEditor.on_keydown(event);">
         {}
@@ -650,7 +666,7 @@ async fn serve_file(
         </div>
     </body>
 </html>
-"##, name, lexed_source_file_string, sidebar_css, sidebar_iframe, name, dir
+"##, name, lexed_source_file_string, testing_src, sidebar_css, sidebar_iframe, name, dir
     ));
 }
 

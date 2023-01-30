@@ -63,6 +63,13 @@
                     </li>
                 </ol>
             </li>
+            <li>Tests
+                <ol>
+                    <li><a
+                            href="client/src/CodeChatEditor-test.mts">CodeChatEditor-test.mts</a>
+                    </li>
+                </ol>
+            </li>
         </ol>
     </li>
     <li>Development tools

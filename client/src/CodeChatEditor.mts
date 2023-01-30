@@ -107,6 +107,13 @@ let current_metadata: {
     mode: string;
 };
 
+// <p>Tell TypeScript about the global namespace this program defines.</p>
+declare global {
+    interface Window {
+        CodeChatEditor: any;
+    }
+}
+
 // <p>This code instantiates editors/viewers for code and doc blocks.</p>
 const make_editors = async (
     // <p>A instance of the <code>EditorMode</code> enum.</p>
@@ -222,6 +229,11 @@ const make_editors = async (
         //         docs</a> and also works.</p>
         /// @ts-ignore
         td.addEventListener("beforeinput", doc_block_indent_on_before_input);
+    }
+
+    // <p>Run any tests.</p>
+    if (typeof window.CodeChatEditor.test === "function") {
+        window.CodeChatEditor.test();
     }
 };
 
