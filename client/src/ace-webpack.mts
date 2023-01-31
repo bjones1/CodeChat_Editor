@@ -41,7 +41,7 @@ interface ConfigAll extends Ace.Config {
 
 // <p>Define a new loader which uses the esbuild dynamic import system.</p>
 (config as ConfigAll).setLoader((moduleName: string, callback: Callback) => {
-    const dynamicAceImports: { [moduleName: string]: () => Promise<void> } = {
+    const dynamicAceImports: { [moduleName: string]: () => Promise<any> } = {
         // <p>Note: all these dynamic imports rely on typing.d.ts to fix the
         //     lack of types for these files.</p>
         // <p>Themes</p>
@@ -72,7 +72,14 @@ interface ConfigAll extends Ace.Config {
         // <p>Given the promised results of an import(), invoke a callback when
         //     the promise resolves or rejects.</p>
         return dynamic_import().then(
-            (module) => callback(null, module),
+            // <p>Using <code>module.default</code> here works around bug when
+            //     esbuild's splitting is used -- it seems to pick the wrong
+            //     type of import in this case. See the <a
+            //         href="https://esbuild.github.io/content-types/#default-interop">ESBuild
+            //         docs on the default export</a>. When not using the
+            //     splitting feature, this should be just <code>module</code>.
+            // </p>
+            (module) => callback(null, module.default),
             (err) => callback(err, null)
         );
     } else {

@@ -77,8 +77,7 @@ export const tinymce_init = async (
             plugins:
                 "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
             // <p>The imports above apply the skins; don't try to dynamically
-            //     load the skin's CSS. However, this still tries to load the
-            //     default skin.</p>
+            //     load the skin's CSS.</p>
             skin: false,
         })
     );

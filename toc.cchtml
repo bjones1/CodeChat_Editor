@@ -38,7 +38,7 @@
                                     href="client/src/ace-webpack.mts">ace-webpack.mts</a>
                             </li>
                             <li><a
-                                    href="client/src/tinymce-webpack.mjs">tinymce-webpack.mjs</a>
+                                    href="client/src/tinymce-webpack.mts">tinymce-webpack.mts</a>
                             </li>
                             <li><a
                                     href="client/src/EditorComponents.mts">EditorComponents.mts</a>
