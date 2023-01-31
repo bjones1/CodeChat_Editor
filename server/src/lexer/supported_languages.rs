@@ -38,7 +38,7 @@ use super::StringDelimiterSpec;
 
 // <h2>Define lexers for each supported language</h2>
 pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
-    // <p>C/C++</p>
+    // <h3>C/C++</h3>
     LanguageLexer {
         ace_mode: "c_cpp",
         ext_arr: &["c", "cc", "cpp"],
@@ -69,7 +69,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         }),
         special_case: SpecialCase::None,
     },
-    // <p>C#</p>
+    // <h3>C#</h3>
     LanguageLexer {
         ace_mode: "csharp",
         ext_arr: &["cs"],
@@ -102,7 +102,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::CSharpVerbatimStringLiteral,
     },
-    // <p>CSS</p>
+    // <h3>CSS</h3>
     LanguageLexer {
         ace_mode: "css",
         ext_arr: &["css"],
@@ -127,7 +127,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p>Go</p>
+    // <h3>Go</h3>
     LanguageLexer {
         ace_mode: "golang",
         ext_arr: &["go"],
@@ -157,7 +157,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p>HTML</p>
+    // <h3>HTML</h3>
     LanguageLexer {
         ace_mode: "html",
         ext_arr: &["html", "htm"],
@@ -182,7 +182,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p>Java</p>
+    // <h3>Java</h3>
     LanguageLexer {
         ace_mode: "java",
         ext_arr: &["java"],
@@ -224,7 +224,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p>JavaScript</p>
+    // <h3>JavaScript</h3>
     LanguageLexer {
         ace_mode: "javascript",
         ext_arr: &["js", "mjs"],
@@ -255,7 +255,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::TemplateLiteral,
     },
-    // <p>JSON5</p>
+    // <h3>JSON5</h3>
     LanguageLexer {
         ace_mode: "json5",
         ext_arr: &["json"],
@@ -280,7 +280,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p>MATLAB</p>
+    // <h3>MATLAB</h3>
     LanguageLexer {
         ace_mode: "matlab",
         ext_arr: &["m"],
@@ -314,7 +314,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::Matlab,
     },
-    // <p>Python</p>
+    // <h3>Python</h3>
     LanguageLexer {
         ace_mode: "python",
         ext_arr: &["py"],
@@ -349,9 +349,9 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p><a
+    // <h3><a
     //         href="https://doc.rust-lang.org/reference/tokens.html#literals">Rust</a>
-    // </p>
+    // </h3>
     LanguageLexer {
         ace_mode: "rust",
         ext_arr: &["rs"],
@@ -381,7 +381,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         }),
         special_case: SpecialCase::None,
     },
-    // <p>SQL</p>
+    // <h3>SQL</h3>
     LanguageLexer {
         ace_mode: "sql",
         ext_arr: &["sql"],
@@ -423,7 +423,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p><a href="https://toml.io/en/">TOML</a></p>
+    // <h3><a href="https://toml.io/en/">TOML</a></h3>
     LanguageLexer {
         ace_mode: "toml",
         ext_arr: &["toml"],
@@ -459,7 +459,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p>TypeScript</p>
+    // <h3>TypeScript</h3>
     LanguageLexer {
         ace_mode: "typescript",
         ext_arr: &["ts", "mts"],
@@ -502,7 +502,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p><a href="https://vlang.io/">V</a></p>
+    // <h3><a href="https://vlang.io/">V</a></h3>
     LanguageLexer {
         // <p>Ace doesn't support V yet.</p>
         ace_mode: "",
@@ -534,7 +534,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p>YAML</p>
+    // <h3>YAML</h3>
     LanguageLexer {
         ace_mode: "yaml",
         ext_arr: &["yaml", "yml"],
@@ -569,7 +569,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p>CodeChat HTML</p>
+    // <h3>CodeChat HTML</h3>
     LanguageLexer {
         ace_mode: "codechat-html",
         ext_arr: &["cchtml"],
