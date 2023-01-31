@@ -3,6 +3,7 @@
     "version": "1.0.0",
     "description": "The client-side code for the CodeChat Editor",
     "homepage": "https://github.com/bjones1/CodeChat_Editor",
+    "type": "module",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
         "check-env": "node -e 'console.log(process.env)' | grep npm",

@@ -16,8 +16,7 @@
 // </details>
 // <h1><code>tinymce-webpack.ts</code> &mdash; imports the TinyMCE editor from
 //     NPM packages using webpack</h1>
-// <p>Import TinyMCE. Note: I can't get this to compile as a TypeScript file.
-//     ???</p>
+// <p>Import TinyMCE.</p>
 import tinymce, { RawEditorOptions } from "tinymce";
 export { tinymce };
 
@@ -64,11 +63,12 @@ import "tinymce/plugins/visualchars/index.js";
 /// import './plugins/powerpaste/js/wordimport';
 
 // <p>Initialize TinyMCE.</p>
-export function tinymce_init(
+export const tinymce_init = async (
     // <p>Provide editor options; don't set ``plugins`` or ``skin``, since these
     //     must be accompanied by the correct imports.</p>
-    options
-) {
+    options: RawEditorOptions
+) =>
+    /// @ts-ignore
     tinymce.init(
         Object.assign({}, options, {
             // <p>See the list of <a
@@ -82,4 +82,3 @@ export function tinymce_init(
             skin: false,
         })
     );
-}

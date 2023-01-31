@@ -67,6 +67,10 @@
                 <ol>
                     <li><a
                             href="client/src/CodeChatEditor-test.mts">CodeChatEditor-test.mts</a>
+                        <ol>
+                            <li><a href="server/src/lib.rs?test">Run tests</a>
+                            </li>
+                        </ol>
                     </li>
                 </ol>
             </li>

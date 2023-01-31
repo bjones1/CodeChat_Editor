@@ -22,8 +22,7 @@
 // <h3>JavaScript/TypeScript</h3>
 // <p>I don't know how to fix this, and don't understand why it's wrong. Perhaps
 //     because the Ace imports are really node-style requires?</p>
-/// @ts-ignore
-import { ace } from "./ace-webpack.mts";
+import { ace } from "./ace-webpack.mjs";
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 import "./graphviz-webcomponent/index.min.mjs";
@@ -90,16 +89,17 @@ const open_lp = (all_source: AllSource, editorMode: EditorMode) => {
         html = classified_source_to_html(code_doc_block_arr);
     }
 
-    /// @ts-ignore
-    document.getElementById("CodeChat-body").innerHTML = html;
-    // <p>Initialize editors for this new content. Postpone this event using a
-    //     timer, to get a faster initial paint.</p>
-    setTimeout(() => make_editors(editorMode));
+    document.getElementById("CodeChat-body")!.innerHTML = html;
+    // <p>Initialize editors for this new content. Return a promise which is
+    //     accepted when the new content is ready.</p>
+    return make_editors(editorMode);
 };
+
+export type code_or_doc_block = [string, string | null, string];
 
 type AllSource = {
     metadata: { mode: string };
-    code_doc_block_arr: [string, string | null, string][];
+    code_doc_block_arr: code_or_doc_block[];
 };
 
 // <p>Store the lexer info for the currently-loaded language.</p>
@@ -110,7 +110,7 @@ let current_metadata: {
 // <p>Tell TypeScript about the global namespace this program defines.</p>
 declare global {
     interface Window {
-        CodeChatEditor: any;
+        CodeChatEditor_test: any;
     }
 }
 
@@ -119,122 +119,139 @@ const make_editors = async (
     // <p>A instance of the <code>EditorMode</code> enum.</p>
     editorMode: EditorMode
 ) => {
-    // <p>In view mode, don't use TinyMCE, since we already have HTML. Raw mode
-    //     doesn't use TinyMCE at all, or even render doc blocks as HTML.</p>
-    if (editorMode === EditorMode.edit) {
-        // <p>Instantiate the TinyMCE editor for doc blocks. Wait until this
-        //     finishes before calling anything else, to help keep the UI
-        //     responsive. TODO: break this up to apply to each doc block,
-        //     instead of doing them all at once.</p>
-        await tinymce_init({
-            // <p>Enable the <a
-            //         href="https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck">browser-supplied
-            //         spellchecker</a>, since TinyMCE's spellchecker is a
-            //     premium feature.</p>
-            browser_spellcheck: true,
-            // <p>Put more buttons on the <a
-            //         href="https://www.tiny.cloud/docs/tinymce/6/quickbars/">quick
-            //         toolbar</a> that appears when text is selected. TODO: add
-            //     a button for code format (can't find this one -- it's only on
-            //     the <a
-            //         href="https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items">list
-            //         of menu items</a> as <code>codeformat</code>).</p>
-            quickbars_selection_toolbar:
-                "align | bold italic underline | quicklink h2 h3 blockquote",
-            // <p>Place the Tiny MCE menu bar at the top of the screen;
-            //     otherwise, it floats in front of text, sometimes obscuring
-            //     what the user wants to edit. See the <a
-            //         href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
-            // </p>
-            fixed_toolbar_container: "#CodeChat-menu",
-            inline: true,
-            // <p>When true, this still prevents hyperlinks to anchors on the
-            //     current page from working correctly. There's an onClick
-            //     handler that prevents links in the current page from working
-            //     -- need to look into this. See also <a
-            //         href="https://github.com/tinymce/tinymce/issues/3836">a
-            //         related GitHub issue</a>.</p>
-            //readonly: true,
-            relative_urls: true,
-            selector: ".CodeChat-TinyMCE",
-            // <p>This combines the <a
-            //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
-            //         TinyMCE toolbar buttons</a> with a few more from plugins.
-            //     I like the default, so this is currently disabled.</p>
-            //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
+    return new Promise((accept) => {
+        setTimeout(async () => {
+            // <p>In view mode, don't use TinyMCE, since we already have HTML.
+            //     Raw mode doesn't use TinyMCE at all, or even render doc
+            //     blocks as HTML.</p>
+            if (editorMode === EditorMode.edit) {
+                // <p>Instantiate the TinyMCE editor for doc blocks. Wait until
+                //     this finishes before calling anything else, to help keep
+                //     the UI responsive. TODO: break this up to apply to each
+                //     doc block, instead of doing them all at once.</p>
+                await tinymce_init({
+                    // <p>Enable the <a
+                    //         href="https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck">browser-supplied
+                    //         spellchecker</a>, since TinyMCE's spellchecker is
+                    //     a premium feature.</p>
+                    browser_spellcheck: true,
+                    // <p>Put more buttons on the <a
+                    //         href="https://www.tiny.cloud/docs/tinymce/6/quickbars/">quick
+                    //         toolbar</a> that appears when text is selected.
+                    //     TODO: add a button for code format (can't find this
+                    //     one -- it's only on the <a
+                    //         href="https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items">list
+                    //         of menu items</a> as <code>codeformat</code>).
+                    // </p>
+                    quickbars_selection_toolbar:
+                        "align | bold italic underline | quicklink h2 h3 blockquote",
+                    // <p>Place the Tiny MCE menu bar at the top of the screen;
+                    //     otherwise, it floats in front of text, sometimes
+                    //     obscuring what the user wants to edit. See the <a
+                    //         href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
+                    // </p>
+                    fixed_toolbar_container: "#CodeChat-menu",
+                    inline: true,
+                    // <p>When true, this still prevents hyperlinks to anchors
+                    //     on the current page from working correctly. There's
+                    //     an onClick handler that prevents links in the current
+                    //     page from working -- need to look into this. See also
+                    //     <a
+                    //         href="https://github.com/tinymce/tinymce/issues/3836">a
+                    //         related GitHub issue</a>.</p>
+                    //readonly: true,
+                    relative_urls: true,
+                    selector: ".CodeChat-TinyMCE",
+                    // <p>This combines the <a
+                    //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
+                    //         TinyMCE toolbar buttons</a> with a few more from
+                    //     plugins. I like the default, so this is currently
+                    //     disabled.</p>
+                    //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
 
-            // <p>Settings for plugins</p>
-            // <p><a
-            //         href="https://www.tiny.cloud/docs/plugins/opensource/image/">Image</a>
-            // </p>
-            image_caption: true,
-            image_advtab: true,
-            image_title: true,
-            // <p>Needed to allow custom elements.</p>
-            extended_valid_elements:
-                "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale]",
-            custom_elements:
-                "graphviz-graph,graphviz-script-editor,graphviz-combined",
+                    // <p>Settings for plugins</p>
+                    // <p><a
+                    //         href="https://www.tiny.cloud/docs/plugins/opensource/image/">Image</a>
+                    // </p>
+                    image_caption: true,
+                    image_advtab: true,
+                    image_title: true,
+                    // <p>Needed to allow custom elements.</p>
+                    extended_valid_elements:
+                        "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale]",
+                    custom_elements:
+                        "graphviz-graph,graphviz-script-editor,graphviz-combined",
+                });
+            }
+
+            // <p>The CodeChat Document Editor doesn't include ACE.</p>
+            if (ace !== undefined) {
+                // <p>Instantiate the Ace editor for code blocks.</p>
+                for (const ace_tag of document.querySelectorAll(
+                    ".CodeChat-ACE"
+                )) {
+                    // <p>Perform each init, then allow UI updates to try and
+                    //     keep the UI responsive.</p>
+                    await new Promise((accept) =>
+                        setTimeout(() => {
+                            ace.edit(ace_tag, {
+                                // <p>The leading <code>+</code> converts the
+                                //     line number from a string (since all HTML
+                                //     attributes are strings) to a number.</p>
+                                firstLineNumber: +(
+                                    ace_tag.getAttribute(
+                                        "data-CodeChat-firstLineNumber"
+                                    ) ?? 0
+                                ),
+                                // <p>This is distracting, since it highlights
+                                //     one line for each ACE editor instance on
+                                //     the screen. Better: only show this if the
+                                //     editor has focus.</p>
+                                highlightActiveLine: false,
+                                highlightGutterLine: false,
+                                maxLines: 1e10,
+                                mode: `ace/mode/${current_metadata["mode"]}`,
+                                // <p>TODO: this still allows cursor movement.
+                                //     Need something that doesn't show an edit
+                                //     cursor / can't be selected; arrow keys
+                                //     should scroll the display, not move the
+                                //     cursor around in the editor.</p>
+                                readOnly:
+                                    editorMode === EditorMode.view ||
+                                    editorMode == EditorMode.toc,
+                                showPrintMargin: false,
+                                theme: "ace/theme/textmate",
+                                wrap: true,
+                            });
+                            accept("");
+                        })
+                    );
+                }
+            }
+
+            // <p>Set up for editing the indent of doc blocks.</p>
+            for (const td of document.querySelectorAll(
+                ".CodeChat-doc-indent"
+            )) {
+                // <p>I don't know why TypeScript doesn't allow this. This
+                //     follows the <a
+                //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event">MDN
+                //         docs</a> and also works.</p>
+                /// @ts-ignore
+                td.addEventListener(
+                    "beforeinput",
+                    doc_block_indent_on_before_input
+                );
+            }
+
+            // <p>Run any tests.</p>
+            if (typeof window.CodeChatEditor_test === "function") {
+                window.CodeChatEditor_test();
+            }
+
+            accept("");
         });
-    }
-
-    // <p>The CodeChat Document Editor doesn't include ACE.</p>
-    if (ace !== undefined) {
-        // <p>Instantiate the Ace editor for code blocks.</p>
-        for (const ace_tag of document.querySelectorAll(".CodeChat-ACE")) {
-            // <p>Perform each init, then allow UI updates to try and keep the
-            //     UI responsive.</p>
-            await new Promise((accept) =>
-                setTimeout(() => {
-                    ace.edit(ace_tag, {
-                        // <p>The leading <code>+</code> converts the line
-                        //     number from a string (since all HTML attributes
-                        //     are strings) to a number.</p>
-                        firstLineNumber: +(
-                            ace_tag.getAttribute(
-                                "data-CodeChat-firstLineNumber"
-                            ) ?? 0
-                        ),
-                        // <p>This is distracting, since it highlights one line
-                        //     for each ACE editor instance on the screen.
-                        //     Better: only show this if the editor has focus.
-                        // </p>
-                        highlightActiveLine: false,
-                        highlightGutterLine: false,
-                        maxLines: 1e10,
-                        mode: `ace/mode/${current_metadata["mode"]}`,
-                        // <p>TODO: this still allows cursor movement. Need
-                        //     something that doesn't show an edit cursor /
-                        //     can't be selected; arrow keys should scroll the
-                        //     display, not move the cursor around in the
-                        //     editor.</p>
-                        readOnly:
-                            editorMode === EditorMode.view ||
-                            editorMode == EditorMode.toc,
-                        showPrintMargin: false,
-                        theme: "ace/theme/textmate",
-                        wrap: true,
-                    });
-                    accept("");
-                })
-            );
-        }
-    }
-
-    // <p>Set up for editing the indent of doc blocks.</p>
-    for (const td of document.querySelectorAll(".CodeChat-doc-indent")) {
-        // <p>I don't know why TypeScript doesn't allow this. This follows the
-        //     <a
-        //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event">MDN
-        //         docs</a> and also works.</p>
-        /// @ts-ignore
-        td.addEventListener("beforeinput", doc_block_indent_on_before_input);
-    }
-
-    // <p>Run any tests.</p>
-    if (typeof window.CodeChatEditor.test === "function") {
-        window.CodeChatEditor.test();
-    }
+    });
 };
 
 // <h2>UI</h2>
@@ -282,8 +299,7 @@ export const on_save = async () => {
 const save = async (contents: AllSource) => {
     let response;
     try {
-        /// @ts-ignore
-        response = await window.fetch(window.location, {
+        response = await window.fetch(window.location.href, {
             method: "PUT",
             headers: {
                 "Content-Type": "application/json",
@@ -430,7 +446,7 @@ const _exit_state = (
 const editor_to_code_doc_blocks = () => {
     // <p>Walk through each code and doc block, extracting its contents then
     //     placing it in <code>classified_lines</code>.</p>
-    let classified_lines: [string, string | null, string][] = [];
+    let classified_lines: code_or_doc_block[] = [];
     for (const code_or_doc_tag of document.querySelectorAll(
         ".CodeChat-ACE, .CodeChat-TinyMCE"
     )) {
@@ -480,16 +496,18 @@ const editor_to_code_doc_blocks = () => {
                     80 - indent.length - (delimiter?.length ?? 1) - 1,
             });
         } else {
-            console.assert(
-                false,
-                `Unexpected class for code or doc block ${code_or_doc_tag}.`
-            );
+            throw `Unexpected class for code or doc block ${code_or_doc_tag}.`;
         }
 
-        // <p>Split the <code>full_string</code> into individual lines; each one
-        //     corresponds to an element of <code>classified_lines</code>.</p>
-        for (const string of full_string.split("\n")) {
-            classified_lines.push([indent, delimiter, string + "\n"]);
+        // Merge this with previous classified line if indent and delimiter are the same; otherwise, add a new entry.
+        if (
+            classified_lines.length &&
+            classified_lines.at(-1)![0] === indent &&
+            classified_lines.at(-1)![1] == delimiter
+        ) {
+            classified_lines.at(-1)![2] += full_string;
+        } else {
+            classified_lines.push([indent, delimiter, full_string]);
         }
     }
 
@@ -524,3 +542,11 @@ const os_is_osx =
     navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
         ? true
         : false;
+
+// <p>A great and simple idea taken from <a
+//         href="https://stackoverflow.com/a/54116079">SO</a>.</p>
+export const exportedForTesting = {
+    editor_to_code_doc_blocks,
+    EditorMode,
+    open_lp,
+};

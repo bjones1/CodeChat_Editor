@@ -617,7 +617,6 @@ async fn serve_file(
         r#"
         <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
         <script src="https://unpkg.com/mocha/mocha.js"></script>
-        <script src="/static/webpack/CodeChatEditor-test.js" type="module"></script>
         "#
     } else {
         ""
@@ -634,7 +633,7 @@ async fn serve_file(
 
         <link rel="stylesheet" href="/static/webpack/CodeChatEditor.css">
         <script type="module">
-            import {{ page_init, on_keydown, on_save }} from "/static/webpack/CodeChatEditor.js"
+            import {{ page_init, on_keydown, on_save }} from "/static/webpack/CodeChatEditor{}.js"
             // <p>Make these accessible on the onxxx handlers below. See <a
             //         href="https://stackoverflow.com/questions/44590393/es6-modules-undefined-onclick-function-after-import">SO</a>.
             // </p>
@@ -663,10 +662,11 @@ async fn serve_file(
             </div>
             <div id="CodeChat-body"></div>
             <div id="CodeChat-bottom"></div>
+            <div id="mocha"></div>
         </div>
     </body>
 </html>
-"##, name, lexed_source_file_string, testing_src, sidebar_css, sidebar_iframe, name, dir
+"##, name, if is_test_mode { "-test" } else { "" }, lexed_source_file_string, testing_src, sidebar_css, sidebar_iframe, name, dir
     ));
 }
 

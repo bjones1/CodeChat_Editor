@@ -22,31 +22,79 @@
 // <p>I can't get Mocha to work with ESBuild, so I import it using a script tag.
 // </p>
 import chai from "chai";
+import {
+    exportedForTesting,
+    code_or_doc_block,
+    page_init,
+    on_keydown,
+    on_save,
+} from "./CodeChatEditor.mjs";
+
+// <p>Re-export everything that CodeChatEditor.mts exports. Otherwise, including
+//     CodeChatEditor.mts elsewhere would double-define everything (producing
+//     complaints about two attempts to define each web component).</p>
+export { page_init, on_keydown, on_save };
+// <p>Provide convenient access to all functions tested here.</p>
+const { editor_to_code_doc_blocks, EditorMode, open_lp } = exportedForTesting;
 
 // <h2>Tests</h2>
-window.CodeChatEditor.test = () => {
-    // <p>Put a Mocha div at the beginning of the body. Other JS replaces
-    //     everything in the body, then calls this when it's done.</p>
-    let div = document.createElement("div");
-    div.id = "mocha";
-    const ccb = document.getElementById("CodeChat-body")!;
-    ccb.insertBefore(div, ccb.firstChild);
+window.CodeChatEditor_test = () => {
+    // <p>See the <a href="https://mochajs.org/#browser-configuration">Mocha
+    //         docs</a>.</p>
+    mocha.setup({
+        ui: "tdd",
+        // <p>This is required to use Mocha's global teardown from the browser,
+        //     AFAIK.</p>
+        /// @ts-ignore
+        globalTeardown: [
+            () => {
+                // <p>On teardown, put the Mocha div at the beginning of the
+                //     body. Testing causes body to be wiped, so don't do this
+                //     until all tests are done.</p>
+                const mocha_div = document.getElementById("mocha")!;
+                const ccb = document.getElementById("CodeChat-body")!;
+                ccb.insertBefore(mocha_div, ccb.firstChild);
+            },
+        ],
+    });
 
     // <p>Define some tests. See the <a href="https://mochajs.org/#tdd">Mocha
     //         TDD docs</a> and the <a
     //         href="https://www.chaijs.com/api/assert/">Chai assert API</a>.
     // </p>
-    mocha.setup("tdd");
-    suite("Array", function () {
-        suite("#indexOf()", function () {
-            test("should return -1 when the value is not present", function () {
-                chai.assert.deepEqual(
-                    [1, 2, { three: 4 }],
-                    [1, 2, { three: 4 }]
+    suite("CodeChatEditor.mts", function () {
+        suite("open_lp", function () {
+            test("Load an empty file", async function () {
+                await open_lp(
+                    {
+                        metadata: {
+                            mode: "javascript",
+                        },
+                        code_doc_block_arr: [],
+                    },
+                    EditorMode.edit
                 );
+                // <p>In JavaScript, <code>[] != []</code> (???), so use a
+                //     length comparison instead.</p>
+                chai.assert.strictEqual(editor_to_code_doc_blocks().length, 0);
+            });
+            test("Load a code block", async function () {
+                const cdb: code_or_doc_block[] = [["", "", "a = 1;\nb = 2;\n"]];
+                await open_lp(
+                    {
+                        metadata: {
+                            mode: "javascript",
+                        },
+                        code_doc_block_arr: cdb,
+                    },
+                    EditorMode.edit
+                );
+                chai.assert.deepEqual(editor_to_code_doc_blocks(), cdb);
             });
         });
     });
 
+    // <p>Avoid an infinite loop of tests calling this again.</p>
+    delete window.CodeChatEditor_test;
     mocha.run();
 };
