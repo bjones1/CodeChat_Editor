@@ -22,6 +22,7 @@
 /// <h3>Standard library</h3>
 use std::{
     collections::HashMap,
+    env,
     ffi::OsStr,
     path::{Path, PathBuf},
 };
@@ -743,11 +744,22 @@ fn escape_html(unsafe_text: &str) -> String {
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
+        // Get the path to this executable. Assume that static files for the webserver are located relative to it.
+        let exe_path = env::current_exe().unwrap();
+        let exe_dir = exe_path.parent().unwrap();
+        let mut client_static_path = PathBuf::from(exe_dir);
+        client_static_path.push("../../../client/static");
+        client_static_path = client_static_path.canonicalize().unwrap();
+
+        // Start the server.
         App::new()
             .app_data(web::Data::new(compile_lexers(LANGUAGE_LEXER_ARR)))
             // <p>Serve static files per the <a
             //         href="https://actix.rs/docs/static-files">docs</a>.</p>
-            .service(actix_files::Files::new("/static", "../client/static"))
+            .service(actix_files::Files::new(
+                "/static",
+                client_static_path.as_os_str(),
+            ))
             // <p>This endpoint serves the filesystem.</p>
             .service(serve_fs)
             .service(save_source)
