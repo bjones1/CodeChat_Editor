@@ -304,6 +304,7 @@ async fn serve_fs(
 ///     directory.</p>
 async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     // <p>Special case on Windows: list drive letters.</p>
+    #[cfg(target_os = "windows")]
     if dir_path == Path::new("") {
         // <p>List drive letters in Windows</p>
         let mut drive_html = String::new();
