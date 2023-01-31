@@ -115,7 +115,8 @@ async fn save_source(
         None => return save_source_response(false, "Invalid mode"),
     };
 
-    // <p>Turn this back into code and doc blocks</p>
+    // <p>Turn this back into code and doc blocks by filling in any missing
+    //     comment delimiters.</p>
     let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
@@ -145,26 +146,50 @@ async fn save_source(
         });
     }
 
-    // <p>Turn this into a string.</p>
+    // <p>Turn this vec of code/doc blocks into a string of source code.</p>
     let mut file_contents = String::new();
     for code_doc_block in code_doc_block_vec {
-        file_contents.push_str(&format!(
-            "{}{}{}{}",
-            code_doc_block.indent,
-            code_doc_block.delimiter,
-            // <p>If we have a delimiter, this is a doc block. Add a space
-            //     between the delimiter and comment body, unless the comment
-            //     was a newline or we're at the end of the file.</p>
-            if code_doc_block.delimiter.is_empty()
-                || code_doc_block.contents.is_empty()
-                || code_doc_block.contents == "\n"
-            {
-                ""
+        if code_doc_block.is_doc_block() {
+            // <p>Append a code block, adding a space between the opening
+            //     delimiter and the contents when necessary.</p>
+            let mut append_code_block = |indent: &str, delimiter: &str, contents: &str| {
+                file_contents += indent;
+                file_contents += delimiter;
+                // <p>Add a space between the delimiter and comment body, unless
+                //     the comment was a newline or we're at the end of the
+                //     file.</p>
+                if contents.is_empty() || contents == "\n" {
+                    // <p>Nothing to append in this case.</p>
+                } else {
+                    // <p>Put a space between the delimiter and the contents.
+                    // </p>
+                    file_contents += " ";
+                }
+                file_contents += contents;
+            };
+
+            let is_inline_delim = lexer
+                .language_lexer
+                .inline_comment_delim_arr
+                .contains(&code_doc_block.delimiter.as_str());
+
+            // <p>Build a comment based on the type of the delimiter.</p>
+            if is_inline_delim {
+                for content_line in code_doc_block.contents.split_inclusive('\n') {
+                    append_code_block(
+                        &code_doc_block.indent,
+                        &code_doc_block.delimiter,
+                        content_line,
+                    );
+                }
             } else {
-                " "
-            },
-            code_doc_block.contents
-        ));
+                panic!("Block comments not supported.");
+            }
+        } else {
+            // <p>This is code. Simply append it (by definition, indent and
+            //     delimiter are empty).</p>
+            file_contents += &code_doc_block.contents;
+        }
     }
 
     // <p>Save this string to a file. Add a leading slash for Linux: this

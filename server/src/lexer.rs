@@ -247,6 +247,13 @@ pub struct CodeDocBlock {
     pub contents: String,
 }
 
+impl CodeDocBlock {
+    pub fn is_doc_block(self: &CodeDocBlock) -> bool {
+        // Doc blocks have a comment delimiter.
+        return !self.delimiter.is_empty();
+    }
+}
+
 // <h2>Globals</h2>
 // <p>Create constant regexes needed by the lexer, following the&nbsp;<a
 //         href="https://docs.rs/regex/1.6.0/regex/index.html#example-avoid-compiling-the-same-regex-in-a-loop">Regex

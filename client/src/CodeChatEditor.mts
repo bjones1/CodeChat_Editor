@@ -499,7 +499,11 @@ const editor_to_code_doc_blocks = () => {
             throw `Unexpected class for code or doc block ${code_or_doc_tag}.`;
         }
 
-        // Merge this with previous classified line if indent and delimiter are the same; otherwise, add a new entry.
+        // There's an implicit newline at the end of each block; restore it.
+        full_string += "\n";
+
+        // <p>Merge this with previous classified line if indent and delimiter
+        //     are the same; otherwise, add a new entry.</p>
         if (
             classified_lines.length &&
             classified_lines.at(-1)![0] === indent &&
