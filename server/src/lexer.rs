@@ -229,8 +229,6 @@ enum RegexDelimType {
         String,
     ),
     TemplateLiteral,
-    // <p>TODO: Will need more options for nested template literals. Match on
-    //     opening brace, closing brace, closing template literal, etc.</p>
 }
 
 // <p>To allow comparison for unit tests.</p>
@@ -253,8 +251,8 @@ pub struct CodeDocBlock {
 
 impl CodeDocBlock {
     pub fn is_doc_block(self: &CodeDocBlock) -> bool {
-        // Doc blocks have a comment delimiter.
-        return !self.delimiter.is_empty();
+        // <p>Doc blocks have a comment delimiter.</p>
+        !self.delimiter.is_empty()
     }
 }
 
@@ -322,10 +320,11 @@ fn build_lexer_regex<'a>(
     // <p>The "compiled" form of this language lexer.</p>
 ) -> LanguageLexerCompiled<'a> {
     // <p>Produce the overall regex from regexes which find a specific special
-    //     case. TODO: explain this and the next variable.</p>
+    //     case. See the lexer walkthrough for an example.</p>
     let mut regex_strings_arr: Vec<String> = Vec::new();
     // <p>Also create a mapping between the groups in this regex being built and
-    //     the delimiter matched by that group.</p>
+    //     the delimiter matched by that group. See docs on
+    //     <code>RegexDelimType</code>.</p>
     let mut regex_group_map: Vec<RegexDelimType> = Vec::new();
 
     // <p>Given an array of strings containing unescaped characters which
@@ -492,13 +491,10 @@ fn build_lexer_regex<'a>(
         SpecialCase::None => (),
         // <p>A C# verbatim string has asymmetric opening and closing
         //     delimiters, making it a special case.</p>
-        SpecialCase::CSharpVerbatimStringLiteral => {
-            regex_builder(
-                &["@\""].to_vec(),
-                RegexDelimType::String(Regex::new(C_SHARP_VERBATIM_STRING_CLOSING).unwrap()),
-            )
-            // <p>TODO: It's just a string literal with a special regex.</p>
-        }
+        SpecialCase::CSharpVerbatimStringLiteral => regex_builder(
+            &["@\""].to_vec(),
+            RegexDelimType::String(Regex::new(C_SHARP_VERBATIM_STRING_CLOSING).unwrap()),
+        ),
         SpecialCase::TemplateLiteral => {
             // <p>Template literals only exist in JavaScript. No other language
             //     (that I know of) allows comments inside these, or nesting of
