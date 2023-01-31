@@ -485,8 +485,7 @@ const editor_to_code_doc_blocks = () => {
             //     Fortunately, it looks like TinyMCE assigns a unique ID if
             //     one's no provided, since it only operates on an ID instead of
             //     the element itself.</p>
-            // <p>TinyMCE assigns every element an ID, so we're guaranteed that
-            //     this works.</p>
+            // <p>Ignore the missing <code>get</code> type definition.</p>
             /// @ts-ignore
             full_string = tinymce.get(code_or_doc_tag.id).getContent();
             // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters,
