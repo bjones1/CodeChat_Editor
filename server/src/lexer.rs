@@ -126,10 +126,14 @@ enum SpecialCase {
     ///         literal</a> support (for languages such as JavaScript,
     ///     TypeScript, etc.).</p>
     TemplateLiteral,
-    // <p>C#'s verbatim string literal -- see <a
-    //         href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals">6.4.5.6
-    //         String literals</a>.</p>
+    /// <p>C#'s verbatim string literal -- see <a
+    ///         href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals">6.4.5.6
+    ///         String literals</a>.</p>
     CSharpVerbatimStringLiteral,
+    /// <p>MATLAB <a
+    ///         href="https://www.mathworks.com/help/matlab/matlab_prog/comments.html">block
+    ///         comments</a> must start and end on a blank line.</p>
+    Matlab,
 }
 
 /// <p>Define a language by providing everything this lexer needs in order to
@@ -506,6 +510,44 @@ fn build_lexer_regex<'a>(
             //     causes a nested parse -- or the closing backtick (which must
             //     be unescaped).</p>
             regex_builder(&["`"].to_vec(), RegexDelimType::TemplateLiteral);
+        }
+        SpecialCase::Matlab => {
+            // <p>MATLAB supports block comments, when the comment delimiters
+            //     appear alone on the line (also preceding and following
+            //     whitespace is allowed). Therefore,</p>
+            regex_strings_arr.push(
+                // <p>Tricky: even though we match on optional leading and
+                //     trailing whitespace, we don't want the whitespace
+                //     captured by the regex. So, begin by defining the outer
+                //     group (added when <code>regex_strings_arr</code> are
+                //     combined into a single string) as a non-capturing group.
+                // </p>
+                "?:".to_string() +
+                // <p>To match on a line which consists only of leading and
+                //     trailing whitespace plus the opening comment delimiter,
+                //     put these inside a <code>(?m:exp)</code> block, so that
+                //     <code>^</code> and <code>$</code> will match on any
+                //     newline in the string; see the <a
+                //         href="https://docs.rs/regex/latest/regex/#grouping-and-flags">regex
+                //         docs</a>. This also functions as a non-capturing
+                //     group, to avoid whitespace capture as discussed earlier.
+                // </p>
+                "(?m:" +
+                    // <p>Look for whitespace before the opening comment
+                    //     delimiter.</p>
+                    r#"^\s*"# +
+                    // <p>Capture just the opening comment delimiter,</p>
+                    r#"(%\{)"# +
+                    // <p>followed by whitespace until the end of the line.</p>
+                    r#"\s*$"# +
+                // <p>End the multi-line mode and this non-capturing group.</p>
+                ")",
+            );
+            regex_group_map.push(RegexDelimType::BlockComment(
+                // <p>Use a similar strategy for finding the closing delimiter.
+                // </p>
+                Regex::new(r#"(?m:^\s*\}%\s*$)"#).unwrap(),
+            ));
         }
     };
 
@@ -1384,6 +1426,50 @@ mod tests {
                 build_code_doc_block("", "", "@\"\n// Test 2\"\"\n// Test 3\"")
             ]
         );
+    }
+
+    #[test]
+    fn test_matlab() {
+        let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+        let matlab = llc.map_mode_to_lexer.get("matlab").unwrap();
+
+        // <p>Test both inline comment styles.</p>
+        assert_eq!(
+            source_lexer(
+                r#"% Test 1
+v = ["Test 2\", ...
+ ... "Test 3", ...
+     "Test 4"];
+"#,
+                matlab
+            ),
+            [
+                build_code_doc_block("", "%", "Test 1\n"),
+                build_code_doc_block("", "", "v = [\"Test 2\\\", ...\n"),
+                build_code_doc_block(" ", "...", "\"Test 3\", ...\n"),
+                build_code_doc_block("", "", "     \"Test 4\"];\n"),
+            ]
+        );
+
+        // <p>Test block comments. TODO: enable this when block comments are
+        //     supported.</p>
+        if false {
+            assert_eq!(
+                source_lexer(
+                    "%{ Test 1
+    a = 1
+    %{
+    a = 2
+    %}
+    ",
+                    matlab
+                ),
+                [
+                    build_code_doc_block("", "", "%{ Test 1\na = 1\n"),
+                    build_code_doc_block("  ", "%{", "\na = 2\n"),
+                ]
+            );
+        }
     }
 
     #[test]

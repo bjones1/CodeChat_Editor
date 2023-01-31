@@ -284,6 +284,40 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
+    // <p>MATLAB</p>
+    LanguageLexer {
+        ace_mode: "matlab",
+        ext_arr: &["m"],
+        // <p>See the <a
+        //         href="https://www.mathworks.com/help/matlab/matlab_prog/comments.html">MATLAB
+        //         docs on comments</a>. Block comments are a special case, so
+        //     they're not included here.</p>
+        inline_comment_delim_arr: &["%", "..."],
+        block_comment_delim_arr: &[],
+        // <p>Per the <a
+        //         href="https://www.mathworks.com/help/matlab/matlab_prog/represent-text-with-character-and-string-arrays.html">MATLAB
+        //         docs</a>, there are two types of strings. Although MATLAB
+        //     supports <a
+        //         href="https://www.mathworks.com/help/matlab/matlab_prog/matlab-operators-and-special-characters.html#bvg44q6">standard
+        //         escape sequences</a> (scroll to the bottom of the page),
+        //     these don't affect quotes; instead, double quotes are used to
+        //     insert a single quote. Per the SQL discussion, double quotes can
+        //     be ignored by this lexer.</p>
+        string_delim_spec_arr: &[
+            StringDelimiterSpec {
+                delimiter: "\"",
+                escape_char: "",
+                newline_support: NewlineSupport::None,
+            },
+            StringDelimiterSpec {
+                delimiter: "'",
+                escape_char: "",
+                newline_support: NewlineSupport::None,
+            },
+        ],
+        heredoc_delim: None,
+        special_case: SpecialCase::Matlab,
+    },
     // <p>Python</p>
     LanguageLexer {
         ace_mode: "python",
