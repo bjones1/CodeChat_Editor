@@ -1,5 +1,4 @@
-/*
-<details>
+/* <details>
     <summary>License</summary>
     <p>Copyright (C) 2022 Bryan A. Jones.</p>
     <p>This file is part of the CodeChat Editor.</p>
@@ -16,9 +15,9 @@
             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
     </p>
 </details>
-<h1><code>CodeChatEditorProject.css</code> &mdash; Styles for the CodeChat Editor for projects</h1>
-*/
-
+<h1><code>CodeChatEditorProject.css</code> &mdash; Styles for the CodeChat
+    Editor for projects</h1>
+ */
 :root {
     --sidebar-width: 15rem;
 }
@@ -27,8 +26,9 @@ body {
     overflow: hidden;
 }
 
-/* TODO: This is a overly simple, non-responsive layout to create a sidebar. Fix. */
-#CodeChat-sidebar {
+/* <p>TODO: This is a overly simple, non-responsive layout to create a sidebar.
+    Fix.</p>
+ */#CodeChat-sidebar {
     width: var(--sidebar-width);
     height: calc(100vh - 2 * var(--body-padding));
     border: 0px;
