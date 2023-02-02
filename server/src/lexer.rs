@@ -1093,22 +1093,23 @@ pub fn source_lexer(
                     );
 
                     // <p>Determine the location of the beginning of this block comment's content.
-                    let full_comment_start_index =
-                        source_code_unlexed_index + matching_group_str.len();
+                    let comment_start_index = source_code_unlexed_index + matching_group_str.len();
 
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "The opening delimiter is '{}', and the closing delimiter is '{}'.\
                         The comment body begins at index {}.",
-                        matching_group_str, closing_regex, full_comment_start_index
+                        matching_group_str, closing_regex, comment_start_index
                     );
 
                     // <p>get the index of the first closing delimiter</p>
                     let closing_delimiter_match = if let Some(_match) =
-                        closing_regex.find(&source_code[full_comment_start_index..])
+                        closing_regex.find(&source_code[comment_start_index..])
                     {
                         _match
                     } else {
+                        #[cfg(feature = "lexer_explain")]
+                        println!("The closing comment delimiter wasn't found.");
                         // <p>If there's no closing delimiter, this is not a doc
                         //     block; it's a syntax error. The safe route is to
                         //     assume the contents are code, which this program
@@ -1119,18 +1120,20 @@ pub fn source_lexer(
                         // <p>Exit the block comment processing code here.</p>
                         break 'block_comment;
                     };
+                    let closing_delimiter_start_index =
+                        closing_delimiter_match.start() + comment_start_index;
+                    let closing_delimiter_end_index =
+                        closing_delimiter_match.end() + comment_start_index;
 
-                    // <p>set closing_delimiter_index to the index of the
-                    //     closing delimiter</p>
-                    let closing_delimiter_index =
-                        closing_delimiter_match.start() + full_comment_start_index;
+                    // Capture the body of the comment -- everything but the opening and closing delimiters.
+                    let comment_body =
+                        &source_code[comment_start_index..closing_delimiter_start_index];
 
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "The closing delimiter is at index {}.",
-                        closing_delimiter_index
+                        closing_delimiter_start_index
                     );
-
                     // <p>Find the first \n after the
                     //     closing delimiter</p>
                     // <p>if there is a newline after the closing delimiter set
@@ -1138,28 +1141,22 @@ pub fn source_lexer(
                     //     the first newline after the closing delimiter else
                     //     set it to the end of the file.</p>
                     let newline_or_eof_after_closing_delimiter_index =
-                        match source_code[closing_delimiter_index..].find('\n') {
+                        match source_code[closing_delimiter_end_index..].find('\n') {
                             // The + 1 includes the newline in the resulting index.
-                            Some(index) => index + closing_delimiter_index + 1,
+                            Some(index) => index + closing_delimiter_end_index + 1,
                             None => source_code.len(),
                         };
 
-                    // <p>now we create full_comment.</p>
-                    // <ul>
-                    //     <li>full_comment begins after the opening delimiter</li>
-                    //     <li>full_comment extends to the first newline after
-                    //         the closing delimiter (and includes it)</li>
-                    //     <li>if there is no newline after the closing
-                    //         delimiter, then full_comment extends to the end
-                    //         of the file</li>
-                    //
-                    // </ul>
-                    let full_comment = &source_code
-                        [full_comment_start_index..newline_or_eof_after_closing_delimiter_index];
+                    // Capture the line which begins after the closing delimiter and ends at the next newline/EOF.
+                    let post_closing_delimiter_line = &source_code
+                        [closing_delimiter_end_index..newline_or_eof_after_closing_delimiter_index];
 
                     // <p>print full_comment</p>
                     #[cfg(feature = "lexer_explain")]
-                    println!("The full comment is '{}'.", full_comment);
+                    println!(
+                        "The post-comment line is '{}'.",
+                        post_closing_delimiter_line
+                    );
 
                     // <p>Set current_code_block to contain preceding code
                     //     (which might be multiple lines) until the block
@@ -1173,7 +1170,6 @@ pub fn source_lexer(
                     //     comment */. After processing,
                     //     code_lines_before_comment will be "a = 1\n" and
                     //     comment_line_prefix will be "b = 2 ".</p>
-
                     let current_code_block =
                         &source_code[current_code_block_index..source_code_unlexed_index];
                     let comment_line_prefix = current_code_block.rsplit('\n').next().unwrap();
@@ -1204,10 +1200,9 @@ pub fn source_lexer(
                     //         the closing comment delimiter on the same line
                     //     </li>
                     // </ol>
-                    let closing_delimiter_line = &full_comment[closing_delimiter_match.end()..];
-                    if (full_comment.starts_with(' ') || full_comment.starts_with('\n'))
+                    if (comment_body.starts_with(' ') || comment_body.starts_with('\n'))
                         && WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix)
-                        && WHITESPACE_ONLY_REGEX.is_match(closing_delimiter_line)
+                        && WHITESPACE_ONLY_REGEX.is_match(post_closing_delimiter_line)
                     {
                         // <p>put the code_lines_before_comment into the code
                         //     block</p>
@@ -1219,15 +1214,8 @@ pub fn source_lexer(
                         // <p>set delimiter to the opening delimiter</p>
                         let delimiter = matching_group_str;
 
-                        // The contents of the block comment are:
-                        let contents =
-                            // from after the space/newline following the opening comment delimiter to the closing comment delimiter
-                            source_code[full_comment_start_index + 1..closing_delimiter_index]
-                            .to_string()
-                            // plus whitespace after the closing delimiter up to and including the newline.
-                            + &source_code[closing_delimiter_index
-                                + closing_delimiter_match.as_str().len()
-                                ..newline_or_eof_after_closing_delimiter_index];
+                        // The contents of the doc block are the comment body (without the leading space/newline) and any whitespace after the closing comment delimiter.
+                        let contents = comment_body[1..].to_string() + &post_closing_delimiter_line;
 
                         // <p>print contents</p>
                         #[cfg(feature = "lexer_explain")]
