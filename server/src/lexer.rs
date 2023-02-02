@@ -1092,19 +1092,20 @@ pub fn source_lexer(
                         source_code_unlexed_index
                     );
 
-                    // <p>find the location of the opening delimiter</p>
-                    let opening_delimiter_index = source_code_unlexed_index;
+                    // <p>Determine the location of the beginning of this block comment's content.
+                    let full_comment_start_index =
+                        source_code_unlexed_index + matching_group_str.len();
 
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "The opening delimiter is '{}', and the closing delimiter is '{}'.\
-                        The opening delimiter is at index {}.",
-                        matching_group_str, closing_regex, opening_delimiter_index
+                        The comment body begins at index {}.",
+                        matching_group_str, closing_regex, full_comment_start_index
                     );
 
                     // <p>get the index of the first closing delimiter</p>
                     let closing_delimiter_match = if let Some(_match) =
-                        closing_regex.find(&source_code[source_code_unlexed_index..])
+                        closing_regex.find(&source_code[full_comment_start_index..])
                     {
                         _match
                     } else {
@@ -1122,7 +1123,7 @@ pub fn source_lexer(
                     // <p>set closing_delimiter_index to the index of the
                     //     closing delimiter</p>
                     let closing_delimiter_index =
-                        closing_delimiter_match.start() + source_code_unlexed_index;
+                        closing_delimiter_match.start() + full_comment_start_index;
 
                     #[cfg(feature = "lexer_explain")]
                     println!(
@@ -1158,7 +1159,7 @@ pub fn source_lexer(
                     //
                     // </ul>
                     let full_comment = &source_code
-                        [opening_delimiter_index..newline_or_eof_after_closing_delimiter_index];
+                        [full_comment_start_index..newline_or_eof_after_closing_delimiter_index];
 
                     // <p>print full_comment</p>
                     #[cfg(feature = "lexer_explain")]
@@ -1208,8 +1209,7 @@ pub fn source_lexer(
                     //     </li>
                     // </ol>
                     let closing_delimiter_line = &full_comment[closing_delimiter_match.end()..];
-                    if (full_comment[matching_group_str.len()..].starts_with(' ')
-                        || full_comment[matching_group_str.len()..].starts_with('\n'))
+                    if (full_comment.starts_with(' ') || full_comment.starts_with('\n'))
                         && WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix)
                         && WHITESPACE_ONLY_REGEX.is_match(closing_delimiter_line)
                     {
@@ -1231,7 +1231,7 @@ pub fn source_lexer(
 
                         let opening_delimiter = matching_group_str;
 
-                        let mut contents = full_comment[opening_delimiter.len() + 1..].to_owned();
+                        let mut contents = full_comment[1..].to_owned();
 
                         // <p>print contents</p>
                         #[cfg(feature = "lexer_explain")]
