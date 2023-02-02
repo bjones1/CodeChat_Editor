@@ -629,6 +629,8 @@ pub fn compile_lexers<'a>(
 
 /// <h2>Source lexer</h2>
 /// <p>This lexer categorizes source code into code blocks or doc blocks.</p>
+/// <p>These linter warnings would IMHO make the code less readable.</p>
+#[allow(clippy::bool_to_int_with_if)]
 pub fn source_lexer(
     // <p>The source code to lex.</p>
     source_code: &str,
@@ -1217,6 +1219,16 @@ pub fn source_lexer(
                         //     block</p>
                         append_code_doc_block("", "", code_lines_before_comment);
 
+                        // <p>If there's a space at the end of the comment body,
+                        //     remove it; also remove the initial space/newline
+                        //     at the beginning of the comment body.</p>
+                        let ends_with_space = match comment_body.chars().last() {
+                            Some(last_char) => last_char == ' ',
+                            None => false,
+                        };
+                        let trimmed_comment_body = &comment_body
+                            [1..comment_body.len() - if ends_with_space { 1 } else { 0 }];
+
                         // <p>Add this doc block:</p>
                         append_code_doc_block(
                             // <p>The indent is the whitespace before the
@@ -1225,11 +1237,10 @@ pub fn source_lexer(
                             // <p>The opening comment delimiter was captured in
                             //     the initial match.</p>
                             matching_group_str,
-                            // <p>The contents of the doc block are the comment
-                            //     body (without the leading space/newline) and
-                            //     any whitespace after the closing comment
-                            //     delimiter.</p>
-                            &(comment_body[1..].to_string() + &post_closing_delimiter_line),
+                            // <p>The contents of the doc block are the trimmed
+                            //     comment body plus any whitespace after the
+                            //     closing comment delimiter.</p>
+                            &(trimmed_comment_body.to_string() + post_closing_delimiter_line),
                         );
 
                         // <p>print the doc block</p>
@@ -1531,7 +1542,7 @@ mod tests {
         // <p>basic test</p>
         assert_eq!(
             source_lexer("/* Basic Test */", js),
-            [build_code_doc_block("", "/*", "Basic Test "),]
+            [build_code_doc_block("", "/*", "Basic Test"),]
         );
 
         // <p>no space after opening delimiter (criteria 1)</p>
@@ -1540,10 +1551,16 @@ mod tests {
             [build_code_doc_block("", "", "/*Test */"),]
         );
 
+        // <p>no space after closing delimiter</p>
+        assert_eq!(
+            source_lexer("/* Test*/", js),
+            [build_code_doc_block("", "/*", "Test"),]
+        );
+
         // <p>extra spaces after opening delimiter (ok, drop 1)</p>
         assert_eq!(
             source_lexer("/*   Extra Space */", js),
-            [build_code_doc_block("", "/*", "  Extra Space "),]
+            [build_code_doc_block("", "/*", "  Extra Space"),]
         );
 
         // <p>code before opening delimiter (criteria 2)</p>
@@ -1555,25 +1572,19 @@ mod tests {
         // <p>4 spaces before opening delimiter (criteria 2 ok)</p>
         assert_eq!(
             source_lexer("    /* Space Before */", js),
-            [build_code_doc_block("    ", "/*", "Space Before "),]
-        );
-
-        // <p>no whitespace before closing delimiter (criteria 4 ok)</p>
-        assert_eq!(
-            source_lexer("/* No Whitespace Close*/", js),
-            [build_code_doc_block("", "/*", "No Whitespace Close"),]
+            [build_code_doc_block("    ", "/*", "Space Before"),]
         );
 
         // <p>newline in comment</p>
         assert_eq!(
             source_lexer("/* Newline\nIn Comment */", js),
-            [build_code_doc_block("", "/*", "Newline\nIn Comment "),]
+            [build_code_doc_block("", "/*", "Newline\nIn Comment"),]
         );
 
         // <p>3 trailing whitespaces (criteria 3 ok)</p>
         assert_eq!(
             source_lexer("/* Trailing Whitespace  */  ", js),
-            [build_code_doc_block("", "/*", "Trailing Whitespace    "),]
+            [build_code_doc_block("", "/*", "Trailing Whitespace   "),]
         );
 
         // <p>code after closing delimiter (criteria 3)</p>
@@ -1585,7 +1596,7 @@ mod tests {
         // <p>Another important case:</p>
         assert_eq!(
             source_lexer("/* Another Important Case */\n", js),
-            [build_code_doc_block("", "/*", "Another Important Case \n"),]
+            [build_code_doc_block("", "/*", "Another Important Case\n"),]
         );
 
         // <p>No closing delimiter</p>
@@ -1598,56 +1609,20 @@ mod tests {
         assert_eq!(
             source_lexer("/* Two Closing Delimiters */ \n */", js),
             [
-                build_code_doc_block("", "/*", "Two Closing Delimiters  \n"),
+                build_code_doc_block("", "/*", "Two Closing Delimiters \n"),
                 build_code_doc_block("", "", " */"),
             ]
         );
-        // <p>Bears before a block comment.</p>
+        // <p>Code before a block comment.</p>
         assert_eq!(
             source_lexer("bears();\n/* Bears */\n", js),
             [
                 build_code_doc_block("", "", "bears();\n"),
-                build_code_doc_block("", "/*", "Bears \n"),
+                build_code_doc_block("", "/*", "Bears\n"),
             ]
         );
 
-        // <p>Foo before a block comment.</p>
-        assert_eq!(
-            source_lexer("foo();\n/* Foo */\n", js),
-            [
-                build_code_doc_block("", "", "foo();\n"),
-                build_code_doc_block("", "/*", "Foo \n"),
-            ]
-        );
-
-        // <p>Food before a block comment.</p>
-        assert_eq!(
-            source_lexer("food();\n/* Food */\n", js),
-            [
-                build_code_doc_block("", "", "food();\n"),
-                build_code_doc_block("", "/*", "Food \n"),
-            ]
-        );
-
-        // <p>BearFood before a block comment.</p>
-        assert_eq!(
-            source_lexer("bear food();\n/* Bear Food */\n", js),
-            [
-                build_code_doc_block("", "", "bear food();\n"),
-                build_code_doc_block("", "/*", "Bear Food \n"),
-            ]
-        );
-
-        // <p>numbers before a block comment.</p>
-        assert_eq!(
-            source_lexer("01234\n/* 9 */\n", js),
-            [
-                build_code_doc_block("", "", "01234\n"),
-                build_code_doc_block("", "/*", "9 \n"),
-            ]
-        );
-
-        // <p>numbers before a block comment.</p>
+        // <p>A newline after the opening comment delimiter.</p>
         assert_eq!(
             source_lexer("test_1();\n/*\nTest 2\n*/", js),
             [
@@ -1742,8 +1717,7 @@ v = ["Test 2\", ...
             ]
         );
 
-        // <p>Test block comments. TODO: enable this when block comments are
-        //     supported.</p>
+        // <p>Test block comments.</p>
         assert_eq!(
             source_lexer(
                 "%{ Test 1
@@ -1756,6 +1730,8 @@ a = 2
             ),
             [
                 build_code_doc_block("", "", "%{ Test 1\na = 1\n"),
+                // <p>TODO: currently, whitespace on the line containing the
+                //     closing block delimiter isn't captured. Fix this.</p>
                 build_code_doc_block("  ", "%{", "a = 2\n"),
             ]
         );
@@ -1775,12 +1751,13 @@ a = 2
             ]
         );
 
-        // <p>Test Rust comments. TODO: test nested comments.</p>
+        // <p>Test Rust comments, which can be nested but aren't here. TODO:
+        //     test nested comments.</p>
         assert_eq!(
             source_lexer("test_1();\n/* Test 2 */\n", rust),
             [
                 build_code_doc_block("", "", "test_1();\n"),
-                build_code_doc_block("", "/*", "Test 2 \n")
+                build_code_doc_block("", "/*", "Test 2\n")
             ]
         );
     }
