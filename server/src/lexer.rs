@@ -1197,9 +1197,8 @@ pub fn source_lexer(
 
                     // <p>next we have to determine if this is a doc block
                     //     criteria for doc blocks for a block comment:</p>
-                    // <ol start="0">
-                    //     <li>the block comment is closed</li>
-                    //     <li>must have whitespace after the opening delimiter
+                    // <ol>
+                    //     <li>must have a space or newline after the opening delimiter
                     //     </li>
                     //     <li>must not have anything besides whitespace before
                     //         the opening comment delimiter on the same line
@@ -1209,7 +1208,8 @@ pub fn source_lexer(
                     //     </li>
                     // </ol>
                     let closing_delimiter_line = &full_comment[closing_delimiter_match.end()..];
-                    if full_comment[matching_group_str.len()..].starts_with(' ')
+                    if (full_comment[matching_group_str.len()..].starts_with(' ')
+                        || full_comment[matching_group_str.len()..].starts_with('\n'))
                         && WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix)
                         && WHITESPACE_ONLY_REGEX.is_match(closing_delimiter_line)
                     {
@@ -1662,6 +1662,15 @@ mod tests {
             [
                 build_code_doc_block("", "", "01234\n"),
                 build_code_doc_block("", "/*", "9 \n"),
+            ]
+        );
+
+        // <p>numbers before a block comment.</p>
+        assert_eq!(
+            source_lexer("test_1();\n/*\nTest 2\n*/", js),
+            [
+                build_code_doc_block("", "", "test_1();\n"),
+                build_code_doc_block("", "/*", "Test 2\n"),
             ]
         );
 
