@@ -1764,6 +1764,15 @@ v = ["Test 2\", ...
                 build_code_doc_block("", "//", "Test 2")
             ]
         );
+
+        // Test Rust comments. TODO: test nested comments.
+        assert_eq!(
+            source_lexer("test_1();\n/* Test 2 */\n", rust),
+            [
+                build_code_doc_block("", "", "test_1();\n"),
+                build_code_doc_block("", "/*", "Test 2 \n")
+            ]
+        );
     }
 
     #[test]
