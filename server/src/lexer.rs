@@ -510,8 +510,10 @@ fn build_lexer_regex<'a>(
         SpecialCase::Matlab => {
             // <p>MATLAB supports block comments, when the comment delimiters
             //     appear alone on the line (also preceding and following
-            //     whitespace is allowed). Therefore,</p>
-            regex_strings_arr.push(
+            //     whitespace is allowed). Therefore, we need a regex that matches this required whitespace.</p>
+            // <p>Also, this match needs to go before the inline comment of <code>%</code>, to prevent that from matching before this does. Hence, use an <code>insert</code> instead of a <code>push</code>.
+            regex_strings_arr.insert(
+                0,
                 // <p>Tricky: even though we match on optional leading and
                 //     trailing whitespace, we don't want the whitespace
                 //     captured by the regex. So, begin by defining the outer
@@ -539,11 +541,14 @@ fn build_lexer_regex<'a>(
                 // <p>End the multi-line mode and this non-capturing group.</p>
                 ")",
             );
-            regex_group_map.push(RegexDelimType::BlockComment(
-                // <p>Use a similar strategy for finding the closing delimiter.
-                // </p>
-                Regex::new(r#"(?m:^\s*\}%\s*$)"#).unwrap(),
-            ));
+            regex_group_map.insert(
+                0,
+                RegexDelimType::BlockComment(
+                    // <p>Use a similar strategy for finding the closing delimiter.
+                    // </p>
+                    Regex::new(r#"(?m:^\s*%\}\s*$)"#).unwrap(),
+                ),
+            );
         }
     };
 
@@ -889,13 +894,6 @@ pub fn source_lexer(
             .next_token
             .captures(&source_code[source_code_unlexed_index..])
         {
-            // <p>Move everything preceding this match from
-            //     <code>source_code</code> to the current code block, since per
-            //     the assumptions this is code. Match group 0 refers to the
-            //     entire match; the start of that group is a simple way to ask
-            //     for the start index of the overall match.</p>
-            source_code_unlexed_index += classify_match.get(0).unwrap().start();
-
             // <p>Find the first group in the regex that matched.</p>
             let matching_group_index = classify_match
                 .iter()
@@ -908,6 +906,11 @@ pub fn source_lexer(
                 //     0.</p>
                 + 1;
             let matching_group_str = &classify_match[matching_group_index];
+
+            // <p>Move everything preceding this match from
+            //     <code>source_code</code> to the current code block, since per
+            //     the assumptions this is code.</p>
+            source_code_unlexed_index += classify_match.get(matching_group_index).unwrap().start();
 
             #[cfg(feature = "lexer_explain")]
             println!(
@@ -1082,24 +1085,15 @@ pub fn source_lexer(
                 // <h4>Block comment</h4>
                 RegexDelimType::BlockComment(closing_regex) => 'block_comment: {
                     #[cfg(feature = "lexer_explain")]
-                    println!(
-                        "\nBlock Comment Found.\n
-                        Source code received: '{}'\n
-                        Length of source code: {}\n
-                        source_code_unlexed_index is {}",
-                        source_code,
-                        source_code.len(),
-                        source_code_unlexed_index
-                    );
+                    println!("Block Comment Found.");
 
                     // <p>Determine the location of the beginning of this block comment's content.
                     let comment_start_index = source_code_unlexed_index + matching_group_str.len();
 
                     #[cfg(feature = "lexer_explain")]
                     println!(
-                        "The opening delimiter is '{}', and the closing delimiter is '{}'.\
-                        The comment body begins at index {}.",
-                        matching_group_str, closing_regex, comment_start_index
+                        "The opening delimiter is '{}', and the closing delimiter regex is '{}'.",
+                        matching_group_str, closing_regex
                     );
 
                     // <p>get the index of the first closing delimiter</p>
@@ -1131,8 +1125,11 @@ pub fn source_lexer(
 
                     #[cfg(feature = "lexer_explain")]
                     println!(
-                        "The closing delimiter is at index {}.",
-                        closing_delimiter_start_index
+                        "The comment body is\n\
+                        '{}'.\n\
+                        The closing delimiter is '{}'.",
+                        comment_body,
+                        closing_delimiter_match.as_str()
                     );
                     // <p>Find the first \n after the
                     //     closing delimiter</p>
@@ -1182,8 +1179,8 @@ pub fn source_lexer(
                     // <p>divide full comment into 3 components</p>
                     #[cfg(feature = "lexer_explain")]
                     println!(
-                        "current_code_block is '{}'\n
-                        comment_line_prefix is '{}'\n
+                        "current_code_block is '{}'\n\
+                        comment_line_prefix is '{}'\n\
                         code_lines_before_comment is '{}'",
                         current_code_block, comment_line_prefix, code_lines_before_comment
                     );
@@ -1732,23 +1729,21 @@ v = ["Test 2\", ...
 
         // <p>Test block comments. TODO: enable this when block comments are
         //     supported.</p>
-        if false {
-            assert_eq!(
-                source_lexer(
-                    "%{ Test 1
-    a = 1
-    %{
-    a = 2
-    %}
-    ",
-                    matlab
-                ),
-                [
-                    build_code_doc_block("", "", "%{ Test 1\na = 1\n"),
-                    build_code_doc_block("  ", "%{", "\na = 2\n"),
-                ]
-            );
-        }
+        assert_eq!(
+            source_lexer(
+                "%{ Test 1
+a = 1
+  %{
+a = 2
+  %}
+",
+                matlab
+            ),
+            [
+                build_code_doc_block("", "", "%{ Test 1\na = 1\n"),
+                build_code_doc_block("  ", "%{", "a = 2\n"),
+            ]
+        );
     }
 
     #[test]
