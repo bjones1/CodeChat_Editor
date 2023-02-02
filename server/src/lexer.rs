@@ -200,9 +200,9 @@ pub struct LanguageLexersCompiled<'a> {
 ////  Map       InlineComment   BlockComment   String(double-quote)   String(single-quote)   TemplateLiteral
 /// <p>The Regex in the table is stored in <code>next_token</code>, which is
 ///     used to search for the next token. The group is both the group number of
-///     the regex (in other words, a match of&nbsp;<code>//</code> is group 1 of
-///     the regex) and the index into <code>map</code> (after subtracting 1, so
-///     that group 1 is stored in <code>map[0]</code>). Map is <code>map</code>,
+///     the regex (in other words, a match of <code>//</code> is group 1 of the
+///     regex) and the index into <code>map</code> (after subtracting 1, so that
+///     group 1 is stored in <code>map[0]</code>). Map is <code>map</code>,
 ///     which labels each group with a <code>RegexDelimType</code>. The lexer
 ///     uses this to decide how to handle the token it just found -- as a inline
 ///     comment, block comment, etc. Note: this is a slightly simplified regex;
@@ -257,7 +257,7 @@ impl CodeDocBlock {
 }
 
 // <h2>Globals</h2>
-// <p>Create constant regexes needed by the lexer, following the&nbsp;<a
+// <p>Create constant regexes needed by the lexer, following the <a
 //         href="https://docs.rs/regex/1.6.0/regex/index.html#example-avoid-compiling-the-same-regex-in-a-loop">Regex
 //         docs recommendation</a>.</p>
 lazy_static! {
@@ -510,8 +510,12 @@ fn build_lexer_regex<'a>(
         SpecialCase::Matlab => {
             // <p>MATLAB supports block comments, when the comment delimiters
             //     appear alone on the line (also preceding and following
-            //     whitespace is allowed). Therefore, we need a regex that matches this required whitespace.</p>
-            // <p>Also, this match needs to go before the inline comment of <code>%</code>, to prevent that from matching before this does. Hence, use an <code>insert</code> instead of a <code>push</code>.
+            //     whitespace is allowed). Therefore, we need a regex that
+            //     matches this required whitespace.</p>
+            // <p>Also, this match needs to go before the inline comment of
+            //     <code>%</code>, to prevent that from matching before this
+            //     does. Hence, use an <code>insert</code> instead of a
+            //     <code>push</code>.</p>
             regex_strings_arr.insert(
                 0,
                 // <p>Tricky: even though we match on optional leading and
@@ -544,8 +548,8 @@ fn build_lexer_regex<'a>(
             regex_group_map.insert(
                 0,
                 RegexDelimType::BlockComment(
-                    // <p>Use a similar strategy for finding the closing delimiter.
-                    // </p>
+                    // <p>Use a similar strategy for finding the closing
+                    //     delimiter.</p>
                     Regex::new(r#"(?m:^\s*%\}\s*$)"#).unwrap(),
                 ),
             );
@@ -1087,7 +1091,8 @@ pub fn source_lexer(
                     #[cfg(feature = "lexer_explain")]
                     println!("Block Comment Found.");
 
-                    // <p>Determine the location of the beginning of this block comment's content.
+                    // <p>Determine the location of the beginning of this block
+                    //     comment's content.</p>
                     let comment_start_index = source_code_unlexed_index + matching_group_str.len();
 
                     #[cfg(feature = "lexer_explain")]
@@ -1096,7 +1101,9 @@ pub fn source_lexer(
                         matching_group_str, closing_regex
                     );
 
-                    // <p>get the index of the first closing delimiter</p>
+                    // <p>get the index of the closing delimiter. TODO: for
+                    //     nested block comments, look for a group match then
+                    //     count nesting depth.</p>
                     let closing_delimiter_match = if let Some(_match) =
                         closing_regex.find(&source_code[comment_start_index..])
                     {
@@ -1119,7 +1126,8 @@ pub fn source_lexer(
                     let closing_delimiter_end_index =
                         closing_delimiter_match.end() + comment_start_index;
 
-                    // Capture the body of the comment -- everything but the opening and closing delimiters.
+                    // <p>Capture the body of the comment -- everything but the
+                    //     opening and closing delimiters.</p>
                     let comment_body =
                         &source_code[comment_start_index..closing_delimiter_start_index];
 
@@ -1131,31 +1139,32 @@ pub fn source_lexer(
                         comment_body,
                         closing_delimiter_match.as_str()
                     );
-                    // <p>Find the first \n after the
-                    //     closing delimiter</p>
-                    // <p>if there is a newline after the closing delimiter set
-                    //     newline_or_eof_after_closing_delimiter_index to the index of
-                    //     the first newline after the closing delimiter else
-                    //     set it to the end of the file.</p>
+                    // <p>Find the first \n after the closing delimiter. If
+                    //     there is a newline after the closing delimiter, set
+                    //     <code>newline_or_eof_after_closing_delimiter_index</code>
+                    //     to the index of the first newline after the closing
+                    //     delimiter else set it to the end of the file.</p>
                     let newline_or_eof_after_closing_delimiter_index =
                         match source_code[closing_delimiter_end_index..].find('\n') {
-                            // The + 1 includes the newline in the resulting index.
+                            // <p>The + 1 includes the newline in the resulting
+                            //     index.</p>
                             Some(index) => index + closing_delimiter_end_index + 1,
                             None => source_code.len(),
                         };
 
-                    // Capture the line which begins after the closing delimiter and ends at the next newline/EOF.
+                    // <p>Capture the line which begins after the closing
+                    //     delimiter and ends at the next newline/EOF.</p>
                     let post_closing_delimiter_line = &source_code
                         [closing_delimiter_end_index..newline_or_eof_after_closing_delimiter_index];
 
-                    // <p>print full_comment</p>
+                    //
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "The post-comment line is '{}'.",
                         post_closing_delimiter_line
                     );
 
-                    // <p>Set current_code_block to contain preceding code
+                    // <p>Set the current code block to contain preceding code
                     //     (which might be multiple lines) until the block
                     //     comment delimiter. Split this on newlines, grouping
                     //     all the lines before the last line into
@@ -1163,10 +1172,13 @@ pub fn source_lexer(
                     //     code), and everything else (from the beginning of the
                     //     last line to where the block comment delimiter
                     //     appears) into <code>comment_line_prefix</code>. For
-                    //     example, consider the fragment: a = 1\nb = 2 /*
-                    //     comment */. After processing,
-                    //     code_lines_before_comment will be "a = 1\n" and
-                    //     comment_line_prefix will be "b = 2 ".</p>
+                    //     example, consider the fragment: <code>a = 1\nb = 2 /*
+                    //         comment
+                    //         */</code>. After processing,
+                    //     <code>code_lines_before_comment</code> will be
+                    //     "<code>a = 1\n</code>" and
+                    //     <code>comment_line_prefix</code> will be "<code>b = 2
+                    //     </code>".</p>
                     let current_code_block =
                         &source_code[current_code_block_index..source_code_unlexed_index];
                     let comment_line_prefix = current_code_block.rsplit('\n').next().unwrap();
@@ -1188,8 +1200,8 @@ pub fn source_lexer(
                     // <p>next we have to determine if this is a doc block
                     //     criteria for doc blocks for a block comment:</p>
                     // <ol>
-                    //     <li>must have a space or newline after the opening delimiter
-                    //     </li>
+                    //     <li>must have a space or newline after the opening
+                    //         delimiter</li>
                     //     <li>must not have anything besides whitespace before
                     //         the opening comment delimiter on the same line
                     //     </li>
@@ -1205,31 +1217,33 @@ pub fn source_lexer(
                         //     block</p>
                         append_code_doc_block("", "", code_lines_before_comment);
 
-                        // <p>set indent to comment_line_prefix</p>
-                        let indent = comment_line_prefix;
-
-                        // <p>set delimiter to the opening delimiter</p>
-                        let delimiter = matching_group_str;
-
-                        // The contents of the doc block are the comment body (without the leading space/newline) and any whitespace after the closing comment delimiter.
-                        let contents = comment_body[1..].to_string() + &post_closing_delimiter_line;
-
-                        // <p>print contents</p>
-                        #[cfg(feature = "lexer_explain")]
-                        println!("contents is now '{}'", contents);
-
-                        // <p>push the array with append_code_doc_block</p>
-                        append_code_doc_block(indent, delimiter, &contents);
+                        // <p>Add this doc block:</p>
+                        append_code_doc_block(
+                            // <p>The indent is the whitespace before the
+                            //     opening comment delimiter.</p>
+                            comment_line_prefix,
+                            // <p>The opening comment delimiter was captured in
+                            //     the initial match.</p>
+                            matching_group_str,
+                            // <p>The contents of the doc block are the comment
+                            //     body (without the leading space/newline) and
+                            //     any whitespace after the closing comment
+                            //     delimiter.</p>
+                            &(comment_body[1..].to_string() + &post_closing_delimiter_line),
+                        );
 
                         // <p>print the doc block</p>
                         #[cfg(feature = "lexer_explain")]
                         println!("Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.", indent, delimiter, contents);
 
-                        // <p>advance current_code_block_index to
-                        //     source_code_unlexed_index</p>
+                        // <p>advance <code>current_code_block_index</code> to
+                        //     <code>source_code_unlexed_index</code>, since
+                        //     we've moved everything in the current code block
+                        //     into the <code>classified_source</code>.</p>
                         current_code_block_index = source_code_unlexed_index;
                     } else {
-                        // Nothing to do -- the comment was simply added to the current code block already.
+                        // <p>Nothing to do -- the comment was simply added to
+                        //     the current code block already.</p>
                     }
                 }
 
@@ -1278,7 +1292,7 @@ pub fn source_lexer(
 }
 
 // <h2>Tests</h2>
-// <p>Rust&nbsp;<a
+// <p>Rust <a
 //         href="https://doc.rust-lang.org/book/ch11-03-test-organization.html">almost
 //         mandates</a> putting tests in the same file as the source, which I
 //     dislike. Here's a <a
@@ -1709,13 +1723,14 @@ mod tests {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
         let matlab = llc.map_mode_to_lexer.get("matlab").unwrap();
 
-        // <p>Test both inline comment styles.</p>
+        // <p>Test both inline comment styles. Verify that escaped quotes are
+        //     ignored, and that doubled quotes are handled correctly.</p>
         assert_eq!(
             source_lexer(
                 r#"% Test 1
 v = ["Test 2\", ...
  ... "Test 3", ...
-     "Test 4"];
+     "Test""4"];
 "#,
                 matlab
             ),
@@ -1723,7 +1738,7 @@ v = ["Test 2\", ...
                 build_code_doc_block("", "%", "Test 1\n"),
                 build_code_doc_block("", "", "v = [\"Test 2\\\", ...\n"),
                 build_code_doc_block(" ", "...", "\"Test 3\", ...\n"),
-                build_code_doc_block("", "", "     \"Test 4\"];\n"),
+                build_code_doc_block("", "", "     \"Test\"\"4\"];\n"),
             ]
         );
 
@@ -1760,7 +1775,7 @@ a = 2
             ]
         );
 
-        // Test Rust comments. TODO: test nested comments.
+        // <p>Test Rust comments. TODO: test nested comments.</p>
         assert_eq!(
             source_lexer("test_1();\n/* Test 2 */\n", rust),
             [
