@@ -5,6 +5,7 @@
 declare module "ace-code/src/theme/textmate";
 declare module "ace-code/src/mode/c_cpp";
 declare module "ace-code/src/mode/csharp";
+declare module "ace-code/src/mode/css";
 declare module "ace-code/src/mode/golang";
 declare module "ace-code/src/mode/java";
 declare module "ace-code/src/mode/javascript";

@@ -51,6 +51,7 @@ interface ConfigAll extends Ace.Config {
         // <p>Modes</p>
         "ace/mode/c_cpp": () => import("ace-code/src/mode/c_cpp"),
         "ace/mode/csharp": () => import("ace-code/src/mode/csharp"),
+        "ace/mode/css": () => import("ace-code/src/mode/css"),
         "ace/mode/golang": () => import("ace-code/src/mode/golang"),
         "ace/mode/java": () => import("ace-code/src/mode/java"),
         "ace/mode/javascript": () => import("ace-code/src/mode/javascript"),
