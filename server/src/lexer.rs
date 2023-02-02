@@ -1203,48 +1203,11 @@ pub fn source_lexer(
                     //         the closing comment delimiter on the same line
                     //     </li>
                     // </ol>
-
-                    // <p>set criteria to false</p>
-                    let mut is_doc_block = false;
-
-                    let mut criteria_1 = false;
-                    let mut criteria_2 = false;
-                    let mut criteria_3 = false;
-
-                    // <p>if there is whitespace after the opening delimiter,
-                    //     then set criteria_1 to true this is done by checking
-                    //     if the first character after the opening delimiter is
-                    //     a space</p>
-
-                    if full_comment[matching_group_str.len()..].starts_with(' ') {
-                        criteria_1 = true;
-                    }
-
-                    // <p>check the opening delimiter line for criteria 2</p>
-                    if WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix) {
-                        criteria_2 = true;
-                    }
-
-                    // <p>check the closing delimiter line for criteria 3</p>
                     let closing_delimiter_line = &full_comment[closing_delimiter_match.end()..];
-                    if WHITESPACE_ONLY_REGEX.is_match(closing_delimiter_line) {
-                        criteria_3 = true;
-                    }
-
-                    // <p>if all criteria are met, then set is_doc_block to true
-                    // </p>
-                    if criteria_1 && criteria_2 && criteria_3 {
-                        is_doc_block = true;
-                        // <p>print doc block</p>
-                        #[cfg(feature = "lexer_explain")]
-                        println!("This is a doc block.");
-                    } else {
-                        // <p>print not doc block</p>
-                        #[cfg(feature = "lexer_explain")]
-                        println!("This is not a doc block.");
-                    }
-
-                    if is_doc_block {
+                    if full_comment[matching_group_str.len()..].starts_with(' ')
+                        && WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix)
+                        && WHITESPACE_ONLY_REGEX.is_match(closing_delimiter_line)
+                    {
                         // <p>put the code_lines_before_comment into the code
                         //     block</p>
                         append_code_doc_block("", "", code_lines_before_comment);
@@ -1263,14 +1226,7 @@ pub fn source_lexer(
 
                         let opening_delimiter = matching_group_str;
 
-                        let full_comment = comment_line_prefix.to_owned() + full_comment;
-
-                        // <p>print full_comment</p>
-                        #[cfg(feature = "lexer_explain")]
-                        println!("full_comment is now '{}'", full_comment);
-
-                        let mut contents =
-                            full_comment[indent.len() + opening_delimiter.len() + 1..].to_owned();
+                        let mut contents = full_comment[opening_delimiter.len() + 1..].to_owned();
 
                         // <p>print contents</p>
                         #[cfg(feature = "lexer_explain")]
