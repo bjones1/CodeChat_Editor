@@ -1133,15 +1133,12 @@ pub fn source_lexer(
 
                     // <p>Find the first \n after the
                     //     closing delimiter</p>
-                    let newline_after_closing_delimiter_match =
-                        source_code[closing_delimiter_index..].find('\n');
-
                     // <p>if there is a newline after the closing delimiter set
-                    //     newline_after_closing_delimiter_index to the index of
+                    //     newline_or_eof_after_closing_delimiter_index to the index of
                     //     the first newline after the closing delimiter else
                     //     set it to the end of the file.</p>
                     let newline_or_eof_after_closing_delimiter_index =
-                        match newline_after_closing_delimiter_match {
+                        match source_code[closing_delimiter_index..].find('\n') {
                             // The + 1 includes the newline in the resulting index.
                             Some(index) => index + closing_delimiter_index + 1,
                             None => source_code.len(),
@@ -1149,8 +1146,7 @@ pub fn source_lexer(
 
                     // <p>now we create full_comment.</p>
                     // <ul>
-                    //     <li>full_comment begins at the opening delimiter (and
-                    //         includes it)</li>
+                    //     <li>full_comment begins after the opening delimiter</li>
                     //     <li>full_comment extends to the first newline after
                     //         the closing delimiter (and includes it)</li>
                     //     <li>if there is no newline after the closing
@@ -1223,32 +1219,19 @@ pub fn source_lexer(
                         // <p>set delimiter to the opening delimiter</p>
                         let delimiter = matching_group_str;
 
-                        // <p>set contents to the contents of the doc block drop
-                        //     opening delimiter and the subsequent whitespace
-                        //     drop closing delimiter but keep all other
-                        //     whitespace so if full_comment is "/* comment */"
-                        //     then contents is "comment "</p>
-
-                        let opening_delimiter = matching_group_str;
-
-                        let mut contents = full_comment[1..].to_owned();
+                        // The contents of the block comment are:
+                        let contents =
+                            // from after the space/newline following the opening comment delimiter to the closing comment delimiter
+                            source_code[full_comment_start_index + 1..closing_delimiter_index]
+                            .to_string()
+                            // plus whitespace after the closing delimiter up to and including the newline.
+                            + &source_code[closing_delimiter_index
+                                + closing_delimiter_match.as_str().len()
+                                ..newline_or_eof_after_closing_delimiter_index];
 
                         // <p>print contents</p>
                         #[cfg(feature = "lexer_explain")]
                         println!("contents is now '{}'", contents);
-
-                        // <p>use a regex to find the first closing delimiter in
-                        //     contents</p>
-                        let closing_delimiter_match = closing_regex.find(&contents);
-
-                        // <p>replace closing_delimiter_match with ""</p>
-                        if let Some(closing_delimiter_match) = closing_delimiter_match {
-                            contents = contents.replace(
-                                &contents[closing_delimiter_match.start()
-                                    ..closing_delimiter_match.end()],
-                                "",
-                            );
-                        }
 
                         // <p>push the array with append_code_doc_block</p>
                         append_code_doc_block(indent, delimiter, &contents);
