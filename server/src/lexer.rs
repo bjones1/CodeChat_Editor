@@ -962,7 +962,8 @@ pub fn source_lexer(
                     // <p>Assign <code>full_comment</code> to contain the entire
                     //     comment (excluding the inline comment delimiter)
                     //     until the newline which ends the comment.</p>
-                    let full_comment_index = source_code_unlexed_index + matching_group_str.len();
+                    let full_comment_start_index =
+                        source_code_unlexed_index + matching_group_str.len();
 
                     // <p>The current code block contains preceding code (which
                     //     might be multiple lines) until the inline comment
@@ -994,7 +995,8 @@ pub fn source_lexer(
                     } else {
                         source_code.len()
                     };
-                    let full_comment = &source_code[full_comment_index..source_code_unlexed_index];
+                    let full_comment =
+                        &source_code[full_comment_start_index..source_code_unlexed_index];
 
                     #[cfg(feature = "lexer_explain")]
                     println!(
@@ -1181,6 +1183,9 @@ pub fn source_lexer(
                     let code_lines_before_comment =
                         &current_code_block[..current_code_block.len() - comment_line_prefix.len()];
 
+                    // <p>Move to the next block of source code to be lexed.</p>
+                    source_code_unlexed_index = newline_or_eof_after_closing_delimiter_index;
+
                     // <p>divide full comment into 3 components</p>
                     #[cfg(feature = "lexer_explain")]
                     println!(
@@ -1251,27 +1256,13 @@ pub fn source_lexer(
                         // <p>print the doc block</p>
                         #[cfg(feature = "lexer_explain")]
                         println!("Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.", indent, delimiter, contents);
+
+                        // <p>advance current_code_block_index to
+                        //     source_code_unlexed_index</p>
+                        current_code_block_index = source_code_unlexed_index;
                     } else {
-                        // <p>add comment_line_prefix to full comment</p>
-                        let full_comment = comment_line_prefix.to_owned() + full_comment;
-
-                        // <p>put current_code_block into the code block</p>
-                        append_code_doc_block("", "", &full_comment);
+                        // Nothing to do -- the comment was simply added to the current code block already.
                     }
-                    // <p>advance source_code_unlexed_index to the end of the
-                    //     comment if there is no closing delimiter, then the
-                    //     comment extends to the end of the file</p>
-                    source_code_unlexed_index = source_code_unlexed_index + full_comment.len();
-                    // <p>print source_code_unlexed_index</p>
-                    #[cfg(feature = "lexer_explain")]
-                    println!(
-                        "source_code_unlexed_index is now {}.",
-                        source_code_unlexed_index
-                    );
-
-                    // <p>advance current_code_block_index to
-                    //     source_code_unlexed_index</p>
-                    current_code_block_index = source_code_unlexed_index;
                 }
 
                 // <h4>String-like syntax</h4>
