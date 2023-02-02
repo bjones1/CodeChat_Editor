@@ -176,6 +176,8 @@ async fn save_source(
 
             // <p>Build a comment based on the type of the delimiter.</p>
             if is_inline_delim {
+                // <p>Split the contents into a series of lines, adding the
+                //     inline comment delimiter to each line.</p>
                 for content_line in code_doc_block.contents.split_inclusive('\n') {
                     append_code_block(
                         &code_doc_block.indent,
@@ -184,7 +186,32 @@ async fn save_source(
                     );
                 }
             } else {
-                panic!("Block comments not supported.");
+                // <p>Determine the closing comment delimiter matching the
+                //     provided opening delimiter.</p>
+                let block_comment_closing_delimiter = match lexer
+                    .language_lexer
+                    .block_comment_delim_arr
+                    .iter()
+                    .position(|bc| bc.opening == code_doc_block.delimiter)
+                {
+                    Some(index) => lexer.language_lexer.block_comment_delim_arr[index].closing,
+                    None => {
+                        return save_source_response(
+                            false,
+                            &format!(
+                                "Unknown block comment opening delimiter '{}'.",
+                                code_doc_block.delimiter
+                            ),
+                        )
+                    }
+                };
+                // <p>Produce the resulting block comment.</p>
+                append_code_block(
+                    &code_doc_block.indent,
+                    &code_doc_block.delimiter,
+                    &code_doc_block.contents,
+                );
+                file_contents = file_contents + " " + block_comment_closing_delimiter;
             }
         } else {
             // <p>This is code. Simply append it (by definition, indent and
@@ -744,14 +771,15 @@ fn escape_html(unsafe_text: &str) -> String {
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
-        // Get the path to this executable. Assume that static files for the webserver are located relative to it.
+        // <p>Get the path to this executable. Assume that static files for the
+        //     webserver are located relative to it.</p>
         let exe_path = env::current_exe().unwrap();
         let exe_dir = exe_path.parent().unwrap();
         let mut client_static_path = PathBuf::from(exe_dir);
         client_static_path.push("../../../client/static");
         client_static_path = client_static_path.canonicalize().unwrap();
 
-        // Start the server.
+        // <p>Start the server.</p>
         App::new()
             .app_data(web::Data::new(compile_lexers(LANGUAGE_LEXER_ARR)))
             // <p>Serve static files per the <a
