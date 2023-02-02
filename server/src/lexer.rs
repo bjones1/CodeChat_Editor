@@ -1101,10 +1101,10 @@ pub fn source_lexer(
                     );
 
                     // <p>get the index of the first closing delimiter</p>
-                    let closing_delimiter_match = if let Some(index) =
+                    let closing_delimiter_match = if let Some(_match) =
                         closing_regex.find(&source_code[source_code_unlexed_index..])
                     {
-                        index
+                        _match
                     } else {
                         // <p>If there's no closing delimiter, this is not a doc
                         //     block; it's a syntax error. The safe route is to
@@ -1136,42 +1136,13 @@ pub fn source_lexer(
                     // <p>if there is a newline after the closing delimiter set
                     //     newline_after_closing_delimiter_index to the index of
                     //     the first newline after the closing delimiter else
-                    //     set it to None</p>
-                    let newline_after_closing_delimiter_index =
-                        if newline_after_closing_delimiter_match.is_some() {
-                            Some(
-                                newline_after_closing_delimiter_match.unwrap()
-                                    + closing_delimiter_index,
-                            )
-                        } else {
-                            None
+                    //     set it to the end of the file.</p>
+                    let newline_or_eof_after_closing_delimiter_index =
+                        match newline_after_closing_delimiter_match {
+                            // The + 1 includes the newline in the resulting index.
+                            Some(index) => index + closing_delimiter_index + 1,
+                            None => source_code.len(),
                         };
-
-                    // <p>print position of first newline after closing
-                    //     delimiter</p>
-                    #[cfg(feature = "lexer_explain")]
-                    if newline_after_closing_delimiter_match.is_some() {
-                        println!(
-                            "The first newline after the closing delimiter is at index {}.",
-                            newline_after_closing_delimiter_index.unwrap()
-                        );
-                    } else {
-                        println!("There is no newline after the closing delimiter.");
-                    }
-
-                    // <p>if there is no newline after the closing delimiter
-                    //     then the block comment extends to the end of the
-                    //     file. Create a boolean to indicate this</p>
-                    let extends_to_end_of_file = newline_after_closing_delimiter_match.is_none();
-
-                    // <p>print whether the block comment extends to the end of
-                    //     the file</p>
-                    #[cfg(feature = "lexer_explain")]
-                    if extends_to_end_of_file {
-                        println!("The block comment extends to the end of the file.");
-                    } else {
-                        println!("The block comment does not extend to the end of the file.");
-                    }
 
                     // <p>now we create full_comment.</p>
                     // <ul>
@@ -1184,12 +1155,8 @@ pub fn source_lexer(
                     //         of the file</li>
                     //
                     // </ul>
-                    let full_comment = &source_code[opening_delimiter_index
-                        ..(if extends_to_end_of_file {
-                            source_code.len()
-                        } else {
-                            newline_after_closing_delimiter_index.unwrap() + 1
-                        })];
+                    let full_comment = &source_code
+                        [opening_delimiter_index..newline_or_eof_after_closing_delimiter_index];
 
                     // <p>print full_comment</p>
                     #[cfg(feature = "lexer_explain")]
