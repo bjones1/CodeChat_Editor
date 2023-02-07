@@ -432,7 +432,8 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             //     a slash, such as <code>C:/</code>. Don't add a second slash
             //     in this case. Otherwise, add a slash to make
             //     <code>C:/foo</code> into <code>C:/foo/</code>.</p>
-            if web_path.ends_with('/') { "" } else { "/" },
+            // <p>Likewise, the Linux root path of <code>/</code> already ends with a slash, while all other paths such a <code>/foo</code> don't. To detect this, look for an empty <code>web_path</code>.
+            if web_path.ends_with('/') || web_path.is_empty() { "" } else { "/" },
             encoded_dir,
             dir_name
         );
