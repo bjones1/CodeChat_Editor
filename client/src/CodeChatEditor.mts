@@ -14,14 +14,34 @@
 //             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 //     </p>
 // </details>
-// <h1><code>CodeChat-editor.mts</code> &mdash; JavaScript which implements part
+// <h1><code>CodeChat-editor.mts</code> &mdash; TypeScript which implements part
 //     of the client-side portion of the CodeChat Editor</h1>
-// <p>The CodeChat Editor provides a simple IDE which allows editing of mixed
-//     code and doc blocks.</p>
+// <p>The overall process of load a file is:</p>
+// <ol>
+//     <li>The user browses to a file on the local machine, using the very
+//         simple file browser webpage provided by the CodeChat Server. Clicking
+//         on this file starts the process of loading a file into the CodeChat
+//         editor.</li>
+//     <li>The server sees a request for a file supported by the CodeChat
+//         Editor. It lexes the files into code and doc blocks, then wraps these
+//         in a webpage which contains this program (the CodeChat Editor).</li>
+//     <li>On load, this program (the CodeChat Editor) transforms these code and
+//         doc blocks into HTML. Specifically, code blocks are placed in <a
+//             href="https://ace.c9.io/">ACE editor</a> instances, while doc
+//         blocks are placed in <a href="https://www.tiny.cloud/">TinyMCE</a>
+//         instances.</li>
+// </ol>
+// <p>The user then uses the editing capabilities of ACE/TinyMCE to edit their
+//     program. When the user saves a file:</p>
+// <ol>
+//     <li>This program looks through the HTML, converting ACE editor/TinyMCE
+//         instances back into code blocks and doc blocks.</li>
+//     <li>It sends these code/doc blocks back to the server.</li>
+//     <li>The server then transforms these code/doc blocks into source code,
+//         then writes this code to the disk.</li>
+// </ol>
 // <h2>Imports</h2>
 // <h3>JavaScript/TypeScript</h3>
-// <p>I don't know how to fix this, and don't understand why it's wrong. Perhaps
-//     because the Ace imports are really node-style requires?</p>
 import { ace } from "./ace-webpack.mjs";
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
@@ -35,12 +55,17 @@ import "./../static/css/CodeChatEditor.css";
 // <h2>Initialization</h2>
 // <p>Load code when the DOM is ready.</p>
 export const page_init = (all_source: any) => {
+    // <p>Use <a
+    //         href="https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams">URLSearchParams</a>
+    //     to parse out the search parameters of this window's URL.</p>
+    const urlParams = new URLSearchParams(window.location.search);
     // <p>Get the mode from the page's query parameters. Default to edit using
     //     the <a
     //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator">nullish
-    //         coalescing operator</a>.</p>
-    const urlParams = new URLSearchParams(window.location.search);
-    // <p>This works, but TypeScript doesn't appreciate it.</p>
+    //         coalescing operator</a>. This works, but TypeScript marks it as
+    //     an error. Ignore this error by including the <a
+    //         href="https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check">@ts-ignore
+    //         directive</a>.</p>
     /// @ts-ignore
     const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
     on_dom_content_loaded(() => open_lp(all_source, editorMode));
@@ -59,11 +84,10 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
     }
 };
 
-// <p>Emulate an enum. <a
-//         href="https://www.30secondsofcode.org/articles/s/javascript-enum">This</a>
-//     seems like a simple-enough approach; see also <a
-//         href="https://masteringjs.io/tutorials/fundamentals/enum">JavaScript
-//         Enums</a> for other options.</p>
+// <p><a id="EditorMode"></a>Define all possible editor modes; these are passed
+//     as a <a href="https://en.wikipedia.org/wiki/Query_string">query
+//         string</a> (<code>http://path/to/foo.py?mode=toc</code>, for example)
+//     to the page's URL.</p>
 enum EditorMode {
     // <p>Display the source code using CodeChat, but disallow editing.</p>
     view,
@@ -77,13 +101,29 @@ enum EditorMode {
     raw,
 }
 
-const open_lp = (all_source: AllSource, editorMode: EditorMode) => {
+// <p>This function is called on page load to "load" a file. Before this point,
+//     the server has already lexed the source file into code and doc blocks;
+//     this function transforms the code and doc blocks into HTML and updates
+//     the current web page with the results.</p>
+const open_lp = (
+    // <p>A data structure provided by the server, containing the source and
+    //     associated metadata. See <a
+    //         href="#AllSource"><code>AllSource</code></a>.</p>
+    all_source: AllSource,
+    // <p>See <code><a href="#EditorMode">EditorMode</a></code>.</p>
+    editorMode: EditorMode
+) => {
+    // <p>Get the <code><a href="#current_metadata">current_metadata</a></code>
+    //     from the provided <code>all_source</code> struct and store it as a
+    //     global variable.</p>
     current_metadata = all_source["metadata"];
     const code_doc_block_arr = all_source["code_doc_block_arr"];
-    // <p>Special case: a CodeChat Editor document's HTML doesn't need lexing.
-    // </p>
     let html;
     if (is_doc_only()) {
+        // <p>Special case: a CodeChat Editor document's HTML doesn't need
+        //     lexing; it only contains HTML. Instead, its structure is always:
+        //     <code>[["", "", HTML]]</code>. Therefore, the HTML is at item
+        //     [0][2].</p>
         html = `<div class="CodeChat-TinyMCE">${code_doc_block_arr[0][2]}</div>`;
     } else {
         html = classified_source_to_html(code_doc_block_arr);
@@ -95,14 +135,28 @@ const open_lp = (all_source: AllSource, editorMode: EditorMode) => {
     return make_editors(editorMode);
 };
 
-export type code_or_doc_block = [string, string | null, string];
+// <p>This defines a single code or doc block entry:</p>
+export type code_or_doc_block = [
+    // <p>The indent for a doc bloc; empty for a code block.</p>
+    string,
+    // <p>The opening comment delimiter for a doc block;</p>
+    string | null,
+    string
+];
 
+// <p>The server passes this to the client to load a file. See <a
+//         href="../../server/src/webserver.rs#LexedSourceFile">LexedSourceFile</a>.
+// </p>
 type AllSource = {
     metadata: { mode: string };
     code_doc_block_arr: code_or_doc_block[];
 };
 
 // <p>Store the lexer info for the currently-loaded language.</p>
+// <p><a id="current_metadata"></a>This mirrors the data provided by the server
+//     -- see <a
+//         href="../../server/src/webserver.rs#SourceFileMetadata">SourceFileMetadata</a>.
+// </p>
 let current_metadata: {
     mode: string;
 };
@@ -159,7 +213,8 @@ const make_editors = async (
                     //     <a
                     //         href="https://github.com/tinymce/tinymce/issues/3836">a
                     //         related GitHub issue</a>.</p>
-                    //readonly: true,
+                    //readonly: true  // Per the comment above, this is commented out.
+                    // <p>TODO: Notes on this setting.</p>
                     relative_urls: true,
                     selector: ".CodeChat-TinyMCE",
                     // <p>This combines the <a
@@ -184,59 +239,54 @@ const make_editors = async (
                 });
             }
 
-            // <p>The CodeChat Document Editor doesn't include ACE.</p>
-            if (ace !== undefined) {
-                // <p>Instantiate the Ace editor for code blocks.</p>
-                for (const ace_tag of document.querySelectorAll(
-                    ".CodeChat-ACE"
-                )) {
-                    // <p>Perform each init, then allow UI updates to try and
-                    //     keep the UI responsive.</p>
-                    await new Promise((accept) =>
-                        setTimeout(() => {
-                            ace.edit(ace_tag, {
-                                // <p>The leading <code>+</code> converts the
-                                //     line number from a string (since all HTML
-                                //     attributes are strings) to a number.</p>
-                                firstLineNumber: +(
-                                    ace_tag.getAttribute(
-                                        "data-CodeChat-firstLineNumber"
-                                    ) ?? 0
-                                ),
-                                // <p>This is distracting, since it highlights
-                                //     one line for each ACE editor instance on
-                                //     the screen. Better: only show this if the
-                                //     editor has focus.</p>
-                                highlightActiveLine: false,
-                                highlightGutterLine: false,
-                                maxLines: 1e10,
-                                mode: `ace/mode/${current_metadata["mode"]}`,
-                                // <p>TODO: this still allows cursor movement.
-                                //     Need something that doesn't show an edit
-                                //     cursor / can't be selected; arrow keys
-                                //     should scroll the display, not move the
-                                //     cursor around in the editor.</p>
-                                readOnly:
-                                    editorMode === EditorMode.view ||
-                                    editorMode == EditorMode.toc,
-                                showPrintMargin: false,
-                                theme: "ace/theme/textmate",
-                                wrap: true,
-                            });
-                            accept("");
-                        })
-                    );
-                }
+            // <p>Instantiate the Ace editor for code blocks.</p>
+            for (const ace_tag of document.querySelectorAll(".CodeChat-ACE")) {
+                // <p>Perform each init, then allow UI updates to try and keep
+                //     the UI responsive.</p>
+                await new Promise((accept) =>
+                    setTimeout(() => {
+                        ace.edit(ace_tag, {
+                            // <p>The leading <code>+</code> converts the line
+                            //     number from a string (since all HTML
+                            //     attributes are strings) to a number.</p>
+                            firstLineNumber: +(
+                                ace_tag.getAttribute(
+                                    "data-CodeChat-firstLineNumber"
+                                ) ?? 0
+                            ),
+                            // <p>This is distracting, since it highlights one
+                            //     line for each ACE editor instance on the
+                            //     screen. Better: only show this if the editor
+                            //     has focus.</p>
+                            highlightActiveLine: false,
+                            highlightGutterLine: false,
+                            maxLines: 1e10,
+                            mode: `ace/mode/${current_metadata["mode"]}`,
+                            // <p>TODO: this still allows cursor movement. Need
+                            //     something that doesn't show an edit cursor /
+                            //     can't be selected; arrow keys should scroll
+                            //     the display, not move the cursor around in
+                            //     the editor.</p>
+                            readOnly:
+                                editorMode === EditorMode.view ||
+                                editorMode == EditorMode.toc,
+                            showPrintMargin: false,
+                            theme: "ace/theme/textmate",
+                            wrap: true,
+                        });
+                        accept("");
+                    })
+                );
             }
 
             // <p>Set up for editing the indent of doc blocks.</p>
             for (const td of document.querySelectorAll(
                 ".CodeChat-doc-indent"
             )) {
-                // <p>I don't know why TypeScript doesn't allow this. This
-                //     follows the <a
+                // <p>While this follows the <a
                 //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event">MDN
-                //         docs</a> and also works.</p>
+                //         docs</a> and also works, TypeScript still reports an
+                //     error. Suppress it.</p>
                 /// @ts-ignore
                 td.addEventListener(
                     "beforeinput",
@@ -244,7 +294,10 @@ const make_editors = async (
                 );
             }
 
-            // <p>Run any tests.</p>
+            // <p><a id="CodeChatEditor_test"></a>If tests should be run, then
+            //     the <a
+            //         href="CodeChatEditor-test.mts#CodeChatEditor_test">following
+            //         global variable</a> is function that runs them.</p>
             if (typeof window.CodeChatEditor_test === "function") {
                 window.CodeChatEditor_test();
             }
@@ -282,10 +335,10 @@ export const on_keydown = (event: KeyboardEvent) => {
 
 // <p>Save CodeChat Editor contents.</p>
 export const on_save = async () => {
-    // <p>Pick an inline comment from the current lexer. TODO: support block
-    //     comments (CSS, for example, doesn't allow inline comment).</p>
-    // <p>This is the data to write &mdash; the source code.</p>
+    // <p>This is the data to write &mdash; the source code. First, transform
+    //     the HTML back into code and doc blocks.</p>
     const source_code = editor_to_code_doc_blocks();
+    // Then, wrap these in a <a href="../server/src/webserver.rs#ClientSourceFile">struct the server expects</a> and send it.
     await save({
         metadata: current_metadata,
         code_doc_block_arr: source_code,
@@ -323,6 +376,7 @@ const save = async (contents: AllSource) => {
 };
 
 // <h2 id="classified_source_to_html">Convert lexed code into HTML</h2>
+// <p>TODO: give a big-picture overview of how/why this is a state machine.</p>
 const classified_source_to_html = (
     classified_source: [string, string | null, string][]
 ) => {
@@ -442,6 +496,8 @@ const _exit_state = (
 };
 
 // <h2>Convert HTML to lexed code</h2>
+// <p>TODO: how does this differ from the previous function? Big picture
+//     overview of what's happening.</p>
 // <p>This transforms the current editor contents into code and doc blocks.</p>
 const editor_to_code_doc_blocks = () => {
     // <p>Walk through each code and doc block, extracting its contents then
@@ -498,7 +554,8 @@ const editor_to_code_doc_blocks = () => {
             throw `Unexpected class for code or doc block ${code_or_doc_tag}.`;
         }
 
-        // There's an implicit newline at the end of each block; restore it.
+        // <p>There's an implicit newline at the end of each block; restore it.
+        // </p>
         full_string += "\n";
 
         // <p>Merge this with previous classified line if indent and delimiter
@@ -520,7 +577,7 @@ const editor_to_code_doc_blocks = () => {
 // <h2>Helper functions</h2>
 // <p>Given text, escape it so it formats correctly as HTML. Because the
 //     solution at <a href="https://stackoverflow.com/a/48054293">SO</a>
-//     transforms newlines in odd ways&nbsp;(see <a
+//     transforms newlines in odd ways (see <a
 //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText">innerText</a>),
 //     it's not usable with code. Instead, this is a translation of Python's
 //     <code>html.escape</code> function.</p>
@@ -547,7 +604,10 @@ const os_is_osx =
         : false;
 
 // <p>A great and simple idea taken from <a
-//         href="https://stackoverflow.com/a/54116079">SO</a>.</p>
+//         href="https://stackoverflow.com/a/54116079">SO</a>: wrap all testing
+//     exports in a single variable. This avoids namespace pollution, since only
+//     one name is exported, and it's clearly marked for testing only. Test code
+//     still gets access to everything it needs.</p>
 export const exportedForTesting = {
     editor_to_code_doc_blocks,
     EditorMode,

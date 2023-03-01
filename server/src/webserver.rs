@@ -52,15 +52,15 @@ use crate::lexer::{source_lexer, CodeDocBlock, LanguageLexersCompiled};
 
 /// <h2>Data structures</h2>
 #[derive(Serialize, Deserialize)]
-/// <p>Metadata about a source file sent along with it both to and from the
-///     client.</p>
+/// <p><a id="SourceFileMetadata"></a>Metadata about a source file sent along
+///     with it both to and from the client.</p>
 struct SourceFileMetadata {
     mode: String,
 }
 
 #[derive(Serialize, Deserialize)]
-/// <p>A simple structure for accepting JSON input to the
-///     <code>save_source</code> endpoint. Use a tuple since serdes can
+/// <p><a id="ClientSourceFile"></a>A simple structure for accepting JSON input
+///     to the <code>save_source</code> endpoint. Use a tuple since serdes can
 ///     auto-generate a deserializer for it.</p>
 struct ClientSourceFile {
     metadata: SourceFileMetadata,
@@ -70,8 +70,8 @@ struct ClientSourceFile {
 }
 
 #[derive(Serialize)]
-/// <p>Define the structure of JSON responses when sending a source file from
-///     the <code>/fs</code> endpoint.</p>
+/// <p><a id="LexedSourceFile"></a>Define the structure of JSON responses when
+///     sending a source file from the <code>/fs</code> endpoint.</p>
 struct LexedSourceFile {
     metadata: SourceFileMetadata,
     code_doc_block_arr: Vec<CodeDocBlock>,
@@ -432,7 +432,10 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             //     a slash, such as <code>C:/</code>. Don't add a second slash
             //     in this case. Otherwise, add a slash to make
             //     <code>C:/foo</code> into <code>C:/foo/</code>.</p>
-            // <p>Likewise, the Linux root path of <code>/</code> already ends with a slash, while all other paths such a <code>/foo</code> don't. To detect this, look for an empty <code>web_path</code>.
+            // <p>Likewise, the Linux root path of <code>/</code> already ends
+            //     with a slash, while all other paths such a <code>/foo</code>
+            //     don't. To detect this, look for an empty
+            //     <code>web_path</code>.</p>
             if web_path.ends_with('/') || web_path.is_empty() { "" } else { "/" },
             encoded_dir,
             dir_name

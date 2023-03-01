@@ -16,7 +16,7 @@
 // </details>
 // <h1><code>CodeChatEditor-test.mts</code> &mdash; Tests for the CodeChat
 //     Editor client</h1>
-// <p>To run tests, add a <code>?test</code> to any web page server by the
+// <p>To run tests, add a <code>?test</code> to any web page served by the
 //     CodeChat Editor server.</p>
 // <h2>Imports</h2>
 // <p>I can't get Mocha to work with ESBuild, so I import it using a script tag.
@@ -30,14 +30,19 @@ import {
     on_save,
 } from "./CodeChatEditor.mjs";
 
-// <p>Re-export everything that CodeChatEditor.mts exports. Otherwise, including
-//     CodeChatEditor.mts elsewhere would double-define everything (producing
-//     complaints about two attempts to define each web component).</p>
+// <p>Re-export everything that <a
+//         href="CodeChatEditor.mts">CodeChatEditor.mts</a> exports. Otherwise,
+//     including <a href="CodeChatEditor.mts">CodeChatEditor.mts</a> elsewhere
+//     would double-define everything (producing complaints about two attempts
+//     to define each web component).</p>
 export { page_init, on_keydown, on_save };
 // <p>Provide convenient access to all functions tested here.</p>
 const { editor_to_code_doc_blocks, EditorMode, open_lp } = exportedForTesting;
 
 // <h2>Tests</h2>
+// <p><a id="CodeChatEditor_test"></a>Defining this global variable signals the
+//     CodeChat Editor to <a href="CodeChatEditor.mts#CodeChatEditor_test">run
+//         tests</a>.</p>
 window.CodeChatEditor_test = () => {
     // <p>See the <a href="https://mochajs.org/#browser-configuration">Mocha
     //         docs</a>.</p>
