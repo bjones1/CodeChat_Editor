@@ -1,5 +1,4 @@
-/*
-<details>
+/* <details>
     <summary>License</summary>
     <p>Copyright (C) 2022 Bryan A. Jones.</p>
     <p>This file is part of the CodeChat Editor.</p>
@@ -16,9 +15,10 @@
             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
     </p>
 </details>
-<h1><code>CodeChatEditorSidebar.css</code> &mdash; Styles for the CodeChat Editor's project sidebar</h1>
+<h1><code>CodeChatEditorSidebar.css</code> &mdash; Styles for the CodeChat
+    Editor's project sidebar</h1>
 <p>Make lists more compact.</p> */
 ol {
-    /* Provide approximately enough space for two digits. */
+    /* <p>Provide approximately enough space for two digits.</p> */
     padding-inline-start: 1.5rem;
 }

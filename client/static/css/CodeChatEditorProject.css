@@ -16,8 +16,7 @@
     </p>
 </details>
 <h1><code>CodeChatEditorProject.css</code> &mdash; Styles for the CodeChat
-    Editor for projects</h1>
- */
+    Editor for projects</h1> */
 :root {
     --sidebar-width: 15rem;
 }
@@ -27,8 +26,8 @@ body {
 }
 
 /* <p>TODO: This is a overly simple, non-responsive layout to create a sidebar.
-    Fix.</p>
- */#CodeChat-sidebar {
+    Fix.</p> */
+#CodeChat-sidebar {
     width: var(--sidebar-width);
     height: calc(100vh - 2 * var(--body-padding));
     border: 0px;

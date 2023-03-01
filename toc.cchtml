@@ -61,6 +61,9 @@
                     <li><a
                             href="client/static/css/CodeChatEditorProject.css">CodeChatEditorProject.css</a>
                     </li>
+                    <li><a
+                            href="client/static/css/CodeChatEditorSidebar.css">CodeChatEditorSidebar.css</a>
+                    </li>
                 </ol>
             </li>
             <li>Tests

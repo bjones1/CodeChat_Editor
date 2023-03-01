@@ -21,15 +21,15 @@
         href="../CodeToEditor.py"><code>CodeToEditor.py</code></a>.</p>
 <h2>Styles for the entire page layout</h2>
 <p>This is used only to store a reused variable value. See the <a
-        href="https://drafts.csswg.org/css-variables/">CSS docs</a>.</p>
- */:root {
+        href="https://drafts.csswg.org/css-variables/">CSS docs</a>.</p> */
+:root {
     --top-height: 6.7rem;
     --body-padding: 0.2rem;
 }
 
 /* <p>See <a href="https://css-tricks.com/box-sizing/">box sizing</a> for the
-    following technique to use <code>border-box</code> sizing.</p>
- */html {
+    following technique to use <code>border-box</code> sizing.</p> */
+html {
     box-sizing: border-box;
 }
 
@@ -40,85 +40,85 @@
 }
 
 body {
-    /* <p>For box model simplicity, switch the padding and margin.</p>
- */    padding: var(--body-padding);
+    /* <p>For box model simplicity, switch the padding and margin.</p> */
+    padding: var(--body-padding);
     margin: 0px;
     /* <p>The default of transparent makes VS Code's black show up and confuse
-    everything. For now, make it white.</p>
- */    background: white;
+    everything. For now, make it white.</p> */
+    background: white;
 }
 
 /* <p>Provide space at the top of the screen for the filename and TinyMCE menu
-    bar.</p>
- */#CodeChat-top {
+    bar.</p> */
+#CodeChat-top {
     height: var(--top-height);
 }
 
-/* <p>The rest of the screen is the editor area.</p>
- */#CodeChat-body {
+/* <p>The rest of the screen is the editor area.</p> */
+#CodeChat-body {
     height: calc(100vh - var(--top-height) - 2 * var(--body-padding));
     overflow: auto;
 }
 
 /* <h2>Misc styling</h2>
-<p>Mark a hotkey.</p>
- */.CodeChat-hotkey {
+<p>Mark a hotkey.</p> */
+.CodeChat-hotkey {
     text-decoration: underline;
 }
 
-/* <p>Make the filename compact.</p>
- */#CodeChat-filename p {
+/* <p>Make the filename compact.</p> */
+#CodeChat-filename p {
     margin: 0px;
     white-space: nowrap;
 }
 
 /* <h2>Code block styling</h2>
-<p>Match the ACE Editor gutter.</p>
- */.CodeChat-ACE-gutter-padding {
+<p>Match the ACE Editor gutter.</p> */
+.CodeChat-ACE-gutter-padding {
     padding-left: 33px;
     background-color: #f0f0f0;
 }
 
 /* <p>The ACE editor puts a bit of left padding in; match this so that code and
-    doc blocks line up.</p>
- */.CodeChat-ACE-padding {
+    doc blocks line up.</p> */
+.CodeChat-ACE-padding {
     padding-left: 3px;
 }
 
-/* <p>Preserve whitespace in the indent of a doc block.</p>
- */.CodeChat-doc-indent {
+/* <p>Preserve whitespace in the indent of a doc block.</p> */
+.CodeChat-doc-indent {
     white-space: pre;
     tab-size: 4;
 }
 
-/* <p>Before the ACE Editor loads, use a monotype font.</p>
- */.CodeChat-ACE {
+/* <p>Before the ACE Editor loads, use a monotype font.</p> */
+.CodeChat-ACE {
     font-family: monospace;
     white-space: pre;
 }
 
-/* <p>Hide the ACE Editor's cursor when it's inactive.</p>
- */.ace_hidden-cursors {
+/* <p>Hide the ACE Editor's cursor when it's inactive.</p> */
+.ace_hidden-cursors {
     opacity: 0;
 }
 
-/* <h2>Doc block styling</h2>
- */.CodeChat-doc > table {
+/* <h2>Doc block styling</h2> */
+.CodeChat-doc > table {
     /* <p>A <a href="../CodeToEditor.py#one-row-table">one-row table</a> is used
-    to lay out a doc block. Therefore, it should have no borders.</p>
- */    border-collapse: collapse;
+    to lay out a doc block. Therefore, it should have no borders.</p> */
+    border-collapse: collapse;
 }
 
 /* <p>Make the editor as wide as possible, so a click anywhere on that line will
-    activate it.</p>
- */.CodeChat-TinyMCE-td {
+    activate it.</p> */
+.CodeChat-TinyMCE-td {
     width: 100%;
 }
 
 /* <p>Remove the editor's border when it's selected, since this hides the cursor
     when the cursot is at the beginning of a line and isn't necessary (the
-    entire screen is an editor, not just that region.)</p>
- */.CodeChat-TinyMCE.mce-edit-focus {
+    entire screen is an editor, not just that region.)</p> */
+.CodeChat-TinyMCE.mce-edit-focus {
     outline-width: 0px;
 }
 
@@ -126,8 +126,8 @@ body {
         doc block. Doc block elements typically have top margin and/or
         padding that produce this undesired space; remove it on the first
         element in the doc block, the first element of the first element in
-        the doc block, etc.</span></p>
- */.CodeChat-TinyMCE > *:first-child,
+        the doc block, etc.</span></p> */
+.CodeChat-TinyMCE > *:first-child,
 .CodeChat-TinyMCE > *:first-child > *:first-child,
 .CodeChat-TinyMCE > *:first-child > *:first-child > *:first-child,
 .CodeChat-TinyMCE
@@ -146,8 +146,8 @@ body {
 }
 
 /* <p><a href="remove-space">Remove space</a> between a doc block followed by a
-    code block.</p>
- */.CodeChat-TinyMCE > *:last-child,
+    code block.</p> */
+.CodeChat-TinyMCE > *:last-child,
 .CodeChat-TinyMCE > *:last-child > *:last-child,
 .CodeChat-TinyMCE > *:last-child > *:last-child > *:last-child,
 .CodeChat-TinyMCE > *:last-child > *:last-child > *:last-child > *:last-child,
