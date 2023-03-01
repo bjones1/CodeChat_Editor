@@ -151,9 +151,9 @@ async fn save_source(
     let mut file_contents = String::new();
     for code_doc_block in code_doc_block_vec {
         if code_doc_block.is_doc_block() {
-            // <p>Append a code block, adding a space between the opening
+            // <p>Append a doc block, adding a space between the opening
             //     delimiter and the contents when necessary.</p>
-            let mut append_code_block = |indent: &str, delimiter: &str, contents: &str| {
+            let mut append_doc_block = |indent: &str, delimiter: &str, contents: &str| {
                 file_contents += indent;
                 file_contents += delimiter;
                 // <p>Add a space between the delimiter and comment body, unless
@@ -179,7 +179,7 @@ async fn save_source(
                 // <p>Split the contents into a series of lines, adding the
                 //     inline comment delimiter to each line.</p>
                 for content_line in code_doc_block.contents.split_inclusive('\n') {
-                    append_code_block(
+                    append_doc_block(
                         &code_doc_block.indent,
                         &code_doc_block.delimiter,
                         content_line,
@@ -205,13 +205,15 @@ async fn save_source(
                         )
                     }
                 };
-                // <p>Produce the resulting block comment.</p>
-                append_code_block(
+                // <p>Produce the resulting block comment. They should always end with a newline.</p>
+                assert!(&code_doc_block.contents.ends_with('\n'));
+                append_doc_block(
                     &code_doc_block.indent,
                     &code_doc_block.delimiter,
-                    &code_doc_block.contents,
+                    // Omit the newline, so we can instead put on the closing delimiter, then the newline.
+                    &code_doc_block.contents[..&code_doc_block.contents.len() - 1],
                 );
-                file_contents = file_contents + " " + block_comment_closing_delimiter;
+                file_contents = file_contents + " " + block_comment_closing_delimiter + "\n";
             }
         } else {
             // <p>This is code. Simply append it (by definition, indent and
