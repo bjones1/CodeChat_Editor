@@ -1,0 +1,15 @@
+<h1>New project template</h1>
+<p>This directory contains an example of a CodeChat Editor project. To create a
+    new project using this template:</p>
+<ol>
+    <li>Copy this file and <a href="toc.cchtml">toc.cchtml</a> to a
+        newly-created directory of your choice.</li>
+    <li>Browse to the directory you just created using the CodeChat Editor's
+        web-based file browser.</li>
+    <li>Open this file and start editing. (If you don't want a readme file, you
+        may delete it; only&nbsp;<a href="toc.cchtml">toc.cchtml</a>&nbsp; is
+        required for a CodeChat Editor project.) You may add any source files
+        you like in this directory or in any subdirectory. When you add or
+        delete a file, update the <a href="toc.cchtml">table of contents</a> to
+        make navigation easier.</li>
+</ol>

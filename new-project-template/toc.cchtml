@@ -1,0 +1,7 @@
+<h1>New project template</h1>
+<p>This file provides a table of contents for a CodeChat Editor project.</p>
+<h2>Contents</h2>
+<ol>
+    <li><a href="README.cchtml">Readme</a></li>
+    <li><a href="toc.cchtml">Table of contents</a></li>
+</ol>
