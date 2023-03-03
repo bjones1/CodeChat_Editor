@@ -338,7 +338,9 @@ export const on_save = async () => {
     // <p>This is the data to write &mdash; the source code. First, transform
     //     the HTML back into code and doc blocks.</p>
     const source_code = editor_to_code_doc_blocks();
-    // Then, wrap these in a <a href="../server/src/webserver.rs#ClientSourceFile">struct the server expects</a> and send it.
+    // <p>Then, wrap these in a <a
+    //         href="../server/src/webserver.rs#ClientSourceFile">struct the
+    //         server expects</a> and send it.</p>
     await save({
         metadata: current_metadata,
         code_doc_block_arr: source_code,
@@ -376,16 +378,12 @@ const save = async (contents: AllSource) => {
 };
 
 // <h2 id="classified_source_to_html">Convert lexed code into HTML</h2>
-// <p>TODO: give a big-picture overview of how/why this is a state machine.</p>
+// <p>This function converts an array of code/doc blocks into editable HTML.</p>
 const classified_source_to_html = (
     classified_source: [string, string | null, string][]
 ) => {
     // <p>An array of strings for the new content of the current HTML page.</p>
     let html = [];
-
-    // <p>Keep track of the current type. Begin with neither comment nor code.
-    // </p>
-    let current_delimiter: string | null = null;
 
     // <p>Keep track of the current line number.</p>
     let line = 1;
@@ -395,110 +393,59 @@ const classified_source_to_html = (
         //         newline; otherwise, code blocks would show an extra newline
         //         at the end of the block. (Doc blocks ending in a
         //         <code>&lt;pre&gt;</code> tag or something similar would also
-        //         have this problem). To do this, remove the newline from the
-        //         end of the current line, then prepend it to the beginning of
-        //         the next line.</span></p>
+        //         have this problem).</span></p>
         const m = contents.match(/\n$/);
         if (m) {
             contents = contents.substring(0, m.index);
         }
 
-        // <p>See if there's a change in state.</p>
-        if (current_delimiter !== delimiter) {
-            // <p>Exit the current state.</p>
-            _exit_state(current_delimiter, html);
-
-            // <p>Enter the new state.</p>
-            if (delimiter === "") {
-                // <p>Code state: emit the beginning of an ACE editor block.</p>
-                html.push(
-                    `
-<div class="CodeChat-code">
-    <div class="CodeChat-ACE" data-CodeChat-firstLineNumber="${line}">`,
-                    escapeHTML(contents)
-                );
-            } else {
-                // <p>Comment state: emit an opening indent for non-zero
-                //     indents; insert a TinyMCE editor.</p>
-                // <p><span id="one-row-table">Use a one-row table to lay out a
-                //         doc block, so that it aligns properly with a code
-                //         block.</span></p>
-                // prettier-ignore
-                html.push(
-                    `<div class="CodeChat-doc">
-    <table>
-        <tbody>
-            <tr>
-` +
-                // <p>Spaces matching the number of digits in the ACE gutter's
-                //     line number. TODO: fix this to match the number of digits
-                //     of the last line of the last code block. Fix ACE to
-                //     display this number of digits in all gutters. See
-                //     https://stackoverflow.com/questions/56601362/manually-change-ace-line-numbers.
-                //     --&gt;</p>
-`                <td class="CodeChat-ACE-gutter-padding ace_editor">&nbsp;&nbsp;&nbsp</td>
-                <td class="CodeChat-ACE-padding"></td>` +
-                // <p>This doc block's indent. TODO: allow paste, but must only
-                //     allow pasting whitespace.</p>
-`                <td class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${indent}</td>
-                <td class="CodeChat-TinyMCE-td"><div class="CodeChat-TinyMCE" data-CodeChat-comment="${delimiter}">`,
-                    contents
-                );
-            }
-        } else {
-            // <p><span id="newline-prepend"><a href="#newline-movement">Newline
-            //             movement</a>: prepend the newline removed from the
-            //         previous line to the current line</span>.</p>
+        if (delimiter === "") {
+            // <p>Code state: emit an ACE editor block.</p>
+            // prettier-ignore
             html.push(
-                m ? m[0] : "",
-                delimiter === "" ? escapeHTML(contents) : contents
+                '<div class="CodeChat-code">',
+                    // <p>TODO: Add the correct number of spaces here so that
+                    //     line numbers stay aligned through the whole file.</p>
+                    '<div class="CodeChat-ACE-gutter ace_editor"></div>',
+                    `<div class="CodeChat-ACE" data-CodeChat-firstLineNumber="${line}">`,
+                        escapeHTML(contents),
+                    "</div>",
+                "</div>"
+            );
+        } else {
+            // <p>Comment state: insert a TinyMCE editor.</p>
+            // prettier-ignore
+            html.push(
+                '<div class="CodeChat-doc">',
+                    // <p>TODO: Add spaces matching the number of digits in the
+                    //     ACE gutter's line number. Currently, this is three
+                    //     spaces, assuming a file length of 100-999 lines.</p>
+                    '<div class="CodeChat-ACE-gutter-padding ace_editor">   </div>',
+                    // <p>This is a thin margin which matches what ACE does.</p>
+                    '<div class="CodeChat-ACE-padding"></div>',
+                    // <p>This doc block's indent. TODO: allow paste, but must
+                    //     only allow pasting whitespace.</p>
+                    `<div class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${indent}</div>`,
+                    // <p>The contents of this doc block.</p>
+                    `<div class="CodeChat-TinyMCE" data-CodeChat-comment="${delimiter}">`,
+                        contents,
+                    '</div>',
+                '</div>'
             );
         }
 
-        // <p>Update the state.</p>
-        current_delimiter = delimiter;
         // <p>There are an unknown number of newlines in this source string. One
         //     was removed <a href="#newline-movement">here</a>, so include that
         //     in the count.</p>
         line += 1 + (contents.match(/\n/g) || []).length;
     }
 
-    // <p>When done, exit the last state.</p>
-    _exit_state(current_delimiter, html);
     return html.join("");
 };
 
-// <h3>_exit_state</h3>
-// <p>Output text produced when exiting a state.</p>
-const _exit_state = (
-    // <p>The type (classification) of the last line.</p>
-    delimiter: string | null,
-    // <p>An array of string to store output in.</p>
-    html: string[]
-) => {
-    if (delimiter === "") {
-        // <p>Close the current code block.</p>
-        html.push("</div>\n</div>\n");
-    } else if (typeof delimiter === "string") {
-        // <p>Close the current doc block without adding any trailing spaces
-        //     &mdash; combining this with the next line would add indentation.
-        // </p>
-        //</p>
-        html.push(
-            `</td>
-            </tr>
-        </tbody>
-    </table>
-</div>
-`
-        );
-    }
-};
-
 // <h2>Convert HTML to lexed code</h2>
-// <p>TODO: how does this differ from the previous function? Big picture
-//     overview of what's happening.</p>
-// <p>This transforms the current editor contents into code and doc blocks.</p>
+// <p>This transforms the current editor contents (which are in HTML) into code
+//     and doc blocks.</p>
 const editor_to_code_doc_blocks = () => {
     // <p>Walk through each code and doc block, extracting its contents then
     //     placing it in <code>classified_lines</code>.</p>
@@ -526,8 +473,7 @@ const editor_to_code_doc_blocks = () => {
             //     the comment delimiter, which is what we want.</p>
             if (!is_doc_only()) {
                 indent =
-                    code_or_doc_tag.parentElement!.previousElementSibling!
-                        .textContent ?? "";
+                    code_or_doc_tag.previousElementSibling!.textContent ?? "";
                 // <p>Use the pre-existing delimiter for this block if it
                 //     exists; otherwise, use the default delimiter.</p>
                 delimiter =
