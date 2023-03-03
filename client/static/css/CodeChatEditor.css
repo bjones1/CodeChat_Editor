@@ -83,16 +83,30 @@ body {
 }
 
 .CodeChat-code {
-    /* <p>Use flexbox layout to style code blocks.</p> */
+    /* <p>Use <a
+        href="https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Flexible_Box_Layout/Basic_Concepts_of_Flexbox">flexbox
+        layout</a> to style code blocks. The goal of this layout is:</p>
+<p>&lt;max line numbers spaces&gt; &lt;code&gt;</p>
+<p>where the max line numbers spaces cause this code block's line numbers
+    to line up with all other code block line numbering. For example, if
+    this code block is lines 9-23 (which the Ace editor will treat as a
+    two-digit line number), but the largest line is 453 (three digits),
+    then we need to insert one extra space to correct for the extra digit
+    when the line number is &gt; 99. A <code>&lt;div
+        class="CodeChat-ACE-gutter"&gt;</code> implements this &lt;max
+    line numbers spaces&gt; indent.</p> */
     display: flex;
 }
 
+// Style the max line numbers spaces element discussed above.
 .CodeChat-ACE-gutter {
     font-family: monospace;
     white-space: pre;
     background-color: #f0f0f0;
-    /* <p>This neither grows nor shrinks, but takes its size from its content.
-</p> */
+    /* <p>Make the &lt;max line number spaces&gt; not expand or shrink, but take
+    exactly the width required by the text (spaces) it contains. Defaults
+    for the &lt;code&gt; element cause it to take the rest of the space
+    on the line.</p> */
     flex: 0 0 auto;
 }
 
@@ -103,7 +117,21 @@ body {
 
 /* <h2>Doc block styling</h2> */
 .CodeChat-doc {
-    /* <p>Use flexbox layout to style doc blocks.</p> */
+    /* <p>Use flexbox layout to style doc blocks. The approach is similar to
+    code blocks; the overall goal is:</p>
+<p>&lt;max line number spaces&gt; &lt;padding to match the ACE editor&gt;
+    &lt;doc block indent&gt; &lt;doc block contents&gt;</p>
+<p>where:</p>
+<ul>
+    <li><code>&lt;div class="CodeChat-ACE-gutter-padding"&gt;</code>
+        contains &lt;max line number spaces&gt;</li>
+    <li><code>&lt;div class="CodeChat-ACE-padding"&gt;</code> contains
+        &lt;padding to match the ACE editor&gt;</li>
+    <li><code>&lt;div class="CodeChat-doc-indent"&gt;</code> contains
+        &lt;doc block indent&gt;</li>
+    <li><code>&lt;div class="CodeChat-TinyMCE"&gt;</code> contains the
+        &lt;doc block contents&gt;</li>
+</ul> */
     display: flex;
 }
 
@@ -111,8 +139,8 @@ body {
 .CodeChat-ACE-gutter-padding {
     padding-left: 33px;
     background-color: #f0f0f0;
-    /* <p>This neither grows nor shrinks, but takes its size from its content.
-</p> */
+    /* <p>Make this &lt;max line number spaces&gt; not expand or shrink, but
+    take exactly the width required by the text (spaces) it contains.</p> */
     flex: 0 0 auto;
     font-family: monospace;
     white-space: pre;
@@ -126,8 +154,8 @@ body {
 
 /* <p>Preserve whitespace in the indent of a doc block.</p> */
 .CodeChat-doc-indent {
-    /* <p>This neither grows nor shrinks, but takes its size from its content.
-</p> */
+    /* <p>Make this &lt;doc block indent&gt; not expand or shrink, but take
+    exactly the width required by the text (spaces) it contains.</p> */
     flex: 0 0 auto;
     white-space: pre;
     tab-size: 4;
