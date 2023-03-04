@@ -98,7 +98,7 @@ body {
     display: flex;
 }
 
-// Style the max line numbers spaces element discussed above.
+/* <p>Style the max line numbers spaces element discussed above.</p> */
 .CodeChat-ACE-gutter {
     font-family: monospace;
     white-space: pre;
