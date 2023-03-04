@@ -123,7 +123,8 @@ const open_lp = (
         // <p>Special case: a CodeChat Editor document's HTML doesn't need
         //     lexing; it only contains HTML. Instead, its structure is always:
         //     <code>[["", "", HTML]]</code>. Therefore, the HTML is at item
-        //     [0][2].</p>
+        //     [0][2].
+        // </p>
         html = `<div class="CodeChat-TinyMCE">${code_doc_block_arr[0][2]}</div>`;
     } else {
         html = classified_source_to_html(code_doc_block_arr);
@@ -212,7 +213,8 @@ const make_editors = async (
                     //     page from working -- need to look into this. See also
                     //     <a
                     //         href="https://github.com/tinymce/tinymce/issues/3836">a
-                    //         related GitHub issue</a>.</p>
+                    //         related GitHub issue</a>.
+                    // </p>
                     //readonly: true  // Per the comment above, this is commented out.
                     // <p>TODO: Notes on this setting.</p>
                     relative_urls: true,
@@ -427,7 +429,7 @@ const classified_source_to_html = (
                     //     only allow pasting whitespace.</p>
                     `<div class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${indent}</div>`,
                     // <p>The contents of this doc block.</p>
-                    `<div class="CodeChat-TinyMCE" data-CodeChat-comment="${delimiter}">`,
+                    `<div class="CodeChat-TinyMCE" data-CodeChat-comment="${delimiter}" id="mce-${line}">`,
                         contents,
                     '</div>',
                 '</div>'
@@ -464,7 +466,15 @@ const editor_to_code_doc_blocks = () => {
 
         // <p>Get the type of this block and its contents.</p>
         if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
-            full_string = ace.edit(code_or_doc_tag).getValue();
+            // <p>See if the Ace editor was applied to this element.</p>
+            full_string =
+                // <p>TypeScript knows that an element doesn't have a
+                //     <code>env</code> attribute; ignore this, since Ace
+                //     elements do.</p>
+                /// @ts-ignore
+                code_or_doc_tag.env === undefined
+                    ? unescapeHTML(code_or_doc_tag.innerHTML)
+                    : ace.edit(code_or_doc_tag).getValue();
         } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
             // <p>Get the indent from the previous table cell. For a CodeChat
             //     Editor document, there's no indent (it's just a doc block).
@@ -484,15 +494,19 @@ const editor_to_code_doc_blocks = () => {
             //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get"><code>get</code></a>
             //     and <a
             //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.editor/#getContent"><code>getContent()</code></a>.
-            //     Fortunately, it looks like TinyMCE assigns a unique ID if
-            //     one's no provided, since it only operates on an ID instead of
-            //     the element itself.</p>
+            //     If this element wasn't managed by TinyMCE, it returns
+            //     <code>null</code>, in which case we can directly get the
+            //     <code>innerHTML</code>.</p>
             // <p>Ignore the missing <code>get</code> type definition.</p>
             /// @ts-ignore
-            full_string = tinymce.get(code_or_doc_tag.id).getContent();
+            const tinymce_inst = tinymce.get(code_or_doc_tag.id);
+            const html =
+                tinymce_inst === null
+                    ? code_or_doc_tag.innerHTML
+                    : tinymce_inst.getContent();
             // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters,
             //     including the length of the indent and comment string.</p>
-            full_string = html_beautify(full_string, {
+            full_string = html_beautify(html, {
                 wrap_line_length:
                     80 - indent.length - (delimiter?.length ?? 1) - 1,
             });
@@ -526,13 +540,22 @@ const editor_to_code_doc_blocks = () => {
 //     transforms newlines in odd ways (see <a
 //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText">innerText</a>),
 //     it's not usable with code. Instead, this is a translation of Python's
-//     <code>html.escape</code> function.</p>
-const escapeHTML = (unsafeText: string) => {
+//     <code>html.escape</code> function.
+// </p>
+const escapeHTML = (unsafeText: string): string => {
     // <p>Must be done first!</p>
     unsafeText = unsafeText.replaceAll("&", "&amp;");
     unsafeText = unsafeText.replaceAll("<", "&lt;");
     unsafeText = unsafeText.replaceAll(">", "&gt;");
     return unsafeText;
+};
+
+// <p>This handles only three HTML entities, but no others!</p>
+const unescapeHTML = (html: string): string => {
+    let text = html.replaceAll("&gt;", ">");
+    text = text.replaceAll("&lt;", "<");
+    text = text.replaceAll("&amp;", "&");
+    return text;
 };
 
 // <p>True if this is a CodeChat Editor document (not a source file).</p>
