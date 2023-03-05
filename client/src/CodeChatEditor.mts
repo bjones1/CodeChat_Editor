@@ -123,8 +123,7 @@ const open_lp = (
         // <p>Special case: a CodeChat Editor document's HTML doesn't need
         //     lexing; it only contains HTML. Instead, its structure is always:
         //     <code>[["", "", HTML]]</code>. Therefore, the HTML is at item
-        //     [0][2].
-        // </p>
+        //     [0][2].</p>
         html = `<div class="CodeChat-TinyMCE">${code_doc_block_arr[0][2]}</div>`;
     } else {
         html = classified_source_to_html(code_doc_block_arr);
@@ -169,6 +168,7 @@ declare global {
     }
 }
 
+// <h2>Editors</h2>
 // <p>This code instantiates editors/viewers for code and doc blocks.</p>
 const make_editors = async (
     // <p>A instance of the <code>EditorMode</code> enum.</p>
@@ -184,61 +184,7 @@ const make_editors = async (
                 //     this finishes before calling anything else, to help keep
                 //     the UI responsive. TODO: break this up to apply to each
                 //     doc block, instead of doing them all at once.</p>
-                await tinymce_init({
-                    // <p>Enable the <a
-                    //         href="https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck">browser-supplied
-                    //         spellchecker</a>, since TinyMCE's spellchecker is
-                    //     a premium feature.</p>
-                    browser_spellcheck: true,
-                    // <p>Put more buttons on the <a
-                    //         href="https://www.tiny.cloud/docs/tinymce/6/quickbars/">quick
-                    //         toolbar</a> that appears when text is selected.
-                    //     TODO: add a button for code format (can't find this
-                    //     one -- it's only on the <a
-                    //         href="https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items">list
-                    //         of menu items</a> as <code>codeformat</code>).
-                    // </p>
-                    quickbars_selection_toolbar:
-                        "align | bold italic underline | quicklink h2 h3 blockquote",
-                    // <p>Place the Tiny MCE menu bar at the top of the screen;
-                    //     otherwise, it floats in front of text, sometimes
-                    //     obscuring what the user wants to edit. See the <a
-                    //         href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
-                    // </p>
-                    fixed_toolbar_container: "#CodeChat-menu",
-                    inline: true,
-                    // <p>When true, this still prevents hyperlinks to anchors
-                    //     on the current page from working correctly. There's
-                    //     an onClick handler that prevents links in the current
-                    //     page from working -- need to look into this. See also
-                    //     <a
-                    //         href="https://github.com/tinymce/tinymce/issues/3836">a
-                    //         related GitHub issue</a>.
-                    // </p>
-                    //readonly: true  // Per the comment above, this is commented out.
-                    // <p>TODO: Notes on this setting.</p>
-                    relative_urls: true,
-                    selector: ".CodeChat-TinyMCE",
-                    // <p>This combines the <a
-                    //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
-                    //         TinyMCE toolbar buttons</a> with a few more from
-                    //     plugins. I like the default, so this is currently
-                    //     disabled.</p>
-                    //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
-
-                    // <p>Settings for plugins</p>
-                    // <p><a
-                    //         href="https://www.tiny.cloud/docs/plugins/opensource/image/">Image</a>
-                    // </p>
-                    image_caption: true,
-                    image_advtab: true,
-                    image_title: true,
-                    // <p>Needed to allow custom elements.</p>
-                    extended_valid_elements:
-                        "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale]",
-                    custom_elements:
-                        "graphviz-graph,graphviz-script-editor,graphviz-combined",
-                });
+                await make_doc_block_editor(".CodeChat-TinyMCE");
             }
 
             // <p>Instantiate the Ace editor for code blocks.</p>
@@ -247,35 +193,7 @@ const make_editors = async (
                 //     the UI responsive.</p>
                 await new Promise((accept) =>
                     setTimeout(() => {
-                        ace.edit(ace_tag, {
-                            // <p>The leading <code>+</code> converts the line
-                            //     number from a string (since all HTML
-                            //     attributes are strings) to a number.</p>
-                            firstLineNumber: +(
-                                ace_tag.getAttribute(
-                                    "data-CodeChat-firstLineNumber"
-                                ) ?? 0
-                            ),
-                            // <p>This is distracting, since it highlights one
-                            //     line for each ACE editor instance on the
-                            //     screen. Better: only show this if the editor
-                            //     has focus.</p>
-                            highlightActiveLine: false,
-                            highlightGutterLine: false,
-                            maxLines: 1e10,
-                            mode: `ace/mode/${current_metadata["mode"]}`,
-                            // <p>TODO: this still allows cursor movement. Need
-                            //     something that doesn't show an edit cursor /
-                            //     can't be selected; arrow keys should scroll
-                            //     the display, not move the cursor around in
-                            //     the editor.</p>
-                            readOnly:
-                                editorMode === EditorMode.view ||
-                                editorMode == EditorMode.toc,
-                            showPrintMargin: false,
-                            theme: "ace/theme/textmate",
-                            wrap: true,
-                        });
+                        make_code_block_editor(ace_tag, editorMode);
                         accept("");
                     })
                 );
@@ -306,6 +224,99 @@ const make_editors = async (
 
             accept("");
         });
+    });
+};
+
+// <p>Instantiate a doc block editor (TinyMCE).</p>
+const make_doc_block_editor = (
+    // <p>CSS selector to specify which HTML elements should be editable using
+    //     TinyMCE.</p>
+    selector: string
+) => {
+    return tinymce_init({
+        // <p>Enable the <a
+        //         href="https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck">browser-supplied
+        //         spellchecker</a>, since TinyMCE's spellchecker is a premium
+        //     feature.</p>
+        browser_spellcheck: true,
+        // <p>Put more buttons on the <a
+        //         href="https://www.tiny.cloud/docs/tinymce/6/quickbars/">quick
+        //         toolbar</a> that appears when text is selected. TODO: add a
+        //     button for code format (can't find this one -- it's only on the
+        //     <a
+        //         href="https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items">list
+        //         of menu items</a> as <code>codeformat</code>).</p>
+        quickbars_selection_toolbar:
+            "align | bold italic underline | quicklink h2 h3 blockquote",
+        // <p>Place the Tiny MCE menu bar at the top of the screen; otherwise,
+        //     it floats in front of text, sometimes obscuring what the user
+        //     wants to edit. See the <a
+        //         href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
+        // </p>
+        fixed_toolbar_container: "#CodeChat-menu",
+        inline: true,
+        // <p>When true, this still prevents hyperlinks to anchors on the
+        //     current page from working correctly. There's an onClick handler
+        //     that prevents links in the current page from working -- need to
+        //     look into this. See also <a
+        //         href="https://github.com/tinymce/tinymce/issues/3836">a
+        //         related GitHub issue</a>.</p>
+        //readonly: true  // Per the comment above, this is commented out.
+        // <p>TODO: Notes on this setting.</p>
+        relative_urls: true,
+        selector: selector,
+        // <p>This combines the <a
+        //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
+        //         TinyMCE toolbar buttons</a> with a few more from plugins. I
+        //     like the default, so this is currently disabled.</p>
+        //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
+
+        // <p>Settings for plugins</p>
+        // <p><a
+        //         href="https://www.tiny.cloud/docs/plugins/opensource/image/">Image</a>
+        // </p>
+        image_caption: true,
+        image_advtab: true,
+        image_title: true,
+        // <p>Needed to allow custom elements.</p>
+        extended_valid_elements:
+            "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale]",
+        custom_elements:
+            "graphviz-graph,graphviz-script-editor,graphviz-combined",
+    });
+};
+
+// <p>Instantiate the code block editor (the Ace editor).</p>
+const make_code_block_editor = (
+    // <p>The HTML element which contains text to be edited by the Ace editor.
+    // </p>
+    element: Element,
+    // <p>The editor mode; this determines if the editor is in read-only mode
+    //     (view/toc EditorModes).</p>
+    editorMode: EditorMode
+) => {
+    ace.edit(element, {
+        // <p>The leading <code>+</code> converts the line number from a string
+        //     (since all HTML attributes are strings) to a number.</p>
+        firstLineNumber: +(
+            element.getAttribute("data-CodeChat-firstLineNumber") ?? 0
+        ),
+        // <p>This is distracting, since it highlights one line for each ACE
+        //     editor instance on the screen. Better: only show this if the
+        //     editor has focus.</p>
+        highlightActiveLine: false,
+        highlightGutterLine: false,
+        maxLines: 1e10,
+        mode: `ace/mode/${current_metadata["mode"]}`,
+        // <p>TODO: this still allows cursor movement. Need something that
+        //     doesn't show an edit cursor / can't be selected; arrow keys
+        //     should scroll the display, not move the cursor around in the
+        //     editor.</p>
+        readOnly:
+            editorMode === EditorMode.view || editorMode == EditorMode.toc,
+        showPrintMargin: false,
+        theme: "ace/theme/textmate",
+        wrap: true,
     });
 };
 
@@ -540,8 +551,7 @@ const editor_to_code_doc_blocks = () => {
 //     transforms newlines in odd ways (see <a
 //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText">innerText</a>),
 //     it's not usable with code. Instead, this is a translation of Python's
-//     <code>html.escape</code> function.
-// </p>
+//     <code>html.escape</code> function.</p>
 const escapeHTML = (unsafeText: string): string => {
     // <p>Must be done first!</p>
     unsafeText = unsafeText.replaceAll("&", "&amp;");
