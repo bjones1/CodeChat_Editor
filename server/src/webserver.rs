@@ -438,7 +438,11 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             //     with a slash, while all other paths such a <code>/foo</code>
             //     don't. To detect this, look for an empty
             //     <code>web_path</code>.</p>
-            if web_path.ends_with('/') || web_path.is_empty() { "" } else { "/" },
+            if web_path.ends_with('/') || web_path.is_empty() {
+                ""
+            } else {
+                "/"
+            },
             encoded_dir,
             dir_name
         );
