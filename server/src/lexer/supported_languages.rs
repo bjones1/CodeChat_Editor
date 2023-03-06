@@ -38,6 +38,34 @@ use super::StringDelimiterSpec;
 
 // <h2>Define lexers for each supported language</h2>
 pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
+    // <h3>Linux shell scripts</h3>
+    LanguageLexer {
+        ace_mode: "sh",
+        ext_arr: &["sh"],
+        inline_comment_delim_arr: &["#"],
+        block_comment_delim_arr: &[],
+        string_delim_spec_arr: &[
+            StringDelimiterSpec {
+                delimiter: "\"",
+                escape_char: "\\",
+                newline_support: NewlineSupport::Unescaped,
+            },
+            StringDelimiterSpec {
+                delimiter: "'",
+                escape_char: "\\",
+                newline_support: NewlineSupport::Unescaped,
+            },
+        ],
+        // This doesn't quite match the spec (search for here documents in the bash man page), since it doesn't correctly handle unmatched or mismatched quote; for example, <code>TODO</code>.
+        heredoc_delim: Some(&HeredocDelim {
+            start_prefix: "<<-?('|\")?",
+            delim_ident_regex: "\\w+",
+            start_suffix: "('|\")?",
+            stop_prefix: "",
+            stop_suffix: "",
+        }),
+        special_case: SpecialCase::None,
+    },
     // <h3>C/C++</h3>
     LanguageLexer {
         ace_mode: "c_cpp",
