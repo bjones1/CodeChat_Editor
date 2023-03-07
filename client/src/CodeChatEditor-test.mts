@@ -96,6 +96,39 @@ window.CodeChatEditor_test = () => {
                 );
                 chai.assert.deepEqual(editor_to_code_doc_blocks(), cdb);
             });
+            test("Load a doc block", async function () {
+                await open_lp(
+                    {
+                        metadata: {
+                            mode: "javascript",
+                        },
+                        code_doc_block_arr: [["", "//", "This is a doc block"]],
+                    },
+                    EditorMode.edit
+                );
+                const actual_cdb = editor_to_code_doc_blocks();
+                const expected_cdb: code_or_doc_block[] = [
+                    ["", "//", "<p>This is a doc block</p>\n"],
+                ];
+                chai.assert.deepEqual(actual_cdb, expected_cdb);
+            });
+            test("Load a mixed code and doc block", async function () {
+                const cdb: code_or_doc_block[] = [
+                    ["", "", "a = 1;\nb = 2;\n"],
+                    ["", "//", "This is a doc block"],
+                ];
+                await open_lp(
+                    {
+                        metadata: {
+                            mode: "javascript",
+                        },
+                        code_doc_block_arr: cdb,
+                    },
+                    EditorMode.edit
+                );
+                const actual_cdb = editor_to_code_doc_blocks();
+                chai.assert.deepEqual(actual_cdb, cdb);
+            });
         });
     });
 
