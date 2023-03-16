@@ -231,29 +231,32 @@ enum RegexDelimType {
     TemplateLiteral,
 }
 
+/// <h3>Code/doc blocks</h3>
 // <p>To allow comparison for unit tests.</p>
 #[derive(PartialEq)]
 // <p>To allow printing with <code>println!</code>.</p>
 #[derive(Debug)]
-/// <h3>Code/doc blocks</h3>
-/// <p>This defines either a code block or a doc block.</p>
-pub struct CodeDocBlock {
-    /// <p>For a doc block, the whitespace characters which created the indent
-    ///     for this doc block. For a code block, an empty string.</p>
+pub struct DocBlock {
+    /// <p>The whitespace characters which created the indent for this doc
+    ///     block.</p>
     pub indent: String,
-    /// <p>For a doc block, the opening comment delimiter. For a code block, an
-    ///     empty string.</p>
+    /// <p>The opening comment delimiter.</p>
     pub delimiter: String,
-    /// <p>The contents of this block -- documentation (with the comment
-    ///     delimiters removed) or code.</p>
+    /// <p>The contents of this block: documentation (with the comment
+    ///     delimiters removed).</p>
     pub contents: String,
 }
 
-impl CodeDocBlock {
-    pub fn is_doc_block(self: &CodeDocBlock) -> bool {
-        // <p>Doc blocks have a comment delimiter.</p>
-        !self.delimiter.is_empty()
-    }
+// <p>To allow comparison for unit tests.</p>
+#[derive(PartialEq)]
+// <p>To allow printing with <code>println!</code>.</p>
+#[derive(Debug)]
+pub enum CodeDocBlock {
+    CodeBlock(
+        // <p>This contains the code defining this code block.</p>
+        String,
+    ),
+    DocBlock(DocBlock),
 }
 
 // <h2>Globals</h2>
@@ -304,9 +307,18 @@ impl Serialize for CodeDocBlock {
     {
         // <p>3 is the number of fields in the seq.</p>
         let mut seq = serializer.serialize_seq(Some(3))?;
-        seq.serialize_element(&self.indent)?;
-        seq.serialize_element(&self.delimiter)?;
-        seq.serialize_element(&self.contents)?;
+        match self {
+            CodeDocBlock::DocBlock(d) => {
+                seq.serialize_element(&d.indent)?;
+                seq.serialize_element(&d.delimiter)?;
+                seq.serialize_element(&d.contents)?;
+            }
+            CodeDocBlock::CodeBlock(c) => {
+                seq.serialize_element("")?;
+                seq.serialize_element("")?;
+                seq.serialize_element(&c)?;
+            }
+        };
         seq.end()
     }
 }
@@ -854,23 +866,41 @@ pub fn source_lexer(
             assert!(indent.is_empty());
             return;
         }
+        let is_code_block = indent.is_empty() && delimiter.is_empty();
         // <p>See if there's a previous entry to potentially append to.</p>
-        if let Some(last_code_doc_block) = classified_source.last() {
+        if !classified_source.is_empty() {
             // <p>See if this is the same type of block.</p>
-            if last_code_doc_block.indent == indent && last_code_doc_block.delimiter == delimiter {
-                // <p>Yes, so append the provided contents to it. We must access
-                //     the array directly since <code>last</code> provides only
-                //     a reference.</p>
-                let end = classified_source.len() - 1;
-                classified_source[end].contents += contents;
-                return;
+            let end = classified_source.len() - 1;
+            match classified_source[end] {
+                CodeDocBlock::DocBlock(ref mut last_doc_block) => {
+                    if last_doc_block.indent == indent && last_doc_block.delimiter == delimiter {
+                        // <p>Yes, so append the provided contents to it. We
+                        //     must access the array directly since
+                        //     <code>last_doc_block</code> provides only a
+                        //     reference.</p>
+                        last_doc_block.contents += contents;
+                        return;
+                    }
+                }
+                CodeDocBlock::CodeBlock(ref mut _last_code_block) => {
+                    if indent.is_empty() && delimiter.is_empty() {
+                        // <p>Code blocks should never need to be appended to a
+                        //     previous entry.</p>
+                        panic!("Attempted to append code block contents to a previous entry.")
+                        //_last_code_block.push_str(contents);
+                    }
+                }
             }
         }
         // <p>We must append a new entry.</p>
-        classified_source.push(CodeDocBlock {
-            indent: indent.to_string(),
-            delimiter: delimiter.to_string(),
-            contents: contents.to_string(),
+        classified_source.push(if is_code_block {
+            CodeDocBlock::CodeBlock(contents.to_string())
+        } else {
+            CodeDocBlock::DocBlock(DocBlock {
+                indent: indent.to_string(),
+                delimiter: delimiter.to_string(),
+                contents: contents.to_string(),
+            })
         });
     };
 
@@ -1313,15 +1343,19 @@ pub fn source_lexer(
 #[cfg(test)]
 mod tests {
     use super::supported_languages::LANGUAGE_LEXER_ARR;
-    use super::{compile_lexers, source_lexer, CodeDocBlock};
+    use super::{compile_lexers, source_lexer, CodeDocBlock, DocBlock};
 
     // <p>Provide a compact way to create a <code>CodeDocBlock</code>.</p>
-    fn build_code_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {
-        return CodeDocBlock {
+    fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {
+        return CodeDocBlock::DocBlock(DocBlock {
             indent: indent.to_string(),
             delimiter: delimiter.to_string(),
             contents: contents.to_string(),
-        };
+        });
+    }
+
+    fn build_code_block(contents: &str) -> CodeDocBlock {
+        return CodeDocBlock::CodeBlock(contents.to_string());
     }
 
     // <h3>Source lexer tests</h3>
@@ -1333,35 +1367,26 @@ mod tests {
         // <p>Try basic cases: make sure than newlines are processed correctly.
         // </p>
         assert_eq!(source_lexer("", py), []);
-        assert_eq!(source_lexer("\n", py), [build_code_doc_block("", "", "\n")]);
-        assert_eq!(source_lexer("\r", py), [build_code_doc_block("", "", "\n")]);
-        assert_eq!(
-            source_lexer("\r\n", py),
-            [build_code_doc_block("", "", "\n")]
-        );
+        assert_eq!(source_lexer("\n", py), [build_code_block("\n")]);
+        assert_eq!(source_lexer("\r", py), [build_code_block("\n")]);
+        assert_eq!(source_lexer("\r\n", py), [build_code_block("\n")]);
 
         // <p>Look at a code to doc transition, checking various newline combos.
         // </p>
         assert_eq!(
             source_lexer("\n# Test", py),
-            [
-                build_code_doc_block("", "", "\n"),
-                build_code_doc_block("", "#", "Test")
-            ]
+            [build_code_block("\n"), build_doc_block("", "#", "Test")]
         );
         assert_eq!(
             source_lexer("\n# Test\n", py),
-            [
-                build_code_doc_block("", "", "\n"),
-                build_code_doc_block("", "#", "Test\n")
-            ]
+            [build_code_block("\n"), build_doc_block("", "#", "Test\n")]
         );
         assert_eq!(
             source_lexer("\n# Test\n\n", py),
             [
-                build_code_doc_block("", "", "\n"),
-                build_code_doc_block("", "#", "Test\n"),
-                build_code_doc_block("", "", "\n"),
+                build_code_block("\n"),
+                build_doc_block("", "#", "Test\n"),
+                build_code_block("\n"),
             ]
         );
 
@@ -1369,104 +1394,83 @@ mod tests {
         assert_eq!(
             source_lexer("a = 1\n# Test", py),
             [
-                build_code_doc_block("", "", "a = 1\n"),
-                build_code_doc_block("", "#", "Test")
+                build_code_block("a = 1\n"),
+                build_doc_block("", "#", "Test")
             ]
         );
 
         // <p>Comments that aren't in doc blocks.</p>
         assert_eq!(
             source_lexer("a = 1 # Test", py),
-            [build_code_doc_block("", "", "a = 1 # Test"),]
+            [build_code_block("a = 1 # Test"),]
         );
         assert_eq!(
             source_lexer("\na = 1 # Test", py),
-            [build_code_doc_block("", "", "\na = 1 # Test"),]
+            [build_code_block("\na = 1 # Test"),]
         );
         assert_eq!(
             source_lexer("a = 1 # Test\n", py),
-            [build_code_doc_block("", "", "a = 1 # Test\n"),]
+            [build_code_block("a = 1 # Test\n"),]
         );
-        assert_eq!(
-            source_lexer("#Test\n", py),
-            [build_code_doc_block("", "", "#Test\n"),]
-        );
+        assert_eq!(source_lexer("#Test\n", py), [build_code_block("#Test\n"),]);
 
         // <p>Doc blocks</p>
-        assert_eq!(source_lexer("#", py), [build_code_doc_block("", "#", ""),]);
-        assert_eq!(
-            source_lexer("#\n", py),
-            [build_code_doc_block("", "#", "\n"),]
-        );
+        assert_eq!(source_lexer("#", py), [build_doc_block("", "#", ""),]);
+        assert_eq!(source_lexer("#\n", py), [build_doc_block("", "#", "\n"),]);
         assert_eq!(
             source_lexer("  # Test", py),
-            [build_code_doc_block("  ", "#", "Test")]
+            [build_doc_block("  ", "#", "Test")]
         );
         assert_eq!(
             source_lexer("  # Test\n", py),
-            [build_code_doc_block("  ", "#", "Test\n")]
+            [build_doc_block("  ", "#", "Test\n")]
         );
         assert_eq!(
             source_lexer("\n  # Test", py),
-            [
-                build_code_doc_block("", "", "\n"),
-                build_code_doc_block("  ", "#", "Test")
-            ]
+            [build_code_block("\n"), build_doc_block("  ", "#", "Test")]
         );
         assert_eq!(
             source_lexer("# Test1\n # Test2", py),
             [
-                build_code_doc_block("", "#", "Test1\n"),
-                build_code_doc_block(" ", "#", "Test2")
+                build_doc_block("", "#", "Test1\n"),
+                build_doc_block(" ", "#", "Test2")
             ]
         );
 
         // <p>Doc blocks with empty comments</p>
         assert_eq!(
             source_lexer("# Test 1\n#\n# Test 2", py),
-            [build_code_doc_block("", "#", "Test 1\n\nTest 2"),]
+            [build_doc_block("", "#", "Test 1\n\nTest 2"),]
         );
         assert_eq!(
             source_lexer("  # Test 1\n  #\n  # Test 2", py),
-            [build_code_doc_block("  ", "#", "Test 1\n\nTest 2"),]
+            [build_doc_block("  ", "#", "Test 1\n\nTest 2"),]
         );
 
         // <p>Single-line strings</p>
-        assert_eq!(
-            source_lexer("''", py),
-            [build_code_doc_block("", "", "''"),]
-        );
+        assert_eq!(source_lexer("''", py), [build_code_block("''"),]);
         // <p>An unterminated string before EOF.</p>
-        assert_eq!(source_lexer("'", py), [build_code_doc_block("", "", "'"),]);
-        assert_eq!(
-            source_lexer("\"\"", py),
-            [build_code_doc_block("", "", "\"\""),]
-        );
+        assert_eq!(source_lexer("'", py), [build_code_block("'"),]);
+        assert_eq!(source_lexer("\"\"", py), [build_code_block("\"\""),]);
         assert_eq!(
             source_lexer("a = 'test'\n", py),
-            [build_code_doc_block("", "", "a = 'test'\n"),]
+            [build_code_block("a = 'test'\n"),]
         );
         // <p>Terminate a string with a newline</p>
         assert_eq!(
             source_lexer("a = 'test\n", py),
-            [build_code_doc_block("", "", "a = 'test\n"),]
+            [build_code_block("a = 'test\n"),]
         );
-        assert_eq!(
-            source_lexer(r"'\''", py),
-            [build_code_doc_block("", "", r"'\''"),]
-        );
-        assert_eq!(
-            source_lexer("'\\\n'", py),
-            [build_code_doc_block("", "", "'\\\n'"),]
-        );
+        assert_eq!(source_lexer(r"'\''", py), [build_code_block(r"'\''"),]);
+        assert_eq!(source_lexer("'\\\n'", py), [build_code_block("'\\\n'"),]);
         // <p>This is <code>\\</code> followed by a newline, which terminates
         //     the string early (syntax error -- unescaped newline in a
         //     single-line string).</p>
         assert_eq!(
             source_lexer("'\\\\\n# Test'", py),
             [
-                build_code_doc_block("", "", "'\\\\\n"),
-                build_code_doc_block("", "#", "Test'")
+                build_code_block("'\\\\\n"),
+                build_doc_block("", "#", "Test'")
             ]
         );
         // <p>This is <code>\\\</code> followed by a newline, which puts a
@@ -1474,56 +1478,49 @@ mod tests {
         //     comment.</p>
         assert_eq!(
             source_lexer("'\\\\\\\n# Test'", py),
-            [build_code_doc_block("", "", "'\\\\\\\n# Test'"),]
+            [build_code_block("'\\\\\\\n# Test'"),]
         );
         assert_eq!(
             source_lexer("'\\\n# Test'", py),
-            [build_code_doc_block("", "", "'\\\n# Test'"),]
+            [build_code_block("'\\\n# Test'"),]
         );
         assert_eq!(
             source_lexer("'\n# Test'", py),
-            [
-                build_code_doc_block("", "", "'\n"),
-                build_code_doc_block("", "#", "Test'")
-            ]
+            [build_code_block("'\n"), build_doc_block("", "#", "Test'")]
         );
 
         // <p>Multi-line strings</p>
         assert_eq!(
             source_lexer("'''\n# Test'''", py),
-            [build_code_doc_block("", "", "'''\n# Test'''"),]
+            [build_code_block("'''\n# Test'''"),]
         );
         assert_eq!(
             source_lexer("\"\"\"\n#Test\"\"\"", py),
-            [build_code_doc_block("", "", "\"\"\"\n#Test\"\"\""),]
+            [build_code_block("\"\"\"\n#Test\"\"\""),]
         );
         // <p>An empty string, follow by a comment which ignores the fake
         //     multi-line string.</p>
         assert_eq!(
             source_lexer("''\n# Test 1'''\n# Test 2", py),
             [
-                build_code_doc_block("", "", "''\n"),
-                build_code_doc_block("", "#", "Test 1'''\nTest 2")
+                build_code_block("''\n"),
+                build_doc_block("", "#", "Test 1'''\nTest 2")
             ]
         );
         assert_eq!(
             source_lexer("'''\n# Test 1\\'''\n# Test 2", py),
-            [build_code_doc_block("", "", "'''\n# Test 1\\'''\n# Test 2"),]
+            [build_code_block("'''\n# Test 1\\'''\n# Test 2"),]
         );
         assert_eq!(
             source_lexer("'''\n# Test 1\\\\'''\n# Test 2", py),
             [
-                build_code_doc_block("", "", "'''\n# Test 1\\\\'''\n"),
-                build_code_doc_block("", "#", "Test 2")
+                build_code_block("'''\n# Test 1\\\\'''\n"),
+                build_doc_block("", "#", "Test 2")
             ]
         );
         assert_eq!(
             source_lexer("'''\n# Test 1\\\\\\'''\n# Test 2", py),
-            [build_code_doc_block(
-                "",
-                "",
-                "'''\n# Test 1\\\\\\'''\n# Test 2"
-            ),]
+            [build_code_block("'''\n# Test 1\\\\\\'''\n# Test 2"),]
         );
     }
 
@@ -1536,89 +1533,89 @@ mod tests {
         // <p>simple inline comment</p>
         assert_eq!(
             source_lexer("// Test", js),
-            [build_code_doc_block("", "//", "Test"),]
+            [build_doc_block("", "//", "Test"),]
         );
 
         // <p>basic test</p>
         assert_eq!(
             source_lexer("/* Basic Test */", js),
-            [build_code_doc_block("", "/*", "Basic Test"),]
+            [build_doc_block("", "/*", "Basic Test"),]
         );
 
         // <p>no space after opening delimiter (criteria 1)</p>
         assert_eq!(
             source_lexer("/*Test */", js),
-            [build_code_doc_block("", "", "/*Test */"),]
+            [build_code_block("/*Test */"),]
         );
 
         // <p>no space after closing delimiter</p>
         assert_eq!(
             source_lexer("/* Test*/", js),
-            [build_code_doc_block("", "/*", "Test"),]
+            [build_doc_block("", "/*", "Test"),]
         );
 
         // <p>extra spaces after opening delimiter (ok, drop 1)</p>
         assert_eq!(
             source_lexer("/*   Extra Space */", js),
-            [build_code_doc_block("", "/*", "  Extra Space"),]
+            [build_doc_block("", "/*", "  Extra Space"),]
         );
 
         // <p>code before opening delimiter (criteria 2)</p>
         assert_eq!(
             source_lexer("a = 1 /* Code Before */", js),
-            [build_code_doc_block("", "", "a = 1 /* Code Before */"),]
+            [build_code_block("a = 1 /* Code Before */"),]
         );
 
         // <p>4 spaces before opening delimiter (criteria 2 ok)</p>
         assert_eq!(
             source_lexer("    /* Space Before */", js),
-            [build_code_doc_block("    ", "/*", "Space Before"),]
+            [build_doc_block("    ", "/*", "Space Before"),]
         );
 
         // <p>newline in comment</p>
         assert_eq!(
             source_lexer("/* Newline\nIn Comment */", js),
-            [build_code_doc_block("", "/*", "Newline\nIn Comment"),]
+            [build_doc_block("", "/*", "Newline\nIn Comment"),]
         );
 
         // <p>3 trailing whitespaces (criteria 3 ok)</p>
         assert_eq!(
             source_lexer("/* Trailing Whitespace  */  ", js),
-            [build_code_doc_block("", "/*", "Trailing Whitespace   "),]
+            [build_doc_block("", "/*", "Trailing Whitespace   "),]
         );
 
         // <p>code after closing delimiter (criteria 3)</p>
         assert_eq!(
             source_lexer("/* Code After */ a = 1", js),
-            [build_code_doc_block("", "", "/* Code After */ a = 1"),]
+            [build_code_block("/* Code After */ a = 1"),]
         );
 
         // <p>Another important case:</p>
         assert_eq!(
             source_lexer("/* Another Important Case */\n", js),
-            [build_code_doc_block("", "/*", "Another Important Case\n"),]
+            [build_doc_block("", "/*", "Another Important Case\n"),]
         );
 
         // <p>No closing delimiter</p>
         assert_eq!(
             source_lexer("/* No Closing Delimiter", js),
-            [build_code_doc_block("", "", "/* No Closing Delimiter"),]
+            [build_code_block("/* No Closing Delimiter"),]
         );
 
         // <p>Two closing delimiters</p>
         assert_eq!(
             source_lexer("/* Two Closing Delimiters */ \n */", js),
             [
-                build_code_doc_block("", "/*", "Two Closing Delimiters \n"),
-                build_code_doc_block("", "", " */"),
+                build_doc_block("", "/*", "Two Closing Delimiters \n"),
+                build_code_block(" */"),
             ]
         );
         // <p>Code before a block comment.</p>
         assert_eq!(
             source_lexer("bears();\n/* Bears */\n", js),
             [
-                build_code_doc_block("", "", "bears();\n"),
-                build_code_doc_block("", "/*", "Bears\n"),
+                build_code_block("bears();\n"),
+                build_doc_block("", "/*", "Bears\n"),
             ]
         );
 
@@ -1626,39 +1623,36 @@ mod tests {
         assert_eq!(
             source_lexer("test_1();\n/*\nTest 2\n*/", js),
             [
-                build_code_doc_block("", "", "test_1();\n"),
-                build_code_doc_block("", "/*", "Test 2\n"),
+                build_code_block("test_1();\n"),
+                build_doc_block("", "/*", "Test 2\n"),
             ]
         );
 
         // <p>Some basic template literal tests. Comments inside template
         //     literal expressions aren't parsed correctly; neither are nested
         //     template literals.</p>
-        assert_eq!(
-            source_lexer("``", js),
-            [build_code_doc_block("", "", "``"),]
-        );
-        assert_eq!(source_lexer("`", js), [build_code_doc_block("", "", "`"),]);
+        assert_eq!(source_lexer("``", js), [build_code_block("``"),]);
+        assert_eq!(source_lexer("`", js), [build_code_block("`"),]);
         assert_eq!(
             source_lexer("`\n// Test`", js),
-            [build_code_doc_block("", "", "`\n// Test`"),]
+            [build_code_block("`\n// Test`"),]
         );
         assert_eq!(
             source_lexer("`\\`\n// Test`", js),
-            [build_code_doc_block("", "", "`\\`\n// Test`"),]
+            [build_code_block("`\\`\n// Test`"),]
         );
         assert_eq!(
             source_lexer("`\n// Test 1`\n// Test 2", js),
             [
-                build_code_doc_block("", "", "`\n// Test 1`\n"),
-                build_code_doc_block("", "//", "Test 2")
+                build_code_block("`\n// Test 1`\n"),
+                build_doc_block("", "//", "Test 2")
             ]
         );
         assert_eq!(
             source_lexer("`\n// Test 1\\`\n// Test 2`\n// Test 3", js),
             [
-                build_code_doc_block("", "", "`\n// Test 1\\`\n// Test 2`\n"),
-                build_code_doc_block("", "//", "Test 3")
+                build_code_block("`\n// Test 1\\`\n// Test 2`\n"),
+                build_doc_block("", "//", "Test 3")
             ]
         );
     }
@@ -1672,8 +1666,8 @@ mod tests {
         assert_eq!(
             source_lexer("R\"heredoc(\n// Test 1)heredoc\"\n// Test 2", cpp),
             [
-                build_code_doc_block("", "", "R\"heredoc(\n// Test 1)heredoc\"\n"),
-                build_code_doc_block("", "//", "Test 2")
+                build_code_block("R\"heredoc(\n// Test 1)heredoc\"\n"),
+                build_doc_block("", "//", "Test 2")
             ]
         );
     }
@@ -1687,8 +1681,8 @@ mod tests {
         assert_eq!(
             source_lexer("// Test 1\n@\"\n// Test 2\"\"\n// Test 3\"", csharp),
             [
-                build_code_doc_block("", "//", "Test 1\n"),
-                build_code_doc_block("", "", "@\"\n// Test 2\"\"\n// Test 3\"")
+                build_doc_block("", "//", "Test 1\n"),
+                build_code_block("@\"\n// Test 2\"\"\n// Test 3\"")
             ]
         );
     }
@@ -1710,10 +1704,10 @@ v = ["Test 2\", ...
                 matlab
             ),
             [
-                build_code_doc_block("", "%", "Test 1\n"),
-                build_code_doc_block("", "", "v = [\"Test 2\\\", ...\n"),
-                build_code_doc_block(" ", "...", "\"Test 3\", ...\n"),
-                build_code_doc_block("", "", "     \"Test\"\"4\"];\n"),
+                build_doc_block("", "%", "Test 1\n"),
+                build_code_block("v = [\"Test 2\\\", ...\n"),
+                build_doc_block(" ", "...", "\"Test 3\", ...\n"),
+                build_code_block("     \"Test\"\"4\"];\n"),
             ]
         );
 
@@ -1729,10 +1723,10 @@ a = 2
                 matlab
             ),
             [
-                build_code_doc_block("", "", "%{ Test 1\na = 1\n"),
+                build_code_block("%{ Test 1\na = 1\n"),
                 // <p>TODO: currently, whitespace on the line containing the
                 //     closing block delimiter isn't captured. Fix this.</p>
-                build_code_doc_block("  ", "%{", "a = 2\n"),
+                build_doc_block("  ", "%{", "a = 2\n"),
             ]
         );
     }
@@ -1746,8 +1740,8 @@ a = 2
         assert_eq!(
             source_lexer("r###\"\n// Test 1\"###\n// Test 2", rust),
             [
-                build_code_doc_block("", "", "r###\"\n// Test 1\"###\n"),
-                build_code_doc_block("", "//", "Test 2")
+                build_code_block("r###\"\n// Test 1\"###\n"),
+                build_doc_block("", "//", "Test 2")
             ]
         );
 
@@ -1756,8 +1750,8 @@ a = 2
         assert_eq!(
             source_lexer("test_1();\n/* Test 2 */\n", rust),
             [
-                build_code_doc_block("", "", "test_1();\n"),
-                build_code_doc_block("", "/*", "Test 2\n")
+                build_code_block("test_1();\n"),
+                build_doc_block("", "/*", "Test 2\n")
             ]
         );
     }
@@ -1771,8 +1765,8 @@ a = 2
         assert_eq!(
             source_lexer("-- Test 1\n'\n-- Test 2''\n-- Test 3'", sql),
             [
-                build_code_doc_block("", "--", "Test 1\n"),
-                build_code_doc_block("", "", "'\n-- Test 2''\n-- Test 3'")
+                build_doc_block("", "--", "Test 1\n"),
+                build_code_block("'\n-- Test 2''\n-- Test 3'")
             ]
         );
     }
@@ -1787,16 +1781,16 @@ a = 2
         assert_eq!(
             source_lexer("'''\n# Test 1\\'''\n# Test 2", toml),
             [
-                build_code_doc_block("", "", "'''\n# Test 1\\'''\n"),
-                build_code_doc_block("", "#", "Test 2")
+                build_code_block("'''\n# Test 1\\'''\n"),
+                build_doc_block("", "#", "Test 2")
             ]
         );
         // <p>Basic strings have an escape, but don't allow newlines.</p>
         assert_eq!(
             source_lexer("\"\\\n# Test 1\"", toml),
             [
-                build_code_doc_block("", "", "\"\\\n"),
-                build_code_doc_block("", "#", "Test 1\"")
+                build_code_block("\"\\\n"),
+                build_doc_block("", "#", "Test 1\"")
             ]
         );
     }
