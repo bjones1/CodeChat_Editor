@@ -205,12 +205,14 @@ async fn save_source(
                         )
                     }
                 };
-                // <p>Produce the resulting block comment. They should always end with a newline.</p>
+                // <p>Produce the resulting block comment. They should always
+                //     end with a newline.</p>
                 assert!(&code_doc_block.contents.ends_with('\n'));
                 append_doc_block(
                     &code_doc_block.indent,
                     &code_doc_block.delimiter,
-                    // Omit the newline, so we can instead put on the closing delimiter, then the newline.
+                    // <p>Omit the newline, so we can instead put on the closing
+                    //     delimiter, then the newline.</p>
                     &code_doc_block.contents[..&code_doc_block.contents.len() - 1],
                 );
                 file_contents = file_contents + " " + block_comment_closing_delimiter + "\n";

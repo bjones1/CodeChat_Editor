@@ -12,10 +12,11 @@
 ///     <p>You should have received a copy of the GNU General Public License
 ///         along with the CodeChat Editor. If not, see <a
 ///             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
-///     </p>
+///
+///
 /// </details>
-/// <h1><code>lexer.rs</code> &mdash; Entrypoint for the CodeChat Editor Server
-/// </h1>
+/// <code>lexer.rs</code> &mdash; Entrypoint for the CodeChat Editor Server
+/// ============================================================================
 use code_chat_editor::webserver;
 
 fn main() {
