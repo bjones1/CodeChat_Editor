@@ -93,7 +93,15 @@
                     style="color: rgb(0, 0, 0);"><strong><span
                             style="background-color: rgb(251, 238, 184);">Where
                             to implement pulldown-cmark
-                            function?</span></strong></span></li>
+                            function?</span></strong></span>
+                <ul>
+                    <li style="color: rgb(35, 111, 161);"><span
+                            style="color: rgb(0, 0, 0);"><span
+                                style="background-color: rgb(251, 238, 184);">We've
+                                marked the potential location in
+                                Cargo.toml.</span></span></li>
+                </ul>
+            </li>
         </ul>
     </li>
 </ul>
