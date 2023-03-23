@@ -18,6 +18,8 @@
 /// </h1>
 /// <p>TODO: auto-reload when the current file changes on disk. Use <a
 ///         href="https://docs.rs/notify/latest/notify/">notify</a>.</p>
+/// <p><span style="background-color: rgb(236, 202, 250);">SSC: Perhaps put the
+///         overall purpose/description/goal of webserver.rs here.</span></p>
 /// <h2>Imports</h2>
 /// <h3>Standard library&nbsp;</h3>
 use std::{
@@ -94,6 +96,9 @@ lazy_static! {
 }
 
 /// <h2>Save endpoint</h2>
+/// <p><span style="background-color: rgb(236, 202, 250);">SSC: I think most of
+///         the code in this section is commented nicely; I can understand the
+///         flow/process of the script from here.</span></p>
 #[put("/fs/{path:.*}")]
 /// <p>The Save button in the CodeChat Editor Client posts to this endpoint with
 ///     the path of the file to save.</p>
@@ -218,8 +223,9 @@ async fn save_source(
                 );
                 file_contents = file_contents + " " + block_comment_closing_delimiter + "\n";
             }
-        // TODO: insert conversion from markdown to html here?
-        // TODO: how do we test what we implement? 
+        // <p><span style="background-color: rgb(251, 238, 184);">TODO: insert
+        //         conversion from markdown to html here? TODO: how do we test
+        //         what we implement?</span></p>
         } 
         else {
             // <p>This is code. Simply append it (by definition, indent and
