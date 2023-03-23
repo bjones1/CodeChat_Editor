@@ -19,7 +19,7 @@
 /// <p>TODO: auto-reload when the current file changes on disk. Use <a
 ///         href="https://docs.rs/notify/latest/notify/">notify</a>.</p>
 /// <h2>Imports</h2>
-/// <h3>Standard library</h3>
+/// <h3>Standard library&nbsp;</h3>
 use std::{
     collections::HashMap,
     env,
@@ -185,7 +185,8 @@ async fn save_source(
                         content_line,
                     );
                 }
-            } else {
+            } 
+            else {
                 // <p>Determine the closing comment delimiter matching the
                 //     provided opening delimiter.</p>
                 let block_comment_closing_delimiter = match lexer
@@ -205,17 +206,22 @@ async fn save_source(
                         )
                     }
                 };
-                // <p>Produce the resulting block comment. They should always end with a newline.</p>
+                // <p>Produce the resulting block comment. They should always
+                //     end with a newline.</p>
                 assert!(&code_doc_block.contents.ends_with('\n'));
                 append_doc_block(
                     &code_doc_block.indent,
                     &code_doc_block.delimiter,
-                    // Omit the newline, so we can instead put on the closing delimiter, then the newline.
+                    // <p>Omit the newline, so we can instead put on the closing
+                    //     delimiter, then the newline.</p>
                     &code_doc_block.contents[..&code_doc_block.contents.len() - 1],
                 );
                 file_contents = file_contents + " " + block_comment_closing_delimiter + "\n";
             }
-        } else {
+        // TODO: insert conversion from markdown to html here?
+        // TODO: how do we test what we implement? 
+        } 
+        else {
             // <p>This is code. Simply append it (by definition, indent and
             //     delimiter are empty).</p>
             file_contents += &code_doc_block.contents;
