@@ -29,9 +29,9 @@
     </li>
     <li>HTML is simple to implement (already done). However, it's less
         readable.</li>
-    <li>If we make Pandoc a depedency, then supporting a wide variety of markup
-        languages is easy. However, any candidate language must be able to
-        preserve arbitrary HTML, which may be problematic.</li>
+    <li>If we make Pandoc a dependency, then supporting a wide variety of
+        markup languages is easy. However, any candidate language must be able
+        to preserve arbitrary HTML, which may be problematic.</li>
     <li>Markdown is very well known, due to GitHub's use of it, and is more
         readable (IMHO). It seems like a possible candidate -- anything that
         can't be translated from HTML from Markdown can simply be left as HTML,
@@ -42,6 +42,60 @@
             href="https://github.com/commonmark/commonmark.js/blob/master/lib/render/html.js">code</a>
         that CommonMark uses to translate from their AST into HTML looks pretty
         straightforward, so the inverse shouldn't be too hard.</li>
+    <li><span style="background-color: rgb(251, 238, 184);">Markdown-to-HTML
+            conversion (for doc-blocks only):</span>
+        <ul>
+            <li><span style="background-color: rgb(251, 238, 184);">TODO:
+                    <br></span>
+                <ul>
+                    <li><span
+                            style="background-color: rgb(251, 238, 184);">import
+                            pulldown-cmark library within
+                            webserver.rs&nbsp;</span></li>
+                    <li><span
+                            style="background-color: rgb(251, 238, 184);">insert
+                            conversion [function?] in "Save Endpoint"
+                            section</span>
+                        <ul>
+                            <li
+                                style="color: rgb(35, 111, 161); font-weight: bold;">
+                                <strong><span
+                                        style="background-color: rgb(251, 238, 184); color: rgb(35, 111, 161);">Immediately
+                                        after doc and code blocks have been
+                                        parsed/split?</span></strong></li>
+                            <li><span
+                                    style="background-color: rgb(251, 238, 184);">check
+                                    if already HTML. if so, move on without
+                                    changes. Skip code blocks</span></li>
+                            <li
+                                style="font-weight: bold; color: rgb(35, 111, 161);">
+                                <span
+                                    style="color: rgb(35, 111, 161);"><strong><span
+                                            style="background-color: rgb(251, 238, 184);">Should
+                                            this be implemented within the
+                                            parsing
+                                            section?</span></strong></span>
+                            </li>
+                            <li
+                                style="font-weight: bold; color: rgb(35, 111, 161);">
+                                <span
+                                    style="color: rgb(35, 111, 161);"><strong><span
+                                            style="background-color: rgb(251, 238, 184);">Should
+                                            we give user the option to convert
+                                            to HTML, or do it
+                                            automatically?</span></strong></span>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+            <li style="font-weight: bold; color: rgb(35, 111, 161);"><span
+                    style="color: rgb(0, 0, 0);"><strong><span
+                            style="background-color: rgb(251, 238, 184);">Where
+                            to implement pulldown-cmark
+                            function?</span></strong></span></li>
+        </ul>
+    </li>
 </ul>
 <h3>Lexing</h3>
 <p>TODO: describe the lexer implementation. Link to the walkthrough, discuss
