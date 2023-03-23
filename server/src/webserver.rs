@@ -19,7 +19,7 @@
 /// <p>TODO: auto-reload when the current file changes on disk. Use <a
 ///         href="https://docs.rs/notify/latest/notify/">notify</a>.</p>
 /// <h2>Imports</h2>
-/// <h3>Standard library</h3>
+/// <h3>Standard library&nbsp;</h3>
 use std::{
     collections::HashMap,
     env,
