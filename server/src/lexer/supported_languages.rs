@@ -56,7 +56,9 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
                 newline_support: NewlineSupport::Unescaped,
             },
         ],
-        // This doesn't quite match the spec (search for here documents in the bash man page), since it doesn't correctly handle unmatched or mismatched quote; for example, <code>TODO</code>.
+        // <p>This doesn't quite match the spec (search for here documents in
+        //     the bash man page), since it doesn't correctly handle unmatched
+        //     or mismatched quote; for example, <code>TODO</code>.</p>
         heredoc_delim: Some(&HeredocDelim {
             start_prefix: "<<-?('|\")?",
             delim_ident_regex: "\\w+",
@@ -69,7 +71,8 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // <h3>C/C++</h3>
     LanguageLexer {
         ace_mode: "c_cpp",
-        // Note that the <code>.ino</code> extension is for Arduino source files.
+        // <p>Note that the <code>.ino</code> extension is for Arduino source
+        //     files.</p>
         ext_arr: &["c", "cc", "cpp", "ino"],
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
@@ -512,6 +515,30 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         ],
         heredoc_delim: None,
         special_case: SpecialCase::TemplateLiteral,
+    },
+    // <p>VHDL</p>
+    LanguageLexer {
+        // <p>See the IEEE Standard VHDL Language Reference Manual (IEEE Std
+        //     1076-2008)</p>
+        ace_mode: "vhdl",
+        // <p><code>bsc</code> files are boundary scan files.</p>
+        ext_arr: &["vhdl", "bsc"],
+        // <p>See section 15.9 of the standard.</p>
+        inline_comment_delim_arr: &["--"],
+        block_comment_delim_arr: &[BlockCommentDelim {
+            opening: "/*",
+            closing: "*/",
+            is_nestable: false,
+        }],
+        // <p>Per section 15.7 of the standard, strings may not contain
+        //     newlines. To quote a double quote, repeat it twice.</p>
+        string_delim_spec_arr: &[StringDelimiterSpec {
+            delimiter: "\"",
+            escape_char: "",
+            newline_support: NewlineSupport::None,
+        }],
+        heredoc_delim: None,
+        special_case: SpecialCase::None,
     },
     // <p>Verilog</p>
     LanguageLexer {
