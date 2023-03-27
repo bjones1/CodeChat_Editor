@@ -30,8 +30,10 @@ use std::{
 // <h3>Third-party</h3>
 use actix_files;
 use actix_web::{
-    get, http::header, http::header::ContentType, put, web, App, HttpRequest, HttpResponse,
-    HttpServer, Responder,
+    get,
+    http::header,
+    http::header::{ContentDisposition, ContentType},
+    put, web, App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -539,7 +541,12 @@ async fn serve_file(
         //     is unknown. Serve it raw, assuming it's an image/video/etc.</p>
         match actix_files::NamedFile::open_async(file_path).await {
             Ok(v) => {
-                let res = v.into_response(req);
+                let res = v
+                    .set_content_disposition(ContentDisposition {
+                        disposition: header::DispositionType::Inline,
+                        parameters: vec![],
+                    })
+                    .into_response(req);
                 return res;
             }
             Err(err) => {
