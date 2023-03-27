@@ -16,9 +16,10 @@
 /// </details>
 /// <h1><code>supported_languages.rs</code> &mdash; Provide lexer info for all
 ///     supported languages</h1>
-/// <p>Note that the lexers here should be complemented by the appropriate Ace
-///     mode in <a
-///         href="../../../client/src/ace-webpack.mts">ace-webpack.mts</a>.</p>
+/// <p>This file contains a data structure which describes all supported
+///     languages; the <a href="../lexer.rs">lexer</a> uses this lex a given
+///     language.</p>
+/// <h2>Lexer implementation</h2>
 /// <p>Ordering matters: all these delimiters end up in a large regex separated
 ///     by an or operator. The regex or operator matches from left to right. So,
 ///     longer Python string delimiters must be specified first (leftmost):
@@ -27,6 +28,20 @@
 ///     which will first search for the multi-line triple quote, then if that's
 ///     not found, the single quote. A regex of <code>"|"""</code> would never
 ///     match the triple quote, since the single quote would match first.</p>
+/// <p>Note that the lexers here should be complemented by the appropriate Ace
+///     mode in <a
+///         href="../../../client/src/ace-webpack.mts">ace-webpack.mts</a>.</p>
+/// <h3><a id="string_delimiter_doubling"></a>String delimiter doubling</h3>
+/// <p>Some languages allow inserting the string delimiter within a string by
+///     putting two back-to-back delimiters in the string. For example, SQL's
+///     string delimiter is a single quote. To insert a single quote in a
+///     string, double it: <code>'She''s here.'</code>, for example. From a
+///     lexer perspective, we don't need extra logic to handle this; instead,
+///     it's treated as two back-to-back strings. In this case, they would be
+///     <code>'She'</code> and <code>'s
+///         here.'</code>. While this doesn't parse the string correctly, it
+///     does correctly identify where comments can't be, which is all that the
+///     lexer needs to do.</p>
 /// <h2>Imports</h2>
 /// <h3>Local</h3>
 use super::BlockCommentDelim;
@@ -328,9 +343,10 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         //     supports <a
         //         href="https://www.mathworks.com/help/matlab/matlab_prog/matlab-operators-and-special-characters.html#bvg44q6">standard
         //         escape sequences</a> (scroll to the bottom of the page),
-        //     these don't affect quotes; instead, double quotes are used to
-        //     insert a single quote. Per the SQL discussion, double quotes can
-        //     be ignored by this lexer.</p>
+        //     these don't affect quotes; instead, doubled quotes are used to
+        //     insert a single quote. See <a
+        //         href="#string_delimiter_doubling">string delimiter
+        //         doubling</a>.</p>
         string_delim_spec_arr: &[
             StringDelimiterSpec {
                 delimiter: "\"",
@@ -435,17 +451,12 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         }],
         string_delim_spec_arr: &[
             // <p>SQL standard strings allow newlines and don't provide an
-            //     escape character. To insert a single quote, double it:
-            //     <code>'She''s here.'</code>, for example. From a lexer
-            //     perspective, we don't need extra logic to handle this;
-            //     instead, it's treated as two back-to-back strings. In this
-            //     case, they would be <code>'She'</code> and <code>'s
-            //         here.'</code>. While this doesn't parse the string
-            //     correctly, it does correctly identify where comments can't
-            //     be, which is all that the lexer needs to do.</p>
-            // <p>Unfortunately, each variant of SQL also supports their custom
-            //     definition of strings; these must be handled by
-            //     vendor-specific flavors of this basic lexer definition.</p>
+            //     escape character. This language uses <a
+            //         href="#string_delimiter_doubling">string delimiter
+            //         doubling</a>. Unfortunately, each variant of SQL also
+            //     supports their custom definition of strings; these must be
+            //     handled by vendor-specific flavors of this basic lexer
+            //     definition.</p>
             StringDelimiterSpec {
                 delimiter: "'",
                 escape_char: "",
@@ -516,7 +527,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::TemplateLiteral,
     },
-    // <p>VHDL</p>
+    // <h3>VHDL</h3>
     LanguageLexer {
         // <p>See the IEEE Standard VHDL Language Reference Manual (IEEE Std
         //     1076-2008)</p>
@@ -531,7 +542,9 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
             is_nestable: false,
         }],
         // <p>Per section 15.7 of the standard, strings may not contain
-        //     newlines. To quote a double quote, repeat it twice.</p>
+        //     newlines. This language uses <a
+        //         href="#string_delimiter_doubling">string delimiter
+        //         doubling</a>.</p>
         string_delim_spec_arr: &[StringDelimiterSpec {
             delimiter: "\"",
             escape_char: "",
@@ -540,7 +553,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <p>Verilog</p>
+    // <h3>Verilog</h3>
     LanguageLexer {
         ace_mode: "verilog",
         ext_arr: &["v"],
