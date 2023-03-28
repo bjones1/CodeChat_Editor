@@ -69,7 +69,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // <h3>C/C++</h3>
     LanguageLexer {
         ace_mode: "c_cpp",
-        ext_arr: &["c", "cc", "cpp"],
+        ext_arr: &["c", "cc", "cpp", "ino"],
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",

@@ -38,20 +38,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
-pulldown-cmark = { version = "0.9.2" } // unsure if brackets belong here. pulldown-cmark source does not include them, but some of the above imports do use brackets
+pulldown-cmark = "0.9.2" 
 # <p>&nbsp;</p>
-# <p><strong><span style="font-size: 14pt;"><span
-#                 style="background-color: rgb(251, 238, 184);">Where to insert
-#                 pulldown-cmark import? At end of preceding section, as shown
-#                 above? [ &nbsp; </span><code
-#                 class="language-toml hljs language-ini"><span
-#                     class="hljs-attr"><span
-#                         style="background-color: rgb(241, 196, 15);">pulldown-cmark</span></span><span
-#                     style="background-color: rgb(241, 196, 15);"> = version
-#                     =&nbsp;<span
-#                         class="hljs-string">"0.9.2"</span></span></code><span
-#                 style="background-color: rgb(251, 238, 184);"> &nbsp;
-#                 ]</span></span></strong></p>
 # <p><a
 #         href="https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies">Windows-only
 #         dependencies</a>.</p>
