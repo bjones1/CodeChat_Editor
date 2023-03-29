@@ -96,9 +96,6 @@ lazy_static! {
 }
 
 /// <h2>Save endpoint</h2>
-/// <p><span style="background-color: rgb(236, 202, 250);">SSC: I think most of
-///         the code in this section is commented nicely; I can understand the
-///         flow/process of the script from here.</span></p>
 #[put("/fs/{path:.*}")]
 /// <p>The Save button in the CodeChat Editor Client posts to this endpoint with
 ///     the path of the file to save.</p>
@@ -224,8 +221,7 @@ async fn save_source(
                 file_contents = file_contents + " " + block_comment_closing_delimiter + "\n";
             }
         // <p><span style="background-color: rgb(251, 238, 184);">TODO: insert
-        //         conversion from markdown to html here? TODO: how do we test
-        //         what we implement?</span></p>
+        //         conversion from HTML to Markdown here?&nbsp;<br></span></p>
         } 
         else {
             // <p>This is code. Simply append it (by definition, indent and
@@ -626,6 +622,9 @@ async fn serve_file(
     };
 
     // <p>Lex the code and put it in a JSON structure.</p>
+    // <p><span style="background-color: rgb(236, 202, 250);">SSC: I think we
+    //         implement the function somewhere in the lines below. I need to
+    //         review this more.</span></p>
     let code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
         vec![CodeDocBlock {
             indent: "".to_string(),
