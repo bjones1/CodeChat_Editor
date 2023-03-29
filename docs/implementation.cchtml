@@ -42,69 +42,41 @@
             href="https://github.com/commonmark/commonmark.js/blob/master/lib/render/html.js">code</a>
         that CommonMark uses to translate from their AST into HTML looks pretty
         straightforward, so the inverse shouldn't be too hard.</li>
-    <li><span style="background-color: rgb(251, 238, 184);">Markdown-to-HTML
-            conversion (for doc-blocks only):</span>
-        <ul>
-            <li><span style="background-color: rgb(251, 238, 184);">TODO:
-                    <br></span>
-                <ul>
-                    <li><span
-                            style="background-color: rgb(251, 238, 184);">import
-                            pulldown-cmark library within
-                            webserver.rs&nbsp;</span></li>
-                    <li><span
-                            style="background-color: rgb(251, 238, 184);">insert
-                            conversion [function?] in "Save Endpoint"
-                            section</span>
-                        <ul>
-                            <li
-                                style="color: rgb(35, 111, 161); font-weight: bold;">
-                                <strong><span
-                                        style="background-color: rgb(251, 238, 184); color: rgb(35, 111, 161);">Immediately
-                                        after doc and code blocks have been
-                                        parsed/split?</span></strong></li>
-                            <li><span
-                                    style="background-color: rgb(251, 238, 184);">check
-                                    if already HTML. if so, move on without
-                                    changes. Skip code blocks</span></li>
-                            <li
-                                style="font-weight: bold; color: rgb(35, 111, 161);">
-                                <span
-                                    style="color: rgb(35, 111, 161);"><strong><span
-                                            style="background-color: rgb(251, 238, 184);">Should
-                                            this be implemented within the
-                                            parsing
-                                            section?</span></strong></span>
-                            </li>
-                            <li
-                                style="font-weight: bold; color: rgb(35, 111, 161);">
-                                <span
-                                    style="color: rgb(35, 111, 161);"><strong><span
-                                            style="background-color: rgb(251, 238, 184);">Should
-                                            we give user the option to convert
-                                            to HTML, or do it
-                                            automatically?</span></strong></span>
-                            </li>
-                        </ul>
-                    </li>
-                </ul>
-            </li>
-            <li style="font-weight: bold; color: rgb(35, 111, 161);"><span
-                    style="color: rgb(0, 0, 0);"><strong><span
-                            style="background-color: rgb(251, 238, 184);">Where
-                            to implement pulldown-cmark
-                            function?</span></strong></span>
-                <ul>
-                    <li style="color: rgb(35, 111, 161);"><span
-                            style="color: rgb(0, 0, 0);"><span
-                                style="background-color: rgb(251, 238, 184);">We've
-                                marked the potential location in
-                                Cargo.toml.</span></span></li>
-                </ul>
-            </li>
-        </ul>
-    </li>
 </ul>
+<h3><span style="color: rgb(0, 0, 0);">Markdown to HTML Conversion
+        Implementation</span></h3>
+<p><span style="color: rgb(0, 0, 0);">Currently, CodeChat only loads and saves
+        doc blocks in HTML format. This can make a CodeChat-edited script hard
+        to read when opened in another IDE, due to the HTML markup language
+        being syntax heavy. To make the output more readable, we propose having
+        CodeChat's main input/output doc block language to be Markdown rather
+        than HTML. Markdown is a markup language with lighter syntax that is
+        more intuitive to read. </span></p>
+<p><span style="color: rgb(0, 0, 0);">Keeping HTML as the markup language may
+        make the editor harder to use, which could scare away potential users
+        of the software. We want to mitigate this from occurring by
+        implementing Markdown in place of HTML.</span></p>
+<p><span style="color: rgb(0, 0, 0);">This implementation will transform files
+        as normal, but instead of the code blocks undergoing the
+        pipeline:</span></p>
+<p><span style="color: rgb(0, 0, 0);">Load File --&gt; Convert to HTML --&gt;
+        Write Stuff --&gt; Convert to HTML --&gt; Save File,</span></p>
+<p><span style="color: rgb(0, 0, 0);">we will have</span></p>
+<p>Load File --&gt; Convert to Markdown --&gt; Convert to HTML --&gt; Write
+    Stuff --&gt; Convert to HTML --&gt; Convert to Markdown --&gt; Save File.
+</p>
+<p>First, we will be focusing on the first half of the pipeline, converting
+    Markdown to HTML. We can simply convert Markdown to HTML using the
+    pulldown-cmark crate, which should be implemented right after the doc and
+    code blocks have been parsed.&nbsp;</p>
+<p>TODO: Import the <a
+        href="https://docs.rs/pulldown-cmark/latest/pulldown_cmark/">pulldown-cmark</a>
+    crate within webserver.rs in the Load Endpoint section, immediately after
+    the doc and code blocks have been parsed. Code blocks will be
+    skipped.&nbsp;</p>
+<p>Once completed, doc blocks written in Markdown can be converted by the
+    editor into HTML for further use. Then, the second half of the pipeline can
+    be implemented.</p>
 <h3>Lexing</h3>
 <p>TODO: describe the lexer implementation. Link to the walkthrough, discuss
     the language specification, etc.</p>
