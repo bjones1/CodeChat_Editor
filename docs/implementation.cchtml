@@ -42,6 +42,73 @@
             href="https://github.com/commonmark/commonmark.js/blob/master/lib/render/html.js">code</a>
         that CommonMark uses to translate from their AST into HTML looks pretty
         straightforward, so the inverse shouldn't be too hard.</li>
+    <li><span style="background-color: rgb(251, 238, 184);">Markdown-to-HTML
+            conversion (for doc-blocks only):</span>
+        <ul>
+            <li><span style="background-color: rgb(251, 238, 184);">TODO:
+                    <br></span>
+                <ul>
+                    <li><span
+                            style="background-color: rgb(251, 238, 184);">import
+                            pulldown-cmark library within
+                            webserver.rs&nbsp;</span></li>
+                    <li><span
+                            style="background-color: rgb(251, 238, 184);">insert
+                            conversion [function?] in "Save Endpoint"
+                            section</span>
+                        <ul>
+                            <li
+                                style="color: rgb(35, 111, 161); font-weight: bold;">
+                                <strong><span
+                                        style="background-color: rgb(251, 238, 184); color: rgb(35, 111, 161);">Immediately
+                                        after doc and code blocks have been
+                                        parsed/split?</span></strong></li>
+                            <li><span
+                                    style="background-color: rgb(251, 238, 184);">check
+                                    if already HTML. if so, move on without
+                                    changes. Skip code blocks</span></li>
+                            <li
+                                style="font-weight: bold; color: rgb(35, 111, 161);">
+                                <span
+                                    style="color: rgb(35, 111, 161);"><strong><span
+                                            style="background-color: rgb(251, 238, 184);">Should
+                                            this be implemented within the
+                                            parsing
+                                            section?</span></strong></span>
+                            </li>
+                            <li
+                                style="font-weight: bold; color: rgb(35, 111, 161);">
+                                <span
+                                    style="color: rgb(35, 111, 161);"><strong><span
+                                            style="background-color: rgb(251, 238, 184);">Should
+                                            we give user the option to convert
+                                            to HTML, or do it
+                                            automatically?</span></strong></span>
+                            </li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+            <li style="font-weight: bold; color: rgb(35, 111, 161);"><span
+                    style="color: rgb(0, 0, 0);"><strong><span
+                            style="background-color: rgb(251, 238, 184);">Where
+                            to implement pulldown-cmark
+                            function?</span></strong></span>
+                <ul>
+                    <li style="color: rgb(35, 111, 161);"><span
+                            style="color: rgb(0, 0, 0);"><span
+                                style="background-color: rgb(251, 238, 184);">We've
+                                marked the potential location in
+                                Cargo.toml.</span></span></li>
+                    <li style="color: rgb(35, 111, 161);"><span
+                            style="color: rgb(0, 0, 0);"><span
+                                style="background-color: rgb(251, 238, 184);">TODO:
+                                Add descriptive paragraph of markdown-&gt;html
+                                purpose/theory</span></span></li>
+                </ul>
+            </li>
+        </ul>
+    </li>
 </ul>
 <h3><span style="color: rgb(0, 0, 0);">Markdown to HTML Conversion
         Implementation</span></h3>
