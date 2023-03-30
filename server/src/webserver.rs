@@ -564,6 +564,9 @@ async fn serve_file(
         }
     }
 
+    // <p><span style="background-color: rgb(236, 202, 250);">SSC: I think the
+    //         file is parsed appropriately once the read_to_string()
+    //         method/function is done...</span></p>
     // <p>The TOC is a simplified web page requiring no additional processing.
     //     The script ensures that all hyperlinks target the enclosing page, not
     //     just the iframe containing this page.</p>
@@ -595,6 +598,10 @@ async fn serve_file(
         ));
     }
 
+    // <p><span style="background-color: rgb(236, 202, 250);">SSC: However, a
+    //         lexer can be used to separate a string into symbols/characters...
+    //         Would this lexer identify the language that the code is written
+    //         in?&nbsp;</span></p>
     // <p>Determine the lexer to use for this file.</p>
     let ace_mode;
     // <p>First, search for a lexer directive in the file contents.</p>
@@ -634,6 +641,13 @@ async fn serve_file(
     };
 
     // <p>Lex the code and put it in a JSON structure.</p>
+    // <p><span style="background-color: rgb(236, 202, 250);">SSC: This part
+    //         turns the code and doc blocks into a vector (code_doc_block_arr),
+    //         then is converted to JSON. Is this used to transform into HTML? I
+    //         think lexed_source_file_string is the variable to use... We feed
+    //         lexed_source_file_string into the pulldown_cmark crate. However,
+    //         this is a JSON structure, I'm not entirely sure when the string
+    //         gets converted to HTML...?&nbsp;</span></p>
     let code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
         vec![CodeDocBlock::CodeBlock(file_contents)]
     } else {
