@@ -532,8 +532,8 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         // <p>See the IEEE Standard VHDL Language Reference Manual (IEEE Std
         //     1076-2008)</p>
         ace_mode: "vhdl",
-        // <p><code>bsc</code> files are boundary scan files.</p>
-        ext_arr: &["vhdl", "bsc"],
+        // <p><code>bsd(l)</code> files are boundary scan files.</p>
+        ext_arr: &["vhdl", "vhd", "bsd", "bsdl"],
         // <p>See section 15.9 of the standard.</p>
         inline_comment_delim_arr: &["--"],
         block_comment_delim_arr: &[BlockCommentDelim {
