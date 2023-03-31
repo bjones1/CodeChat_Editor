@@ -398,6 +398,36 @@ fn build_lexer_regex<'a>(
     for string_delim_spec in language_lexer.string_delim_spec_arr {
         // <p>Generate a regex based on the characteristics of this string.</p>
         let has_escape_char = !string_delim_spec.escape_char.is_empty();
+        // <p>For multi-character string delimiters, build a regex:
+        //     <code>'''</code> becomes <code>(|'|'')</code>, which allows
+        //     matches of a partial string delimiter, but not the entire
+        //     delimiter. For a single-character delimiter, the "regex" is an
+        //     empty string.</p>
+        let string_partial_builder = |delimiter: &str| -> String {
+            // <p>If this is a single-character string delimiter, then we're
+            //     done.</p>
+            if delimiter.len() < 2 {
+                return String::new();
+            };
+
+            // <p>Otherwise, build a vector of substrings of the delimiter: for
+            //     a delimiter of <code>'''</code>, we want <code>["", "'"",
+            //         "''"]</code>.</p>
+            let mut v: Vec<String> = vec![];
+            let mut partial_delimiter = String::new();
+            for c in delimiter.chars() {
+                // <p>Add the previous partial delimiter. This allows us to
+                //     produce a vector containing all the but full delimiter
+                //     and including the empty string case.</p>
+                v.push(regex::escape(&partial_delimiter));
+                // <p>Add the current character to the partial delimiter.</p>
+                partial_delimiter.push(c);
+            }
+
+            // <p>Convert this vector into a regex.</p>
+            format!("({})", v.join("|"))
+        };
+        let string_partial_delimiter = string_partial_builder(string_delim_spec.delimiter);
         // <p>Look for</p>
         let escaped_delimiter = regex::escape(string_delim_spec.delimiter);
         let escaped_escape_char = regex::escape(string_delim_spec.escape_char);
@@ -417,12 +447,15 @@ fn build_lexer_regex<'a>(
                 //     in the middle means it can skip over escape characters.
                 // </p>
                 "^(" +
+                    // <p>Allow a partial string delimiter inside the string
+                    //     (but not the full delimiter).</p>
+                    &string_partial_delimiter +
                     // <p>Allow any non-special character,</p>
-                    &format!("[^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
+                    &format!("([^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
                     // <p>or anything following an escape character (since
                     //     whatever it is, it can't be the end of the string).
                     // </p>
-                    &escaped_escape_char + "." +
+                    &escaped_escape_char + ".)" +
                 // <p>Look for an arbitrary number of these non-string-ending
                 //     characters.</p>
                 ")*" +
@@ -440,15 +473,18 @@ fn build_lexer_regex<'a>(
                 //     in the middle means it can skip over escape characters.
                 // </p>
                 &("^(".to_string() +
+                    // <p>Allow a partial string delimiter inside the string
+                    //     (but not the full delimiter).</p>
+                    &string_partial_delimiter +
                     // <p>Allow any non-special character</p>
-                    &format!("[^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
+                    &format!("([^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
                     // <p>or anything following an escape character except a
                     //     newline.</p>
-                    &escaped_escape_char + "[^\n]" +
+                    &escaped_escape_char + "[^\n])" +
                 // <p>Look for an arbitrary number of these non-string-ending
                 //     characters.</p>
                 ")*" +
-                // <p>Now, find the end of the string: a newline optinally
+                // <p>Now, find the end of the string: a newline optionally
                 //     preceded by the escape char or the string delimiter.</p>
                 &format!("({}?\n|{})", escaped_escape_char, escaped_delimiter)),
             ),
@@ -465,12 +501,15 @@ fn build_lexer_regex<'a>(
                 //     in the middle means it can skip over escape characters.
                 // </p>
                 "^(" +
+                    // <p>Allow a partial string delimiter inside the string
+                    //     (but not the full delimiter).</p>
+                    &string_partial_delimiter +
                     // <p>Allow any non-special character,</p>
-                    &format!("[^{}{}]|", escaped_delimiter, escaped_escape_char) +
+                    &format!("([^{}{}]|", escaped_delimiter, escaped_escape_char) +
                     // <p>or anything following an escape character (since
                     //     whatever it is, it can't be the end of the string).
                     // </p>
-                    &escaped_escape_char + "." +
+                    &escaped_escape_char + ".)" +
                 // <p>Look for an arbitrary number of these non-string-ending
                 //     characters.</p>
                 ")*" +
@@ -1260,6 +1299,8 @@ pub fn source_lexer(
                             [1..comment_body.len() - if ends_with_space { 1 } else { 0 }];
 
                         // <p>Add this doc block:</p>
+                        let contents =
+                            &(trimmed_comment_body.to_string() + post_closing_delimiter_line);
                         append_code_doc_block(
                             // <p>The indent is the whitespace before the
                             //     opening comment delimiter.</p>
@@ -1270,12 +1311,12 @@ pub fn source_lexer(
                             // <p>The contents of the doc block are the trimmed
                             //     comment body plus any whitespace after the
                             //     closing comment delimiter.</p>
-                            &(trimmed_comment_body.to_string() + post_closing_delimiter_line),
+                            contents,
                         );
 
                         // <p>print the doc block</p>
                         #[cfg(feature = "lexer_explain")]
-                        println!("Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.", indent, delimiter, contents);
+                        println!("Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.", &comment_line_prefix, matching_group_str, contents);
 
                         // <p>advance <code>current_code_block_index</code> to
                         //     <code>source_code_unlexed_index</code>, since
@@ -1497,6 +1538,21 @@ mod tests {
         assert_eq!(
             source_lexer("\"\"\"\n#Test\"\"\"", py),
             [build_code_block("\"\"\"\n#Test\"\"\""),]
+        );
+        assert_eq!(
+            source_lexer("\"\"\"Test 1\n\"\"\"\n# Test 2", py),
+            [
+                build_code_block("\"\"\"Test 1\n\"\"\"\n"),
+                build_doc_block("", "#", "Test 2")
+            ]
+        );
+        // <p>Quotes nested inside a multi-line string.</p>
+        assert_eq!(
+            source_lexer("'''\n# 'Test' 1'''\n# Test 2", py),
+            [
+                build_code_block("'''\n# 'Test' 1'''\n"),
+                build_doc_block("", "#", "Test 2")
+            ]
         );
         // <p>An empty string, follow by a comment which ignores the fake
         //     multi-line string.</p>
