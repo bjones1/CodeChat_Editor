@@ -48,6 +48,7 @@ use tokio::{
 use urlencoding::{self, encode};
 #[cfg(target_os = "windows")]
 use win_partitions::win_api::get_logical_drive;
+use pulldown_cmark::{Parser, Options, html};
 
 // <h3>Local</h3>
 use super::lexer::compile_lexers;
@@ -653,12 +654,30 @@ async fn serve_file(
     } else {
         source_lexer(&file_contents, lexer)
     };
+    
+    // <p>Testing here:</p>
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    let parser = Parser::new_ext(code_doc_block_arr, options);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
+    // Where does html_output go?
+    
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),
         },
         code_doc_block_arr,
     };
+    
+    // Or here???
+    // Testing:
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    let parser = Parser::new_ext(lexed_source_file, options);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
+    
     let lexed_source_file_string = match serde_json::to_string(&lexed_source_file) {
         Ok(v) => v,
         Err(err) => {
