@@ -655,6 +655,7 @@ async fn serve_file(
         source_lexer(&file_contents, lexer)
     };
     
+    print!("{:?}", code_doc_block_arr);
     
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
