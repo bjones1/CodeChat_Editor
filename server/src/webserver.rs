@@ -220,8 +220,7 @@ async fn save_source(
                 );
                 file_contents = file_contents + " " + block_comment_closing_delimiter + "\n";
             }
-        // <p><span style="background-color: rgb(251, 238, 184);">TODO: insert
-        //         conversion from HTML to Markdown here?&nbsp;<br></span></p>
+        //
         } 
         else {
             // <p>This is code. Simply append it (by definition, indent and
