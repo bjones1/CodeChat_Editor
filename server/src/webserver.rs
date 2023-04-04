@@ -657,11 +657,11 @@ async fn serve_file(
     
     // <p><span style="background-color: rgb(251, 238, 184);">Testing
     //         here:</span></p>
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_STRIKETHROUGH);
-    let parser = Parser::new_ext(code_doc_block_arr, options);
-    let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
+    //let mut options = Options::empty();
+    //options.insert(Options::ENABLE_STRIKETHROUGH);
+    //let parser = Parser::new_ext(code_doc_block_arr, options);
+    //let mut html_output = String::new();
+    //html::push_html(&mut html_output, parser);
     // <p>Where does html_output go?</p>
     
     let lexed_source_file = LexedSourceFile {
@@ -673,11 +673,11 @@ async fn serve_file(
     
     // <p><span style="background-color: rgb(251, 238, 184);">Or here???
     //         Testing:</span></p>
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_STRIKETHROUGH);
-    let parser = Parser::new_ext(lexed_source_file, options);
-    let mut html_output = String::new();
-    html::push_html(&mut html_output, parser);
+    //let mut options = Options::empty();
+    //options.insert(Options::ENABLE_STRIKETHROUGH);
+    //let parser = Parser::new_ext(lexed_source_file, options);
+    //let mut html_output = String::new();
+    //html::push_html(&mut html_output, parser);
     
     let lexed_source_file_string = match serde_json::to_string(&lexed_source_file) {
         Ok(v) => v,
