@@ -655,13 +655,14 @@ async fn serve_file(
         source_lexer(&file_contents, lexer)
     };
     
-    // <p>Testing here:</p>
+    // <p><span style="background-color: rgb(251, 238, 184);">Testing
+    //         here:</span></p>
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     let parser = Parser::new_ext(code_doc_block_arr, options);
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
-    // Where does html_output go?
+    // <p>Where does html_output go?</p>
     
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
@@ -670,8 +671,8 @@ async fn serve_file(
         code_doc_block_arr,
     };
     
-    // Or here???
-    // Testing:
+    // <p><span style="background-color: rgb(251, 238, 184);">Or here???
+    //         Testing:</span></p>
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     let parser = Parser::new_ext(lexed_source_file, options);
