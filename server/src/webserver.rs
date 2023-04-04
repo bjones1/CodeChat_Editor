@@ -676,13 +676,13 @@ async fn serve_file(
     // <p>Look for any script tags and prevent these from causing problems.</p>
     let lexed_source_file_string = lexed_source_file_string.replace("</script>", "<\\/script>");
     
-    // TESTING HERE?
+    // <p>TESTING HERE?</p>
     
-    //let mut options = Options::empty();
-    //options.insert(Options::ENABLE_STRIKETHROUGH);
-    //let parser = Parser::new_ext(lexed_source_file_string, options);
-    //let mut html_output = String::new();
-    //html::push_html(&mut html_output, parser);
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    let parser = Parser::new_ext(&lexed_source_file_string, options);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
 
     // <p>Look for a project file by searching the current directory, then all
     //     its parents, for a file named <code>toc.cchtml</code>.</p>
