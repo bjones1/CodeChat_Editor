@@ -151,6 +151,8 @@ async fn save_source(
                     }
                 },
                 contents: cdb.2.to_string(),
+                // This doesn't matter when converting from edited code back to source code.
+                lines: 0,
             })
         });
     }

@@ -245,6 +245,8 @@ pub struct DocBlock {
     /// <p>The contents of this block: documentation (with the comment
     ///     delimiters removed).</p>
     pub contents: String,
+    /// The number of source code lines in this doc block.
+    pub lines: usize,
 }
 
 // <p>To allow comparison for unit tests.</p>
@@ -905,6 +907,7 @@ pub fn source_lexer(
             assert!(indent.is_empty());
             return;
         }
+        let lines = contents.matches('\n').count();
         let is_code_block = indent.is_empty() && delimiter.is_empty();
         // <p>See if there's a previous entry to potentially append to.</p>
         if !classified_source.is_empty() {
@@ -918,6 +921,7 @@ pub fn source_lexer(
                         //     <code>last_doc_block</code> provides only a
                         //     reference.</p>
                         last_doc_block.contents += contents;
+                        last_doc_block.lines += lines;
                         return;
                     }
                 }
@@ -939,6 +943,7 @@ pub fn source_lexer(
                 indent: indent.to_string(),
                 delimiter: delimiter.to_string(),
                 contents: contents.to_string(),
+                lines,
             })
         });
     };
@@ -1392,6 +1397,7 @@ mod tests {
             indent: indent.to_string(),
             delimiter: delimiter.to_string(),
             contents: contents.to_string(),
+            lines: contents.matches("\n").count(),
         });
     }
 
