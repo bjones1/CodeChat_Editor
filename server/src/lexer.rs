@@ -28,7 +28,6 @@ use std::sync::Arc;
 use lazy_static::lazy_static;
 use regex;
 use regex::Regex;
-use serde::ser::{Serialize, SerializeSeq, Serializer};
 
 /// <h2>Data structures</h2>
 /// <h3>Language definition</h3>
@@ -299,31 +298,6 @@ const C_SHARP_VERBATIM_STRING_CLOSING: &str =
     // <p>Allow anything except for a lone double quote as the contents of the
     //     string, followed by a double quote to end the string.</p>
     r#"([^"]|"")*""#;
-
-/// <h2>Functions</h2>
-/// <p>Provide a way to turn a <code>CodeDocBlock</code> into JSON.</p>
-impl Serialize for CodeDocBlock {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // <p>3 is the number of fields in the seq.</p>
-        let mut seq = serializer.serialize_seq(Some(3))?;
-        match self {
-            CodeDocBlock::DocBlock(d) => {
-                seq.serialize_element(&d.indent)?;
-                seq.serialize_element(&d.delimiter)?;
-                seq.serialize_element(&d.contents)?;
-            }
-            CodeDocBlock::CodeBlock(c) => {
-                seq.serialize_element("")?;
-                seq.serialize_element("")?;
-                seq.serialize_element(&c)?;
-            }
-        };
-        seq.end()
-    }
-}
 
 /// <h3>Language "compiler"</h3>
 /// <p>"Compile" a language description into regexes used to lex the language.

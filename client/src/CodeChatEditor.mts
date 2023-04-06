@@ -64,6 +64,7 @@ import {
     EditorState,
     StateField,
     StateEffect,
+    EditorSelection,
     Transaction,
 } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
@@ -128,7 +129,7 @@ const open_lp = (
     // <p>A data structure provided by the server, containing the source and
     //     associated metadata. See <a
     //         href="#AllSource"><code>AllSource</code></a>.</p>
-    all_source: AllSource,
+    all_source: LexedSourceFile,
     // <p>See <code><a href="#EditorMode">EditorMode</a></code>.</p>
     editorMode: EditorMode
 ) => {
@@ -136,22 +137,30 @@ const open_lp = (
     //     from the provided <code>all_source</code> struct and store it as a
     //     global variable.</p>
     current_metadata = all_source["metadata"];
-    const code_doc_block_arr = all_source["code_doc_block_arr"];
+    const source = all_source["source"];
+    const codechat_body = document.getElementById("CodeChat-body")!;
     let html;
     if (is_doc_only()) {
         // <p>Special case: a CodeChat Editor document's HTML doesn't need
         //     lexing; it only contains HTML. Instead, its structure is always:
         //     <code>[["", "", HTML]]</code>. Therefore, the HTML is at item
         //     [0][2].</p>
-        html = `<div class="CodeChat-TinyMCE">${code_doc_block_arr[0][2]}</div>`;
+        codechat_body.innerHTML = `<div class="CodeChat-TinyMCE">${source.doc}</div>`;
     } else {
-        html = classified_source_to_html(code_doc_block_arr);
+        codechat_body.innerHTML = '<div class="CodeChat-CodeMirror"></div>';
+        source.selection = EditorSelection.single(0).toJSON();
+        const initialState = EditorState.fromJSON(
+            source,
+            {
+                extensions: [javascript(), basicSetup, underlineKeymap],
+            },
+            { doc_blocks: underlineField }
+        );
+        const view = new EditorView({
+            parent: codechat_body,
+            state: initialState,
+        });
     }
-
-    document.getElementById("CodeChat-body")!.innerHTML = html;
-    // <p>Initialize editors for this new content. Return a promise which is
-    //     accepted when the new content is ready.</p>
-    return make_editors(editorMode);
 };
 
 // <p>This defines a single code or doc block entry:</p>
@@ -166,9 +175,13 @@ export type code_or_doc_block = [
 // <p>The server passes this to the client to load a file. See <a
 //         href="../../server/src/webserver.rs#LexedSourceFile">LexedSourceFile</a>.
 // </p>
-type AllSource = {
+type LexedSourceFile = {
     metadata: { mode: string };
-    code_doc_block_arr: code_or_doc_block[];
+    source: {
+        doc: string;
+        doc_blocks: [[Number, Number, string, string, string]];
+        selection: any;
+    };
 };
 
 // <p>Store the lexer info for the currently-loaded language.</p>
@@ -195,29 +208,6 @@ const make_editors = async (
 ) => {
     return new Promise((accept) => {
         setTimeout(async () => {
-            // <p>In view mode, don't use TinyMCE, since we already have HTML.
-            //     Raw mode doesn't use TinyMCE at all, or even render doc
-            //     blocks as HTML.</p>
-            if (editorMode === EditorMode.edit) {
-                // <p>Instantiate the TinyMCE editor for doc blocks. Wait until
-                //     this finishes before calling anything else, to help keep
-                //     the UI responsive. TODO: break this up to apply to each
-                //     doc block, instead of doing them all at once.</p>
-                //await make_doc_block_editor(".CodeChat-TinyMCE");
-            }
-
-            // <p>Instantiate the Ace editor for code blocks.</p>
-            for (const ace_tag of document.querySelectorAll(".CodeChat-ACE")) {
-                // <p>Perform each init, then allow UI updates to try and keep
-                //     the UI responsive.</p>
-                await new Promise((accept) =>
-                    setTimeout(() => {
-                        make_code_block_editor(ace_tag, editorMode);
-                        accept("");
-                    })
-                );
-            }
-
             // <p>Set up for editing the indent of doc blocks.</p>
             for (const td of document.querySelectorAll(
                 ".CodeChat-doc-indent"
@@ -358,11 +348,20 @@ const underlineField = StateField.define<DecorationSet>({
     // For loading a file from the server back into the editor, use <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.fromJSON">fromJSON</a>.
     fromJSON: (json: any, state: EditorState) =>
         Decoration.set(
-            Decoration.replace({
-                widget: new DocBlockWidget(json[2], json[3], json[4]),
-                // Causes errors when replacing an entire line.
-                block: true,
-            }).range(json[0], json[1])
+            json.map(
+                ([from, to, indent, delimiter, contents]: [
+                    number,
+                    number,
+                    string,
+                    string,
+                    string
+                ]) =>
+                    Decoration.replace({
+                        widget: new DocBlockWidget(indent, delimiter, contents),
+                        // Causes errors when replacing an entire line.
+                        block: true,
+                    }).range(from, to)
+            )
         ),
 });
 
@@ -454,143 +453,6 @@ const underlineKeymap = keymap.of([
     },
 ]);
 
-/**
-class CheckboxWidget extends WidgetType {
-    constructor(readonly checked: boolean) {
-        super();
-    }
-
-    eq(other: CheckboxWidget) {
-        return other.checked == this.checked;
-    }
-
-    toDOM() {
-        let wrap = document.createElement("div");
-        wrap.setAttribute("aria-hidden", "true");
-        wrap.className = "cm-boolean-toggle";
-        let box = wrap.appendChild(document.createElement("input"));
-        box.type = "checkbox";
-        box.checked = this.checked;
-        return wrap;
-    }
-
-    ignoreEvent() {
-        return false;
-    }
-}
-
-function checkboxes(view: EditorView) {
-    let widgets = [];
-    for (let { from, to } of view.visibleRanges) {
-        syntaxTree(view.state).iterate({
-            from,
-            to,
-            enter: (node) => {
-                if (node.name == "BooleanLiteral") {
-                    let isTrue =
-                        view.state.doc.sliceString(node.from, node.to) ==
-                        "true";
-                    let deco = Decoration.replace({
-                        widget: new CheckboxWidget(isTrue),
-                        side: 1,
-                    });
-                    widgets.push(deco.range(node.from, node.to));
-                }
-            },
-        });
-    }
-    return Decoration.set(widgets);
-}
-
-const checkboxPlugin = ViewPlugin.fromClass(
-    class {
-        decorations: DecorationSet;
-
-        constructor(view: EditorView) {
-            this.decorations = checkboxes(view);
-        }
-
-        update(update: ViewUpdate) {
-            if (update.docChanged || update.viewportChanged)
-                this.decorations = checkboxes(update.view);
-        }
-    },
-    {
-        decorations: (v) => v.decorations,
-
-        eventHandlers: {
-            mousedown: (e, view) => {
-                let target = e.target as HTMLElement;
-                if (
-                    target.nodeName == "INPUT" &&
-                    target.parentElement!.classList.contains(
-                        "cm-boolean-toggle"
-                    )
-                )
-                    return toggleBoolean(view, view.posAtDOM(target));
-            },
-        },
-    }
-);
-
-function toggleBoolean(view: EditorView, pos: number) {
-    let before = view.state.doc.sliceString(Math.max(0, pos - 5), pos);
-    let change;
-    if (before == "false") change = { from: pos - 5, to: pos, insert: "true" };
-    else if (before.endsWith("true"))
-        change = { from: pos - 4, to: pos, insert: "false" };
-    else return false;
-    view.dispatch({ changes: change });
-    return true;
-}
-*/
-
-// <p>Instantiate the code block editor (the Ace editor).</p>
-const make_code_block_editor = (
-    // <p>The HTML element which contains text to be edited by the Ace editor.
-    // </p>
-    element: Element,
-    // <p>The editor mode; this determines if the editor is in read-only mode
-    //     (view/toc EditorModes).</p>
-    editorMode: EditorMode
-) => {
-    const contents = element.textContent;
-    element.innerHTML = "";
-    const initialState = EditorState.create({
-        doc: contents,
-        extensions: [javascript(), basicSetup, underlineKeymap],
-    });
-    const view = new EditorView({
-        parent: element,
-        state: initialState,
-    });
-    /**
-    ace.edit(element, {
-        // <p>The leading <code>+</code> converts the line number from a string
-        //     (since all HTML attributes are strings) to a number.</p>
-        firstLineNumber: +(
-            element.getAttribute("data-CodeChat-firstLineNumber") ?? 0
-        ),
-        // <p>This is distracting, since it highlights one line for each ACE
-        //     editor instance on the screen. Better: only show this if the
-        //     editor has focus.</p>
-        highlightActiveLine: false,
-        highlightGutterLine: false,
-        maxLines: 1e10,
-        mode: `ace/mode/${current_metadata["mode"]}`,
-        // <p>TODO: this still allows cursor movement. Need something that
-        //     doesn't show an edit cursor / can't be selected; arrow keys
-        //     should scroll the display, not move the cursor around in the
-        //     editor.</p>
-        readOnly:
-            editorMode === EditorMode.view || editorMode == EditorMode.toc,
-        showPrintMargin: false,
-        theme: "ace/theme/textmate",
-        wrap: true,
-    });
-     */
-};
-
 // <h2>UI</h2>
 // <p>Allow only spaces and delete/backspaces when editing the indent of a doc
 //     block.</p>
@@ -635,7 +497,7 @@ export const on_save = async () => {
 //     sending a <code>PUT</code> request to the server. See the <a
 //         href="CodeChatEditorServer.v.html#save_file">save_file endpoint</a>.
 // </p>
-const save = async (contents: AllSource) => {
+const save = async (contents: LexedSourceFile) => {
     let response;
     try {
         response = await window.fetch(window.location.href, {

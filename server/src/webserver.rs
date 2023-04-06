@@ -72,11 +72,31 @@ struct ClientSourceFile {
 }
 
 #[derive(Serialize)]
+/// The format used by CodeMirror to serialize/deserialize editor contents.
+struct CodeMirror<'a> {
+    /// The document being edited.
+    doc: String,
+    /// Doc blocks
+    doc_blocks: Vec<(
+        // From
+        usize,
+        // To
+        usize,
+        // indent
+        &'a str,
+        // delimiter
+        &'a str,
+        // contents
+        &'a str,
+    )>,
+}
+
+#[derive(Serialize)]
 /// <p><a id="LexedSourceFile"></a>Define the structure of JSON responses when
 ///     sending a source file from the <code>/fs</code> endpoint.</p>
-struct LexedSourceFile {
+struct LexedSourceFile<'a> {
     metadata: SourceFileMetadata,
-    code_doc_block_arr: Vec<CodeDocBlock>,
+    source: CodeMirror<'a>,
 }
 
 /// <p>This defines the structure of JSON responses from the
@@ -630,19 +650,53 @@ async fn serve_file(
         }
     };
 
-    // <p>Lex the code and put it in a JSON structure.</p>
-    let code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
-        vec![CodeDocBlock::CodeBlock(file_contents)]
-    } else {
-        source_lexer(&file_contents, lexer)
-    };
+    // Convert the file contents into JSON.
+    let code_doc_block_arr;
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),
         },
-        code_doc_block_arr,
+        source: if lexer.language_lexer.ace_mode == "codechat-html" {
+            // Document-only files are easy: just encode the contents.
+            CodeMirror {
+                doc: file_contents,
+                doc_blocks: vec![],
+            }
+        } else {
+            // <p>Lex the code.</p>
+            code_doc_block_arr = source_lexer(&file_contents, lexer);
+
+            // Convert this into CodeMirror's format.
+            let mut code_mirror = CodeMirror {
+                doc: "".to_string(),
+                doc_blocks: Vec::new(),
+            };
+            for code_or_doc_block in &code_doc_block_arr {
+                match code_or_doc_block {
+                    CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(code_string),
+                    CodeDocBlock::DocBlock(doc_block) => {
+                        // Create the doc block.
+                        let len = code_mirror.doc.len();
+                        code_mirror.doc_blocks.push((
+                            // From
+                            len,
+                            // To
+                            len + doc_block.lines,
+                            &doc_block.indent,
+                            &doc_block.delimiter,
+                            &doc_block.contents,
+                        ));
+                        // Append newlines to the document; the doc block will replace these in the editor. This keeps the line numbering of non-doc blocks correct.
+                        code_mirror.doc.push_str(&"\n".repeat(doc_block.lines));
+                    }
+                }
+            }
+            code_mirror
+        },
     };
-    let lexed_source_file_string = match serde_json::to_string(&lexed_source_file) {
+
+    // Error check the JSON result.
+    let source_as_json = match serde_json::to_string(&lexed_source_file) {
         Ok(v) => v,
         Err(err) => {
             return html_not_found(&format!(
@@ -650,9 +704,9 @@ async fn serve_file(
                 err
             ))
         }
-    };
+    }
     // <p>Look for any script tags and prevent these from causing problems.</p>
-    let lexed_source_file_string = lexed_source_file_string.replace("</script>", "<\\/script>");
+    .replace("</script>", "<\\/script>");
 
     // <p>Look for a project file by searching the current directory, then all
     //     its parents, for a file named <code>toc.cchtml</code>.</p>
@@ -743,7 +797,7 @@ async fn serve_file(
         </div>
     </body>
 </html>
-"##, name, if is_test_mode { "-test" } else { "" }, lexed_source_file_string, testing_src, sidebar_css, sidebar_iframe, name, dir
+"##, name, if is_test_mode { "-test" } else { "" }, source_as_json, testing_src, sidebar_css, sidebar_iframe, name, dir
     ))
 }
 
