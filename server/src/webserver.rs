@@ -92,7 +92,7 @@ lazy_static! {
     /// <p>Matches a bare drive letter.</p>
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
     /// <p>Match the lexer directive in a source file.</p>
-    static ref LEXER_DIRECTIVE: Regex = Regex::new("CodeChat Editor lexer\\\\: (\\\\w)+").unwrap();
+    static ref LEXER_DIRECTIVE: Regex = Regex::new(r#"CodeChat Editor lexer: (\w+)"#).unwrap();
 }
 
 /// <h2>Save endpoint</h2>
