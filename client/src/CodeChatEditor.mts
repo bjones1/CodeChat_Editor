@@ -54,6 +54,7 @@ import {
     EditorView,
     Decoration,
     DecorationSet,
+    DOMEventMap,
     ViewUpdate,
     ViewPlugin,
     keymap,
@@ -139,7 +140,6 @@ const open_lp = (
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
     const codechat_body = document.getElementById("CodeChat-body")!;
-    let html;
     if (is_doc_only()) {
         // <p>Special case: a CodeChat Editor document's HTML doesn't need
         //     lexing; it only contains HTML. Instead, its structure is always:
@@ -152,9 +152,15 @@ const open_lp = (
         const initialState = EditorState.fromJSON(
             source,
             {
-                extensions: [javascript(), basicSetup, underlineKeymap],
+                extensions: [
+                    javascript(),
+                    basicSetup,
+                    underlineKeymap,
+                    EditorView.lineWrapping,
+                    DocBlockPlugin,
+                ],
             },
-            { doc_blocks: underlineField }
+            { doc_blocks: docBlockField }
         );
         const view = new EditorView({
             parent: codechat_body,
@@ -179,10 +185,13 @@ type LexedSourceFile = {
     metadata: { mode: string };
     source: {
         doc: string;
-        doc_blocks: [[Number, Number, string, string, string]];
+        doc_blocks: [DocBlockJSON];
         selection: any;
     };
 };
+
+// How a doc block is stored using CodeMirror.
+type DocBlockJSON = [number, number, string, string, string];
 
 // <p>Store the lexer info for the currently-loaded language.</p>
 // <p><a id="current_metadata"></a>This mirrors the data provided by the server
@@ -298,7 +307,7 @@ const make_doc_block_editor = (
 // <p>The goal: given a <a href="https://codemirror.net/docs/ref/#state.Range">Range</a> of lines containing a doc block and the doc block's delimiter, indent, and contents corresponding to these lines, <a href="https://codemirror.net/docs/ref/#view.Decoration^replace">replace</a> them with a widget which allows editing of the doc block.</p>
 // <p>First, define the required state. Conveniently, a <a href="https://codemirror.net/docs/ref/#view.DecorationSet">DecorationSet</a> is a <a href="https://codemirror.net/docs/ref/#state.Range">Range</a>&lt;<a href="https://codemirror.net/docs/ref/#view.Decoration">Decoration</a>&gt; which contains the required range and the needed HTML in the Decoration -- all the required state. Making it a DecorationSet allows us (I think) to return an empty set to delete a decoration.</p>
 // <p>Per the <a href="https://codemirror.net/docs/ref/#state.StateField^define">docs</a>, "Fields can store additional information in an editor state, and keep it in sync with the rest of the state."</p>
-const underlineField = StateField.define<DecorationSet>({
+const docBlockField = StateField.define<DecorationSet>({
     // <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.create">Create</a> the initial value for the field when a state is created. Since the only allowed parameter is the editor's state, simply return an empty DecorationSet (oddly, the type of <a href="https://codemirror.net/docs/ref/#view.Decoration^none">Decoration.none</a>).
     create(state: EditorState) {
         return Decoration.none;
@@ -310,7 +319,7 @@ const underlineField = StateField.define<DecorationSet>({
         underlines = underlines.map(tr.changes);
         // See <a href="https://codemirror.net/docs/ref/#state.StateEffect.is">is</a>.
         for (let effect of tr.effects)
-            if (effect.is(addUnderline)) {
+            if (effect.is(addDocBlock)) {
                 // Perform an <a href="https://codemirror.net/docs/ref/#state.RangeSet.update">update</a> by adding the requested doc block. TODO: handle combining two adjacent doc blocks, deleting a doc block, etc.
                 underlines = underlines.update({
                     // See <a href="https://codemirror.net/docs/ref/#state.RangeSet.update^updateSpec">updateSpec</a>
@@ -348,26 +357,20 @@ const underlineField = StateField.define<DecorationSet>({
     // For loading a file from the server back into the editor, use <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.fromJSON">fromJSON</a>.
     fromJSON: (json: any, state: EditorState) =>
         Decoration.set(
-            json.map(
-                ([from, to, indent, delimiter, contents]: [
-                    number,
-                    number,
-                    string,
-                    string,
-                    string
-                ]) =>
-                    Decoration.replace({
-                        widget: new DocBlockWidget(indent, delimiter, contents),
-                        // Causes errors when replacing an entire line.
-                        block: true,
-                    }).range(from, to)
+            // Unlike <code>toJSON</code>, which transforms a single doc block, this function is passed an array of ALL doc blocks. It needs to convert all of them back into DocBlockFields.
+            json.map(([from, to, indent, delimiter, contents]: DocBlockJSON) =>
+                Decoration.replace({
+                    widget: new DocBlockWidget(indent, delimiter, contents),
+                    // Causes errors when replacing an entire line.
+                    block: true,
+                }).range(from, to)
             )
         ),
 });
 
 // <p>Specify what happens to doc blocks during a transaction. I think the purpose of this is to provide a more compact model than the StateField above; that StateField models the doc block using a widget, which provides a representation in the DOM, but is therefore larger/heavier. Here, the effects apply to the core elements of the state (range and doc block's defining indent, delimiter, and contents).</p>
 // <p>Per the <a href="https://codemirror.net/docs/ref/#state.StateEffect^define">docs</a>, "State effects can be used to represent additional effects associated with a transaction. They are often useful to model changes to custom state fields, when those changes aren't implicit in document or selection changes."</p>
-const addUnderline = StateEffect.define<{
+const addDocBlock = StateEffect.define<{
     from: number;
     to: number;
     indent: string;
@@ -406,9 +409,9 @@ class DocBlockWidget extends WidgetType {
         wrap.innerHTML =
             // <p>This doc block's indent. TODO: allow paste, but must
             //     only allow pasting whitespace.</p>
-            `<div class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${this.indent}</div>` +
+            `<div class="CodeChat-doc-indent" contenteditable onpaste="return false">${this.indent}</div>` +
             // <p>The contents of this doc block.</p>
-            `<div class="CodeChat-TinyMCE" data-CodeChat-comment="${this.delimiter}" contenteditable>` +
+            `<div class="CodeChat-TinyMCE" contenteditable>` +
             this.contents +
             "</div>";
 
@@ -422,10 +425,34 @@ class DocBlockWidget extends WidgetType {
     // TODO: need a way to move changes made to this doc block back to the state variables (this.indent, delimiter, contents).
 }
 
+const DocBlockPlugin = ViewPlugin.fromClass(
+    class {
+        constructor(view: EditorView) {}
+
+        update(update: ViewUpdate) {}
+    },
+    {
+        eventHandlers: {
+            mousedown: (event: MouseEvent, view: EditorView) => {
+                return false;
+                setTimeout(event.target?.dispatchEvent!, 0, event);
+                let target = e.target as HTMLElement;
+                if (
+                    target.nodeName == "INPUT" &&
+                    target.parentElement!.classList.contains(
+                        "cm-boolean-toggle"
+                    )
+                ) {
+                }
+            },
+        },
+    }
+);
+
 function underlineSelection(view: EditorView) {
     const doc = view.state.doc;
     let effects: StateEffect<unknown>[] = [
-        addUnderline.of({
+        addDocBlock.of({
             from: doc.line(1).from,
             to: doc.line(2).to,
             indent: "",
@@ -434,14 +461,7 @@ function underlineSelection(view: EditorView) {
         }),
     ];
 
-    // See if the doc block field has been defined in the view's state. See <a href="https://codemirror.net/docs/ref/#state.EditorState.field">field</a>.
-    if (!view.state.field(underlineField, false))
-        // Not yet, so add that change to the effects to apply in this transaction. See <a href="https://codemirror.net/docs/ref/#state.StateEffect^appendConfig">appendConfig</a>. TODO: do this as a one-time config, rather than checking every time. I don't fully understand this.
-        effects.push(StateEffect.appendConfig.of(underlineField));
-
     view.dispatch({ effects });
-
-    console.log(view.state.toJSON({ doc_blocks: underlineField }));
     return true;
 }
 
@@ -523,161 +543,6 @@ const save = async (contents: LexedSourceFile) => {
     );
 };
 
-// <h2 id="classified_source_to_html">Convert lexed code into HTML</h2>
-// <p>This function converts an array of code/doc blocks into editable HTML.</p>
-const classified_source_to_html = (
-    classified_source: [string, string | null, string][]
-) => {
-    // <p>An array of strings for the new content of the current HTML page.</p>
-    let html = [];
-
-    // <p>Keep track of the current line number.</p>
-    let line = 1;
-
-    for (let [indent, delimiter, contents] of classified_source) {
-        // <p><span id="newline-movement">In a code or doc block, omit the last
-        //         newline; otherwise, code blocks would show an extra newline
-        //         at the end of the block. (Doc blocks ending in a
-        //         <code>&lt;pre&gt;</code> tag or something similar would also
-        //         have this problem).</span></p>
-        const m = contents.match(/\n$/);
-        if (m) {
-            contents = contents.substring(0, m.index);
-        }
-
-        if (delimiter === "") {
-            // <p>Code state: emit an ACE editor block.</p>
-            // prettier-ignore
-            html.push(
-                '<div class="CodeChat-code">',
-                    // <p>TODO: Add the correct number of spaces here so that
-                    //     line numbers stay aligned through the whole file.</p>
-                    '<div class="CodeChat-ACE-gutter ace_editor"></div>',
-                    `<div class="CodeChat-ACE" data-CodeChat-firstLineNumber="${line}">`,
-                        escapeHTML(contents),
-                    "</div>",
-                "</div>"
-            );
-        } else {
-            // <p>Comment state: insert a TinyMCE editor.</p>
-            // prettier-ignore
-            html.push(
-                '<div class="CodeChat-doc">',
-                    // <p>TODO: Add spaces matching the number of digits in the
-                    //     ACE gutter's line number. Currently, this is three
-                    //     spaces, assuming a file length of 100-999 lines.</p>
-                    '<div class="CodeChat-ACE-gutter-padding ace_editor">   </div>',
-                    // <p>This is a thin margin which matches what ACE does.</p>
-                    '<div class="CodeChat-ACE-padding"></div>',
-                    // <p>This doc block's indent. TODO: allow paste, but must
-                    //     only allow pasting whitespace.</p>
-                    `<div class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${indent}</div>`,
-                    // <p>The contents of this doc block.</p>
-                    `<div class="CodeChat-TinyMCE" data-CodeChat-comment="${delimiter}" id="mce-${line}">`,
-                        contents,
-                    '</div>',
-                '</div>'
-            );
-        }
-
-        // <p>There are an unknown number of newlines in this source string. One
-        //     was removed <a href="#newline-movement">here</a>, so include that
-        //     in the count.</p>
-        line += 1 + (contents.match(/\n/g) || []).length;
-    }
-
-    return html.join("");
-};
-
-// <h2>Convert HTML to lexed code</h2>
-// <p>This transforms the current editor contents (which are in HTML) into code
-//     and doc blocks.</p>
-const editor_to_code_doc_blocks = () => {
-    // <p>Walk through each code and doc block, extracting its contents then
-    //     placing it in <code>classified_lines</code>.</p>
-    let classified_lines: code_or_doc_block[] = [];
-    for (const code_or_doc_tag of document.querySelectorAll(
-        ".CodeChat-ACE, .CodeChat-TinyMCE"
-    )) {
-        // <p>The type of this block: <code>null</code> for code, or &gt;= 0 for
-        //     doc (the value of n specifies the indent in spaces).</p>
-        let indent = "";
-        // <p>The delimiter for a comment block, or an empty string for a code
-        //     block.</p>
-        let delimiter: string | null = "";
-        // <p>A string containing all the code/docs in this block.</p>
-        let full_string;
-
-        // <p>Get the type of this block and its contents.</p>
-        if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
-            // <p>See if the Ace editor was applied to this element.</p>
-            full_string =
-                // <p>TypeScript knows that an element doesn't have a
-                //     <code>env</code> attribute; ignore this, since Ace
-                //     elements do.</p>
-                /// @ts-ignore
-                code_or_doc_tag.env === undefined
-                    ? unescapeHTML(code_or_doc_tag.innerHTML)
-                    : ace.edit(code_or_doc_tag).getValue();
-        } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
-            // <p>Get the indent from the previous table cell. For a CodeChat
-            //     Editor document, there's no indent (it's just a doc block).
-            //     Likewise, get the delimiter; leaving it blank for a CodeChat
-            //     Editor document causes the next block of code to leave off
-            //     the comment delimiter, which is what we want.</p>
-            if (!is_doc_only()) {
-                indent =
-                    code_or_doc_tag.previousElementSibling!.textContent ?? "";
-                // <p>Use the pre-existing delimiter for this block if it
-                //     exists; otherwise, use the default delimiter.</p>
-                delimiter =
-                    code_or_doc_tag.getAttribute("data-CodeChat-comment") ??
-                    null;
-            }
-            // <p>See <a
-            //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get"><code>get</code></a>
-            //     and <a
-            //         href="https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.editor/#getContent"><code>getContent()</code></a>.
-            //     If this element wasn't managed by TinyMCE, it returns
-            //     <code>null</code>, in which case we can directly get the
-            //     <code>innerHTML</code>.</p>
-            // <p>Ignore the missing <code>get</code> type definition.</p>
-            /// @ts-ignore
-            const tinymce_inst = tinymce.get(code_or_doc_tag.id);
-            const html =
-                tinymce_inst === null
-                    ? code_or_doc_tag.innerHTML
-                    : tinymce_inst.getContent();
-            // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters,
-            //     including the length of the indent and comment string.</p>
-            full_string = html_beautify(html, {
-                wrap_line_length:
-                    80 - indent.length - (delimiter?.length ?? 1) - 1,
-            });
-        } else {
-            throw `Unexpected class for code or doc block ${code_or_doc_tag}.`;
-        }
-
-        // <p>There's an implicit newline at the end of each block; restore it.
-        // </p>
-        full_string += "\n";
-
-        // <p>Merge this with previous classified line if indent and delimiter
-        //     are the same; otherwise, add a new entry.</p>
-        if (
-            classified_lines.length &&
-            classified_lines.at(-1)![0] === indent &&
-            classified_lines.at(-1)![1] == delimiter
-        ) {
-            classified_lines.at(-1)![2] += full_string;
-        } else {
-            classified_lines.push([indent, delimiter, full_string]);
-        }
-    }
-
-    return classified_lines;
-};
-
 // <h2>Helper functions</h2>
 // <p>Given text, escape it so it formats correctly as HTML. Because the
 //     solution at <a href="https://stackoverflow.com/a/48054293">SO</a>
@@ -721,7 +586,6 @@ const os_is_osx =
 //     one name is exported, and it's clearly marked for testing only. Test code
 //     still gets access to everything it needs.</p>
 export const exportedForTesting = {
-    editor_to_code_doc_blocks,
     EditorMode,
     open_lp,
 };

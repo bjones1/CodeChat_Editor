@@ -50,6 +50,14 @@ body {
     background: white;
 }
 
+#testing.testing {
+    caret-color: black;
+}
+
+#testing.testing ::selection {
+    background-color: black;
+}
+
 /* <p>Provide space at the top of the screen for the filename and TinyMCE menu
     bar.</p> */
 #CodeChat-top {
@@ -74,51 +82,11 @@ body {
     white-space: nowrap;
 }
 
-/* <h2>Code block styling</h2>
-<p>Before the ACE Editor loads, use a monotype font.</p> */
-.CodeChat-ACE {
-    font-family: monospace;
-    white-space: pre;
-    width: 100%;
-}
-
-.CodeChat-code {
-    /* <p>Use <a
-        href="https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Flexible_Box_Layout/Basic_Concepts_of_Flexbox">flexbox
-        layout</a> to style code blocks. The goal of this layout is:</p>
-<p>&lt;max line numbers spaces&gt; &lt;code&gt;</p>
-<p>where the max line numbers spaces cause this code block's line numbers
-    to line up with all other code block line numbering. For example, if
-    this code block is lines 9-23 (which the Ace editor will treat as a
-    two-digit line number), but the largest line is 453 (three digits),
-    then we need to insert one extra space to correct for the extra digit
-    when the line number is &gt; 99. A <code>&lt;div
-        class="CodeChat-ACE-gutter"&gt;</code> implements this &lt;max
-    line numbers spaces&gt; indent.</p> */
-    display: flex;
-}
-
-/* <p>Style the max line numbers spaces element discussed above.</p> */
-.CodeChat-ACE-gutter {
-    font-family: monospace;
-    white-space: pre;
-    background-color: #f0f0f0;
-    /* <p>Make the &lt;max line number spaces&gt; not expand or shrink, but take
-    exactly the width required by the text (spaces) it contains. Defaults
-    for the &lt;code&gt; element cause it to take the rest of the space
-    on the line.</p> */
-    flex: 0 0 auto;
-}
-
-/* <p>Hide the ACE Editor's cursor when it's inactive.</p> */
-.ace_hidden-cursors {
-    opacity: 0;
-}
-
 /* <h2>Doc block styling</h2> */
 .CodeChat-doc {
-    /* <p>Use flexbox layout to style doc blocks. The approach is similar to
-    code blocks; the overall goal is:</p>
+    /* <p>Use <a
+        href="https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Flexible_Box_Layout/Basic_Concepts_of_Flexbox">flexbox
+        layout</a> to style doc blocks. The goal of this layout is:</p>
 <p>&lt;max line number spaces&gt; &lt;padding to match the ACE editor&gt;
     &lt;doc block indent&gt; &lt;doc block contents&gt;</p>
 <p>where:</p>
@@ -133,23 +101,7 @@ body {
         &lt;doc block contents&gt;</li>
 </ul> */
     display: flex;
-}
-
-/* <p>Match the ACE Editor gutter for doc blocks.</p> */
-.CodeChat-ACE-gutter-padding {
-    padding-left: 33px;
-    background-color: #f0f0f0;
-    /* <p>Make this &lt;max line number spaces&gt; not expand or shrink, but
-    take exactly the width required by the text (spaces) it contains.</p> */
-    flex: 0 0 auto;
-    font-family: monospace;
-    white-space: pre;
-}
-
-/* <p>The ACE editor puts a bit of left padding in; match this so that code and
-    doc blocks line up.</p> */
-.CodeChat-ACE-padding {
-    padding-left: 3px;
+    padding: 0px 2px 0px 6px;
 }
 
 /* <p>Preserve whitespace in the indent of a doc block.</p> */
@@ -161,8 +113,15 @@ body {
     tab-size: 4;
 }
 
+/* Reset what CodeMirror messes up for doc blocks. */
+.CodeChat-TinyMCE {
+    font-family: auto;
+    line-height: initial;
+    white-space: normal;
+}
+
 /* <p>Remove the editor's border when it's selected, since this hides the cursor
-    when the cursot is at the beginning of a line and isn't necessary (the
+    when the cursor is at the beginning of a line and isn't necessary (the
     entire screen is an editor, not just that region.)</p> */
 .CodeChat-TinyMCE.mce-edit-focus {
     outline-width: 0px;
