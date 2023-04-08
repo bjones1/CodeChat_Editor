@@ -655,7 +655,8 @@ async fn serve_file(
         source_lexer(&file_contents, lexer)
     };
     
-    print!("{:?}", code_doc_block_arr);
+    // print!("{:?}", code_doc_block_arr);
+    
     
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
@@ -678,7 +679,8 @@ async fn serve_file(
     let lexed_source_file_string = lexed_source_file_string.replace("</script>", "<\\/script>");
     
     // <p>TESTING HERE?</p>
-    
+
+
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     let parser = Parser::new_ext(&lexed_source_file_string, options);
