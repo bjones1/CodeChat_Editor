@@ -304,47 +304,47 @@ const make_doc_block_editor = (
     });
 };
 
-// <p>The goal: given a <a href="https://codemirror.net/docs/ref/#state.Range">Range</a> of lines containing a doc block and the doc block's delimiter, indent, and contents corresponding to these lines, <a href="https://codemirror.net/docs/ref/#view.Decoration^replace">replace</a> them with a widget which allows editing of the doc block.</p>
-// <p>First, define the required state. Conveniently, a <a href="https://codemirror.net/docs/ref/#view.DecorationSet">DecorationSet</a> is a <a href="https://codemirror.net/docs/ref/#state.Range">Range</a>&lt;<a href="https://codemirror.net/docs/ref/#view.Decoration">Decoration</a>&gt; which contains the required range and the needed HTML in the Decoration -- all the required state. Making it a DecorationSet allows us (I think) to return an empty set to delete a decoration.</p>
-// <p>Per the <a href="https://codemirror.net/docs/ref/#state.StateField^define">docs</a>, "Fields can store additional information in an editor state, and keep it in sync with the rest of the state."</p>
+// <h2>Doc blocks in CodeMirror</h2>
+// <p>The goal: given a <a href="https://codemirror.net/docs/ref/#state.Range">Range</a> of lines containing a doc block (a delimiter, indent, and contents) residing at these lines, <a href="https://codemirror.net/docs/ref/#view.Decoration^replace">replace</a> them with a widget which allows editing of the doc block.</p>
+// <p>First, define a <a href="https://codemirror.net/docs/ref/#state.StateField^define">StateField</a>: the state required to store all doc blocks. Conveniently, a <a href="https://codemirror.net/docs/ref/#view.DecorationSet">DecorationSet</a> is a <a href="https://codemirror.net/docs/ref/#state.RangeSet">RangeSet</a>&lt;<a href="https://codemirror.net/docs/ref/#view.Decoration">Decoration</a>&gt;, each element of which contains the required range and the needed HTML in the Decoration -- all the required state. Making it a DecorationSet provides an easy way to store all doc blocks.
 const docBlockField = StateField.define<DecorationSet>({
-    // <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.create">Create</a> the initial value for the field when a state is created. Since the only allowed parameter is the editor's state, simply return an empty DecorationSet (oddly, the type of <a href="https://codemirror.net/docs/ref/#view.Decoration^none">Decoration.none</a>).
+    // <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.create">Create</a> the initial value for the field, which is an empty set (no doc blocks). Therefore, simply return an empty DecorationSet (oddly, the type of <a href="https://codemirror.net/docs/ref/#view.Decoration^none">Decoration.none</a>).
     create(state: EditorState) {
         return Decoration.none;
     },
 
-    // <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.update">Update</a> computes a new value from the field's previous value and a transaction.
-    update(underlines: DecorationSet, tr: Transaction) {
+    // <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.update">Update</a> computes a new value for this field from the field's previous value and the provided transaction.
+    update(doc_blocks: DecorationSet, tr: Transaction) {
         // <a href="https://codemirror.net/docs/ref/#state.RangeSet.map">Map</a> these changes through the provided transaction, which updates the offsets of the range so the doc blocks is still anchored to the same location in the document after this transaction completes.
-        underlines = underlines.map(tr.changes);
+        doc_blocks = doc_blocks.map(tr.changes);
         // See <a href="https://codemirror.net/docs/ref/#state.StateEffect.is">is</a>.
+        // Add a doc block, as requested by this effect. TODO: add cases to handle combining two adjacent doc blocks, deleting a doc block, etc.
         for (let effect of tr.effects)
             if (effect.is(addDocBlock)) {
-                // Perform an <a href="https://codemirror.net/docs/ref/#state.RangeSet.update">update</a> by adding the requested doc block. TODO: handle combining two adjacent doc blocks, deleting a doc block, etc.
-                underlines = underlines.update({
+                // Perform an <a href="https://codemirror.net/docs/ref/#state.RangeSet.update">update</a> by adding the requested doc block.
+                doc_blocks = doc_blocks.update({
                     // See <a href="https://codemirror.net/docs/ref/#state.RangeSet.update^updateSpec">updateSpec</a>
                     add: [
-                        // <a href="https://codemirror.net/docs/ref/#view.Decoration^replace">Replace</a> the code (comments which contain a doc block) with the doc block contents, rendered using a GUI editor.
+                        // <a href="https://codemirror.net/docs/ref/#view.Decoration^replace">Replace</a> the code (empty lines saving space for the doc block) with the doc block contents, rendered using a GUI editor.
                         Decoration.replace({
                             widget: new DocBlockWidget(
                                 effect.value.indent,
                                 effect.value.delimiter,
                                 effect.value.content
                             ),
-                            // Causes errors when replacing an entire line.
                             block: true,
                         }).range(effect.value.from, effect.value.to),
                     ],
                 });
             }
-        return underlines;
+        return doc_blocks;
     },
 
     // <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.provide">Provide</a> extensions based on this field. See also <a href="https://codemirror.net/docs/ref/#view.EditorView^decorations">EditorView.decorations</a> and <a href="unknown">from</a>. TODO: I don't understand what this does, but removing it breaks the extension.
     provide: (field: StateField<DecorationSet>) =>
         EditorView.decorations.from(field),
 
-    // Define a way to serialize this field; see <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.toJSON">toJSON</a>. This provides a straightfoward path to transform the entire editor's contents (including these doc blocks) to JSON, which can then be sent back to the server for reassembly into a source file.
+    // Define a way to serialize this field; see <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.toJSON">toJSON</a>. This provides a straightforward path to transform the entire editor's contents (including these doc blocks) to JSON, which can then be sent back to the server for reassembly into a source file.
     toJSON: (value: DecorationSet, state: EditorState) => {
         let json = [];
         for (const iter = value.iter(); iter.value !== null; iter.next()) {
@@ -357,19 +357,16 @@ const docBlockField = StateField.define<DecorationSet>({
     // For loading a file from the server back into the editor, use <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.fromJSON">fromJSON</a>.
     fromJSON: (json: any, state: EditorState) =>
         Decoration.set(
-            // Unlike <code>toJSON</code>, which transforms a single doc block, this function is passed an array of ALL doc blocks. It needs to convert all of them back into DocBlockFields.
             json.map(([from, to, indent, delimiter, contents]: DocBlockJSON) =>
                 Decoration.replace({
                     widget: new DocBlockWidget(indent, delimiter, contents),
-                    // Causes errors when replacing an entire line.
                     block: true,
                 }).range(from, to)
             )
         ),
 });
 
-// <p>Specify what happens to doc blocks during a transaction. I think the purpose of this is to provide a more compact model than the StateField above; that StateField models the doc block using a widget, which provides a representation in the DOM, but is therefore larger/heavier. Here, the effects apply to the core elements of the state (range and doc block's defining indent, delimiter, and contents).</p>
-// <p>Per the <a href="https://codemirror.net/docs/ref/#state.StateEffect^define">docs</a>, "State effects can be used to represent additional effects associated with a transaction. They are often useful to model changes to custom state fields, when those changes aren't implicit in document or selection changes."</p>
+// <p>Per the <a href="https://codemirror.net/docs/ref/#state.StateEffect^define">docs</a>, "State effects can be used to represent additional effects associated with a transaction. They are often useful to model changes to custom state fields, when those changes aren't implicit in document or selection changes." In this case, provide a way to add a doc block.</p>
 const addDocBlock = StateEffect.define<{
     from: number;
     to: number;
@@ -394,17 +391,22 @@ class DocBlockWidget extends WidgetType {
         readonly delimiter: string,
         readonly contents: string
     ) {
+        // TODO: I don't understand why I don't need to store the provided parameters in the object: <code>this.indent = indent;</code>, etc.
         super();
-        this.indent = indent;
-        this.delimiter = delimiter;
-        this.contents = contents;
+    }
+
+    eq(other: DocBlockWidget) {
+        return (
+            other.indent == this.indent &&
+            other.delimiter == this.delimiter &&
+            other.contents == this.contents
+        );
     }
 
     // See <a href="https://codemirror.net/docs/ref/#view.WidgetType.toDOM">toDom</a>.
     toDOM() {
         // Wrap this in an enclosing div.
         let wrap = document.createElement("div");
-        wrap.setAttribute("aria-hidden", "true");
         wrap.className = "CodeChat-doc";
         wrap.innerHTML =
             // <p>This doc block's indent. TODO: allow paste, but must
@@ -414,36 +416,55 @@ class DocBlockWidget extends WidgetType {
             `<div class="CodeChat-TinyMCE" contenteditable>` +
             this.contents +
             "</div>";
-
         return wrap;
     }
 
-    ignoreEvent() {
-        return false;
+    // Per the <a href="https://codemirror.net/docs/ref/#view.WidgetType.updateDOM">docs</a>, "Update a DOM element created by a widget of the same type (but different, non-eq content) to reflect this widget."
+    updateDOM(dom: HTMLElement, view: EditorView): boolean {
+        (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
+        tinymce
+            .get((dom.childNodes[1] as HTMLDivElement).id)
+            .setContent(this.contents);
+        // Indicate the update was successful.
+        return true;
     }
 
-    // TODO: need a way to move changes made to this doc block back to the state variables (this.indent, delimiter, contents).
+    ignoreEvent() {
+        // Don't ignore events that happen in this widget, so the view can handle them correctly.
+        return false;
+    }
 }
 
 const DocBlockPlugin = ViewPlugin.fromClass(
     class {
         constructor(view: EditorView) {}
 
-        update(update: ViewUpdate) {}
+        update(update: ViewUpdate) {
+            // TODO: make this much less expensive.
+            make_doc_block_editor(".CodeChat-TinyMCE");
+        }
     },
     {
         eventHandlers: {
             mousedown: (event: MouseEvent, view: EditorView) => {
-                return false;
-                setTimeout(event.target?.dispatchEvent!, 0, event);
-                let target = e.target as HTMLElement;
-                if (
-                    target.nodeName == "INPUT" &&
-                    target.parentElement!.classList.contains(
-                        "cm-boolean-toggle"
-                    )
-                ) {
+                let target = event.target as HTMLElement;
+                while (target.parentElement) {
+                    // If we're to the root CodeMirror element, then this isn't a doc block. Don't handle this event.
+                    if (target.classList.contains("cm-content")) {
+                        return false;
+                    }
+                    // If it's a doc block, then tell Code Mirror not to handle this event.
+                    if (target.classList.contains("CodeChat-doc")) {
+                        // TODO: send an update to the state field associated with this DOM element. Probably view.dispatch({changes: ???});
+                        const pos = view.posAtDOM(target);
+                        console.log(pos);
+                        return null;
+                    }
+                    // Keep searching higher in the DOM,
+                    target = target.parentElement;
                 }
+                // We shouldn't reach here; if so, it's definitely not a doc block.
+                return false;
             },
         },
     }
@@ -451,6 +472,8 @@ const DocBlockPlugin = ViewPlugin.fromClass(
 
 function underlineSelection(view: EditorView) {
     const doc = view.state.doc;
+    console.log(view.state.toJSON({ doc_blocks: docBlockField }));
+    return true;
     let effects: StateEffect<unknown>[] = [
         addDocBlock.of({
             from: doc.line(1).from,
