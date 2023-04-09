@@ -18,8 +18,6 @@
 /// </h1>
 /// <p>TODO: auto-reload when the current file changes on disk. Use <a
 ///         href="https://docs.rs/notify/latest/notify/">notify</a>.</p>
-/// <p><span style="background-color: rgb(236, 202, 250);">SSC: Perhaps put the
-///         overall purpose/description/goal of webserver.rs here.</span></p>
 /// <h2>Imports</h2>
 /// <h3>Standard library&nbsp;</h3>
 use std::{
@@ -99,9 +97,6 @@ lazy_static! {
 }
 
 /// <h2>Save endpoint</h2>
-/// <p><span style="background-color: rgb(236, 202, 250);">SSC: I think most of
-///         the code in this section is commented nicely; I can understand the
-///         flow/process of the script from here.</span></p>
 #[put("/fs/{path:.*}")]
 /// <p>The Save button in the CodeChat Editor Client posts to this endpoint with
 ///     the path of the file to save.</p>
@@ -565,9 +560,6 @@ async fn serve_file(
         }
     }
 
-    // <p><span style="background-color: rgb(236, 202, 250);">SSC: I think the
-    //         file is parsed appropriately once the read_to_string()
-    //         method/function is done...</span></p>
     // <p>The TOC is a simplified web page requiring no additional processing.
     //     The script ensures that all hyperlinks target the enclosing page, not
     //     just the iframe containing this page.</p>
@@ -599,10 +591,6 @@ async fn serve_file(
         ));
     }
 
-    // <p><span style="background-color: rgb(236, 202, 250);">SSC: However, a
-    //         lexer can be used to separate a string into symbols/characters...
-    //         Would this lexer identify the language that the code is written
-    //         in?&nbsp;</span></p>
     // <p>Determine the lexer to use for this file.</p>
     let ace_mode;
     // <p>First, search for a lexer directive in the file contents.</p>
@@ -642,20 +630,13 @@ async fn serve_file(
     };
 
     // <p>Lex the code and put it in a JSON structure.</p>
-    // <p><span style="background-color: rgb(236, 202, 250);">SSC: This part
-    //         turns the code and doc blocks into a vector (code_doc_block_arr),
-    //         then is converted to JSON. Is this used to transform into HTML? I
-    //         think lexed_source_file_string is the variable to use... We feed
-    //         lexed_source_file_string into the pulldown_cmark crate. However,
-    //         this is a JSON structure, I'm not entirely sure when the string
-    //         gets converted to HTML...?&nbsp;</span></p>
     let code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
         vec![CodeDocBlock::CodeBlock(file_contents)]
     } else {
         source_lexer(&file_contents, lexer)
     };
     
-    // print!("{:?}", code_doc_block_arr);
+    // <p>print!("{:?}", code_doc_block_arr);</p>
     
     
     let lexed_source_file = LexedSourceFile {
@@ -678,8 +659,7 @@ async fn serve_file(
     // <p>Look for any script tags and prevent these from causing problems.</p>
     let lexed_source_file_string = lexed_source_file_string.replace("</script>", "<\\/script>");
     
-    // <p>TESTING HERE?</p>
-
+    //
 
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
