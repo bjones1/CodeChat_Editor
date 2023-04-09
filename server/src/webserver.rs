@@ -636,21 +636,30 @@ async fn serve_file(
         source_lexer(&file_contents, lexer)
     };
     
-    // <p>print!("{:?}", code_doc_block_arr);</p>
+    // <p>&nbsp;</p>
     // <p>Converts doc blocks from Markdown to HTML.</p>
-    for segment in &code_doc_block_arr { 
-        //if segment == CodeBlock { 
-        //    continue
-        //} else { 
-            //let parser = Parser::new_ext(&segment.contents(), options); 
-            
-            //let mut html_output = String::new(); 
-            
-            //html::push_html(&mut html_output, parser); 
-            
-            //segment.contents() = html_output; 
-        //} 
+    //print!("{:?}", code_doc_block_arr);
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    for code_doc_block in &code_doc_block_arr { 
+        if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
+            println!("Yay! It's a doc block!");
+            println!("Converting from Markdown to HTML...");
+            print!("{:?}", doc_block.contents);
+            println!("");
+            println!("");
+            let parser = Parser::new_ext(&doc_block.contents, options); 
+            let mut html_output = String::new(); 
+            html::push_html(&mut html_output, parser); 
+            print!("{:?}",html_output);
+
+            // TO PASS INTO THE VECTOR (NOT WORKING, NEED TO FIGURE OUT WHY)
+            //doc_block.contents = html_output; 
+        } else {
+            println!("It's a code block! We will skip this!");
+            continue
     }
+}
     
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
