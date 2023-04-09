@@ -637,7 +637,20 @@ async fn serve_file(
     };
     
     // <p>print!("{:?}", code_doc_block_arr);</p>
-    
+    // <p>Converts doc blocks from Markdown to HTML.</p>
+    for segment in &code_doc_block_arr { 
+        //if segment == CodeBlock { 
+        //    continue
+        //} else { 
+            //let parser = Parser::new_ext(&segment.contents(), options); 
+            
+            //let mut html_output = String::new(); 
+            
+            //html::push_html(&mut html_output, parser); 
+            
+            //segment.contents() = html_output; 
+        //} 
+    }
     
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
