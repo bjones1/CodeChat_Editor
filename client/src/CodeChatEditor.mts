@@ -337,6 +337,22 @@ const docBlockField = StateField.define<DecorationSet>({
                     ],
                 });
             }
+
+            // Perform an update to a doc block.
+            else if (effect.is(updateDocBlock)) {
+                // Find the specific doc block associated with the provided position.
+                doc_blocks.between(
+                    effect.value.pos,
+                    effect.value.pos,
+                    (from: number, to: number, doc_block: Decoration) => {
+                        // Perform the update on the found doc block.
+                        console.log(from, to, "Update");
+
+                        // Assume that there's only one doc block for this range: stop looking for any others.
+                        return false;
+                    }
+                );
+            }
         return doc_blocks;
     },
 
@@ -384,7 +400,23 @@ const addDocBlock = StateEffect.define<{
     }),
 });
 
-// Create a widget which contains a doc block.
+// Define an update. Note that we have only a position (the only data a view can gather), rather than a from/to.
+const updateDocBlock = StateEffect.define<{
+    pos: number;
+    indent: string;
+    delimiter: string;
+    content: string;
+}>({
+    map: ({ pos, indent, delimiter, content }, change: ChangeDesc) => ({
+        // Update the location (from/to) of this doc block due to the transaction's changes.
+        pos: change.mapPos(pos),
+        indent,
+        delimiter,
+        content,
+    }),
+});
+
+// Create a <a href="https://codemirror.net/docs/ref/#view.WidgetType">widget</a> which contains a doc block.
 class DocBlockWidget extends WidgetType {
     constructor(
         readonly indent: string,
@@ -422,9 +454,15 @@ class DocBlockWidget extends WidgetType {
     // Per the <a href="https://codemirror.net/docs/ref/#view.WidgetType.updateDOM">docs</a>, "Update a DOM element created by a widget of the same type (but different, non-eq content) to reflect this widget."
     updateDOM(dom: HTMLElement, view: EditorView): boolean {
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
-        tinymce
-            .get((dom.childNodes[1] as HTMLDivElement).id)
-            .setContent(this.contents);
+
+        // The contents div could be a TinyMCE instance, or just a plain div. Handle both cases.
+        const [contents_div, tinymce_inst] = get_contents(dom);
+        if (tinymce_inst === null) {
+            contents_div.innerHTML = this.contents;
+        } else {
+            tinymce_inst.setContent(this.contents);
+        }
+
         // Indicate the update was successful.
         return true;
     }
@@ -433,7 +471,21 @@ class DocBlockWidget extends WidgetType {
         // Don't ignore events that happen in this widget, so the view can handle them correctly.
         return false;
     }
+
+    destroy(dom: HTMLElement): void {
+        const [contents_div, tinymce_inst] = get_contents(dom);
+        if (tinymce_inst !== null) {
+            tinymce_inst.remove();
+        }
+    }
 }
+
+// Given a doc block div element, return the TinyMCE instance and the div it's rooted in.
+const get_contents = (element: HTMLElement) => {
+    const contents_div = element.childNodes[1] as HTMLDivElement;
+    const tinymce_inst = tinymce.get(contents_div.id);
+    return [contents_div, tinymce_inst];
+};
 
 const DocBlockPlugin = ViewPlugin.fromClass(
     class {
@@ -441,34 +493,61 @@ const DocBlockPlugin = ViewPlugin.fromClass(
 
         update(update: ViewUpdate) {
             // TODO: make this much less expensive.
-            make_doc_block_editor(".CodeChat-TinyMCE");
+            //make_doc_block_editor(".CodeChat-TinyMCE");
         }
     },
     {
         eventHandlers: {
             mousedown: (event: MouseEvent, view: EditorView) => {
-                let target = event.target as HTMLElement;
-                while (target.parentElement) {
-                    // If we're to the root CodeMirror element, then this isn't a doc block. Don't handle this event.
-                    if (target.classList.contains("cm-content")) {
-                        return false;
-                    }
-                    // If it's a doc block, then tell Code Mirror not to handle this event.
-                    if (target.classList.contains("CodeChat-doc")) {
-                        // TODO: send an update to the state field associated with this DOM element. Probably view.dispatch({changes: ???});
-                        const pos = view.posAtDOM(target);
-                        console.log(pos);
-                        return null;
-                    }
-                    // Keep searching higher in the DOM,
-                    target = target.parentElement;
+                if (event_is_in_doc_block(event)) {
+                    return null;
+                } else {
+                    return false;
                 }
-                // We shouldn't reach here; if so, it's definitely not a doc block.
-                return false;
+            },
+
+            input: (event: Event, view: EditorView) => {
+                if (event_is_in_doc_block(event)) {
+                    // TODO: send an update to the state field associated with this DOM element. Probably view.dispatch({changes: ???});
+                    const target = event.target as HTMLElement;
+                    const pos = view.posAtDOM(target);
+                    let effects: StateEffect<unknown>[] = [
+                        updateDocBlock.of({
+                            pos,
+                            indent: "",
+                            delimiter: "",
+                            content: "Trying",
+                        }),
+                    ];
+
+                    view.dispatch({ effects });
+                    return null;
+                } else {
+                    return false;
+                }
             },
         },
     }
 );
+
+// Determine if the element which generated the provided event was in a doc block or not.
+const event_is_in_doc_block = (event: Event): boolean => {
+    let target = event.target as HTMLElement;
+    while (target.parentElement) {
+        // If we're to the root CodeMirror element, then this isn't a doc block. Don't handle this event.
+        if (target.classList.contains("cm-content")) {
+            return false;
+        }
+        // If it's a doc block, then tell Code Mirror not to handle this event.
+        if (target.classList.contains("CodeChat-doc")) {
+            return true;
+        }
+        // Keep searching higher in the DOM,
+        target = target.parentElement;
+    }
+    // We shouldn't reach here; if so, it's definitely not a doc block.
+    return false;
+};
 
 function underlineSelection(view: EditorView) {
     const doc = view.state.doc;
