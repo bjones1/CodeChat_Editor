@@ -330,7 +330,8 @@ const docBlockField = StateField.define<DecorationSet>({
                             widget: new DocBlockWidget(
                                 effect.value.indent,
                                 effect.value.delimiter,
-                                effect.value.content
+                                effect.value.content,
+                                null
                             ),
                             block: true,
                         }).range(effect.value.from, effect.value.to),
@@ -340,18 +341,41 @@ const docBlockField = StateField.define<DecorationSet>({
 
             // Perform an update to a doc block.
             else if (effect.is(updateDocBlock)) {
-                // Find the specific doc block associated with the provided position.
+                // The view provides only the to value (the position); use this to find the from value for the doc block to update.
+                const from = effect.value.pos;
+                let to;
                 doc_blocks.between(
-                    effect.value.pos,
-                    effect.value.pos,
-                    (from: number, to: number, doc_block: Decoration) => {
-                        // Perform the update on the found doc block.
-                        console.log(from, to, "Update");
-
+                    from,
+                    from,
+                    (_from: number, _to: number, doc_block: Decoration) => {
+                        to = _to;
                         // Assume that there's only one doc block for this range: stop looking for any others.
                         return false;
                     }
                 );
+                // Remove the old doc block and create a new one to replace it. (Recall that this is the functional approach required by CodeMirror -- state is immutable.)
+                doc_blocks = doc_blocks.update({
+                    // Remove the old doc block. We assume there's only one block in the provided from/to range.
+                    filter: (from, to, doc_block) => false,
+                    filterFrom: from,
+                    filterTo: to,
+                    // This adds the replacement doc block with updated indent/delimiter/content.
+                    add: [
+                        Decoration.replace({
+                            widget: new DocBlockWidget(
+                                effect.value.indent,
+                                effect.value.delimiter,
+                                effect.value.content,
+                                effect.value.dom
+                            ),
+                            block: true,
+                        }).range(
+                            from,
+                            // We know that the to value will always be found; make TypeScript happy.
+                            to as unknown as number
+                        ),
+                    ],
+                });
             }
         return doc_blocks;
     },
@@ -375,7 +399,12 @@ const docBlockField = StateField.define<DecorationSet>({
         Decoration.set(
             json.map(([from, to, indent, delimiter, contents]: DocBlockJSON) =>
                 Decoration.replace({
-                    widget: new DocBlockWidget(indent, delimiter, contents),
+                    widget: new DocBlockWidget(
+                        indent,
+                        delimiter,
+                        contents,
+                        null
+                    ),
                     block: true,
                 }).range(from, to)
             )
@@ -406,13 +435,15 @@ const updateDocBlock = StateEffect.define<{
     indent: string;
     delimiter: string;
     content: string;
+    dom: HTMLDivElement;
 }>({
-    map: ({ pos, indent, delimiter, content }, change: ChangeDesc) => ({
-        // Update the location (from/to) of this doc block due to the transaction's changes.
+    map: ({ pos, indent, delimiter, content, dom }, change: ChangeDesc) => ({
+        // Update the position of this doc block due to the transaction's changes.
         pos: change.mapPos(pos),
         indent,
         delimiter,
         content,
+        dom,
     }),
 });
 
@@ -421,7 +452,9 @@ class DocBlockWidget extends WidgetType {
     constructor(
         readonly indent: string,
         readonly delimiter: string,
-        readonly contents: string
+        readonly contents: string,
+        // Only used in an update to avoid changing an already-modified doc block.
+        readonly dom: null | HTMLDivElement
     ) {
         // TODO: I don't understand why I don't need to store the provided parameters in the object: <code>this.indent = indent;</code>, etc.
         super();
@@ -453,6 +486,11 @@ class DocBlockWidget extends WidgetType {
 
     // Per the <a href="https://codemirror.net/docs/ref/#view.WidgetType.updateDOM">docs</a>, "Update a DOM element created by a widget of the same type (but different, non-eq content) to reflect this widget."
     updateDOM(dom: HTMLElement, view: EditorView): boolean {
+        // If this update has already been made to the provided DOM, then we're done. TODO: does this actually improve performance?
+        if (this.dom === dom) {
+            return true;
+        }
+
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
 
         // The contents div could be a TinyMCE instance, or just a plain div. Handle both cases.
@@ -492,8 +530,8 @@ const DocBlockPlugin = ViewPlugin.fromClass(
         constructor(view: EditorView) {}
 
         update(update: ViewUpdate) {
-            // TODO: make this much less expensive.
-            //make_doc_block_editor(".CodeChat-TinyMCE");
+            // TODO: make this much less expensive. It's called very frequently.
+            make_doc_block_editor(".CodeChat-TinyMCE");
         }
     },
     {
@@ -507,16 +545,25 @@ const DocBlockPlugin = ViewPlugin.fromClass(
             },
 
             input: (event: Event, view: EditorView) => {
-                if (event_is_in_doc_block(event)) {
-                    // TODO: send an update to the state field associated with this DOM element. Probably view.dispatch({changes: ???});
-                    const target = event.target as HTMLElement;
+                const target_or_false = event_is_in_doc_block(event);
+                if (target_or_false) {
+                    // Send an update to the state field associated with this DOM element.
+                    const target = target_or_false as HTMLDivElement;
                     const pos = view.posAtDOM(target);
+                    const indent = (target.childNodes[0] as HTMLDivElement)
+                        .innerHTML;
+                    const [contents_div, tinymce_inst] = get_contents(target);
+                    const content =
+                        tinymce_inst === null
+                            ? contents_div.innerHTML
+                            : tinymce_inst.getContent();
                     let effects: StateEffect<unknown>[] = [
                         updateDocBlock.of({
                             pos,
-                            indent: "",
+                            indent,
                             delimiter: "",
-                            content: "Trying",
+                            content: content,
+                            dom: target,
                         }),
                     ];
 
@@ -531,16 +578,16 @@ const DocBlockPlugin = ViewPlugin.fromClass(
 );
 
 // Determine if the element which generated the provided event was in a doc block or not.
-const event_is_in_doc_block = (event: Event): boolean => {
+const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
     let target = event.target as HTMLElement;
     while (target.parentElement) {
-        // If we're to the root CodeMirror element, then this isn't a doc block. Don't handle this event.
-        if (target.classList.contains("cm-content")) {
+        // If we find any CodeMirror element, this isn't a doc block.
+        if (target.className.includes("cm-")) {
             return false;
         }
         // If it's a doc block, then tell Code Mirror not to handle this event.
         if (target.classList.contains("CodeChat-doc")) {
-            return true;
+            return target as HTMLDivElement;
         }
         // Keep searching higher in the DOM,
         target = target.parentElement;

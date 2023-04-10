@@ -50,14 +50,6 @@ body {
     background: white;
 }
 
-#testing.testing {
-    caret-color: black;
-}
-
-#testing.testing ::selection {
-    background-color: black;
-}
-
 /* <p>Provide space at the top of the screen for the filename and TinyMCE menu
     bar.</p> */
 #CodeChat-top {
@@ -118,6 +110,7 @@ body {
     font-family: auto;
     line-height: initial;
     white-space: normal;
+    flex-grow: 1;
 }
 
 /* <p>Remove the editor's border when it's selected, since this hides the cursor
