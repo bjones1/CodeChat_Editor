@@ -122,53 +122,6 @@ enum EditorMode {
     raw,
 }
 
-// <p>This function is called on page load to "load" a file. Before this point,
-//     the server has already lexed the source file into code and doc blocks;
-//     this function transforms the code and doc blocks into HTML and updates
-//     the current web page with the results.</p>
-const open_lp = (
-    // <p>A data structure provided by the server, containing the source and
-    //     associated metadata. See <a
-    //         href="#AllSource"><code>AllSource</code></a>.</p>
-    all_source: LexedSourceFile,
-    // <p>See <code><a href="#EditorMode">EditorMode</a></code>.</p>
-    editorMode: EditorMode
-) => {
-    // <p>Get the <code><a href="#current_metadata">current_metadata</a></code>
-    //     from the provided <code>all_source</code> struct and store it as a
-    //     global variable.</p>
-    current_metadata = all_source["metadata"];
-    const source = all_source["source"];
-    const codechat_body = document.getElementById("CodeChat-body")!;
-    if (is_doc_only()) {
-        // <p>Special case: a CodeChat Editor document's HTML doesn't need
-        //     lexing; it only contains HTML. Instead, its structure is always:
-        //     <code>[["", "", HTML]]</code>. Therefore, the HTML is at item
-        //     [0][2].</p>
-        codechat_body.innerHTML = `<div class="CodeChat-TinyMCE">${source.doc}</div>`;
-    } else {
-        codechat_body.innerHTML = '<div class="CodeChat-CodeMirror"></div>';
-        source.selection = EditorSelection.single(0).toJSON();
-        const initialState = EditorState.fromJSON(
-            source,
-            {
-                extensions: [
-                    javascript(),
-                    basicSetup,
-                    underlineKeymap,
-                    EditorView.lineWrapping,
-                    DocBlockPlugin,
-                ],
-            },
-            { doc_blocks: docBlockField }
-        );
-        const view = new EditorView({
-            parent: codechat_body,
-            state: initialState,
-        });
-    }
-};
-
 // <p>This defines a single code or doc block entry:</p>
 export type code_or_doc_block = [
     // <p>The indent for a doc bloc; empty for a code block.</p>
@@ -525,25 +478,62 @@ const get_contents = (element: HTMLElement) => {
     return [contents_div, tinymce_inst];
 };
 
+// Determine if the element which generated the provided event was in a doc block or not. If not, return false; if so, return the doc block div.
+const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
+    let target = event.target as HTMLElement;
+    while (target.parentElement) {
+        // If we find any CodeMirror element, this isn't a doc block.
+        if (target.className.includes("cm-")) {
+            return false;
+        }
+        // If it's a doc block, then tell Code Mirror not to handle this event.
+        if (target.classList.contains("CodeChat-doc")) {
+            return target as HTMLDivElement;
+        }
+        // Keep searching higher in the DOM,
+        target = target.parentElement;
+    }
+    // We shouldn't reach here; if so, it's definitely not a doc block.
+    return false;
+};
+
+// Pass doc block events to the doc block, by telling CodeMirror to ignore it (a return of null); let CodeMirror handle everything else (return true).
+const route_event = (event: Event) =>
+    event_is_in_doc_block(event) ? null : false;
+
 const DocBlockPlugin = ViewPlugin.fromClass(
     class {
         constructor(view: EditorView) {}
-
         update(update: ViewUpdate) {
-            // TODO: make this much less expensive. It's called very frequently.
+            // TODO: this make the program VERY slow and produces a lot of JS exceptions.
             make_doc_block_editor(".CodeChat-TinyMCE");
         }
     },
     {
         eventHandlers: {
-            mousedown: (event: MouseEvent, view: EditorView) => {
-                if (event_is_in_doc_block(event)) {
-                    return null;
+            mousedown: route_event,
+            // TODO: when a doc block loses focus, save the TinyMCE instance for reuse.
+            focusout: route_event,
+
+            // When a doc block receives focus, turn it into a TinyMCE instance so it can be edited. A simpler alternative is to do this in the update() method above, but this is VERY slow, since update is called frequently.
+            focusin: (event: Event, view: EditorView) => {
+                const target_or_false = event_is_in_doc_block(event);
+                if (target_or_false) {
+                    const target = target_or_false as HTMLDivElement;
+                    const [contents_div, tinymce_inst] = get_contents(target);
+                    if (tinymce_inst === null) {
+                        if (contents_div.id === "") {
+                            contents_div.id = `docblock-${Date.now()}`;
+                        }
+                        // TODO: this is fast, but never removes the TinyMCE menu when the doc block isn't focused.
+                        //make_doc_block_editor(`#${contents_div.id}`);
+                    }
                 } else {
                     return false;
                 }
             },
 
+            // When a doc block changes, update the CodeMirror state to match these changes.
             input: (event: Event, view: EditorView) => {
                 const target_or_false = event_is_in_doc_block(event);
                 if (target_or_false) {
@@ -577,40 +567,8 @@ const DocBlockPlugin = ViewPlugin.fromClass(
     }
 );
 
-// Determine if the element which generated the provided event was in a doc block or not.
-const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
-    let target = event.target as HTMLElement;
-    while (target.parentElement) {
-        // If we find any CodeMirror element, this isn't a doc block.
-        if (target.className.includes("cm-")) {
-            return false;
-        }
-        // If it's a doc block, then tell Code Mirror not to handle this event.
-        if (target.classList.contains("CodeChat-doc")) {
-            return target as HTMLDivElement;
-        }
-        // Keep searching higher in the DOM,
-        target = target.parentElement;
-    }
-    // We shouldn't reach here; if so, it's definitely not a doc block.
-    return false;
-};
-
+// To show how to create a keyboard-activated function.
 function underlineSelection(view: EditorView) {
-    const doc = view.state.doc;
-    console.log(view.state.toJSON({ doc_blocks: docBlockField }));
-    return true;
-    let effects: StateEffect<unknown>[] = [
-        addDocBlock.of({
-            from: doc.line(1).from,
-            to: doc.line(2).to,
-            indent: "",
-            delimiter: "",
-            content: "Trying",
-        }),
-    ];
-
-    view.dispatch({ effects });
     return true;
 }
 
@@ -648,17 +606,69 @@ export const on_keydown = (event: KeyboardEvent) => {
     }
 };
 
+let current_view: EditorView;
+const CodeMirror_JSON_fields = { doc_blocks: docBlockField };
+
+// <p>This function is called on page load to "load" a file. Before this point,
+//     the server has already lexed the source file into code and doc blocks;
+//     this function transforms the code and doc blocks into HTML and updates
+//     the current web page with the results.</p>
+const open_lp = (
+    // <p>A data structure provided by the server, containing the source and
+    //     associated metadata. See <a
+    //         href="#AllSource"><code>AllSource</code></a>.</p>
+    all_source: LexedSourceFile,
+    // <p>See <code><a href="#EditorMode">EditorMode</a></code>.</p>
+    editorMode: EditorMode
+) => {
+    // <p>Get the <code><a href="#current_metadata">current_metadata</a></code>
+    //     from the provided <code>all_source</code> struct and store it as a
+    //     global variable.</p>
+    current_metadata = all_source["metadata"];
+    const source = all_source["source"];
+    const codechat_body = document.getElementById("CodeChat-body")!;
+    if (is_doc_only()) {
+        // <p>Special case: a CodeChat Editor document's HTML doesn't need
+        //     lexing; it only contains HTML. Instead, its structure is always:
+        //     <code>[["", "", HTML]]</code>. Therefore, the HTML is at item
+        //     [0][2].</p>
+        codechat_body.innerHTML = `<div class="CodeChat-TinyMCE">${source.doc}</div>`;
+    } else {
+        codechat_body.innerHTML = '<div class="CodeChat-CodeMirror"></div>';
+        source.selection = EditorSelection.single(0).toJSON();
+        const state = EditorState.fromJSON(
+            source,
+            {
+                extensions: [
+                    javascript(),
+                    basicSetup,
+                    underlineKeymap,
+                    EditorView.lineWrapping,
+                    DocBlockPlugin,
+                ],
+            },
+            CodeMirror_JSON_fields
+        );
+        current_view = new EditorView({
+            parent: codechat_body,
+            state,
+        });
+    }
+};
+
 // <p>Save CodeChat Editor contents.</p>
 export const on_save = async () => {
     // <p>This is the data to write &mdash; the source code. First, transform
     //     the HTML back into code and doc blocks.</p>
-    const source_code = editor_to_code_doc_blocks();
+    let source = current_view.state.toJSON(CodeMirror_JSON_fields);
+    // Don't record the current selection when saving.
+    delete source.selection;
     // <p>Then, wrap these in a <a
     //         href="../server/src/webserver.rs#ClientSourceFile">struct the
     //         server expects</a> and send it.</p>
     await save({
         metadata: current_metadata,
-        code_doc_block_arr: source_code,
+        source,
     });
 };
 
