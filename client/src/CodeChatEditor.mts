@@ -46,7 +46,8 @@ import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 import "./graphviz-webcomponent/index.min.mjs";
 import { html_beautify } from "js-beautify";
-import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
+import { tinymce } from "./tinymce-webpack.mjs";
+import { Editor } from "tinymce";
 
 import { javascript } from "@codemirror/lang-javascript";
 import { basicSetup } from "codemirror";
@@ -54,7 +55,6 @@ import {
     EditorView,
     Decoration,
     DecorationSet,
-    DOMEventMap,
     ViewUpdate,
     ViewPlugin,
     keymap,
@@ -68,10 +68,10 @@ import {
     EditorSelection,
     Transaction,
 } from "@codemirror/state";
-import { syntaxTree } from "@codemirror/language";
 
 // <h3>CSS</h3>
 import "./../static/css/CodeChatEditor.css";
+import { TinyMCE } from "tinymce";
 
 // <h2>Initialization</h2>
 // <p>Load code when the DOM is ready.</p>
@@ -161,101 +161,6 @@ declare global {
         CodeChatEditor_test: any;
     }
 }
-
-// <h2>Editors</h2>
-// <p>This code instantiates editors/viewers for code and doc blocks.</p>
-const make_editors = async (
-    // <p>A instance of the <code>EditorMode</code> enum.</p>
-    editorMode: EditorMode
-) => {
-    return new Promise((accept) => {
-        setTimeout(async () => {
-            // <p>Set up for editing the indent of doc blocks.</p>
-            for (const td of document.querySelectorAll(
-                ".CodeChat-doc-indent"
-            )) {
-                // <p>While this follows the <a
-                //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event">MDN
-                //         docs</a> and also works, TypeScript still reports an
-                //     error. Suppress it.</p>
-                /// @ts-ignore
-                td.addEventListener(
-                    "beforeinput",
-                    doc_block_indent_on_before_input
-                );
-            }
-
-            // <p><a id="CodeChatEditor_test"></a>If tests should be run, then
-            //     the <a
-            //         href="CodeChatEditor-test.mts#CodeChatEditor_test">following
-            //         global variable</a> is function that runs them.</p>
-            if (typeof window.CodeChatEditor_test === "function") {
-                window.CodeChatEditor_test();
-            }
-
-            accept("");
-        });
-    });
-};
-
-// <p>Instantiate a doc block editor (TinyMCE).</p>
-const make_doc_block_editor = (
-    // <p>CSS selector to specify which HTML elements should be editable using
-    //     TinyMCE.</p>
-    selector: string
-) => {
-    return tinymce_init({
-        // <p>Enable the <a
-        //         href="https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck">browser-supplied
-        //         spellchecker</a>, since TinyMCE's spellchecker is a premium
-        //     feature.</p>
-        browser_spellcheck: true,
-        // <p>Put more buttons on the <a
-        //         href="https://www.tiny.cloud/docs/tinymce/6/quickbars/">quick
-        //         toolbar</a> that appears when text is selected. TODO: add a
-        //     button for code format (can't find this one -- it's only on the
-        //     <a
-        //         href="https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items">list
-        //         of menu items</a> as <code>codeformat</code>).</p>
-        quickbars_selection_toolbar:
-            "align | bold italic underline | quicklink h2 h3 blockquote",
-        // <p>Place the Tiny MCE menu bar at the top of the screen; otherwise,
-        //     it floats in front of text, sometimes obscuring what the user
-        //     wants to edit. See the <a
-        //         href="https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container">docs</a>.
-        // </p>
-        fixed_toolbar_container: "#CodeChat-menu",
-        inline: true,
-        // <p>When true, this still prevents hyperlinks to anchors on the
-        //     current page from working correctly. There's an onClick handler
-        //     that prevents links in the current page from working -- need to
-        //     look into this. See also <a
-        //         href="https://github.com/tinymce/tinymce/issues/3836">a
-        //         related GitHub issue</a>.</p>
-        //readonly: true  // Per the comment above, this is commented out.
-        // <p>TODO: Notes on this setting.</p>
-        relative_urls: true,
-        selector: selector,
-        // <p>This combines the <a
-        //         href="https://www.tiny.cloud/blog/tinymce-toolbar/">default
-        //         TinyMCE toolbar buttons</a> with a few more from plugins. I
-        //     like the default, so this is currently disabled.</p>
-        //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
-
-        // <p>Settings for plugins</p>
-        // <p><a
-        //         href="https://www.tiny.cloud/docs/plugins/opensource/image/">Image</a>
-        // </p>
-        image_caption: true,
-        image_advtab: true,
-        image_title: true,
-        // <p>Needed to allow custom elements.</p>
-        extended_valid_elements:
-            "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale]",
-        custom_elements:
-            "graphviz-graph,graphviz-script-editor,graphviz-combined",
-    });
-};
 
 // <h2>Doc blocks in CodeMirror</h2>
 // <p>The goal: given a <a href="https://codemirror.net/docs/ref/#state.Range">Range</a> of lines containing a doc block (a delimiter, indent, and contents) residing at these lines, <a href="https://codemirror.net/docs/ref/#view.Decoration^replace">replace</a> them with a widget which allows editing of the doc block.</p>
@@ -472,7 +377,9 @@ class DocBlockWidget extends WidgetType {
 }
 
 // Given a doc block div element, return the TinyMCE instance and the div it's rooted in.
-const get_contents = (element: HTMLElement) => {
+const get_contents = (
+    element: HTMLElement
+): [HTMLDivElement, Editor | null] => {
     const contents_div = element.childNodes[1] as HTMLDivElement;
     const tinymce_inst = tinymce.get(contents_div.id);
     return [contents_div, tinymce_inst];
@@ -504,10 +411,7 @@ const route_event = (event: Event) =>
 const DocBlockPlugin = ViewPlugin.fromClass(
     class {
         constructor(view: EditorView) {}
-        update(update: ViewUpdate) {
-            // TODO: this make the program VERY slow and produces a lot of JS exceptions.
-            make_doc_block_editor(".CodeChat-TinyMCE");
-        }
+        update(update: ViewUpdate) {}
     },
     {
         eventHandlers: {
@@ -521,12 +425,30 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 if (target_or_false) {
                     const target = target_or_false as HTMLDivElement;
                     const [contents_div, tinymce_inst] = get_contents(target);
+
+                    // See if this is already a TinyMCE instance; if not, create one.
                     if (tinymce_inst === null) {
                         if (contents_div.id === "") {
                             contents_div.id = `docblock-${Date.now()}`;
                         }
-                        // TODO: this is fast, but never removes the TinyMCE menu when the doc block isn't focused.
-                        //make_doc_block_editor(`#${contents_div.id}`);
+                        const editor = tinymce.createEditor(contents_div.id, {
+                            selector: `#${contents_div.id}`,
+                        });
+                        editor.render();
+                        editor.focus(false);
+
+                        // <p>Set up for editing the indent of doc blocks.</p>
+                        const indent_div = target
+                            .childNodes[0] as HTMLDivElement;
+                        // <p>While this follows the <a
+                        //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event">MDN
+                        //         docs</a> and also works, TypeScript still reports an
+                        //     error. Suppress it.</p>
+                        /// @ts-ignore
+                        indent_div.addEventListener(
+                            "beforeinput",
+                            doc_block_indent_on_before_input
+                        );
                     }
                 } else {
                     return false;
@@ -653,6 +575,14 @@ const open_lp = (
             parent: codechat_body,
             state,
         });
+    }
+
+    // <p><a id="CodeChatEditor_test"></a>If tests should be run, then
+    //     the <a
+    //         href="CodeChatEditor-test.mts#CodeChatEditor_test">following
+    //         global variable</a> is function that runs them.</p>
+    if (typeof window.CodeChatEditor_test === "function") {
+        window.CodeChatEditor_test();
     }
 };
 
