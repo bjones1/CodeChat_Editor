@@ -680,8 +680,8 @@ async fn serve_file(
                         code_mirror.doc_blocks.push((
                             // From
                             len,
-                            // To
-                            len + doc_block.lines,
+                            // To. Make this one line short, which allows CodeMirror to correctly handle inserts at the first character of the following code block.
+                            len + doc_block.lines - 1,
                             &doc_block.indent,
                             &doc_block.delimiter,
                             &doc_block.contents,
