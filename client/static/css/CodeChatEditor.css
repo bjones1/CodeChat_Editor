@@ -106,7 +106,7 @@ body {
 }
 
 /* Reset what CodeMirror messes up for doc blocks. */
-.CodeChat-TinyMCE {
+.CodeChat-doc-contents {
     font-family: auto;
     line-height: initial;
     white-space: normal;
@@ -116,7 +116,7 @@ body {
 /* <p>Remove the editor's border when it's selected, since this hides the cursor
     when the cursor is at the beginning of a line and isn't necessary (the
     entire screen is an editor, not just that region.)</p> */
-.CodeChat-TinyMCE.mce-edit-focus {
+.CodeChat-doc-contents.mce-edit-focus {
     outline-width: 0px;
 }
 
@@ -126,15 +126,15 @@ body {
         padding that produce this undesired space; remove it on the first
         element in the doc block, the first element of the first element in
         the doc block, etc.</span></p> */
-.CodeChat-TinyMCE > *:first-child,
-.CodeChat-TinyMCE > *:first-child > *:first-child,
-.CodeChat-TinyMCE > *:first-child > *:first-child > *:first-child,
-.CodeChat-TinyMCE
+.CodeChat-doc-contents > *:first-child,
+.CodeChat-doc-contents > *:first-child > *:first-child,
+.CodeChat-doc-contents > *:first-child > *:first-child > *:first-child,
+.CodeChat-doc-contents
     > *:first-child
     > *:first-child
     > *:first-child
     > *:first-child,
-.CodeChat-TinyMCE
+.CodeChat-doc-contents
     > *:first-child
     > *:first-child
     > *:first-child
@@ -146,11 +146,15 @@ body {
 
 /* <p><a href="remove-space">Remove space</a> between a doc block followed by a
     code block.</p> */
-.CodeChat-TinyMCE > *:last-child,
-.CodeChat-TinyMCE > *:last-child > *:last-child,
-.CodeChat-TinyMCE > *:last-child > *:last-child > *:last-child,
-.CodeChat-TinyMCE > *:last-child > *:last-child > *:last-child > *:last-child,
-.CodeChat-TinyMCE
+.CodeChat-doc-contents > *:last-child,
+.CodeChat-doc-contents > *:last-child > *:last-child,
+.CodeChat-doc-contents > *:last-child > *:last-child > *:last-child,
+.CodeChat-doc-contents
+    > *:last-child
+    > *:last-child
+    > *:last-child
+    > *:last-child,
+.CodeChat-doc-contents
     > *:last-child
     > *:last-child
     > *:last-child

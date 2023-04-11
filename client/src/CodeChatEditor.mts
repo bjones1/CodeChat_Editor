@@ -45,8 +45,7 @@
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 import "./graphviz-webcomponent/index.min.mjs";
-import { html_beautify } from "js-beautify";
-import { tinymce } from "./tinymce-webpack.mjs";
+import { init, tinymce } from "./tinymce-webpack.mjs";
 import { Editor } from "tinymce";
 
 import { javascript } from "@codemirror/lang-javascript";
@@ -74,6 +73,8 @@ import "./../static/css/CodeChatEditor.css";
 import { TinyMCE } from "tinymce";
 
 // <h2>Initialization</h2>
+let tinymce_singleton: Editor | undefined;
+
 // <p>Load code when the DOM is ready.</p>
 export const page_init = (all_source: any) => {
     // <p>Use <a
@@ -89,7 +90,10 @@ export const page_init = (all_source: any) => {
     //         directive</a>.</p>
     /// @ts-ignore
     const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
-    on_dom_content_loaded(() => open_lp(all_source, editorMode));
+    on_dom_content_loaded(async () => {
+        tinymce_singleton = (await init({ selector: "#TinyMCE-inst" }))[0];
+        open_lp(all_source, editorMode);
+    });
 };
 
 // <p>This is copied from <a
@@ -336,7 +340,7 @@ class DocBlockWidget extends WidgetType {
             //     only allow pasting whitespace.</p>
             `<div class="CodeChat-doc-indent" contenteditable onpaste="return false">${this.indent}</div>` +
             // <p>The contents of this doc block.</p>
-            `<div class="CodeChat-TinyMCE" contenteditable>` +
+            `<div class="CodeChat-doc-contents" contenteditable>` +
             this.contents +
             "</div>";
         return wrap;
@@ -368,12 +372,7 @@ class DocBlockWidget extends WidgetType {
         return false;
     }
 
-    destroy(dom: HTMLElement): void {
-        const [contents_div, tinymce_inst] = get_contents(dom);
-        if (tinymce_inst !== null) {
-            tinymce_inst.remove();
-        }
-    }
+    destroy(dom: HTMLElement): void {}
 }
 
 // Given a doc block div element, return the TinyMCE instance and the div it's rooted in.
@@ -405,8 +404,9 @@ const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
 };
 
 // Pass doc block events to the doc block, by telling CodeMirror to ignore it (a return of null); let CodeMirror handle everything else (return true).
-const route_event = (event: Event) =>
-    event_is_in_doc_block(event) ? null : false;
+const route_event = (event: Event) => {
+    return event_is_in_doc_block(event) ? null : false;
+};
 
 const DocBlockPlugin = ViewPlugin.fromClass(
     class {
@@ -420,70 +420,136 @@ const DocBlockPlugin = ViewPlugin.fromClass(
             focusout: route_event,
 
             // When a doc block receives focus, turn it into a TinyMCE instance so it can be edited. A simpler alternative is to do this in the update() method above, but this is VERY slow, since update is called frequently.
+            mouseup: route_event,
             focusin: (event: Event, view: EditorView) => {
                 const target_or_false = event_is_in_doc_block(event);
-                if (target_or_false) {
-                    const target = target_or_false as HTMLDivElement;
-                    const [contents_div, tinymce_inst] = get_contents(target);
-
-                    // See if this is already a TinyMCE instance; if not, create one.
-                    if (tinymce_inst === null) {
-                        if (contents_div.id === "") {
-                            contents_div.id = `docblock-${Date.now()}`;
-                        }
-                        const editor = tinymce.createEditor(contents_div.id, {
-                            selector: `#${contents_div.id}`,
-                        });
-                        editor.render();
-                        editor.focus(false);
-
-                        // <p>Set up for editing the indent of doc blocks.</p>
-                        const indent_div = target
-                            .childNodes[0] as HTMLDivElement;
-                        // <p>While this follows the <a
-                        //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event">MDN
-                        //         docs</a> and also works, TypeScript still reports an
-                        //     error. Suppress it.</p>
-                        /// @ts-ignore
-                        indent_div.addEventListener(
-                            "beforeinput",
-                            doc_block_indent_on_before_input
-                        );
-                    }
-                } else {
+                if (!target_or_false) {
                     return false;
                 }
+                const target = target_or_false as HTMLDivElement;
+                const [contents_div, tinymce_inst] = get_contents(target);
+
+                // See if this is already a TinyMCE instance; if not, move it here.
+                if (tinymce_inst === null) {
+                    // Wait until the focus event completes; this causes the cursor position (the selection) to be set in the contenteditable div. Then, save that location.
+                    setTimeout(() => {
+                        // The code which moves TinyMCE into this div disturbs all the nodes, which causes it to loose a selection tied to a specific node. So, instead store the selection as an array of indices in the childNodes array of each element: for example, a given selection is element 10 of the root TinyMCE div's children (selecting an ol tag), element 5 of the ol's children (selecting the last li tag), element 0 of the li's children (a text node where the actual click landed; the offset in this node is placed in <code>selection_offset</code>.)
+                        const sel = window.getSelection();
+                        let selection_path = [];
+                        const selection_offset = sel?.anchorOffset;
+                        if (sel?.anchorNode) {
+                            // Find a path from the selection back to the containing div.
+                            for (
+                                let current_node = sel.anchorNode;
+                                // Continue until we find the div which contains the doc block contents: either it's not an element (such as a div), ...
+                                current_node.nodeType !== Node.ELEMENT_NODE ||
+                                // or it's not the doc block contents div.
+                                !(current_node as Element).classList.contains(
+                                    "CodeChat-doc-contents"
+                                );
+                                current_node = current_node.parentNode!
+                            ) {
+                                // Store the index of this node in its's parent list of child nodes.
+                                selection_path.unshift(
+                                    Array.prototype.indexOf.call(
+                                        current_node.parentNode!.childNodes,
+                                        current_node
+                                    )
+                                );
+                            }
+                        }
+
+                        // With the selection saved, it's safe to replace the contenteditable div with the TinyMCE instance (which would otherwise wipe the selection).
+                        const tinymce_div =
+                            document.getElementById("TinyMCE-inst")!;
+                        // Copy the current TinyMCE instance contents into a contenteditable div.
+                        const old_contents_div = document.createElement("div")!;
+                        old_contents_div.className = "CodeChat-doc-contents";
+                        old_contents_div.contentEditable = "true";
+                        old_contents_div.replaceChildren(
+                            ...tinymce_singleton!.getContentAreaContainer()
+                                .childNodes
+                        );
+                        tinymce_div.parentNode!.insertBefore(
+                            old_contents_div,
+                            null
+                        );
+                        // Move TinyMCE to the new location, then remove the old div it will replace.
+                        target.insertBefore(tinymce_div, null);
+                        tinymce_singleton!
+                            .getContentAreaContainer()
+                            .replaceChildren(...contents_div.childNodes);
+                        contents_div.remove();
+
+                        // This process causes TinyMCE to lose focus. Restore that. However, this causes TinyMCE to lose the selection, which the next bit of code then restores.
+                        tinymce_singleton!.focus(false);
+
+                        // Copy the selection over to TinyMCE by indexing the selection path to find the selected node.
+                        if (
+                            selection_path.length &&
+                            typeof selection_offset === "number"
+                        ) {
+                            let selection_node =
+                                tinymce_singleton!.getContentAreaContainer();
+                            for (
+                                ;
+                                selection_path.length;
+                                selection_node =
+                                    selection_node.childNodes[
+                                        selection_path.shift()!
+                                    ]!
+                            );
+                            // Use that to set the selection.
+                            tinymce_singleton!.selection.setCursorLocation(
+                                selection_node,
+                                selection_offset
+                            );
+                        }
+                    }, 0);
+
+                    // <p>Set up for editing the indent of doc blocks.</p>
+                    const indent_div = target.childNodes[0] as HTMLDivElement;
+                    // <p>While this follows the <a
+                    //         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event">MDN
+                    //         docs</a> and also works, TypeScript still reports an
+                    //     error. Suppress it.</p>
+                    /// @ts-ignore
+                    indent_div.addEventListener(
+                        "beforeinput",
+                        doc_block_indent_on_before_input
+                    );
+                }
+                return null;
             },
 
             // When a doc block changes, update the CodeMirror state to match these changes.
             input: (event: Event, view: EditorView) => {
                 const target_or_false = event_is_in_doc_block(event);
-                if (target_or_false) {
-                    // Send an update to the state field associated with this DOM element.
-                    const target = target_or_false as HTMLDivElement;
-                    const pos = view.posAtDOM(target);
-                    const indent = (target.childNodes[0] as HTMLDivElement)
-                        .innerHTML;
-                    const [contents_div, tinymce_inst] = get_contents(target);
-                    const content =
-                        tinymce_inst === null
-                            ? contents_div.innerHTML
-                            : tinymce_inst.getContent();
-                    let effects: StateEffect<unknown>[] = [
-                        updateDocBlock.of({
-                            pos,
-                            indent,
-                            delimiter: "",
-                            content: content,
-                            dom: target,
-                        }),
-                    ];
-
-                    view.dispatch({ effects });
-                    return null;
-                } else {
+                if (!target_or_false) {
                     return false;
                 }
+                // Send an update to the state field associated with this DOM element.
+                const target = target_or_false as HTMLDivElement;
+                const pos = view.posAtDOM(target);
+                const indent = (target.childNodes[0] as HTMLDivElement)
+                    .innerHTML;
+                const [contents_div, tinymce_inst] = get_contents(target);
+                const content =
+                    tinymce_inst === null
+                        ? contents_div.innerHTML
+                        : tinymce_inst.getContent();
+                let effects: StateEffect<unknown>[] = [
+                    updateDocBlock.of({
+                        pos,
+                        indent,
+                        delimiter: "",
+                        content: content,
+                        dom: target,
+                    }),
+                ];
+
+                view.dispatch({ effects });
+                return null;
             },
         },
     }
