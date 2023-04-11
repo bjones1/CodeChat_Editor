@@ -36,6 +36,7 @@ use actix_web::{
     put, web, App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use lazy_static::lazy_static;
+use pulldown_cmark::{html, Options, Parser};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -629,17 +630,31 @@ async fn serve_file(
     };
 
     // <p>Lex the code and put it in a JSON structure.</p>
-    let code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
+    let mut code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
         vec![CodeDocBlock::CodeBlock(file_contents)]
     } else {
         source_lexer(&file_contents, lexer)
     };
+
+    // <p>Convert doc blocks from Markdown to HTML</p>
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    for code_doc_block in &mut code_doc_block_arr {
+        if let CodeDocBlock::DocBlock(ref mut doc_block) = code_doc_block {
+            let parser = Parser::new_ext(&doc_block.contents, options);
+            let mut html_output = String::new();
+            html::push_html(&mut html_output, parser);
+            doc_block.contents = html_output;
+        }
+    }
+
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),
         },
         code_doc_block_arr,
     };
+
     let lexed_source_file_string = match serde_json::to_string(&lexed_source_file) {
         Ok(v) => v,
         Err(err) => {

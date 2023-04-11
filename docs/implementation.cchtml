@@ -29,20 +29,70 @@
     </li>
     <li>HTML is simple to implement (already done). However, it's less
         readable.</li>
-    <li>If we make Pandoc a depedency, then supporting a wide variety of markup
-        languages is easy. However, any candidate language must be able to
-        preserve arbitrary HTML, which may be problematic.</li>
     <li>Markdown is very well known, due to GitHub's use of it, and is more
-        readable (IMHO). It seems like a possible candidate -- anything that
-        can't be translated from HTML from Markdown can simply be left as HTML,
-        since Markdown allows HTML as a part of its syntax. Markdown has a
-        JavaScript implementation for markdown to HTML. Pandoc can translate
-        HTML back to Markdown, but this requires installation of another
-        program and adds to the server-side complexity. The <a
-            href="https://github.com/commonmark/commonmark.js/blob/master/lib/render/html.js">code</a>
-        that CommonMark uses to translate from their AST into HTML looks pretty
-        straightforward, so the inverse shouldn't be too hard.</li>
+        readable. Anything that can't be translated from HTML from Markdown can
+        simply be left as HTML, since Markdown allows HTML as a part of its
+        syntax.</li>
 </ul>
+<h3><span style="color: rgb(0, 0, 0);">Markdown to HTML Conversion
+        Implementation</span></h3>
+<p><span style="color: rgb(0, 0, 0);">Currently, CodeChat only loads and saves
+        doc blocks in HTML format. This can make a CodeChat-edited script hard
+        to read when opened in another IDE, due to the HTML markup language
+        being syntax heavy. To make the output more readable, we propose having
+        CodeChat's main input/output doc block language to be Markdown rather
+        than HTML. Markdown is a markup language with lighter syntax that is
+        more intuitive to read. </span></p>
+<p><span style="color: rgb(0, 0, 0);">Keeping HTML as the markup language may
+        make the editor harder to use, which could scare away potential users
+        of the software. We want to mitigate this from occurring by
+        implementing Markdown in place of HTML.</span></p>
+<p style="padding-left: 40px;"><span style="color: rgb(0, 0, 0);">This
+        implementation will transform files as normal, but instead of the code
+        blocks undergoing the existing pipeline:</span></p>
+<p style="padding-left: 80px;"><span style="color: rgb(0, 0, 0);">Load File
+        --&gt; Convert to HTML --&gt; Write Stuff --&gt; Convert to HTML --&gt;
+        Save File,</span></p>
+<p style="padding-left: 40px;"><em><span style="color: rgb(0, 0, 0);">we will
+            instead have:</span></em></p>
+<p style="padding-left: 80px;">Load File --&gt; <strong>Convert to Markdown
+    </strong>--&gt; Convert to HTML --&gt; Write Stuff --&gt; Convert to HTML
+    --&gt; <strong>Convert to Markdown</strong> --&gt; Save File.</p>
+<p style="padding-left: 40px;">To begin, we will be focusing on the
+    <em>first</em> half of the pipeline, converting Markdown to HTML. We can
+    simply convert Markdown to HTML using the pulldown-cmark crate, which
+    should be implemented right after the doc and code blocks have been parsed.
+</p>
+<h4>CommonMark Info:</h4>
+<ul>
+    <li>Guide to using Markdown: visit <a
+            href="https://www.markdownguide.org/getting-started/">this link</a>
+    </li>
+    <li>Specifications for CommonMark: see&nbsp;<a
+            href="https://spec.commonmark.org/">this link</a></li>
+    <li>To view CommonMark syntax, visit <a
+            href="https://commonmark.org/help/">this link</a></li>
+</ul>
+<h4>Sources and Documentation for pulldown-cmark:</h4>
+<ul>
+    <li>To download: visit <a
+            href="https://crates.io/crates/pulldown-cmark">this homepage
+            link</a></li>
+    <li>To view documentation for pulldown-cmark, visit <a
+            href="https://docs.rs/pulldown-cmark/latest/pulldown_cmark/">this
+            link</a></li>
+    <li>By default, only CommonMark features are implemented.&nbsp;
+        <ul>
+            <li>To use tables, strikethrough text, footnotes, task lists, etc,
+                we must enable them in the Options struct. See <a
+                    href="https://docs.rs/pulldown-cmark/latest/pulldown_cmark/struct.Options.html">this
+                    link</a> for details</li>
+        </ul>
+    </li>
+</ul>
+<p>Once completed, doc blocks written in Markdown can be converted by the
+    editor into HTML for further use. Then, the second half of the pipeline can
+    be implemented.</p>
 <h3>Lexing</h3>
 <p>TODO: describe the lexer implementation. Link to the walkthrough, discuss
     the language specification, etc.</p>
