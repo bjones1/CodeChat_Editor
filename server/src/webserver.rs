@@ -630,7 +630,7 @@ async fn serve_file(
     };
 
     // <p>Lex the code and put it in a JSON structure.</p>
-    let code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
+    let mut code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
         vec![CodeDocBlock::CodeBlock(file_contents)]
     } else {
         source_lexer(&file_contents, lexer)
@@ -641,8 +641,9 @@ async fn serve_file(
     //print!("{:?}", code_doc_block_arr);
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
-    for code_doc_block in &code_doc_block_arr { 
-        if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
+    print!("{:?}", code_doc_block_arr);
+    for code_doc_block in &mut code_doc_block_arr { 
+        if let CodeDocBlock::DocBlock(ref mut doc_block) = code_doc_block {
             println!("Yay! It's a doc block!");
             println!("Converting from Markdown to HTML...");
             print!("{:?}", doc_block.contents);
@@ -651,15 +652,14 @@ async fn serve_file(
             let parser = Parser::new_ext(&doc_block.contents, options); 
             let mut html_output = String::new(); 
             html::push_html(&mut html_output, parser); 
-            print!("{:?}",html_output);
-
-            // TO PASS INTO THE VECTOR (NOT WORKING, NEED TO FIGURE OUT WHY)
-            //doc_block.contents = html_output; 
+            
+            doc_block.contents = html_output; 
         } else {
             println!("It's a code block! We will skip this!");
             continue
+        }
     }
-}
+    print!("{:?}", code_doc_block_arr);
     
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
