@@ -34,7 +34,8 @@
     "dependencies": {
         "ace-code": "^1",
         "js-beautify": "^1",
-        "tinymce": "^6"
+        "tinymce": "^6",
+        "turndown": "^7.1.2"
     },
     "repository": {
         "type": "git",
