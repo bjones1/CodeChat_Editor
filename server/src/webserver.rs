@@ -537,6 +537,15 @@ async fn serve_file(
     }
     .read_to_string(&mut file_contents)
     .await;
+    
+    // Categorize the file:
+    //
+    // - A binary file (meaning we can't read the contents as UTF-8): just serve it raw. Assume this is an image/video/etc.
+    // - A text file - first determine the type. Based on the type:
+    //   - If it's an unknown type (such as a source file we don't know or a plain text file): just serve it raw.
+    //   - If the client requested a table of contents, then serve it wrapped in a CodeChat TOC.
+    //   - If it's Markdown or CCHTML, serve it wrapped in a CodeChat Document Editor.
+    //   - Otherwise, it must be a recognized file type. Serve it wrapped in a CodeChat Editor.
     if let Err(_err) = read_ret {
         // <p>TODO: make a better decision, don't duplicate code. The file type
         //     is unknown. Serve it raw, assuming it's an image/video/etc.</p>
