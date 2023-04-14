@@ -16,6 +16,6 @@
 #  </details>
 # <h1>.prettierignore</code> &mdash; files for Prettier to ignore
 # <p>NPM</p>
-node_modules/
+client/node_modules/
 # Edits to CodeMirror source
-src/codemirror_view_index.js
+client/src/codemirror_view_index.js
