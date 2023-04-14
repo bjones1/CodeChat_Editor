@@ -17,5 +17,5 @@
 # <h1>.prettierignore</code> &mdash; files for Prettier to ignore
 # <p>NPM</p>
 node_modules/
-# Output from <code>npx run buildj</code>
-stats.json
+# Edits to CodeMirror source
+src/codemirror_view_index.js

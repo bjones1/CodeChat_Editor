@@ -43,8 +43,8 @@
         "@codemirror/lang-python": "^6",
         "@codemirror/lang-rust": "^6",
         "@codemirror/lang-xml": "^6",
+        "@codemirror/view": "=6.9.4",
         "codemirror": "^6",
-        "js-beautify": "^1",
         "tinymce": "^6"
     },
     "repository": {
