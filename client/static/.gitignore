@@ -15,4 +15,4 @@
 #      </p>
 #  </details>
 # <h1><code>.gitignore</code> &mdash; files for Git to ignore</h1>
-webpack/
+bundled/

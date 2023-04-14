@@ -8,8 +8,8 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "check-env": "node -e 'console.log(process.env)' | grep npm",
         "build": "run-script-os",
-        "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/webpack --sourcemap --format=esm --splitting && tsc -noEmit",
-        "build:default": "node_modules/.bin/esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/webpack --sourcemap --format=esm --splitting && tsc -noEmit",
+        "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
+        "build:default": "node_modules/.bin/esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
         "dist": "TODO"
     },
     "keywords": [],

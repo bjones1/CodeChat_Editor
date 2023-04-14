@@ -762,9 +762,9 @@ async fn serve_file(
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{} - The CodeChat Editor</title>
 
-        <link rel="stylesheet" href="/static/webpack/CodeChatEditor.css">
+        <link rel="stylesheet" href="/static/bundled/CodeChatEditor.css">
         <script type="module">
-            import {{ page_init, on_keydown, on_save }} from "/static/webpack/CodeChatEditor{}.js"
+            import {{ page_init, on_keydown, on_save }} from "/static/bundled/CodeChatEditor{}.js"
             // <p>Make these accessible on the onxxx handlers below. See <a
             //         href="https://stackoverflow.com/questions/44590393/es6-modules-undefined-onclick-function-after-import">SO</a>.
             // </p>
