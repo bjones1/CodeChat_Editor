@@ -44,7 +44,7 @@
 // <h3>JavaScript/TypeScript</h3>
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
-import "./graphviz-webcomponent/index.min.mjs";
+import "graphviz-webcomponent";
 import { init, tinymce } from "./tinymce-webpack.mjs";
 import { Editor } from "tinymce";
 

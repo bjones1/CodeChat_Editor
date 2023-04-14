@@ -45,6 +45,7 @@
         "@codemirror/lang-xml": "^6",
         "@codemirror/view": "=6.9.4",
         "codemirror": "^6",
+        "graphviz-webcomponent": "=2.0.0",
         "tinymce": "^6"
     },
     "repository": {
