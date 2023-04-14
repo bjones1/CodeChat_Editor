@@ -18,4 +18,4 @@
 # <p>NPM</p>
 client/node_modules/
 # Edits to CodeMirror source
-client/src/codemirror_view_index.js
+client/src/codemirror/*

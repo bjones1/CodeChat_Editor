@@ -58,7 +58,7 @@ import {
     ViewPlugin,
     keymap,
     WidgetType,
-} from "@codemirror/view";
+} from "./codemirror/codemirror_view_index.js"; // This is modified to allow better event handling; original import: "@codemirror/view";
 import {
     ChangeDesc,
     EditorState,
@@ -70,7 +70,6 @@ import {
 
 // <h3>CSS</h3>
 import "./../static/css/CodeChatEditor.css";
-import { TinyMCE } from "tinymce";
 
 // <h2>Initialization</h2>
 let tinymce_singleton: Editor | undefined;
@@ -494,10 +493,9 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                             for (
                                 ;
                                 selection_path.length;
-                                selection_node =
-                                    selection_node.childNodes[
-                                        selection_path.shift()!
-                                    ]!
+                                selection_node = selection_node.childNodes[
+                                    selection_path.shift()!
+                                ]! as HTMLElement
                             );
                             // Use that to set the selection.
                             tinymce_singleton!.selection.setCursorLocation(
