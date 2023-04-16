@@ -125,15 +125,6 @@ enum EditorMode {
     raw,
 }
 
-// <p>This defines a single code or doc block entry:</p>
-export type code_or_doc_block = [
-    // <p>The indent for a doc bloc; empty for a code block.</p>
-    string,
-    // <p>The opening comment delimiter for a doc block;</p>
-    string | null,
-    string
-];
-
 // <p>The server passes this to the client to load a file. See <a
 //         href="../../server/src/webserver.rs#LexedSourceFile">LexedSourceFile</a>.
 // </p>
@@ -147,7 +138,18 @@ type LexedSourceFile = {
 };
 
 // How a doc block is stored using CodeMirror.
-type DocBlockJSON = [number, number, string, string, string];
+type DocBlockJSON = [
+    // From
+    number,
+    // To
+    number,
+    // Indent
+    string,
+    // Delimiter
+    string,
+    // Contents
+    string
+];
 
 // <p>Store the lexer info for the currently-loaded language.</p>
 // <p><a id="current_metadata"></a>This mirrors the data provided by the server
