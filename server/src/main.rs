@@ -17,8 +17,8 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// </details>
 ///
-/// `lexer.rs` &mdash; Entrypoint for the CodeChat Editor Server
-/// ============================================================
+/// `main.rs` &mdash; Entrypoint for the CodeChat Editor Server
+/// ===========================================================
 use code_chat_editor::webserver;
 
 fn main() {
