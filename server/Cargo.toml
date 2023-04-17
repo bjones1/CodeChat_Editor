@@ -38,12 +38,19 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
-
-# <a href="https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies">Windows-only dependencies</a>.
+# <p>Per the <a>docs</a>, avoid building the binary.</p>
+pulldown-cmark = { version = "0.9", default-features = false }
+# <p><a
+#         href="https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies">Windows-only
+#         dependencies</a>.</p>
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"
 
 [dev-dependencies]
+# <p>See the <a href="https://github.com/rust-lang/rust-clippy#usage">docs</a>
+#     to install clippy; it can't be installed as a dev-dependency. See the <a
+#         href="https://github.com/rust-lang/rustfmt#quick-start">fmt docs</a>
+#     to install fmt.</p>
 #clippy = "0.0.302"
 
 # <p>See https://doc.rust-lang.org/cargo/reference/features.html.</p>

@@ -36,6 +36,7 @@ use actix_web::{
     put, web, App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use lazy_static::lazy_static;
+use pulldown_cmark::{html, Options, Parser};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -558,6 +559,15 @@ async fn serve_file(
     }
     .read_to_string(&mut file_contents)
     .await;
+
+    // Categorize the file:
+    //
+    // - A binary file (meaning we can't read the contents as UTF-8): just serve it raw. Assume this is an image/video/etc.
+    // - A text file - first determine the type. Based on the type:
+    //   - If it's an unknown type (such as a source file we don't know or a plain text file): just serve it raw.
+    //   - If the client requested a table of contents, then serve it wrapped in a CodeChat TOC.
+    //   - If it's Markdown or CCHTML, serve it wrapped in a CodeChat Document Editor.
+    //   - Otherwise, it must be a recognized file type. Serve it wrapped in a CodeChat Editor.
     if let Err(_err) = read_ret {
         // <p>TODO: make a better decision, don't duplicate code. The file type
         //     is unknown. Serve it raw, assuming it's an image/video/etc.</p>
@@ -650,8 +660,8 @@ async fn serve_file(
         }
     };
 
-    // Convert the file contents into JSON.
-    let code_doc_block_arr;
+    // <p>Lex the code and put it in a JSON structure.</p>
+    let mut code_doc_block_arr;
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),
@@ -671,12 +681,13 @@ async fn serve_file(
                 doc: "".to_string(),
                 doc_blocks: Vec::new(),
             };
-            for code_or_doc_block in &code_doc_block_arr {
+            for code_or_doc_block in &mut code_doc_block_arr {
                 match code_or_doc_block {
                     CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(code_string),
                     CodeDocBlock::DocBlock(doc_block) => {
                         // Create the doc block.
                         let len = code_mirror.doc.len();
+                        doc_block.contents = markdown_to_html(&doc_block.contents);
                         code_mirror.doc_blocks.push((
                             // From
                             len,
@@ -695,8 +706,7 @@ async fn serve_file(
         },
     };
 
-    // Error check the JSON result.
-    let source_as_json = match serde_json::to_string(&lexed_source_file) {
+    let lexed_source_file_string = match serde_json::to_string(&lexed_source_file) {
         Ok(v) => v,
         Err(err) => {
             return html_not_found(&format!(
@@ -797,7 +807,7 @@ async fn serve_file(
         </div>
     </body>
 </html>
-"##, name, if is_test_mode { "-test" } else { "" }, source_as_json, testing_src, sidebar_css, sidebar_iframe, name, dir
+"##, name, if is_test_mode { "-test" } else { "" }, lexed_source_file_string, testing_src, sidebar_css, sidebar_iframe, name, dir
     ))
 }
 
@@ -842,6 +852,17 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+fn markdown_to_html(markdown: &str) -> String {
+    // Set up options and parser. Strikethroughs are not part of the CommonMark standard
+    // and we therefore must enable it explicitly.
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    let parser = Parser::new_ext(markdown, options);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
+    html_output
 }
 
 // <h2>Webserver startup</h2>
