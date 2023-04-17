@@ -1,27 +1,37 @@
 <h1>1. Unit Tests Project for CodeChat Editor: an overview</h1>
-<p>These unit tests for the CodeChat Editor should validate the execution of
-    the "Save Endpoint" function in the webserver.rs file.&nbsp;</p>
-<p>They will be conducted in the model of Test-Driven Development.</p>
-<h2><span style="text-decoration: underline;">Features to be Added</span></h2>
+<p style="padding-left: 40px;">These unit tests for the CodeChat Editor should
+    validate the execution of the "Save Endpoint" function in the webserver.rs
+    file.&nbsp;</p>
+<p style="padding-left: 40px;">They will be conducted in the model of
+    Test-Driven Development.</p>
+<h2><span style="text-decoration: underline;">Features to be Added:</span></h2>
 <ul>
-    <li>Unit Tests for the "Save Endpoint" functionality of the webserver.rs
-        function</li>
-</ul>
-<h2><span style="text-decoration: underline;">Repositories</span></h2>
-<ul>
-    <li>Original: <a
-            href="https://github.com/bjones1/CodeChat_Editor">CodeChatEditor
-            (link to GitHub Repository)</a>
+    <li style="list-style-type: none;">
         <ul>
-            <li>Fork from this codebase to a <a
-                    href="https://github.com/crobinson3209/car-sc_CodeChat_Editor">work-in-progress
-                    repo</a></li>
+            <li>Unit Tests for the "Save Endpoint" functionality of the
+                webserver.rs function</li>
         </ul>
     </li>
 </ul>
-<h2><span style="text-decoration: underline;">Libraries, Languages and
-        Interfaces</span></h2>
-<h3 style="padding-left: 40px;">Libraries</h3>
+<h2><span style="text-decoration: underline;">Repositories:</span></h2>
+<ul>
+    <li style="list-style-type: none;">
+        <ul>
+            <li>Original: <a
+                    href="https://github.com/bjones1/CodeChat_Editor">CodeChatEditor
+                    (link to GitHub Repository)</a>
+                <ul>
+                    <li>Fork from this codebase to a <a
+                            href="https://github.com/crobinson3209/car-sc_CodeChat_Editor">work-in-progress
+                            repo</a></li>
+                </ul>
+            </li>
+        </ul>
+    </li>
+</ul>
+<h2><span style="text-decoration: underline;">Libraries, Languages, and
+        Interfaces:</span></h2>
+<h3 style="padding-left: 40px;"><em>Libraries</em></h3>
 <ul>
     <li style="list-style-type: none;">
         <ul>
@@ -35,7 +45,7 @@
         </ul>
     </li>
 </ul>
-<h3 style="padding-left: 40px;">Languages</h3>
+<h3 style="padding-left: 40px;"><em>Languages</em></h3>
 <ul>
     <li style="list-style-type: none;">
         <ul>
@@ -44,7 +54,7 @@
         </ul>
     </li>
 </ul>
-<h3 style="padding-left: 40px;">Interfaces</h3>
+<h3 style="padding-left: 40px;"><em>Interfaces</em></h3>
 <ul>
     <li style="list-style-type: none;">
         <ul>
@@ -52,20 +62,34 @@
         </ul>
     </li>
 </ul>
-<h2><span style="text-decoration: underline;">Steps to Completion</span></h2>
+<h2><span style="text-decoration: underline;">Steps to Completion:</span></h2>
 <ol>
-    <li>Understand the "Save Endpoint" code and brainstorm on approaches to
-        implementing the tests</li>
-    <li>Define the scope of a "Unit" to be tested within the "Save Endpoint"
-        heading of the webserver.rs code</li>
-    <li>Determine the number of unit tests to be written</li>
-    <li>Mock the input to any functions being tested and validate whether
-        functionality persists</li>
-    <li>Attempt to break the unit tests</li>
-    <li>Fix bugs and revisit strategy</li>
-    <li>Continue implementing tests in any remaining units until complete</li>
+    <li style="list-style-type: none;">
+        <ol>
+            <li>Understand the "Save Endpoint" code and brainstorm on
+                approaches to implementing the tests
+                <ol>
+                    <li>Define the scope of each "Unit" to be tested within the
+                        "Save Endpoint" heading of the webserver.rs code</li>
+                    <li>Determine the number of unit tests to be written</li>
+                </ol>
+            </li>
+            <li>Break the "Save Endpoint" section into testable units</li>
+            <li>Mock the input to any functions being tested and validate
+                whether functionality persists</li>
+            <li>Attempt to break the unit tests</li>
+            <li>Fix bugs and revisit strategy</li>
+            <li>Continue implementing tests in any remaining units until
+                complete
+                <ol>
+                    <li>Break down larger units into smaller ones, if
+                        reasonable</li>
+                </ol>
+            </li>
+        </ol>
+    </li>
 </ol>
-<h2><span style="text-decoration: underline;">The Unit Tests</span></h2>
+<h2><span style="text-decoration: underline;">The Unit Tests:</span></h2>
 <h3 style="padding-left: 40px;">webserver.rs :: Save Endpoint</h3>
 <ul>
     <li style="list-style-type: none;">
@@ -77,14 +101,18 @@
         </ul>
     </li>
 </ul>
-<p>&nbsp;</p>
 <h2><span style="text-decoration: underline;">Goals for the Draft Pull
-        Request</span></h2>
+        Request:</span></h2>
 <ol>
-    <li>Identify scope of each unit test</li>
-    <li>Identify location in code for each unit test</li>
-    <li>Implement some unit tests and validate their operation</li>
+    <li style="list-style-type: none;">
+        <ol>
+            <li>Identify scope of each unit test</li>
+            <li>Identify location in code for each unit test</li>
+            <li>Implement some unit tests and validate their operation</li>
+        </ol>
+    </li>
 </ol>
+<p>&nbsp;</p>
 <p>&nbsp;</p>
 <h2>License</h2>
 <p>Copyright (C) 2022 Bryan A. Jones.</p>
