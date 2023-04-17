@@ -3,8 +3,17 @@
 <p>&nbsp;</p>
 <h1>Save Format Project Description:&nbsp;</h1>
 <h2>Features that will be Added:</h2>
+<p>In the Code Mirror format of the Code Chat Editor, the goal is to create
+    a&nbsp;new save format that writes code that transforms the JSON produced
+    when performing a save back to source code to write to the disk.</p>
 <h2>Repository/Repositories that Code will be Added to:</h2>
+<p>We will be adding to the CodeChat_Editor Repository, specifically the
+    CodeMirror Branch in that repository.&nbsp;</p>
 <h2>Libraries, Languages, and Interfaces:</h2>
+<p>We will be working in the Code Chat interface. The primary language we will
+    be working in is the Rust language on the back end of the Code Chat Editor.
+    We will also be examining HTML and Javascript on the front end of the Code
+    Chat Editor.&nbsp;</p>
 <h2>Steps to Complete:</h2>
 <h2>Tests to Demonstrate New Feature:</h2>
 <h2>Goals for Pull Requests:</h2>
