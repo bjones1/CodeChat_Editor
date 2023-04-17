@@ -669,7 +669,7 @@ async fn serve_file(
         source: if lexer.language_lexer.ace_mode == "codechat-html" {
             // Document-only files are easy: just encode the contents.
             CodeMirror {
-                doc: file_contents,
+                doc: markdown_to_html(&file_contents),
                 doc_blocks: vec![],
             }
         } else {
@@ -854,6 +854,7 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+// Convert the provided string in Markdown to its equivalent in HTML.
 fn markdown_to_html(markdown: &str) -> String {
     // Set up options and parser. Strikethroughs are not part of the CommonMark standard
     // and we therefore must enable it explicitly.
