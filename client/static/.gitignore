@@ -16,3 +16,5 @@
 #  </details>
 # <h1><code>.gitignore</code> &mdash; files for Git to ignore</h1>
 bundled/
+
+# CodeChat Editor lexer: python. See TODO.

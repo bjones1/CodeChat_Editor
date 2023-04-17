@@ -791,7 +791,6 @@ async fn serve_file(
                 </div>
                 <div id="CodeChat-menu"></div>
             </div>
-            <div id="TinyMCE-inst" class="CodeChat-doc-contents"></div>
             <div id="CodeChat-body"></div>
             <div id="CodeChat-bottom"></div>
             <div id="mocha"></div>

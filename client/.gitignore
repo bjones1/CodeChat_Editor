@@ -17,5 +17,5 @@
 # <h1><code>.gitignore</code> &mdash; files for Git to ignore</h1>
 # <p>NPM</p>
 node_modules/
-# Output from <code>npx run buildj</code>
-stats.json
+
+# The phrase "CodeChat Editor lexer: python" sets the lexer for this file, so that the CodeChat Editor will render it correctly. While this isn't Python (meaning syntax highlighting will be broken), it does at least use `#` for inline comments.

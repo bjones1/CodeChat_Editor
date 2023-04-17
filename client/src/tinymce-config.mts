@@ -14,12 +14,17 @@
 //             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 //     </p>
 // </details>
-// <h1><code>tinymce-webpack.ts</code> &mdash; imports the TinyMCE editor from
-//     NPM packages</h1>
+// <h1><code>tinymce-webpack.ts</code> &mdash; integrate and configure the TinyMCE editor for use with the CodeChat Editor</h1>
 // <p>Import TinyMCE.</p>
-import { default as tinymce_, TinyMCE, RawEditorOptions } from "tinymce";
+import {
+    default as tinymce_,
+    Editor,
+    RawEditorOptions,
+    TinyMCE,
+} from "tinymce";
 // TODO: The type of tinymce is broken; I don't know why. Here's a workaround.
 export const tinymce = tinymce_ as any as TinyMCE;
+export { Editor };
 
 // <p>Default icons are required for TinyMCE 5.3 or above.</p>
 import "tinymce/icons/default/index.js";

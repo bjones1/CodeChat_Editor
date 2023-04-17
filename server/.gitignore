@@ -15,11 +15,7 @@
 #      </p>
 #  </details>
 # <h1><code>.gitignore</code> &mdash; files for Git to ignore</h1>
-# <p>The name of the binary on Windows</p>
-CodeChatEditorServer.exe
-# <p>The name of the binary on Linux</p>
-CodeChatEditorServer
-# <p>But don't ignore the source file (which the preceeding pattern does).</p>
-!CodeChatEditorServer.v
 # Rust build output
 target/
+
+# CodeChat Editor lexer: python. See TODO.

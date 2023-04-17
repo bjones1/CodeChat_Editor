@@ -35,10 +35,10 @@
                             href="client/src/CodeChatEditor.mts">CodeChatEditor.mts</a><br>
                         <ol>
                             <li><a
-                                    href="client/src/ace-webpack.mts">ace-webpack.mts</a>
+                                    href="client/src/CodeMirror-integration.mts">CodeMirror-integration.mts</a>
                             </li>
                             <li><a
-                                    href="client/src/tinymce-webpack.mts">tinymce-webpack.mts</a>
+                                    href="client/src/tinymce-config.mts">tinymce-config.mts</a>
                             </li>
                             <li><a
                                     href="client/src/EditorComponents.mts">EditorComponents.mts</a>
@@ -81,11 +81,11 @@
     </li>
     <li>Development tools
         <ol>
-            <li>Git&nbsp;
+            <li>Git
                 <ol>
-                    <li>server/.gitignore</li>
-                    <li>client/static/.gitignore</li>
-                    <li>client/.gitignore</li>
+                    <li><a href="server/.gitignore">server/.gitignore</a></li>
+                    <li><a href="client/static/.gitignore">client/static/.gitignore</a></li>
+                    <li><a href="client/.gitignore">client/.gitignore</a></li>
                 </ol>
             </li>
             <li>NPM/esbuild
