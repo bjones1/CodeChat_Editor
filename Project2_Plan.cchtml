@@ -15,6 +15,18 @@
     We will also be examining HTML and Javascript on the front end of the Code
     Chat Editor.&nbsp;</p>
 <h2>Steps to Complete:</h2>
+<p>1. Find the data structures being grabbed by the save function in order to
+    reproduce them</p>
+<p>2. Make sure Source Code is being changed correctly</p>
+<p>3. Make sure Dot Block Code is changed correctly</p>
+<p>4. Ensure that they can save together.</p>
 <h2>Tests to Demonstrate New Feature:</h2>
+<p>For testing, we will use dedicated Testing files where we will edit and save
+    to see how our changes handle saving the documents and a Rust debugger to
+    ensure that our code is grabbing the correct things, on the Java side we
+    can breakpoints to also catch what is happening on the front end.</p>
 <h2>Goals for Pull Requests:</h2>
-<p>&nbsp;</p>
+<p>1. Understand Rust and how it handles data structures with a skeleton code
+</p>
+<p>2. Implement Code to correctly change source code and dot block code back to
+    what it should be</p>
