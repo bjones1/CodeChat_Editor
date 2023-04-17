@@ -417,19 +417,16 @@
         source_code [label = &quot;Source\ncode&quot;, style = dashed];
         CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];
     }
-
     subgraph cluster_server {
         label = &lt;CodeChat Editor Server&gt;;
         websocket_server [label = &quot;Websocket\nserver&quot;];
         web_server [label = &quot;Web\nserver&quot;];
     }
-
     subgraph cluster_client {
         label = &quot;CodeChat Editor Client&quot;;
         rendered_code [label = &quot;Rendered code&quot;, style = dashed];
         JavaScript;
     }
-
     CodeChat_plugin -&gt; websocket_server [dir = both];
     websocket_server -&gt; JavaScript [dir = both];
     web_server -&gt; JavaScript [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client];
