@@ -19,3 +19,5 @@
 client/node_modules/
 # Edits to CodeMirror source
 client/src/codemirror/*
+
+# CodeChat Editor lexer: python. See TODO.

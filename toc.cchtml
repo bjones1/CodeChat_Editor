@@ -93,6 +93,7 @@
                     <li>package.json</li>
                     <li><a href="client/tsconfig.json">tsconfig.json</a></li>
                     <li><a href="client/.eslintrc.yml">.eslintrc.yml</a></li>
+                    <li><a href=".prettierignore">.prettierignore</a></li>
                 </ol>
             </li>
         </ol>
