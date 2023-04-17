@@ -1,0 +1,103 @@
+<h1>1. Unit Tests Project for CodeChat Editor: an overview</h1>
+<p>These unit tests for the CodeChat Editor should validate the execution of
+    the "Save Endpoint" function in the webserver.rs file.&nbsp;</p>
+<p>They will be conducted in the model of Test-Driven Development.</p>
+<h2><span style="text-decoration: underline;">Features to be Added</span></h2>
+<ul>
+    <li>Unit Tests for the "Save Endpoint" functionality of the webserver.rs
+        function</li>
+</ul>
+<h2><span style="text-decoration: underline;">Repositories</span></h2>
+<ul>
+    <li>Original: <a
+            href="https://github.com/bjones1/CodeChat_Editor">CodeChatEditor
+            (link to GitHub Repository)</a>
+        <ul>
+            <li>Fork from this codebase to a <a
+                    href="https://github.com/crobinson3209/car-sc_CodeChat_Editor">work-in-progress
+                    repo</a></li>
+        </ul>
+    </li>
+</ul>
+<h2><span style="text-decoration: underline;">Libraries, Languages and
+        Interfaces</span></h2>
+<h3 style="padding-left: 40px;">Libraries</h3>
+<ul>
+    <li style="list-style-type: none;">
+        <ul>
+            <li>std::env (for inspecting environment variables and current
+                directory)</li>
+            <li>actix_files (Rust framework for serving static files from disk)
+            </li>
+            <li>regex (for matching unicode strings)</li>
+            <li>serde (for serializing and deserializing Rust data structures)
+            </li>
+        </ul>
+    </li>
+</ul>
+<h3 style="padding-left: 40px;">Languages</h3>
+<ul>
+    <li style="list-style-type: none;">
+        <ul>
+            <li>Rust</li>
+            <li>html</li>
+        </ul>
+    </li>
+</ul>
+<h3 style="padding-left: 40px;">Interfaces</h3>
+<ul>
+    <li style="list-style-type: none;">
+        <ul>
+            <li>CodeChatEditor web browser interface</li>
+        </ul>
+    </li>
+</ul>
+<h2><span style="text-decoration: underline;">Steps to Completion</span></h2>
+<ol>
+    <li>Understand the "Save Endpoint" code and brainstorm on approaches to
+        implementing the tests</li>
+    <li>Define the scope of a "Unit" to be tested within the "Save Endpoint"
+        heading of the webserver.rs code</li>
+    <li>Determine the number of unit tests to be written</li>
+    <li>Mock the input to any functions being tested and validate whether
+        functionality persists</li>
+    <li>Attempt to break the unit tests</li>
+    <li>Fix bugs and revisit strategy</li>
+    <li>Continue implementing tests in any remaining units until complete</li>
+</ol>
+<h2><span style="text-decoration: underline;">The Unit Tests</span></h2>
+<h3 style="padding-left: 40px;">webserver.rs :: Save Endpoint</h3>
+<ul>
+    <li style="list-style-type: none;">
+        <ul>
+            <li>No or empty doc blocks in file</li>
+            <li>No or empty code blocks in file</li>
+            <li>No contents in file</li>
+            <li>&nbsp;</li>
+        </ul>
+    </li>
+</ul>
+<p>&nbsp;</p>
+<h2><span style="text-decoration: underline;">Goals for the Draft Pull
+        Request</span></h2>
+<ol>
+    <li>Identify scope of each unit test</li>
+    <li>Identify location in code for each unit test</li>
+    <li>Implement some unit tests and validate their operation</li>
+</ol>
+<p>&nbsp;</p>
+<h2>License</h2>
+<p>Copyright (C) 2022 Bryan A. Jones.</p>
+<p>This file is part of the CodeChat Editor.</p>
+<p>The CodeChat Editor is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your
+    option) any later version.</p>
+<p>The CodeChat Editor is distributed in the hope that it will be useful, but
+    WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+    more details.</p>
+<p>You should have received a <a href="LICENSE.html">copy</a> of the GNU
+    General Public License along with the CodeChat Editor. If not, see <a
+        href="https://www.gnu.org/licenses/">https://www.gnu.org/licenses/</a>.
+</p>
