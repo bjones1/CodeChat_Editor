@@ -15,18 +15,23 @@
     We will also be examining HTML and Javascript on the front end of the Code
     Chat Editor.&nbsp;</p>
 <h2>Steps to Complete:</h2>
-<p>1. Find the data structures being grabbed by the save function in order to
-    reproduce them</p>
-<p>2. Make sure Source Code is being changed correctly</p>
-<p>3. Make sure Dot Block Code is changed correctly</p>
-<p>4. Ensure that they can save together.</p>
+<p>1. Find and understand the data structures being grabbed by the save
+    function in order to reproduce them in the new format.&nbsp;</p>
+<p>2. Replace empty lines with source code where needed and ensure Source Code
+    is being changed correctly.</p>
+<p>3. Replace empty lines with Doc Blocks where needed and ensure Dot Blocks
+    are being changed correctly.</p>
+<p>4. Implement a save format that can replace both Source Code and Doc Blocks
+    and save both as intended.&nbsp;</p>
 <h2>Tests to Demonstrate New Feature:</h2>
-<p>For testing, we will use dedicated Testing files where we will edit and save
-    to see how our changes handle saving the documents and a Rust debugger to
-    ensure that our code is grabbing the correct things, on the Java side we
-    can breakpoints to also catch what is happening on the front end.</p>
+<p>To test these changes, we intend to pull up a document in Code Mirror Branch
+    and open the Javascript of the Website. We will then put a breakpoint over
+    the save function and view the values of the data structures to ensure that
+    the save function is working properly. We intend to also run tests on the
+    backend using a Rust Debugger to view the structures on both ends of the
+    Code Chat Editor.&nbsp;</p>
 <h2>Goals for Pull Requests:</h2>
-<p>1. Understand Rust and how it handles data structures with a skeleton code
-</p>
-<p>2. Implement Code to correctly change source code and dot block code back to
-    what it should be</p>
+<p>1. Understand and practice Rust and test how it handles data structures with
+    a skeleton code in a Rust Debugger.&nbsp;</p>
+<p>2. Implement new save function code to correctly save the source code and
+    dot block code back to how it originally should look.&nbsp;</p>
