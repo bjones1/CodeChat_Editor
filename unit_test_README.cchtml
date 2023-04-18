@@ -59,7 +59,7 @@
 </ul>
 <h3><span style="text-decoration: underline;">Libraries, Languages, and
         Interfaces:</span></h3>
-<h4 style="padding-left: 40px;"><em>Libraries</em></h4>
+<p style="padding-left: 40px;"><strong><em>Libraries</em></strong></p>
 <ul>
     <li style="list-style-type: none;">
         <ul>
@@ -73,7 +73,7 @@
         </ul>
     </li>
 </ul>
-<h4 style="padding-left: 40px;"><em>Languages</em></h4>
+<p style="padding-left: 40px;"><strong><em>Languages</em></strong></p>
 <ul>
     <li style="list-style-type: none;">
         <ul>
@@ -82,7 +82,7 @@
         </ul>
     </li>
 </ul>
-<h4 style="padding-left: 40px;"><em>Interfaces</em></h4>
+<p style="padding-left: 40px;"><strong><em>Interfaces</em></strong></p>
 <ul>
     <li style="list-style-type: none;">
         <ul>
@@ -143,7 +143,8 @@
             <li>No or empty code blocks in file</li>
             <li>No contents in file</li>
             <li>lexer reports error?</li>
-            <li>&nbsp;</li>
+            <li>given and not given comment delimiter</li>
+            <li>inline comment language and block comment language</li>
         </ul>
     </li>
 </ul>
