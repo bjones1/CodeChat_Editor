@@ -33,9 +33,9 @@ import "./graphviz-webcomponent-setup.mts";
 import "./graphviz-webcomponent/index.min.mjs";
 import { html_beautify } from "js-beautify";
 import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
+import TurndownService from "turndown";
 
 // Not exactly an import, but this seems like the place to instantiate this
-const TurndownService = require("turndown");
 const turndownService = new TurndownService();
 
 // ### CSS
