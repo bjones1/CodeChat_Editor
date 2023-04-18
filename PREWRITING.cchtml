@@ -1,0 +1,43 @@
+<p><strong>Clark Hensley ch3136</strong><br><strong>Project 2: Converting HTML
+        to Markdown in CodeChat Editor<br>Prewriting:<br><br></strong>1. Our
+    goal is to implement a feature into the CodeChat Editor that will
+    automatically convert the html encoded text shown in the editor in the doc
+    blocks to the more-readable Markdown text when the file is saved. This will
+    greatly improve readability when a CodeChat file is opened in another
+    editor. Previous work by other contributors has already enabled CodeChat to
+    automatically read markdown text and render it as html in the editor.</p>
+<p>2. Our code will be initially added to <a
+        href="https://github.com/ClarkHensley/CodeChat_Editor">my fork of the
+        CodeChat Editor repository</a> and eventually merged into <a
+        href="https://github.com/bjones1/CodeChat_Editor">Dr. Jones' main
+        repository.</a></p>
+<p>3. Our work will be implementing the <a
+        href="https://github.com/mixmark-io/turndown">turndown library</a> in
+    Javascript, implementing this in the CodeChat Editor's client-side (the
+    client serializes the data and stores it to the user's hard drive, we'll be
+    changing which data are serialized).</p>
+<p>4. Our first step for implementing turndown was locating the location where
+    the changes needed to be make (the editor_to_code_doc_blocks() method in
+    the <a href="client/src/CodeChatEditor.mts">CodeChatEditor.mts</a> file</p>
+<p>&nbsp;&nbsp;&nbsp; Our second step was adding basic turndown functionality
+    to the section of the above method that parses each doc-block. This has
+    already been implemented on this branch.<br><br>&nbsp;&nbsp;&nbsp; Our
+    third step will be to manage turndown edge-cases. Per <a
+        href="https://github.com/mixmark-io/turndown/issues/180#issuecomment-294141031">this
+        issue</a>, turndown does not, natively, support storing html attributes
+    that Markdown cannot natively parse (namely 'style" and "class" attrs),
+    which makes the current turndown implementation in CodeChat incomplete.
+    Some steps we might take include writing a turndown filter as shown in the
+    linked issue, or possibly converting "style" and "class" attrs into
+    &lt;style&gt; or &lt;class&gt; tags.</p>
+<p>5. The file <a href="Markdown_HTML.js">Markdown_HTML.js</a> is a file
+    containing, to my knowledge, examples of all the html elements and styles
+    that The CodeChat Editor supports. We can use copies of this file to see if
+    all the correct formatting is preserved after the turndown library is used.
+</p>
+<p>6. Because we've already had a good bit of success in running the library on
+    example documents, I believe we might already be prepared for a draft PR.
+    However, a full draft PR would, hopefully, fully implement some method to
+    preserve style tags. A final PR would, hopefully, pass all tests and be as
+    efficient as possible in how we preserve formatting, perhaps by
+    implementing a turndown filter, or by exploring other avenues.</p>
