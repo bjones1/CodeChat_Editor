@@ -277,7 +277,7 @@ async fn save_source(
     save_source_response(true, "")
 }
 
-/// <p>A convenience method to fill out then return the
+/// <p>A convenience method to fill out then return the hello world
 ///     <code>ErrorResponse</code> struct from the <code>save_source</code>
 ///     endpoint.</p>
 fn save_source_response(success: bool, message: &str) -> HttpResponse {
