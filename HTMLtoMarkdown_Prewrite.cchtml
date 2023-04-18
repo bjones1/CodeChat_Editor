@@ -1,0 +1,83 @@
+<h1>HTML to Markdown Conversion</h1>
+<h3>Sprint 1 Developers:</h3>
+<p>Kenzie Ellenberger: <a
+        href="mailto:mde168@msstate.edu">mde168@msstate.edu</a></p>
+<p>Clark Hensley: <a href="mailto:ch3136@msstate.edu">ch3136@msstate.edu</a>
+</p>
+<h3><strong>1. Feature to be Added</strong></h3>
+<div>The feature we will be adding is the conversion from HTML to Markdown
+    within the CodeChat Editor. This will be implemented to convert the HTML
+    produced on save for files to be stored in Markdown within the source code.
+    Converting the HTML to Markdown will make the source code easier for the
+    user to read from within an IDE or anytime when viewing the source
+    code.&nbsp;</div>
+<h3><strong>2. Repositories the New Code will be Added to</strong></h3>
+<p>The new code will first go through the forked&nbsp;<a
+        href="https://github.com/ClarkHensley/CodeChat_Editor">CodeChat_Editor
+    </a>repository with the owner ClarkHensley on Github. A pull request will
+    be made to the original repository, also <a
+        href="https://github.com/bjones1/CodeChat_Editor">CodeChat_Editor
+    </a>with the owner bjones1. The code will then be merged into this main
+    repository.&nbsp;</p>
+<h3>3. Libraries, languages, and interfaces our code must work with.</h3>
+<p>The programming language we will be using to implement this new feature is
+    Typescript. The markup languages we will have to work with while
+    implementing this feature are HTML and Markdown. To convert the HTML to
+    Markdown, the <a href="https://github.com/mixmark-io/turndown">Turndown
+    </a>library will be used. This code will be added within the save function
+    for the CodeChat Editor so it will need to work with the methods
+    surrounding that functionality.&nbsp;</p>
+<h3>4. Series of steps to complete this feature</h3>
+<p>Step 1: Add the Turndown library to the project. Do this by installing it
+    with npm with the following command:</p>
+<p><code> npm install turndown </code></p>
+<p>This will add the library to the list of dependencies within the
+    package.json file. Now on npm install or npm update, this package/library
+    will be installed.&nbsp;</p>
+<p>Step 2: Load the library into the <a
+        href="client/src/CodeChatEditor.mts">CodeChatEditor.mts</a> with the <a
+        href="https://www.typescriptlang.org/docs/handbook/modules.html">require()</a>
+    function. This imports the module into the file, and allows an instance of
+    the class to be created. Once the class is instantiated, this variable can
+    be used to use the Turndown library functions. The code to instantiate the
+    module is shown below.&nbsp;</p>
+<p><code> const TurndownService = require("turndown");
+    </code></p>
+<p><code>const turndownService = new TurndownService();</code></p>
+<p><code> </code></p>
+<p>Step 3: The turndownService variable can then be used to call the turndown()
+    function. This function will convert the HTML provided argument and return
+    a string of Markdown that is equivalent to it. This will be added to the
+    save function with the CodeChatEditor.mts file to allow the saved file to
+    be saved as Markdown. An example of the turndown() function being used is
+    shown below.</p>
+<p><code>&nbsp;var markdown = turndownService.turndown('&lt; h1&gt;Hello world!
+        &lt; /h1&gt;') </code></p>
+<p>Step 4: The Turndown plugin, <a
+        href="https://github.com/mixmark-io/turndown-plugin-gfm">turndown-plugin-gfm</a>,
+    will then be installed to enable the HTML to Markdown conversions for
+    tables, strikethrough, and task list items. The install command and code to
+    add this plugin to the instantiated class are shown below.</p>
+<pre>npm install turndown-plugin-gfm<br><br><br><span class="pl-k">var</span> <span class="pl-s1">gfm</span> <span class="pl-c1">=</span> <span class="pl-s1">turndownPluginGfm</span><span class="pl-kos">.</span><span class="pl-c1">gfm</span><br><span class="pl-s1">turndownService</span><span class="pl-kos">.</span><span class="pl-en">use</span><span class="pl-kos">(</span><span class="pl-s1">gfm</span><span class="pl-kos">)</span></pre>
+<p><span class="pl-kos"><br>Step 5: Once the files are converting the HTML that
+        the CodeChat Editor produces, the next step is to begin properly
+        testing/debugging the Turndown library's ability to convert to
+        Markdown. For conversions that are not in the Turndown library, new
+        rules can be added using Turndown's addRule()
+        function.&nbsp;<br></span></p>
+<h3>5. Tests to show the feature works correctly.</h3>
+<p>To show that this new feature works correctly, a file will be made with
+    differing HTML styles. This will be to test each conversion from HTML to
+    Markdown and ensure that no data will be lost. There are many different
+    test cases defined within the <a href="Markdown_MD.js">Markdown_HTML.js</a>
+    file.&nbsp;</p>
+<h3>6. Goals for the draft pull request and final pull request.</h3>
+<h4>Draft Pull Request Goals</h4>
+<p>For the draft pull request, our main goal is to have the Turndown library
+    installed and making the initial HTML to Markdown conversion on save. We
+    aim to begin looking into possible solutions for losing styling data to see
+    what our options are at this point.&nbsp;</p>
+<h4>Final Pull Request Goals</h4>
+<p>Our goal for the final pull request is to have the HTML to Markdown
+    conversion implemented with no styling data lost. We hope for this feature
+    to be fully functional at this point.&nbsp;</p>
