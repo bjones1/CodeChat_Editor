@@ -834,7 +834,7 @@ pub async fn main() -> std::io::Result<()> {
         client_static_path = client_static_path.canonicalize().unwrap();
 
         // <p>Start the server.</p>
-        App::new()
+        App::new()   
             .app_data(web::Data::new(compile_lexers(LANGUAGE_LEXER_ARR)))
             // <p>Serve static files per the <a
             //         href="https://actix.rs/docs/static-files">docs</a>.</p>
@@ -854,5 +854,32 @@ pub async fn main() -> std::io::Result<()> {
     .await
 }
 
-// Tests
+// <h2>&nbsp;</h2>
+// <h2>Tests</h2>
+// <p>As mentioned in the lexer.rs tests, Rust <a
+//         href="https://doc.rust-lang.org/book/ch11-03-test-organization.html">almost
+//         mandates</a> putting tests in the same file as the source. Here's
+//     some <a
+//         href="http://xion.io/post/code/rust-unit-test-placement.html">good
+//         information</a> on how to put tests in another file, for future
+//     refactoring reference.</p>
+// <p>&nbsp;</p>
+#[cfg(test)]
 
+
+// <p>Provide a way to create a CodeDocBlock</p>
+
+
+    
+// <h3>Save Endpoint Testing</h3>
+
+#[test]
+    fn test_saveEndpoint() 
+    {
+        assert_eq!(2, 1); 
+        
+    }
+    
+    
+    
+    
