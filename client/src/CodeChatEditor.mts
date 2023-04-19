@@ -148,7 +148,9 @@ const open_lp = (
     //     global variable.</p>
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
-    const codechat_body = document.getElementById("CodeChat-body")!;
+    const codechat_body = document.getElementById(
+        "CodeChat-body"
+    ) as HTMLDivElement;
     if (is_doc_only()) {
         // <p>Special case: a CodeChat Editor document's HTML doesn't need
         //     lexing; it only contains HTML. Instead, its structure is always:

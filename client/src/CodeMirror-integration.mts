@@ -229,11 +229,11 @@ class DocBlockWidget extends WidgetType {
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
 
         // The contents div could be a TinyMCE instance, or just a plain div. Handle both cases.
-        const [contents_div, tinymce_inst] = get_contents(dom);
-        if (tinymce_inst === null) {
-            contents_div.innerHTML = this.contents;
+        const [contents_div, is_tinymce] = get_contents(dom);
+        if (is_tinymce) {
+            tinymce_singleton!.setContent(this.contents);
         } else {
-            tinymce_inst.setContent(this.contents);
+            contents_div.innerHTML = this.contents;
         }
 
         // Indicate the update was successful.
@@ -248,31 +248,22 @@ class DocBlockWidget extends WidgetType {
     destroy(dom: HTMLElement): void {}
 }
 
-// Given a doc block div element, return the TinyMCE instance and the div it's rooted in.
-const get_contents = (
-    element: HTMLElement
-): [HTMLDivElement, Editor | null] => {
+// Given a doc block div element, return the contents div and if TinyMCE is attached to that div.
+const get_contents = (element: HTMLElement): [HTMLDivElement, boolean] => {
     const contents_div = element.childNodes[1] as HTMLDivElement;
     const tinymce_inst = tinymce.get(contents_div.id);
-    return [contents_div, tinymce_inst];
+    return [contents_div, tinymce_inst !== null];
 };
 
 // Determine if the element which generated the provided event was in a doc block or not. If not, return false; if so, return the doc block div.
 const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
-    let target = event.target as HTMLElement;
-    while (target.parentElement) {
-        // If we find any CodeMirror element, this isn't a doc block.
-        if (target.className.includes("cm-")) {
-            return false;
-        }
-        // If it's a doc block, then tell Code Mirror not to handle this event.
-        if (target.classList.contains("CodeChat-doc")) {
-            return target as HTMLDivElement;
-        }
-        // Keep searching higher in the DOM,
-        target = target.parentElement;
+    const target = event.target as HTMLElement;
+    // Look for either a CodeMirror ancestor or a CodeChat doc block ancestor.
+    const ancestor = target.closest(".cm-line, .CodeChat-doc");
+    // If it's a doc block, then tell Code Mirror not to handle this event.
+    if (ancestor?.classList.contains("CodeChat-doc")) {
+        return ancestor as HTMLDivElement;
     }
-    // We shouldn't reach here; if so, it's definitely not a doc block.
     return false;
 };
 
@@ -299,11 +290,13 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 if (!target_or_false) {
                     return false;
                 }
+                // If the target is in the indent, not the contents, then none of this is necessary.
+
                 const target = target_or_false as HTMLDivElement;
-                const [contents_div, tinymce_inst] = get_contents(target);
+                const [contents_div, is_tinymce] = get_contents(target);
 
                 // See if this is already a TinyMCE instance; if not, move it here.
-                if (tinymce_inst === null) {
+                if (!is_tinymce) {
                     // Wait until the focus event completes; this causes the cursor position (the selection) to be set in the contenteditable div. Then, save that location.
                     setTimeout(() => {
                         // The code which moves TinyMCE into this div disturbs all the nodes, which causes it to loose a selection tied to a specific node. So, instead store the selection as an array of indices in the childNodes array of each element: for example, a given selection is element 10 of the root TinyMCE div's children (selecting an ol tag), element 5 of the ol's children (selecting the last li tag), element 0 of the li's children (a text node where the actual click landed; the offset in this node is placed in <code>selection_offset</code>.)
@@ -405,11 +398,10 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 const pos = view.posAtDOM(target);
                 const indent = (target.childNodes[0] as HTMLDivElement)
                     .innerHTML;
-                const [contents_div, tinymce_inst] = get_contents(target);
-                const content =
-                    tinymce_inst === null
-                        ? contents_div.innerHTML
-                        : tinymce_inst.getContent();
+                const [contents_div, is_tinymce] = get_contents(target);
+                const content = is_tinymce
+                    ? tinymce_singleton!.getContent()
+                    : contents_div.innerHTML;
                 let effects: StateEffect<unknown>[] = [
                     updateDocBlock.of({
                         pos,
@@ -460,12 +452,12 @@ const CodeMirror_JSON_fields = { doc_blocks: docBlockField };
 // Given source code in a CodeMirror-friendly JSON format, load it into the provided div.
 export const CodeMirror_load = async (
     // The div to place the loaded document in.
-    codechat_body: HTMLElement,
+    codechat_body: HTMLDivElement,
     // The document to load.
     source: any
 ) => {
     codechat_body.innerHTML =
-        '<div id="TinyMCE-inst" class="CodeChat-doc-contents"></div><div class="CodeChat-CodeMirror"></div>';
+        '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents"></div>';
     source.selection = EditorSelection.single(0).toJSON();
     const state = EditorState.fromJSON(
         source,
@@ -481,7 +473,7 @@ export const CodeMirror_load = async (
         CodeMirror_JSON_fields
     );
     current_view = new EditorView({
-        parent: codechat_body,
+        parent: codechat_body.childNodes[0] as HTMLDivElement,
         state,
     });
     tinymce_singleton = (await init({ selector: "#TinyMCE-inst" }))[0];
