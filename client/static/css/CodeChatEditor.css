@@ -115,12 +115,13 @@ body {
 
 /* <p>Remove the editor's border when it's selected, since this hides the cursor
     when the cursor is at the beginning of a line and isn't necessary (the
-    entire screen is an editor, not just that region.)</p> */
-.CodeChat-doc-contents.mce-edit-focus {
+    entire screen is an editor, not just that region.) Note that the <code>focus-visible</code> attribute is only visible briefly, but this eliminated that visual flicker.</p> */
+.CodeChat-doc-contents.mce-edit-focus,
+.CodeChat-doc-contents:focus-visible {
     outline-width: 0px;
 }
 
-/* <h2>Combined code/doc block syling</h2>
+/* <h2>Combined code/doc block styling</h2>
 <p><span id="remove-space">Remove space between a code block followed by a
         doc block. Doc block elements typically have top margin and/or
         padding that produce this undesired space; remove it on the first
