@@ -291,8 +291,14 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                     return false;
                 }
                 // If the target is in the indent, not the contents, then none of this is necessary.
-
                 const target = target_or_false as HTMLDivElement;
+                if (
+                    (event.target as HTMLElement).closest(
+                        ".CodeChat-doc-contents"
+                    ) === null
+                ) {
+                    return null;
+                }
                 const [contents_div, is_tinymce] = get_contents(target);
 
                 // See if this is already a TinyMCE instance; if not, move it here.
