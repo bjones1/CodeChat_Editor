@@ -4,8 +4,7 @@
 <h1>Save Format Project Description:&nbsp;</h1>
 <h2>Features that will be Added:</h2>
 <p>In the Code Mirror format of the Code Chat Editor, the goal is to create
-    a&nbsp;new save format that writes code that transforms the JSON produced
-    when performing a save back to source code to write to the disk.</p>
+    a&nbsp;new save format that writes converts the written code in Code Chat into code blocks and doc blocks.</p>
 <h2>Repository/Repositories that Code will be Added to:</h2>
 <p>We will be adding to the CodeChat_Editor Repository, specifically the
     CodeMirror Branch in that repository.&nbsp;</p>
@@ -15,12 +14,9 @@
     We will also be examining HTML and Javascript on the front end of the Code
     Chat Editor.&nbsp;</p>
 <h2>Steps to Complete:</h2>
-<p>1. Find and understand the data structures being grabbed by the save
-    function in order to reproduce them in the new format.&nbsp;</p>
-<p>2. Replace empty lines with source code where needed and ensure Source Code
-    is being changed correctly.</p>
-<p>3. Replace empty lines with Doc Blocks where needed and ensure Dot Blocks
-    are being changed correctly.</p>
+<p>1. Find and understand the data structures in the save function by debugging through the main branch. Having a good understanding on the current save function is crucial to changing it.&nbsp;</p>
+<p>2. Add code blocks where new lines have parameters for code blocks.</p>
+<p>3. Add doc blocks where new lines have parameter that signify a doc block.</p>
 <p>4. Implement a save format that can replace both Source Code and Doc Blocks
     and save both as intended.&nbsp;</p>
 <h2>Tests to Demonstrate New Feature:</h2>
@@ -32,6 +28,6 @@
     Code Chat Editor.&nbsp;</p>
 <h2>Goals for Pull Requests:</h2>
 <p>1. Understand and practice Rust and test how it handles data structures with
-    a skeleton code in a Rust Debugger.&nbsp;</p>
+    code in a Rust Debugger.&nbsp;</p>
 <p>2. Implement new save function code to correctly save the source code and
     dot block code back to how it originally should look.&nbsp;</p>
