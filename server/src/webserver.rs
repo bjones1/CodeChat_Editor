@@ -48,6 +48,16 @@ use urlencoding::{self, encode};
 #[cfg(target_os = "windows")]
 use win_partitions::win_api::get_logical_drive;
 
+use html5ever::tendril::TendrilSink;
+use html5ever::serialize::{SerializeOpts, serialize};
+use markup5ever_rcdom::RcDom;
+use markup5ever_rcdom::SerializableHandle;
+use html5ever::ParseOpts;
+use html5ever::namespace_url;
+use html5ever::ns;
+use html5ever::QualName;
+
+
 // <h3>Local</h3>
 use super::lexer::compile_lexers;
 use super::lexer::supported_languages::LANGUAGE_LEXER_ARR;
@@ -538,14 +548,15 @@ async fn serve_file(
     .read_to_string(&mut file_contents)
     .await;
     
-    // Categorize the file:
-    //
-    // - A binary file (meaning we can't read the contents as UTF-8): just serve it raw. Assume this is an image/video/etc.
-    // - A text file - first determine the type. Based on the type:
-    //   - If it's an unknown type (such as a source file we don't know or a plain text file): just serve it raw.
-    //   - If the client requested a table of contents, then serve it wrapped in a CodeChat TOC.
-    //   - If it's Markdown or CCHTML, serve it wrapped in a CodeChat Document Editor.
-    //   - Otherwise, it must be a recognized file type. Serve it wrapped in a CodeChat Editor.
+    // <p>Categorize the file: - A binary file (meaning we can't read the
+    //     contents as UTF-8): just serve it raw. Assume this is an
+    //     image/video/etc. - A text file - first determine the type. Based on
+    //     the type: - If it's an unknown type (such as a source file we don't
+    //     know or a plain text file): just serve it raw. - If the client
+    //     requested a table of contents, then serve it wrapped in a CodeChat
+    //     TOC. - If it's Markdown or CCHTML, serve it wrapped in a CodeChat
+    //     Document Editor. - Otherwise, it must be a recognized file type.
+    //     Serve it wrapped in a CodeChat Editor.</p>
     if let Err(_err) = read_ret {
         // <p>TODO: make a better decision, don't duplicate code. The file type
         //     is unknown. Serve it raw, assuming it's an image/video/etc.</p>
@@ -645,7 +656,7 @@ async fn serve_file(
         source_lexer(&file_contents, lexer)
     };
 
-    // <p>Convert doc blocks from Markdown to HTML</p>
+	// <p>Convert doc blocks from Markdown to HTML then parse using HTML5Ever</p>
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     for code_doc_block in &mut code_doc_block_arr {
@@ -653,10 +664,22 @@ async fn serve_file(
             let parser = Parser::new_ext(&doc_block.contents, options);
             let mut html_output = String::new();
             html::push_html(&mut html_output, parser);
-            doc_block.contents = html_output;
+		
+		// <p>Create a new RcDom object to represent the DOM tree with default settings</p>
+        let dom = RcDom::default();
+		// <p>Convert html_output to UTF-8 encoding then use parse_fragment to parse the HTML with default options</p>
+        let parse_result = html5ever::parse_fragment(dom,ParseOpts::default(),QualName::new(None, ns!(), "html".into()),Default::default(),).from_utf8().read_from(&mut html_output.as_bytes()).unwrap();
+		// <p>Create an empty vector for html_parsed_output</p>
+        let mut html_parsed_output = Vec::new();
+		// <p>Take the parsed html result document field, clone it, and create a serializable handle for it</p>
+        let serializable_handle: SerializableHandle = parse_result.document.clone().try_into().unwrap();
+		// <p>Serialize the handle and store in html_parsed_output</p>
+        serialize(&mut html_parsed_output, &serializable_handle, SerializeOpts::default()).unwrap();
+		// <p>Set the contents of the doc_block to the string converted UTF-8 encoded parsed HTML</p>
+        doc_block.contents = String::from_utf8(html_parsed_output).unwrap();
         }
     }
-
+    	
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),

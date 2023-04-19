@@ -30,6 +30,8 @@ name = "code_chat_editor"
 #         href="https://doc.rust-lang.org/cargo/reference/manifest.html">keys
 #         and their definitions</a>.</p>
 [dependencies]
+html5ever = "*"
+markup5ever_rcdom = "*"
 actix-files = "0.6"
 actix-web = "4"
 lazy_static = "1"
