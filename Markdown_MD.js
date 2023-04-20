@@ -28,7 +28,15 @@
 //
 // Underlined Text
 //
-// Strikethrough Text
+// ~~Strikethrough Text~~
+//
+// *   Unordered List 1
+// *   Unordered List 2
+// *   Unordered List 3
+//
+// 1.  Ordered List 1
+// 2.  Ordered List 2
+// 3.  Ordered List 3
 //
 // Text in superscript and subscript
 //
@@ -64,57 +72,7 @@
 //
 // A nice little table
 //
-//     
-//
-// a
-//
-// b
-//
-// c
-//
-// d
-//
-// e
-//
-// b
-//
-// c
-//
-// d
-//
-// e
-//
-// f
-//
-// c
-//
-// d
-//
-// e
-//
-// f
-//
-// g
-//
-// d
-//
-// e
-//
-// f
-//
-// g
-//
-// h
-//
-// e
-//
-// f
-//
-// g
-//
-// h
-//
-// i
+// <table style="border-collapse: collapse; width: 100.024%;" border="1"><colgroup><col style="width: 20.0122%;"> <col style="width: 20.0122%;"> <col style="width: 20.0122%;"> <col style="width: 20.0122%;"> <col style="width: 20.0122%;"></colgroup><tbody><tr><td>a</td><td>b</td><td>c</td><td>d</td><td>e</td></tr><tr><td>b</td><td>c</td><td>d</td><td>e</td><td>f</td></tr><tr><td>c</td><td>d</td><td>e</td><td>f</td><td>g</td></tr><tr><td>d</td><td>e</td><td>f</td><td>g</td><td>h</td></tr><tr><td>e</td><td>f</td><td>g</td><td>h</td><td>i</td></tr></tbody></table>
 //
 // [Here's a nice link](https://github.com)
 //

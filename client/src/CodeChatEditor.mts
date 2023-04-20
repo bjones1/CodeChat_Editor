@@ -34,9 +34,19 @@ import "./graphviz-webcomponent/index.min.mjs";
 import { html_beautify } from "js-beautify";
 import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
 import TurndownService from "turndown";
+const turndownPluginGfm = require('turndown-plugin-gfm')
 
 // Not exactly an import, but this seems like the place to instantiate this
 const turndownService = new TurndownService();
+const tables = turndownPluginGfm.tables;
+const taskListItems = turndownPluginGfm.taskListItems;
+turndownService.use([tables, taskListItems]);
+turndownService.addRule('strikethrough', {
+    filter: ['s'],
+    replacement: function (content) {
+      return '~~' + content + '~~'
+    }
+  });
 
 // ### CSS
 import "./../static/css/CodeChatEditor.css";
