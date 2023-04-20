@@ -36,7 +36,9 @@
 // 3.   Define a StateField to store the doc block decorations.
 // 4.   Define a ViewPlugin to route events to doc blocks; when doc block contents are focused, apply the TinyMCE instance to those contents.
 // 5.   Define a set of StateEffects to add/update/etc. doc blocks.
-
+//
+// Imports
+// -------
 import { basicSetup } from "codemirror";
 import {
     EditorView,
@@ -46,7 +48,7 @@ import {
     ViewPlugin,
     keymap,
     WidgetType,
-} from "./codemirror/codemirror_view_index.js"; // This is modified to allow better event handling; original import: "@codemirror/view";
+} from "@codemirror/view";
 import {
     ChangeDesc,
     EditorState,
