@@ -1,5 +1,5 @@
-// In this file, I will test as many markdown things as I can, to ensure that the conversion works correctly:  
-//   
+// In this file, I will test as many markdown things as I can, to ensure that the conversion works correctly:
+//
 // **Bold Text**
 //
 // _Italic Text_
@@ -38,8 +38,8 @@
 //
 // Div Text
 //
-// Pre Text  
-//   
+// Pre Text
+//
 // Formatting Time:
 //
 // Different Fonts
@@ -63,8 +63,6 @@
 // Text in less-nice colors
 //
 // A nice little table
-//
-//     
 //
 // a
 //
@@ -133,5 +131,3 @@
 // And some images:
 //
 // ![](CodeChat1.png)
-//
-// ![](CodeChat2.png)![](CodeChat3.png)
