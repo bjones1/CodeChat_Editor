@@ -124,9 +124,12 @@ async fn save_source(
     encoded_path: web::Path<String>,
     // <p>The file to save plus metadata, stored in the
     //     <code>ClientSourceFile</code></p>
+    // This file stores the metadata along with Doc Blocks and Code Blocks
     client_source_file: web::Json<ClientSourceFile>,
     // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
     //     source code.</p>
+    // The lexer is used to tell the program what language the code uses. 
+    // This is useful when saving because different languages use different symbols to initiate comments
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
     // <p>Given the mode, find the lexer.</p>
@@ -140,15 +143,25 @@ async fn save_source(
 
     // <p>Turn this back into code and doc blocks by filling in any missing
     //     comment delimiters.</p>
+    // This line assigns the variable 'inline_comment' with what a inline comment would look like in this file. 
     let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
+    // This line assigns the variable 'block_comment' with what a block comment would look like in this file.
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
+    // The vector 'code_doc_block_vec' is what is used to store the strings from the site. There is an indent, a delimeter, and the contents. 
+    // Each index in a vector has those three parameters.
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
+    // 'some_empty' is just a string "".
     let some_empty = Some("".to_string());
+    // This for loop sorts the data from the site into code blocks and doc blocks. 
     for cdb in &client_source_file.code_doc_block_arr {
+        // The first test compares the indent and delimeter of the data from the site. Code blocks only have content, so if the first two parameters are empty, it is a code block. 
         let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
+        // If it is a code block, then push into the CodeDocBlock as a string
         code_doc_block_vec.push(if is_code_block {
             CodeDocBlock::CodeBlock(cdb.2.to_string())
         } else {
+            // If it is not a code block then it must be a doc block
+            // The following sections convert all parameters of the vector into a string.
             CodeDocBlock::DocBlock(DocBlock {
                 indent: cdb.0.to_string(),
                 // <p>If no delimiter is provided, use an inline comment (if
@@ -157,6 +170,7 @@ async fn save_source(
                     // <p>The delimiter was provided. Simply use that.</p>
                     Some(v) => v.to_string(),
                     // <p>No delimiter was provided -- fill one in.</p>
+                    // There is a check that determines whether the section should be an inline comment, or a block comment.
                     None => {
                         if let Some(ic) = inline_comment {
                             ic.to_string()
