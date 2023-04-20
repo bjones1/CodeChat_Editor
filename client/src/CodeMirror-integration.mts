@@ -480,11 +480,11 @@ export const CodeMirror_load = async (
         source,
         {
             extensions: [
+                DocBlockPlugin,
                 javascript(),
                 basicSetup,
                 underlineKeymap,
                 EditorView.lineWrapping,
-                DocBlockPlugin,
             ],
         },
         CodeMirror_JSON_fields
