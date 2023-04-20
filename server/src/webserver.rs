@@ -232,9 +232,9 @@ async fn save_source(
             }
         }
     }
-
+        // <h3>Save file</h3>
     // <p>Save this string to a file. Add a leading slash for Linux: this
-    //     changes from <code>foo/bar.c</code> to <code>/foo/bar.c</code>.
+    //     changes from&nbsp;<code>foo/bar.c</code> to <code>/foo/bar.c</code>.
     //     Windows already starts with a drive letter, such as
     //     <code>C:\foo\bar.c</code>, so no changes are needed.</p>
     let save_file_path = if cfg!(windows) {
@@ -253,6 +253,140 @@ async fn save_source(
     }
 
     save_source_response(true, "")
+}
+
+    //#[put("/fs/{path:.*}")]
+    // <h3>Testing input to save file</h3>
+    // <p>This function is only used for testing; it does not actively save
+    //     anything. It takes in a file with code and doc blocks and outputs a
+    //     string of the contents for testing.</p>
+    async fn test_source(
+        // <p>The path to save this file to.</p>
+        encoded_path: web::Path<String>,
+        // <p>The file to save plus metadata, stored in the
+        //     <code>ClientSourceFile</code></p>
+        client_source_file: web::Json<ClientSourceFile>,
+        // <p>Lexer info, needed to transform the <code>ClientSourceFile</code>
+        //     into source code.</p>
+        language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
+    ) -> String {
+        // <p>Given the mode, find the lexer.</p>
+        let lexer = match language_lexers_compiled
+            .map_mode_to_lexer
+            .get(client_source_file.metadata.mode.as_str())
+        {
+            Some(v) => v,
+            None => todo!(),
+        };
+    
+        // <p>Turn this back into code and doc blocks by filling in any missing
+        //     comment delimiters.</p>
+        let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
+        let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
+        let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
+        let some_empty = Some("".to_string());
+        for cdb in &client_source_file.code_doc_block_arr {
+            let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
+            code_doc_block_vec.push(if is_code_block {
+                CodeDocBlock::CodeBlock(cdb.2.to_string())
+            } else {
+                CodeDocBlock::DocBlock(DocBlock {
+                    indent: cdb.0.to_string(),
+                    // <p>If no delimiter is provided, use an inline comment (if
+                    //     available), then a block comment.</p>
+                    delimiter: match &cdb.1 {
+                        // <p>The delimiter was provided. Simply use that.</p>
+                        Some(v) => v.to_string(),
+                        // <p>No delimiter was provided -- fill one in.</p>
+                        None => {
+                            if let Some(ic) = inline_comment {
+                                ic.to_string()
+                            } else if let Some(bc) = block_comment {
+                                bc.opening.to_string()
+                            } else {
+                                //
+                                continue
+                            }
+                        }
+                    },
+                    contents: cdb.2.to_string(),
+                })
+            });
+        }
+    
+        // <p>Turn this vec of code/doc blocks into a string of source code.</p>
+        let mut file_contents = String::new();
+        for code_doc_block in code_doc_block_vec {
+            match code_doc_block {
+                CodeDocBlock::DocBlock(doc_block) => {
+                    // <p>Append a doc block, adding a space between the opening
+                    //     delimiter and the contents when necessary.</p>
+                    let mut append_doc_block = |indent: &str, delimiter: &str, contents: &str| {
+                        file_contents += indent;
+                        file_contents += delimiter;
+                        // <p>Add a space between the delimiter and comment
+                        //     body, unless the comment was a newline or we're
+                        //     at the end of the file.</p>
+                        if contents.is_empty() || contents == "\n" {
+                            // <p>Nothing to append in this case.</p>
+                        } else {
+                            // <p>Put a space between the delimiter and the
+                            //     contents.</p>
+                            file_contents += " ";
+                        }
+                        file_contents += contents;
+                    };
+    
+                    let is_inline_delim = lexer
+                        .language_lexer
+                        .inline_comment_delim_arr
+                        .contains(&doc_block.delimiter.as_str());
+    
+                    // <p>Build a comment based on the type of the delimiter.
+                    // </p>
+                    if is_inline_delim {
+                        // <p>Split the contents into a series of lines, adding
+                        //     the inline comment delimiter to each line.</p>
+                        for content_line in doc_block.contents.split_inclusive('\n') {
+                            append_doc_block(&doc_block.indent, &doc_block.delimiter, content_line);
+                        }
+                    } else {
+                        // <p>Determine the closing comment delimiter matching
+                        //     the provided opening delimiter.</p>
+                        let block_comment_closing_delimiter = match lexer
+                            .language_lexer
+                            .block_comment_delim_arr
+                            .iter()
+                            .position(|bc| bc.opening == doc_block.delimiter)
+                        {
+                            Some(index) => lexer.language_lexer.block_comment_delim_arr[index].closing,
+                            None => {
+                                todo!()
+                            //
+                            }
+                        };
+                        // <p>Produce the resulting block comment. They should
+                        //     always end with a newline.</p>
+                        assert!(&doc_block.contents.ends_with('\n'));
+                        append_doc_block(
+                            &doc_block.indent,
+                            &doc_block.delimiter,
+                            // <p>Omit the newline, so we can instead put on the
+                            //     closing delimiter, then the newline.</p>
+                            &doc_block.contents[..&doc_block.contents.len() - 1],
+                        );
+                        file_contents = file_contents + " " + block_comment_closing_delimiter + "\n";
+                    }
+                }
+                CodeDocBlock::CodeBlock(contents) =>
+                // <p>This is code. Simply append it (by definition, indent and
+                //     delimiter are empty).</p>
+                {
+                    file_contents += &contents
+                }
+            }
+        }
+    return file_contents;  
 }
 
 /// <p>A convenience method to fill out then return the
