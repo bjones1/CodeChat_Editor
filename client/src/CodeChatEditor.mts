@@ -152,11 +152,11 @@ const open_lp = (
         "CodeChat-body"
     ) as HTMLDivElement;
     if (is_doc_only()) {
-        // <p>Special case: a CodeChat Editor document's HTML doesn't need
-        //     lexing; it only contains HTML. Instead, its structure is always:
-        //     <code>[["", "", HTML]]</code>. Therefore, the HTML is at item
-        //     [0][2].</p>
-        codechat_body.innerHTML = `<div class="CodeChat-TinyMCE">${source.doc}</div>`;
+        // <p>Special case: a CodeChat Editor document's HTML is stored in `source.doc`. We don't need the CodeMirror editor at all; instead, treat it like a single doc block contents div./p>
+        codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
+        init({ selector: ".CodeChat-doc-contents" }).then((editors) =>
+            editors[0].focus()
+        );
     } else {
         CodeMirror_load(codechat_body, source);
     }
@@ -184,8 +184,12 @@ export const on_keydown = (event: KeyboardEvent) => {
 
 // <p>Save CodeChat Editor contents.</p>
 export const on_save = async () => {
-    let source;
+    /// @ts-expect-error
+    let source: LexedSourceFile["source"] = {};
     if (is_doc_only()) {
+        // To save a document only, simply get the HTML from the only Tiny MCE div.
+        source.doc = tinymce.get(0)!.getContent();
+    } else {
         source = CodeMirror_save();
     }
     await save({
