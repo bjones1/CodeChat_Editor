@@ -156,7 +156,7 @@ async fn save_source(
     for cdb in &client_source_file.code_doc_block_arr {
         // The first test compares the indent and delimeter of the data from the site. Code blocks only have content, so if the first two parameters are empty, it is a code block. 
         let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
-        // If it is a code block, then push into the CodeDocBlock as a string
+        // If it is a code block, then push into the CodeDocBlock as a string.
         code_doc_block_vec.push(if is_code_block {
             CodeDocBlock::CodeBlock(cdb.2.to_string())
         } else {
