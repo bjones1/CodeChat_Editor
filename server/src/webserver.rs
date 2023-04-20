@@ -72,21 +72,22 @@ struct ClientSourceFile {
 }
 
 #[derive(Serialize)]
-/// The format used by CodeMirror to serialize/deserialize editor contents.
+/// <p>The format used by CodeMirror to serialize/deserialize editor contents.
+/// </p>
 struct CodeMirror<'a> {
-    /// The document being edited.
+    /// <p>The document being edited.</p>
     doc: String,
-    /// Doc blocks
+    /// <p>Doc blocks</p>
     doc_blocks: Vec<(
-        // From
+        // <p>From</p>
         usize,
-        // To
+        // <p>To</p>
         usize,
-        // indent
+        // <p>indent</p>
         &'a str,
-        // delimiter
+        // <p>delimiter</p>
         &'a str,
-        // contents
+        // <p>contents</p>
         &'a str,
     )>,
 }
@@ -124,12 +125,14 @@ async fn save_source(
     encoded_path: web::Path<String>,
     // <p>The file to save plus metadata, stored in the
     //     <code>ClientSourceFile</code></p>
-    // This file stores the metadata along with Doc Blocks and Code Blocks
+    // <p>This file stores the metadata along with Doc Blocks and Code Blocks
+    // </p>
     client_source_file: web::Json<ClientSourceFile>,
     // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
     //     source code.</p>
-    // The lexer is used to tell the program what language the code uses. 
-    // This is useful when saving because different languages use different symbols to initiate comments
+    // <p>The lexer is used to tell the program what language the code uses.
+    //     This is useful when saving because different languages use different
+    //     symbols to initiate comments</p>
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
     // <p>Given the mode, find the lexer.</p>
@@ -143,25 +146,33 @@ async fn save_source(
 
     // <p>Turn this back into code and doc blocks by filling in any missing
     //     comment delimiters.</p>
-    // This line assigns the variable 'inline_comment' with what a inline comment would look like in this file. 
+    // <p>This line assigns the variable 'inline_comment' with what a inline
+    //     comment would look like in this file.</p>
     let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
-    // This line assigns the variable 'block_comment' with what a block comment would look like in this file.
+    // <p>This line assigns the variable 'block_comment' with what a block
+    //     comment would look like in this file.</p>
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
-    // The vector 'code_doc_block_vec' is what is used to store the strings from the site. There is an indent, a delimeter, and the contents. 
-    // Each index in a vector has those three parameters.
+    // <p>The vector 'code_doc_block_vec' is what is used to store the strings
+    //     from the site. There is an indent, a delimeter, and the contents.
+    //     Each index in a vector has those three parameters.</p>
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
-    // 'some_empty' is just a string "".
+    // <p>'some_empty' is just a string "".</p>
     let some_empty = Some("".to_string());
-    // This for loop sorts the data from the site into code blocks and doc blocks. 
+    // <p>This for loop sorts the data from the site into code blocks and doc
+    //     blocks.</p>
     for cdb in &client_source_file.code_doc_block_arr {
-        // The first test compares the indent and delimeter of the data from the site. Code blocks only have content, so if the first two parameters are empty, it is a code block. 
+        // <p>The first test compares the indent and delimeter of the data from
+        //     the site. Code blocks only have content, so if the first two
+        //     parameters are empty, it is a code block.</p>
         let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
-        // If it is a code block, then push into the CodeDocBlock as a string.
+        // <p>If it is a code block, then push into the CodeDocBlock as a
+        //     string.</p>
         code_doc_block_vec.push(if is_code_block {
             CodeDocBlock::CodeBlock(cdb.2.to_string())
         } else {
-            // If it is not a code block then it must be a doc block
-            // The following sections convert all parameters of the vector into a string.
+            // <p>If it is not a code block then it must be a doc block The
+            //     following sections convert all parameters of the vector into
+            //     a string.</p>
             CodeDocBlock::DocBlock(DocBlock {
                 indent: cdb.0.to_string(),
                 // <p>If no delimiter is provided, use an inline comment (if
@@ -170,7 +181,8 @@ async fn save_source(
                     // <p>The delimiter was provided. Simply use that.</p>
                     Some(v) => v.to_string(),
                     // <p>No delimiter was provided -- fill one in.</p>
-                    // There is a check that determines whether the section should be an inline comment, or a block comment.
+                    // <p>There is a check that determines whether the section
+                    //     should be an inline comment, or a block comment.</p>
                     None => {
                         if let Some(ic) = inline_comment {
                             ic.to_string()
@@ -185,7 +197,8 @@ async fn save_source(
                     }
                 },
                 contents: cdb.2.to_string(),
-                // This doesn't matter when converting from edited code back to source code.
+                // <p>This doesn't matter when converting from edited code back
+                //     to source code.</p>
                 lines: 0,
             })
         });
@@ -664,14 +677,14 @@ async fn serve_file(
         }
     };
 
-    // Convert the file contents into JSON.
+    // <p>Convert the file contents into JSON.</p>
     let code_doc_block_arr;
     let lexed_source_file = LexedSourceFile {
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),
         },
         source: if lexer.language_lexer.ace_mode == "codechat-html" {
-            // Document-only files are easy: just encode the contents.
+            // <p>Document-only files are easy: just encode the contents.</p>
             CodeMirror {
                 doc: file_contents,
                 doc_blocks: vec![],
@@ -680,7 +693,7 @@ async fn serve_file(
             // <p>Lex the code.</p>
             code_doc_block_arr = source_lexer(&file_contents, lexer);
 
-            // Convert this into CodeMirror's format.
+            // <p>Convert this into CodeMirror's format.</p>
             let mut code_mirror = CodeMirror {
                 doc: "".to_string(),
                 doc_blocks: Vec::new(),
@@ -689,18 +702,23 @@ async fn serve_file(
                 match code_or_doc_block {
                     CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(code_string),
                     CodeDocBlock::DocBlock(doc_block) => {
-                        // Create the doc block.
+                        // <p>Create the doc block.</p>
                         let len = code_mirror.doc.len();
                         code_mirror.doc_blocks.push((
-                            // From
+                            // <p>From</p>
                             len,
-                            // To. Make this one line short, which allows CodeMirror to correctly handle inserts at the first character of the following code block.
+                            // <p>To. Make this one line short, which allows
+                            //     CodeMirror to correctly handle inserts at the
+                            //     first character of the following code block.
+                            // </p>
                             len + doc_block.lines - 1,
                             &doc_block.indent,
                             &doc_block.delimiter,
                             &doc_block.contents,
                         ));
-                        // Append newlines to the document; the doc block will replace these in the editor. This keeps the line numbering of non-doc blocks correct.
+                        // <p>Append newlines to the document; the doc block
+                        //     will replace these in the editor. This keeps the
+                        //     line numbering of non-doc blocks correct.</p>
                         code_mirror.doc.push_str(&"\n".repeat(doc_block.lines));
                     }
                 }
@@ -709,7 +727,7 @@ async fn serve_file(
         },
     };
 
-    // Error check the JSON result.
+    // <p>Error check the JSON result.</p>
     let source_as_json = match serde_json::to_string(&lexed_source_file) {
         Ok(v) => v,
         Err(err) => {
