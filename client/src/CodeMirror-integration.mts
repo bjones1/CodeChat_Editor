@@ -14,7 +14,28 @@
 //             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
 //     </p>
 // </details>
-// <h1><code>CodeMirror-integration.mts</code> &mdash; integrate CodeMirror into the CodeChat Editor</h1>
+//
+// `CodeMirror-integration.mts` &mdash; integrate CodeMirror into the CodeChat Editor
+// ==================================================================================
+// This file assumes the server has parsed the source. For example given the following original Python source code:
+//
+//      # This is a multi-line
+//      # doc block.
+//      print("Some code.")
+//
+// this is transformed to (note that `\n` represents an empty line):
+//
+//      \n                      <= Replace from character 0..
+//      \n                      <= ..to character 1 with a doc block: indent = "", delimiter = "#",
+//      print("Some code.")        contents = "This is a multi-line\ndoc block."
+//
+// To accomplish this:
+//
+// 1.   Create a single CodeMirror instance, which holds the parsed source. Create a single TinyMCE instance, for editing doc block contents.
+// 2.   Define a replacement decoration for each doc block, which replaces the newlines in the parsed source with editable doc blocks.
+// 3.   Define a StateField to store the doc block decorations.
+// 4.   Define a ViewPlugin to route events to doc blocks; when doc block contents are focused, apply the TinyMCE instance to those contents.
+// 5.   Define a set of StateEffects to add/update/etc. doc blocks.
 
 import { basicSetup } from "codemirror";
 import {
