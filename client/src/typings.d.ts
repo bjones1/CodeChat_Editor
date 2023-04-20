@@ -21,3 +21,5 @@ declare module "ace-code/src/mode/toml";
 declare module "ace-code/src/mode/verilog";
 declare module "ace-code/src/mode/yaml";
 declare module "graphviz-webcomponent/bundled";
+declare module "turndown-plugin-gfm";
+declare module "turndown";
