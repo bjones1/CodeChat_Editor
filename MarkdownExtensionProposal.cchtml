@@ -1,0 +1,58 @@
+<h1>Our Proposal for Extending CodeChat Markdown Syntax</h1>
+<p><strong>Problem:</strong> </p>
+<p>Markup languages like Markdown, Github-flavored Markdown, or CommonMark do
+    not have a native way to support certain features of the CodeChat Editor,
+    such as text alignment, colored text, or font families and size. Generally,
+    these customizations are achieved with html &lt;style&gt; tags or style
+    attrs in other html tags, but Markdown and other similar languages do not
+    preserve these tags or attrs.<br><br>In most of these cases, it is possible
+    to simply embed html tags in the markdown text, and this would work
+    perfectly for viewing these styles in the Codechat Editor. However, this
+    defeats the purpose of converting these things to markdown, as it leaves
+    the source files littered with html tags.</p>
+<p>Additionally, the turndown library, which we are using to convert rendered
+    html to Markdown, is not fully featured for some elements of Markdown, such
+    as strikethrough text or tables, even though these are actually supported
+    in standard Markdown.<br><br><strong>Our Proposal:</strong></p>
+<p>Our main issue is including the data in style html attrs into the markdown
+    text of the CodeChat Editor. Fortunately, both the turndown library (which
+    implements the conversion of html to Markdown) and the pulldown-cmark
+    library (which implements the conversion of Markdown back to html), allow
+    for adding custom rules to the parser.<br><br>We would like to create a set
+    of custom rules, stored accessibly in the CodeChat Editor (perhaps in .json
+    format or .toml format), that define syntax that applies to certain style
+    tags, which we can them implement in both turndown and pulldown-cmark.</p>
+<p>Implementing these custom rules in turndown will allow allow it to properly
+    handle things like strikethroughs and tables.</p>
+<p>Markdown uses special characters, either in line or below lines, to denote
+    style. "**Foo**" renders "<strong>Foo</strong>", "~~Bar~~" renders
+    "<s>Bar</s>", etc. Some special characters do not have uses in Markdown,
+    such as "%" or "@" (others, such as "&amp;", "\", "/", "&lt;", "&gt;" do
+    have meaning that we cannot overwrite or are otherwise too common to use
+    for syntax.</p>
+<p style="text-align: left;">Our proposal is the use of uncommon combinations
+    of special characters (such as wrapping text inbetween layered @ symbols or
+    % Such as "@super@" rendering "<sup>super</sup>").</p>
+<p style="text-align: left;">Some examples might be something like:</p>
+<p style="text-align: left;">@&gt;Right Align&gt;@</p>
+<p style="text-align: left;">Rendering:</p>
+<p style="text-align: right;"><br>Right Align</p>
+<p style="text-align: left;">Where you could use similar shorthands (@&lt;&lt;@
+    for left-align, @&gt;&lt;@ for center-align, or @&lt;&gt;@ for
+    justify).<br><br>The other major issue is the html style tags that take
+    variable options, namely font sizes, colors, families, or highlights. This
+    is probably only achieveable by adding the list of relevant values in the
+    least intrusive way possible.<br><br>Other flavors of Markdown, such as
+    kramdown, apply CSS classes to blocks by appending these classes within {}
+    braces after the block.<br><br>We do not need to cater to full CSS classes,
+    but, for things like text color or highlight, a simple syntax of:<br><br>My
+    very cool sentence.<br>{color: yellow; background: purple; size: 24; font:
+    comic sans ms;}<br><br>Which would render:<br><span
+        style="color: rgb(241, 196, 15); background-color: rgb(132, 63, 161); font-size: 24pt; font-family: 'comic sans ms', sans-serif;">My
+        very cool sentence.</span></p>
+<p style="text-align: left;"><span
+        style="font-family: arial, helvetica, sans-serif;"><span
+            style="font-family: 'times new roman', times, serif;">This</span>
+        way, you could have the relevant information without a need for full
+        html tags, while also following conventions of other markdown
+        renderers.</span></p>

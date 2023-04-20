@@ -114,5 +114,4 @@
 //         data-emoticon="true"></p>
 // <p>&nbsp;</p>
 // <p>And some images:</p>
-// <p><img src="CodeChat1.png" alt=""><!-- pagebreak --></p>
-// <p><img src="CodeChat2.png" alt=""><img src="CodeChat3.png" alt=""></p>
+// <p><img src="CodeChat1.png" alt="">
