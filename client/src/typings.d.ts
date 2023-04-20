@@ -21,5 +21,9 @@ declare module "ace-code/src/mode/toml";
 declare module "ace-code/src/mode/verilog";
 declare module "ace-code/src/mode/yaml";
 declare module "graphviz-webcomponent/bundled";
+
+// <p>These modules keep TypeScript from complaining about missing type
+//     definitions for Turndown and Turndown plugin imports. See <a
+//         href="CodeChatEditor.mts">CodeChatEditor.mts</a>.</p>
 declare module "turndown-plugin-gfm";
 declare module "turndown";

@@ -29,9 +29,8 @@
     surrounding that functionality.&nbsp;</p>
 <h3>4. Series of steps to complete this feature</h3>
 <p>Step 1: Add the Turndown library to the project. Do this by installing it
-    with npm with the following commands:</p>
+    with npm using the following command:</p>
 <p><code> npm install turndown </code></p>
-<p><code>npm i --save-dev @types/turndown</code></p>
 <p>This will add the library to the list of dependencies within the
     package.json file. Now on npm install or npm update, this package/library
     will be installed.&nbsp;</p>
