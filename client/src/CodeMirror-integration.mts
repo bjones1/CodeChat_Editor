@@ -138,7 +138,7 @@ const docBlockField = StateField.define<DecorationSet>({
         return doc_blocks;
     },
 
-    // <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.provide">Provide</a> extensions based on this field. See also <a href="https://codemirror.net/docs/ref/#view.EditorView^decorations">EditorView.decorations</a> and <a href="unknown">from</a>. TODO: I don't understand what this does, but removing it breaks the extension.
+    // <a href="https://codemirror.net/docs/ref/#state.StateField^define^config.provide">Provide</a> extensions based on this field. See also <a href="https://codemirror.net/docs/ref/#view.EditorView^decorations">EditorView.decorations</a> and <a href="https://codemirror.net/docs/ref/#state.Facet.from">from</a>. TODO: I don't understand what this does, but removing it breaks the extension.
     provide: (field: StateField<DecorationSet>) =>
         EditorView.decorations.from(field),
 
