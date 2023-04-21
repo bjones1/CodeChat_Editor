@@ -1292,7 +1292,9 @@ pub fn source_lexer(
                         //     remove it; also remove the initial space/newline
                         //     at the beginning of the comment body.</p>
                         let ends_with_space = match comment_body.chars().last() {
-                            Some(last_char) => last_char == ' ',
+                            Some(last_char) => last_char == ' ' &&
+                            // Don't remove a space at the end of the comment body when it's also the space at the beginning of the comment body (meaning it's a single-character comment body).
+                            comment_body.len() > 1,
                             None => false,
                         };
                         let trimmed_comment_body = &comment_body
@@ -1590,6 +1592,16 @@ mod tests {
         assert_eq!(
             source_lexer("// Test", js),
             [build_doc_block("", "//", "Test"),]
+        );
+
+        // An empty block comment.
+        assert_eq!(
+            source_lexer("/* */", js),
+            [build_doc_block("", "/*", ""),]
+        );
+        assert_eq!(
+            source_lexer("/*\n*/", js),
+            [build_doc_block("", "/*", ""),]
         );
 
         // <p>basic test</p>
