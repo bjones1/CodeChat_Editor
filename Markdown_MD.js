@@ -28,7 +28,19 @@
 //
 // Underlined Text
 //
-// Strikethrough Text
+// ~~Strikethrough Text~~
+//
+// *   Unordered List 1
+// *   Unordered List 2
+// *   Unordered List 3
+//
+// 1.  Ordered List 1
+// 2.  Ordered List 2
+// 3.  Ordered List 3
+//
+// *   [ ] Task list 1
+// *   [x] Task list 2
+// *   [ ] Task list 3
 //
 // Text in superscript and subscript
 //
@@ -64,57 +76,13 @@
 //
 // A nice little table
 //
-//     
-//
-// a
-//
-// b
-//
-// c
-//
-// d
-//
-// e
-//
-// b
-//
-// c
-//
-// d
-//
-// e
-//
-// f
-//
-// c
-//
-// d
-//
-// e
-//
-// f
-//
-// g
-//
-// d
-//
-// e
-//
-// f
-//
-// g
-//
-// h
-//
-// e
-//
-// f
-//
-// g
-//
-// h
-//
-// i
+// |     |     |     |     |     |
+// | --- | --- | --- | --- | --- |    
+// | a   | b   | c   | d   | e   |
+// | b   | c   | d   | e   | f   |
+// | c   | d   | e   | f   | g   |
+// | d   | e   | f   | g   | h   |
+// | e   | f   | g   | h   | i   |
 //
 // [Here's a nice link](https://github.com)
 //
@@ -133,5 +101,3 @@
 // And some images:
 //
 // ![](CodeChat1.png)
-//
-// ![](CodeChat2.png)![](CodeChat3.png)

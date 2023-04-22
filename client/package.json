@@ -19,7 +19,6 @@
         "@types/chai": "^4",
         "@types/js-beautify": "^1",
         "@types/mocha": "^10",
-        "@types/node": "^18.15.11",
         "@typescript-eslint/eslint-plugin": "^5",
         "@typescript-eslint/parser": "^5",
         "chai": "^4.3.7",
@@ -33,10 +32,11 @@
         "typescript": "^4"
     },
     "dependencies": {
+        "@joplin/turndown-plugin-gfm": "^1",
         "ace-code": "^1",
         "js-beautify": "^1",
         "tinymce": "^6",
-        "turndown": "^7.1.2"
+        "turndown": "^7"
     },
     "repository": {
         "type": "git",

@@ -33,10 +33,9 @@ import "./graphviz-webcomponent-setup.mts";
 import "./graphviz-webcomponent/index.min.mjs";
 import { html_beautify } from "js-beautify";
 import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
+import { gfm } from '@joplin/turndown-plugin-gfm';
+import TurndownService from "turndown";
 
-// Not exactly an import, but this seems like the place to instantiate this
-const TurndownService = require("turndown");
-const turndownService = new TurndownService();
 
 // ### CSS
 import "./../static/css/CodeChatEditor.css";
@@ -44,6 +43,13 @@ import "./../static/css/CodeChatEditor.css";
 // Initialization
 // --------------
 //
+// Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to Markdown conversion
+const turndownService = new TurndownService();
+
+// Add the plugins from [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
+turndownService.use(gfm);
+
+  
 // Load code when the DOM is ready.
 export const page_init = (all_source: any) => {
     // Use [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams) to parse out the search parameters of this window's URL.

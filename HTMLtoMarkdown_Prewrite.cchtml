@@ -29,7 +29,7 @@
     surrounding that functionality.&nbsp;</p>
 <h3>4. Series of steps to complete this feature</h3>
 <p>Step 1: Add the Turndown library to the project. Do this by installing it
-    with npm with the following command:</p>
+    with npm using the following command:</p>
 <p><code> npm install turndown </code></p>
 <p>This will add the library to the list of dependencies within the
     package.json file. Now on npm install or npm update, this package/library
@@ -41,7 +41,7 @@
     the class to be created. Once the class is instantiated, this variable can
     be used to use the Turndown library functions. The code to instantiate the
     module is shown below.&nbsp;</p>
-<p><code> const TurndownService = require("turndown");
+<p><code> import TurndownService from "turndown";
     </code></p>
 <p><code>const turndownService = new TurndownService();</code></p>
 <p><code> </code></p>
