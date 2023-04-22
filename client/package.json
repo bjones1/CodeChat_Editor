@@ -32,11 +32,11 @@
         "typescript": "^4"
     },
     "dependencies": {
+        "@joplin/turndown-plugin-gfm": "^1",
         "ace-code": "^1",
         "js-beautify": "^1",
         "tinymce": "^6",
-        "turndown": "^7",
-        "turndown-plugin-gfm": "^1"
+        "turndown": "^7"
     },
     "repository": {
         "type": "git",

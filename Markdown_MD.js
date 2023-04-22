@@ -1,5 +1,5 @@
-// In this file, I will test as many markdown things as I can, to ensure that the conversion works correctly:
-//
+// In this file, I will test as many markdown things as I can, to ensure that the conversion works correctly:  
+//   
 // **Bold Text**
 //
 // _Italic Text_
@@ -38,6 +38,10 @@
 // 2.  Ordered List 2
 // 3.  Ordered List 3
 //
+// *   [ ] Task list 1
+// *   [x] Task list 2
+// *   [ ] Task list 3
+//
 // Text in superscript and subscript
 //
 // `for good measure, here's a code-block`
@@ -46,8 +50,8 @@
 //
 // Div Text
 //
-// Pre Text
-//
+// Pre Text  
+//   
 // Formatting Time:
 //
 // Different Fonts
@@ -72,7 +76,13 @@
 //
 // A nice little table
 //
-// <table style="border-collapse: collapse; width: 100.024%;" border="1"><colgroup><col style="width: 20.0122%;"> <col style="width: 20.0122%;"> <col style="width: 20.0122%;"> <col style="width: 20.0122%;"> <col style="width: 20.0122%;"></colgroup><tbody><tr><td>a</td><td>b</td><td>c</td><td>d</td><td>e</td></tr><tr><td>b</td><td>c</td><td>d</td><td>e</td><td>f</td></tr><tr><td>c</td><td>d</td><td>e</td><td>f</td><td>g</td></tr><tr><td>d</td><td>e</td><td>f</td><td>g</td><td>h</td></tr><tr><td>e</td><td>f</td><td>g</td><td>h</td><td>i</td></tr></tbody></table>
+// |     |     |     |     |     |
+// | --- | --- | --- | --- | --- |    
+// | a   | b   | c   | d   | e   |
+// | b   | c   | d   | e   | f   |
+// | c   | d   | e   | f   | g   |
+// | d   | e   | f   | g   | h   |
+// | e   | f   | g   | h   | i   |
 //
 // [Here's a nice link](https://github.com)
 //

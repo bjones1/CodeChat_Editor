@@ -33,7 +33,7 @@ import "./graphviz-webcomponent-setup.mts";
 import "./graphviz-webcomponent/index.min.mjs";
 import { html_beautify } from "js-beautify";
 import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
-import { tables, taskListItems } from 'turndown-plugin-gfm';
+import { gfm } from '@joplin/turndown-plugin-gfm';
 import TurndownService from "turndown";
 
 
@@ -46,16 +46,9 @@ import "./../static/css/CodeChatEditor.css";
 // Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to Markdown conversion
 const turndownService = new TurndownService();
 
-// Add the plugins from [turndown-plugin-gfm](https://github.com/mixmark-io/turndown-plugin-gfm) to enable conversions for tables & ordered and unordered lists
-turndownService.use([tables, taskListItems]);
+// Add the plugins from [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
+turndownService.use(gfm);
 
-// To add the conversion from HTML to Markdown for strikethroughs, a new rule can be added using turndown's addRule() function. For HTML strikethrough tags, <s>, the conversion will add '~~' surrounding the content within the open and closing HTML tags.
-turndownService.addRule('strikethrough', {
-    filter: ['s'],
-    replacement: function (content: string) {
-      return '~~' + content + '~~'
-    }
-  });
   
 // Load code when the DOM is ready.
 export const page_init = (all_source: any) => {

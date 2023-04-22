@@ -19,15 +19,20 @@
 // <p><s><span style="text-decoration: underline;">Strikethrough Text</span></s>
 // </p>
 // <ul>
-//  <li>Unordered List 1</li>
-//  <li>Unordered List 2</li>
-//  <li>Unordered List 3</li>
+//     <li>Unordered List 1</li>
+//     <li>Unordered List 2</li>
+//     <li>Unordered List 3</li>
 // </ul>
 // <ol>
-//  <li>Ordered List 1</li>
-//  <li>Ordered List 2</li>
-//  <li>Ordered List 3</li>
+//     <li>Ordered List 1</li>
+//     <li>Ordered List 2</li>
+//     <li>Ordered List 3</li>
 // </ol>
+// <ul>
+//     <li><input type="checkbox">Task list 1</li>
+//     <li><input checked="checked" type="checkbox">Task list 2</li>
+//     <li><input type="checkbox">Task list 3</li>
+// </ul>
 // <p>&nbsp;</p>
 // <p>Text in&nbsp;<sup>superscript</sup> and&nbsp;<sub>subscript</sub></p>
 // <p>&nbsp;</p>
@@ -124,4 +129,4 @@
 //         data-emoticon="true"></p>
 // <p>&nbsp;</p>
 // <p>And some images:</p>
-// <p><img src="CodeChat1.png" alt="">
+// <p><img src="CodeChat1.png" alt=""></p>
