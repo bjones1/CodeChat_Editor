@@ -675,9 +675,10 @@ async fn serve_file(
             // Modifers:
             // (A) from_utf8 converts the parse HTML of parse_fragment from Vector to a String
             // (B) read_from converts the parsed HTML string into an RcDom object specified by dom
-            // (C) unwrap extracts the ParseResult object representing the parse HTML
+            // (C) match the parse_result so if a failure occurs, an HTML parsing error gets assigned to the doc block, but the
+            // code proceeds onto the next doc block.
             // </p>
-            let parse_result = html5ever::parse_fragment(
+            let parse_result = match html5ever::parse_fragment(
                 dom,
                 ParseOpts::default(),
                 QualName::new(None, ns!(), "html".into()),
@@ -685,9 +686,20 @@ async fn serve_file(
             )
             .from_utf8()
             .read_from(&mut html_output.as_bytes())
-            .unwrap();
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    let err_msg = format!("Error parsing HTML: {}", error);
+                    let html_error_msg = format!(
+                        "<p>There was an error parsing the HTML for the code doc block: {}</p>",
+                        err_msg
+                    );
+                    doc_block.contents = html_error_msg;
+                    continue;
+                }
+            };
 
-            // <p>Take the parsed html result document field, clone it, and create a serializable handle for it</p>
+            // <p>Take the parsed html result document field, then create a serializable handle for it</p>
             let serializable_handle: SerializableHandle = parse_result.document.try_into().unwrap();
             // <p>Serialize the handle and store in html_parsed_output_str</p>
             let mut buffer = std::io::Cursor::new(Vec::new());
