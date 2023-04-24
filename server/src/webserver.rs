@@ -72,7 +72,7 @@ struct ClientSourceFile {
     code_doc_block_arr: Vec<(String, Option<String>, String)>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 /// The format used by CodeMirror to serialize/deserialize editor contents.
 struct CodeMirror<'a> {
     /// The document being edited.
@@ -92,7 +92,7 @@ struct CodeMirror<'a> {
     )>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 /// <p><a id="LexedSourceFile"></a>Define the structure of JSON responses when
 ///     sending a source file from the <code>/fs</code> endpoint.</p>
 struct LexedSourceFile<'a> {
@@ -120,12 +120,15 @@ lazy_static! {
 #[put("/fs/{path:.*}")]
 /// <p>The Save button in the CodeChat Editor Client posts to this endpoint with
 ///     the path of the file to save.</p>
-async fn save_source(
+async fn save_source<'a>(
     // <p>The path to save this file to.</p>
     encoded_path: web::Path<String>,
     // <p>The file to save plus metadata, stored in the
     //     <code>ClientSourceFile</code></p>
-    client_source_file: web::Json<ClientSourceFile>,
+    // client_source_file: web::Json<ClientSourceFile>,
+
+    client_source_file: web::Json<LexedSourceFile<'a>>,
+
     // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
     //     source code.</p>
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
