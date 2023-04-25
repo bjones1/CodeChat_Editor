@@ -42,7 +42,6 @@ import "tinymce/plugins/code/index.js";
 import "tinymce/plugins/directionality/index.js";
 import "tinymce/plugins/emoticons/index.js";
 import "tinymce/plugins/emoticons/js/emojis.js";
-import "tinymce/plugins/emoticons/js/emojiimages.js";
 import "tinymce/plugins/help/index.js";
 import "tinymce/plugins/image/index.js";
 import "tinymce/plugins/link/index.js";
@@ -76,6 +75,9 @@ export const tinymce_init = async (
             // </p>
             plugins:
                 "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
+            // <p>Using this to disable the emoji images and force the unicode instead
+            // </p>
+            emoticons_database: "emojis",
             // <p>The imports above apply the skins; don't try to dynamically
             //     load the skin's CSS.</p>
             skin: false,

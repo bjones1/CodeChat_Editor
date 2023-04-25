@@ -96,7 +96,7 @@
 //
 // Some Emoji (more unicode)
 //
-// ![💯](https://twemoji.maxcdn.com/v/13.0.1/72x72/1f4af.png) ![🅱️](https://twemoji.maxcdn.com/v/13.0.1/72x72/1f171.png)
+// 💯🅱️
 //
 // And some images:
 //
