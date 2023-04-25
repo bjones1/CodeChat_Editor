@@ -547,15 +547,23 @@ async fn serve_file(
     .read_to_string(&mut file_contents)
     .await;
 
-    // <p>Categorize the file: - A binary file (meaning we can't read the
-    //     contents as UTF-8): just serve it raw. Assume this is an
-    //     image/video/etc. - A text file - first determine the type. Based on
-    //     the type: - If it's an unknown type (such as a source file we don't
-    //     know or a plain text file): just serve it raw. - If the client
-    //     requested a table of contents, then serve it wrapped in a CodeChat
-    //     TOC. - If it's Markdown or CCHTML, serve it wrapped in a CodeChat
-    //     Document Editor. - Otherwise, it must be a recognized file type.
-    //     Serve it wrapped in a CodeChat Editor.</p>
+    // <p>Categorize the file:&nbsp;</p>
+    // <ul>
+    //     <li>A binary file (meaning we can't read the contents as UTF-8): just
+    //         serve it raw. Assume this is an image/video/etc.</li>
+    //     <li>A text file - first determine the type. Based on the type:
+    //         <ul>
+    //             <li>If it's an unknown type (such as a source file we don't
+    //                 know or a plain text file): just serve it raw.</li>
+    //             <li>If the client requested a table of contents, then serve
+    //                 it wrapped in a CodeChat TOC.</li>
+    //             <li>If it's Markdown or CCHTML, serve it wrapped in a
+    //                 CodeChat Document Editor.</li>
+    //             <li>Otherwise, it must be a recognized file type. Serve it
+    //                 wrapped in a CodeChat Editor.</li>
+    //         </ul>
+    //     </li>
+    // </ul>
     if let Err(_err) = read_ret {
         // <p>TODO: make a better decision, don't duplicate code. The file type
         //     is unknown. Serve it raw, assuming it's an image/video/etc.</p>
@@ -655,7 +663,8 @@ async fn serve_file(
         source_lexer(&file_contents, lexer)
     };
 
-    // <p>Convert doc blocks from Markdown to HTML then parse using HTML5Ever</p>
+    // <p>Convert doc blocks from Markdown to HTML then parse using HTML5Ever
+    // </p>
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     for code_doc_block in &mut code_doc_block_arr {
@@ -664,20 +673,25 @@ async fn serve_file(
             let mut html_output = String::new();
             html::push_html(&mut html_output, parser);
 
-            // <p>Create a new RcDom object to represent the DOM tree with default settings</p>
+            // <p>Create a new RcDom object to represent the DOM tree with
+            //     default settings</p>
             let dom = RcDom::default();
-            // <p>Convert html_output to UTF-8 encoding then use parse_fragment to parse the HTML with default options:
-            // parse_fragment is a function of HTML5Ever that takes four arguments:
-            // (1) RcDom object representing a DOM tree where the parsed hTML will be added, in this case dom. See html5ever::parse_fragment
-            // (2) ParseOpts object specifies the parsing options, in this case the default options are used. See ParseOpts::default()
-            // (3) QualName represents the name of the root element of the HTML which in this case is <html>.  See QualName::new
-            // (4) SerializerOpts soecufy tge serialization options which we use the default. See Default::default()
-            // Modifers:
-            // (A) from_utf8 converts the parse HTML of parse_fragment from Vector to a String
-            // (B) read_from converts the parsed HTML string into an RcDom object specified by dom
-            // (C) match the parse_result so if a failure occurs, an HTML parsing error gets assigned to the doc block, but the
-            // code proceeds onto the next doc block.
-            // </p>
+            // <p>Convert html_output to UTF-8 encoding then use parse_fragment
+            //     to parse the HTML with default options: parse_fragment is a
+            //     function of HTML5Ever that takes four arguments: (1) RcDom
+            //     object representing a DOM tree where the parsed hTML will be
+            //     added, in this case dom. See html5ever::parse_fragment (2)
+            //     ParseOpts object specifies the parsing options, in this case
+            //     the default options are used. See ParseOpts::default() (3)
+            //     QualName represents the name of the root element of the HTML
+            //     which in this case is . See QualName::new (4) SerializerOpts
+            //     soecufy tge serialization options which we use the default.
+            //     See Default::default() Modifers: (A) from_utf8 converts the
+            //     parse HTML of parse_fragment from Vector to a String (B)
+            //     read_from converts the parsed HTML string into an RcDom
+            //     object specified by dom (C) match the parse_result so if a
+            //     failure occurs, an HTML parsing error gets assigned to the
+            //     doc block, but the code proceeds onto the next doc block.</p>
             let parse_result = match html5ever::parse_fragment(
                 dom,
                 ParseOpts::default(),
@@ -699,13 +713,15 @@ async fn serve_file(
                 }
             };
 
-            // <p>Take the parsed html result document field, then create a serializable handle for it</p>
+            // <p>Take the parsed html result document field, then create a
+            //     serializable handle for it</p>
             let serializable_handle: SerializableHandle = parse_result.document.try_into().unwrap();
             // <p>Serialize the handle and store in html_parsed_output_str</p>
             let mut buffer = std::io::Cursor::new(Vec::new());
             serialize(&mut buffer, &serializable_handle, SerializeOpts::default()).unwrap();
             let html_parsed_output_str = String::from_utf8(buffer.into_inner()).unwrap();
-            // <p>Set the contents of the doc_block to the string converted UTF-8 encoded parsed HTML</p>
+            // <p>Set the contents of the doc_block to the string converted
+            //     UTF-8 encoded parsed HTML</p>
             doc_block.contents = html_parsed_output_str;
         }
     }
