@@ -676,22 +676,44 @@ async fn serve_file(
             // <p>Create a new RcDom object to represent the DOM tree with
             //     default settings</p>
             let dom = RcDom::default();
-            // <p>Convert html_output to UTF-8 encoding then use parse_fragment
-            //     to parse the HTML with default options: parse_fragment is a
-            //     function of HTML5Ever that takes four arguments: (1) RcDom
-            //     object representing a DOM tree where the parsed hTML will be
-            //     added, in this case dom. See html5ever::parse_fragment (2)
-            //     ParseOpts object specifies the parsing options, in this case
-            //     the default options are used. See ParseOpts::default() (3)
-            //     QualName represents the name of the root element of the HTML
-            //     which in this case is . See QualName::new (4) SerializerOpts
-            //     soecufy tge serialization options which we use the default.
-            //     See Default::default() Modifers: (A) from_utf8 converts the
-            //     parse HTML of parse_fragment from Vector to a String (B)
-            //     read_from converts the parsed HTML string into an RcDom
-            //     object specified by dom (C) match the parse_result so if a
-            //     failure occurs, an HTML parsing error gets assigned to the
-            //     doc block, but the code proceeds onto the next doc block.</p>
+            // <p>Next, convert html_output to UTF-8 encoding then use
+            //     parse_fragment to parse the HTML with default
+            //     options.<br>Parse_fragment is a function of HTML5Ever that
+            //     takes four arguments:</p>
+            // <ol>
+            //     <li>RcDom object representing a DOM tree where the parsed
+            //         hTML will be added, in this case dom. See <a
+            //             href="https://docs.rs/html5ever/latest/html5ever/driver/fn.parse_fragment.html">html5ever::parse_fragment</a>
+            //     </li>
+            //     <li>ParseOpts object specifies the parsing options, in this
+            //         case the default options are used. See <a
+            //             href="https://docs.rs/html5ever/latest/html5ever/driver/struct.ParseOpts.html">ParseOpts::default()</a>
+            //     </li>
+            //     <li>QualName represents the name of the root element of the
+            //         HTML which in this case is html. See <a
+            //             href="https://docs.rs/html5ever/latest/html5ever/struct.QualName.html">QualName::new&nbsp;</a>
+            //     </li>
+            //     <li>SerializerOpts specify the serialization options which we
+            //         use the default. See Default::default().&nbsp; It has the
+            //         modifers below:
+            //         <ol>
+            //             <li><a
+            //                     href="https://docs.rs/html5ever/latest/html5ever/driver/struct.Parser.html#method.from_utf8">from_utf8</a>
+            //                 converts the parse HTML of parse_fragment from
+            //                 Vector to a String</li>
+            //             <li><a
+            //                     href="https://docs.rs/html5ever/latest/html5ever/tendril/trait.TendrilSink.html#method.read_from">read_from</a>
+            //                 converts the parsed HTML string into an RcDom
+            //                 object specified by dom</li>
+            //             <li><a
+            //                     href="https://doc.rust-lang.org/rust-by-example/flow_control/match.html">match
+            //                 </a>the parse_result so if a failure occurs, an
+            //                 HTML parsing error gets assigned to the doc
+            //                 block, but the code proceeds onto the next doc
+            //                 block.</li>
+            //         </ol>
+            //     </li>
+            // </ol>
             let parse_result = match html5ever::parse_fragment(
                 dom,
                 ParseOpts::default(),
