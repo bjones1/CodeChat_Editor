@@ -884,19 +884,29 @@ pub async fn main() -> std::io::Result<()> {
 // <p>&nbsp;</p>
 #[cfg(test)]
 
-
-// <p>Provide a way to create a CodeDocBlock</p>
-
-
-    
 // <h3>Save Endpoint Testing</h3>
 mod tests {
+    use actix_web::web::{
+        Data,
+        Json,
+    };
+    use crate::webserver::{
+        compile_lexers,
+        LANGUAGE_LEXER_ARR,
+    };
+    use crate::webserver::save_source_as_string;
+
     #[test]
-        fn test_saveEndpoint() 
-        {
-            assert_eq!(2, 1); 
+    fn test_saveEndpoint() 
+    {
+        assert_eq!(2, 1); 
+
+        let test_source_file = Json::ClientSourceFile;
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(test_source_file, llc);
+        print!("[{}]", file_contents);
         
-        }
+    }
     
 }
     
