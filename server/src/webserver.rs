@@ -53,6 +53,7 @@ use super::lexer::compile_lexers;
 use super::lexer::supported_languages::LANGUAGE_LEXER_ARR;
 use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexersCompiled};
 
+
 /// <h2>Data structures</h2>
 #[derive(Serialize, Deserialize)]
 /// <p><a id="SourceFileMetadata"></a>Metadata about a source file sent along
@@ -92,6 +93,7 @@ struct CodeMirror<'a> {
     )>,
 }
 
+
 #[derive(Serialize, Deserialize)]
 /// <p><a id="LexedSourceFile"></a>Define the structure of JSON responses when
 ///     sending a source file from the <code>/fs</code> endpoint.</p>
@@ -127,14 +129,19 @@ async fn save_source<'a>(
     //     <code>ClientSourceFile</code></p>
     // client_source_file: web::Json<ClientSourceFile>,
 
-    client_source_file: web::Json<LexedSourceFile<'a>>,
+    lexed_source_file: web::Json<LexedSourceFile<'a>>,
 
     // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
     //     source code.</p>
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
     // <p>Given the mode, find the lexer.</p>
-    let lexer = match language_lexers_compiled
+
+    // All New Stuff
+    let client_source_file = code_mirror_to_client(&lexed_source_file.source);
+    // New Stuff ends
+
+    let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match language_lexers_compiled
         .map_mode_to_lexer
         .get(client_source_file.metadata.mode.as_str())
     {
@@ -145,14 +152,14 @@ async fn save_source<'a>(
     // <p>Turn this back into code and doc blocks by filling in any missing
     //     comment delimiters.</p>
     // This line assigns the variable 'inline_comment' with what a inline comment would look like in this file. 
-    let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
+    let inline_comment: Option<&&str> = lexer.language_lexer.inline_comment_delim_arr.first();
     // This line assigns the variable 'block_comment' with what a block comment would look like in this file.
-    let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
+    let block_comment: Option<&crate::lexer::BlockCommentDelim> = lexer.language_lexer.block_comment_delim_arr.first();
     // The vector 'code_doc_block_vec' is what is used to store the strings from the site. There is an indent, a delimeter, and the contents. 
     // Each index in a vector has those three parameters.
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
     // 'some_empty' is just a string "".
-    let some_empty = Some("".to_string());
+    let some_empty: Option<String> = Some("".to_string());
     // This for loop sorts the data from the site into code blocks and doc blocks. 
     for cdb in &client_source_file.code_doc_block_arr {
         let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
@@ -874,6 +881,69 @@ fn markdown_to_html(markdown: &str) -> String {
     html::push_html(&mut html_output, parser);
     html_output
 }
+
+//New Function Added
+fn html_to_markdown(html: &str) -> String {
+    // Parse the HTML
+    let parser = Parser::new(html);
+    let mut markdown_output = String::new();
+    html::push_html(&mut markdown_output, parser);
+
+    markdown_output
+}
+
+//Conversion Function
+fn code_mirror_to_client(code_mirror: &CodeMirror) -> ClientSourceFile {
+    let mut code_doc_block_arr = Vec::new();
+    let mut current_idx = 0;
+    let mut last_was_doc = false;
+    for (idx, _) in code_mirror.doc.match_indices('\n') {
+        if let Some((from, to, indent, delimiter, contents)) = code_mirror
+            .doc_blocks
+            .iter()
+            .find(|(from, to, _, _, _)| *from <= current_idx && *to >= idx)
+        {
+            if last_was_doc {
+                let (prev_indent, _, prev_content) = code_doc_block_arr.last_mut().unwrap();
+                *prev_content = format!("{}\n{}{}{}", prev_content, indent, delimiter, contents);
+            } else {
+                code_doc_block_arr.push((
+                    code_mirror
+                        .doc
+                        .get(current_idx..*from)
+                        .unwrap_or("")
+                        .to_string(),
+                    Some(indent.to_string()),
+                    format!("{}{}", delimiter, contents),
+                ));
+            }
+            last_was_doc = true;
+            current_idx = *to + 1;
+        } else {
+            code_doc_block_arr.push((
+                code_mirror
+                    .doc
+                    .get(current_idx..idx)
+                    .unwrap_or("")
+                    .to_string(),
+                None,
+                "".to_string(),
+            ));
+            last_was_doc = false;
+            current_idx = idx + 1;
+        }
+    }
+    code_doc_block_arr.push((
+        code_mirror.doc.get(current_idx..).unwrap_or("").to_string(),
+        None,
+        "".to_string(),
+    ));
+    ClientSourceFile {
+        metadata: code_mirror.metadata.clone(),
+        code_doc_block_arr,
+    }
+}
+
 
 // <h2>Webserver startup</h2>
 #[actix_web::main]
