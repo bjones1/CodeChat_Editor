@@ -16,7 +16,7 @@
 // <h5>h5 Text</h5>
 // <h6>h6 Text</h6>
 // <p><span style="text-decoration: underline;">Underlined Text</span></p>
-// <p><s><span style="text-decoration: underline;">Strikethrough Text</span></s>
+// <p><s>Strikethrough Text</s>
 // </p>
 // <ul>
 //     <li>Unordered List 1</li>
@@ -119,14 +119,7 @@
 //         height="314" allowfullscreen="allowfullscreen"></iframe></p>
 // <p>&nbsp;</p>
 // <p>Some Emoji (more unicode)</p>
-// <p><img style="width: 1em; height: 1em; margin: 0 .05em 0 .1em; vertical-align: -.1em;"
-//         draggable="false"
-//         src="https://twemoji.maxcdn.com/v/13.0.1/72x72/1f4af.png" alt="💯"
-//         data-emoticon="true"> <img
-//         style="width: 1em; height: 1em; margin: 0 .05em 0 .1em; vertical-align: -.1em;"
-//         draggable="false"
-//         src="https://twemoji.maxcdn.com/v/13.0.1/72x72/1f171.png" alt="🅱️"
-//         data-emoticon="true"></p>
+// <p>💯🅱️</p>
 // <p>&nbsp;</p>
 // <p>And some images:</p>
 // <p><img src="CodeChat1.png" alt=""></p>

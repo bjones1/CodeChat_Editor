@@ -646,8 +646,7 @@ async fn serve_file(
     };
 
     // <p>Convert doc blocks from Markdown to HTML</p>
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_STRIKETHROUGH);
+    let options = Options::all();
     for code_doc_block in &mut code_doc_block_arr {
         if let CodeDocBlock::DocBlock(ref mut doc_block) = code_doc_block {
             let parser = Parser::new_ext(&doc_block.contents, options);
