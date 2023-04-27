@@ -125,3 +125,8 @@
     preserve style tags. A final PR would, hopefully, pass all tests and be as
     efficient as possible in how we preserve formatting, perhaps by
     implementing a turndown filter, or by exploring other avenues.</p>
+
+<h2> Final PR Results </h2>
+<p> All of the standard HTML to Markdown conversions are working along with non-standard Markdown conversions tables, task lists, and strikethrough. The style attributes are not currently being saved so many styling features do not save. The tables have been added and fixed so that they can properly convert both ways, and a custom style class has been added so that a black border is added. On converting back to HTML, the width for the tables is lost and reset to auto. The emojis have been fixed so they can properly convert as well. </p>
+
+<p>We were unable to figure out how to add custom rules into pulldown-cmark's library. We attempted to create custom events, but could not get the custom events to properly work. The custom rules could easily be added to the HTML to Markdown side, but not to the Markdown to HTML side.</p>
