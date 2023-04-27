@@ -907,8 +907,8 @@ mod tests {
                 mode: "python".to_string()
             },
             code_doc_block_arr: vec![
-                ("indent".to_string(),Some("delim".to_string()),"This is a test file.".to_string()),
-                ("indent".to_string(),Some("delim".to_string()), "Again, test file.".to_string()),
+                ("".to_string(),Some("#".to_string()),"This is a test file.".to_string()),
+                ("".to_string(),Some("#".to_string()), "Again, test file.".to_string()),
             ] 
         }; 
         let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR)); 
