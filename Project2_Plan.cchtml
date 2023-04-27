@@ -31,3 +31,16 @@
     code in a Rust Debugger.&nbsp;</p>
 <p>2. Implement new save function code to correctly save the source code and
     dot block code back to how it originally should look.&nbsp;</p>
+<p>3. We then implemented a new function that would that the lexed code mirror source file and convert it into the original format of the client source file.&nbsp;</p>
+<h2>Results:</h2>
+<p>1. After time, we were able to understand the Rust code and implement the Rust Debugger to understand exactly
+    what was being pulled from the file that needs to be saved and what the format looks like.&nbsp;</p>
+<p>2. We downloaded the Rust Analyzer and had to create a launch.json file that would launch the debugger and have it operate alongside
+    the Code Chat Editor.&nbsp;</p>
+<p>3. We then implemented a new function that would that the lexed code mirror source file and convert it into the original format of the client source file.&nbsp;</p>
+<p>4. The function logically looks as if it would work as planned, but we were unable to test it. Which leads me to remaining issues.&nbsp;</p>
+<h2>Issues and Future Work:</h2>
+<p>1. No matter what adjustments made, anytime the lexed source file was in use, a lifetime error would pop up. It stated that one lifetime needed to outlive another 
+    and that it would not. Due to this error, the code would not compile.&nbsp;</p>
+<p>1. The first issue that would need to be fixed is the lifetime error. It could be simple or complex, but once this is resolved, the save functionality should work as intended. 
+    If it does not, I am sure that we were able to give a good function that may just need to take a little bit of tweaking for the next coder.&nbsp;</p>
