@@ -1017,7 +1017,7 @@ mod tests {
         let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
         assert_eq!(file_contents, " This is a block comment ");
 
-        // <p><strong>Pass an inline comment</strong></p>
+        // <p><strong>Pass code with an inline comment</strong></p>
         let test_source_file = ClientSourceFile {
             metadata: SourceFileMetadata {
                 mode: "c_cpp".to_string(),
