@@ -1004,18 +1004,18 @@ mod tests {
         let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
         assert_eq!(file_contents, "Test");
         
-        // <p><strong>Pass a block comment</strong></p>
+        // <p><strong>Pass an inline comment</strong></p>
         let test_source_file = ClientSourceFile{
             metadata: SourceFileMetadata {
                 mode: "c_cpp".to_string()
             },
             code_doc_block_arr: vec![
-                ("".to_string(),Some("".to_string()),"/* This is a block comment */".to_string()),
+                ("".to_string(),Some("//".to_string()),"Test".to_string()),
             ] 
         }; 
         let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR)); 
         let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
-        assert_eq!(file_contents, "This is a block comment");
+        assert_eq!(file_contents, "// Test");
         
         // <p><strong>Pass space as content with no delimiter</strong></p>
         let test_source_file = ClientSourceFile{
