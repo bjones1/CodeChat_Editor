@@ -207,3 +207,13 @@ body {
     margin-bottom: 0px;
     padding-bottom: 0px;
 }
+
+.CodeChat-TinyMCE-TableDefault { 
+    border: 1px solid black;
+    border-collapse: collapse;
+}
+
+.CodeChat-TinyMCE-TableDefault th, td{ 
+    border: 1px solid black;
+    border-collapse: collapse;
+}

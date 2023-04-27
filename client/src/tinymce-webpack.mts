@@ -1,40 +1,34 @@
-// <details>
-//     <summary>Copyright (C) 2022 Bryan A. Jones.</summary>
-//     <p>This file is part of the CodeChat Editor.</p>
-//     <p>The CodeChat Editor is free software: you can redistribute it and/or
-//         modify it under the terms of the GNU General Public License as
-//         published by the Free Software Foundation, either version 3 of the
-//         License, or (at your option) any later version.</p>
-//     <p>The CodeChat Editor is distributed in the hope that it will be useful,
-//         but WITHOUT ANY WARRANTY; without even the implied warranty of
-//         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-//         General Public License for more details.</p>
-//     <p>You should have received a copy of the GNU General Public License
-//         along with the CodeChat Editor. If not, see <a
-//             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
-//     </p>
-// </details>
-// <h1><code>tinymce-webpack.ts</code> &mdash; imports the TinyMCE editor from
-//     NPM packages using webpack</h1>
-// <p>Import TinyMCE.</p>
+// Copyright (C) 2022 Bryan A. Jones.
+//
+// This file is part of the CodeChat Editor.
+//
+// The CodeChat Editor is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// The CodeChat Editor is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along with the CodeChat Editor. If not, see [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+//
+// `tinymce-webpack.ts` — imports the TinyMCE editor from NPM packages using webpack
+// =================================================================================
+//
+// Import TinyMCE.
 import tinymce, { RawEditorOptions } from "tinymce";
 export { tinymce };
 
-// <p>Default icons are required for TinyMCE 5.3 or above.</p>
+// Default icons are required for TinyMCE 5.3 or above.
 import "tinymce/icons/default/index.js";
 
-// <p>A theme is also required.</p>
+// A theme is also required.
 import "tinymce/themes/silver/index.js";
 
-// <p>Import the skin to use; use're using an inline editor, so load the inline
-//     CSS.</p>
+// Import the skin to use; use're using an inline editor, so load the inline CSS.
 import "tinymce/skins/ui/oxide/skin.css";
 import "tinymce/skins/ui/oxide/content.inline.css";
 
-// <p>Without this, TinyMCE produces errors.</p>
+// Without this, TinyMCE produces errors.
 import "tinymce/models/dom/index.js";
 
-// <p>Import plugins.</p>
+// Import plugins.
 import "tinymce/plugins/advlist/index.js";
 import "tinymce/plugins/anchor/index.js";
 import "tinymce/plugins/charmap/index.js";
@@ -55,31 +49,27 @@ import "tinymce/plugins/table/index.js";
 import "tinymce/plugins/visualblocks/index.js";
 import "tinymce/plugins/visualchars/index.js";
 
-// <p>Import premium plugins. NOTE: Download separately and add these to
-//     /src/plugins.</p>
+// Import premium plugins. NOTE: Download separately and add these to /src/plugins.
 /// import './plugins/checklist/plugin';
 /// import './plugins/powerpaste/plugin';
 /// import './plugins/powerpaste/js/wordimport';
 
-// <p>Initialize TinyMCE.</p>
+// Initialize TinyMCE.
 export const tinymce_init = async (
-    // <p>Provide editor options; don't set ``plugins`` or ``skin``, since these
-    //     must be accompanied by the correct imports.</p>
+    // Provide editor options; don't set \`\`plugins\`\` or \`\`skin\`\`, since these must be accompanied by the correct imports.
     options: RawEditorOptions
 ) =>
     /// @ts-ignore
     tinymce.init(
         Object.assign({}, options, {
-            // <p>See the list of <a
-            //         href="https://www.tiny.cloud/docs/tinymce/6/plugins/">plugins</a>.
-            // </p>
+            // See the list of [plugins](https://www.tiny.cloud/docs/tinymce/6/plugins/).
             plugins:
                 "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
-            // <p>Using this to disable the emoji images and force the unicode instead
-            // </p>
+            // Using this to disable the emoji images and force the unicode instead
             emoticons_database: "emojis",
-            // <p>The imports above apply the skins; don't try to dynamically
-            //     load the skin's CSS.</p>
+            // Add this option to add a custom class to tables. This class adds a black border to the table. 
+            visual_table_class : "CodeChat-TinyMCE-TableDefault",
+            // The imports above apply the skins; don't try to dynamically load the skin's CSS.
             skin: false,
         })
     );
