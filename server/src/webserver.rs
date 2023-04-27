@@ -58,6 +58,9 @@ use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexersCompiled}
 #[derive(Serialize, Deserialize)]
 /// <p><a id="SourceFileMetadata"></a>Metadata about a source file sent along
 ///     with it both to and from the client.</p>
+
+/// Added so the metadata from the CodeMirror Format can be cloned to the Old Client Source File Format
+#[derive(Clone)]
 struct SourceFileMetadata {
     mode: String,
 }
@@ -137,9 +140,8 @@ async fn save_source<'a>(
 ) -> impl Responder {
     // <p>Given the mode, find the lexer.</p>
 
-    // All New Stuff
-    let client_source_file = code_mirror_to_client(&lexed_source_file.source);
-    // New Stuff ends
+    // Call function to convert from CodeMirror to CodeDocBlockArray
+    let client_source_file = code_mirror_to_client(&lexed_source_file.source, &lexed_source_file);
 
     let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match language_lexers_compiled
         .map_mode_to_lexer
@@ -882,31 +884,29 @@ fn markdown_to_html(markdown: &str) -> String {
     html_output
 }
 
-//New Function Added
-fn html_to_markdown(html: &str) -> String {
-    // Parse the HTML
-    let parser = Parser::new(html);
-    let mut markdown_output = String::new();
-    html::push_html(&mut markdown_output, parser);
-
-    markdown_output
-}
-
-//Conversion Function
-fn code_mirror_to_client(code_mirror: &CodeMirror) -> ClientSourceFile {
-    let mut code_doc_block_arr = Vec::new();
-    let mut current_idx = 0;
-    let mut last_was_doc = false;
+// Conversion Function
+// This function takes in two parameters, the CodeMirror Structure and the Metadata from the Lexed Source File
+// This function returns the struct: ClientSourceFile to finish this conversion
+fn code_mirror_to_client(code_mirror: &CodeMirror, meta: &LexedSourceFile) -> ClientSourceFile {
+    // Create 3 mutable variables, an empty vector to store the code/doc block array, the index to iterate through, and another to determine the end of the doc. 
+    let mut code_doc_block_arr: Vec<(String, Option<String>, String)> = Vec::new();
+    let mut current_idx: usize = 0;
+    let mut last_was_doc: bool = false;
+    // Start a loop that iterates over each line in the doc string using the 'match_indices' method to find each occurence of the newline character
     for (idx, _) in code_mirror.doc.match_indices('\n') {
+        // Take the range of characters that must be put in place of the new line. Then find that spot in the doc block. Iterate through and find those specific characters
+        // If it is a code block
         if let Some((from, to, indent, delimiter, contents)) = code_mirror
             .doc_blocks
             .iter()
             .find(|(from, to, _, _, _)| *from <= current_idx && *to >= idx)
-        {
+        {   
+            // If the last appended was a doc block
             if last_was_doc {
                 let (prev_indent, _, prev_content) = code_doc_block_arr.last_mut().unwrap();
                 *prev_content = format!("{}\n{}{}{}", prev_content, indent, delimiter, contents);
             } else {
+                //append to the code_doc_block_arr in the old format
                 code_doc_block_arr.push((
                     code_mirror
                         .doc
@@ -919,6 +919,7 @@ fn code_mirror_to_client(code_mirror: &CodeMirror) -> ClientSourceFile {
             }
             last_was_doc = true;
             current_idx = *to + 1;
+        // If it is not a code block, append to the code_doc_block_arr in the old format
         } else {
             code_doc_block_arr.push((
                 code_mirror
@@ -938,8 +939,9 @@ fn code_mirror_to_client(code_mirror: &CodeMirror) -> ClientSourceFile {
         None,
         "".to_string(),
     ));
+    // Add all pushed to a new client source file struct that will be returned. 
     ClientSourceFile {
-        metadata: code_mirror.metadata.clone(),
+        metadata: meta.metadata.clone(),
         code_doc_block_arr,
     }
 }
