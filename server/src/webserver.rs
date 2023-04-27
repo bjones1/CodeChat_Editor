@@ -902,21 +902,32 @@ mod tests {
     {
         assert_eq!(1, 1); 
 
+        // Pass nothing to the function.
         let test_source_file = ClientSourceFile{
             metadata: SourceFileMetadata {
                 mode: "python".to_string()
             },
             code_doc_block_arr: vec![
-                ("".to_string(),Some("#".to_string()),"This is a test file.".to_string()),
-                ("".to_string(),Some("#".to_string()), "Again, test file.".to_string()),
+                ("".to_string(),Some("".to_string()),"".to_string()),
             ] 
         }; 
         let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR)); 
         let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
-        assert_eq!(file_contents, "This is a test file. Again, test file.")
+        assert_eq!(file_contents, "");
         
+        // Pass a test comment. 
+        let test_source_file = ClientSourceFile{
+            metadata: SourceFileMetadata {
+                mode: "python".to_string()
+            },
+            code_doc_block_arr: vec![
+                ("".to_string(),Some("#".to_string()),"Test".to_string()),
+            ] 
+        }; 
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR)); 
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "# Test");
     }
-    
 }
     
     
