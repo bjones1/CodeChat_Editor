@@ -154,14 +154,14 @@ async fn save_source<'a>(
     // <p>Turn this back into code and doc blocks by filling in any missing
     //     comment delimiters.</p>
     // This line assigns the variable 'inline_comment' with what a inline comment would look like in this file. 
-    let inline_comment: Option<&&str> = lexer.language_lexer.inline_comment_delim_arr.first();
+    let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
     // This line assigns the variable 'block_comment' with what a block comment would look like in this file.
-    let block_comment: Option<&crate::lexer::BlockCommentDelim> = lexer.language_lexer.block_comment_delim_arr.first();
+    let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
     // The vector 'code_doc_block_vec' is what is used to store the strings from the site. There is an indent, a delimeter, and the contents. 
     // Each index in a vector has those three parameters.
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
     // 'some_empty' is just a string "".
-    let some_empty: Option<String> = Some("".to_string());
+    let some_empty = Some("".to_string());
     // This for loop sorts the data from the site into code blocks and doc blocks. 
     for cdb in &client_source_file.code_doc_block_arr {
         let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
