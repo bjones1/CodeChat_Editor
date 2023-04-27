@@ -902,7 +902,7 @@ mod tests {
     {
         assert_eq!(1, 1); 
 
-        // Pass nothing to the function.
+        // <p><strong>Pass nothing to the function.</strong></p>
         let test_source_file = ClientSourceFile{
             metadata: SourceFileMetadata {
                 mode: "python".to_string()
@@ -915,7 +915,35 @@ mod tests {
         let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
         assert_eq!(file_contents, "");
         
-        // Pass a test comment. 
+// <p style="padding-left: 40px;"><strong>Pass without comment
+//         delimiter<br></strong></p>
+        let test_source_file = ClientSourceFile{
+            metadata: SourceFileMetadata {
+                mode: "python".to_string()
+            },
+            code_doc_block_arr: vec![
+                ("".to_string(),Some("".to_string()),"Test".to_string()),
+            ] 
+        }; 
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR)); 
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "Test");
+//
+        // <p><strong>Pass only an indent</strong></p>
+        let test_source_file = ClientSourceFile{
+            metadata: SourceFileMetadata {
+                mode: "python".to_string()
+            },
+            code_doc_block_arr: vec![
+                (" ".to_string(),Some("".to_string()),"".to_string()),
+            ] 
+        }; 
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR)); 
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, " ");
+        
+        
+        // <p><strong>Pass a test comment.</strong></p>
         let test_source_file = ClientSourceFile{
             metadata: SourceFileMetadata {
                 mode: "python".to_string()
@@ -927,7 +955,37 @@ mod tests {
         let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR)); 
         let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
         assert_eq!(file_contents, "# Test");
+    
+        
+        // <p><strong>Pass a block comment</strong></p>
+        let test_source_file = ClientSourceFile{
+            metadata: SourceFileMetadata {
+                mode: "python".to_string()
+            },
+            code_doc_block_arr: vec![
+                ("".to_string(),Some("".to_string()),"/* This is a block comment */".to_string()),
+            ] 
+        }; 
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR)); 
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "This is a block comment");
+    
+    
+        // <p><strong>Pass an inline comment</strong></p>
+        let test_source_file = ClientSourceFile{
+            metadata: SourceFileMetadata {
+                mode: "python".to_string()
+            },
+            code_doc_block_arr: vec![
+                ("".to_string(),Some("".to_string()),"This is some code // with an inline comment".to_string()),
+            ] 
+        }; 
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR)); 
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "This is some code // with an inline comment");
     }
+    
+    
 }
     
     
