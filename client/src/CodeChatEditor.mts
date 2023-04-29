@@ -35,6 +35,7 @@ import { html_beautify } from "js-beautify";
 import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
 import { gfm } from '@joplin/turndown-plugin-gfm';
 import TurndownService from "turndown";
+import MarkdownConversions from "../src/markdown_conversions.json";
 
 
 // ### CSS
@@ -48,6 +49,15 @@ const turndownService = new TurndownService();
 
 // Add the plugins from [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
 turndownService.use(gfm);
+for (let i = 0; i < MarkdownConversions.conversions.length; i++) {
+    turndownService.addRule(MarkdownConversions.conversions[i].name, {
+        filter: [MarkdownConversions.conversions[i].filter_tag],
+        replacement: function (content: string) {
+          return MarkdownConversions.conversions[i].markdown + content + MarkdownConversions.conversions[i].markdown
+        }
+      })
+}
+
 
   
 // Load code when the DOM is ready.

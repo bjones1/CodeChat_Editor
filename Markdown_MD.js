@@ -42,7 +42,7 @@
 // *   [x] Task list 2
 // *   [ ] Task list 3
 //
-// Text in superscript and subscript
+// Text in ^superscript^ and ~subscript~
 //
 // `for good measure, here's a code-block`
 //
