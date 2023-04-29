@@ -49,6 +49,8 @@ const turndownService = new TurndownService();
 
 // Add the plugins from [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
 turndownService.use(gfm);
+
+// Add each new rule for HTML to Markdown conversions into turndown. These rules are stored and added in from the [markdown\_conversions.json](markdown_conversions.json) file.
 for (let i = 0; i < MarkdownConversions.conversions.length; i++) {
     turndownService.addRule(MarkdownConversions.conversions[i].name, {
         filter: [MarkdownConversions.conversions[i].filter_tag],
@@ -62,9 +64,9 @@ for (let i = 0; i < MarkdownConversions.conversions.length; i++) {
   
 // Load code when the DOM is ready.
 export const page_init = (all_source: any) => {
-    // Use [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams) to parse out the search parameters of this window's URL.
+    // Use [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams) to parse out the search parameters of this window’s URL.
     const urlParams = new URLSearchParams(window.location.search);
-    // Get the mode from the page's query parameters. Default to edit using the [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator). This works, but TypeScript marks it as an error. Ignore this error by including the [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
+    // Get the mode from the page’s query parameters. Default to edit using the [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator). This works, but TypeScript marks it as an error. Ignore this error by including the [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
     /// @ts-ignore
     const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
     on_dom_content_loaded(() => open_lp(all_source, editorMode));
@@ -73,7 +75,7 @@ export const page_init = (all_source: any) => {
 // This is copied from [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
 const on_dom_content_loaded = (on_load_func: () => void) => {
     if (document.readyState === "loading") {
-        // Loading hasn't finished yet.
+        // Loading hasn’t finished yet.
         document.addEventListener("DOMContentLoaded", on_load_func);
     } else {
         // `DOMContentLoaded` has already fired.
@@ -81,7 +83,7 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
     }
 };
 
-// Define all possible editor modes; these are passed as a [query string](https://en.wikipedia.org/wiki/Query_string) (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
+// Define all possible editor modes; these are passed as a [query string](https://en.wikipedia.org/wiki/Query_string) (`http://path/to/foo.py?mode=toc`, for example) to the page’s URL.
 enum EditorMode {
     // Display the source code using CodeChat, but disallow editing.
     view,
@@ -93,7 +95,7 @@ enum EditorMode {
     raw,
 }
 
-// This function is called on page load to "load" a file. Before this point, the server has already lexed the source file into code and doc blocks; this function transforms the code and doc blocks into HTML and updates the current web page with the results.
+// This function is called on page load to “load” a file. Before this point, the server has already lexed the source file into code and doc blocks; this function transforms the code and doc blocks into HTML and updates the current web page with the results.
 const open_lp = (
     // A data structure provided by the server, containing the source and associated metadata. See [`AllSource`](#AllSource).
     all_source: AllSource,
@@ -105,7 +107,7 @@ const open_lp = (
     const code_doc_block_arr = all_source["code_doc_block_arr"];
     let html;
     if (is_doc_only()) {
-        // Special case: a CodeChat Editor document's HTML doesn't need lexing; it only contains HTML. Instead, its structure is always: `[["", "", HTML]]`. Therefore, the HTML is at item \[0\]\[2\].
+        // Special case: a CodeChat Editor document’s HTML doesn’t need lexing; it only contains HTML. Instead, its structure is always: `[["", "", HTML]]`. Therefore, the HTML is at item \[0\]\[2\].
         html = `<div class="CodeChat-TinyMCE">${code_doc_block_arr[0][2]}</div>`;
     } else {
         html = classified_source_to_html(code_doc_block_arr);
@@ -133,7 +135,7 @@ type AllSource = {
 
 // Store the lexer info for the currently-loaded language.
 //
-// This mirrors the data provided by the server -- see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
+// This mirrors the data provided by the server – see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
 let current_metadata: {
     mode: string;
 };
@@ -155,7 +157,7 @@ const make_editors = async (
 ) => {
     return new Promise((accept) => {
         setTimeout(async () => {
-            // In view mode, don't use TinyMCE, since we already have HTML. Raw mode doesn't use TinyMCE at all, or even render doc blocks as HTML.
+            // In view mode, don’t use TinyMCE, since we already have HTML. Raw mode doesn’t use TinyMCE at all, or even render doc blocks as HTML.
             if (editorMode === EditorMode.edit) {
                 // Instantiate the TinyMCE editor for doc blocks. Wait until this finishes before calling anything else, to help keep the UI responsive. TODO: break this up to apply to each doc block, instead of doing them all at once.
                 await make_doc_block_editor(".CodeChat-TinyMCE");
@@ -200,15 +202,15 @@ const make_doc_block_editor = (
     selector: string
 ) => {
     return tinymce_init({
-        // Enable the [browser-supplied spellchecker](https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck), since TinyMCE's spellchecker is a premium feature.
+        // Enable the [browser-supplied spellchecker](https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck), since TinyMCE’s spellchecker is a premium feature.
         browser_spellcheck: true,
-        // Put more buttons on the [quick toolbar](https://www.tiny.cloud/docs/tinymce/6/quickbars/) that appears when text is selected. TODO: add a button for code format (can't find this one -- it's only on the [list of menu items](https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items) as `codeformat`).
+        // Put more buttons on the [quick toolbar](https://www.tiny.cloud/docs/tinymce/6/quickbars/) that appears when text is selected. TODO: add a button for code format (can’t find this one – it’s only on the [list of menu items](https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items) as `codeformat`).
         quickbars_selection_toolbar:
             "align | bold italic underline | quicklink h2 h3 blockquote",
         // Place the Tiny MCE menu bar at the top of the screen; otherwise, it floats in front of text, sometimes obscuring what the user wants to edit. See the [docs](https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container).
         fixed_toolbar_container: "#CodeChat-menu",
         inline: true,
-        // When true, this still prevents hyperlinks to anchors on the current page from working correctly. There's an onClick handler that prevents links in the current page from working -- need to look into this. See also [a related GitHub issue](https://github.com/tinymce/tinymce/issues/3836).
+        // When true, this still prevents hyperlinks to anchors on the current page from working correctly. There’s an onClick handler that prevents links in the current page from working – need to look into this. See also [a related GitHub issue](https://github.com/tinymce/tinymce/issues/3836).
         //readonly: true  // Per the comment above, this is commented out.
         // TODO: Notes on this setting.
         relative_urls: true,
@@ -247,7 +249,7 @@ const make_code_block_editor = (
         highlightGutterLine: false,
         maxLines: 1e10,
         mode: `ace/mode/${current_metadata["mode"]}`,
-        // TODO: this still allows cursor movement. Need something that doesn't show an edit cursor / can't be selected; arrow keys should scroll the display, not move the cursor around in the editor.
+        // TODO: this still allows cursor movement. Need something that doesn’t show an edit cursor / can’t be selected; arrow keys should scroll the display, not move the cursor around in the editor.
         readOnly:
             editorMode === EditorMode.view || editorMode == EditorMode.toc,
         showPrintMargin: false,
@@ -263,7 +265,7 @@ const make_code_block_editor = (
 const doc_block_indent_on_before_input = (event: InputEvent) => {
     // Only modify the behavior of inserts.
     if (event.data) {
-        // Block any insert that's not an insert of spaces. TODO: need to support tabs.
+        // Block any insert that’s not an insert of spaces. TODO: need to support tabs.
         if (event.data !== " ".repeat(event.data.length)) {
             event.preventDefault();
         }
@@ -358,11 +360,11 @@ const classified_source_to_html = (
             // prettier-ignore
             html.push(
                 '<div class="CodeChat-doc">',
-                    // TODO: Add spaces matching the number of digits in the ACE gutter's line number. Currently, this is three spaces, assuming a file length of 100-999 lines.
+                    // TODO: Add spaces matching the number of digits in the ACE gutter’s line number. Currently, this is three spaces, assuming a file length of 100-999 lines.
                     '<div class="CodeChat-ACE-gutter-padding ace_editor">   </div>',
                     // This is a thin margin which matches what ACE does.
                     '<div class="CodeChat-ACE-padding"></div>',
-                    // This doc block's indent. TODO: allow paste, but must only allow pasting whitespace.
+                    // This doc block’s indent. TODO: allow paste, but must only allow pasting whitespace.
                     `<div class="ace_editor CodeChat-doc-indent" contenteditable onpaste="return false">${indent}</div>`,
                     // The contents of this doc block.
                     `<div class="CodeChat-TinyMCE" data-CodeChat-comment="${delimiter}" id="mce-${line}">`,
@@ -400,13 +402,13 @@ const editor_to_code_doc_blocks = () => {
         if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
             // See if the Ace editor was applied to this element.
             full_string =
-                // TypeScript knows that an element doesn't have a `env` attribute; ignore this, since Ace elements do.
+                // TypeScript knows that an element doesn’t have a `env` attribute; ignore this, since Ace elements do.
                 /// @ts-ignore
                 code_or_doc_tag.env === undefined
                     ? unescapeHTML(code_or_doc_tag.innerHTML)
                     : ace.edit(code_or_doc_tag).getValue();
         } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
-            // Get the indent from the previous table cell. For a CodeChat Editor document, there's no indent (it's just a doc block). Likewise, get the delimiter; leaving it blank for a CodeChat Editor document causes the next block of code to leave off the comment delimiter, which is what we want.
+            // Get the indent from the previous table cell. For a CodeChat Editor document, there’s no indent (it’s just a doc block). Likewise, get the delimiter; leaving it blank for a CodeChat Editor document causes the next block of code to leave off the comment delimiter, which is what we want.
             if (!is_doc_only()) {
                 indent =
                     code_or_doc_tag.previousElementSibling!.textContent ?? "";
@@ -415,7 +417,7 @@ const editor_to_code_doc_blocks = () => {
                     code_or_doc_tag.getAttribute("data-CodeChat-comment") ??
                     null;
             }
-            // See [`get`](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get) and [`getContent()`](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.editor/#getContent). If this element wasn't managed by TinyMCE, it returns `null`, in which case we can directly get the `innerHTML`.
+            // See [`get`](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#get) and [`getContent()`](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.editor/#getContent). If this element wasn’t managed by TinyMCE, it returns `null`, in which case we can directly get the `innerHTML`.
             //
             // Ignore the missing `get` type definition.
             /// @ts-ignore
@@ -435,7 +437,7 @@ const editor_to_code_doc_blocks = () => {
             throw `Unexpected class for code or doc block ${code_or_doc_tag}.`;
         }
 
-        // There's an implicit newline at the end of each block; restore it.
+        // There’s an implicit newline at the end of each block; restore it.
         full_string += "\n";
 
         // Merge this with previous classified line if indent and delimiter are the same; otherwise, add a new entry.
@@ -456,7 +458,7 @@ const editor_to_code_doc_blocks = () => {
 // Helper functions
 // ----------------
 //
-// Given text, escape it so it formats correctly as HTML. Because the solution at [SO](https://stackoverflow.com/a/48054293) transforms newlines in odd ways (see [innerText](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText)), it's not usable with code. Instead, this is a translation of Python's `html.escape` function.
+// Given text, escape it so it formats correctly as HTML. Because the solution at [SO](https://stackoverflow.com/a/48054293) transforms newlines in odd ways (see [innerText](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText)), it’s not usable with code. Instead, this is a translation of Python’s `html.escape` function.
 const escapeHTML = (unsafeText: string): string => {
     // Must be done first!
     unsafeText = unsafeText.replaceAll("&", "&amp;");
@@ -478,13 +480,13 @@ const is_doc_only = () => {
     return current_metadata["mode"] === "codechat-html";
 };
 
-// Per [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples), here's the least bad way to choose between the control key and the command key.
+// Per [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples), here’s the least bad way to choose between the control key and the command key.
 const os_is_osx =
     navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
         ? true
         : false;
 
-// A great and simple idea taken from [SO](https://stackoverflow.com/a/54116079): wrap all testing exports in a single variable. This avoids namespace pollution, since only one name is exported, and it's clearly marked for testing only. Test code still gets access to everything it needs.
+// A great and simple idea taken from [SO](https://stackoverflow.com/a/54116079): wrap all testing exports in a single variable. This avoids namespace pollution, since only one name is exported, and it’s clearly marked for testing only. Test code still gets access to everything it needs.
 export const exportedForTesting = {
     editor_to_code_doc_blocks,
     EditorMode,

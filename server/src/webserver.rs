@@ -1,25 +1,22 @@
-/// <details>
-///     <summary>Copyright (C) 2022 Bryan A. Jones.</summary>
-///     <p>This file is part of the CodeChat Editor.</p>
-///     <p>The CodeChat Editor is free software: you can redistribute it and/or
-///         modify it under the terms of the GNU General Public License as
-///         published by the Free Software Foundation, either version 3 of the
-///         License, or (at your option) any later version.</p>
-///     <p>The CodeChat Editor is distributed in the hope that it will be
-///         useful, but WITHOUT ANY WARRANTY; without even the implied warranty
-///         of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-///         General Public License for more details.</p>
-///     <p>You should have received a copy of the GNU General Public License
-///         along with the CodeChat Editor. If not, see <a
-///             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
-///     </p>
-/// </details>
-/// <h1><code>webserver.rs</code> &mdash; Serve CodeChat Editor Client webpages
-/// </h1>
-/// <p>TODO: auto-reload when the current file changes on disk. Use <a
-///         href="https://docs.rs/notify/latest/notify/">notify</a>.</p>
-/// <h2>Imports</h2>
-/// <h3>Standard library</h3>
+/// Copyright (C) 2022 Bryan A. Jones.
+///
+/// This file is part of the CodeChat Editor.
+///
+/// The CodeChat Editor is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+///
+/// The CodeChat Editor is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+///
+/// You should have received a copy of the GNU General Public License along with the CodeChat Editor. If not, see [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+///
+/// `webserver.rs` — Serve CodeChat Editor Client webpages
+/// ======================================================
+///
+/// TODO: auto-reload when the current file changes on disk. Use [notify](https://docs.rs/notify/latest/notify/).
+///
+/// Imports
+/// -------
+///
+/// ### Standard library
 use std::{
     collections::HashMap,
     env,
@@ -27,7 +24,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-// <h3>Third-party</h3>
+// ### Third-party
 use actix_files;
 use actix_web::{
     get,
@@ -48,69 +45,63 @@ use urlencoding::{self, encode};
 #[cfg(target_os = "windows")]
 use win_partitions::win_api::get_logical_drive;
 
-// <h3>Local</h3>
+// ### Local
 use super::lexer::compile_lexers;
 use super::lexer::supported_languages::LANGUAGE_LEXER_ARR;
 use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexersCompiled};
 
-/// <h2>Data structures</h2>
+/// Data structures
+/// ---------------
 #[derive(Serialize, Deserialize)]
-/// <p><a id="SourceFileMetadata"></a>Metadata about a source file sent along
-///     with it both to and from the client.</p>
+/// Metadata about a source file sent along with it both to and from the client.
 struct SourceFileMetadata {
     mode: String,
 }
 
 #[derive(Serialize, Deserialize)]
-/// <p><a id="ClientSourceFile"></a>A simple structure for accepting JSON input
-///     to the <code>save_source</code> endpoint. Use a tuple since serdes can
-///     auto-generate a deserializer for it.</p>
+/// A simple structure for accepting JSON input to the `save_source` endpoint. Use a tuple since serdes can auto-generate a deserializer for it.
 struct ClientSourceFile {
     metadata: SourceFileMetadata,
-    // <p>TODO: implement a serdes deserializer that would convert this directly
-    //     to a CodeDocBlock?</p>
+    // TODO: implement a serdes deserializer that would convert this directly to a CodeDocBlock?
     code_doc_block_arr: Vec<(String, Option<String>, String)>,
 }
 
 #[derive(Serialize)]
-/// <p><a id="LexedSourceFile"></a>Define the structure of JSON responses when
-///     sending a source file from the <code>/fs</code> endpoint.</p>
+/// Define the structure of JSON responses when sending a source file from the `/fs` endpoint.
 struct LexedSourceFile {
     metadata: SourceFileMetadata,
     code_doc_block_arr: Vec<CodeDocBlock>,
 }
 
-/// <p>This defines the structure of JSON responses from the
-///     <code>save_source</code> endpoint.</p>
+/// This defines the structure of JSON responses from the `save_source` endpoint.
 #[derive(Serialize)]
 struct ErrorResponse {
     success: bool,
     message: String,
 }
 
-// <h2>Globals</h2>
+// Globals
+// -------
 lazy_static! {
-    /// <p>Matches a bare drive letter.</p>
+    /// Matches a bare drive letter.
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
-    /// <p>Match the lexer directive in a source file.</p>
+    /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r#"CodeChat Editor lexer: (\w+)"#).unwrap();
 }
 
-/// <h2>Save endpoint</h2>
+/// Save endpoint
+/// -------------
 #[put("/fs/{path:.*}")]
-/// <p>The Save button in the CodeChat Editor Client posts to this endpoint with
-///     the path of the file to save.</p>
+/// The Save button in the CodeChat Editor Client posts to this endpoint with the path of the file to save.
 async fn save_source(
-    // <p>The path to save this file to.</p>
+    // The path to save this file to.
     encoded_path: web::Path<String>,
-    // <p>The file to save plus metadata, stored in the
-    //     <code>ClientSourceFile</code></p>
+    // The file to save plus metadata, stored in the `ClientSourceFile`
     client_source_file: web::Json<ClientSourceFile>,
-    // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
-    //     source code.</p>
+    // Lexer info, needed to transform the `ClientSourceFile` into source code.
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
-    // <p>Given the mode, find the lexer.</p>
+    // Given the mode, find the lexer.
     let lexer = match language_lexers_compiled
         .map_mode_to_lexer
         .get(client_source_file.metadata.mode.as_str())
@@ -119,8 +110,7 @@ async fn save_source(
         None => return save_source_response(false, "Invalid mode"),
     };
 
-    // <p>Turn this back into code and doc blocks by filling in any missing
-    //     comment delimiters.</p>
+    // Turn this back into code and doc blocks by filling in any missing comment delimiters.
     let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
@@ -132,12 +122,11 @@ async fn save_source(
         } else {
             CodeDocBlock::DocBlock(DocBlock {
                 indent: cdb.0.to_string(),
-                // <p>If no delimiter is provided, use an inline comment (if
-                //     available), then a block comment.</p>
+                // If no delimiter is provided, use an inline comment (if available), then a block comment.
                 delimiter: match &cdb.1 {
-                    // <p>The delimiter was provided. Simply use that.</p>
+                    // The delimiter was provided. Simply use that.
                     Some(v) => v.to_string(),
-                    // <p>No delimiter was provided -- fill one in.</p>
+                    // No delimiter was provided – fill one in.
                     None => {
                         if let Some(ic) = inline_comment {
                             ic.to_string()
@@ -156,24 +145,20 @@ async fn save_source(
         });
     }
 
-    // <p>Turn this vec of code/doc blocks into a string of source code.</p>
+    // Turn this vec of code/doc blocks into a string of source code.
     let mut file_contents = String::new();
     for code_doc_block in code_doc_block_vec {
         match code_doc_block {
             CodeDocBlock::DocBlock(doc_block) => {
-                // <p>Append a doc block, adding a space between the opening
-                //     delimiter and the contents when necessary.</p>
+                // Append a doc block, adding a space between the opening delimiter and the contents when necessary.
                 let mut append_doc_block = |indent: &str, delimiter: &str, contents: &str| {
                     file_contents += indent;
                     file_contents += delimiter;
-                    // <p>Add a space between the delimiter and comment body,
-                    //     unless the comment was a newline or we're at the end
-                    //     of the file.</p>
+                    // Add a space between the delimiter and comment body, unless the comment was a newline or we’re at the end of the file.
                     if contents.is_empty() || contents == "\n" {
-                        // <p>Nothing to append in this case.</p>
+                        // Nothing to append in this case.
                     } else {
-                        // <p>Put a space between the delimiter and the
-                        //     contents.</p>
+                        // Put a space between the delimiter and the contents.
                         file_contents += " ";
                     }
                     file_contents += contents;
@@ -184,16 +169,14 @@ async fn save_source(
                     .inline_comment_delim_arr
                     .contains(&doc_block.delimiter.as_str());
 
-                // <p>Build a comment based on the type of the delimiter.</p>
+                // Build a comment based on the type of the delimiter.
                 if is_inline_delim {
-                    // <p>Split the contents into a series of lines, adding the
-                    //     inline comment delimiter to each line.</p>
+                    // Split the contents into a series of lines, adding the inline comment delimiter to each line.
                     for content_line in doc_block.contents.split_inclusive('\n') {
                         append_doc_block(&doc_block.indent, &doc_block.delimiter, content_line);
                     }
                 } else {
-                    // <p>Determine the closing comment delimiter matching the
-                    //     provided opening delimiter.</p>
+                    // Determine the closing comment delimiter matching the provided opening delimiter.
                     let block_comment_closing_delimiter = match lexer
                         .language_lexer
                         .block_comment_delim_arr
@@ -211,32 +194,26 @@ async fn save_source(
                             )
                         }
                     };
-                    // <p>Produce the resulting block comment. They should
-                    //     always end with a newline.</p>
+                    // Produce the resulting block comment. They should always end with a newline.
                     assert!(&doc_block.contents.ends_with('\n'));
                     append_doc_block(
                         &doc_block.indent,
                         &doc_block.delimiter,
-                        // <p>Omit the newline, so we can instead put on the
-                        //     closing delimiter, then the newline.</p>
+                        // Omit the newline, so we can instead put on the closing delimiter, then the newline.
                         &doc_block.contents[..&doc_block.contents.len() - 1],
                     );
                     file_contents = file_contents + " " + block_comment_closing_delimiter + "\n";
                 }
             }
             CodeDocBlock::CodeBlock(contents) =>
-            // <p>This is code. Simply append it (by definition, indent and
-            //     delimiter are empty).</p>
+            // This is code. Simply append it (by definition, indent and delimiter are empty).
             {
                 file_contents += &contents
             }
         }
     }
 
-    // <p>Save this string to a file. Add a leading slash for Linux: this
-    //     changes from <code>foo/bar.c</code> to <code>/foo/bar.c</code>.
-    //     Windows already starts with a drive letter, such as
-    //     <code>C:\foo\bar.c</code>, so no changes are needed.</p>
+    // Save this string to a file. Add a leading slash for Linux: this changes from `foo/bar.c` to `/foo/bar.c`. Windows already starts with a drive letter, such as `C:\foo\bar.c`, so no changes are needed.
     let save_file_path = if cfg!(windows) {
         "".to_string()
     } else {
@@ -255,9 +232,7 @@ async fn save_source(
     save_source_response(true, "")
 }
 
-/// <p>A convenience method to fill out then return the
-///     <code>ErrorResponse</code> struct from the <code>save_source</code>
-///     endpoint.</p>
+/// A convenience method to fill out then return the `ErrorResponse` struct from the `save_source` endpoint.
 fn save_source_response(success: bool, message: &str) -> HttpResponse {
     let response = ErrorResponse {
         success,
@@ -275,17 +250,17 @@ fn save_source_response(success: bool, message: &str) -> HttpResponse {
     }
 }
 
-/// <h2>Load endpoints</h2>
-/// <p>Redirect from the root of the filesystem to the actual root path on this
-///     OS.</p>
+/// Load endpoints
+/// --------------
+///
+/// Redirect from the root of the filesystem to the actual root path on this OS.
 async fn _root_fs_redirect() -> impl Responder {
     HttpResponse::TemporaryRedirect()
         .insert_header((header::LOCATION, "/fs/"))
         .finish()
 }
 
-/// <p>The load endpoint: dispatch to support functions which serve either a
-///     directory listing, a CodeChat Editor file, or a normal file.</p>
+/// The load endpoint: dispatch to support functions which serve either a directory listing, a CodeChat Editor file, or a normal file.
 #[get("/fs/{path:.*}")]
 async fn serve_fs(
     req: HttpRequest,
@@ -294,29 +269,20 @@ async fn serve_fs(
 ) -> impl Responder {
     let mut fixed_path = orig_path.to_string();
     #[cfg(target_os = "windows")]
-    // <p>On Windows, a path of <code>drive_letter:</code> needs a
-    //     <code>/</code> appended.</p>
+    // On Windows, a path of `drive_letter:` needs a `/` appended.
     if DRIVE_LETTER_REGEX.is_match(&fixed_path) {
         fixed_path += "/";
     } else if fixed_path.is_empty() {
-        // <p>If there's no drive letter yet, we will always use
-        //     <code>dir_listing</code> to select a drive.</p>
+        // If there’s no drive letter yet, we will always use `dir_listing` to select a drive.
         return dir_listing("", Path::new("")).await;
     }
-    // <p>All other cases (for example, <code>C:\a\path\to\file.txt</code>) are
-    //     OK.</p>
+    // All other cases (for example, `C:\a\path\to\file.txt`) are OK.
 
-    // <p>For Linux/OS X, prepend a slash, so that
-    //     <code>a/path/to/file.txt</code> becomes
-    //     <code>/a/path/to/file.txt</code>.</p>
+    // For Linux/OS X, prepend a slash, so that `a/path/to/file.txt` becomes `/a/path/to/file.txt`.
     #[cfg(not(target_os = "windows"))]
     let fixed_path = "/".to_string() + &fixed_path;
 
-    // <p>On Windows, the returned path starts with <code>\\?\</code> per the <a
-    //         href="https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces">docs</a>.
-    //     Handle any <a
-    //         href="https://doc.rust-lang.org/std/fs/fn.canonicalize.html#errors">errors</a>.
-    // </p>
+    // On Windows, the returned path starts with `\\?\` per the [docs](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces). Handle any [errors](https://doc.rust-lang.org/std/fs/fn.canonicalize.html#errors).
     let canon_path = match Path::new(&fixed_path).canonicalize() {
         Ok(p) => p,
         Err(err) => {
@@ -332,22 +298,21 @@ async fn serve_fs(
         return serve_file(&canon_path, &req, language_lexers_compiled).await;
     }
 
-    // <p>It's not a directory or a file...we give up. For simplicity, don't
-    //     handle symbolic links.</p>
+    // It’s not a directory or a file…we give up. For simplicity, don’t handle symbolic links.
     html_not_found(&format!(
         "<p>The requested path <code>{}</code> is not a directory or a file.</p>",
         path_display(&canon_path)
     ))
 }
 
-/// <h3>Directory browser</h3>
-/// <p>Create a web page listing all files and subdirectories of the provided
-///     directory.</p>
+/// ### Directory browser
+///
+/// Create a web page listing all files and subdirectories of the provided directory.
 async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
-    // <p>Special case on Windows: list drive letters.</p>
+    // Special case on Windows: list drive letters.
     #[cfg(target_os = "windows")]
     if dir_path == Path::new("") {
-        // <p>List drive letters in Windows</p>
+        // List drive letters in Windows
         let mut drive_html = String::new();
         let logical_drives = match get_logical_drive() {
             Ok(v) => v,
@@ -370,7 +335,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         )));
     }
 
-    // <p>List each file/directory with appropriate links.</p>
+    // List each file/directory with appropriate links.
     let mut unwrapped_read_dir = match fs::read_dir(dir_path).await {
         Ok(p) => p,
         Err(err) => {
@@ -382,7 +347,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         }
     };
 
-    // <p>Get a listing of all files and directories</p>
+    // Get a listing of all files and directories
     let mut files: Vec<DirEntry> = Vec::new();
     let mut dirs: Vec<DirEntry> = Vec::new();
     loop {
@@ -402,7 +367,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
                     if file_type.is_file() {
                         files.push(dir_entry);
                     } else {
-                        // <p>Group symlinks with dirs.</p>
+                        // Group symlinks with dirs.
                         dirs.push(dir_entry);
                     }
                 } else {
@@ -414,7 +379,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             }
         };
     }
-    // <p>Sort them -- case-insensitive on Windows, normally on Linux/OS X.</p>
+    // Sort them – case-insensitive on Windows, normally on Linux/OS X.
     #[cfg(target_os = "windows")]
     let file_name_key = |a: &DirEntry| {
         Ok::<String, std::ffi::OsString>(a.file_name().into_string()?.to_lowercase())
@@ -425,7 +390,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     files.sort_unstable_by_key(file_name_key);
     dirs.sort_unstable_by_key(file_name_key);
 
-    // <p>Put this on the resulting webpage. List directories first.</p>
+    // Put this on the resulting webpage. List directories first.
     let mut dir_html = String::new();
     for dir in dirs {
         let dir_name = match dir.file_name().into_string() {
@@ -441,14 +406,9 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         dir_html += &format!(
             "<li><a href='/fs/{}{}{}'>{}</a></li>\n",
             web_path,
-            // <p>If this is a raw drive letter, then the path already ends with
-            //     a slash, such as <code>C:/</code>. Don't add a second slash
-            //     in this case. Otherwise, add a slash to make
-            //     <code>C:/foo</code> into <code>C:/foo/</code>.</p>
-            // <p>Likewise, the Linux root path of <code>/</code> already ends
-            //     with a slash, while all other paths such a <code>/foo</code>
-            //     don't. To detect this, look for an empty
-            //     <code>web_path</code>.</p>
+            // If this is a raw drive letter, then the path already ends with a slash, such as `C:/`. Don’t add a second slash in this case. Otherwise, add a slash to make `C:/foo` into `C:/foo/`.
+            //
+            // Likewise, the Linux root path of `/` already ends with a slash, while all other paths such a `/foo` don’t. To detect this, look for an empty `web_path`.
             if web_path.ends_with('/') || web_path.is_empty() {
                 ""
             } else {
@@ -459,7 +419,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         );
     }
 
-    // <p>List files second.</p>
+    // List files second.
     let mut file_html = String::new();
     for file in files {
         let file_name = match file.file_name().into_string() {
@@ -496,15 +456,14 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     HttpResponse::Ok().body(body)
 }
 
-// <h3>Serve a CodeChat Editor Client webpage</h3>
+// ### Serve a CodeChat Editor Client webpage
 async fn serve_file(
     file_path: &Path,
     req: &HttpRequest,
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> HttpResponse {
     let raw_dir = file_path.parent().unwrap();
-    // <p>Use a lossy conversion, since this is UI display, not filesystem
-    //     access.</p>
+    // Use a lossy conversion, since this is UI display, not filesystem access.
     let dir = escape_html(path_display(raw_dir).as_str());
     let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
     let ext = &file_path
@@ -512,7 +471,7 @@ async fn serve_file(
         .unwrap_or_else(|| OsStr::new(""))
         .to_string_lossy();
 
-    // <p>Get the <code>mode</code> and <code>test</code> query parameters.</p>
+    // Get the `mode` and `test` query parameters.
     let empty_string = "".to_string();
     let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
     let (mode, is_test_mode) = match query_params {
@@ -523,7 +482,7 @@ async fn serve_file(
         Err(_err) => (empty_string, false),
     };
 
-    // <p>Read the file.</p>
+    // Read the file.
     let mut file_contents = String::new();
     let read_ret = match File::open(file_path).await {
         Ok(fc) => fc,
@@ -540,15 +499,14 @@ async fn serve_file(
     
     // Categorize the file:
     //
-    // - A binary file (meaning we can't read the contents as UTF-8): just serve it raw. Assume this is an image/video/etc.
-    // - A text file - first determine the type. Based on the type:
-    //   - If it's an unknown type (such as a source file we don't know or a plain text file): just serve it raw.
-    //   - If the client requested a table of contents, then serve it wrapped in a CodeChat TOC.
-    //   - If it's Markdown or CCHTML, serve it wrapped in a CodeChat Document Editor.
-    //   - Otherwise, it must be a recognized file type. Serve it wrapped in a CodeChat Editor.
+    // *   A binary file (meaning we can’t read the contents as UTF-8): just serve it raw. Assume this is an image/video/etc.
+    // *   A text file - first determine the type. Based on the type:
+    //     *   If it’s an unknown type (such as a source file we don’t know or a plain text file): just serve it raw.
+    //     *   If the client requested a table of contents, then serve it wrapped in a CodeChat TOC.
+    //     *   If it’s Markdown or CCHTML, serve it wrapped in a CodeChat Document Editor.
+    //     *   Otherwise, it must be a recognized file type. Serve it wrapped in a CodeChat Editor.
     if let Err(_err) = read_ret {
-        // <p>TODO: make a better decision, don't duplicate code. The file type
-        //     is unknown. Serve it raw, assuming it's an image/video/etc.</p>
+        // TODO: make a better decision, don’t duplicate code. The file type is unknown. Serve it raw, assuming it’s an image/video/etc.
         match actix_files::NamedFile::open_async(file_path).await {
             Ok(v) => {
                 let res = v
@@ -569,9 +527,7 @@ async fn serve_file(
         }
     }
 
-    // <p>The TOC is a simplified web page requiring no additional processing.
-    //     The script ensures that all hyperlinks target the enclosing page, not
-    //     just the iframe containing this page.</p>
+    // The TOC is a simplified web page requiring no additional processing. The script ensures that all hyperlinks target the enclosing page, not just the iframe containing this page.
     if mode == "toc" {
         return HttpResponse::Ok().body(format!(
             r#"<!DOCTYPE html>
@@ -600,9 +556,9 @@ async fn serve_file(
         ));
     }
 
-    // <p>Determine the lexer to use for this file.</p>
+    // Determine the lexer to use for this file.
     let ace_mode;
-    // <p>First, search for a lexer directive in the file contents.</p>
+    // First, search for a lexer directive in the file contents.
     let lexer = if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
         ace_mode = captures[1].to_string();
         match language_lexers_compiled
@@ -613,15 +569,14 @@ async fn serve_file(
             None => return html_not_found(&format!("<p>Unknown lexer type {}.</p>", &ace_mode)),
         }
     } else {
-        // <p>Otherwise, look up the lexer by the file's extension.</p>
+        // Otherwise, look up the lexer by the file’s extension.
         if let Some(llc) = language_lexers_compiled
             .map_ext_to_lexer_vec
             .get(ext.as_ref())
         {
             llc.first().unwrap()
         } else {
-            // <p>The file type is unknown. Serve it raw, assuming it's an
-            //     image/video/etc.</p>
+            // The file type is unknown. Serve it raw, assuming it’s an image/video/etc.
             match actix_files::NamedFile::open_async(file_path).await {
                 Ok(v) => {
                     let res = v.into_response(req);
@@ -638,14 +593,14 @@ async fn serve_file(
         }
     };
 
-    // <p>Lex the code and put it in a JSON structure.</p>
+    // Lex the code and put it in a JSON structure.
     let mut code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
         vec![CodeDocBlock::CodeBlock(file_contents)]
     } else {
         source_lexer(&file_contents, lexer)
     };
 
-    // <p>Convert doc blocks from Markdown to HTML</p>
+    // Read non-standard markdown conversions from [markdown\_conversions.json](../../client/src/markdown_conversions.json) file
     #[derive(Debug, Deserialize)]
     struct Conversion {
         conversions: Vec<Entry>
@@ -659,17 +614,20 @@ async fn serve_file(
     let mut file = File::open("../client/src/markdown_conversions.json").await.unwrap();
     let mut buff = String::new();
     file.read_to_string(&mut buff).await.unwrap();
- 
     let conversion: Conversion = serde_json::from_str(&buff).unwrap();
 
     for code_doc_block in &mut code_doc_block_arr {
         if let CodeDocBlock::DocBlock(ref mut doc_block) = code_doc_block {
+            
+            // For each all document block contents, iterate through each character to look for new Markdown conversions. If symbol is found, insert corresponding HTML tag.
             let mut output_contents = Vec::new();
             let mut tag_open = false;
-            for c in doc_block.contents.chars() { 
+            let doc_block_contents = doc_block.contents.chars().collect::<Vec<char>>();
+            for i in 0..doc_block_contents.len() { 
                 let mut replaced = false;
                 for entry in &conversion.conversions {
-                    if c == entry.markdown {
+                    // Check if character matches a markdown conversion. Also check to ensure that subscript isn't converting '~~' so that strikethrough still works.
+                    if doc_block_contents[i] == entry.markdown && doc_block_contents[i+1] != entry.markdown && doc_block_contents[i-1] != entry.markdown {
                         if tag_open {
                             for tag_char in entry.close_tag.chars() {
                                 output_contents.push(tag_char);
@@ -686,12 +644,13 @@ async fn serve_file(
                 }
                 if !replaced {
                     {
-                        output_contents.push(c);
+                        output_contents.push(doc_block_contents[i]);
                     }
                 }
             }
             let output: String = output_contents.into_iter().map(|i| i.to_string()).collect::<String>();
-            
+           
+            // Convert doc blocks from Markdown to HTML
             let options = Options::all();
             let parser = Parser::new_ext(&output, options);
             let mut html_output = String::new();
@@ -716,14 +675,12 @@ async fn serve_file(
             ))
         }
     };
-    // <p>Look for any script tags and prevent these from causing problems.</p>
+    // Look for any script tags and prevent these from causing problems.
     let lexed_source_file_string = lexed_source_file_string.replace("</script>", "<\\/script>");
 
-    // <p>Look for a project file by searching the current directory, then all
-    //     its parents, for a file named <code>toc.cchtml</code>.</p>
+    // Look for a project file by searching the current directory, then all its parents, for a file named `toc.cchtml`.
     let mut is_project = false;
-    // <p>The number of directories between this file to serve (in
-    //     <code>path</code>) and the toc file.</p>
+    // The number of directories between this file to serve (in `path`) and the toc file.
     let mut path_to_toc = PathBuf::new();
     let mut current_dir = file_path.to_path_buf();
     loop {
@@ -741,7 +698,7 @@ async fn serve_file(
         path_to_toc.push("../");
     }
 
-    // <p>For project files, add in the sidebar.</p>
+    // For project files, add in the sidebar.
     let (sidebar_iframe, sidebar_css) = if is_project {
         (
             format!(
@@ -754,7 +711,7 @@ async fn serve_file(
         ("".to_string(), "")
     };
 
-    // <p>Add in content when testing.</p>
+    // Add in content when testing.
     let testing_src = if is_test_mode {
         r#"
         <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
@@ -764,7 +721,7 @@ async fn serve_file(
         ""
     };
 
-    // <p>Build and return the webpage.</p>
+    // Build and return the webpage.
     HttpResponse::Ok().body(format!(
         r##"<!DOCTYPE html>
 <html lang="en">
@@ -812,8 +769,10 @@ async fn serve_file(
     ))
 }
 
-// <h2>Utilities</h2>
-// <p>Given a <code>Path</code>, transform it into a displayable string.</p>
+// Utilities
+// ---------
+//
+// Given a `Path`, transform it into a displayable string.
 fn path_display(p: &Path) -> String {
     let path_orig = p.to_string_lossy();
     if cfg!(windows) {
@@ -823,12 +782,12 @@ fn path_display(p: &Path) -> String {
     }
 }
 
-// <p>Return a Not Found (404) errors with the provided HTML body.</p>
+// Return a Not Found (404) errors with the provided HTML body.
 fn html_not_found(msg: &str) -> HttpResponse {
     HttpResponse::NotFound().body(html_wrapper(msg))
 }
 
-// <p>Wrap the provided HTML body in DOCTYPE/html/head tags.</p>
+// Wrap the provided HTML body in DOCTYPE/html/head tags.
 fn html_wrapper(body: &str) -> String {
     format!(
         "<!DOCTYPE html>
@@ -846,8 +805,7 @@ fn html_wrapper(body: &str) -> String {
     )
 }
 
-// <p>Given text, escape it so it formats correctly as HTML. This is a
-//     translation of Python's <code>html.escape</code> function.</p>
+// Given text, escape it so it formats correctly as HTML. This is a translation of Python’s `html.escape` function.
 fn escape_html(unsafe_text: &str) -> String {
     unsafe_text
         .replace('&', "&amp;")
@@ -855,31 +813,30 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-// <h2>Webserver startup</h2>
+// Webserver startup
+// -----------------
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
-        // <p>Get the path to this executable. Assume that static files for the
-        //     webserver are located relative to it.</p>
+        // Get the path to this executable. Assume that static files for the webserver are located relative to it.
         let exe_path = env::current_exe().unwrap();
         let exe_dir = exe_path.parent().unwrap();
         let mut client_static_path = PathBuf::from(exe_dir);
         client_static_path.push("../../../client/static");
         client_static_path = client_static_path.canonicalize().unwrap();
 
-        // <p>Start the server.</p>
+        // Start the server.
         App::new()
             .app_data(web::Data::new(compile_lexers(LANGUAGE_LEXER_ARR)))
-            // <p>Serve static files per the <a
-            //         href="https://actix.rs/docs/static-files">docs</a>.</p>
+            // Serve static files per the [docs](https://actix.rs/docs/static-files).
             .service(actix_files::Files::new(
                 "/static",
                 client_static_path.as_os_str(),
             ))
-            // <p>This endpoint serves the filesystem.</p>
+            // This endpoint serves the filesystem.
             .service(serve_fs)
             .service(save_source)
-            // <p>Reroute to the filesystem for typical user-requested URLs.</p>
+            // Reroute to the filesystem for typical user-requested URLs.
             .route("/", web::get().to(_root_fs_redirect))
             .route("/fs", web::get().to(_root_fs_redirect))
     })
