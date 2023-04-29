@@ -72,9 +72,9 @@
 //
 // Text in nice colors
 //
-// Text in less-nice colors
+// ~~Text in less-nice colors
 //
-// A nice little table
+// A nice little table~~
 //
 // |     |     |     |     |     |
 // | --- | --- | --- | --- | --- |    

@@ -622,31 +622,64 @@ async fn serve_file(
             // For each all document block contents, iterate through each character to look for new Markdown conversions. If symbol is found, insert corresponding HTML tag.
             let mut output_contents = Vec::new();
             let mut tag_open = false;
-            let doc_block_contents = doc_block.contents.chars().collect::<Vec<char>>();
-            for i in 0..doc_block_contents.len() { 
-                let mut replaced = false;
-                for entry in &conversion.conversions {
-                    // Check if character matches a markdown conversion. Also check to ensure that subscript isn't converting '~~' so that strikethrough still works.
-                    if doc_block_contents[i] == entry.markdown && doc_block_contents[i+1] != entry.markdown && doc_block_contents[i-1] != entry.markdown {
-                        if tag_open {
-                            for tag_char in entry.close_tag.chars() {
-                                output_contents.push(tag_char);
+            let doc_block_lines = doc_block.contents.lines();
+            
+            for line in doc_block_lines {
+                let doc_block_contents = line.chars().collect::<Vec<char>>();
+                for i in 0..doc_block_contents.len() {
+                    let mut replaced = false;
+                    for entry in &conversion.conversions {
+                        // Check if character matches a markdown conversion.
+                        if doc_block_contents[i] == entry.markdown {
+                            let mut convert_to_html = false;
+
+                            if tag_open {
+                                for tag_char in entry.close_tag.chars() {
+                                    output_contents.push(tag_char);
+                                }
+                                tag_open = false;
+                                replaced = true;
+                            } 
+                            else {
+                                // Check to see if characters need converted to HTML. Only convert when the text has the correct format & not just anytime the symbol appears. 
+                                for j in i..doc_block_contents.len() {
+                                    if doc_block_contents[j] == entry.markdown {
+                                        convert_to_html = true;
+                                    }
+                                }
+                                // This is in place to ensure that subscript isn't converting '~~' so that strikethrough still works.
+                                if i == 0 {
+                                    if doc_block_contents[i+1] == entry.markdown {
+                                            convert_to_html = false;
+                                    }  
+                                }
+                                else if i == doc_block_contents.len() - 1 {
+                                    if doc_block_contents[i-1] == entry.markdown {
+                                        convert_to_html = false
+                                    }
+                                }
+                                else {
+                                    if doc_block_contents[i+1] == entry.markdown || doc_block_contents[i-1] == entry.markdown {
+                                        convert_to_html = false;
+                                    }
+                                }
+                                if convert_to_html {
+                                    for tag_char in entry.open_tag.chars() {
+                                        output_contents.push(tag_char);
+                                    }
+                                    tag_open = true;
+                                    replaced = true;
+                                }
                             }
                         } 
-                        else {
-                            for tag_char in entry.open_tag.chars() {
-                                output_contents.push(tag_char);
-                            }
+                    }
+                    if !replaced {
+                        {
+                            output_contents.push(doc_block_contents[i]);
                         }
-                        tag_open = !tag_open;
-                        replaced = true;
-                    } 
-                }
-                if !replaced {
-                    {
-                        output_contents.push(doc_block_contents[i]);
                     }
                 }
+                output_contents.push('\n');
             }
             let output: String = output_contents.into_iter().map(|i| i.to_string()).collect::<String>();
            
