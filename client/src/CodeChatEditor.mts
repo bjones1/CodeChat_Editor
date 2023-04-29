@@ -287,7 +287,6 @@ export const on_keydown = (event: KeyboardEvent) => {
 // Save CodeChat Editor contents.
 export const on_save = async () => {
     // This is the data to write — the source code. First, transform the HTML back into code and doc blocks.
-    console.log(turndownService);
     const source_code = editor_to_code_doc_blocks();
     // Then, wrap these in a [struct the server expects](../server/src/webserver.rs#ClientSourceFile) and send it.
     await save({
@@ -432,7 +431,6 @@ const editor_to_code_doc_blocks = () => {
                     80 - indent.length - (delimiter?.length ?? 1) - 1,
             });
             full_string = turndownService.turndown(full_string);
-            console.log(full_string);
         } else {
             throw `Unexpected class for code or doc block ${code_or_doc_tag}.`;
         }
