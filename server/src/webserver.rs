@@ -646,10 +646,54 @@ async fn serve_file(
     };
 
     // <p>Convert doc blocks from Markdown to HTML</p>
-    let options = Options::all();
+    #[derive(Debug, Deserialize)]
+    struct Conversion {
+        conversions: Vec<Entry>
+    }
+    #[derive(Debug, Deserialize)]
+    struct Entry {
+        open_tag: String,
+        close_tag: String,
+        markdown: char,
+    }
+    let mut file = File::open("../client/src/markdown_conversions.json").await.unwrap();
+    let mut buff = String::new();
+    file.read_to_string(&mut buff).await.unwrap();
+ 
+    let conversion: Conversion = serde_json::from_str(&buff).unwrap();
+
     for code_doc_block in &mut code_doc_block_arr {
         if let CodeDocBlock::DocBlock(ref mut doc_block) = code_doc_block {
-            let parser = Parser::new_ext(&doc_block.contents, options);
+            let mut output_contents = Vec::new();
+            let mut tag_open = false;
+            for c in doc_block.contents.chars() { 
+                let mut replaced = false;
+                for entry in &conversion.conversions {
+                    if c == entry.markdown {
+                        if tag_open {
+                            for tag_char in entry.close_tag.chars() {
+                                output_contents.push(tag_char);
+                            }
+                        } 
+                        else {
+                            for tag_char in entry.open_tag.chars() {
+                                output_contents.push(tag_char);
+                            }
+                        }
+                        tag_open = !tag_open;
+                        replaced = true;
+                    } 
+                }
+                if !replaced {
+                    {
+                        output_contents.push(c);
+                    }
+                }
+            }
+            let output: String = output_contents.into_iter().map(|i| i.to_string()).collect::<String>();
+            
+            let options = Options::all();
+            let parser = Parser::new_ext(&output, options);
             let mut html_output = String::new();
             html::push_html(&mut html_output, parser);
             doc_block.contents = html_output;

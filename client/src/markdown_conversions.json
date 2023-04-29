@@ -1,0 +1,18 @@
+{
+   "conversions": [
+        {
+            "name": "subscript",
+            "filter_tag": "sub",
+            "open_tag": "<sub>",
+            "close_tag": "</sub>",
+            "markdown": "~"
+        },
+        {
+            "name": "superscript",
+            "filter_tag": "sup",
+            "open_tag": "<sup>",
+            "close_tag": "</sup>",
+            "markdown": "^"
+        }
+    ]
+}
