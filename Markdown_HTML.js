@@ -57,10 +57,10 @@
 //         nice colors</span></p>
 // <p style="line-height: 1;">&nbsp;</p>
 // <p style="line-height: 1;"><span
-//         style="background-color: rgb(132, 63, 161); color: rgb(241, 196, 15);">Text
+//         style="background-color: rgb(132, 63, 161); color: rgb(241, 196, 15);">~~Text
 //         in less-nice colors</span></p>
 // <p style="line-height: 1;">&nbsp;</p>
-// <p>A nice little table</p>
+// <p>A nice little table~~</p>
 // <table style="border-collapse: collapse; width: 100.024%;" border="1">
 //     <colgroup>
 //         <col style="width: 20.0122%;">
