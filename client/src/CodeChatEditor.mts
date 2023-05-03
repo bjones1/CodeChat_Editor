@@ -46,9 +46,11 @@ import "./../static/css/CodeChatEditor.css";
 //
 // Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to Markdown conversion
 const turndownService = new TurndownService();
+const baseTurndownService = new TurndownService();
 
 // Add the plugins from [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
 turndownService.use(gfm);
+baseTurndownService.use(gfm);
 
 // Add each new rule for HTML to Markdown conversions into turndown. These rules are stored and added in from the [markdown\_conversions.json](markdown_conversions.json) file.
 for (let i = 0; i < MarkdownConversions.conversions.length; i++) {
@@ -60,7 +62,28 @@ for (let i = 0; i < MarkdownConversions.conversions.length; i++) {
       })
 }
 
-
+// Adapted from [this issue](https://github.com/mixmark-io/turndown/issues/152)
+interface HTMLEntityMap {
+    "<": string,
+    ">": string
+};
+turndownService.addRule("angle brackets",
+    {
+        filter: function (node: any, options: any){
+            const re = /(.*<.*>.*)+/g;
+            return(re.test(node.innerText));
+        },
+        replacement: function (content: string, node: any) {
+            let htmlEntityMap: HTMLEntityMap = {
+                "<": " &lt; ",
+                ">": " &gt; "
+            };
+            let formattedHTML: string = baseTurndownService.turndown(node.outerHTML);
+            let finalHTML: string = formattedHTML.replace(/[<>]/g, function(m) {return htmlEntityMap[m as keyof HTMLEntityMap]});
+            console.log(finalHTML);
+            return finalHTML;
+        }
+    });
   
 // Load code when the DOM is ready.
 export const page_init = (all_source: any) => {
