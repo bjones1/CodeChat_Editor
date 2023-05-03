@@ -46,10 +46,14 @@ import "./../static/css/CodeChatEditor.css";
 //
 // Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to Markdown conversion
 const turndownService = new TurndownService();
+
+// Generate a "base" version of the turndown plugin that will be used within the main one. This way, we can use the functionality during the special rules we add.
 const baseTurndownService = new TurndownService();
 
 // Add the plugins from [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
 turndownService.use(gfm);
+
+// Add the gfm capabilities to the base version too
 baseTurndownService.use(gfm);
 
 // Add each new rule for HTML to Markdown conversions into turndown. These rules are stored and added in from the [markdown\_conversions.json](markdown_conversions.json) file.
@@ -63,6 +67,7 @@ for (let i = 0; i < MarkdownConversions.conversions.length; i++) {
 }
 
 // Adapted from [this issue](https://github.com/mixmark-io/turndown/issues/152)
+// This rule is more complex than the above ones, so it is not in the .json file.
 interface HTMLEntityMap {
     "<": string,
     ">": string
@@ -78,9 +83,13 @@ turndownService.addRule("angle brackets",
                 "<": " &lt; ",
                 ">": " &gt; "
             };
+            // Convert the outer HTML of this node. This initial conversion handles things like
+            // converting "\<code\>" blocks to "\`backtick\`" blocks
             let formattedHTML: string = baseTurndownService.turndown(node.outerHTML);
+            // then, we take that turndown'd version, and replace the "\<" and "\>" characters
+            // with their escaped html entity counterparts. This keeps them from potentially
+            // acting as html tags when they are not.
             let finalHTML: string = formattedHTML.replace(/[<>]/g, function(m) {return htmlEntityMap[m as keyof HTMLEntityMap]});
-            console.log(finalHTML);
             return finalHTML;
         }
     });
