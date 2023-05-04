@@ -88,8 +88,8 @@ lazy_static! {
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r#"CodeChat Editor lexer: (\w+)"#).unwrap();
-    // Matches all < and > symbols not within backticks. This allows the HTML to escape only the necessary symbols
-    static ref ESCAPE_HTML_REGEX: fancy_regex::Regex = fancy_regex::Regex::new("[<>](?![^`]*`)").unwrap();
+    // Matches all < and > symbols not within backticks. This allows the HTML to escape only the necessary symbols. This regex was found on [StackOverflow](https://stackoverflow.com/questions/64561041/regular-expression-to-match-a-word-but-not-inside-backticks).
+    static ref ESCAPE_HTML_REGEX: fancy_regex::Regex = fancy_regex::Regex::new("[<>](?=(?:[^`]*`[^`]*`)*[^`]*$)").unwrap();
 }
 
 /// Save endpoint

@@ -36,7 +36,6 @@ import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
 import { gfm } from '@joplin/turndown-plugin-gfm';
 import TurndownService from "turndown";
 import MarkdownConversions from "../src/markdown_conversions.json";
-import MarkdownConversions from "../src/markdown_conversions.json";
 
 
 // ### CSS
@@ -67,33 +66,32 @@ for (let i = 0; i < MarkdownConversions.conversions.length; i++) {
       })
 }
 
-// Adapted from [this issue](https://github.com/mixmark-io/turndown/issues/152)
-// This rule is more complex than the above ones, so it is not in the .json file.
-interface HTMLEntityMap {
-    "<": string,
-    ">": string
-};
-turndownService.addRule("angle brackets",
-    {
-        filter: function (node: any, options: any){
-            const re = /(.*<.*>.*)+/g;
-            return(re.test(node.innerText));
-        },
-        replacement: function (content: string, node: any) {
-            let htmlEntityMap: HTMLEntityMap = {
-                "<": "&lt;",
-                ">": "&gt;"
-            };
-            // Convert the outer HTML of this node. This initial conversion handles things like
-            // converting "&lt;code&gt;" blocks to "\`backtick\`" blocks
-            let formattedHTML: string = baseTurndownService.turndown(node.outerHTML);
-            // then, we take that turndown'd version, and replace the "&lt;" and "&gt;" characters
-            // with their escaped html entity counterparts. This keeps them from potentially
-            // acting as html tags when they are not.
-            let finalHTML: string = formattedHTML.replace(/[<>]/g, function(m) {return htmlEntityMap[m as keyof HTMLEntityMap]});
-            return finalHTML;
-        }
-    });
+// Adapted from [this issue](https://github.com/mixmark-io/turndown/issues/152) This rule is more complex than the above ones, so it is not in the .json file. Add flag to test the client side solution for HTML escaping. Setting to false to test server side regex solution.
+const test_HTML_Escape = false;
+if (test_HTML_Escape) {
+    interface HTMLEntityMap {
+        "<": string,
+        ">": string
+    };
+    turndownService.addRule("angle brackets",
+        {
+            filter: function (node: any, options: any){
+                const re = /(.*<.*>.*)+/g;
+                return(re.test(node.innerText));
+            },
+            replacement: function (content: string, node: any) {
+                let htmlEntityMap: HTMLEntityMap = {
+                    "<": "&lt;",
+                    ">": "&gt;"
+                };
+                // Convert the outer HTML of this node. This initial conversion handles things like converting "<code>" blocks to "\`backtick\`" blocks
+                let formattedHTML: string = baseTurndownService.turndown(node.outerHTML);
+                // then, we take that turndown'd version, and replace the "<" and ">" characters with their escaped html entity counterparts. This keeps them from potentially acting as html tags when they are not.
+                let finalHTML: string = formattedHTML.replace(/[<>]/g, function(m) {return htmlEntityMap[m as keyof HTMLEntityMap]});
+                return finalHTML;
+            }
+        });
+}
 
 // Keep <a> anchor tags, because they get removed from Markdown otherwise
 turndownService.keep(["a"]);
