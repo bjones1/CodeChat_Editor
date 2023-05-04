@@ -21,164 +21,168 @@ Styles for the entire page layout
 ---------------------------------
 
 This is used only to store a reused variable value. See the [CSS docs](https://drafts.csswg.org/css-variables/). */
-:root {
-    --top-height: 6.7rem;
-    --body-padding: 0.2rem;
-}
-
-/* See [box sizing](https://css-tricks.com/box-sizing/) for the following technique to use `border-box` sizing. */
-html {
-    box-sizing: border-box;
-}
-
-*,
-*:before,
-*:after {
-    box-sizing: inherit;
-}
-
-body {
-    /* For box model simplicity, switch the padding and margin. */
-    padding: var(--body-padding);
-    margin: 0px;
-    /* The default of transparent makes VS Code’s black show up and confuse everything. For now, make it white. */
-    background: white;
-}
-
-/* Provide space at the top of the screen for the filename and TinyMCE menu bar. */
-#CodeChat-top {
-    height: var(--top-height);
-}
-
-/* The rest of the screen is the editor area. */
-#CodeChat-body {
-    height: calc(100vh - var(--top-height) - 2 * var(--body-padding));
-    overflow: auto;
-}
-
-/* Misc styling
+        :root {
+            --top-height: 6.7rem;
+            --body-padding: 0.2rem;
+        }
+        
+        /* See [box sizing](https://css-tricks.com/box-sizing/) for the following technique to use `border-box` sizing. */
+        html {
+            box-sizing: border-box;
+        }
+        
+        *,
+        *:before,
+        *:after {
+            box-sizing: inherit;
+        }
+        
+        body {
+            /* For box model simplicity, switch the padding and margin. */
+            padding: var(--body-padding);
+            margin: 0px;
+            /* The default of transparent makes VS Code's black show up and confuse everything. For now, make it white. */
+            background: white;
+        }
+        
+        /* Provide space at the top of the screen for the filename and TinyMCE menu bar. */
+        #CodeChat-top {
+            height: var(--top-height);
+        }
+        
+        /* The rest of the screen is the editor area. */
+        #CodeChat-body {
+            height: calc(100vh - var(--top-height) - 2 * var(--body-padding));
+            overflow: auto;
+        }
+        
+        /* Misc styling
 ------------
 
 Mark a hotkey. */
-.CodeChat-hotkey {
-    text-decoration: underline;
-}
-
-/* Make the filename compact. */
-#CodeChat-filename p {
-    margin: 0px;
-    white-space: nowrap;
-}
-
-/* Code block styling
+        .CodeChat-hotkey {
+            text-decoration: underline;
+        }
+        
+        /* Make the filename compact. */
+        #CodeChat-filename p {
+            margin: 0px;
+            white-space: nowrap;
+        }
+        
+        /* Code block styling
 ------------------
 
 Before the ACE Editor loads, use a monotype font. */
-.CodeChat-ACE {
-    font-family: monospace;
-    white-space: pre;
-    width: 100%;
-}
+        .CodeChat-ACE {
+            font-family: monospace;
+            white-space: pre;
+            width: 100%;
+        }
+        
+        .CodeChat-code {
+            /* Use [flexbox layout](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Flexible_Box_Layout/Basic_Concepts_of_Flexbox) to style code blocks. The goal of this layout is:
 
-.CodeChat-code {
-    /* Use [flexbox layout](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Flexible_Box_Layout/Basic_Concepts_of_Flexbox) to style code blocks. The goal of this layout is:
+<max line numbers spaces> <code>
 
-where the max line numbers spaces cause this code block’s line numbers to line up with all other code block line numbering. For example, if this code block is lines 9-23 (which the Ace editor will treat as a two-digit line number), but the largest line is 453 (three digits), then we need to insert one extra space to correct for the extra digit when the line number is > 99. A `<div class="CodeChat-ACE-gutter">` implements this indent. */
-    display: flex;
-}
+where the max line numbers spaces cause this code block's line numbers to line up with all other code block line numbering. For example, if this code block is lines 9-23 (which the Ace editor will treat as a two-digit line number), but the largest line is 453 (three digits), then we need to insert one extra space to correct for the extra digit when the line number is > 99. A `<div class="CodeChat-ACE-gutter">` implements this <max line numbers spaces> indent. */
+            display: flex;
+        }
+        
+        /* Style the max line numbers spaces element discussed above. */
+        .CodeChat-ACE-gutter {
+            font-family: monospace;
+            white-space: pre;
+            background-color: #f0f0f0;
+            /* Make the <max line number spaces> not expand or shrink, but take exactly the width required by the text (spaces) it contains. Defaults for the <code> element cause it to take the rest of the space on the line. */
+            flex: 0 0 auto;
+        }
+        
+        /* Hide the ACE Editor's cursor when it's inactive. */
+        .ace_hidden-cursors {
+            opacity: 0;
+        }
+        
+        /* Doc block styling
+----------------- */
+        .CodeChat-doc {
+            /* Use flexbox layout to style doc blocks. The approach is similar to code blocks; the overall goal is:
 
-/* `Style the max line numbers spaces element discussed above.` */
-.CodeChat-ACE-gutter {
-    font-family: monospace;
-    white-space: pre;
-    background-color: #f0f0f0;
-    /* `` Make the not expand or shrink, but take exactly the width required by the text (spaces) it contains. Defaults for the `element cause it to take the rest of the space on the line.` `` */
-    flex: 0 0 auto;
-}
-
-/* `` `Hide the ACE Editor’s cursor when it’s inactive.` `` */
-.ace_hidden-cursors {
-    opacity: 0;
-}
-
-/* `` `Doc block styling` ``
-------------------------- */
-.CodeChat-doc {
-    /* `` `Use flexbox layout to style doc blocks. The approach is similar to code blocks; the overall goal is:` ``
+<max line number spaces> <padding to match the ACE editor> <doc block indent> <doc block contents>
 
 where:
 
-*   `<div class="CodeChat-ACE-gutter-padding">` contains
-*   `<div class="CodeChat-ACE-padding">` contains
-*   `<div class="CodeChat-doc-indent">` contains
-*   `<div class="CodeChat-TinyMCE">` contains the */
-    display: flex;
-}
-
-/* `` `Match the ACE Editor gutter for doc blocks.` `` */
-.CodeChat-ACE-gutter-padding {
-    padding-left: 33px;
-    background-color: #f0f0f0;
-    /* `` `Make this not expand or shrink, but take exactly the width required by the text (spaces) it contains.` `` */
-    flex: 0 0 auto;
-    font-family: monospace;
-    white-space: pre;
-}
-
-/* `` `The ACE editor puts a bit of left padding in; match this so that code and doc blocks line up.` `` */
-.CodeChat-ACE-padding {
-    padding-left: 3px;
-}
-
-/* `` `Preserve whitespace in the indent of a doc block.` `` */
-.CodeChat-doc-indent {
-    /* `` `Make this not expand or shrink, but take exactly the width required by the text (spaces) it contains.` `` */
-    flex: 0 0 auto;
-    white-space: pre;
-    tab-size: 4;
-}
-
-/* `` `Remove the editor’s border when it’s selected, since this hides the cursor when the cursot is at the beginning of a line and isn’t necessary (the entire screen is an editor, not just that region.)` `` */
-.CodeChat-TinyMCE.mce-edit-focus {
-    outline-width: 0px;
-}
-
-/* `` `Combined code/doc block syling` ``
---------------------------------------
+*   `<div class="CodeChat-ACE-gutter-padding">` contains <max line number spaces>
+*   `<div class="CodeChat-ACE-padding">` contains <padding to match the ACE editor>
+*   `<div class="CodeChat-doc-indent">` contains <doc block indent>
+*   `<div class="CodeChat-TinyMCE">` contains the <doc block contents> */
+            display: flex;
+        }
+        
+        /* Match the ACE Editor gutter for doc blocks. */
+        .CodeChat-ACE-gutter-padding {
+            padding-left: 33px;
+            background-color: #f0f0f0;
+            /* Make this <max line number spaces> not expand or shrink, but take exactly the width required by the text (spaces) it contains. */
+            flex: 0 0 auto;
+            font-family: monospace;
+            white-space: pre;
+        }
+        
+        /* The ACE editor puts a bit of left padding in; match this so that code and doc blocks line up. */
+        .CodeChat-ACE-padding {
+            padding-left: 3px;
+        }
+        
+        /* Preserve whitespace in the indent of a doc block. */
+        .CodeChat-doc-indent {
+            /* Make this <doc block indent> not expand or shrink, but take exactly the width required by the text (spaces) it contains. */
+            flex: 0 0 auto;
+            white-space: pre;
+            tab-size: 4;
+        }
+        
+        /* Remove the editor's border when it's selected, since this hides the cursor when the cursot is at the beginning of a line and isn't necessary (the entire screen is an editor, not just that region.) */
+        .CodeChat-TinyMCE.mce-edit-focus {
+            outline-width: 0px;
+        }
+        
+        /* Combined code/doc block syling
+------------------------------
 
 Remove space between a code block followed by a doc block. Doc block elements typically have top margin and/or padding that produce this undesired space; remove it on the first element in the doc block, the first element of the first element in the doc block, etc. */
-.CodeChat-TinyMCE > *:first-child,
-.CodeChat-TinyMCE > *:first-child > *:first-child,
-.CodeChat-TinyMCE > *:first-child > *:first-child > *:first-child,
-.CodeChat-TinyMCE
-    > *:first-child
-    > *:first-child
-    > *:first-child
-    > *:first-child,
-.CodeChat-TinyMCE
-    > *:first-child
-    > *:first-child
-    > *:first-child
-    > *:first-child
-    > *:first-child {
-    margin-top: 0px;
-    padding-top: 0px;
-}
-
-/* [Remove space](remove-space) between a doc block followed by a code block. */
-.CodeChat-TinyMCE > *:last-child,
-.CodeChat-TinyMCE > *:last-child > *:last-child,
-.CodeChat-TinyMCE > *:last-child > *:last-child > *:last-child,
-.CodeChat-TinyMCE > *:last-child > *:last-child > *:last-child > *:last-child,
-.CodeChat-TinyMCE
-    > *:last-child
-    > *:last-child
-    > *:last-child
-    > *:last-child
-    > *:last-child {
-    margin-bottom: 0px;
-    padding-bottom: 0px;
-}
+        .CodeChat-TinyMCE > *:first-child,
+        .CodeChat-TinyMCE > *:first-child > *:first-child,
+        .CodeChat-TinyMCE > *:first-child > *:first-child > *:first-child,
+        .CodeChat-TinyMCE
+            > *:first-child
+            > *:first-child
+            > *:first-child
+            > *:first-child,
+        .CodeChat-TinyMCE
+            > *:first-child
+            > *:first-child
+            > *:first-child
+            > *:first-child
+            > *:first-child {
+            margin-top: 0px;
+            padding-top: 0px;
+        }
+        
+        /* [Remove space](remove-space) between a doc block followed by a code block. */
+        .CodeChat-TinyMCE > *:last-child,
+        .CodeChat-TinyMCE > *:last-child > *:last-child,
+        .CodeChat-TinyMCE > *:last-child > *:last-child > *:last-child,
+        .CodeChat-TinyMCE > *:last-child > *:last-child > *:last-child > *:last-child,
+        .CodeChat-TinyMCE
+            > *:last-child
+            > *:last-child
+            > *:last-child
+            > *:last-child
+            > *:last-child {
+            margin-bottom: 0px;
+            padding-bottom: 0px;
+        }
 
 /* Add a border around tables for converting back to HTML from Markdown. This class is used in [tinymce-webpack.mts](../../src/tinymce-webpack.mts) to add to all tables on initialization */
 .CodeChat-TinyMCE-TableDefault { 

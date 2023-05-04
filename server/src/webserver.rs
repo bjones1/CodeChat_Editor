@@ -34,7 +34,8 @@ use actix_web::{
 };
 use lazy_static::lazy_static;
 use pulldown_cmark::{html, Options, Parser};
-use regex::Regex;
+use regex::{Regex};
+use fancy_regex::{Captures};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::{
@@ -87,6 +88,8 @@ lazy_static! {
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r#"CodeChat Editor lexer: (\w+)"#).unwrap();
+    // Matches all < and > symbols not within backticks. This allows the HTML to escape only the necessary symbols
+    static ref ESCAPE_HTML_REGEX: fancy_regex::Regex = fancy_regex::Regex::new("[<>](?![^`]*`)").unwrap();
 }
 
 /// Save endpoint
@@ -126,7 +129,7 @@ async fn save_source(
                 delimiter: match &cdb.1 {
                     // The delimiter was provided. Simply use that.
                     Some(v) => v.to_string(),
-                    // No delimiter was provided – fill one in.
+                    // No delimiter was provided -- fill one in.
                     None => {
                         if let Some(ic) = inline_comment {
                             ic.to_string()
@@ -625,7 +628,14 @@ async fn serve_file(
             let doc_block_lines = doc_block.contents.lines();
             
             for line in doc_block_lines {
-                let doc_block_contents = line.chars().collect::<Vec<char>>();
+                let line_escaped = &ESCAPE_HTML_REGEX.replace_all(line, |cap: &Captures| {
+                    match &cap[0] {
+                        ">" => "&gt;",
+                        "<" => "&lt;",
+                        _ => panic!("Escape HTML Regex replace failed"),
+                    }.to_string()
+                }).to_string();
+                let doc_block_contents = line_escaped.chars().collect::<Vec<char>>();
                 for i in 0..doc_block_contents.len() {
                     let mut replaced = false;
                     for entry in &conversion.conversions {
@@ -641,7 +651,7 @@ async fn serve_file(
                                 replaced = true;
                             } 
                             else {
-                                // Check to see if characters need converted to HTML. Only convert when the text has the correct format & not just anytime the symbol appears. 
+                                // Check to see if characters need converted to HTML. Only convert when the text has the correct format & not just anytime the symbol appears.
                                 for j in i..doc_block_contents.len() {
                                     if doc_block_contents[j] == entry.markdown {
                                         convert_to_html = true;
@@ -684,7 +694,8 @@ async fn serve_file(
             let output: String = output_contents.into_iter().map(|i| i.to_string()).collect::<String>();
            
             // Convert doc blocks from Markdown to HTML
-            let options = Options::all();
+            let mut options = Options::all();
+            options.remove(Options::ENABLE_SMART_PUNCTUATION);
             let parser = Parser::new_ext(&output, options);
             let mut html_output = String::new();
             html::push_html(&mut html_output, parser);
