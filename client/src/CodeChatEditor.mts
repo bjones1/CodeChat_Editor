@@ -36,6 +36,7 @@ import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
 import { gfm } from '@joplin/turndown-plugin-gfm';
 import TurndownService from "turndown";
 import MarkdownConversions from "../src/markdown_conversions.json";
+import MarkdownConversions from "../src/markdown_conversions.json";
 
 
 // ### CSS

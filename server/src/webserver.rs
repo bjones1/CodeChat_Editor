@@ -603,9 +603,22 @@ async fn serve_file(
         source_lexer(&file_contents, lexer)
     };
 
-    // Convert doc blocks from Markdown to HTML
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_STRIKETHROUGH);
+    // Read non-standard markdown conversions from [markdown\_conversions.json](../../client/src/markdown_conversions.json) file
+    #[derive(Debug, Deserialize)]
+    struct Conversion {
+        conversions: Vec<Entry>
+    }
+    #[derive(Debug, Deserialize)]
+    struct Entry {
+        open_tag: String,
+        close_tag: String,
+        markdown: char,
+    }
+    let mut file = File::open("../client/src/markdown_conversions.json").await.unwrap();
+    let mut buff = String::new();
+    file.read_to_string(&mut buff).await.unwrap();
+    let conversion: Conversion = serde_json::from_str(&buff).unwrap();
+
     for code_doc_block in &mut code_doc_block_arr {
         if let CodeDocBlock::DocBlock(ref mut doc_block) = code_doc_block {
             
