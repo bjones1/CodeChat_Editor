@@ -53,13 +53,13 @@ use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexersCompiled}
 /// Data structures
 /// ---------------
 #[derive(Serialize, Deserialize)]
-/// Metadata about a source file sent along with it both to and from the client.
+/// <a id="SourceFileMetadata"></a>Metadata about a source file sent along with it both to and from the client.
 struct SourceFileMetadata {
     mode: String,
 }
 
 #[derive(Serialize, Deserialize)]
-/// A simple structure for accepting JSON input to the `save_source` endpoint. Use a tuple since serdes can auto-generate a deserializer for it.
+/// <a id="ClientSourceFile"></a>A simple structure for accepting JSON input to the `save_source` endpoint. Use a tuple since serdes can auto-generate a deserializer for it.
 struct ClientSourceFile {
     metadata: SourceFileMetadata,
     // TODO: implement a serdes deserializer that would convert this directly to a CodeDocBlock?
@@ -67,7 +67,7 @@ struct ClientSourceFile {
 }
 
 #[derive(Serialize)]
-/// Define the structure of JSON responses when sending a source file from the `/fs` endpoint.
+/// <a id="LexedSourceFile"></a>Define the structure of JSON responses when sending a source file from the `/fs` endpoint.
 struct LexedSourceFile {
     metadata: SourceFileMetadata,
     code_doc_block_arr: Vec<CodeDocBlock>,
@@ -126,7 +126,7 @@ async fn save_source(
                 delimiter: match &cdb.1 {
                     // The delimiter was provided. Simply use that.
                     Some(v) => v.to_string(),
-                    // No delimiter was provided – fill one in.
+                    // No delimiter was provided -- fill one in.
                     None => {
                         if let Some(ic) = inline_comment {
                             ic.to_string()
@@ -154,7 +154,7 @@ async fn save_source(
                 let mut append_doc_block = |indent: &str, delimiter: &str, contents: &str| {
                     file_contents += indent;
                     file_contents += delimiter;
-                    // Add a space between the delimiter and comment body, unless the comment was a newline or we’re at the end of the file.
+                    // Add a space between the delimiter and comment body, unless the comment was a newline or we're at the end of the file.
                     if contents.is_empty() || contents == "\n" {
                         // Nothing to append in this case.
                     } else {
@@ -273,7 +273,7 @@ async fn serve_fs(
     if DRIVE_LETTER_REGEX.is_match(&fixed_path) {
         fixed_path += "/";
     } else if fixed_path.is_empty() {
-        // If there’s no drive letter yet, we will always use `dir_listing` to select a drive.
+        // If there's no drive letter yet, we will always use `dir_listing` to select a drive.
         return dir_listing("", Path::new("")).await;
     }
     // All other cases (for example, `C:\a\path\to\file.txt`) are OK.
@@ -298,7 +298,7 @@ async fn serve_fs(
         return serve_file(&canon_path, &req, language_lexers_compiled).await;
     }
 
-    // It’s not a directory or a file…we give up. For simplicity, don’t handle symbolic links.
+    // It's not a directory or a file...we give up. For simplicity, don't handle symbolic links.
     html_not_found(&format!(
         "<p>The requested path <code>{}</code> is not a directory or a file.</p>",
         path_display(&canon_path)
@@ -379,7 +379,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             }
         };
     }
-    // Sort them – case-insensitive on Windows, normally on Linux/OS X.
+    // Sort them -- case-insensitive on Windows, normally on Linux/OS X.
     #[cfg(target_os = "windows")]
     let file_name_key = |a: &DirEntry| {
         Ok::<String, std::ffi::OsString>(a.file_name().into_string()?.to_lowercase())
@@ -406,9 +406,9 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         dir_html += &format!(
             "<li><a href='/fs/{}{}{}'>{}</a></li>\n",
             web_path,
-            // If this is a raw drive letter, then the path already ends with a slash, such as `C:/`. Don’t add a second slash in this case. Otherwise, add a slash to make `C:/foo` into `C:/foo/`.
+            // If this is a raw drive letter, then the path already ends with a slash, such as `C:/`. Don't add a second slash in this case. Otherwise, add a slash to make `C:/foo` into `C:/foo/`.
             //
-            // Likewise, the Linux root path of `/` already ends with a slash, while all other paths such a `/foo` don’t. To detect this, look for an empty `web_path`.
+            // Likewise, the Linux root path of `/` already ends with a slash, while all other paths such a `/foo` don't. To detect this, look for an empty `web_path`.
             if web_path.ends_with('/') || web_path.is_empty() {
                 ""
             } else {
@@ -506,7 +506,7 @@ async fn serve_file(
     //     *   If it’s Markdown or CCHTML, serve it wrapped in a CodeChat Document Editor.
     //     *   Otherwise, it must be a recognized file type. Serve it wrapped in a CodeChat Editor.
     if let Err(_err) = read_ret {
-        // TODO: make a better decision, don’t duplicate code. The file type is unknown. Serve it raw, assuming it’s an image/video/etc.
+        // TODO: make a better decision, don't duplicate code. The file type is unknown. Serve it raw, assuming it's an image/video/etc.
         match actix_files::NamedFile::open_async(file_path).await {
             Ok(v) => {
                 let res = v
@@ -569,14 +569,14 @@ async fn serve_file(
             None => return html_not_found(&format!("<p>Unknown lexer type {}.</p>", &ace_mode)),
         }
     } else {
-        // Otherwise, look up the lexer by the file’s extension.
+        // Otherwise, look up the lexer by the file's extension.
         if let Some(llc) = language_lexers_compiled
             .map_ext_to_lexer_vec
             .get(ext.as_ref())
         {
             llc.first().unwrap()
         } else {
-            // The file type is unknown. Serve it raw, assuming it’s an image/video/etc.
+            // The file type is unknown. Serve it raw, assuming it's an image/video/etc.
             match actix_files::NamedFile::open_async(file_path).await {
                 Ok(v) => {
                     let res = v.into_response(req);
@@ -600,92 +600,12 @@ async fn serve_file(
         source_lexer(&file_contents, lexer)
     };
 
-    // Read non-standard markdown conversions from [markdown\_conversions.json](../../client/src/markdown_conversions.json) file
-    #[derive(Debug, Deserialize)]
-    struct Conversion {
-        conversions: Vec<Entry>
-    }
-    #[derive(Debug, Deserialize)]
-    struct Entry {
-        open_tag: String,
-        close_tag: String,
-        markdown: char,
-    }
-    let mut file = File::open("../client/src/markdown_conversions.json").await.unwrap();
-    let mut buff = String::new();
-    file.read_to_string(&mut buff).await.unwrap();
-    let conversion: Conversion = serde_json::from_str(&buff).unwrap();
-
+    // Convert doc blocks from Markdown to HTML
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
     for code_doc_block in &mut code_doc_block_arr {
         if let CodeDocBlock::DocBlock(ref mut doc_block) = code_doc_block {
-            
-            // For each all document block contents, iterate through each character to look for new Markdown conversions. If symbol is found, insert corresponding HTML tag.
-            let mut output_contents = Vec::new();
-            let mut tag_open = false;
-            let doc_block_lines = doc_block.contents.lines();
-            
-            for line in doc_block_lines {
-                let doc_block_contents = line.chars().collect::<Vec<char>>();
-                for i in 0..doc_block_contents.len() {
-                    let mut replaced = false;
-                    for entry in &conversion.conversions {
-                        // Check if character matches a markdown conversion.
-                        if doc_block_contents[i] == entry.markdown {
-                            let mut convert_to_html = false;
-
-                            if tag_open {
-                                for tag_char in entry.close_tag.chars() {
-                                    output_contents.push(tag_char);
-                                }
-                                tag_open = false;
-                                replaced = true;
-                            } 
-                            else {
-                                // Check to see if characters need converted to HTML. Only convert when the text has the correct format & not just anytime the symbol appears. 
-                                for j in i..doc_block_contents.len() {
-                                    if doc_block_contents[j] == entry.markdown {
-                                        convert_to_html = true;
-                                    }
-                                }
-                                // This is in place to ensure that subscript isn't converting '~~' so that strikethrough still works.
-                                if i == 0 {
-                                    if doc_block_contents[i+1] == entry.markdown {
-                                            convert_to_html = false;
-                                    }  
-                                }
-                                else if i == doc_block_contents.len() - 1 {
-                                    if doc_block_contents[i-1] == entry.markdown {
-                                        convert_to_html = false
-                                    }
-                                }
-                                else {
-                                    if doc_block_contents[i+1] == entry.markdown || doc_block_contents[i-1] == entry.markdown {
-                                        convert_to_html = false;
-                                    }
-                                }
-                                if convert_to_html {
-                                    for tag_char in entry.open_tag.chars() {
-                                        output_contents.push(tag_char);
-                                    }
-                                    tag_open = true;
-                                    replaced = true;
-                                }
-                            }
-                        } 
-                    }
-                    if !replaced {
-                        {
-                            output_contents.push(doc_block_contents[i]);
-                        }
-                    }
-                }
-                output_contents.push('\n');
-            }
-            let output: String = output_contents.into_iter().map(|i| i.to_string()).collect::<String>();
-           
-            // Convert doc blocks from Markdown to HTML
-            let options = Options::all();
-            let parser = Parser::new_ext(&output, options);
+            let parser = Parser::new_ext(&doc_block.contents, options);
             let mut html_output = String::new();
             html::push_html(&mut html_output, parser);
             doc_block.contents = html_output;
@@ -838,7 +758,7 @@ fn html_wrapper(body: &str) -> String {
     )
 }
 
-// Given text, escape it so it formats correctly as HTML. This is a translation of Python’s `html.escape` function.
+// Given text, escape it so it formats correctly as HTML. This is a translation of Python's `html.escape` function.
 fn escape_html(unsafe_text: &str) -> String {
     unsafe_text
         .replace('&', "&amp;")

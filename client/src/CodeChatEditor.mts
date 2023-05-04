@@ -80,20 +80,23 @@ turndownService.addRule("angle brackets",
         },
         replacement: function (content: string, node: any) {
             let htmlEntityMap: HTMLEntityMap = {
-                "<": " &lt; ",
-                ">": " &gt; "
+                "<": "&lt;",
+                ">": "&gt;"
             };
             // Convert the outer HTML of this node. This initial conversion handles things like
-            // converting "\<code\>" blocks to "\`backtick\`" blocks
+            // converting "&lt;code&gt;" blocks to "\`backtick\`" blocks
             let formattedHTML: string = baseTurndownService.turndown(node.outerHTML);
-            // then, we take that turndown'd version, and replace the "\<" and "\>" characters
+            // then, we take that turndown'd version, and replace the "&lt;" and "&gt;" characters
             // with their escaped html entity counterparts. This keeps them from potentially
             // acting as html tags when they are not.
             let finalHTML: string = formattedHTML.replace(/[<>]/g, function(m) {return htmlEntityMap[m as keyof HTMLEntityMap]});
             return finalHTML;
         }
     });
-  
+
+// Keep <a> anchor tags, because they get removed from Markdown otherwise
+turndownService.keep(["a"]);
+
 // Load code when the DOM is ready.
 export const page_init = (all_source: any) => {
     // Use [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams) to parse out the search parameters of this window’s URL.
