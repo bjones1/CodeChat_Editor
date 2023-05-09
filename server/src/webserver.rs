@@ -272,7 +272,7 @@ fn save_source_as_string(
             }
         }
     }
-    return Ok(file_contents);
+    Ok(file_contents)
 }
 
 /// <p>A convenience method to fill out then return the
@@ -950,10 +950,7 @@ mod tests {
 
         // Test a doc block with no delimiter provided.
         assert_eq!(
-            run_test(
-                "python",
-                vec![("".to_string(), None, "Test".to_string())],
-            ),
+            run_test("python", vec![("".to_string(), None, "Test".to_string())],),
             "# Test"
         );
 
@@ -995,10 +992,7 @@ mod tests {
 
         // <p><strong>Pass an inline comment</strong></p>
         assert_eq!(
-            run_test(
-                "c_cpp",
-                vec![("".to_string(), None, "Test".to_string())],
-            ),
+            run_test("c_cpp", vec![("".to_string(), None, "Test".to_string())],),
             "// Test"
         );
 
