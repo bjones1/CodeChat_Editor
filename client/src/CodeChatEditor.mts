@@ -570,7 +570,7 @@ const unescapeHTML = (html: string): string => {
 
 // <p>True if this is a CodeChat Editor document (not a source file).</p>
 const is_doc_only = () => {
-    return current_metadata["mode"] === "codechat-html";
+    return current_metadata["mode"] === "markdown";
 };
 
 // <p>Per <a

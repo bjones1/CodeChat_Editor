@@ -2,6 +2,6 @@
 <p>This file provides a table of contents for a CodeChat Editor project.</p>
 <h2>Contents</h2>
 <ol>
-    <li><a href="README.cchtml">Readme</a></li>
-    <li><a href="toc.cchtml">Table of contents</a></li>
+    <li><a href="README.md">Readme</a></li>
+    <li><a href="toc.md">Table of contents</a></li>
 </ol>

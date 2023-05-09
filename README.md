@@ -23,21 +23,21 @@
     <li>In the <code>server/</code> directory, execute <code>cargo run</code>.
     </li>
     <li>Open <code>http://localhost:8080</code> in your browser.</li>
-    <li>Open the file <code>README.cchtml</code>.</li>
+    <li>Open the file <code>README.md</code>.</li>
 </ol>
 <h2><a id="vision"></a>1.2 Vision</h2>
 <p>These form a set of high-level requirements to guide the project.</p>
 <ul>
     <li>View source code as <a id="vision-code-blocks-and-doc-blocks"></a><a
-            href="index.cchtml#code-blocks-and-doc-blocks">code blocks and doc
+            href="index.md#code-blocks-and-doc-blocks">code blocks and doc
             blocks</a>. Doc blocks are lines of source which contain only
         correctly-formatted comments.</li>
     <li>Provide support for a <a
             id="vision-programming-language-support"></a><a
-            href="index.cchtml#programming-language-support">wide variety of
+            href="index.md#programming-language-support">wide variety of
             programming languages</a>.</li>
     <li>Provide integration with a <a id="vision-ide-integration"></a><a
-            href="index.cchtml#ide-integration">wide variety of IDEs/text
+            href="index.md#ide-integration">wide variety of IDEs/text
             editors</a>.</li>
     <li>Load a document from source code, allow edits in a GUI, then save it
         back to source code.
@@ -68,7 +68,7 @@
         </ul>
     </li>
     <li><a id="authoring-support"></a>Provide <a
-            href="index.cchtml#authoring-support">authoring support</a>, which
+            href="index.md#authoring-support">authoring support</a>, which
         allows authors to easily create book/project-like features. In
         particular:
         <ul>
@@ -129,7 +129,7 @@
     indents are combined into a single, larger doc block.</p>
 <pre>// This is all one doc block, since only the preceding<br>//   whitespace (there is none) matters, not the amount of <br>// whitespace following the opening comment delimiters.<br>  // This is the beginning of a different doc<br>  // block, since the indent is different.<br>    // Here's a third doc block; inline and block comments<br>    /* combine as long as the whitespace preceeding the comment<br>delimiters is identical. Whitespace inside the comment doesn't affect<br>       the classification. */<br>// These are two separate doc blocks,<br>void foo();<br>// since they are separated by a code block.</pre>
 <h3><a id="implementation-programming-language-support"></a><a
-        href="index.cchtml#programming-language-support">Programming language
+        href="index.md#programming-language-support">Programming language
         support</a></h3>
 <p>Initial targets come from the Stack Overflow Developer Survey 2022's section
     on&nbsp;<a

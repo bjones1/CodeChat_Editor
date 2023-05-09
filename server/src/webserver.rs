@@ -568,7 +568,7 @@ async fn serve_file(
     //                 know or a plain text file): just serve it raw.</li>
     //             <li>If the client requested a table of contents, then serve
     //                 it wrapped in a CodeChat TOC.</li>
-    //             <li>If it's Markdown or CCHTML, serve it wrapped in a
+    //             <li>If it's Markdown, serve it wrapped in a
     //                 CodeChat Document Editor.</li>
     //             <li>Otherwise, it must be a recognized file type. Serve it
     //                 wrapped in a CodeChat Editor.</li>
@@ -668,7 +668,7 @@ async fn serve_file(
     };
 
     // <p>Lex the code and put it in a JSON structure.</p>
-    let mut code_doc_block_arr = if lexer.language_lexer.ace_mode == "codechat-html" {
+    let mut code_doc_block_arr = if lexer.language_lexer.ace_mode == "markdown" {
         vec![CodeDocBlock::CodeBlock(file_contents)]
     } else {
         source_lexer(&file_contents, lexer)
@@ -706,7 +706,7 @@ async fn serve_file(
     let lexed_source_file_string = lexed_source_file_string.replace("</script>", "<\\/script>");
 
     // <p>Look for a project file by searching the current directory, then all
-    //     its parents, for a file named <code>toc.cchtml</code>.</p>
+    //     its parents, for a file named <code>toc.md</code>.</p>
     let mut is_project = false;
     // <p>The number of directories between this file to serve (in
     //     <code>path</code>) and the toc file.</p>
@@ -714,10 +714,10 @@ async fn serve_file(
     let mut current_dir = file_path.to_path_buf();
     loop {
         let mut project_file = current_dir.clone();
-        project_file.push("toc.cchtml");
+        project_file.push("toc.md");
         if project_file.is_file() {
             path_to_toc.pop();
-            path_to_toc.push("toc.cchtml");
+            path_to_toc.push("toc.md");
             is_project = true;
             break;
         }
