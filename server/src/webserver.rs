@@ -110,13 +110,50 @@ async fn save_source(
     //     source code.</p>
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
+    // <p>Takes the source file and the lexer and saves the source as a string.
+    // </p>
+    let (file_contents, _) = save_source_as_string(client_source_file, language_lexers_compiled);
+
+    // <h3>Save file</h3>
+    // <p>Save this string to a file. Add a leading slash for Linux: this
+    //     changes from&nbsp;<code>foo/bar.c</code> to <code>/foo/bar.c</code>.
+    //     Windows already starts with a drive letter, such as
+    //     <code>C:\foo\bar.c</code>, so no changes are needed.</p>
+    let save_file_path = if cfg!(windows) {
+        "".to_string()
+    } else {
+        "/".to_string()
+    } + &encoded_path;
+    match fs::write(save_file_path.to_string(), file_contents).await {
+        Ok(v) => v,
+        Err(err) => {
+            return save_source_response(
+                false,
+                &format!("Unable to save file {}: {}.", save_file_path, err),
+            )
+        }
+    }
+
+    save_source_response(true, "")
+}
+
+// <p>This function takes in a file with code and doc blocks and outputs a
+//     string of the contents for testing.</p>
+fn save_source_as_string(
+    // <p>The file to save plus metadata, stored in the
+    //     <code>ClientSourceFile</code></p>
+    client_source_file: web::Json<ClientSourceFile>,
+    // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
+    //     source code.</p>
+    language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
+) -> (String, impl Responder) {
     // <p>Given the mode, find the lexer.</p>
     let lexer = match language_lexers_compiled
         .map_mode_to_lexer
         .get(client_source_file.metadata.mode.as_str())
     {
         Some(v) => v,
-        None => return save_source_response(false, "Invalid mode"),
+        None => return (String::new(), save_source_response(false, "Invalid mode")),
     };
 
     // <p>Turn this back into code and doc blocks by filling in any missing
@@ -144,10 +181,10 @@ async fn save_source(
                         } else if let Some(bc) = block_comment {
                             bc.opening.to_string()
                         } else {
-                            return save_source_response(
+                            return (String::new(), save_source_response(
                                 false,
                                 "Neither inline nor block comments are defined for this language.",
-                            );
+                            ));
                         }
                     }
                 },
@@ -202,11 +239,14 @@ async fn save_source(
                     {
                         Some(index) => lexer.language_lexer.block_comment_delim_arr[index].closing,
                         None => {
-                            return save_source_response(
-                                false,
-                                &format!(
-                                    "Unknown block comment opening delimiter '{}'.",
-                                    doc_block.delimiter
+                            return (
+                                String::new(),
+                                save_source_response(
+                                    false,
+                                    &format!(
+                                        "Unknown block comment opening delimiter '{}'.",
+                                        doc_block.delimiter
+                                    ),
                                 ),
                             )
                         }
@@ -232,27 +272,7 @@ async fn save_source(
             }
         }
     }
-
-    // <p>Save this string to a file. Add a leading slash for Linux: this
-    //     changes from <code>foo/bar.c</code> to <code>/foo/bar.c</code>.
-    //     Windows already starts with a drive letter, such as
-    //     <code>C:\foo\bar.c</code>, so no changes are needed.</p>
-    let save_file_path = if cfg!(windows) {
-        "".to_string()
-    } else {
-        "/".to_string()
-    } + &encoded_path;
-    match fs::write(save_file_path.to_string(), file_contents).await {
-        Ok(v) => v,
-        Err(err) => {
-            return save_source_response(
-                false,
-                &format!("Unable to save file {}: {}.", save_file_path, err),
-            )
-        }
-    }
-
-    save_source_response(true, "")
+    return (file_contents, save_source_response(false, ""));
 }
 
 /// <p>A convenience method to fill out then return the
@@ -537,15 +557,24 @@ async fn serve_file(
     }
     .read_to_string(&mut file_contents)
     .await;
-    
-    // Categorize the file:
-    //
-    // - A binary file (meaning we can't read the contents as UTF-8): just serve it raw. Assume this is an image/video/etc.
-    // - A text file - first determine the type. Based on the type:
-    //   - If it's an unknown type (such as a source file we don't know or a plain text file): just serve it raw.
-    //   - If the client requested a table of contents, then serve it wrapped in a CodeChat TOC.
-    //   - If it's Markdown or CCHTML, serve it wrapped in a CodeChat Document Editor.
-    //   - Otherwise, it must be a recognized file type. Serve it wrapped in a CodeChat Editor.
+
+    // <p>Categorize the file:</p>
+    // <ul>
+    //     <li>A binary file (meaning we can't read the contents as UTF-8): just
+    //         serve it raw. Assume this is an image/video/etc.</li>
+    //     <li>A text file - first determine the type. Based on the type:
+    //         <ul>
+    //             <li>If it's an unknown type (such as a source file we don't
+    //                 know or a plain text file): just serve it raw.</li>
+    //             <li>If the client requested a table of contents, then serve
+    //                 it wrapped in a CodeChat TOC.</li>
+    //             <li>If it's Markdown or CCHTML, serve it wrapped in a
+    //                 CodeChat Document Editor.</li>
+    //             <li>Otherwise, it must be a recognized file type. Serve it
+    //                 wrapped in a CodeChat Editor.</li>
+    //         </ul>
+    //     </li>
+    // </ul>
     if let Err(_err) = read_ret {
         // <p>TODO: make a better decision, don't duplicate code. The file type
         //     is unknown. Serve it raw, assuming it's an image/video/etc.</p>
@@ -843,4 +872,164 @@ pub async fn main() -> std::io::Result<()> {
     .bind(("127.0.0.1", 8080))?
     .run()
     .await
+}
+
+// <h2>&nbsp;</h2>
+// <h2>Tests</h2>
+// <p>As mentioned in the lexer.rs tests, Rust <a
+//         href="https://doc.rust-lang.org/book/ch11-03-test-organization.html">almost
+//         mandates</a> putting tests in the same file as the source. Here's
+//     some <a
+//         href="http://xion.io/post/code/rust-unit-test-placement.html">good
+//         information</a> on how to put tests in another file, for future
+//     refactoring reference.</p>
+// <p>&nbsp;</p>
+#[cfg(test)]
+
+// <h3>Save Endpoint Testing</h3>
+mod tests {
+    use crate::webserver::save_source_as_string;
+    use crate::webserver::{
+        compile_lexers, ClientSourceFile, SourceFileMetadata, LANGUAGE_LEXER_ARR,
+    };
+    use actix_web::web::Data;
+
+    // <h3><span style="text-decoration: underline;">Python Tests</span></h3>
+    #[test]
+    fn test_save_endpoint_py() {
+        // <p><strong>Pass nothing to the function.</strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "python".to_string(),
+            },
+            code_doc_block_arr: vec![("".to_string(), Some("".to_string()), "".to_string())],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "");
+
+        // <p style="padding-left: 40px;"><strong>Pass without comment
+        //         delimiter<br></strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "python".to_string(),
+            },
+            code_doc_block_arr: vec![("".to_string(), Some("".to_string()), "Test".to_string())],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "Test");
+        // <p><strong>Pass a space as content with no delimiter<br></strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "python".to_string(),
+            },
+            code_doc_block_arr: vec![("".to_string(), Some("".to_string()), " ".to_string())],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, " ");
+
+        // <p><strong>Pass a test comment.</strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "python".to_string(),
+            },
+            code_doc_block_arr: vec![("".to_string(), Some("#".to_string()), "Test".to_string())],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "# Test");
+        //
+
+        // <p><strong>Pass an inline comment</strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "python".to_string(),
+            },
+            code_doc_block_arr: vec![(
+                "".to_string(),
+                Some("".to_string()),
+                "This is some code # with an inline comment".to_string(),
+            )],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "This is some code # with an inline comment");
+    }
+
+    // <h3><span style="text-decoration: underline;">C / C++ Tests</span></h3>
+    #[test]
+    fn test_save_endpoint_cpp() {
+        // <p><strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Pass nothing to the
+        //         function</strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "c_cpp".to_string(),
+            },
+            code_doc_block_arr: vec![("".to_string(), Some("".to_string()), "".to_string())],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "");
+
+        // <p><strong>Pass text without comment delimiter</strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "c_cpp".to_string(),
+            },
+            code_doc_block_arr: vec![("".to_string(), Some("".to_string()), "Test".to_string())],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "Test");
+
+        // <p><strong>Pass an inline comment</strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "c_cpp".to_string(),
+            },
+            code_doc_block_arr: vec![("".to_string(), Some("//".to_string()), "Test".to_string())],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "// Test");
+
+        // <p><strong>Pass space as content with no delimiter</strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "c_cpp".to_string(),
+            },
+            code_doc_block_arr: vec![("".to_string(), Some("".to_string()), " ".to_string())],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, " ");
+        
+        // <p><strong>Pass a block comment</strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "c_cpp".to_string(),
+            },
+            code_doc_block_arr: vec![("".to_string(), Some("".to_string()), "/* This is a block comment */".to_string())],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, " This is a block comment ");
+
+        // <p><strong>Pass code with an inline comment</strong></p>
+        let test_source_file = ClientSourceFile {
+            metadata: SourceFileMetadata {
+                mode: "c_cpp".to_string(),
+            },
+            code_doc_block_arr: vec![(
+                "".to_string(),
+                Some("".to_string()),
+                "This is some code // with an inline comment".to_string(),
+            )],
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let (file_contents, _) = save_source_as_string(actix_web::web::Json(test_source_file), llc);
+        assert_eq!(file_contents, "This is some code // with an inline comment");
+    }
 }

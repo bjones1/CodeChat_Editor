@@ -73,6 +73,8 @@
                         <ol>
                             <li><a href="server/src/lib.rs?test">Run tests</a>
                             </li>
+                            <li><a href="unit_test_README.cchtml">Unit Test
+                                    ReadMe</a></li>
                         </ol>
                     </li>
                 </ol>
