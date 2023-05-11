@@ -21,6 +21,7 @@
 /// <h2>Imports</h2>
 /// <h3>Standard library</h3>
 use std::{
+    borrow::Cow,
     collections::HashMap,
     env,
     ffi::OsStr,
@@ -72,7 +73,7 @@ struct ClientSourceFile {
     code_doc_block_arr: Vec<(String, Option<String>, String)>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 /// The format used by CodeMirror to serialize/deserialize editor contents.
 struct CodeMirror<'a> {
     /// The document being edited.
@@ -83,16 +84,16 @@ struct CodeMirror<'a> {
         usize,
         // To
         usize,
-        // indent
-        &'a str,
+        // indent. This might be a borrowed reference or an owned reference. When the lexer transforms code and doc blocks into this CodeMirror format, a borrow from those existing doc blocks is more efficient. However, deserialization from JSON requires ownership, since the Actix web framework doesn't provide a place to borrow from. The following variables are clone-on-write for the same reason.
+        Cow<'a, String>,
         // delimiter
-        &'a str,
+        Cow<'a, String>,
         // contents
-        &'a str,
+        Cow<'a, String>,
     )>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 /// <p><a id="LexedSourceFile"></a>Define the structure of JSON responses when
 ///     sending a source file from the <code>/fs</code> endpoint.</p>
 struct LexedSourceFile<'a> {
@@ -120,18 +121,24 @@ lazy_static! {
 #[put("/fs/{path:.*}")]
 /// <p>The Save button in the CodeChat Editor Client posts to this endpoint with
 ///     the path of the file to save.</p>
-async fn save_source(
+async fn save_source<'a>(
     // <p>The path to save this file to.</p>
     encoded_path: web::Path<String>,
     // <p>The file to save plus metadata, stored in the
     //     <code>ClientSourceFile</code></p>
-    client_source_file: web::Json<ClientSourceFile>,
+    // client_source_file: web::Json<ClientSourceFile>,
+    lexed_source_file: web::Json<LexedSourceFile<'a>>,
+
     // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
     //     source code.</p>
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
     // <p>Given the mode, find the lexer.</p>
-    let lexer = match language_lexers_compiled
+
+    // Call function to convert from CodeMirror to CodeDocBlockArray
+    let client_source_file = code_mirror_to_client(&lexed_source_file.source, &lexed_source_file);
+
+    let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match language_lexers_compiled
         .map_mode_to_lexer
         .get(client_source_file.metadata.mode.as_str())
     {
@@ -699,9 +706,9 @@ async fn serve_file(
                             len,
                             // To. Make this one line short, which allows CodeMirror to correctly handle inserts at the first character of the following code block.
                             len + doc_block.lines - 1,
-                            &doc_block.indent,
-                            &doc_block.delimiter,
-                            &doc_block.contents,
+                            std::borrow::Cow::Borrowed(&doc_block.indent),
+                            std::borrow::Cow::Borrowed(&doc_block.delimiter),
+                            std::borrow::Cow::Borrowed(&doc_block.contents),
                         ));
                         // Append newlines to the document; the doc block will replace these in the editor. This keeps the line numbering of non-doc blocks correct.
                         code_mirror.doc.push_str(&"\n".repeat(doc_block.lines));
@@ -871,6 +878,74 @@ fn markdown_to_html(markdown: &str) -> String {
     html::push_html(&mut html_output, parser);
     html_output
 }
+
+// Conversion Function
+// This function takes in two parameters, the CodeMirror Structure and the Metadata from the Lexed Source File
+// This function returns the struct: ClientSourceFile to finish this conversion
+fn code_mirror_to_client(code_mirror: &CodeMirror, meta: &LexedSourceFile) -> ClientSourceFile {
+    //Declare 3 mutable variables. The CodeDocBlockArray to append all changes to, and a index for the last docblock and current 
+    let mut code_doc_block_arr: Vec<(String, Option<String>, String)> = Vec::new();
+    let mut current_idx: usize = 0;
+    let mut last_doc_block_idx: Option<usize> = None;
+    
+    // Iterate through Code Mirror Structure
+    for (idx, _) in code_mirror.doc.match_indices('\n') {
+        if let Some((from, to, indent, delimiter, contents)) = code_mirror
+            .doc_blocks
+            .iter()
+            .find(|(from, to, _, _, _)| *from <= current_idx && *to >= idx)
+        {
+            // Check if the current line belongs to a doc block
+            if let Some(doc_block_idx) = last_doc_block_idx {
+                // Merge consecutive doc blocks by appending the contents
+                let (_, _, prev_content) = &mut code_doc_block_arr[doc_block_idx];
+                *prev_content = format!("{}{}{}{}", prev_content, indent, delimiter, contents);
+            } else {
+                // Append a new code/doc block to the array
+                code_doc_block_arr.push((
+                code_mirror
+                    .doc
+                    .get(current_idx..*from)
+                    .unwrap_or("")
+                    .to_string(),
+                Some(indent.to_string()),
+                format!("{}{}", delimiter, contents),
+                ));
+            last_doc_block_idx = Some(code_doc_block_arr.len() - 1);
+            }
+            current_idx = *to + 1;
+        } else {
+            // Else the current line is part of a code block, not a doc block
+            code_doc_block_arr.push((
+                code_mirror
+                    .doc
+                    .get(current_idx..idx)
+                    .unwrap_or("")
+                    .to_string(),
+                None,
+                    "".to_string(),
+            ));
+            last_doc_block_idx = None;
+            current_idx = idx + 1;
+        }
+    }
+
+    // Handle the remaining part of the document after the last newline
+    code_doc_block_arr.push((
+        code_mirror.doc.get(current_idx..).unwrap_or("").to_string(),
+        None,
+        "".to_string(),
+    ));
+
+    // Create and return a ClientSourceFile with the converted data
+    ClientSourceFile {
+        metadata: SourceFileMetadata {
+            mode: meta.metadata.mode.clone(),
+        },
+        code_doc_block_arr,
+    }
+    }
+
 
 // <h2>Webserver startup</h2>
 #[actix_web::main]
