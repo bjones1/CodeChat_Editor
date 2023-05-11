@@ -21,6 +21,7 @@
 /// <h2>Imports</h2>
 /// <h3>Standard library</h3>
 use std::{
+    borrow::Cow,
     collections::HashMap,
     env,
     ffi::OsStr,
@@ -53,14 +54,10 @@ use super::lexer::compile_lexers;
 use super::lexer::supported_languages::LANGUAGE_LEXER_ARR;
 use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexersCompiled};
 
-
 /// <h2>Data structures</h2>
 #[derive(Serialize, Deserialize)]
 /// <p><a id="SourceFileMetadata"></a>Metadata about a source file sent along
 ///     with it both to and from the client.</p>
-
-/// Added so the metadata from the CodeMirror Format can be cloned to the Old Client Source File Format
-#[derive(Clone)]
 struct SourceFileMetadata {
     mode: String,
 }
@@ -87,15 +84,14 @@ struct CodeMirror<'a> {
         usize,
         // To
         usize,
-        // indent
-        &'a str,
+        // indent. This might be a borrowed reference or an owned reference. When the lexer transforms code and doc blocks into this CodeMirror format, a borrow from those existing doc blocks is more efficient. However, deserialization from JSON requires ownership, since the Actix web framework doesn't provide a place to borrow from. The following variables are clone-on-write for the same reason.
+        Cow<'a, String>,
         // delimiter
-        &'a str,
+        Cow<'a, String>,
         // contents
-        &'a str,
+        Cow<'a, String>,
     )>,
 }
-
 
 #[derive(Serialize, Deserialize)]
 /// <p><a id="LexedSourceFile"></a>Define the structure of JSON responses when
@@ -131,7 +127,6 @@ async fn save_source<'a>(
     // <p>The file to save plus metadata, stored in the
     //     <code>ClientSourceFile</code></p>
     // client_source_file: web::Json<ClientSourceFile>,
-
     lexed_source_file: web::Json<LexedSourceFile<'a>>,
 
     // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
@@ -153,16 +148,16 @@ async fn save_source<'a>(
 
     // <p>Turn this back into code and doc blocks by filling in any missing
     //     comment delimiters.</p>
-    // This line assigns the variable 'inline_comment' with what a inline comment would look like in this file. 
+    // This line assigns the variable 'inline_comment' with what a inline comment would look like in this file.
     let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
     // This line assigns the variable 'block_comment' with what a block comment would look like in this file.
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
-    // The vector 'code_doc_block_vec' is what is used to store the strings from the site. There is an indent, a delimeter, and the contents. 
+    // The vector 'code_doc_block_vec' is what is used to store the strings from the site. There is an indent, a delimeter, and the contents.
     // Each index in a vector has those three parameters.
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
     // 'some_empty' is just a string "".
     let some_empty = Some("".to_string());
-    // This for loop sorts the data from the site into code blocks and doc blocks. 
+    // This for loop sorts the data from the site into code blocks and doc blocks.
     for cdb in &client_source_file.code_doc_block_arr {
         let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
         code_doc_block_vec.push(if is_code_block {
@@ -711,9 +706,9 @@ async fn serve_file(
                             len,
                             // To. Make this one line short, which allows CodeMirror to correctly handle inserts at the first character of the following code block.
                             len + doc_block.lines - 1,
-                            &doc_block.indent,
-                            &doc_block.delimiter,
-                            &doc_block.contents,
+                            std::borrow::Cow::Borrowed(&doc_block.indent),
+                            std::borrow::Cow::Borrowed(&doc_block.delimiter),
+                            std::borrow::Cow::Borrowed(&doc_block.contents),
                         ));
                         // Append newlines to the document; the doc block will replace these in the editor. This keeps the line numbering of non-doc blocks correct.
                         code_mirror.doc.push_str(&"\n".repeat(doc_block.lines));
@@ -888,39 +883,39 @@ fn markdown_to_html(markdown: &str) -> String {
 // This function takes in two parameters, the CodeMirror Structure and the Metadata from the Lexed Source File
 // This function returns the struct: ClientSourceFile to finish this conversion
 fn code_mirror_to_client(code_mirror: &CodeMirror, meta: &LexedSourceFile) -> ClientSourceFile {
-    // Create 3 mutable variables, an empty vector to store the code/doc block array, the index to iterate through, and another to determine the end of the doc. 
+    //Declare 3 mutable variables. The CodeDocBlockArray to append all changes to, and a index for the last docblock and current 
     let mut code_doc_block_arr: Vec<(String, Option<String>, String)> = Vec::new();
     let mut current_idx: usize = 0;
-    let mut last_was_doc: bool = false;
-    // Start a loop that iterates over each line in the doc string using the 'match_indices' method to find each occurence of the newline character
+    let mut last_doc_block_idx: Option<usize> = None;
+    
+    // Iterate through Code Mirror Structure
     for (idx, _) in code_mirror.doc.match_indices('\n') {
-        // Take the range of characters that must be put in place of the new line. Then find that spot in the doc block. Iterate through and find those specific characters
-        // If it is a code block
         if let Some((from, to, indent, delimiter, contents)) = code_mirror
             .doc_blocks
             .iter()
             .find(|(from, to, _, _, _)| *from <= current_idx && *to >= idx)
-        {   
-            // If the last appended was a doc block
-            if last_was_doc {
-                let (prev_indent, _, prev_content) = code_doc_block_arr.last_mut().unwrap();
-                *prev_content = format!("{}\n{}{}{}", prev_content, indent, delimiter, contents);
+        {
+            // Check if the current line belongs to a doc block
+            if let Some(doc_block_idx) = last_doc_block_idx {
+                // Merge consecutive doc blocks by appending the contents
+                let (_, _, prev_content) = &mut code_doc_block_arr[doc_block_idx];
+                *prev_content = format!("{}{}{}{}", prev_content, indent, delimiter, contents);
             } else {
-                //append to the code_doc_block_arr in the old format
+                // Append a new code/doc block to the array
                 code_doc_block_arr.push((
-                    code_mirror
-                        .doc
-                        .get(current_idx..*from)
-                        .unwrap_or("")
-                        .to_string(),
-                    Some(indent.to_string()),
-                    format!("{}{}", delimiter, contents),
+                code_mirror
+                    .doc
+                    .get(current_idx..*from)
+                    .unwrap_or("")
+                    .to_string(),
+                Some(indent.to_string()),
+                format!("{}{}", delimiter, contents),
                 ));
+            last_doc_block_idx = Some(code_doc_block_arr.len() - 1);
             }
-            last_was_doc = true;
             current_idx = *to + 1;
-        // If it is not a code block, append to the code_doc_block_arr in the old format
         } else {
+            // Else the current line is part of a code block, not a doc block
             code_doc_block_arr.push((
                 code_mirror
                     .doc
@@ -928,23 +923,28 @@ fn code_mirror_to_client(code_mirror: &CodeMirror, meta: &LexedSourceFile) -> Cl
                     .unwrap_or("")
                     .to_string(),
                 None,
-                "".to_string(),
+                    "".to_string(),
             ));
-            last_was_doc = false;
+            last_doc_block_idx = None;
             current_idx = idx + 1;
         }
     }
+
+    // Handle the remaining part of the document after the last newline
     code_doc_block_arr.push((
         code_mirror.doc.get(current_idx..).unwrap_or("").to_string(),
         None,
         "".to_string(),
     ));
-    // Add all pushed to a new client source file struct that will be returned. 
+
+    // Create and return a ClientSourceFile with the converted data
     ClientSourceFile {
-        metadata: meta.metadata.clone(),
+        metadata: SourceFileMetadata {
+            mode: meta.metadata.mode.clone(),
+        },
         code_doc_block_arr,
     }
-}
+    }
 
 
 // <h2>Webserver startup</h2>
