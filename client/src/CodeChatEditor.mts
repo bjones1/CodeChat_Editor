@@ -33,9 +33,8 @@ import "./graphviz-webcomponent-setup.mts";
 import "./graphviz-webcomponent/index.min.mjs";
 import { html_beautify } from "js-beautify";
 import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
-import { gfm } from '@joplin/turndown-plugin-gfm';
-import TurndownService from "turndown";
-
+import { gfm } from "@joplin/turndown-plugin-gfm";
+import TurndownService from "./turndown/turndown.browser.es.js";
 
 // ### CSS
 import "./../static/css/CodeChatEditor.css";
