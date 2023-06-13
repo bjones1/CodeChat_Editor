@@ -44,15 +44,29 @@
 // <h3>JavaScript/TypeScript</h3>
 import { ace } from "./ace-webpack.mjs";
 import "./EditorComponents.mjs";
+import { gfm } from "@joplin/turndown-plugin-gfm";
+import prettier from "prettier/esm/standalone.mjs";
+import parserMarkdown from "prettier/esm/parser-markdown.mjs";
 import "./graphviz-webcomponent-setup.mts";
 import "./graphviz-webcomponent/index.min.mjs";
-import { html_beautify } from "js-beautify";
 import { tinymce, tinymce_init } from "./tinymce-webpack.mjs";
+// @ts-ignore - Turndown doesn't have types.
+import TurndownService from "./turndown/turndown.browser.es.js";
 
 // <h3>CSS</h3>
 import "./../static/css/CodeChatEditor.css";
 
 // <h2>Initialization</h2>
+// Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to Markdown conversion
+const turndownService = new TurndownService({
+    br: "\\",
+    codeBlockStyle: "fenced",
+    renderAsPure: false,
+});
+
+// Add the plugins from [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
+turndownService.use(gfm);
+
 // <p>Load code when the DOM is ready.</p>
 export const page_init = (all_source: any) => {
     // <p>Use <a
@@ -473,12 +487,12 @@ const editor_to_code_doc_blocks = () => {
         //     block.</p>
         let delimiter: string | null = "";
         // <p>A string containing all the code/docs in this block.</p>
-        let full_string;
+        let markdown;
 
         // <p>Get the type of this block and its contents.</p>
         if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
             // <p>See if the Ace editor was applied to this element.</p>
-            full_string =
+            markdown =
                 // <p>TypeScript knows that an element doesn't have a
                 //     <code>env</code> attribute; ignore this, since Ace
                 //     elements do.</p>
@@ -515,11 +529,21 @@ const editor_to_code_doc_blocks = () => {
                 tinymce_inst === null
                     ? code_or_doc_tag.innerHTML
                     : tinymce_inst.getContent();
+            markdown = turndownService.turndown(html);
             // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters,
             //     including the length of the indent and comment string.</p>
-            full_string = html_beautify(html, {
-                wrap_line_length:
-                    80 - indent.length - (delimiter?.length ?? 1) - 1,
+            markdown = prettier.format(markdown, {
+                // See [prettier from ES modules](https://prettier.io/docs/en/browser.html#es-modules).
+                parser: "markdown",
+                // TODO:
+                //
+                // -    Unfortunately, Prettier doesn't know how to format HTML embedded in Markdown; see [issue 8480](https://github.com/prettier/prettier/issues/8480).
+                // -    Prettier formats headings using the ATX style; this isn't configurable per the [source](https://github.com/prettier/prettier/blob/main/src/language-markdown/printer-markdown.js#L228).
+                plugins: [parserMarkdown],
+                // See [prettier options](https://prettier.io/docs/en/options.html).
+                printWidth: 80 - indent.length - (delimiter?.length ?? 1) - 1,
+                // Without this option, most lines aren't wrapped.
+                proseWrap: "always",
             });
         } else {
             throw `Unexpected class for code or doc block ${code_or_doc_tag}.`;
@@ -527,7 +551,7 @@ const editor_to_code_doc_blocks = () => {
 
         // <p>There's an implicit newline at the end of each block; restore it.
         // </p>
-        full_string += "\n";
+        markdown += "\n";
 
         // <p>Merge this with previous classified line if indent and delimiter
         //     are the same; otherwise, add a new entry.</p>
@@ -536,9 +560,9 @@ const editor_to_code_doc_blocks = () => {
             classified_lines.at(-1)![0] === indent &&
             classified_lines.at(-1)![1] == delimiter
         ) {
-            classified_lines.at(-1)![2] += full_string;
+            classified_lines.at(-1)![2] += markdown;
         } else {
-            classified_lines.push([indent, delimiter, full_string]);
+            classified_lines.push([indent, delimiter, markdown]);
         }
     }
 

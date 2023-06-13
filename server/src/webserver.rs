@@ -675,8 +675,9 @@ async fn serve_file(
     };
 
     // <p>Convert doc blocks from Markdown to HTML</p>
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_STRIKETHROUGH);
+    let mut options = Options::all();
+    // Turndown (which converts HTML back to Markdown) doesn't support smart punctuation.
+    options.remove(Options::ENABLE_SMART_PUNCTUATION);
     for code_doc_block in &mut code_doc_block_arr {
         if let CodeDocBlock::DocBlock(ref mut doc_block) = code_doc_block {
             let parser = Parser::new_ext(&doc_block.contents, options);

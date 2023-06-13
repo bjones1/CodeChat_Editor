@@ -76,6 +76,8 @@ export const tinymce_init = async (
             // </p>
             plugins:
                 "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
+            // Using this to disable the emoji images and force the unicode instead
+            emoticons_database: "emojis",
             // <p>The imports above apply the skins; don't try to dynamically
             //     load the skin's CSS.</p>
             skin: false,

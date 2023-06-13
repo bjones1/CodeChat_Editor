@@ -207,3 +207,10 @@ body {
     margin-bottom: 0px;
     padding-bottom: 0px;
 }
+
+/* Provide nicer defaults for tables. */
+.CodeChat-TinyMCE > table, .CodeChat-TinyMCE > th, .CodeChat-TinyMCE > tr {
+    border-collapse: collapse;
+    /* TODO: unfortunately, this get overridden by the TinyMCE skin. */
+    border: 1px solid;
+}
