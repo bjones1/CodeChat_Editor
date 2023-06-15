@@ -17,7 +17,7 @@
 //
 // # Big h1 Text
 //
-// ## h2 Text 
+// ## h2 Text
 //
 // ### h3 Text
 //
