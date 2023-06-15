@@ -625,7 +625,7 @@ async fn serve_file(
 	</body>
 </html>
 "#,
-            name, file_contents
+            name, markdown_to_html(&file_contents)
         ));
     }
 
@@ -669,21 +669,15 @@ async fn serve_file(
 
     // <p>Lex the code and put it in a JSON structure.</p>
     let mut code_doc_block_arr = if lexer.language_lexer.ace_mode == "markdown" {
-        vec![CodeDocBlock::CodeBlock(file_contents)]
+        vec![CodeDocBlock::DocBlock(DocBlock { indent: "".to_string(), delimiter: "".to_string(), contents: file_contents })]
     } else {
         source_lexer(&file_contents, lexer)
     };
 
     // <p>Convert doc blocks from Markdown to HTML</p>
-    let mut options = Options::all();
-    // Turndown (which converts HTML back to Markdown) doesn't support smart punctuation.
-    options.remove(Options::ENABLE_SMART_PUNCTUATION);
     for code_doc_block in &mut code_doc_block_arr {
         if let CodeDocBlock::DocBlock(ref mut doc_block) = code_doc_block {
-            let parser = Parser::new_ext(&doc_block.contents, options);
-            let mut html_output = String::new();
-            html::push_html(&mut html_output, parser);
-            doc_block.contents = html_output;
+            doc_block.contents = markdown_to_html(&doc_block.contents);
         }
     }
 
@@ -840,6 +834,16 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+fn markdown_to_html(markdown: &str) -> String {
+    let mut options = Options::all();
+    // Turndown (which converts HTML back to Markdown) doesn't support smart punctuation.
+    options.remove(Options::ENABLE_SMART_PUNCTUATION);
+    let parser = Parser::new_ext(markdown, options);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
+    html_output
 }
 
 // <h2>Webserver startup</h2>
