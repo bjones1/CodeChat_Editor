@@ -44,7 +44,7 @@
 // <h3>JavaScript/TypeScript</h3>
 import { ace } from "./ace-webpack.mjs";
 import "./EditorComponents.mjs";
-import { gfm } from "@joplin/turndown-plugin-gfm";
+import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
 import prettier from "prettier/esm/standalone.mjs";
 import parserMarkdown from "prettier/esm/parser-markdown.mjs";
 import "./graphviz-webcomponent-setup.mts";

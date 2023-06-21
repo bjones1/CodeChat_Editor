@@ -89,7 +89,7 @@ function Node (node, options) {
       // Check to see how many of the allowed attributes match the actual attributes.
       let allowedLength = 0;
       for (const [key, value] of Object.entries(d)) {
-        if (key in node.attributes && (value === undefined || node.attributes[key] === value)) {
+        if (key in node.attributes && (value === undefined || node.attributes[key].value === value)) {
           ++allowedLength;
         }
       }
