@@ -29,7 +29,7 @@
 //
 // Underlined Text
 //
-// ~~Strikethrough Text~~
+// ~Strikethrough Text~
 //
 // - Unordered List 1
 // - Unordered List 2
@@ -39,9 +39,9 @@
 // 2.  Ordered List 2
 // 3.  Ordered List 3
 //
-// *   [ ] Task list 1
-// *   [x] Task list 2
-// *   [ ] Task list 3
+// - [ ] Task list 1
+// - [x] Task list 2
+// - [ ] Task list 3
 //
 // Text in superscript and subscript
 //
@@ -77,7 +77,7 @@
 //
 // A nice little table
 //
-// |     |     |     |     |     |
+// |     |     |     |     |     |
 // | --- | --- | --- | --- | --- |
 // | a   | b   | c   | d   | e   |
 // | b   | c   | d   | e   | f   |
