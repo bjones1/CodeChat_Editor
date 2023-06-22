@@ -487,12 +487,12 @@ const editor_to_code_doc_blocks = () => {
         //     block.</p>
         let delimiter: string | null = "";
         // <p>A string containing all the code/docs in this block.</p>
-        let markdown;
+        let full_string;
 
         // <p>Get the type of this block and its contents.</p>
         if (code_or_doc_tag.classList.contains("CodeChat-ACE")) {
             // <p>See if the Ace editor was applied to this element.</p>
-            markdown =
+            full_string =
                 // <p>TypeScript knows that an element doesn't have a
                 //     <code>env</code> attribute; ignore this, since Ace
                 //     elements do.</p>
@@ -500,6 +500,10 @@ const editor_to_code_doc_blocks = () => {
                 code_or_doc_tag.env === undefined
                     ? unescapeHTML(code_or_doc_tag.innerHTML)
                     : ace.edit(code_or_doc_tag).getValue();
+
+            // <p>There's an implicit newline at the end of each block; restore it.
+            // </p>
+            full_string += "\n";
         } else if (code_or_doc_tag.classList.contains("CodeChat-TinyMCE")) {
             // <p>Get the indent from the previous table cell. For a CodeChat
             //     Editor document, there's no indent (it's just a doc block).
@@ -529,10 +533,10 @@ const editor_to_code_doc_blocks = () => {
                 tinymce_inst === null
                     ? code_or_doc_tag.innerHTML
                     : tinymce_inst.getContent();
-            markdown = turndownService.turndown(html);
+            const markdown = turndownService.turndown(html);
             // <p>The HTML from TinyMCE is a mess! Wrap at 80 characters,
             //     including the length of the indent and comment string.</p>
-            markdown = prettier.format(markdown, {
+            full_string = prettier.format(markdown, {
                 // See [prettier from ES modules](https://prettier.io/docs/en/browser.html#es-modules).
                 parser: "markdown",
                 // TODO:
@@ -549,10 +553,6 @@ const editor_to_code_doc_blocks = () => {
             throw `Unexpected class for code or doc block ${code_or_doc_tag}.`;
         }
 
-        // <p>There's an implicit newline at the end of each block; restore it.
-        // </p>
-        markdown += "\n";
-
         // <p>Merge this with previous classified line if indent and delimiter
         //     are the same; otherwise, add a new entry.</p>
         if (
@@ -560,9 +560,9 @@ const editor_to_code_doc_blocks = () => {
             classified_lines.at(-1)![0] === indent &&
             classified_lines.at(-1)![1] == delimiter
         ) {
-            classified_lines.at(-1)![2] += markdown;
+            classified_lines.at(-1)![2] += full_string;
         } else {
-            classified_lines.push([indent, delimiter, markdown]);
+            classified_lines.push([indent, delimiter, full_string]);
         }
     }
 
