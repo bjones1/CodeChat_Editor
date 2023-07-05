@@ -1206,7 +1206,7 @@ is inferred to `any`, and should be explicitly set if you want type
 checking.
 */
 declare type DOMEventHandlers<This> = {
-    [event in keyof DOMEventMap]?: (this: This, event: DOMEventMap[event], view: EditorView) => boolean | void;
+    [event in keyof DOMEventMap]?: (this: This, event: DOMEventMap[event], view: EditorView) => boolean | void | null;
 };
 
 /**

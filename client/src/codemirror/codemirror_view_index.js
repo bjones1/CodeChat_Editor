@@ -3537,9 +3537,7 @@ class InputState {
                 return;
             if (this.mustFlushObserver(event))
                 view.observer.forceFlush();
-            if (this.runCustomHandlers(event.type, view, event))
-                event.preventDefault();
-            else
+            if (!this.runCustomHandlers(event.type, view, event))
                 handler(view, event);
         };
         for (let type in handlers) {
@@ -3604,8 +3602,7 @@ class InputState {
                         view.contentDOM.addEventListener(type, (event) => {
                             if (!eventBelongsToEditor(view, event))
                                 return;
-                            if (this.runCustomHandlers(type, view, event))
-                                event.preventDefault();
+                            this.runCustomHandlers(type, view, event);
                         });
                     }
             }
@@ -3615,8 +3612,12 @@ class InputState {
             let handler = set.handlers[type];
             if (handler) {
                 try {
-                    if (handler.call(set.plugin, event, view) || event.defaultPrevented)
+                    let h = handler.call(set.plugin, event, view);
+                    if (h || event.defaultPrevented) {
+                        event.preventDefault();
                         return true;
+                    }
+                    if (h === null) return true;
                 }
                 catch (e) {
                     logException(view.state, e);
