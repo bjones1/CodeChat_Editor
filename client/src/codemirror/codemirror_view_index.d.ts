@@ -1,25 +1,21 @@
-import * as _codemirror_state from "@codemirror/state";
-import {
-    RangeSet,
-    RangeValue,
-    Range,
-    EditorState,
-    Extension,
-    Transaction,
-    ChangeSet,
-    EditorSelection,
-    EditorStateConfig,
-    TransactionSpec,
-    SelectionRange,
-    Line,
-    StateEffect,
-    Facet,
-} from "@codemirror/state";
-import { StyleModule, StyleSpec } from "style-mod";
+import * as _codemirror_state from '@codemirror/state';
+import { RangeSet, RangeValue, Range, EditorState, Extension, Transaction, ChangeSet, EditorSelection, EditorStateConfig, TransactionSpec, SelectionRange, Line, StateEffect, Facet } from '@codemirror/state';
+import { StyleModule, StyleSpec } from 'style-mod';
 
 declare type Attrs = {
     [name: string]: string;
 };
+
+/**
+Basic rectangle type.
+*/
+interface Rect {
+    readonly left: number;
+    readonly right: number;
+    readonly top: number;
+    readonly bottom: number;
+}
+declare type ScrollStrategy = "nearest" | "start" | "end" | "center";
 
 interface MarkDecorationSpec {
     /**
@@ -74,14 +70,24 @@ interface WidgetDecorationSpec {
     cursor is on the same position. Otherwise, it'll be drawn before
     it. When multiple widgets sit at the same position, their `side`
     values will determine their ordering—those with a lower value
-    come first. Defaults to 0.
+    come first. Defaults to 0. May not be more than 10000 or less
+    than -10000.
     */
     side?: number;
+    /**
+    By default, to avoid unintended mixing of block and inline
+    widgets, block widgets with a positive `side` are always drawn
+    after all inline widgets at that position, and those with a
+    non-positive side before inline widgets. Setting this option to
+    `true` for a block widget will turn this off and cause it to be
+    rendered between the inline widgets, ordered by `side`.
+    */
+    inlineOrder?: boolean;
     /**
     Determines whether this is a block widgets, which will be drawn
     between lines, or an inline widget (the default) which is drawn
     between the surrounding text.
-
+    
     Note that block-level decorations should not have vertical
     margins, and if you dynamically change their height, you should
     make sure to call
@@ -178,11 +184,26 @@ declare abstract class WidgetType {
     */
     get estimatedHeight(): number;
     /**
+    For inline widgets that are displayed inline (as opposed to
+    `inline-block`) and introduce line breaks (through `<br>` tags
+    or textual newlines), this must indicate the amount of line
+    breaks they introduce. Defaults to 0.
+    */
+    get lineBreaks(): number;
+    /**
     Can be used to configure which kinds of events inside the widget
     should be ignored by the editor. The default is to ignore all
     events.
     */
     ignoreEvent(event: Event): boolean;
+    /**
+    Override the way screen coordinates for positions at/in the
+    widget are found. `pos` will be the offset into the widget, and
+    `side` the side of the position that is being queried—less than
+    zero for before, greater than zero for after, and zero for
+    directly at that position.
+    */
+    coordsAt(dom: HTMLElement, pos: number, side: number): Rect | null;
     /**
     This is called when the an instance of the widget is removed
     from the editor view.
@@ -214,7 +235,7 @@ declare enum BlockType {
     /**
     A block widget [replacing](https://codemirror.net/6/docs/ref/#view.Decoration^replace) a range of content.
     */
-    WidgetRange = 3,
+    WidgetRange = 3
 }
 /**
 A decoration provides information on how to draw or style a piece
@@ -230,25 +251,24 @@ declare abstract class Decoration extends RangeValue {
     */
     readonly spec: any;
     protected constructor(
-        /**
+    /**
     @internal
     */
-        startSide: number,
-        /**
+    startSide: number, 
+    /**
     @internal
     */
-        endSide: number,
-        /**
+    endSide: number, 
+    /**
     @internal
     */
-        widget: WidgetType | null,
-        /**
+    widget: WidgetType | null, 
+    /**
     The config object used to create this decoration. You can
     include additional properties in there to store metadata about
     your decoration.
     */
-        spec: any
-    );
+    spec: any);
     abstract eq(other: Decoration): boolean;
     /**
     Create a mark decoration, which influences the styling of the
@@ -280,26 +300,12 @@ declare abstract class Decoration extends RangeValue {
     decorated range or ranges. If the ranges aren't already sorted,
     pass `true` for `sort` to make the library sort them for you.
     */
-    static set(
-        of: Range<Decoration> | readonly Range<Decoration>[],
-        sort?: boolean
-    ): DecorationSet;
+    static set(of: Range<Decoration> | readonly Range<Decoration>[], sort?: boolean): DecorationSet;
     /**
     The empty set of decorations.
     */
     static none: DecorationSet;
 }
-
-/**
-Basic rectangle type.
-*/
-interface Rect {
-    readonly left: number;
-    readonly right: number;
-    readonly top: number;
-    readonly bottom: number;
-}
-declare type ScrollStrategy = "nearest" | "start" | "end" | "center";
 
 /**
 Command functions are used in key bindings and other types of user
@@ -321,11 +327,7 @@ Either calls a handler registered with
 `window.onerror`, if defined, or `console.error` (in which case
 it'll pass `context`, when given, as first argument).
 */
-declare function logException(
-    state: EditorState,
-    exception: any,
-    context?: string
-): void;
+declare function logException(state: EditorState, exception: any, context?: string): void;
 /**
 This is the interface plugin objects conform to.
 */
@@ -388,20 +390,14 @@ declare class ViewPlugin<V extends PluginValue> {
     Define a plugin from a constructor function that creates the
     plugin's value, given an editor view.
     */
-    static define<V extends PluginValue>(
-        create: (view: EditorView) => V,
-        spec?: PluginSpec<V>
-    ): ViewPlugin<V>;
+    static define<V extends PluginValue>(create: (view: EditorView) => V, spec?: PluginSpec<V>): ViewPlugin<V>;
     /**
     Create a plugin for a class whose constructor takes a single
     editor view as argument.
     */
-    static fromClass<V extends PluginValue>(
-        cls: {
-            new (view: EditorView): V;
-        },
-        spec?: PluginSpec<V>
-    ): ViewPlugin<V>;
+    static fromClass<V extends PluginValue>(cls: {
+        new (view: EditorView): V;
+    }, spec?: PluginSpec<V>): ViewPlugin<V>;
 }
 interface MeasureRequest<T> {
     /**
@@ -489,22 +485,18 @@ interface MouseSelectionStyle {
     with the event passed here. In case of a plain click, those may
     both be the `mousedown` event, in case of a drag gesture, the
     latest `mousemove` event will be passed.
-
+    
     When `extend` is true, that means the new selection should, if
     possible, extend the start selection. If `multiple` is true, the
     new selection should be added to the original selection.
     */
-    get: (
-        curEvent: MouseEvent,
-        extend: boolean,
-        multiple: boolean
-    ) => EditorSelection;
+    get: (curEvent: MouseEvent, extend: boolean, multiple: boolean) => EditorSelection;
     /**
     Called when the view is updated while the gesture is in
     progress. When the document changes, it may be necessary to map
     some data (like the original selection or start position)
     through the changes.
-
+    
     This may return `true` to indicate that the `get` method should
     get queried again after the update, because something in the
     update could change its result. Be wary of infinite loops when
@@ -513,10 +505,7 @@ interface MouseSelectionStyle {
     */
     update: (update: ViewUpdate) => boolean | void;
 }
-declare type MakeSelectionStyle = (
-    view: EditorView,
-    event: MouseEvent
-) => MouseSelectionStyle | null;
+declare type MakeSelectionStyle = (view: EditorView, event: MouseEvent) => MouseSelectionStyle | null;
 
 /**
 Record used to represent information about a block-level element
@@ -544,7 +533,7 @@ declare class BlockInfo {
     The type of element this is. When querying lines, this may be
     an array of all the blocks that make up the line.
     */
-    readonly type: BlockType | readonly BlockInfo[];
+    get type(): BlockType | readonly BlockInfo[];
     /**
     The end of the element as a document position.
     */
@@ -553,6 +542,16 @@ declare class BlockInfo {
     The bottom position of the element.
     */
     get bottom(): number;
+    /**
+    If this is a widget block, this will return the widget
+    associated with it.
+    */
+    get widget(): WidgetType | null;
+    /**
+    If this is a textblock, this holds the number of line breaks
+    that appear in widgets inside the block.
+    */
+    get widgetLineBreaks(): number;
 }
 
 /**
@@ -566,7 +565,7 @@ declare enum Direction {
     /**
     Right-to-left.
     */
-    RTL = 1,
+    RTL = 1
 }
 /**
 Represents a contiguous range of text that has a single direction
@@ -628,7 +627,7 @@ interface EditorViewConfig extends EditorStateConfig {
     if provided, should probably call the view's [`update`
     method](https://codemirror.net/6/docs/ref/#view.EditorView.update).
     */
-    dispatch?: (tr: Transaction) => void;
+    dispatch?: (tr: Transaction, view: EditorView) => void;
 }
 /**
 An editor view represents the editor's user interface. It holds
@@ -828,18 +827,14 @@ declare class EditorView {
     When the start position was the last one on the line, the
     returned position will be across the line break. If there is no
     further line, the original position is returned.
-
+    
     By default, this method moves over a single cluster. The
     optional `by` argument can be used to move across more. It will
     be called with the first cluster as argument, and should return
     a predicate that determines, for each subsequent cluster,
     whether it should also be moved over.
     */
-    moveByChar(
-        start: SelectionRange,
-        forward: boolean,
-        by?: (initial: string) => (next: string) => boolean
-    ): SelectionRange;
+    moveByChar(start: SelectionRange, forward: boolean, by?: (initial: string) => (next: string) => boolean): SelectionRange;
     /**
     Move a cursor position across the next group of either
     [letters](https://codemirror.net/6/docs/ref/#state.EditorState.charCategorizer) or non-letter
@@ -853,17 +848,13 @@ declare class EditorView {
     returned. Otherwise this function will return the start or end
     of the line.
     */
-    moveToLineBoundary(
-        start: SelectionRange,
-        forward: boolean,
-        includeWrap?: boolean
-    ): SelectionRange;
+    moveToLineBoundary(start: SelectionRange, forward: boolean, includeWrap?: boolean): SelectionRange;
     /**
     Move a cursor position vertically. When `distance` isn't given,
     it defaults to moving to the next line (including wrapped
     lines). Otherwise, `distance` should provide a positive distance
     in pixels.
-
+    
     When `start` has a
     [`goalColumn`](https://codemirror.net/6/docs/ref/#state.SelectionRange.goalColumn), the vertical
     motion will use that as a target horizontal position. Otherwise,
@@ -871,16 +862,12 @@ declare class EditorView {
     cursor will have its goal column set to whichever column was
     used.
     */
-    moveVertically(
-        start: SelectionRange,
-        forward: boolean,
-        distance?: number
-    ): SelectionRange;
+    moveVertically(start: SelectionRange, forward: boolean, distance?: number): SelectionRange;
     /**
     Find the DOM parent node and offset (child offset if `node` is
     an element, character offset when it is a text node) at the
     given document position.
-
+    
     Note that for positions that aren't currently in
     `visibleRanges`, the resulting DOM position isn't necessarily
     meaningful (it may just point before or after a placeholder
@@ -903,14 +890,14 @@ declare class EditorView {
     argument, in which case it'll return an estimated position that
     would be near the coordinates if it were rendered.
     */
-    posAtCoords(
-        coords: {
-            x: number;
-            y: number;
-        },
-        precise: false
-    ): number;
-    posAtCoords(coords: { x: number; y: number }): number | null;
+    posAtCoords(coords: {
+        x: number;
+        y: number;
+    }, precise: false): number;
+    posAtCoords(coords: {
+        x: number;
+        y: number;
+    }): number | null;
     /**
     Get the screen coordinates at the given document position.
     `side` determines whether the coordinates are based on the
@@ -987,35 +974,32 @@ declare class EditorView {
     [added](https://codemirror.net/6/docs/ref/#state.TransactionSpec.effects) to a transaction to
     cause it to scroll the given position or range into view.
     */
-    static scrollIntoView(
-        pos: number | SelectionRange,
-        options?: {
-            /**
+    static scrollIntoView(pos: number | SelectionRange, options?: {
+        /**
         By default (`"nearest"`) the position will be vertically
         scrolled only the minimal amount required to move the given
         position into view. You can set this to `"start"` to move it
         to the top of the view, `"end"` to move it to the bottom, or
         `"center"` to move it to the center.
         */
-            y?: ScrollStrategy;
-            /**
+        y?: ScrollStrategy;
+        /**
         Effect similar to
         [`y`](https://codemirror.net/6/docs/ref/#view.EditorView^scrollIntoView^options.y), but for the
         horizontal scroll position.
         */
-            x?: ScrollStrategy;
-            /**
+        x?: ScrollStrategy;
+        /**
         Extra vertical distance to add when moving something into
         view. Not used with the `"center"` strategy. Defaults to 5.
         */
-            yMargin?: number;
-            /**
+        yMargin?: number;
+        /**
         Extra horizontal distance to add. Not used with the `"center"`
         strategy. Defaults to 5.
         */
-            xMargin?: number;
-        }
-    ): StateEffect<unknown>;
+        xMargin?: number;
+    }): StateEffect<unknown>;
     /**
     Facet to add a [style
     module](https://github.com/marijnh/style-mod#documentation) to
@@ -1044,26 +1028,12 @@ declare class EditorView {
     content. When one returns true, no further input handlers are
     called and the default behavior is prevented.
     */
-    static inputHandler: Facet<
-        (view: EditorView, from: number, to: number, text: string) => boolean,
-        readonly ((
-            view: EditorView,
-            from: number,
-            to: number,
-            text: string
-        ) => boolean)[]
-    >;
+    static inputHandler: Facet<(view: EditorView, from: number, to: number, text: string) => boolean, readonly ((view: EditorView, from: number, to: number, text: string) => boolean)[]>;
     /**
     This facet can be used to provide functions that create effects
     to be dispatched when the editor's focus state changes.
     */
-    static focusChangeEffect: Facet<
-        (state: EditorState, focusing: boolean) => StateEffect<any> | null,
-        readonly ((
-            state: EditorState,
-            focusing: boolean
-        ) => StateEffect<any> | null)[]
-    >;
+    static focusChangeEffect: Facet<(state: EditorState, focusing: boolean) => StateEffect<any> | null, readonly ((state: EditorState, focusing: boolean) => StateEffect<any> | null)[]>;
     /**
     By default, the editor assumes all its content has the same
     [text direction](https://codemirror.net/6/docs/ref/#view.Direction). Configure this with a `true`
@@ -1078,18 +1048,12 @@ declare class EditorView {
     from user-code-provided callbacks). This is mostly useful for
     debugging and logging. See [`logException`](https://codemirror.net/6/docs/ref/#view.logException).
     */
-    static exceptionSink: Facet<
-        (exception: any) => void,
-        readonly ((exception: any) => void)[]
-    >;
+    static exceptionSink: Facet<(exception: any) => void, readonly ((exception: any) => void)[]>;
     /**
     A facet that can be used to register a function to be called
     every time the view updates.
     */
-    static updateListener: Facet<
-        (update: ViewUpdate) => void,
-        readonly ((update: ViewUpdate) => void)[]
-    >;
+    static updateListener: Facet<(update: ViewUpdate) => void, readonly ((update: ViewUpdate) => void)[]>;
     /**
     Facet that controls whether the editor content DOM is editable.
     When its highest-precedence value is `false`, the element will
@@ -1105,50 +1069,38 @@ declare class EditorView {
     on the editor, and can return an object that overrides the way a
     selection is computed from that mouse click or drag.
     */
-    static mouseSelectionStyle: Facet<
-        MakeSelectionStyle,
-        readonly MakeSelectionStyle[]
-    >;
+    static mouseSelectionStyle: Facet<MakeSelectionStyle, readonly MakeSelectionStyle[]>;
     /**
     Facet used to configure whether a given selection drag event
     should move or copy the selection. The given predicate will be
     called with the `mousedown` event, and can return `true` when
     the drag should move the content.
     */
-    static dragMovesSelection: Facet<
-        (event: MouseEvent) => boolean,
-        readonly ((event: MouseEvent) => boolean)[]
-    >;
+    static dragMovesSelection: Facet<(event: MouseEvent) => boolean, readonly ((event: MouseEvent) => boolean)[]>;
     /**
     Facet used to configure whether a given selecting click adds a
     new range to the existing selection or replaces it entirely. The
     default behavior is to check `event.metaKey` on macOS, and
     `event.ctrlKey` elsewhere.
     */
-    static clickAddsSelectionRange: Facet<
-        (event: MouseEvent) => boolean,
-        readonly ((event: MouseEvent) => boolean)[]
-    >;
+    static clickAddsSelectionRange: Facet<(event: MouseEvent) => boolean, readonly ((event: MouseEvent) => boolean)[]>;
     /**
     A facet that determines which [decorations](https://codemirror.net/6/docs/ref/#view.Decoration)
     are shown in the view. Decorations can be provided in two
     ways—directly, or via a function that takes an editor view.
-
+    
     Only decoration sets provided directly are allowed to influence
     the editor's vertical layout structure. The ones provided as
     functions are called _after_ the new viewport has been computed,
     and thus **must not** introduce block widgets or replacing
     decorations that cover line breaks.
-
+    
     If you want decorated ranges to behave like atomic units for
     cursor motion and deletion purposes, also provide the range set
     containing the decorations to
     [`EditorView.atomicRanges`](https://codemirror.net/6/docs/ref/#view.EditorView^atomicRanges).
     */
-    static decorations: Facet<
-        DecorationSet | ((view: EditorView) => DecorationSet),
-        readonly (DecorationSet | ((view: EditorView) => DecorationSet))[]
-    >;
+    static decorations: Facet<DecorationSet | ((view: EditorView) => DecorationSet), readonly (DecorationSet | ((view: EditorView) => DecorationSet))[]>;
     /**
     Used to provide ranges that should be treated as atoms as far as
     cursor motion is concerned. This causes methods like
@@ -1160,10 +1112,7 @@ declare class EditorView {
     updates](https://codemirror.net/6/docs/ref/#state.TransactionSpec.selection) from moving into such
     regions.
     */
-    static atomicRanges: Facet<
-        (view: EditorView) => _codemirror_state.RangeSet<any>,
-        readonly ((view: EditorView) => _codemirror_state.RangeSet<any>)[]
-    >;
+    static atomicRanges: Facet<(view: EditorView) => _codemirror_state.RangeSet<any>, readonly ((view: EditorView) => _codemirror_state.RangeSet<any>)[]>;
     /**
     Facet that allows extensions to provide additional scroll
     margins (space around the sides of the scrolling element that
@@ -1171,36 +1120,30 @@ declare class EditorView {
     plugin introduces elements that cover part of that element (for
     example a horizontally fixed gutter).
     */
-    static scrollMargins: Facet<
-        (view: EditorView) => Partial<Rect> | null,
-        readonly ((view: EditorView) => Partial<Rect> | null)[]
-    >;
+    static scrollMargins: Facet<(view: EditorView) => Partial<Rect> | null, readonly ((view: EditorView) => Partial<Rect> | null)[]>;
     /**
     Create a theme extension. The first argument can be a
     [`style-mod`](https://github.com/marijnh/style-mod#documentation)
     style spec providing the styles for the theme. These will be
     prefixed with a generated class for the style.
-
+    
     Because the selectors will be prefixed with a scope class, rule
     that directly match the editor's [wrapper
     element](https://codemirror.net/6/docs/ref/#view.EditorView.dom)—to which the scope class will be
     added—need to be explicitly differentiated by adding an `&` to
     the selector for that element—for example
     `&.cm-focused`.
-
+    
     When `dark` is set to true, the theme will be marked as dark,
     which will cause the `&dark` rules from [base
     themes](https://codemirror.net/6/docs/ref/#view.EditorView^baseTheme) to be used (as opposed to
     `&light` when a light theme is active).
     */
-    static theme(
-        spec: {
-            [selector: string]: StyleSpec;
-        },
-        options?: {
-            dark?: boolean;
-        }
-    ): Extension;
+    static theme(spec: {
+        [selector: string]: StyleSpec;
+    }, options?: {
+        dark?: boolean;
+    }): Extension;
     /**
     This facet records whether a dark theme is active. The extension
     returned by [`theme`](https://codemirror.net/6/docs/ref/#view.EditorView^theme) automatically
@@ -1215,7 +1158,9 @@ declare class EditorView {
     that. You can also use `&dark` or `&light` instead to only
     target editors with a dark or light theme.
     */
-    static baseTheme(spec: { [selector: string]: StyleSpec }): Extension;
+    static baseTheme(spec: {
+        [selector: string]: StyleSpec;
+    }): Extension;
     /**
     Facet that provides additional DOM attributes for the editor's
     editable DOM element.
@@ -1261,11 +1206,7 @@ is inferred to `any`, and should be explicitly set if you want type
 checking.
 */
 declare type DOMEventHandlers<This> = {
-    [event in keyof DOMEventMap]?: (
-        this: This,
-        event: DOMEventMap[event],
-        view: EditorView
-    ) => boolean | void;
+    [event in keyof DOMEventMap]?: (this: This, event: DOMEventMap[event], view: EditorView) => boolean | void;
 };
 
 /**
@@ -1358,20 +1299,13 @@ determine their precedence (the ones specified early or with high
 priority get checked first). When a handler has returned `true`
 for a given key, no further handlers are called.
 */
-declare const keymap: Facet<
-    readonly KeyBinding[],
-    readonly (readonly KeyBinding[])[]
->;
+declare const keymap: Facet<readonly KeyBinding[], readonly (readonly KeyBinding[])[]>;
 /**
 Run the key handlers registered for a given scope. The event
 object should be a `"keydown"` event. Returns true if any of the
 handlers handled it.
 */
-declare function runScopeHandlers(
-    view: EditorView,
-    event: KeyboardEvent,
-    scope: string
-): boolean;
+declare function runScopeHandlers(view: EditorView, event: KeyboardEvent, scope: string): boolean;
 
 declare type SelectionConfig = {
     /**
@@ -1414,7 +1348,7 @@ declare function dropCursor(): Extension;
 interface SpecialCharConfig {
     /**
     An optional function that renders the placeholder elements.
-
+    
     The `description` argument will be text that clarifies what the
     character is, which should be provided to screen readers (for
     example with the
@@ -1423,17 +1357,11 @@ interface SpecialCharConfig {
     as the
     [`title`](https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/title)
     attribute).
-
+    
     The given placeholder string is a suggestion for how to display
     the character visually.
     */
-    render?:
-        | ((
-              code: number,
-              description: string | null,
-              placeholder: string
-          ) => HTMLElement)
-        | null;
+    render?: ((code: number, description: string | null, placeholder: string) => HTMLElement) | null;
     /**
     Regular expression that matches the special characters to
     highlight. Must have its 'g'/global flag set.
@@ -1450,11 +1378,10 @@ Returns an extension that installs highlighting of special
 characters.
 */
 declare function highlightSpecialChars(
-    /**
+/**
 Configuration options.
 */
-    config?: SpecialCharConfig
-): Extension;
+config?: SpecialCharConfig): Extension;
 
 /**
 Returns an extension that makes sure the content has a bottom
@@ -1518,13 +1445,7 @@ declare class RectangleMarker implements LayerMarker {
     Create a marker with the given class and dimensions. If `width`
     is null, the DOM element will get no width style.
     */
-    constructor(
-        className: string,
-        left: number,
-        top: number,
-        width: number | null,
-        height: number
-    );
+    constructor(className: string, left: number, top: number, width: number | null, height: number);
     draw(): HTMLDivElement;
     update(elt: HTMLElement, prev: RectangleMarker): boolean;
     private adjust;
@@ -1536,11 +1457,7 @@ declare class RectangleMarker implements LayerMarker {
     rectangles covering the range's content (in a bidi-aware
     way) for non-empty ones.
     */
-    static forRange(
-        view: EditorView,
-        className: string,
-        range: SelectionRange
-    ): readonly RectangleMarker[];
+    static forRange(view: EditorView, className: string, range: SelectionRange): readonly RectangleMarker[];
 }
 interface LayerConfig {
     /**
@@ -1602,30 +1519,18 @@ declare class MatchDecorator {
         The decoration to apply to matches, either directly or as a
         function of the match.
         */
-        decoration?:
-            | Decoration
-            | ((
-                  match: RegExpExecArray,
-                  view: EditorView,
-                  pos: number
-              ) => Decoration | null);
+        decoration?: Decoration | ((match: RegExpExecArray, view: EditorView, pos: number) => Decoration | null);
         /**
         Customize the way decorations are added for matches. This
         function, when given, will be called for matches and should
         call `add` to create decorations for them. Note that the
         decorations should appear *in* the given range, and the
         function should have no side effects beyond calling `add`.
-
+        
         The `decoration` option is ignored when `decorate` is
         provided.
         */
-        decorate?: (
-            add: (from: number, to: number, decoration: Decoration) => void,
-            from: number,
-            to: number,
-            match: RegExpExecArray,
-            view: EditorView
-        ) => void;
+        decorate?: (add: (from: number, to: number, decoration: Decoration) => void, from: number, to: number, match: RegExpExecArray, view: EditorView) => void;
         /**
         By default, changed lines are re-matched entirely. You can
         provide a boundary expression, which should match single
@@ -1693,7 +1598,7 @@ declare function tooltips(config?: {
     scrollable parent elements. However, CSS rules like `contain:
     layout` can break fixed positioning in child nodes, which can be
     worked about by using `"absolute"` here.
-
+    
     On iOS, which at the time of writing still doesn't properly
     support fixed positioning, the library always uses absolute
     positioning.
@@ -1831,37 +1736,27 @@ Note that all hover tooltips are hosted within a single tooltip
 container element. This allows multiple tooltips over the same
 range to be "merged" together without overlapping.
 */
-declare function hoverTooltip(
-    source: (
-        view: EditorView,
-        pos: number,
-        side: -1 | 1
-    ) => Tooltip | null | Promise<Tooltip | null>,
-    options?: {
-        /**
+declare function hoverTooltip(source: (view: EditorView, pos: number, side: -1 | 1) => Tooltip | null | Promise<Tooltip | null>, options?: {
+    /**
     Controls whether a transaction hides the tooltip. The default
     is to not hide.
     */
-        hideOn?: (tr: Transaction, tooltip: Tooltip) => boolean;
-        /**
+    hideOn?: (tr: Transaction, tooltip: Tooltip) => boolean;
+    /**
     When enabled (this defaults to false), close the tooltip
     whenever the document changes or the selection is set.
     */
-        hideOnChange?: boolean | "touch";
-        /**
+    hideOnChange?: boolean | "touch";
+    /**
     Hover time after which the tooltip should appear, in
     milliseconds. Defaults to 300ms.
     */
-        hoverTime?: number;
-    }
-): Extension;
+    hoverTime?: number;
+}): Extension;
 /**
 Get the active tooltip view for a given tooltip, if available.
 */
-declare function getTooltip(
-    view: EditorView,
-    tooltip: Tooltip
-): TooltipView | null;
+declare function getTooltip(view: EditorView, tooltip: Tooltip): TooltipView | null;
 /**
 Returns true if any hover tooltips are currently active.
 */
@@ -1927,10 +1822,7 @@ Get the active panel created by the given constructor, if any.
 This can be useful when you need access to your panels' DOM
 structure.
 */
-declare function getPanel(
-    view: EditorView,
-    panel: PanelConstructor
-): Panel | null;
+declare function getPanel(view: EditorView, panel: PanelConstructor): Panel | null;
 /**
 A function that initializes a panel. Used in
 [`showPanel`](https://codemirror.net/6/docs/ref/#view.showPanel).
@@ -1941,10 +1833,7 @@ Opening a panel is done by providing a constructor function for
 the panel through this facet. (The panel is closed again when its
 constructor is no longer provided.) Values of `null` are ignored.
 */
-declare const showPanel: Facet<
-    PanelConstructor | null,
-    readonly (PanelConstructor | null)[]
->;
+declare const showPanel: Facet<PanelConstructor | null, readonly (PanelConstructor | null)[]>;
 
 /**
 A gutter marker represents a bit of information attached to a line
@@ -1978,16 +1867,9 @@ Markers given to this facet should _only_ define an
 [`toDOM`](https://codemirror.net/6/docs/ref/#view.GutterMarker.toDOM) (or the marker will appear
 in all gutters for the line).
 */
-declare const gutterLineClass: Facet<
-    RangeSet<GutterMarker>,
-    readonly RangeSet<GutterMarker>[]
->;
+declare const gutterLineClass: Facet<RangeSet<GutterMarker>, readonly RangeSet<GutterMarker>[]>;
 declare type Handlers = {
-    [event: string]: (
-        view: EditorView,
-        line: BlockInfo,
-        event: Event
-    ) => boolean;
+    [event: string]: (view: EditorView, line: BlockInfo, event: Event) => boolean;
 };
 interface GutterConfig {
     /**
@@ -2003,20 +1885,18 @@ interface GutterConfig {
     /**
     Retrieve a set of markers to use in this gutter.
     */
-    markers?: (
-        view: EditorView
-    ) => RangeSet<GutterMarker> | readonly RangeSet<GutterMarker>[];
+    markers?: (view: EditorView) => (RangeSet<GutterMarker> | readonly RangeSet<GutterMarker>[]);
     /**
     Can be used to optionally add a single marker to every line.
     */
-    lineMarker?: (
-        view: EditorView,
-        line: BlockInfo,
-        otherMarkers: readonly GutterMarker[]
-    ) => GutterMarker | null;
+    lineMarker?: (view: EditorView, line: BlockInfo, otherMarkers: readonly GutterMarker[]) => GutterMarker | null;
     /**
-    If line markers depend on additional state, and should be
-    updated when that changes, pass a predicate here that checks
+    Associate markers with block widgets in the document.
+    */
+    widgetMarker?: (view: EditorView, widget: WidgetType, block: BlockInfo) => GutterMarker | null;
+    /**
+    If line or widget markers depend on additional state, and should
+    be updated when that changes, pass a predicate here that checks
     whether a given view update might change the line markers.
     */
     lineMarkerChange?: null | ((update: ViewUpdate) => boolean);
@@ -2028,9 +1908,7 @@ interface GutterConfig {
     /**
     Update the spacer element when the view is updated.
     */
-    updateSpacer?:
-        | null
-        | ((spacer: GutterMarker, update: ViewUpdate) => GutterMarker);
+    updateSpacer?: null | ((spacer: GutterMarker, update: ViewUpdate) => GutterMarker);
     /**
     Supply event handlers for DOM events on this gutter.
     */
@@ -2051,7 +1929,9 @@ horizontally (except on Internet Explorer, which doesn't support
 CSS [`position:
 sticky`](https://developer.mozilla.org/en-US/docs/Web/CSS/position#sticky)).
 */
-declare function gutters(config?: { fixed?: boolean }): Extension;
+declare function gutters(config?: {
+    fixed?: boolean;
+}): Extension;
 interface LineNumberConfig {
     /**
     How to display line numbers. Defaults to simply converting them
@@ -2066,10 +1946,7 @@ interface LineNumberConfig {
 /**
 Facet used to provide markers to the line number gutter.
 */
-declare const lineNumberMarkers: Facet<
-    RangeSet<GutterMarker>,
-    readonly RangeSet<GutterMarker>[]
->;
+declare const lineNumberMarkers: Facet<RangeSet<GutterMarker>, readonly RangeSet<GutterMarker>[]>;
 /**
 Create a line number gutter extension.
 */
@@ -2094,62 +1971,4 @@ trailing whitespace.
 */
 declare function highlightTrailingWhitespace(): Extension;
 
-export {
-    BidiSpan,
-    BlockInfo,
-    BlockType,
-    Command,
-    DOMEventHandlers,
-    DOMEventMap,
-    Decoration,
-    DecorationSet,
-    Direction,
-    EditorView,
-    EditorViewConfig,
-    GutterMarker,
-    KeyBinding,
-    LayerMarker,
-    MatchDecorator,
-    MouseSelectionStyle,
-    Panel,
-    PanelConstructor,
-    PluginSpec,
-    PluginValue,
-    Rect,
-    RectangleMarker,
-    Tooltip,
-    TooltipView,
-    ViewPlugin,
-    ViewUpdate,
-    WidgetType,
-    closeHoverTooltips,
-    crosshairCursor,
-    drawSelection,
-    dropCursor,
-    getPanel,
-    getTooltip,
-    gutter,
-    gutterLineClass,
-    gutters,
-    hasHoverTooltips,
-    highlightActiveLine,
-    highlightActiveLineGutter,
-    highlightSpecialChars,
-    highlightTrailingWhitespace,
-    highlightWhitespace,
-    hoverTooltip,
-    keymap,
-    layer,
-    lineNumberMarkers,
-    lineNumbers,
-    logException,
-    panels,
-    placeholder,
-    rectangularSelection,
-    repositionTooltips,
-    runScopeHandlers,
-    scrollPastEnd,
-    showPanel,
-    showTooltip,
-    tooltips,
-};
+export { BidiSpan, BlockInfo, BlockType, Command, DOMEventHandlers, DOMEventMap, Decoration, DecorationSet, Direction, EditorView, EditorViewConfig, GutterMarker, KeyBinding, LayerMarker, MatchDecorator, MouseSelectionStyle, Panel, PanelConstructor, PluginSpec, PluginValue, Rect, RectangleMarker, Tooltip, TooltipView, ViewPlugin, ViewUpdate, WidgetType, closeHoverTooltips, crosshairCursor, drawSelection, dropCursor, getPanel, getTooltip, gutter, gutterLineClass, gutters, hasHoverTooltips, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, highlightTrailingWhitespace, highlightWhitespace, hoverTooltip, keymap, layer, lineNumberMarkers, lineNumbers, logException, panels, placeholder, rectangularSelection, repositionTooltips, runScopeHandlers, scrollPastEnd, showPanel, showTooltip, tooltips };
