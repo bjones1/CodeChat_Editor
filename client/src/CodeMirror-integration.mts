@@ -263,9 +263,13 @@ class DocBlockWidget extends WidgetType {
         return true;
     }
 
-    ignoreEvent() {
-        // Don't ignore events that happen in this widget, so the view can handle them correctly.
-        return false;
+    ignoreEvent(event: Event) {
+        // Avoid handling other events, since this causes [weird problems with event routing](https://discuss.codemirror.net/t/how-to-get-focusin-events-on-a-custom-widget-decoration/6792).
+        if (event.type === "focusin" || event.type === "input") {
+            return false;
+        } else {
+            return true;
+        }
     }
 
     destroy(dom: HTMLElement): void {}
@@ -290,11 +294,6 @@ const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
     return false;
 };
 
-// Pass doc block events to the doc block, by telling CodeMirror to ignore it (a return of null); let CodeMirror handle everything else (return false).
-const route_event = (event: Event) => {
-    return event_is_in_doc_block(event) ? null : false;
-};
-
 const DocBlockPlugin = ViewPlugin.fromClass(
     class {
         constructor(view: EditorView) {}
@@ -302,14 +301,6 @@ const DocBlockPlugin = ViewPlugin.fromClass(
     },
     {
         eventHandlers: {
-            keyup: route_event,
-            // CodeMirror doesn't let me override this for navigation keys (up/down/left/right/etc.) ???
-            keydown: route_event,
-            keypress: route_event,
-            mousedown: route_event,
-            mouseup: route_event,
-            focusout: route_event,
-
             // When a doc block receives focus, turn it into a TinyMCE instance so it can be edited. A simpler alternative is to do this in the update() method above, but this is VERY slow, since update is called frequently.
             focusin: (event: Event, view: EditorView) => {
                 const target_or_false = event_is_in_doc_block(event);
@@ -323,7 +314,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                         ".CodeChat-doc-contents"
                     ) === null
                 ) {
-                    return null;
+                    return false;
                 }
                 const [contents_div, is_tinymce] = get_contents(target);
 
@@ -416,7 +407,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                         doc_block_indent_on_before_input
                     );
                 }
-                return null;
+                return false;
             },
 
             // When a doc block changes, update the CodeMirror state to match these changes.
@@ -445,7 +436,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 ];
 
                 view.dispatch({ effects });
-                return null;
+                return false;
             },
         },
     }
