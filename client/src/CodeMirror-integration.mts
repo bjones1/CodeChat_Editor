@@ -290,7 +290,7 @@ const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
     return false;
 };
 
-// Pass doc block events to the doc block, by telling CodeMirror to ignore it (a return of null); let CodeMirror handle everything else (return true).
+// Pass doc block events to the doc block, by telling CodeMirror to ignore it (a return of null); let CodeMirror handle everything else (return false).
 const route_event = (event: Event) => {
     return event_is_in_doc_block(event) ? null : false;
 };
@@ -302,22 +302,15 @@ const DocBlockPlugin = ViewPlugin.fromClass(
     },
     {
         eventHandlers: {
-            /// @ts-expect-error
             keyup: route_event,
             // CodeMirror doesn't let me override this for navigation keys (up/down/left/right/etc.) ???
-            /// @ts-expect-error
             keydown: route_event,
-            /// @ts-expect-error
             keypress: route_event,
-            /// @ts-expect-error
             mousedown: route_event,
-            /// @ts-expect-error
             mouseup: route_event,
-            /// @ts-expect-error
             focusout: route_event,
 
             // When a doc block receives focus, turn it into a TinyMCE instance so it can be edited. A simpler alternative is to do this in the update() method above, but this is VERY slow, since update is called frequently.
-            /// @ts-expect-error
             focusin: (event: Event, view: EditorView) => {
                 const target_or_false = event_is_in_doc_block(event);
                 if (!target_or_false) {
@@ -427,7 +420,6 @@ const DocBlockPlugin = ViewPlugin.fromClass(
             },
 
             // When a doc block changes, update the CodeMirror state to match these changes.
-            /// @ts-expect-error
             input: (event: Event, view: EditorView) => {
                 const target_or_false = event_is_in_doc_block(event);
                 if (!target_or_false) {
