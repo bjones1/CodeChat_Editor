@@ -1575,14 +1575,8 @@ mod tests {
         );
 
         // An empty block comment.
-        assert_eq!(
-            source_lexer("/* */", js),
-            [build_doc_block("", "/*", ""),]
-        );
-        assert_eq!(
-            source_lexer("/*\n*/", js),
-            [build_doc_block("", "/*", ""),]
-        );
+        assert_eq!(source_lexer("/* */", js), [build_doc_block("", "/*", ""),]);
+        assert_eq!(source_lexer("/*\n*/", js), [build_doc_block("", "/*", ""),]);
 
         // <p>basic test</p>
         assert_eq!(

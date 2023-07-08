@@ -638,10 +638,10 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
         heredoc_delim: None,
         special_case: SpecialCase::None,
     },
-    // <h3>CodeChat HTML</h3>
+    // <h3>Markdown</h3>
     LanguageLexer {
-        ace_mode: "codechat-html",
-        ext_arr: &["cchtml"],
+        ace_mode: "markdown",
+        ext_arr: &["md"],
         inline_comment_delim_arr: &[],
         block_comment_delim_arr: &[],
         string_delim_spec_arr: &[],

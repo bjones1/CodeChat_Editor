@@ -43,16 +43,27 @@
 // <h2>Imports</h2>
 // <h3>JavaScript/TypeScript</h3>
 import "./EditorComponents.mjs";
+import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
 import "./graphviz-webcomponent-setup.mts";
 import "graphviz-webcomponent";
-import { Editor, init, tinymce } from "./tinymce-config.mjs";
+import { tinymce, init } from "./tinymce-config.mjs";
+// @ts-ignore - Turndown doesn't have types.
+import TurndownService from "./turndown/turndown.browser.es.js";
 
 // <h3>CSS</h3>
 import "./../static/css/CodeChatEditor.css";
 import { CodeMirror_load, CodeMirror_save } from "./CodeMirror-integration.mjs";
 
 // <h2>Initialization</h2>
+// Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to Markdown conversion
+const turndownService = new TurndownService({
+    br: "\\",
+    codeBlockStyle: "fenced",
+    renderAsPure: false,
+});
 
+// Add the plugins from [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
+turndownService.use(gfm);
 // <p>The server passes this to the client to load a file. See <a
 //         href="../../server/src/webserver.rs#LexedSourceFile">LexedSourceFile</a>.
 // </p>
@@ -253,7 +264,7 @@ const unescapeHTML = (html: string): string => {
 
 // <p>True if this is a CodeChat Editor document (not a source file).</p>
 const is_doc_only = () => {
-    return current_metadata["mode"] === "codechat-html";
+    return current_metadata["mode"] === "markdown";
 };
 
 // <p>Per <a

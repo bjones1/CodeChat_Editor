@@ -1,14 +1,14 @@
 <h1>The CodeChat Editor</h1>
 <h2>Design</h2>
 <ol>
-    <li><a href="README.cchtml">CodeChat Editor Overview</a>
+    <li><a href="README.md">CodeChat Editor Overview</a>
         <ol>
-            <li><a href="README.cchtml#how-to-run">How to run</a></li>
-            <li><a href="README.cchtml#vision">Vision</a></li>
-            <li><a href="README.cchtml#specification">Specification</a></li>
+            <li><a href="README.md#how-to-run">How to run</a></li>
+            <li><a href="README.md#vision">Vision</a></li>
+            <li><a href="README.md#specification">Specification</a></li>
         </ol>
     </li>
-    <li><a href="docs/implementation.cchtml">Implementation</a></li>
+    <li><a href="docs/implementation.md">Implementation</a></li>
 </ol>
 <h2>Implementation</h2>
 <ol>
@@ -101,14 +101,14 @@
 </ol>
 <h2>Misc</h2>
 <ul>
-    <li><a href="new-project-template/README.cchtml" target="_blank"
+    <li><a href="new-project-template/README.md" target="_blank"
             rel="noopener">New project template</a></li>
-    <li><a href="toc.cchtml">Table of contents</a></li>
-    <li><a href="docs/index.cchtml">Index</a></li>
+    <li><a href="toc.md">Table of contents</a></li>
+    <li><a href="docs/index.md">Index</a></li>
 </ul>
 <h2>Notes</h2>
 <ul>
     <li><a id="auto-title"></a>TODO: all links here should be auto-titled and
         autogenerate the page-local TOC.</li>
 </ul>
-<h2><a href="LICENSE.cchtml">License</a></h2>
+<h2><a href="LICENSE.md">License</a></h2>

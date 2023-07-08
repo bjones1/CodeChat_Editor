@@ -125,39 +125,76 @@ async fn save_source<'a>(
     // <p>The path to save this file to.</p>
     encoded_path: web::Path<String>,
     // <p>The file to save plus metadata, stored in the
-    //     <code>ClientSourceFile</code></p>
-    // client_source_file: web::Json<ClientSourceFile>,
+    //     <code>LexedSourceFile</code></p>
     lexed_source_file: web::Json<LexedSourceFile<'a>>,
-
-    // <p>Lexer info, needed to transform the <code>ClientSourceFile</code> into
+    // <p>Lexer info, needed to transform the <code>LexedSourceFile</code> into
     //     source code.</p>
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
-    // <p>Given the mode, find the lexer.</p>
+    // <p>Takes the source file and the lexer and saves the source as a string.
+    // </p>
+    let file_contents = match save_source_as_string(lexed_source_file, language_lexers_compiled) {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
 
-    // Call function to convert from CodeMirror to CodeDocBlockArray
+    // <h3>Save file</h3>
+    // <p>Save this string to a file. Add a leading slash for Linux: this
+    //     changes from&nbsp;<code>foo/bar.c</code> to <code>/foo/bar.c</code>.
+    //     Windows already starts with a drive letter, such as
+    //     <code>C:\foo\bar.c</code>, so no changes are needed.</p>
+    let save_file_path = if cfg!(windows) {
+        "".to_string()
+    } else {
+        "/".to_string()
+    } + &encoded_path;
+    match fs::write(save_file_path.to_string(), file_contents).await {
+        Ok(v) => v,
+        Err(err) => {
+            return save_source_response(
+                false,
+                &format!("Unable to save file {}: {}.", save_file_path, err),
+            )
+        }
+    }
+
+    save_source_response(true, "")
+}
+
+// <p>This function takes in a file with code and doc blocks and outputs a
+//     string of the contents for testing.</p>
+fn save_source_as_string(
+    // <p>The file to save plus metadata, stored in the
+    //     <code>LexedSourceFile</code></p>
+    lexed_source_file: web::Json<LexedSourceFile<'_>>,
+    // <p>Lexer info, needed to transform the <code>LexedSourceFile</code> into
+    //     source code.</p>
+    language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
+) -> Result<String, HttpResponse> {
+    // Convert from CodeMirror to a CodeDocBlockArray.
     let client_source_file = code_mirror_to_client(&lexed_source_file.source, &lexed_source_file);
 
+    // <p>Given the mode, find the lexer.</p>
     let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match language_lexers_compiled
         .map_mode_to_lexer
         .get(client_source_file.metadata.mode.as_str())
     {
         Some(v) => v,
-        None => return save_source_response(false, "Invalid mode"),
+        None => return Err(save_source_response(false, "Invalid mode")),
     };
 
     // <p>Turn this back into code and doc blocks by filling in any missing
     //     comment delimiters.</p>
-    // This line assigns the variable 'inline_comment' with what a inline comment would look like in this file. 
+    // This line assigns the variable 'inline_comment' with what a inline comment would look like in this file.
     let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
     // This line assigns the variable 'block_comment' with what a block comment would look like in this file.
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
-    // The vector 'code_doc_block_vec' is what is used to store the strings from the site. There is an indent, a delimeter, and the contents. 
+    // The vector 'code_doc_block_vec' is what is used to store the strings from the site. There is an indent, a delimeter, and the contents.
     // Each index in a vector has those three parameters.
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
     // 'some_empty' is just a string "".
     let some_empty = Some("".to_string());
-    // This for loop sorts the data from the site into code blocks and doc blocks. 
+    // This for loop sorts the data from the site into code blocks and doc blocks.
     for cdb in &client_source_file.code_doc_block_arr {
         let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
         code_doc_block_vec.push(if is_code_block {
@@ -177,10 +214,10 @@ async fn save_source<'a>(
                         } else if let Some(bc) = block_comment {
                             bc.opening.to_string()
                         } else {
-                            return save_source_response(
+                            return Err(save_source_response(
                                 false,
                                 "Neither inline nor block comments are defined for this language.",
-                            );
+                            ));
                         }
                     }
                 },
@@ -237,13 +274,13 @@ async fn save_source<'a>(
                     {
                         Some(index) => lexer.language_lexer.block_comment_delim_arr[index].closing,
                         None => {
-                            return save_source_response(
+                            return Err(save_source_response(
                                 false,
                                 &format!(
                                     "Unknown block comment opening delimiter '{}'.",
                                     doc_block.delimiter
                                 ),
-                            )
+                            ))
                         }
                     };
                     // <p>Produce the resulting block comment. They should
@@ -267,27 +304,7 @@ async fn save_source<'a>(
             }
         }
     }
-
-    // <p>Save this string to a file. Add a leading slash for Linux: this
-    //     changes from <code>foo/bar.c</code> to <code>/foo/bar.c</code>.
-    //     Windows already starts with a drive letter, such as
-    //     <code>C:\foo\bar.c</code>, so no changes are needed.</p>
-    let save_file_path = if cfg!(windows) {
-        "".to_string()
-    } else {
-        "/".to_string()
-    } + &encoded_path;
-    match fs::write(save_file_path.to_string(), file_contents).await {
-        Ok(v) => v,
-        Err(err) => {
-            return save_source_response(
-                false,
-                &format!("Unable to save file {}: {}.", save_file_path, err),
-            )
-        }
-    }
-
-    save_source_response(true, "")
+    Ok(file_contents)
 }
 
 /// <p>A convenience method to fill out then return the hello world
@@ -579,7 +596,7 @@ async fn serve_file(
     // - A text file - first determine the type. Based on the type:
     //   - If it's an unknown type (such as a source file we don't know or a plain text file): just serve it raw.
     //   - If the client requested a table of contents, then serve it wrapped in a CodeChat TOC.
-    //   - If it's Markdown or CCHTML, serve it wrapped in a CodeChat Document Editor.
+    //   - If it's Markdown, serve it wrapped in a CodeChat Document Editor.
     //   - Otherwise, it must be a recognized file type. Serve it wrapped in a CodeChat Editor.
     if let Err(_err) = read_ret {
         // <p>TODO: make a better decision, don't duplicate code. The file type
@@ -631,7 +648,8 @@ async fn serve_file(
 	</body>
 </html>
 "#,
-            name, file_contents
+            name,
+            markdown_to_html(&file_contents)
         ));
     }
 
@@ -679,7 +697,7 @@ async fn serve_file(
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),
         },
-        source: if lexer.language_lexer.ace_mode == "codechat-html" {
+        source: if lexer.language_lexer.ace_mode == "markdown" {
             // Document-only files are easy: just encode the contents.
             CodeMirror {
                 doc: markdown_to_html(&file_contents),
@@ -732,7 +750,7 @@ async fn serve_file(
     .replace("</script>", "<\\/script>");
 
     // <p>Look for a project file by searching the current directory, then all
-    //     its parents, for a file named <code>toc.cchtml</code>.</p>
+    //     its parents, for a file named <code>toc.md</code>.</p>
     let mut is_project = false;
     // <p>The number of directories between this file to serve (in
     //     <code>path</code>) and the toc file.</p>
@@ -740,10 +758,10 @@ async fn serve_file(
     let mut current_dir = file_path.to_path_buf();
     loop {
         let mut project_file = current_dir.clone();
-        project_file.push("toc.cchtml");
+        project_file.push("toc.md");
         if project_file.is_file() {
             path_to_toc.pop();
-            path_to_toc.push("toc.cchtml");
+            path_to_toc.push("toc.md");
             is_project = true;
             break;
         }
@@ -867,12 +885,10 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-// Convert the provided string in Markdown to its equivalent in HTML.
 fn markdown_to_html(markdown: &str) -> String {
-    // Set up options and parser. Strikethroughs are not part of the CommonMark standard
-    // and we therefore must enable it explicitly.
-    let mut options = Options::empty();
-    options.insert(Options::ENABLE_STRIKETHROUGH);
+    let mut options = Options::all();
+    // Turndown (which converts HTML back to Markdown) doesn't support smart punctuation.
+    options.remove(Options::ENABLE_SMART_PUNCTUATION);
     let parser = Parser::new_ext(markdown, options);
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
@@ -883,11 +899,11 @@ fn markdown_to_html(markdown: &str) -> String {
 // This function takes in two parameters, the CodeMirror Structure and the Metadata from the Lexed Source File
 // This function returns the struct: ClientSourceFile to finish this conversion
 fn code_mirror_to_client(code_mirror: &CodeMirror, meta: &LexedSourceFile) -> ClientSourceFile {
-    //Declare 3 mutable variables. The CodeDocBlockArray to append all changes to, and a index for the last docblock and current 
+    //Declare 3 mutable variables. The CodeDocBlockArray to append all changes to, and a index for the last docblock and current
     let mut code_doc_block_arr: Vec<(String, Option<String>, String)> = Vec::new();
     let mut current_idx: usize = 0;
     let mut last_doc_block_idx: Option<usize> = None;
-    
+
     // Iterate through Code Mirror Structure
     for (idx, _) in code_mirror.doc.match_indices('\n') {
         if let Some((from, to, indent, delimiter, contents)) = code_mirror
@@ -903,15 +919,15 @@ fn code_mirror_to_client(code_mirror: &CodeMirror, meta: &LexedSourceFile) -> Cl
             } else {
                 // Append a new code/doc block to the array
                 code_doc_block_arr.push((
-                code_mirror
-                    .doc
-                    .get(current_idx..*from)
-                    .unwrap_or("")
-                    .to_string(),
-                Some(indent.to_string()),
-                format!("{}{}", delimiter, contents),
+                    code_mirror
+                        .doc
+                        .get(current_idx..*from)
+                        .unwrap_or("")
+                        .to_string(),
+                    Some(indent.to_string()),
+                    format!("{}{}", delimiter, contents),
                 ));
-            last_doc_block_idx = Some(code_doc_block_arr.len() - 1);
+                last_doc_block_idx = Some(code_doc_block_arr.len() - 1);
             }
             current_idx = *to + 1;
         } else {
@@ -923,7 +939,7 @@ fn code_mirror_to_client(code_mirror: &CodeMirror, meta: &LexedSourceFile) -> Cl
                     .unwrap_or("")
                     .to_string(),
                 None,
-                    "".to_string(),
+                "".to_string(),
             ));
             last_doc_block_idx = None;
             current_idx = idx + 1;
@@ -944,8 +960,7 @@ fn code_mirror_to_client(code_mirror: &CodeMirror, meta: &LexedSourceFile) -> Cl
         },
         code_doc_block_arr,
     }
-    }
-
+}
 
 // <h2>Webserver startup</h2>
 #[actix_web::main]
@@ -978,4 +993,118 @@ pub async fn main() -> std::io::Result<()> {
     .bind(("127.0.0.1", 8080))?
     .run()
     .await
+}
+
+// <h2>Tests</h2>
+// <p>As mentioned in the lexer.rs tests, Rust <a
+//         href="https://doc.rust-lang.org/book/ch11-03-test-organization.html">almost
+//         mandates</a> putting tests in the same file as the source. Here's
+//     some <a
+//         href="http://xion.io/post/code/rust-unit-test-placement.html">good
+//         information</a> on how to put tests in another file, for future
+//     refactoring reference.</p>
+// <p>&nbsp;</p>
+#[cfg(test)]
+
+// <h3>Save Endpoint Testing</h3>
+mod tests {
+    use crate::webserver::save_source_as_string;
+    use crate::webserver::{
+        compile_lexers, CodeMirror, LexedSourceFile, SourceFileMetadata, LANGUAGE_LEXER_ARR,
+    };
+    use actix_web::web::Data;
+    use std::borrow::Cow;
+
+    // Wrap the common test operations in a function.
+    fn run_test<'a>(
+        mode: &str,
+        doc: &str,
+        doc_blocks: Vec<(
+            usize,
+            usize,
+            Cow<'a, String>,
+            Cow<'a, String>,
+            Cow<'a, String>,
+        )>,
+    ) -> String {
+        let test_source_file = LexedSourceFile {
+            metadata: SourceFileMetadata {
+                mode: mode.to_string(),
+            },
+            source: CodeMirror {
+                doc: doc.to_string(),
+                doc_blocks,
+            },
+        };
+        let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
+        let file_contents =
+            save_source_as_string(actix_web::web::Json(test_source_file), llc).unwrap();
+        file_contents
+    }
+
+    fn build_doc_block<'a>(
+        start: usize,
+        end: usize,
+        indent: &str,
+        delimiter: &str,
+        contents: &str,
+    ) -> (
+        usize,
+        usize,
+        Cow<'a, String>,
+        Cow<'a, String>,
+        Cow<'a, String>,
+    ) {
+        (
+            start,
+            end,
+            Cow::Owned(indent.to_string()),
+            Cow::Owned(delimiter.to_string()),
+            Cow::Owned(contents.to_string()),
+        )
+    }
+
+    // <h3>Python Tests</h3>
+    #[test]
+    fn test_save_endpoint_py() {
+        // <p>Pass nothing to the function.</p>
+        assert_eq!(run_test("python", "", vec![]), "");
+
+        // <p>Pass text only.</p>
+        assert_eq!(run_test("python", "Test", vec![]), "Test");
+
+        // <p>Pass one doc block.</p>
+        assert_eq!(
+            run_test("python", "\n", vec![build_doc_block(0, 0, "", "#", "Test")],),
+            "# Test"
+        );
+
+        // Test a doc block with no delimiter provided.
+        assert_eq!(
+            run_test("python", "\n", vec![build_doc_block(0, 0, "", "", "Test")]),
+            "# Test"
+        );
+    }
+
+    // <h3>C / C++ Tests</h3>
+    #[test]
+    fn test_save_endpoint_cpp() {
+        // <p>Pass text without comment delimiter</p>
+        assert_eq!(
+            run_test("c_cpp", "\n", vec![build_doc_block(0, 0, "", "", "Test")]),
+            "// Test"
+        );
+
+        // <p>Pass an inline comment</p>
+        assert_eq!(
+            run_test("c_cpp", "\n", vec![build_doc_block(0, 0, "", "//", "Test")]),
+            "// Test"
+        );
+
+        // <p><strong>Pass a block comment</strong></p>
+        assert_eq!(
+            run_test("c_cpp", "\n", vec![build_doc_block(0, 0, "", "/*", "Test")]),
+            "// Test"
+        );
+    }
 }

@@ -1,12 +1,12 @@
 <h1>1. CodeChat Editor overview</h1>
-<p>The CodeChat Editor should be a GUI-based programmer's word processor /
+<p>The CodeChat Editor is a GUI-based programmer's word processor /
     Jupyter for software developers. This document records its overall design.
 </p>
 <p>These headings are manually numbered; they will be automatically numbered.
 </p>
 <h2><a id="how-to-run"></a>1.1 How to run</h2>
 <p>The <a href="https://github.com/bjones1/CodeChat_Editor">CodeChat Editor
-        repository</a>&nbsp;contains the code for this application. To try it
+        repository</a> contains the code for this application. To try it
     out:</p>
 <ol>
     <li>Clone or download the repository.</li>
@@ -16,28 +16,28 @@
             href="https://docs.npmjs.com/downloading-and-installing-node-js-and-npm">Install
             NPM</a> (the Node.js package manager).</li>
     <li>Install all NPM dependencies: in the
-        <code>client/</code>&nbsp;directory, run <code>npm install</code>.</li>
+        <code>client/</code> directory, run <code>npm update</code>.</li>
     <li>Package all JavaScript dependencies from NPM: also in
-        the&nbsp;<code>client/</code>&nbsp;directory, run <code>npm run
+        the <code>client/</code> directory, run <code>npm run
             build</code>.</li>
     <li>In the <code>server/</code> directory, execute <code>cargo run</code>.
     </li>
     <li>Open <code>http://localhost:8080</code> in your browser.</li>
-    <li>Open the file <code>README.cchtml</code>.</li>
+    <li>Open the file <code>README.md</code>.</li>
 </ol>
 <h2><a id="vision"></a>1.2 Vision</h2>
 <p>These form a set of high-level requirements to guide the project.</p>
 <ul>
     <li>View source code as <a id="vision-code-blocks-and-doc-blocks"></a><a
-            href="index.cchtml#code-blocks-and-doc-blocks">code blocks and doc
+            href="index.md#code-blocks-and-doc-blocks">code blocks and doc
             blocks</a>. Doc blocks are lines of source which contain only
         correctly-formatted comments.</li>
     <li>Provide support for a <a
             id="vision-programming-language-support"></a><a
-            href="index.cchtml#programming-language-support">wide variety of
+            href="index.md#programming-language-support">wide variety of
             programming languages</a>.</li>
     <li>Provide integration with a <a id="vision-ide-integration"></a><a
-            href="index.cchtml#ide-integration">wide variety of IDEs/text
+            href="index.md#ide-integration">wide variety of IDEs/text
             editors</a>.</li>
     <li>Load a document from source code, allow edits in a GUI, then save it
         back to source code.
@@ -54,7 +54,7 @@
     <li>Support both a single-file mode and a project mode.
         <ul>
             <li>A project is a specific directory tree, identified by the
-                presence of a TOC.&nbsp;I like&nbsp;<a
+                presence of a TOC. I like <a
                     href="https://rust-lang.github.io/mdBook/format/summary.html">mdbook's
                     appearance</a>,</li>
             <li>A page in a project build is a single-file page plus:
@@ -68,7 +68,7 @@
         </ul>
     </li>
     <li><a id="authoring-support"></a>Provide <a
-            href="index.cchtml#authoring-support">authoring support</a>, which
+            href="index.md#authoring-support">authoring support</a>, which
         allows authors to easily create book/project-like features. In
         particular:
         <ul>
@@ -111,7 +111,7 @@
 <p>Comments in most programming languages are either inline comments (which are
     terminated by a newline) or block comments, which may span multiple lines.
     In C/C++, the opening delimiter for an inline comment
-    is&nbsp;<code>//</code>. Likewise, <code>/*</code> and <code>*/</code>
+    is <code>//</code>. Likewise, <code>/*</code> and <code>*/</code>
     define the opening and closing delimiters for block comments.</p>
 <p>This design treats source code on a line-by-line basis. It does not classify
     at any deeper granularity -- for example, it does not support a mix of code
@@ -129,17 +129,17 @@
     indents are combined into a single, larger doc block.</p>
 <pre>// This is all one doc block, since only the preceding<br>//   whitespace (there is none) matters, not the amount of <br>// whitespace following the opening comment delimiters.<br>  // This is the beginning of a different doc<br>  // block, since the indent is different.<br>    // Here's a third doc block; inline and block comments<br>    /* combine as long as the whitespace preceeding the comment<br>delimiters is identical. Whitespace inside the comment doesn't affect<br>       the classification. */<br>// These are two separate doc blocks,<br>void foo();<br>// since they are separated by a code block.</pre>
 <h3><a id="implementation-programming-language-support"></a><a
-        href="index.cchtml#programming-language-support">Programming language
+        href="index.md#programming-language-support">Programming language
         support</a></h3>
 <p>Initial targets come from the Stack Overflow Developer Survey 2022's section
-    on&nbsp;<a
+    on <a
         href="https://survey.stackoverflow.co/2022/#section-most-popular-technologies-programming-scripting-and-markup-languages">programming,
         scripting, and markup languages</a> and IEEE Spectrum's <a
         href="https://spectrum.ieee.org/top-programming-languages-2022">Top
         Programming Languages 2022</a>.</p>
 <h3><a id="specification-ide-integration"></a>IDE/text editor integration</h3>
 <p>Initial targets come from the Stack Overflow Developer Survey 2022's section
-    on&nbsp;<a
+    on <a
         href="https://survey.stackoverflow.co/2022/#section-most-popular-technologies-integrated-development-environment">integrated
         development environments</a>.</p>
 <h3>Zero-build support</h3>
@@ -199,10 +199,10 @@
     instead refer to this anchor.</p>
 <p>How to handle the case where an anchor isn't found in the cache? We'd then
     need to update the cache for the entire project, which might be expensive
-    but also rare. Perhaps perform this update in the background.&nbsp;</p>
+    but also rare. Perhaps perform this update in the background.</p>
 <h3>Hyperlink support</h3>
 <p>This system relies on the user to create a lot of meaningful links; it must
-    make the creation and maintainance of links simple:</p>
+    make the creation and maintenance of links simple:</p>
 <ul>
     <li>Make it easy to create a link to another file/anchor via GUI support.
         <ul>

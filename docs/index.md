@@ -17,25 +17,25 @@
 </details>
 <h1>Index</h1>
 <p><a id="code-blocks-and-doc-blocks"></a>Code blocks and doc blocks<br>&nbsp;
-    <a href="README.cchtml#specification-code-blocks-and-doc-blocks">1.3
+    <a href="README.md#specification-code-blocks-and-doc-blocks">1.3
         Specification &sect; Code blocks and doc blocks</a><br>&nbsp; <a
-        href="README.cchtml#vision-code-blocks-and-doc-blocks">1.2 Vision</a>
+        href="README.md#vision-code-blocks-and-doc-blocks">1.2 Vision</a>
 </p>
 <p>Authoring support<br>&nbsp; Auto-titled links<br>&nbsp; &nbsp;
     Manually-implemented features<br>&nbsp; &nbsp; &nbsp; <a
-        href="toc.cchtml#auto-title">Table of contents &sect;
+        href="toc.md#auto-title">Table of contents &sect;
         Notes</a><br>&nbsp; Bidirectional links<br>&nbsp; &nbsp;
     Manually-implemented features<br>&nbsp; &nbsp; &nbsp; <a
         href="#note-bidirectional-links">Index &sect; Notes</a></p>
 <p><a id="ide-integration"></a>IDE/text editor integration<br>&nbsp; <a
-        href="README.cchtml#vision-ide-integration">1.2 Vision</a><br>&nbsp; <a
-        href="README.cchtml#specification-ide-integration">1.3 Specification
+        href="README.md#vision-ide-integration">1.2 Vision</a><br>&nbsp; <a
+        href="README.md#specification-ide-integration">1.3 Specification
         &sect; IDE/text editor integration</a></p>
 <p><a id="programming-language-support"></a>Programming language
     support<br>&nbsp; <a
-        href="README.cchtml#vision-programming-language-support">1.2
+        href="README.md#vision-programming-language-support">1.2
         Vision</a><br>&nbsp; <a
-        href="README.cchtml#implementation-programming-language-support">1.3
+        href="README.md#implementation-programming-language-support">1.3
         Specification &sect; Programming language support</a></p>
 <h2>Notes</h2>
 <p><a id="note-bidirectional-links"></a>Note: this is currently hand-generated.
