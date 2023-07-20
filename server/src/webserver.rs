@@ -307,7 +307,7 @@ fn save_source_as_string(
     Ok(file_contents)
 }
 
-/// <p>A convenience method to fill out then return the hello world
+/// <p>A convenience method to fill out then return the
 ///     <code>ErrorResponse</code> struct from the <code>save_source</code>
 ///     endpoint.</p>
 fn save_source_response(success: bool, message: &str) -> HttpResponse {
@@ -545,7 +545,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         file_html
     );
 
-    HttpResponse::Ok().body(body)
+    HttpResponse::Ok().body(html_wrapper(&body))
 }
 
 // <h3>Serve a CodeChat Editor Client webpage</h3>
