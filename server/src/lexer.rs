@@ -14,352 +14,334 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// <h1><code>lexer.rs</code> -- Lex source code into code and doc blocks
-/// </h1>
-/// <h2>Submodule definitions</h2>
+/// # `lexer.rs` -- Lex source code into code and doc blocks
+///
+/// ## Submodule definitions
 pub mod supported_languages;
 
-/// <h2>Imports</h2>
-/// <h3>Standard library</h3>
+/// ## Imports
+///
+/// ### Standard library
 use std::collections::HashMap;
 use std::sync::Arc;
 
-// <h3>Third-party</h3>
+// ### Third-party
 use lazy_static::lazy_static;
 use regex;
 use regex::Regex;
 
-/// <h2>Data structures</h2>
-/// <h3>Language definition</h3>
-/// <p>These data structures define everything the lexer needs in order to
-///     analyze a programming language:</p>
-/// <ul>
-///     <li>It defines block and inline comment delimiters; these (when
-///         correctly formatted) become doc blocks.</li>
-///     <li>It defines strings: what is the escape character? Are newlines
-///         allowed? If so, must newlines be escaped?</li>
-///     <li>It defines heredocs in a flexible form (see
-///         <code>HeredocDelim</code> for more details).</li>
-///     <li>It associates an Ace mode and filename extensions with the lexer.
-///     </li>
-/// </ul>
-/// <p>This lexer ignores line continuation characters; in C/C++/Python, it's a
-///     <code>\</code> character followed immediately by a newline (<a
-///         href="https://www.open-std.org/jtc1/sc22/WG14/www/docs/n1256.pdf#page22">C
-///         reference</a>, <a
-///         href="https://docs.python.org/3/reference/lexical_analysis.html#explicit-line-joining">Python
-///         reference</a>). From a lexer perspective, supporting these adds
-///     little value:</p>
-/// <ol>
-///     <li>It would allow the lexer to recognize the following C/C++ snippet as
-///         a doc block:<br><code>// This is an odd\</code><br><code>two-line
-///             inline comment.</code><br>However, this such such unusual syntax
-///         (most authors would instead use either a block comment or another
-///         inline comment) that recognizing it adds little value.</li>
-///     <li>I'm unaware of any valid syntax in which ignoring a line
-///         continuation would cause the lexer to mis-recognize code as a
-///         comment. (Escaped newlines in strings, a separate case, are handled
-///         correctly).</li>
-/// </ol>
-/// <p>This struct defines the delimiters for a block comment.</p>
+/// ## Data structures
+///
+/// ### Language definition
+///
+/// These data structures define everything the lexer needs in order to analyze
+/// a programming language:
+///
+/// - It defines block and inline comment delimiters; these (when correctly
+///   formatted) become doc blocks.
+/// - It defines strings: what is the escape character? Are newlines allowed? If
+///   so, must newlines be escaped?
+/// - It defines heredocs in a flexible form (see `HeredocDelim` for more
+///   details).
+/// - It associates an Ace mode and filename extensions with the lexer.
+///
+/// This lexer ignores line continuation characters; in C/C++/Python, it's a `\`
+/// character followed immediately by a newline
+/// ([C reference](https://www.open-std.org/jtc1/sc22/WG14/www/docs/n1256.pdf#page22),
+/// [Python reference](https://docs.python.org/3/reference/lexical_analysis.html#explicit-line-joining)).
+/// From a lexer perspective, supporting these adds little value:
+///
+/// 1.  It would allow the lexer to recognize the following C/C++ snippet as a
+///     doc block:\
+///     `// This is an odd\`\
+///     `two-line inline comment.`\
+///     However, this such such unusual syntax (most authors would instead use either
+///     a block comment or another inline comment) that recognizing it adds little
+///     value.
+/// 2.  I'm unaware of any valid syntax in which ignoring a line continuation
+///     would cause the lexer to mis-recognize code as a comment. (Escaped
+///     newlines in strings, a separate case, are handled correctly).
+///
+/// This struct defines the delimiters for a block comment.
 pub struct BlockCommentDelim<'a> {
-    /// <p>A string specifying the opening comment delimiter for a block
-    ///     comment.</p>
+    /// A string specifying the opening comment delimiter for a block comment.
     pub opening: &'a str,
-    /// <p>A string specifying the closing comment delimiter for a block
-    ///     comment.</p>
+    /// A string specifying the closing comment delimiter for a block comment.
     pub closing: &'a str,
-    /// <p>True if block comment may be nested.</p>
+    /// True if block comment may be nested.
     is_nestable: bool,
 }
 
-/// <p>Define the types of newlines supported in a string.</p>
+/// Define the types of newlines supported in a string.
 enum NewlineSupport {
-    /// <p>This string delimiter allows unescaped newlines. This is a multiline
-    ///     string.</p>
+    /// This string delimiter allows unescaped newlines. This is a multiline
+    /// string.
     Unescaped,
-    /// <p>This string delimiter only allows newlines when preceded by the
-    ///     string escape character. This is (mostly) a single-line string.</p>
+    /// This string delimiter only allows newlines when preceded by the string
+    /// escape character. This is (mostly) a single-line string.
     Escaped,
-    /// <p>This string delimiter does not allow newlines. This is strictly a
-    ///     single-line string.</p>
+    /// This string delimiter does not allow newlines. This is strictly a
+    /// single-line string.
     None,
 }
 
-/// <p>Define a string from the lexer's perspective.</p>
+/// Define a string from the lexer's perspective.
 struct StringDelimiterSpec<'a> {
-    /// <p>Delimiter to indicate the start and end of a string.</p>
+    /// Delimiter to indicate the start and end of a string.
     delimiter: &'a str,
-    /// <p>Escape character, to allow inserting the string delimiter into the
-    ///     string. Empty if this string delimiter doesn't provide an escape
-    ///     character.</p>
+    /// Escape character, to allow inserting the string delimiter into the
+    /// string. Empty if this string delimiter doesn't provide an escape
+    /// character.
     escape_char: &'a str,
-    /// <p>Newline handling. This value cannot be <code>Escaped</code> if the
-    ///     <code>escape_char</code> is empty.</p>
+    /// Newline handling. This value cannot be `Escaped` if the `escape_char` is
+    /// empty.
     newline_support: NewlineSupport,
 }
 
-/// <p>This defines the delimiters for a <a
-///         href="https://en.wikipedia.org/wiki/Here_document">heredoc</a> (or
-///     heredoc-like literal).</p>
+/// This defines the delimiters for a
+/// [heredoc](https://en.wikipedia.org/wiki/Here_document) (or heredoc-like
+/// literal).
 struct HeredocDelim<'a> {
-    /// <p>The prefix before the heredoc's delimiting identifier.</p>
+    /// The prefix before the heredoc's delimiting identifier.
     start_prefix: &'a str,
-    /// <p>A regex which matches the delimiting identifier.</p>
+    /// A regex which matches the delimiting identifier.
     delim_ident_regex: &'a str,
-    /// <p>The suffix after the delimiting identifier.</p>
+    /// The suffix after the delimiting identifier.
     start_suffix: &'a str,
-    /// <p>The prefix before the second (closing) delimiting identifier.</p>
+    /// The prefix before the second (closing) delimiting identifier.
     stop_prefix: &'a str,
-    /// <p>The suffix after the heredoc's closing delimiting identifier.</p>
+    /// The suffix after the heredoc's closing delimiting identifier.
     stop_suffix: &'a str,
 }
 
-/// <p>Provide a method to handle special cases that don't fit within the
-///     current lexing strategy.</p>
+/// Provide a method to handle special cases that don't fit within the current
+/// lexing strategy.
 enum SpecialCase {
-    /// <p>There are no special cases for this language.</p>
+    /// There are no special cases for this language.
     None,
-    /// <p><a
-    ///         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals">Template
-    ///         literal</a> support (for languages such as JavaScript,
-    ///     TypeScript, etc.).</p>
+    /// [Template literal](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals)
+    /// support (for languages such as JavaScript, TypeScript, etc.).
     TemplateLiteral,
-    /// <p>C#'s verbatim string literal -- see <a
-    ///         href="https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals">6.4.5.6
-    ///         String literals</a>.</p>
+    /// C#'s verbatim string literal -- see
+    /// [6.4.5.6 String literals](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals).
     CSharpVerbatimStringLiteral,
-    /// <p>MATLAB <a
-    ///         href="https://www.mathworks.com/help/matlab/matlab_prog/comments.html">block
-    ///         comments</a> must start and end on a blank line.</p>
+    /// MATLAB
+    /// [block comments](https://www.mathworks.com/help/matlab/matlab_prog/comments.html)
+    /// must start and end on a blank line.
     Matlab,
 }
 
-/// <p>Define a language by providing everything this lexer needs in order to
-///     split it into code and doc blocks.</p>
+/// Define a language by providing everything this lexer needs in order to split
+/// it into code and doc blocks.
 pub struct LanguageLexer<'a> {
-    /// <p>The <a href="https://ace.c9.io/">Ace</a> <a
-    ///         href="https://github.com/ajaxorg/ace/tree/master/src/mode">mode</a>
-    ///     to use for this language. The CodeChat Editor Client uses this to
-    ///     tell Ace the mode to use. It's can also be used in a
-    ///     specially-formatted comment in a source file to override the lexer
-    ///     chosen by looking at the file's extension.</p>
+    /// The [Ace](https://ace.c9.io/)
+    /// [mode](https://github.com/ajaxorg/ace/tree/master/src/mode) to use for
+    /// this language. The CodeChat Editor Client uses this to tell Ace the mode
+    /// to use. It's can also be used in a specially-formatted comment in a
+    /// source file to override the lexer chosen by looking at the file's
+    /// extension.
     pub ace_mode: &'a str,
-    /// <p>An array of file extensions for this language. They <em>do
-    ///         not</em>begin with a period, such as <code>rs</code>. This is
-    ///     the typical way that the CodeChat Editor uses to determine which
-    ///     lexer to use for a given source file.</p>
+    /// An array of file extensions for this language. They \_do not_begin with
+    /// a period, such as `rs`. This is the typical way that the CodeChat Editor
+    /// uses to determine which lexer to use for a given source file.
     ext_arr: &'a [&'a str],
-    /// <p>An array of strings which specify inline comment delimiters. Empty if
-    ///     this language doesn't provide inline comments.</p>
+    /// An array of strings which specify inline comment delimiters. Empty if
+    /// this language doesn't provide inline comments.
     pub inline_comment_delim_arr: &'a [&'a str],
-    /// <p>An array which specifies opening and closing block comment
-    ///     delimiters. Empty if this language doesn't provide block comments.
-    /// </p>
+    /// An array which specifies opening and closing block comment delimiters.
+    /// Empty if this language doesn't provide block comments.
     pub block_comment_delim_arr: &'a [BlockCommentDelim<'a>],
-    /// <p>Specify the strings supported by this language. While this could be
-    ///     empty, such a language would be very odd.</p>
+    /// Specify the strings supported by this language. While this could be
+    /// empty, such a language would be very odd.
     string_delim_spec_arr: &'a [StringDelimiterSpec<'a>],
-    /// <p>A <a href="https://en.wikipedia.org/wiki/Here_document">heredoc</a>
-    ///     delimiter; <code>None</code> if heredocs aren't supported.</p>
+    /// A [heredoc](https://en.wikipedia.org/wiki/Here_document) delimiter;
+    /// `None` if heredocs aren't supported.
     heredoc_delim: Option<&'a HeredocDelim<'a>>,
-    /// <p>Any special case treatment for this language.</p>
+    /// Any special case treatment for this language.
     special_case: SpecialCase,
 }
 
-/// <h3>Compiled language definition</h3>
-// <p>Store the results of compiling a language lexer.</p>
+/// ### Compiled language definition
+// Store the results of compiling a language lexer.
 pub struct LanguageLexerCompiled<'a> {
-    /// <p>Provide a reference back to the language definition this came from.
-    /// </p>
+    /// Provide a reference back to the language definition this came from.
     pub language_lexer: &'a LanguageLexer<'a>,
-    /// <p>A regex used to identify the next token when in a code block.</p>
+    /// A regex used to identify the next token when in a code block.
     next_token: Regex,
-    /// <p>A mapping from groups in this regex to the corresponding delimiter
-    ///     type matched.</p>
+    /// A mapping from groups in this regex to the corresponding delimiter type
+    /// matched.
     map: Vec<RegexDelimType>,
 }
 
-// <p>Store all lexers and their associated maps after they're compiled.</p>
+// Store all lexers and their associated maps after they're compiled.
 pub struct LanguageLexersCompiled<'a> {
-    // <p>The resulting compiled lexers.</p>
+    // The resulting compiled lexers.
     pub language_lexer_compiled_vec: Vec<Arc<LanguageLexerCompiled<'a>>>,
-    // <p>Maps a file extension to indices into the lexers vector.</p>
+    // Maps a file extension to indices into the lexers vector.
     pub map_ext_to_lexer_vec: HashMap<&'a str, Vec<Arc<LanguageLexerCompiled<'a>>>>,
-    // <p>Maps an Ace mode to an index into the lexers vector.</p>
+    // Maps an Ace mode to an index into the lexers vector.
     pub map_mode_to_lexer: HashMap<&'a str, Arc<LanguageLexerCompiled<'a>>>,
 }
 
-/// <p>Define which delimiter corresponds to a given regex group.</p>
-/// <p>This struct stores the results of "compiling" a
-///     <code>LanguageLexer</code> into a set of regexes and a map. For example,
-///     the JavaScript lexer becomes:</p>
+/// Define which delimiter corresponds to a given regex group.
+///
+/// This struct stores the results of "compiling" a `LanguageLexer` into a set
+/// of regexes and a map. For example, the JavaScript lexer becomes:
 //// Regex          (//)     |    (/*)      |        (")           |         (')          |       (`)
 //// Group            1             2                 3                       4                    5
 ////  Map       InlineComment   BlockComment   String(double-quote)   String(single-quote)   TemplateLiteral
-/// <p>The Regex in the table is stored in <code>next_token</code>, which is
-///     used to search for the next token. The group is both the group number of
-///     the regex (in other words, a match of <code>//</code> is group 1 of the
-///     regex) and the index into <code>map</code> (after subtracting 1, so that
-///     group 1 is stored in <code>map[0]</code>). Map is <code>map</code>,
-///     which labels each group with a <code>RegexDelimType</code>. The lexer
-///     uses this to decide how to handle the token it just found -- as a inline
-///     comment, block comment, etc. Note: this is a slightly simplified regex;
-///     group 1, <code>(/*)</code>, would actually be <code>(/\*)</code>, since
-///     the <code>*</code> must be escaped.</p>
+/// The Regex in the table is stored in `next_token`, which is used to search
+/// for the next token. The group is both the group number of the regex (in
+/// other words, a match of `//` is group 1 of the regex) and the index into
+/// `map` (after subtracting 1, so that group 1 is stored in `map[0]`). Map is
+/// `map`, which labels each group with a `RegexDelimType`. The lexer uses this
+/// to decide how to handle the token it just found -- as a inline comment,
+/// block comment, etc. Note: this is a slightly simplified regex; group 1,
+/// `(/*)`, would actually be `(/\*)`, since the `*` must be escaped.
 enum RegexDelimType {
     InlineComment,
     BlockComment(
-        /// <p>The regex used to find the closing delimiter. If the regex
-        ///     contains groups, then this is a language that supports nested
-        ///     block comments. Group 1 must match an opening comment, while
-        ///     group 2 must match the closing comment.</p>
+        /// The regex used to find the closing delimiter. If the regex contains
+        /// groups, then this is a language that supports nested block comments.
+        /// Group 1 must match an opening comment, while group 2 must match the
+        /// closing comment.
         Regex,
     ),
     String(
-        /// <p>The regex used to find the closing delimiter for this string
-        ///     type.</p>
+        /// The regex used to find the closing delimiter for this string type.
         Regex,
     ),
     Heredoc(
-        /// <p>The regex-escaped <code>HeredocDelim.stop_prefix</code>.</p>
+        /// The regex-escaped `HeredocDelim.stop_prefix`.
         String,
-        /// <p>The regex-escaped <code>HeredocDelim.stop_suffix</code>.</p>
+        /// The regex-escaped `HeredocDelim.stop_suffix`.
         String,
     ),
     TemplateLiteral,
 }
 
-/// <h3>Code/doc blocks</h3>
-// <p>To allow comparison for unit tests.</p>
+/// ### Code/doc blocks
+// To allow comparison for unit tests.
 #[derive(PartialEq)]
-// <p>To allow printing with <code>println!</code>.</p>
+// To allow printing with `println!`.
 #[derive(Debug)]
 pub struct DocBlock {
-    /// <p>The whitespace characters which created the indent for this doc
-    ///     block.</p>
+    /// The whitespace characters which created the indent for this doc block.
     pub indent: String,
-    /// <p>The opening comment delimiter.</p>
+    /// The opening comment delimiter.
     pub delimiter: String,
-    /// <p>The contents of this block: documentation (with the comment
-    ///     delimiters removed).</p>
+    /// The contents of this block: documentation (with the comment delimiters
+    /// removed).
     pub contents: String,
     /// The number of source code lines in this doc block.
     pub lines: usize,
 }
 
-// <p>To allow comparison for unit tests.</p>
+// To allow comparison for unit tests.
 #[derive(PartialEq)]
-// <p>To allow printing with <code>println!</code>.</p>
+// To allow printing with `println!`.
 #[derive(Debug)]
 pub enum CodeDocBlock {
     CodeBlock(
-        // <p>This contains the code defining this code block.</p>
+        // This contains the code defining this code block.
         String,
     ),
     DocBlock(DocBlock),
 }
 
-// <h2>Globals</h2>
-// <p>Create constant regexes needed by the lexer, following the <a
-//         href="https://docs.rs/regex/1.6.0/regex/index.html#example-avoid-compiling-the-same-regex-in-a-loop">Regex
-//         docs recommendation</a>.</p>
+// ## Globals
+//
+// Create constant regexes needed by the lexer, following the
+// [Regex docs recommendation](https://docs.rs/regex/1.6.0/regex/index.html#example-avoid-compiling-the-same-regex-in-a-loop).
 lazy_static! {
     static ref WHITESPACE_ONLY_REGEX: Regex = Regex::new("^[[:space:]]*$").unwrap();
-    /// <p>TODO: This regex should also allow termination on an unescaped
-    ///     <code>${</code> sequence, which then must count matching braces to
-    ///     find the end of the expression.</p>
+    /// TODO: This regex should also allow termination on an unescaped `${`
+    /// sequence, which then must count matching braces to find the end of the
+    /// expression.
     static ref TEMPLATE_LITERAL_CLOSING_REGEX: Regex = Regex::new(
-        // <p>Allow <code>.</code> to match <em>any</em> character, including a
-        //     newline. See the <a
-        //         href="https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags">regex
-        //         docs</a>.</p>
+        // Allow `.` to match _any_ character, including a newline. See the
+        // [regex docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
         &("(?s)".to_string() +
-        // <p>Start at the beginning of the string, and require a match of every
-        //     character. Allowing the regex to start matching in the middle
-        //     means it can skip over escape characters.</p>
+        // Start at the beginning of the string, and require a match of every
+        // character. Allowing the regex to start matching in the middle means
+        // it can skip over escape characters.
         "^(" +
-            // <p>Allow any non-special character,</p>
+            // Allow any non-special character,
             "[^\\\\`]|" +
-            // <p>or anything following an escape character (since whatever it
-            //     is, it can't be the end of the string).</p>
+            // or anything following an escape character (since whatever it is,
+            // it can't be the end of the string).
             "\\\\." +
-        // <p>Look for an arbitrary number of these non-string-ending
-        //     characters.</p>
+        // Look for an arbitrary number of these non-string-ending characters.
         ")*" +
-        // <p>Now, find the end of the string: the string delimiter.</p>
+        // Now, find the end of the string: the string delimiter.
         "`"),
     ).unwrap();
 }
 
-// <p>Support C# verbatim string literals, which end with a <code>"</code>; a
-//     <code>""</code> inserts a single " in the string.</p>
+// Support C# verbatim string literals, which end with a `"`; a `""` inserts a
+// single " in the string.
 const C_SHARP_VERBATIM_STRING_CLOSING: &str =
-    // <p>Allow anything except for a lone double quote as the contents of the
-    //     string, followed by a double quote to end the string.</p>
+    // Allow anything except for a lone double quote as the contents of the
+    // string, followed by a double quote to end the string.
     r#"([^"]|"")*""#;
 
-/// <h3>Language "compiler"</h3>
-/// <p>"Compile" a language description into regexes used to lex the language.
-/// </p>
+/// ### Language "compiler"
+///
+/// "Compile" a language description into regexes used to lex the language.
 fn build_lexer_regex<'a>(
-    // <p>The language description to build regexes for.</p>
+    // The language description to build regexes for.
     language_lexer: &'a LanguageLexer,
-    // <p>The "compiled" form of this language lexer.</p>
+    // The "compiled" form of this language lexer.
 ) -> LanguageLexerCompiled<'a> {
-    // <p>Produce the overall regex from regexes which find a specific special
-    //     case. See the lexer walkthrough for an example.</p>
+    // Produce the overall regex from regexes which find a specific special
+    // case. See the lexer walkthrough for an example.
     let mut regex_strings_arr: Vec<String> = Vec::new();
-    // <p>Also create a mapping between the groups in this regex being built and
-    //     the delimiter matched by that group. See docs on
-    //     <code>RegexDelimType</code>.</p>
+    // Also create a mapping between the groups in this regex being built and
+    // the delimiter matched by that group. See docs on `RegexDelimType`.
     let mut regex_group_map: Vec<RegexDelimType> = Vec::new();
 
-    // <p>Given an array of strings containing unescaped characters which
-    //     identifies the start of one of the special cases, combine them into a
-    //     single string separated by an or operator. Return the index of the
-    //     resulting string in <code>regex_strings</code>, or <code>None</code>
-    //     if the array is empty (indicating that this language doesn't support
-    //     the provided special case).</p>
+    // Given an array of strings containing unescaped characters which
+    // identifies the start of one of the special cases, combine them into a
+    // single string separated by an or operator. Return the index of the
+    // resulting string in `regex_strings`, or `None` if the array is empty
+    // (indicating that this language doesn't support the provided special
+    // case).
     let mut regex_builder = |//
-                             // <p>An array of alternative delimiters, which
-                             //     will be combined with a regex or
-                             //     (<code>|</code>) operator.</p>
+                             // An array of alternative delimiters, which will
+                             // be combined with a regex or (`|`) operator.
                              string_arr: &Vec<&str>,
-                             // <p>The type of delimiter in
-                             //     <code>string_arr</code>.</p>
+                             // The type of delimiter in `string_arr`.
                              regex_delim_type: RegexDelimType| {
-        // <p>If there are no delimiters, then there's nothing to do.</p>
+        // If there are no delimiters, then there's nothing to do.
         if string_arr.is_empty() {
             return;
         }
-        // <p>Join the array of strings with an or operator.</p>
+        // Join the array of strings with an or operator.
         let tmp: Vec<String> = string_arr.iter().map(|x| regex::escape(x)).collect();
         regex_strings_arr.push(tmp.join("|"));
-        // <p>Store the type of this group.</p>
+        // Store the type of this group.
         regex_group_map.push(regex_delim_type);
     };
 
-    // <p>Add the opening block comment delimiter to the overall regex; add the
-    //     closing block comment delimiter to the map for the corresponding
-    //     group.</p>
+    // Add the opening block comment delimiter to the overall regex; add the
+    // closing block comment delimiter to the map for the corresponding group.
     let mut block_comment_opening_delim: Vec<&str> = vec![""];
     for block_comment_delim in language_lexer.block_comment_delim_arr {
         block_comment_opening_delim[0] = block_comment_delim.opening;
         regex_builder(
             &block_comment_opening_delim,
-            // <p>Determine the block closing regex:</p>
+            // Determine the block closing regex:
             RegexDelimType::BlockComment(
                 Regex::new(&if block_comment_delim.is_nestable {
-                    // <p>If nested, look for another opening delimiter or the
-                    //     closing delimiter.</p>
+                    // If nested, look for another opening delimiter or the
+                    // closing delimiter.
                     format!(
                         "({})|({})",
                         regex::escape(block_comment_delim.opening),
                         regex::escape(block_comment_delim.closing)
                     )
                 } else {
-                    // <p>Otherwise, just look for the closing delimiter.</p>
+                    // Otherwise, just look for the closing delimiter.
                     regex::escape(block_comment_delim.closing)
                 })
                 .unwrap(),
@@ -370,141 +352,130 @@ fn build_lexer_regex<'a>(
         &language_lexer.inline_comment_delim_arr.to_vec(),
         RegexDelimType::InlineComment,
     );
-    // <p>Build regexes for each string delimiter.</p>
+    // Build regexes for each string delimiter.
     for string_delim_spec in language_lexer.string_delim_spec_arr {
-        // <p>Generate a regex based on the characteristics of this string.</p>
+        // Generate a regex based on the characteristics of this string.
         let has_escape_char = !string_delim_spec.escape_char.is_empty();
-        // <p>For multi-character string delimiters, build a regex:
-        //     <code>'''</code> becomes <code>(|'|'')</code>, which allows
-        //     matches of a partial string delimiter, but not the entire
-        //     delimiter. For a single-character delimiter, the "regex" is an
-        //     empty string.</p>
+        // For multi-character string delimiters, build a regex: `'''` becomes
+        // `(|'|'')`, which allows matches of a partial string delimiter, but
+        // not the entire delimiter. For a single-character delimiter, the
+        // "regex" is an empty string.
         let string_partial_builder = |delimiter: &str| -> String {
-            // <p>If this is a single-character string delimiter, then we're
-            //     done.</p>
+            // If this is a single-character string delimiter, then we're done.
             if delimiter.len() < 2 {
                 return String::new();
             };
 
-            // <p>Otherwise, build a vector of substrings of the delimiter: for
-            //     a delimiter of <code>'''</code>, we want <code>["", "'"",
-            //         "''"]</code>.</p>
+            // Otherwise, build a vector of substrings of the delimiter: for a
+            // delimiter of `'''`, we want `["", "'"", "''"]`.
             let mut v: Vec<String> = vec![];
             let mut partial_delimiter = String::new();
             for c in delimiter.chars() {
-                // <p>Add the previous partial delimiter. This allows us to
-                //     produce a vector containing all the but full delimiter
-                //     and including the empty string case.</p>
+                // Add the previous partial delimiter. This allows us to produce
+                // a vector containing all the but full delimiter and including
+                // the empty string case.
                 v.push(regex::escape(&partial_delimiter));
-                // <p>Add the current character to the partial delimiter.</p>
+                // Add the current character to the partial delimiter.
                 partial_delimiter.push(c);
             }
 
-            // <p>Convert this vector into a regex.</p>
+            // Convert this vector into a regex.
             format!("({})", v.join("|"))
         };
         let string_partial_delimiter = string_partial_builder(string_delim_spec.delimiter);
-        // <p>Look for</p>
+        // Look for
         let escaped_delimiter = regex::escape(string_delim_spec.delimiter);
         let escaped_escape_char = regex::escape(string_delim_spec.escape_char);
         let end_of_string_regex = match (has_escape_char, &string_delim_spec.newline_support) {
-            // <p>This is the most complex case. This type of string can be
-            //     terminated by an unescaped newline or an unescaped delimiter.
-            //     Escaped newlines or terminators should be included in the
-            //     string.</p>
+            // This is the most complex case. This type of string can be
+            // terminated by an unescaped newline or an unescaped delimiter.
+            // Escaped newlines or terminators should be included in the string.
             (true, NewlineSupport::Escaped) => Regex::new(
-                // <p>Allow <code>.</code> to match <em>any</em> character,
-                //     including a newline. See the <a
-                //         href="https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags">regex
-                //         docs</a>.</p>
+                // Allow `.` to match _any_ character, including a newline. See
+                // the
+                // [regex docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
                 &("(?s)".to_string() +
-                // <p>Start at the beginning of the string, and require a match
-                //     of every character. Allowing the regex to start matching
-                //     in the middle means it can skip over escape characters.
-                // </p>
+                // Start at the beginning of the string, and require a match of
+                // every character. Allowing the regex to start matching in the
+                // middle means it can skip over escape characters.
                 "^(" +
-                    // <p>Allow a partial string delimiter inside the string
-                    //     (but not the full delimiter).</p>
+                    // Allow a partial string delimiter inside the string (but
+                    // not the full delimiter).
                     &string_partial_delimiter +
-                    // <p>Allow any non-special character,</p>
+                    // Allow any non-special character,
                     &format!("([^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
-                    // <p>or anything following an escape character (since
-                    //     whatever it is, it can't be the end of the string).
-                    // </p>
+                    // or anything following an escape character (since whatever
+                    // it is, it can't be the end of the string).
                     &escaped_escape_char + ".)" +
-                // <p>Look for an arbitrary number of these non-string-ending
-                //     characters.</p>
+                // Look for an arbitrary number of these non-string-ending
+                // characters.
                 ")*" +
-                // <p>Now, find the end of the string: a newline or the string
-                //     delimiter.</p>
+                // Now, find the end of the string: a newline or the string
+                // delimiter.
                 &format!("(\n|{})", escaped_delimiter)),
             ),
 
-            // <p>A bit simpler: this type of string can be terminated by a
-            //     newline or an unescaped delimiter. Escaped terminators should
-            //     be included in the string.</p>
+            // A bit simpler: this type of string can be terminated by a newline
+            // or an unescaped delimiter. Escaped terminators should be included
+            // in the string.
             (true, NewlineSupport::None) => Regex::new(
-                // <p>Start at the beginning of the string, and require a match
-                //     of every character. Allowing the regex to start matching
-                //     in the middle means it can skip over escape characters.
-                // </p>
+                // Start at the beginning of the string, and require a match of
+                // every character. Allowing the regex to start matching in the
+                // middle means it can skip over escape characters.
                 &("^(".to_string() +
-                    // <p>Allow a partial string delimiter inside the string
-                    //     (but not the full delimiter).</p>
+                    // Allow a partial string delimiter inside the string (but
+                    // not the full delimiter).
                     &string_partial_delimiter +
-                    // <p>Allow any non-special character</p>
+                    // Allow any non-special character
                     &format!("([^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
-                    // <p>or anything following an escape character except a
-                    //     newline.</p>
+                    // or anything following an escape character except a
+                    // newline.
                     &escaped_escape_char + "[^\n])" +
-                // <p>Look for an arbitrary number of these non-string-ending
-                //     characters.</p>
+                // Look for an arbitrary number of these non-string-ending
+                // characters.
                 ")*" +
-                // <p>Now, find the end of the string: a newline optionally
-                //     preceded by the escape char or the string delimiter.</p>
+                // Now, find the end of the string: a newline optionally
+                // preceded by the escape char or the string delimiter.
                 &format!("({}?\n|{})", escaped_escape_char, escaped_delimiter)),
             ),
 
-            // <p>Even simpler: look for an unescaped string delimiter.</p>
+            // Even simpler: look for an unescaped string delimiter.
             (true, NewlineSupport::Unescaped) => Regex::new(
-                // <p>Allow <code>.</code> to match <em>any</em> character,
-                //     including a newline. See the <a
-                //         href="https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags">regex
-                //         docs</a>.</p>
+                // Allow `.` to match _any_ character, including a newline. See
+                // the
+                // [regex docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
                 &("(?s)".to_string() +
-                // <p>Start at the beginning of the string, and require a match
-                //     of every character. Allowing the regex to start matching
-                //     in the middle means it can skip over escape characters.
-                // </p>
+                // Start at the beginning of the string, and require a match of
+                // every character. Allowing the regex to start matching in the
+                // middle means it can skip over escape characters.
                 "^(" +
-                    // <p>Allow a partial string delimiter inside the string
-                    //     (but not the full delimiter).</p>
+                    // Allow a partial string delimiter inside the string (but
+                    // not the full delimiter).
                     &string_partial_delimiter +
-                    // <p>Allow any non-special character,</p>
+                    // Allow any non-special character,
                     &format!("([^{}{}]|", escaped_delimiter, escaped_escape_char) +
-                    // <p>or anything following an escape character (since
-                    //     whatever it is, it can't be the end of the string).
-                    // </p>
+                    // or anything following an escape character (since whatever
+                    // it is, it can't be the end of the string).
                     &escaped_escape_char + ".)" +
-                // <p>Look for an arbitrary number of these non-string-ending
-                //     characters.</p>
+                // Look for an arbitrary number of these non-string-ending
+                // characters.
                 ")*" +
-                // <p>Now, find the end of the string: the string delimiter.</p>
+                // Now, find the end of the string: the string delimiter.
                 &escaped_delimiter),
             ),
 
-            // <p>This case makes no sense: there's no escape character, yet the
-            //     string allows escaped newlines?</p>
+            // This case makes no sense: there's no escape character, yet the
+            // string allows escaped newlines?
             (false, NewlineSupport::Escaped) => panic!(
                 "Invalid parameters for the language lexer where ace_mode = {} and ext_arr = {:?}.",
                 language_lexer.ace_mode, language_lexer.ext_arr
             ),
 
-            // <p>The simplest case: just look for the delimiter!</p>
+            // The simplest case: just look for the delimiter!
             (false, NewlineSupport::Unescaped) => Regex::new(&escaped_delimiter),
 
-            // <p>Look for either the delimiter or a newline to terminate the
-            //     string.</p>
+            // Look for either the delimiter or a newline to terminate the
+            // string.
             (false, NewlineSupport::None) => Regex::new(&format!("{}|\n", &escaped_delimiter)),
         }
         .unwrap();
@@ -516,87 +487,82 @@ fn build_lexer_regex<'a>(
 
     match language_lexer.special_case {
         SpecialCase::None => (),
-        // <p>A C# verbatim string has asymmetric opening and closing
-        //     delimiters, making it a special case.</p>
+        // A C# verbatim string has asymmetric opening and closing delimiters,
+        // making it a special case.
         SpecialCase::CSharpVerbatimStringLiteral => regex_builder(
             &["@\""].to_vec(),
             RegexDelimType::String(Regex::new(C_SHARP_VERBATIM_STRING_CLOSING).unwrap()),
         ),
         SpecialCase::TemplateLiteral => {
-            // <p>Template literals only exist in JavaScript. No other language
-            //     (that I know of) allows comments inside these, or nesting of
-            //     template literals.</p>
-            // <p>Build a regex for template strings.</p>
-            // <p>TODO: this is broken! Lexing nested template literals means
-            //     matching braces, yikes. For now, don't support this.</p>
-            // <p>TODO: match either an unescaped <code>${</code> -- which
-            //     causes a nested parse -- or the closing backtick (which must
-            //     be unescaped).</p>
+            // Template literals only exist in JavaScript. No other language
+            // (that I know of) allows comments inside these, or nesting of
+            // template literals.
+            //
+            // Build a regex for template strings.
+            //
+            // TODO: this is broken! Lexing nested template literals means
+            // matching braces, yikes. For now, don't support this.
+            //
+            // TODO: match either an unescaped `${` -- which causes a nested
+            // parse -- or the closing backtick (which must be unescaped).
             regex_builder(&["`"].to_vec(), RegexDelimType::TemplateLiteral);
         }
         SpecialCase::Matlab => {
-            // <p>MATLAB supports block comments, when the comment delimiters
-            //     appear alone on the line (also preceding and following
-            //     whitespace is allowed). Therefore, we need a regex that
-            //     matches this required whitespace.</p>
-            // <p>Also, this match needs to go before the inline comment of
-            //     <code>%</code>, to prevent that from matching before this
-            //     does. Hence, use an <code>insert</code> instead of a
-            //     <code>push</code>.</p>
+            // MATLAB supports block comments, when the comment delimiters
+            // appear alone on the line (also preceding and following whitespace
+            // is allowed). Therefore, we need a regex that matches this
+            // required whitespace.
+            //
+            // Also, this match needs to go before the inline comment of `%`, to
+            // prevent that from matching before this does. Hence, use an
+            // `insert` instead of a `push`.
             regex_strings_arr.insert(
                 0,
-                // <p>Tricky: even though we match on optional leading and
-                //     trailing whitespace, we don't want the whitespace
-                //     captured by the regex. So, begin by defining the outer
-                //     group (added when <code>regex_strings_arr</code> are
-                //     combined into a single string) as a non-capturing group.
-                // </p>
+                // Tricky: even though we match on optional leading and trailing
+                // whitespace, we don't want the whitespace captured by the
+                // regex. So, begin by defining the outer group (added when
+                // `regex_strings_arr` are combined into a single string) as a
+                // non-capturing group.
                 "?:".to_string() +
-                // <p>To match on a line which consists only of leading and
-                //     trailing whitespace plus the opening comment delimiter,
-                //     put these inside a <code>(?m:exp)</code> block, so that
-                //     <code>^</code> and <code>$</code> will match on any
-                //     newline in the string; see the <a
-                //         href="https://docs.rs/regex/latest/regex/#grouping-and-flags">regex
-                //         docs</a>. This also functions as a non-capturing
-                //     group, to avoid whitespace capture as discussed earlier.
-                // </p>
+                // To match on a line which consists only of leading and
+                // trailing whitespace plus the opening comment delimiter, put
+                // these inside a `(?m:exp)` block, so that `^` and `$` will
+                // match on any newline in the string; see the
+                // [regex docs](https://docs.rs/regex/latest/regex/#grouping-and-flags).
+                // This also functions as a non-capturing group, to avoid
+                // whitespace capture as discussed earlier.
                 "(?m:" +
-                    // <p>Look for whitespace before the opening comment
-                    //     delimiter.</p>
+                    // Look for whitespace before the opening comment delimiter.
                     r#"^\s*"# +
-                    // <p>Capture just the opening comment delimiter,</p>
+                    // Capture just the opening comment delimiter,
                     r#"(%\{)"# +
-                    // <p>followed by whitespace until the end of the line.</p>
+                    // followed by whitespace until the end of the line.
                     r#"\s*$"# +
-                // <p>End the multi-line mode and this non-capturing group.</p>
+                // End the multi-line mode and this non-capturing group.
                 ")",
             );
             regex_group_map.insert(
                 0,
                 RegexDelimType::BlockComment(
-                    // <p>Use a similar strategy for finding the closing
-                    //     delimiter.</p>
+                    // Use a similar strategy for finding the closing delimiter.
                     Regex::new(r#"(?m:^\s*%\}\s*$)"#).unwrap(),
                 ),
             );
         }
     };
 
-    // <p>This must be last, since it includes one group (so the index of all
-    //     future items will be off by 1). Build a regex for a heredoc start.
-    // </p>
+    // This must be last, since it includes one group (so the index of all
+    // future items will be off by 1). Build a regex for a heredoc start.
     let &regex_str;
     if let Some(heredoc_delim) = language_lexer.heredoc_delim {
-        // <p>First, create the string which defines the regex.</p>
+        // First, create the string which defines the regex.
         regex_str = format!(
             "{}({}){}",
             regex::escape(heredoc_delim.start_prefix),
             heredoc_delim.delim_ident_regex,
             regex::escape(heredoc_delim.start_suffix)
         );
-        // <p>Then add it. Do this manually, since we don't want the regex
-        //     escaped.</p>
+        // Then add it. Do this manually, since we don't want the regex escaped.
         regex_strings_arr.push(regex_str);
         regex_group_map.push(RegexDelimType::Heredoc(
             regex::escape(heredoc_delim.stop_prefix),
@@ -604,8 +570,8 @@ fn build_lexer_regex<'a>(
         ));
     }
 
-    // <p>Combine all this into a single regex, which is this or of each
-    //     delimiter's regex. Create a capturing group for each delimiter.</p>
+    // Combine all this into a single regex, which is this or of each
+    // delimiter's regex. Create a capturing group for each delimiter.
     let classify_regex = Regex::new(&format!("({})", regex_strings_arr.join(")|("))).unwrap();
 
     LanguageLexerCompiled {
@@ -615,7 +581,7 @@ fn build_lexer_regex<'a>(
     }
 }
 
-// <h2>Compile lexers</h2>
+// ## Compile lexers
 pub fn compile_lexers<'a>(
     language_lexer_arr: &'a [LanguageLexer<'a>],
 ) -> LanguageLexersCompiled<'a> {
@@ -624,15 +590,15 @@ pub fn compile_lexers<'a>(
         map_ext_to_lexer_vec: HashMap::new(),
         map_mode_to_lexer: HashMap::new(),
     };
-    // <p>Walk through each lexer.</p>
+    // Walk through each lexer.
     for language_lexer in language_lexer_arr {
-        // <p>Compile and add it.</p>
+        // Compile and add it.
         let llc = Arc::new(build_lexer_regex(language_lexer));
         language_lexers_compiled
             .language_lexer_compiled_vec
             .push(Arc::clone(&llc));
 
-        // <p>Add all its extensions to the extension map.</p>
+        // Add all its extensions to the extension map.
         for ext in language_lexer.ext_arr {
             match language_lexers_compiled.map_ext_to_lexer_vec.get_mut(ext) {
                 None => {
@@ -645,7 +611,7 @@ pub fn compile_lexers<'a>(
             }
         }
 
-        // <p>Add its mode to the mode map.</p>
+        // Add its mode to the mode map.
         language_lexers_compiled
             .map_mode_to_lexer
             .insert(language_lexer.ace_mode, llc);
@@ -654,246 +620,237 @@ pub fn compile_lexers<'a>(
     language_lexers_compiled
 }
 
-/// <h2>Source lexer</h2>
-/// <p>This lexer categorizes source code into code blocks or doc blocks.</p>
-/// <p>These linter warnings would IMHO make the code less readable.</p>
+/// ## Source lexer
+///
+/// This lexer categorizes source code into code blocks or doc blocks.
+///
+/// These linter warnings would IMHO make the code less readable.
 #[allow(clippy::bool_to_int_with_if)]
 pub fn source_lexer(
-    // <p>The source code to lex.</p>
+    // The source code to lex.
     source_code: &str,
-    // <p>A description of the language, used to lex the
-    //     <code>source_code</code>.</p>
+    // A description of the language, used to lex the `source_code`.
     language_lexer_compiled: &LanguageLexerCompiled,
-    // <p>The return value is an array of code and doc blocks.</p>
+    // The return value is an array of code and doc blocks.
 ) -> Vec<CodeDocBlock> {
-    // <p>Rather than attempt to lex the entire language, this lexer's only goal
-    //     is to categorize all the source code into code blocks or doc blocks.
-    //     To do it, it only needs to:</p>
-    // <ul>
-    //     <li>Recognize where comments can't be&mdash;inside strings or
-    //         string-like syntax, such as <a
-    //             href="https://en.wikipedia.org/wiki/Here_document">here
-    //             text</a> or <a
-    //             href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals">template
-    //             literals</a>. These are always part of a code block and can
-    //         never contain a comment or (by implication) a doc block.</li>
-    //     <li>Outside of these special cases, look for inline or block
-    //         comments, categorizing everything else as plain code.</li>
-    //     <li>After finding either an inline or block comment, determine if
-    //         this is a doc block.</li>
-    // </ul>
-    // <h3>Lexer operation</h3>
-    // <p>To accomplish this goal, use a <a
-    //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions">regex</a>
-    //     named <code>language_lexer_compiled.next_token</code> and associated
-    //     indices in <code>language_lexer_compiled.map</code>. These divides
-    //     source code into two categories: plain code and special cases. The
-    //     special cases consist of:</p>
-    // <ul>
-    //     <li>String-like code (strings, here text, template literals). In this
-    //         case, the lexer must find the end of the string-like element
-    //         before it can return to plain code.</li>
-    //     <li>Comments (inline or block). In this case, the lexer must find the
-    //         end of the comment before it can return to plain code.</li>
-    // </ul>
-    // <p>This regex assumes the string it analyzes was preceded by plain code;
-    //     its purpose is to identify the start of the next special case.
-    //     <strong>This code makes heavy use of regexes -- read the previous
-    //         link thoroughly.</strong></p>
-    // <p>To better explain the operation of the lexer, the following provides a
-    //     high-level walkthrough.</p>
-    // <h3>Lexer walkthrough</h3>
-    // <p>This walkthrough shows how the lexer parses the following Python code
-    //     fragment:</p>
-    // <p><code>print(<span
-    //             style="color: rgb(224, 62, 45);">"""&para;</span></code><br><code><span
-    //             style="color: rgb(224, 62, 45);"># This is not a comment!
-    //             It's a multi-line string.&para;</span></code><br><code><span
-    //             style="color: rgb(224, 62, 45);">"""</span>)&para;</code><br>&nbsp;
-    //     <code><span style="color: rgb(45, 194, 107);"># This is a
-    //             comment.</span></code></p>
-    // <p>Paragraph marks (the &para; character) are included to show how the
-    //     lexer handles newlines. To explain the operation of the lexer, the
-    //     code will be highlighted in yellow to represent the <span
-    //         style="background-color: rgb(251, 238, 184);">unlexed source
-    //         code</span>, represented by the contents of the
-    //     variable&nbsp;<code>source_code[source_code_unlexed_index..]</code>
-    //     and in green for the <span
-    //         style="background-color: rgb(191, 237, 210);">current code
-    //         block</span>, defined by
-    //     <code>source_code[current_code_block_index..source_code_unlexed_index]</code>.
-    //     Code that is classified by the lexer will be placed in the
-    //     <code>classified_code</code> array.</p>
-    // <h4>Start of parse</h4>
-    // <p>The <span style="background-color: rgb(251, 238, 184);">unlexed source
-    //         code</span> holds all the code (everything is highlighted in
-    //     yellow); the <span
-    //         style="background-color: rgb(191, 237, 210);">current code
-    //         block</span> is empty (there is no green highlight).&nbsp;</p>
-    // <p><span style="background-color: rgb(251, 238, 184);"><code>print(<span
-    //                 style="color: rgb(224, 62, 45);">"""&para;</span></code></span><br><span
-    //         style="background-color: rgb(251, 238, 184);"><code><span
-    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
-    //                 It's a multi-line
-    //                 string.&para;</span></code></span><br><span
-    //         style="background-color: rgb(251, 238, 184);"><code><span
-    //                 style="color: rgb(224, 62, 45);">"""</span>)&para;</code></span><br><code><span
-    //             style="background-color: rgb(251, 238, 184);">&nbsp; <span
-    //                 style="color: rgb(45, 194, 107);"># This is a
-    //                 comment.</span></span></code></p>
-    // <p><code>classified_code = [</code><br><code>]</code><span
-    //         style="background-color: rgb(191, 237, 210);"><br></span></p>
-    // <h4>Search for a token</h4>
-    // <p>The lexer begins by searching for the regex in
-    //     <code>language_lexer_compiled.next_token</code>, which is
-    //     <code>(\#)|(""")|(''')|(")|(')</code>. The first token found is <span
-    //         style="color: rgb(224, 62, 45);"><code>"""</code></span>.
-    //     Everything up to the match is moved from the unlexed source code to
-    //     the current code block, giving:</p>
-    // <p><code><span
-    //             style="background-color: rgb(191, 237, 210);">print(</span><span
-    //             style="color: rgb(224, 62, 45); background-color: rgb(251, 238, 184);">"""&para;</span></code><br><span
-    //         style="background-color: rgb(251, 238, 184);"><code><span
-    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
-    //                 It's a multi-line
-    //                 string.&para;</span></code></span><br><span
-    //         style="background-color: rgb(251, 238, 184);"><code><span
-    //                 style="color: rgb(224, 62, 45);">"""</span>)&para;</code></span><br><code><span
-    //             style="background-color: rgb(251, 238, 184);">&nbsp; <span
-    //                 style="color: rgb(45, 194, 107);"># This is a
-    //                 comment.</span></span></code></p>
-    // <p><code>classified_code = [</code><br><code>]</code><span
-    //         style="background-color: rgb(191, 237, 210);"><br></span></p>
-    // <h4>String processing</h4>
-    // <p>The regex is accompanied by a map named
-    //     <code>language_lexer_compiled.map</code>, which connects the mapped
-    //     group to which token it matched (see <code>struct
-    //         RegexDelimType</code>):<br>Regex:&nbsp; &nbsp; &nbsp; &nbsp;
-    //     &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;(#)&nbsp; &nbsp;
-    //     &nbsp; &nbsp; &nbsp;|&nbsp; (""") |&nbsp; &nbsp; (''')&nbsp; &nbsp;
-    //     |&nbsp; &nbsp; (")&nbsp; &nbsp; |&nbsp; &nbsp; (')<br>Mapping: &nbsp;
-    //     &nbsp;Inline comment &nbsp; String &nbsp; String &nbsp; String &nbsp;
-    //     String<br>Group:&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
-    //     &nbsp; &nbsp; &nbsp; &nbsp; 1&nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
-    //     &nbsp; &nbsp; &nbsp; 2&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;3
-    //     &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; 4&nbsp; &nbsp; &nbsp; &nbsp;
-    //     &nbsp; 5</p>
-    // <p>Since group 2 matched, looking up this group in the map tells the
-    //     lexer it&rsquo;s a string, and also gives a regex which identifies
-    //     the end of the string . This regex identifies the end of the string,
-    //     moving it from the <span
-    //         style="background-color: rgb(251, 238, 184);">(unclassified)
-    //         source code</span> to the (classified) <span
-    //         style="background-color: rgb(191, 237, 210);">current code
-    //         block</span>. It correctly skips what looks like a comment but is
-    //     not a comment. After this step, the lexer&rsquo;s state is:</p>
-    // <p><span style="background-color: rgb(191, 237, 210);"><code>print(<span
-    //                 style="color: rgb(224, 62, 45);">"""&para;</span></code></span><br><span
-    //         style="background-color: rgb(191, 237, 210);"><code><span
-    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
-    //                 It's a multi-line
-    //                 string.&para;</span></code></span><br><code><span
-    //             style="color: rgb(224, 62, 45); background-color: rgb(191, 237, 210);">"""</span><span
-    //             style="background-color: rgb(251, 238, 184);">)&para;</span></code><br><code><span
-    //             style="background-color: rgb(251, 238, 184);">&nbsp; <span
-    //                 style="color: rgb(45, 194, 107);"># This is a
-    //                 comment.</span></span></code></p>
-    // <p><code>classified_code = [</code><br><code>]</code></p>
-    // <h4>Search for a token (second time)</h4>
-    // <p>Now, the lexer is back to its state of looking through code (as
-    //     opposed to looking inside a string, comment, etc.). It uses the
-    //     <code>next_token</code> regex as before to identify the next token
-    //     <span style="color: rgb(45, 194, 107);"><code>#</code></span> and
-    //     moves all the preceding characters from source code to the current
-    //     code block. The lexer state is now:</p>
-    // <p><code><span style="background-color: rgb(191, 237, 210);">print(<span
-    //                 style="color: rgb(224, 62, 45);">"""&para;</span></span></code><br><span
-    //         style="background-color: rgb(191, 237, 210);"><code><span
-    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
-    //                 It's a multi-line
-    //                 string.&para;</span></code></span><br><span
-    //         style="background-color: rgb(191, 237, 210);"><code><span
-    //                 style="color: rgb(224, 62, 45);">"""</span>)&para;</code></span><br><code><span
-    //             style="background-color: rgb(191, 237, 210);">&nbsp;
-    //         </span><span style="color: rgb(45, 194, 107);"><span
-    //                 style="background-color: rgb(251, 238, 184);"><code>#
-    //                     This is a
-    //                     comment.</code></span></span></code></p>
-    // <p><code>classified_code = [</code><br><code>]</code></p>
-    // <h4>Inline comment lex</h4>
-    // <p>Based on the map, the lexer identifies this as an inline comment. The
-    //     inline comment lexer first identifies the end of the comment (the
-    //     next newline or, as in this case, the end of the file), putting the
-    //     entire inline comment except for the comment opening delimiter <span
-    //         style="color: rgb(45, 194, 107);"><code>#</code></span>&nbsp;into
-    //     <span
-    //         style="background-color: rgb(236, 240, 241);"><code>full_comment</code></span>.
-    //     It then splits the current code block into two groups:&nbsp;<span
-    //         style="background-color: rgb(236, 202, 250);"><code>code_lines_before_comment</code></span>
-    //     (lines in the current code block which come before the current line)
-    //     and the <span
-    //         style="background-color: rgb(194, 224, 244);"><code>comment_line_prefix</code></span>
-    //     (the current line up to the start of the comment). The classification
-    //     is:</p>
-    // <p><code><span style="background-color: rgb(236, 202, 250);">print(<span
-    //                 style="color: rgb(224, 62, 45);">"""&para;</span></span></code><br><span
-    //         style="background-color: rgb(236, 202, 250);"><code><span
-    //                 style="color: rgb(224, 62, 45);"># This is not a comment!
-    //                 It's a multi-line
-    //                 string.&para;</span></code></span><br><span
-    //         style="background-color: rgb(236, 202, 250);"><code><span
-    //                 style="color: rgb(224, 62, 45);">"""</span>)&para;</code></span><br><code><span
-    //             style="background-color: rgb(194, 224, 244);">&nbsp;
-    //         </span><span style="color: rgb(45, 194, 107);">#<span
-    //                 style="background-color: rgb(236, 240, 241);"> This is a
-    //                 comment.</span></span></code></p>
-    // <p><code>classified_code = [</code><br><code>]</code></p>
-    // <h4>Code/doc block classification</h4>
-    // <p>Because <code><span
-    //             style="background-color: rgb(194, 224, 244);">comment_line_prefix</span></code>
-    //     contains only whitespace and <span
-    //         style="background-color: rgb(236, 240, 241);">full_comment</span>
-    //     has a space after the comment delimiter, the lexer classifies this as
-    //     a doc block. It adds&nbsp;<span
-    //         style="background-color: rgb(236, 202, 250);">code_lines_before_comment</span>
-    //     as a code block, then the text of the comment as a doc block:</p>
-    // <p><code>classified_code = [</code><br><code>&nbsp; Item 0 = CodeDocBlock
-    //         { <br>&nbsp; &nbsp; </code><code>indent: "", delimiter: "",
-    //         contents = "print("""&para;</code><br><code># This is not a
-    //         comment! It's a multi-line
-    //         string.&para;</code><br><code>""")&para;</code><br>&nbsp; &nbsp;
-    //     &nbsp; &nbsp; <code>" },</code></p>
-    // <p><code>&nbsp; &nbsp;Item 1 = CodeDocBlock { indent: " &nbsp;",
-    //         delimiter: "#", contents = "This is a comment"
-    //         }</code><br><code>]</code></p>
-    // <h4>Done</h4>
-    // <p>After this, the unlexed source code is empty since the inline comment
-    //     classified moved the remainder of its contents into
-    //     <code>classified_code</code>. The function exits.</p>
-    // <h3>Helper function</h3>
-    // <p>Provide a method to intelligently append to the code/doc block vec.
-    //     Empty appends are ignored; appends of the same type append to
-    //     <code>contents</code> instead of creating a new entry.</p>
+    // Rather than attempt to lex the entire language, this lexer's only goal is
+    // to categorize all the source code into code blocks or doc blocks. To do
+    // it, it only needs to:
+    //
+    // - Recognize where comments can't be—inside strings or string-like syntax,
+    //   such as [here text](https://en.wikipedia.org/wiki/Here_document) or
+    //   [template literals](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals).
+    //   These are always part of a code block and can never contain a comment
+    //   or (by implication) a doc block.
+    // - Outside of these special cases, look for inline or block comments,
+    //   categorizing everything else as plain code.
+    // - After finding either an inline or block comment, determine if this is a
+    //   doc block.
+    //
+    // ### Lexer operation
+    //
+    // To accomplish this goal, use a
+    // [regex](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions)
+    // named `language_lexer_compiled.next_token` and associated indices in
+    // `language_lexer_compiled.map`. These divides source code into two
+    // categories: plain code and special cases. The special cases consist of:
+    //
+    // - String-like code (strings, here text, template literals). In this case,
+    //   the lexer must find the end of the string-like element before it can
+    //   return to plain code.
+    // - Comments (inline or block). In this case, the lexer must find the end
+    //   of the comment before it can return to plain code.
+    //
+    // This regex assumes the string it analyzes was preceded by plain code; its
+    // purpose is to identify the start of the next special case. **This code
+    // makes heavy use of regexes -- read the previous link thoroughly.**
+    //
+    // To better explain the operation of the lexer, the following provides a
+    // high-level walkthrough.
+    //
+    // ### Lexer walkthrough
+    //
+    // This walkthrough shows how the lexer parses the following Python code
+    // fragment:
+    //
+    // <code>print(<span style="color: rgb(224, 62, 45);">"""¶</span></code>\
+    // <code><span style="color: rgb(224, 62, 45);"># This is not a comment! It's
+    // a multi-line string.¶</span></code>\
+    // <code><span style="color: rgb(224, 62, 45);">"""</span>)¶</code>\
+    //   <code><span style="color: rgb(45, 194, 107);"># This is a comment.</span></code>
+    //
+    // Paragraph marks (the ¶ character) are included to show how the lexer
+    // handles newlines. To explain the operation of the lexer, the code will be
+    // highlighted in yellow to represent the
+    // <span style="background-color: rgb(251, 238, 184);">unlexed source
+    // code</span>, represented by the contents of the
+    // variable `source_code[source_code_unlexed_index..]` and in green for the
+    // <span style="background-color: rgb(191, 237, 210);">current code
+    // block</span>, defined by
+    // `source_code[current_code_block_index..source_code_unlexed_index]`. Code
+    // that is classified by the lexer will be placed in the `classified_code`
+    // array.
+    //
+    // #### Start of parse
+    //
+    // The <span style="background-color: rgb(251, 238, 184);">unlexed source
+    // code</span> holds all the code (everything is highlighted in yellow); the
+    // <span style="background-color: rgb(191, 237, 210);">current code
+    // block</span> is empty (there is no green highlight).
+    //
+    // <span style="background-color: rgb(251, 238, 184);"><code>print(<span style="color: rgb(224, 62, 45);">"""¶</span></code></span>\
+    // <span style="background-color: rgb(251, 238, 184);"><code><span style="color: rgb(224, 62, 45);">#
+    // This is not a comment! It's a multi-line string.¶</span></code></span>\
+    // <span style="background-color: rgb(251, 238, 184);"><code><span style="color: rgb(224, 62, 45);">"""</span>)¶</code></span>\
+    //   <code><span style="background-color: rgb(251, 238, 184);">&nbsp; <span style="color: rgb(45, 194, 107);">#
+    // This is a comment.</span></span></code>
+    //
+    // `classified_code = [`\
+    // `]`<span style="background-color: rgb(191, 237, 210);"><br></span>
+    //
+    // #### Search for a token
+    //
+    // The lexer begins by searching for the regex in
+    // `language_lexer_compiled.next_token`, which is
+    // `(\#)|(""")|(''')|(")|(')`. The first token found is
+    // <span style="color: rgb(224, 62, 45);"><code>"""</code></span>.
+    // Everything up to the match is moved from the unlexed source code to the
+    // current code block, giving:
+    //
+    // <code><span style="background-color: rgb(191, 237, 210);">print(</span><span style="color: rgb(224, 62, 45); background-color: rgb(251, 238, 184);">"""¶</span></code>\
+    // <span style="background-color: rgb(251, 238, 184);"><code><span style="color: rgb(224, 62, 45);">#
+    // This is not a comment! It's a multi-line string.¶</span></code></span>\
+    // <span style="background-color: rgb(251, 238, 184);"><code><span style="color: rgb(224, 62, 45);">"""</span>)¶</code></span>\
+    //   <code><span style="background-color: rgb(251, 238, 184);">&nbsp; <span style="color: rgb(45, 194, 107);">#
+    // This is a comment.</span></span></code>
+    //
+    // `classified_code = [`\
+    // `]`<span style="background-color: rgb(191, 237, 210);"><br></span>
+    //
+    // #### String processing
+    //
+    // The regex is accompanied by a map named `language_lexer_compiled.map`,
+    // which connects the mapped group to which token it matched (see
+    // `struct RegexDelimType`):\
+    // Regex:                     (#)         |  (""") |    (''')    |    (")   
+    // |    (')\
+    // Mapping:    Inline comment   String   String   String   String\
+    // Group:                      1                2           3           4   
+    //       5
+    //
+    // Since group 2 matched, looking up this group in the map tells the lexer
+    // it’s a string, and also gives a regex which identifies the end of the
+    // string . This regex identifies the end of the string, moving it from the
+    // <span style="background-color: rgb(251, 238, 184);">(unclassified) source
+    // code</span> to the (classified)
+    // <span style="background-color: rgb(191, 237, 210);">current code
+    // block</span>. It correctly skips what looks like a comment but is not a
+    // comment. After this step, the lexer’s state is:
+    //
+    // <span style="background-color: rgb(191, 237, 210);"><code>print(<span style="color: rgb(224, 62, 45);">"""¶</span></code></span>\
+    // <span style="background-color: rgb(191, 237, 210);"><code><span style="color: rgb(224, 62, 45);">#
+    // This is not a comment! It's a multi-line string.¶</span></code></span>\
+    // <code><span style="color: rgb(224, 62, 45); background-color: rgb(191, 237, 210);">"""</span><span style="background-color: rgb(251, 238, 184);">)¶</span></code>\
+    //   <code><span style="background-color: rgb(251, 238, 184);">&nbsp; <span style="color: rgb(45, 194, 107);">#
+    // This is a comment.</span></span></code>
+    //
+    // `classified_code = [`\
+    // `]`
+    //
+    // #### Search for a token (second time)
+    //
+    // Now, the lexer is back to its state of looking through code (as opposed
+    // to looking inside a string, comment, etc.). It uses the `next_token`
+    // regex as before to identify the next token
+    // <span style="color: rgb(45, 194, 107);"><code>#</code></span> and moves
+    // all the preceding characters from source code to the current code block.
+    // The lexer state is now:
+    //
+    // <code><span style="background-color: rgb(191, 237, 210);">print(<span style="color: rgb(224, 62, 45);">"""¶</span></span></code>\
+    // <span style="background-color: rgb(191, 237, 210);"><code><span style="color: rgb(224, 62, 45);">#
+    // This is not a comment! It's a multi-line string.¶</span></code></span>\
+    // <span style="background-color: rgb(191, 237, 210);"><code><span style="color: rgb(224, 62, 45);">"""</span>)¶</code></span>\
+    //   <code><span style="background-color: rgb(191, 237, 210);">&nbsp; </span><span style="color: rgb(45, 194, 107);"><span style="background-color: rgb(251, 238, 184);"><code>#
+    // This is a comment.</code></span></span></code>
+    //
+    // `classified_code = [`\
+    // `]`
+    //
+    // #### Inline comment lex
+    //
+    // Based on the map, the lexer identifies this as an inline comment. The
+    // inline comment lexer first identifies the end of the comment (the next
+    // newline or, as in this case, the end of the file), putting the entire
+    // inline comment except for the comment opening delimiter
+    // <span style="color: rgb(45, 194, 107);"><code>#</code></span> into
+    // <span style="background-color: rgb(236, 240, 241);"><code>full_comment</code></span>.
+    // It then splits the current code block into two
+    // groups: <span style="background-color: rgb(236, 202, 250);"><code>code_lines_before_comment</code></span>
+    // (lines in the current code block which come before the current line) and
+    // the
+    // <span style="background-color: rgb(194, 224, 244);"><code>comment_line_prefix</code></span>
+    // (the current line up to the start of the comment). The classification is:
+    //
+    // <code><span style="background-color: rgb(236, 202, 250);">print(<span style="color: rgb(224, 62, 45);">"""¶</span></span></code>\
+    // <span style="background-color: rgb(236, 202, 250);"><code><span style="color: rgb(224, 62, 45);">#
+    // This is not a comment! It's a multi-line string.¶</span></code></span>\
+    // <span style="background-color: rgb(236, 202, 250);"><code><span style="color: rgb(224, 62, 45);">"""</span>)¶</code></span>\
+    //   <code><span style="background-color: rgb(194, 224, 244);">&nbsp; </span><span style="color: rgb(45, 194, 107);">#<span style="background-color: rgb(236, 240, 241);">
+    // This is a comment.</span></span></code>
+    //
+    // `classified_code = [`\
+    // `]`
+    //
+    // #### Code/doc block classification
+    //
+    // Because
+    // <code><span style="background-color: rgb(194, 224, 244);">comment_line_prefix</span></code>
+    // contains only whitespace and
+    // <span style="background-color: rgb(236, 240, 241);">full_comment</span>
+    // has a space after the comment delimiter, the lexer classifies this as a
+    // doc block. It
+    // adds <span style="background-color: rgb(236, 202, 250);">code_lines_before_comment</span>
+    // as a code block, then the text of the comment as a doc block:
+    //
+    // `classified_code = [`\
+    //   <code>&nbsp; Item 0 = CodeDocBlock {<br>&nbsp; &nbsp; </code>    `indent: "", delimiter: "", contents = "print("""¶`\
+    // `# This is not a comment! It's a multi-line string.¶`\
+    // `""")¶`\
+    //         `" },`
+    //
+    // `Item 1 = CodeDocBlock { indent: " ", delimiter: "#", contents = "This is a comment" }`\
+    // `]`
+    //
+    // #### Done
+    //
+    // After this, the unlexed source code is empty since the inline comment
+    // classified moved the remainder of its contents into `classified_code`.
+    // The function exits.
+    //
+    // ### Helper function
+    //
+    // Provide a method to intelligently append to the code/doc block vec. Empty
+    // appends are ignored; appends of the same type append to `contents`
+    // instead of creating a new entry.
     let mut classified_source: Vec<CodeDocBlock> = Vec::new();
     let mut append_code_doc_block = |indent: &str, delimiter: &str, contents: &str| {
-        // <p>Don't append empty entries.</p>
+        // Don't append empty entries.
         if delimiter.is_empty() && contents.is_empty() {
             assert!(indent.is_empty());
             return;
         }
         let lines = contents.matches('\n').count();
         let is_code_block = indent.is_empty() && delimiter.is_empty();
-        // <p>See if there's a previous entry to potentially append to.</p>
+        // See if there's a previous entry to potentially append to.
         if !classified_source.is_empty() {
-            // <p>See if this is the same type of block.</p>
+            // See if this is the same type of block.
             let end = classified_source.len() - 1;
             match classified_source[end] {
                 CodeDocBlock::DocBlock(ref mut last_doc_block) => {
                     if last_doc_block.indent == indent && last_doc_block.delimiter == delimiter {
-                        // <p>Yes, so append the provided contents to it. We
-                        //     must access the array directly since
-                        //     <code>last_doc_block</code> provides only a
-                        //     reference.</p>
+                        // Yes, so append the provided contents to it. We must
+                        // access the array directly since `last_doc_block`
+                        // provides only a reference.
                         last_doc_block.contents += contents;
                         last_doc_block.lines += lines;
                         return;
@@ -901,15 +858,15 @@ pub fn source_lexer(
                 }
                 CodeDocBlock::CodeBlock(ref mut _last_code_block) => {
                     if indent.is_empty() && delimiter.is_empty() {
-                        // <p>Code blocks should never need to be appended to a
-                        //     previous entry.</p>
+                        // Code blocks should never need to be appended to a
+                        // previous entry.
                         panic!("Attempted to append code block contents to a previous entry.")
                         //_last_code_block.push_str(contents);
                     }
                 }
             }
         }
-        // <p>We must append a new entry.</p>
+        // We must append a new entry.
         classified_source.push(if is_code_block {
             CodeDocBlock::CodeBlock(contents.to_string())
         } else {
@@ -922,48 +879,47 @@ pub fn source_lexer(
         });
     };
 
-    // <h3>Main loop</h3>
-    // <p>Normalize all line endings.</p>
+    // ### Main loop
+    //
+    // Normalize all line endings.
     let source_code = source_code.replace("\r\n", "\n").replace('\r', "\n");
-    // <p>This index marks the start of code that hasn't been lexed.</p>
+    // This index marks the start of code that hasn't been lexed.
     let mut source_code_unlexed_index: usize = 0;
-    // <p>Ths index marks the start of code that belongs to the current code
-    //     block. The current code block is always defined as
-    //     <code>source_code[current_code_block_index..source_code_unlexed_index]</code>.
-    // </p>
+    // Ths index marks the start of code that belongs to the current code block.
+    // The current code block is always defined as
+    // `source_code[current_code_block_index..source_code_unlexed_index]`.
     let mut current_code_block_index: usize = 0;
 
-    // <p>Main loop: lex the provided source code.</p>
+    // Main loop: lex the provided source code.
     while source_code_unlexed_index < source_code.len() {
         #[cfg(feature = "lexer_explain")]
         println!(
             "Searching the following source_code using the pattern {:?}:\n'{}'\n\nThe current code block is '{}'\n",
             language_lexer_compiled.next_token, &source_code[source_code_unlexed_index..], &source_code[current_code_block_index..source_code_unlexed_index]
         );
-        // <h4>Find the next token</h4>
-        // <p>Look for the next special case. Per the earlier discussion, this
-        //     assumes that the text immediately preceding
-        //     <code>source_code</code> was plain code.</p>
+        // #### Find the next token
+        //
+        // Look for the next special case. Per the earlier discussion, this
+        // assumes that the text immediately preceding `source_code` was plain
+        // code.
         if let Some(classify_match) = language_lexer_compiled
             .next_token
             .captures(&source_code[source_code_unlexed_index..])
         {
-            // <p>Find the first group in the regex that matched.</p>
+            // Find the first group in the regex that matched.
             let matching_group_index = classify_match
                 .iter()
-                // <p>Group 0 is the entire match, which is always true. Skip
-                //     this group.</p>
+                // Group 0 is the entire match, which is always true. Skip this
+                // group.
                 .skip(1)
                 .position(|x| x.is_some())
                 .unwrap()
-                // <p>Correct the resulting group index, since we skipped group
-                //     0.</p>
+                // Correct the resulting group index, since we skipped group 0.
                 + 1;
             let matching_group_str = &classify_match[matching_group_index];
 
-            // <p>Move everything preceding this match from
-            //     <code>source_code</code> to the current code block, since per
-            //     the assumptions this is code.</p>
+            // Move everything preceding this match from `source_code` to the
+            // current code block, since per the assumptions this is code.
             source_code_unlexed_index += classify_match.get(matching_group_index).unwrap().start();
 
             #[cfg(feature = "lexer_explain")]
@@ -974,30 +930,30 @@ pub fn source_lexer(
                 &source_code[current_code_block_index..source_code_unlexed_index]
             );
 
-            // <p>This helper function moves code from unlexed source code to
-            //     the current code block based on the provided regex.</p>
+            // This helper function moves code from unlexed source code to the
+            // current code block based on the provided regex.
             let mut append_code =
-                                   // <p>The regex; code up to the end of this
-                                   //     match will be appended to the current
-                                   //     code block.</p>
+                                   // The regex; code up to the end of this
+                                   // match will be appended to the current code
+                                   // block.
                                    |closing_regex: &Regex| {
                 #[cfg(feature = "lexer_explain")]
                 println!("Searching for the end of this token using the pattern '{:?}'.", closing_regex);
 
-                // <p>Add the opening delimiter to the code.</p>
+                // Add the opening delimiter to the code.
                 source_code_unlexed_index += matching_group_str.len();
-                // <p>Find the closing delimiter.</p>
+                // Find the closing delimiter.
                 if let Some(closing_match) = closing_regex.find(&source_code[source_code_unlexed_index..]) {
                     #[cfg(feature = "lexer_explain")]
                     println!("Found; adding source_code up to and including this token to current_code_block.");
 
-                    // <p>Include this in code.</p>
+                    // Include this in code.
                     source_code_unlexed_index += closing_match.end();
                 } else {
                     #[cfg(feature = "lexer_explain")]
                     println!("Not found; adding all the source_code to current_code_block.");
 
-                    // <p>Then the rest of the code is a string.</p>
+                    // Then the rest of the code is a string.
                     source_code_unlexed_index = source_code.len();
                 }
                 #[cfg(feature = "lexer_explain")]
@@ -1006,48 +962,44 @@ pub fn source_lexer(
 
             };
 
-            // <p>In the map, index 0 refers to group 1 (since group 0 matches
-            //     are skipped). Adjust the index for this.</p>
+            // In the map, index 0 refers to group 1 (since group 0 matches are
+            // skipped). Adjust the index for this.
             match &language_lexer_compiled.map[matching_group_index - 1] {
-                // <h4>Inline comment</h4>
+                // #### Inline comment
                 RegexDelimType::InlineComment => {
-                    // <p><strong>First</strong>, find the end of this comment:
-                    //     a newline.</p>
+                    // **First**, find the end of this comment: a newline.
                     let end_of_comment_rel_index =
                         source_code[source_code_unlexed_index..].find('\n');
 
-                    // <p>Assign <code>full_comment</code> to contain the entire
-                    //     comment (excluding the inline comment delimiter)
-                    //     until the newline which ends the comment.</p>
+                    // Assign `full_comment` to contain the entire comment
+                    // (excluding the inline comment delimiter) until the
+                    // newline which ends the comment.
                     let full_comment_start_index =
                         source_code_unlexed_index + matching_group_str.len();
 
-                    // <p>The current code block contains preceding code (which
-                    //     might be multiple lines) until the inline comment
-                    //     delimiter. Split this on newlines, grouping all the
-                    //     lines before the last line into
-                    //     <code>code_lines_before_comment</code> (which is all
-                    //     code), and everything else (from the beginning of the
-                    //     last line to where the inline comment delimiter
-                    //     appears) into <code>comment_line_prefix</code>. For
-                    //     example, consider the fragment <code>a = 1\nb = 2 //
-                    //         Doc</code>. After processing,
-                    //     <code>code_lines_before_comment == "a = 1\n"</code>
-                    //     and <code>comment_line_prefix == "b = 2 "</code>.</p>
+                    // The current code block contains preceding code (which
+                    // might be multiple lines) until the inline comment
+                    // delimiter. Split this on newlines, grouping all the lines
+                    // before the last line into `code_lines_before_comment`
+                    // (which is all code), and everything else (from the
+                    // beginning of the last line to where the inline comment
+                    // delimiter appears) into `comment_line_prefix`. For
+                    // example, consider the fragment `a = 1\nb = 2 // Doc`.
+                    // After processing,
+                    // `code_lines_before_comment == "a = 1\n"` and
+                    // `comment_line_prefix == "b = 2 "`.
                     let current_code_block =
                         &source_code[current_code_block_index..source_code_unlexed_index];
                     let comment_line_prefix = current_code_block.rsplit('\n').next().unwrap();
                     let code_lines_before_comment =
                         &current_code_block[..current_code_block.len() - comment_line_prefix.len()];
 
-                    // <p>Move to the next block of source code to be lexed. No
-                    //     matching newline means we're at the end of the file,
-                    //     so the comment is all the remaining
-                    //     <code>source_code</code>.</p>
+                    // Move to the next block of source code to be lexed. No
+                    // matching newline means we're at the end of the file, so
+                    // the comment is all the remaining `source_code`.
                     source_code_unlexed_index = if let Some(index) = end_of_comment_rel_index {
-                        // <p>Note that <code>index</code> is the index of the
-                        //     newline; add 1 to include that newline in the
-                        //     comment.</p>
+                        // Note that `index` is the index of the newline; add 1
+                        // to include that newline in the comment.
                         source_code_unlexed_index + index + 1
                     } else {
                         source_code.len()
@@ -1063,54 +1015,48 @@ pub fn source_lexer(
                         code_lines_before_comment, comment_line_prefix, full_comment
                     );
 
-                    // <p><strong>Next</strong>, determine if this comment is a
-                    //     doc block. Criteria for doc blocks for an inline
-                    //     comment:</p>
-                    // <ol>
-                    //     <li>All characters preceding the comment on the line
-                    //         containing the comment must be whitespace.</li>
-                    //     <li>Either:
-                    //         <ol>
-                    //             <li>The inline comment delimiter is
-                    //                 immediately followed by a space, or</li>
-                    //             <li>the inline comment delimiter is followed
-                    //                 by a newline or the end of the file.</li>
-                    //         </ol>
-                    //     </li>
-                    // </ol>
-                    // <p>With this last line located, apply the doc block
-                    //     criteria.</p>
+                    // **Next**, determine if this comment is a doc block.
+                    // Criteria for doc blocks for an inline comment:
+                    //
+                    // 1.  All characters preceding the comment on the line
+                    //     containing the comment must be whitespace.
+                    // 2.  Either:
+                    //     1.  The inline comment delimiter is immediately
+                    //         followed by a space, or
+                    //     2.  the inline comment delimiter is followed by a
+                    //         newline or the end of the file.
+                    //
+                    // With this last line located, apply the doc block
+                    // criteria.
                     let ws_only = WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix);
                     let has_space_after_comment = full_comment.starts_with(' ');
-                    // <p>Criteria 1 -- the whitespace matched.</p>
+                    // Criteria 1 -- the whitespace matched.
                     if ws_only &&
-                        // <p>TODO: generalize this to specific lines that are
-                        //     never doc blocks.</p>
+                        // TODO: generalize this to specific lines that are
+                        // never doc blocks.
                         full_comment != " prettier-ignore\n"
                         && (
-                            // <p>Criteria 2.1</p>
+                            // Criteria 2.1
                             has_space_after_comment ||
-                            // <p>Criteria 2.2a</p>
+                            // Criteria 2.2a
                             (full_comment == "\n" ||
-                            // <p>Criteria 2.2b -- end of file means the comment
-                            //     is empty.</p>
+                            // Criteria 2.2b -- end of file means the comment is
+                            // empty.
                             full_comment.is_empty())
                         )
                     {
-                        // <p>This is a doc block. Transition from the preceding
-                        //     code block to this doc block.</p>
+                        // This is a doc block. Transition from the preceding
+                        // code block to this doc block.
                         append_code_doc_block("", "", code_lines_before_comment);
 
-                        // <p>Add this doc block by pushing the array
-                        //     [whitespace before the inline comment, inline
-                        //     comment contents, inline comment delimiter].
-                        //     Since it's a doc block, then
-                        //     <code>comment_line_prefix</code> contains the
-                        //     whitespace before this comment and
-                        //     <code>matching_group_string</code> contains the
-                        //     inline comment delimiter. For the contents, omit
-                        //     the leading space if it's there (this might be
-                        //     just a newline or an EOF).</p>
+                        // Add this doc block by pushing the array \[whitespace
+                        // before the inline comment, inline comment contents,
+                        // inline comment delimiter\]. Since it's a doc block,
+                        // then `comment_line_prefix` contains the whitespace
+                        // before this comment and `matching_group_string`
+                        // contains the inline comment delimiter. For the
+                        // contents, omit the leading space if it's there (this
+                        // might be just a newline or an EOF).
                         let contents = &full_comment[if has_space_after_comment { 1 } else { 0 }..];
                         append_code_doc_block(comment_line_prefix, matching_group_str, contents);
 
@@ -1123,26 +1069,25 @@ pub fn source_lexer(
                             current_code_block, comment_line_prefix, matching_group_str, contents
                         );
 
-                        // <p>We've now stored the current code block (which was
-                        //     classified as a doc block) in
-                        //     <code>classified_lines</code>. Make the current
-                        //     code block empty by moving its index up to the
-                        //     unlexed code.</p>
+                        // We've now stored the current code block (which was
+                        // classified as a doc block) in `classified_lines`.
+                        // Make the current code block empty by moving its index
+                        // up to the unlexed code.
                         current_code_block_index = source_code_unlexed_index;
                     } else {
-                        // <p>This comment is not a doc block; instead, treat it
-                        //     as code. This code is already in the current code
-                        //     block, so we're done.</p>
+                        // This comment is not a doc block; instead, treat it as
+                        // code. This code is already in the current code block,
+                        // so we're done.
                     }
                 }
 
-                // <h4>Block comment</h4>
+                // #### Block comment
                 RegexDelimType::BlockComment(closing_regex) => 'block_comment: {
                     #[cfg(feature = "lexer_explain")]
                     println!("Block Comment Found.");
 
-                    // <p>Determine the location of the beginning of this block
-                    //     comment's content.</p>
+                    // Determine the location of the beginning of this block
+                    // comment's content.
                     let comment_start_index = source_code_unlexed_index + matching_group_str.len();
 
                     #[cfg(feature = "lexer_explain")]
@@ -1151,9 +1096,9 @@ pub fn source_lexer(
                         matching_group_str, closing_regex
                     );
 
-                    // <p>get the index of the closing delimiter. TODO: for
-                    //     nested block comments, look for a group match then
-                    //     count nesting depth.</p>
+                    // get the index of the closing delimiter. TODO: for nested
+                    // block comments, look for a group match then count nesting
+                    // depth.
                     let closing_delimiter_match = if let Some(_match) =
                         closing_regex.find(&source_code[comment_start_index..])
                     {
@@ -1161,14 +1106,14 @@ pub fn source_lexer(
                     } else {
                         #[cfg(feature = "lexer_explain")]
                         println!("The closing comment delimiter wasn't found.");
-                        // <p>If there's no closing delimiter, this is not a doc
-                        //     block; it's a syntax error. The safe route is to
-                        //     assume the contents are code, which this program
-                        //     won't edit; it does edit comments by cleaning up
-                        //     HTML tags, word-wrapping, etc. which would be a
-                        //     disaster if this was applied to code.</p>
+                        // If there's no closing delimiter, this is not a doc
+                        // block; it's a syntax error. The safe route is to
+                        // assume the contents are code, which this program
+                        // won't edit; it does edit comments by cleaning up HTML
+                        // tags, word-wrapping, etc. which would be a disaster
+                        // if this was applied to code.
                         source_code_unlexed_index = source_code.len();
-                        // <p>Exit the block comment processing code here.</p>
+                        // Exit the block comment processing code here.
                         break 'block_comment;
                     };
                     let closing_delimiter_start_index =
@@ -1176,8 +1121,8 @@ pub fn source_lexer(
                     let closing_delimiter_end_index =
                         closing_delimiter_match.end() + comment_start_index;
 
-                    // <p>Capture the body of the comment -- everything but the
-                    //     opening and closing delimiters.</p>
+                    // Capture the body of the comment -- everything but the
+                    // opening and closing delimiters.
                     let comment_body =
                         &source_code[comment_start_index..closing_delimiter_start_index];
 
@@ -1189,56 +1134,51 @@ pub fn source_lexer(
                         comment_body,
                         closing_delimiter_match.as_str()
                     );
-                    // <p>Find the first \n after the closing delimiter. If
-                    //     there is a newline after the closing delimiter, set
-                    //     <code>newline_or_eof_after_closing_delimiter_index</code>
-                    //     to the index of the first newline after the closing
-                    //     delimiter else set it to the end of the file.</p>
+                    // Find the first \\n after the closing delimiter. If there
+                    // is a newline after the closing delimiter, set
+                    // `newline_or_eof_after_closing_delimiter_index` to the
+                    // index of the first newline after the closing delimiter
+                    // else set it to the end of the file.
                     let newline_or_eof_after_closing_delimiter_index =
                         match source_code[closing_delimiter_end_index..].find('\n') {
-                            // <p>The + 1 includes the newline in the resulting
-                            //     index.</p>
+                            // The + 1 includes the newline in the resulting
+                            // index.
                             Some(index) => index + closing_delimiter_end_index + 1,
                             None => source_code.len(),
                         };
 
-                    // <p>Capture the line which begins after the closing
-                    //     delimiter and ends at the next newline/EOF.</p>
+                    // Capture the line which begins after the closing delimiter
+                    // and ends at the next newline/EOF.
                     let post_closing_delimiter_line = &source_code
                         [closing_delimiter_end_index..newline_or_eof_after_closing_delimiter_index];
 
-                    //
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "The post-comment line is '{}'.",
                         post_closing_delimiter_line
                     );
 
-                    // <p>Set the current code block to contain preceding code
-                    //     (which might be multiple lines) until the block
-                    //     comment delimiter. Split this on newlines, grouping
-                    //     all the lines before the last line into
-                    //     <code>code_lines_before_comment</code> (which is all
-                    //     code), and everything else (from the beginning of the
-                    //     last line to where the block comment delimiter
-                    //     appears) into <code>comment_line_prefix</code>. For
-                    //     example, consider the fragment: <code>a = 1\nb = 2 /*
-                    //         comment
-                    //         */</code>. After processing,
-                    //     <code>code_lines_before_comment</code> will be
-                    //     "<code>a = 1\n</code>" and
-                    //     <code>comment_line_prefix</code> will be "<code>b = 2
-                    //     </code>".</p>
+                    // Set the current code block to contain preceding code
+                    // (which might be multiple lines) until the block comment
+                    // delimiter. Split this on newlines, grouping all the lines
+                    // before the last line into `code_lines_before_comment`
+                    // (which is all code), and everything else (from the
+                    // beginning of the last line to where the block comment
+                    // delimiter appears) into `comment_line_prefix`. For
+                    // example, consider the fragment:
+                    // `a = 1\nb = 2 /* comment */`. After processing,
+                    // `code_lines_before_comment` will be "`a = 1\n`" and
+                    // `comment_line_prefix` will be "`b = 2` ".
                     let current_code_block =
                         &source_code[current_code_block_index..source_code_unlexed_index];
                     let comment_line_prefix = current_code_block.rsplit('\n').next().unwrap();
                     let code_lines_before_comment =
                         &current_code_block[..current_code_block.len() - comment_line_prefix.len()];
 
-                    // <p>Move to the next block of source code to be lexed.</p>
+                    // Move to the next block of source code to be lexed.
                     source_code_unlexed_index = newline_or_eof_after_closing_delimiter_index;
 
-                    // <p>divide full comment into 3 components</p>
+                    // divide full comment into 3 components
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "current_code_block is '{}'\n\
@@ -1247,33 +1187,32 @@ pub fn source_lexer(
                         current_code_block, comment_line_prefix, code_lines_before_comment
                     );
 
-                    // <p>next we have to determine if this is a doc block
-                    //     criteria for doc blocks for a block comment:</p>
-                    // <ol>
-                    //     <li>must have a space or newline after the opening
-                    //         delimiter</li>
-                    //     <li>must not have anything besides whitespace before
-                    //         the opening comment delimiter on the same line
-                    //     </li>
-                    //     <li>must not have anything besides whitespace after
-                    //         the closing comment delimiter on the same line
-                    //     </li>
-                    // </ol>
+                    // next we have to determine if this is a doc block criteria
+                    // for doc blocks for a block comment:
+                    //
+                    // 1.  must have a space or newline after the opening
+                    //     delimiter
+                    // 2.  must not have anything besides whitespace before the
+                    //     opening comment delimiter on the same line
+                    // 3.  must not have anything besides whitespace after the
+                    //     closing comment delimiter on the same line
                     if (comment_body.starts_with(' ') || comment_body.starts_with('\n'))
                         && WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix)
                         && WHITESPACE_ONLY_REGEX.is_match(post_closing_delimiter_line)
                     {
-                        // <p>put the code_lines_before_comment into the code
-                        //     block</p>
+                        // put the code_lines_before_comment into the code block
                         append_code_doc_block("", "", code_lines_before_comment);
 
-                        // <p>If there's a space at the end of the comment body,
-                        //     remove it; also remove the initial space/newline
-                        //     at the beginning of the comment body.</p>
+                        // If there's a space at the end of the comment body,
+                        // remove it; also remove the initial space/newline at
+                        // the beginning of the comment body.
                         let ends_with_space = match comment_body.chars().last() {
                             Some(last_char) => {
                                 last_char == ' ' &&
-                                // Don't remove a space at the end of the comment body when it's also the space at the beginning of the comment body (meaning it's a single-character comment body).
+                                // Don't remove a space at the end of the
+                                // comment body when it's also the space at the
+                                // beginning of the comment body (meaning it's a
+                                // single-character comment body).
                                 comment_body.len() > 1
                             }
                             None => false,
@@ -1281,38 +1220,38 @@ pub fn source_lexer(
                         let trimmed_comment_body = &comment_body
                             [1..comment_body.len() - if ends_with_space { 1 } else { 0 }];
 
-                        // <p>Add this doc block:</p>
+                        // Add this doc block:
                         let contents =
                             &(trimmed_comment_body.to_string() + post_closing_delimiter_line);
                         append_code_doc_block(
-                            // <p>The indent is the whitespace before the
-                            //     opening comment delimiter.</p>
+                            // The indent is the whitespace before the opening
+                            // comment delimiter.
                             comment_line_prefix,
-                            // <p>The opening comment delimiter was captured in
-                            //     the initial match.</p>
+                            // The opening comment delimiter was captured in the
+                            // initial match.
                             matching_group_str,
-                            // <p>The contents of the doc block are the trimmed
-                            //     comment body plus any whitespace after the
-                            //     closing comment delimiter.</p>
+                            // The contents of the doc block are the trimmed
+                            // comment body plus any whitespace after the
+                            // closing comment delimiter.
                             contents,
                         );
 
-                        // <p>print the doc block</p>
+                        // print the doc block
                         #[cfg(feature = "lexer_explain")]
                         println!("Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.", &comment_line_prefix, matching_group_str, contents);
 
-                        // <p>advance <code>current_code_block_index</code> to
-                        //     <code>source_code_unlexed_index</code>, since
-                        //     we've moved everything in the current code block
-                        //     into the <code>classified_source</code>.</p>
+                        // advance `current_code_block_index` to
+                        // `source_code_unlexed_index`, since we've moved
+                        // everything in the current code block into the
+                        // `classified_source`.
                         current_code_block_index = source_code_unlexed_index;
                     } else {
-                        // <p>Nothing to do -- the comment was simply added to
-                        //     the current code block already.</p>
+                        // Nothing to do -- the comment was simply added to the
+                        // current code block already.
                     }
                 }
 
-                // <h4>String-like syntax</h4>
+                // #### String-like syntax
                 RegexDelimType::String(closing_regex) => {
                     #[cfg(feature = "lexer_explain")]
                     print!("This is a string. ");
@@ -1329,47 +1268,46 @@ pub fn source_lexer(
                     #[cfg(feature = "lexer_explain")]
                     print!("This is a heredoc. ");
 
-                    // <p>Get the string from the source code which (along with
-                    //     the stop prefix/suffix) defines the end of the
-                    //     heredoc.</p>
+                    // Get the string from the source code which (along with the
+                    // stop prefix/suffix) defines the end of the heredoc.
                     let heredoc_string = &classify_match[language_lexer_compiled.map.len() + 1];
-                    // <p>Make a regex from it.</p>
+                    // Make a regex from it.
                     let closing_regex = Regex::new(
                         &(stop_prefix.to_owned() + &regex::escape(heredoc_string) + stop_suffix),
                     )
                     .unwrap();
-                    // <p>Use this to find the end of the heredoc and add that
-                    //     to <code>current_source_code</code>.</p>
+                    // Use this to find the end of the heredoc and add that to
+                    // `current_source_code`.
                     append_code(&closing_regex);
                 }
             }
         } else {
-            // <p>There's no match, so the rest of the source code belongs in
-            //     the current code block.</p>
+            // There's no match, so the rest of the source code belongs in the
+            // current code block.
             source_code_unlexed_index = source_code.len();
         }
     }
 
-    // <p>Any leftover code is source code.</p>
+    // Any leftover code is source code.
     append_code_doc_block("", "", &source_code[current_code_block_index..]);
 
     classified_source
 }
 
-// <h2>Tests</h2>
-// <p>Rust <a
-//         href="https://doc.rust-lang.org/book/ch11-03-test-organization.html">almost
-//         mandates</a> putting tests in the same file as the source, which I
-//     dislike. Here's a <a
-//         href="http://xion.io/post/code/rust-unit-test-placement.html">good
-//         discussion</a> of how to place them in another file, for the time
-//     when I'm ready to adopt this more sane layout.</p>
+// ## Tests
+//
+// Rust
+// [almost mandates](https://doc.rust-lang.org/book/ch11-03-test-organization.html)
+// putting tests in the same file as the source, which I dislike. Here's a
+// [good discussion](http://xion.io/post/code/rust-unit-test-placement.html) of
+// how to place them in another file, for the time when I'm ready to adopt this
+// more sane layout.
 #[cfg(test)]
 mod tests {
     use super::supported_languages::LANGUAGE_LEXER_ARR;
     use super::{compile_lexers, source_lexer, CodeDocBlock, DocBlock};
 
-    // <p>Provide a compact way to create a <code>CodeDocBlock</code>.</p>
+    // Provide a compact way to create a `CodeDocBlock`.
     fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {
         return CodeDocBlock::DocBlock(DocBlock {
             indent: indent.to_string(),
@@ -1383,21 +1321,19 @@ mod tests {
         return CodeDocBlock::CodeBlock(contents.to_string());
     }
 
-    // <h3>Source lexer tests</h3>
+    // ### Source lexer tests
     #[test]
     fn test_py() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
         let py = llc.map_mode_to_lexer.get("python").unwrap();
 
-        // <p>Try basic cases: make sure than newlines are processed correctly.
-        // </p>
+        // Try basic cases: make sure than newlines are processed correctly.
         assert_eq!(source_lexer("", py), []);
         assert_eq!(source_lexer("\n", py), [build_code_block("\n")]);
         assert_eq!(source_lexer("\r", py), [build_code_block("\n")]);
         assert_eq!(source_lexer("\r\n", py), [build_code_block("\n")]);
 
-        // <p>Look at a code to doc transition, checking various newline combos.
-        // </p>
+        // Look at a code to doc transition, checking various newline combos.
         assert_eq!(
             source_lexer("\n# Test", py),
             [build_code_block("\n"), build_doc_block("", "#", "Test")]
@@ -1415,7 +1351,7 @@ mod tests {
             ]
         );
 
-        // <p>Source followed by a comment.</p>
+        // Source followed by a comment.
         assert_eq!(
             source_lexer("a = 1\n# Test", py),
             [
@@ -1424,7 +1360,7 @@ mod tests {
             ]
         );
 
-        // <p>Comments that aren't in doc blocks.</p>
+        // Comments that aren't in doc blocks.
         assert_eq!(
             source_lexer("a = 1 # Test", py),
             [build_code_block("a = 1 # Test"),]
@@ -1439,7 +1375,7 @@ mod tests {
         );
         assert_eq!(source_lexer("#Test\n", py), [build_code_block("#Test\n"),]);
 
-        // <p>Doc blocks</p>
+        // Doc blocks
         assert_eq!(source_lexer("#", py), [build_doc_block("", "#", ""),]);
         assert_eq!(source_lexer("#\n", py), [build_doc_block("", "#", "\n"),]);
         assert_eq!(
@@ -1462,7 +1398,7 @@ mod tests {
             ]
         );
 
-        // <p>Doc blocks with empty comments</p>
+        // Doc blocks with empty comments
         assert_eq!(
             source_lexer("# Test 1\n#\n# Test 2", py),
             [build_doc_block("", "#", "Test 1\n\nTest 2"),]
@@ -1472,25 +1408,24 @@ mod tests {
             [build_doc_block("  ", "#", "Test 1\n\nTest 2"),]
         );
 
-        // <p>Single-line strings</p>
+        // Single-line strings
         assert_eq!(source_lexer("''", py), [build_code_block("''"),]);
-        // <p>An unterminated string before EOF.</p>
+        // An unterminated string before EOF.
         assert_eq!(source_lexer("'", py), [build_code_block("'"),]);
         assert_eq!(source_lexer("\"\"", py), [build_code_block("\"\""),]);
         assert_eq!(
             source_lexer("a = 'test'\n", py),
             [build_code_block("a = 'test'\n"),]
         );
-        // <p>Terminate a string with a newline</p>
+        // Terminate a string with a newline
         assert_eq!(
             source_lexer("a = 'test\n", py),
             [build_code_block("a = 'test\n"),]
         );
         assert_eq!(source_lexer(r"'\''", py), [build_code_block(r"'\''"),]);
         assert_eq!(source_lexer("'\\\n'", py), [build_code_block("'\\\n'"),]);
-        // <p>This is <code>\\</code> followed by a newline, which terminates
-        //     the string early (syntax error -- unescaped newline in a
-        //     single-line string).</p>
+        // This is `\\` followed by a newline, which terminates the string early
+        // (syntax error -- unescaped newline in a single-line string).
         assert_eq!(
             source_lexer("'\\\\\n# Test'", py),
             [
@@ -1498,9 +1433,8 @@ mod tests {
                 build_doc_block("", "#", "Test'")
             ]
         );
-        // <p>This is <code>\\\</code> followed by a newline, which puts a
-        //     <code>\</code> followed by a newline in the string, so there's no
-        //     comment.</p>
+        // This is `\\\` followed by a newline, which puts a `\` followed by a
+        // newline in the string, so there's no comment.
         assert_eq!(
             source_lexer("'\\\\\\\n# Test'", py),
             [build_code_block("'\\\\\\\n# Test'"),]
@@ -1514,7 +1448,7 @@ mod tests {
             [build_code_block("'\n"), build_doc_block("", "#", "Test'")]
         );
 
-        // <p>Multi-line strings</p>
+        // Multi-line strings
         assert_eq!(
             source_lexer("'''\n# Test'''", py),
             [build_code_block("'''\n# Test'''"),]
@@ -1530,7 +1464,7 @@ mod tests {
                 build_doc_block("", "#", "Test 2")
             ]
         );
-        // <p>Quotes nested inside a multi-line string.</p>
+        // Quotes nested inside a multi-line string.
         assert_eq!(
             source_lexer("'''\n# 'Test' 1'''\n# Test 2", py),
             [
@@ -1538,8 +1472,8 @@ mod tests {
                 build_doc_block("", "#", "Test 2")
             ]
         );
-        // <p>An empty string, follow by a comment which ignores the fake
-        //     multi-line string.</p>
+        // An empty string, follow by a comment which ignores the fake
+        // multi-line string.
         assert_eq!(
             source_lexer("''\n# Test 1'''\n# Test 2", py),
             [
@@ -1569,8 +1503,9 @@ mod tests {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
         let js = llc.map_mode_to_lexer.get("javascript").unwrap();
 
-        // <p>JavaScript tests.</p>
-        // <p>simple inline comment</p>
+        // JavaScript tests.
+        //
+        // simple inline comment
         assert_eq!(
             source_lexer("// Test", js),
             [build_doc_block("", "//", "Test"),]
@@ -1580,73 +1515,73 @@ mod tests {
         assert_eq!(source_lexer("/* */", js), [build_doc_block("", "/*", ""),]);
         assert_eq!(source_lexer("/*\n*/", js), [build_doc_block("", "/*", ""),]);
 
-        // <p>basic test</p>
+        // basic test
         assert_eq!(
             source_lexer("/* Basic Test */", js),
             [build_doc_block("", "/*", "Basic Test"),]
         );
 
-        // <p>no space after opening delimiter (criteria 1)</p>
+        // no space after opening delimiter (criteria 1)
         assert_eq!(
             source_lexer("/*Test */", js),
             [build_code_block("/*Test */"),]
         );
 
-        // <p>no space after closing delimiter</p>
+        // no space after closing delimiter
         assert_eq!(
             source_lexer("/* Test*/", js),
             [build_doc_block("", "/*", "Test"),]
         );
 
-        // <p>extra spaces after opening delimiter (ok, drop 1)</p>
+        // extra spaces after opening delimiter (ok, drop 1)
         assert_eq!(
             source_lexer("/*   Extra Space */", js),
             [build_doc_block("", "/*", "  Extra Space"),]
         );
 
-        // <p>code before opening delimiter (criteria 2)</p>
+        // code before opening delimiter (criteria 2)
         assert_eq!(
             source_lexer("a = 1 /* Code Before */", js),
             [build_code_block("a = 1 /* Code Before */"),]
         );
 
-        // <p>4 spaces before opening delimiter (criteria 2 ok)</p>
+        // 4 spaces before opening delimiter (criteria 2 ok)
         assert_eq!(
             source_lexer("    /* Space Before */", js),
             [build_doc_block("    ", "/*", "Space Before"),]
         );
 
-        // <p>newline in comment</p>
+        // newline in comment
         assert_eq!(
             source_lexer("/* Newline\nIn Comment */", js),
             [build_doc_block("", "/*", "Newline\nIn Comment"),]
         );
 
-        // <p>3 trailing whitespaces (criteria 3 ok)</p>
+        // 3 trailing whitespaces (criteria 3 ok)
         assert_eq!(
             source_lexer("/* Trailing Whitespace  */  ", js),
             [build_doc_block("", "/*", "Trailing Whitespace   "),]
         );
 
-        // <p>code after closing delimiter (criteria 3)</p>
+        // code after closing delimiter (criteria 3)
         assert_eq!(
             source_lexer("/* Code After */ a = 1", js),
             [build_code_block("/* Code After */ a = 1"),]
         );
 
-        // <p>Another important case:</p>
+        // Another important case:
         assert_eq!(
             source_lexer("/* Another Important Case */\n", js),
             [build_doc_block("", "/*", "Another Important Case\n"),]
         );
 
-        // <p>No closing delimiter</p>
+        // No closing delimiter
         assert_eq!(
             source_lexer("/* No Closing Delimiter", js),
             [build_code_block("/* No Closing Delimiter"),]
         );
 
-        // <p>Two closing delimiters</p>
+        // Two closing delimiters
         assert_eq!(
             source_lexer("/* Two Closing Delimiters */ \n */", js),
             [
@@ -1654,7 +1589,7 @@ mod tests {
                 build_code_block(" */"),
             ]
         );
-        // <p>Code before a block comment.</p>
+        // Code before a block comment.
         assert_eq!(
             source_lexer("bears();\n/* Bears */\n", js),
             [
@@ -1663,7 +1598,7 @@ mod tests {
             ]
         );
 
-        // <p>A newline after the opening comment delimiter.</p>
+        // A newline after the opening comment delimiter.
         assert_eq!(
             source_lexer("test_1();\n/*\nTest 2\n*/", js),
             [
@@ -1672,9 +1607,9 @@ mod tests {
             ]
         );
 
-        // <p>Some basic template literal tests. Comments inside template
-        //     literal expressions aren't parsed correctly; neither are nested
-        //     template literals.</p>
+        // Some basic template literal tests. Comments inside template literal
+        // expressions aren't parsed correctly; neither are nested template
+        // literals.
         assert_eq!(source_lexer("``", js), [build_code_block("``"),]);
         assert_eq!(source_lexer("`", js), [build_code_block("`"),]);
         assert_eq!(
@@ -1706,7 +1641,7 @@ mod tests {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
         let cpp = llc.map_mode_to_lexer.get("c_cpp").unwrap();
 
-        // <p>Try out a C++ heredoc.</p>
+        // Try out a C++ heredoc.
         assert_eq!(
             source_lexer("R\"heredoc(\n// Test 1)heredoc\"\n// Test 2", cpp),
             [
@@ -1721,7 +1656,7 @@ mod tests {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
         let csharp = llc.map_mode_to_lexer.get("csharp").unwrap();
 
-        // <p>Try out a verbatim string literal with embedded double quotes.</p>
+        // Try out a verbatim string literal with embedded double quotes.
         assert_eq!(
             source_lexer("// Test 1\n@\"\n// Test 2\"\"\n// Test 3\"", csharp),
             [
@@ -1736,8 +1671,8 @@ mod tests {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
         let matlab = llc.map_mode_to_lexer.get("matlab").unwrap();
 
-        // <p>Test both inline comment styles. Verify that escaped quotes are
-        //     ignored, and that doubled quotes are handled correctly.</p>
+        // Test both inline comment styles. Verify that escaped quotes are
+        // ignored, and that doubled quotes are handled correctly.
         assert_eq!(
             source_lexer(
                 r#"% Test 1
@@ -1755,7 +1690,7 @@ v = ["Test 2\", ...
             ]
         );
 
-        // <p>Test block comments.</p>
+        // Test block comments.
         assert_eq!(
             source_lexer(
                 "%{ Test 1
@@ -1768,8 +1703,8 @@ a = 2
             ),
             [
                 build_code_block("%{ Test 1\na = 1\n"),
-                // <p>TODO: currently, whitespace on the line containing the
-                //     closing block delimiter isn't captured. Fix this.</p>
+                // TODO: currently, whitespace on the line containing the
+                // closing block delimiter isn't captured. Fix this.
                 build_doc_block("  ", "%{", "a = 2\n"),
             ]
         );
@@ -1780,7 +1715,7 @@ a = 2
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
         let rust = llc.map_mode_to_lexer.get("rust").unwrap();
 
-        // <p>Test Rust raw strings.</p>
+        // Test Rust raw strings.
         assert_eq!(
             source_lexer("r###\"\n// Test 1\"###\n// Test 2", rust),
             [
@@ -1789,8 +1724,8 @@ a = 2
             ]
         );
 
-        // <p>Test Rust comments, which can be nested but aren't here. TODO:
-        //     test nested comments.</p>
+        // Test Rust comments, which can be nested but aren't here. TODO: test
+        // nested comments.
         assert_eq!(
             source_lexer("test_1();\n/* Test 2 */\n", rust),
             [
@@ -1805,7 +1740,7 @@ a = 2
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
         let sql = llc.map_mode_to_lexer.get("sql").unwrap();
 
-        // <p>Test strings with embedded single quotes.</p>
+        // Test strings with embedded single quotes.
         assert_eq!(
             source_lexer("-- Test 1\n'\n-- Test 2''\n-- Test 3'", sql),
             [
@@ -1821,7 +1756,7 @@ a = 2
         let toml = llc.map_mode_to_lexer.get("toml").unwrap();
         assert_eq!(toml.language_lexer.ace_mode, "toml");
 
-        // <p>Multi-line literal strings don't have escapes.</p>
+        // Multi-line literal strings don't have escapes.
         assert_eq!(
             source_lexer("'''\n# Test 1\\'''\n# Test 2", toml),
             [
@@ -1829,7 +1764,7 @@ a = 2
                 build_doc_block("", "#", "Test 2")
             ]
         );
-        // <p>Basic strings have an escape, but don't allow newlines.</p>
+        // Basic strings have an escape, but don't allow newlines.
         assert_eq!(
             source_lexer("\"\\\n# Test 1\"", toml),
             [
@@ -1839,7 +1774,7 @@ a = 2
         );
     }
 
-    // <h3>Compiler tests</h3>
+    // ### Compiler tests
     #[test]
     fn test_compiler() {
         let llc = compile_lexers(&LANGUAGE_LEXER_ARR);

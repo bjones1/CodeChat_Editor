@@ -1,114 +1,58 @@
-<h1>The CodeChat Editor</h1>
-<h2>Design</h2>
-<ol>
-    <li><a href="README.md">CodeChat Editor Overview</a>
-        <ol>
-            <li><a href="README.md#how-to-run">How to run</a></li>
-            <li><a href="README.md#vision">Vision</a></li>
-            <li><a href="README.md#specification">Specification</a></li>
-        </ol>
-    </li>
-    <li><a href="docs/implementation.md">Implementation</a></li>
-</ol>
-<h2>Implementation</h2>
-<ol>
-    <li>Server
-        <ol>
-            <li><a href="server/src/main.rs">main.rs</a></li>
-            <li><a href="server/src/lib.rs">lib.rs</a></li>
-            <li><a href="server/src/lexer.rs">lexer.rs</a>
-                <ol>
-                    <li><a
-                            href="server/src/lexer/supported_languages.rs">supported_languages.rs</a>
-                    </li>
-                </ol>
-            </li>
-            <li><a href="server/src/webserver.rs">webserver.rs</a></li>
-            <li><a href="server/Cargo.toml">Cargo.toml</a></li>
-        </ol>
-    </li>
-    <li>Client
-        <ol>
-            <li>Editor
-                <ol>
-                    <li><a
-                            href="client/src/CodeChatEditor.mts">CodeChatEditor.mts</a><br>
-                        <ol>
-                            <li><a
-                                    href="client/src/CodeMirror-integration.mts">CodeMirror-integration.mts</a>
-                            </li>
-                            <li><a
-                                    href="client/src/tinymce-config.mts">tinymce-config.mts</a>
-                            </li>
-                            <li><a
-                                    href="client/src/EditorComponents.mts">EditorComponents.mts</a>
-                            </li>
-                            <li><a
-                                    href="client/src/graphviz-webcomponent-setup.mts">graphviz-webcomponent-setup.mts</a>
-                            </li>
-                            <li><a
-                                    href="client/src/typings.d.ts">typings.d.ts</a>
-                            </li>
-                        </ol>
-                    </li>
-                </ol>
-            </li>
-            <li>Styles
-                <ol>
-                    <li><a
-                            href="client/static/css/CodeChatEditor.css">CodeChatEditor.css</a>
-                    </li>
-                    <li><a
-                            href="client/static/css/CodeChatEditorProject.css">CodeChatEditorProject.css</a>
-                    </li>
-                    <li><a
-                            href="client/static/css/CodeChatEditorSidebar.css">CodeChatEditorSidebar.css</a>
-                    </li>
-                </ol>
-            </li>
-            <li>Tests
-                <ol>
-                    <li><a
-                            href="client/src/CodeChatEditor-test.mts">CodeChatEditor-test.mts</a>
-                        <ol>
-                            <li><a href="server/src/lib.rs?test">Run tests</a>
-                            </li>
-                        </ol>
-                    </li>
-                </ol>
-            </li>
-        </ol>
-    </li>
-    <li>Development tools
-        <ol>
-            <li>Git
-                <ol>
-                    <li><a href="server/.gitignore">server/.gitignore</a></li>
-                    <li><a href="client/static/.gitignore">client/static/.gitignore</a></li>
-                    <li><a href="client/.gitignore">client/.gitignore</a></li>
-                </ol>
-            </li>
-            <li>NPM/esbuild
-                <ol>
-                    <li>package.json</li>
-                    <li><a href="client/tsconfig.json">tsconfig.json</a></li>
-                    <li><a href="client/.eslintrc.yml">.eslintrc.yml</a></li>
-                    <li><a href=".prettierignore">.prettierignore</a></li>
-                </ol>
-            </li>
-        </ol>
-    </li>
-</ol>
-<h2>Misc</h2>
-<ul>
-    <li><a href="new-project-template/README.md" target="_blank"
-            rel="noopener">New project template</a></li>
-    <li><a href="toc.md">Table of contents</a></li>
-    <li><a href="docs/index.md">Index</a></li>
-</ul>
-<h2>Notes</h2>
-<ul>
-    <li><a id="auto-title"></a>TODO: all links here should be auto-titled and
-        autogenerate the page-local TOC.</li>
-</ul>
-<h2><a href="LICENSE.md">License</a></h2>
+# The CodeChat Editor
+
+## Design
+
+1.  [CodeChat Editor Overview](README.md)
+    1.  [How to run](README.md#how-to-run)
+    2.  [Vision](README.md#vision)
+    3.  [Specification](README.md#specification)
+2.  [Implementation](docs/implementation.md)
+
+## Implementation
+
+1.  Server
+    1.  [main.rs](server/src/main.rs)
+    2.  [lib.rs](server/src/lib.rs)
+    3.  [lexer.rs](server/src/lexer.rs)
+        1.  [supported_languages.rs](server/src/lexer/supported_languages.rs)
+    4.  [webserver.rs](server/src/webserver.rs)
+    5.  [Cargo.toml](server/Cargo.toml)
+2.  Client
+    1.  Editor
+        1.  [CodeChatEditor.mts](client/src/CodeChatEditor.mts)\
+            1.  [CodeMirror-integration.mts](client/src/CodeMirror-integration.mts)
+            2.  [tinymce-config.mts](client/src/tinymce-config.mts)
+            3.  [EditorComponents.mts](client/src/EditorComponents.mts)
+            4.  [graphviz-webcomponent-setup.mts](client/src/graphviz-webcomponent-setup.mts)
+            5.  [typings.d.ts](client/src/typings.d.ts)
+    2.  Styles
+        1.  [CodeChatEditor.css](client/static/css/CodeChatEditor.css)
+        2.  [CodeChatEditorProject.css](client/static/css/CodeChatEditorProject.css)
+        3.  [CodeChatEditorSidebar.css](client/static/css/CodeChatEditorSidebar.css)
+    3.  Tests
+        1.  [CodeChatEditor-test.mts](client/src/CodeChatEditor-test.mts)
+            1.  [Run tests](server/src/lib.rs?test)
+3.  Development tools
+    1.  Git
+        1.  [server/.gitignore](server/.gitignore)
+        2.  [client/static/.gitignore](client/static/.gitignore)
+        3.  [client/.gitignore](client/.gitignore)
+    2.  NPM/esbuild
+        1.  package.json
+        2.  [tsconfig.json](client/tsconfig.json)
+        3.  [.eslintrc.yml](client/.eslintrc.yml)
+        4.  [.prettierignore](.prettierignore)
+
+## Misc
+
+- <a href="new-project-template/README.md" target="_blank" rel="noopener">New
+  project template</a>
+- [Table of contents](toc.md)
+- [Index](docs/index.md)
+
+## Notes
+
+- <a id="auto-title"></a>TODO: all links here should be auto-titled and
+  autogenerate the page-local TOC.
+
+## [License](LICENSE.md)

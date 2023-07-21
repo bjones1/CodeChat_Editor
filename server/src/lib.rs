@@ -14,11 +14,10 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// <h1><code>lib.rs</code> -- Define library modules for the CodeChat
-///     Editor Server.</h1>
-/// <p>TODO: Add the ability to use <a
-///         href="https://zicklag.github.io/rust-tutorials/rust-plugins.html">plugins</a>.
-/// </p>
+/// # `lib.rs` -- Define library modules for the CodeChat Editor Server.
+///
+/// TODO: Add the ability to use
+/// [plugins](https://zicklag.github.io/rust-tutorials/rust-plugins.html).
 pub mod lexer;
-/// <p>The webserver</p>
+/// The webserver
 pub mod webserver;

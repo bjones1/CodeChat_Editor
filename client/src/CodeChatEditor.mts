@@ -1,47 +1,46 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
-// software: you can redistribute it and/or modify it under the terms of the
-// GNU General Public License as published by the Free Software Foundation,
-// either version 3 of the License, or (at your option) any later version.
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
 //
 // The CodeChat Editor is distributed in the hope that it will be useful, but
-// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-// more details.
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
 //
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// <h1><code>CodeChat-editor.mts</code> -- TypeScript which implements part
-//     of the client-side portion of the CodeChat Editor</h1>
-// <p>The overall process of load a file is:</p>
-// <ol>
-//     <li>The user browses to a file on the local machine, using the very
-//         simple file browser webpage provided by the CodeChat Server. Clicking
-//         on this file starts the process of loading a file into the CodeChat
-//         editor.</li>
-//     <li>The server sees a request for a file supported by the CodeChat
-//         Editor. It lexes the files into code and doc blocks, then wraps these
-//         in a webpage which contains this program (the CodeChat Editor).</li>
-//     <li>On load, this program (the CodeChat Editor) transforms these code and
-//         doc blocks into HTML. Specifically, code blocks are placed in <a
-//             href="https://ace.c9.io/">ACE editor</a> instances, while doc
-//         blocks are placed in <a href="https://www.tiny.cloud/">TinyMCE</a>
-//         instances.</li>
-// </ol>
-// <p>The user then uses the editing capabilities of ACE/TinyMCE to edit their
-//     program. When the user saves a file:</p>
-// <ol>
-//     <li>This program looks through the HTML, converting ACE editor/TinyMCE
-//         instances back into code blocks and doc blocks.</li>
-//     <li>It sends these code/doc blocks back to the server.</li>
-//     <li>The server then transforms these code/doc blocks into source code,
-//         then writes this code to the disk.</li>
-// </ol>
-// <h2>Imports</h2>
-// <h3>JavaScript/TypeScript</h3>
+// # `CodeChat-editor.mts` -- TypeScript which implements part of the client-side portion of the CodeChat Editor
+//
+// The overall process of load a file is:
+//
+// 1.  The user browses to a file on the local machine, using the very simple
+//     file browser webpage provided by the CodeChat Server. Clicking on this
+//     file starts the process of loading a file into the CodeChat editor.
+// 2.  The server sees a request for a file supported by the CodeChat Editor. It
+//     lexes the files into code and doc blocks, then wraps these in a webpage
+//     which contains this program (the CodeChat Editor).
+// 3.  On load, this program (the CodeChat Editor) transforms these code and doc
+//     blocks into HTML. Specifically, code blocks are placed in
+//     [ACE editor](https://ace.c9.io/) instances, while doc blocks are placed
+//     in [TinyMCE](https://www.tiny.cloud/) instances.
+//
+// The user then uses the editing capabilities of ACE/TinyMCE to edit their
+// program. When the user saves a file:
+//
+// 1.  This program looks through the HTML, converting ACE editor/TinyMCE
+//     instances back into code blocks and doc blocks.
+// 2.  It sends these code/doc blocks back to the server.
+// 3.  The server then transforms these code/doc blocks into source code, then
+//     writes this code to the disk.
+//
+// ## Imports
+//
+// ### JavaScript/TypeScript
 import "./EditorComponents.mjs";
 import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
 import "./graphviz-webcomponent-setup.mts";
@@ -50,23 +49,26 @@ import { tinymce, init } from "./tinymce-config.mjs";
 // @ts-ignore - Turndown doesn't have types.
 import TurndownService from "./turndown/turndown.browser.es.js";
 
-// <h3>CSS</h3>
+// ### CSS
 import "./../static/css/CodeChatEditor.css";
 import { CodeMirror_load, CodeMirror_save } from "./CodeMirror-integration.mjs";
 
-// <h2>Initialization</h2>
-// Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to Markdown conversion
+// ## Initialization
+//
+// Instantiate \[turndown\](https://github.com/mixmark-io/turndown) for HTML to
+// Markdown conversion
 const turndownService = new TurndownService({
     br: "\\",
     codeBlockStyle: "fenced",
     renderAsPure: false,
 });
 
-// Add the plugins from [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
+// Add the plugins from
+// [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm)
+// to enable conversions for tables, task lists, and strikethroughs.
 turndownService.use(gfm);
-// <p>The server passes this to the client to load a file. See <a
-//         href="../../server/src/webserver.rs#LexedSourceFile">LexedSourceFile</a>.
-// </p>
+// The server passes this to the client to load a file. See
+// [LexedSourceFile](../../server/src/webserver.rs#LexedSourceFile).
 type LexedSourceFile = {
     metadata: { mode: string };
     source: {
@@ -76,28 +78,25 @@ type LexedSourceFile = {
     };
 };
 
-// <p>Store the lexer info for the currently-loaded language.</p>
-// <p><a id="current_metadata"></a>This mirrors the data provided by the server
-//     -- see <a
-//         href="../../server/src/webserver.rs#SourceFileMetadata">SourceFileMetadata</a>.
-// </p>
+// Store the lexer info for the currently-loaded language.
+//
+// <a id="current_metadata"></a>This mirrors the data provided by the server --
+// see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
 let current_metadata: {
     mode: string;
 };
 
-// <p>Load code when the DOM is ready.</p>
+// Load code when the DOM is ready.
 export const page_init = (all_source: any) => {
-    // <p>Use <a
-    //         href="https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams">URLSearchParams</a>
-    //     to parse out the search parameters of this window's URL.</p>
+    // Use
+    // [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
+    // to parse out the search parameters of this window's URL.
     const urlParams = new URLSearchParams(window.location.search);
-    // <p>Get the mode from the page's query parameters. Default to edit using
-    //     the <a
-    //         href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator">nullish
-    //         coalescing operator</a>. This works, but TypeScript marks it as
-    //     an error. Ignore this error by including the <a
-    //         href="https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check">@ts-ignore
-    //         directive</a>.</p>
+    // Get the mode from the page's query parameters. Default to edit using the
+    // [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
+    // This works, but TypeScript marks it as an error. Ignore this error by
+    // including the
+    // [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
     /// @ts-ignore
     const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
     on_dom_content_loaded(async () => {
@@ -105,65 +104,62 @@ export const page_init = (all_source: any) => {
     });
 };
 
-// <p>This is copied from <a
-//         href="https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete">MDN</a>.
-// </p>
+// This is copied from
+// [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
 const on_dom_content_loaded = (on_load_func: () => void) => {
     if (document.readyState === "loading") {
-        // <p>Loading hasn't finished yet.</p>
+        // Loading hasn't finished yet.
         document.addEventListener("DOMContentLoaded", on_load_func);
     } else {
-        // <p><code>DOMContentLoaded</code> has already fired.</p>
+        // `DOMContentLoaded` has already fired.
         on_load_func();
     }
 };
 
-// <p><a id="EditorMode"></a>Define all possible editor modes; these are passed
-//     as a <a href="https://en.wikipedia.org/wiki/Query_string">query
-//         string</a> (<code>http://path/to/foo.py?mode=toc</code>, for example)
-//     to the page's URL.</p>
+// <a id="EditorMode"></a>Define all possible editor modes; these are passed as
+// a [query string](https://en.wikipedia.org/wiki/Query_string)
+// (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
 enum EditorMode {
-    // <p>Display the source code using CodeChat, but disallow editing.</p>
+    // Display the source code using CodeChat, but disallow editing.
     view,
-    // <p>For this source, the same a view; the server uses this to avoid
-    //     recursive iframes of the table of contents.</p>
+    // For this source, the same a view; the server uses this to avoid recursive
+    // iframes of the table of contents.
     toc,
-    // <p>The full CodeChat editor.</p>
+    // The full CodeChat editor.
     edit,
-    // <p>Show only raw source code; ignore doc blocks, treating them also as
-    //     code.</p>
+    // Show only raw source code; ignore doc blocks, treating them also as code.
     raw,
 }
 
-// <p>Tell TypeScript about the global namespace this program defines.</p>
+// Tell TypeScript about the global namespace this program defines.
 declare global {
     interface Window {
         CodeChatEditor_test: any;
     }
 }
 
-// <p>This function is called on page load to "load" a file. Before this point,
-//     the server has already lexed the source file into code and doc blocks;
-//     this function transforms the code and doc blocks into HTML and updates
-//     the current web page with the results.</p>
+// This function is called on page load to "load" a file. Before this point, the
+// server has already lexed the source file into code and doc blocks; this
+// function transforms the code and doc blocks into HTML and updates the current
+// web page with the results.
 const open_lp = (
-    // <p>A data structure provided by the server, containing the source and
-    //     associated metadata. See <a
-    //         href="#AllSource"><code>AllSource</code></a>.</p>
+    // A data structure provided by the server, containing the source and
+    // associated metadata. See [`AllSource`](#AllSource).
     all_source: LexedSourceFile,
-    // <p>See <code><a href="#EditorMode">EditorMode</a></code>.</p>
+    // See <code><a href="#EditorMode">EditorMode</a></code>.
     editorMode: EditorMode
 ) => {
-    // <p>Get the <code><a href="#current_metadata">current_metadata</a></code>
-    //     from the provided <code>all_source</code> struct and store it as a
-    //     global variable.</p>
+    // Get the <code><a href="#current_metadata">current_metadata</a></code>
+    // from the provided `all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
     const codechat_body = document.getElementById(
         "CodeChat-body"
     ) as HTMLDivElement;
     if (is_doc_only()) {
-        // <p>Special case: a CodeChat Editor document's HTML is stored in `source.doc`. We don't need the CodeMirror editor at all; instead, treat it like a single doc block contents div./p>
+        // Special case: a CodeChat Editor document's HTML is stored in
+        // \`source.doc\`. We don't need the CodeMirror editor at all; instead,
+        // treat it like a single doc block contents div./p>
         codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
         init({ selector: ".CodeChat-doc-contents" }).then((editors) =>
             editors[0].focus()
@@ -172,16 +168,15 @@ const open_lp = (
         CodeMirror_load(codechat_body, source);
     }
 
-    // <p><a id="CodeChatEditor_test"></a>If tests should be run, then
-    //     the <a
-    //         href="CodeChatEditor-test.mts#CodeChatEditor_test">following
-    //         global variable</a> is function that runs them.</p>
+    // <a id="CodeChatEditor_test"></a>If tests should be run, then the
+    // [following global variable](CodeChatEditor-test.mts#CodeChatEditor_test)
+    // is function that runs them.
     if (typeof window.CodeChatEditor_test === "function") {
         window.CodeChatEditor_test();
     }
 };
 
-// <p>Provide a shortcut of ctrl-s (or command-s) to save the current file.</p>
+// Provide a shortcut of ctrl-s (or command-s) to save the current file.
 export const on_keydown = (event: KeyboardEvent) => {
     if (
         event.key === "s" &&
@@ -193,12 +188,13 @@ export const on_keydown = (event: KeyboardEvent) => {
     }
 };
 
-// <p>Save CodeChat Editor contents.</p>
+// Save CodeChat Editor contents.
 export const on_save = async () => {
     /// @ts-expect-error
     let source: LexedSourceFile["source"] = {};
     if (is_doc_only()) {
-        // To save a document only, simply get the HTML from the only Tiny MCE div.
+        // To save a document only, simply get the HTML from the only Tiny MCE
+        // div.
         source.doc = tinymce.get(0)!.getContent();
     } else {
         source = CodeMirror_save();
@@ -209,10 +205,9 @@ export const on_save = async () => {
     });
 };
 
-// <p><a id="save"></a>Save the provided contents back to the filesystem, by
-//     sending a <code>PUT</code> request to the server. See the <a
-//         href="CodeChatEditorServer.v.html#save_file">save_file endpoint</a>.
-// </p>
+// <a id="save"></a>Save the provided contents back to the filesystem, by
+// sending a `PUT` request to the server. See the
+// [save_file endpoint](CodeChatEditorServer.v.html#save_file).
 const save = async (contents: LexedSourceFile) => {
     let response;
     try {
@@ -239,22 +234,23 @@ const save = async (contents: LexedSourceFile) => {
     );
 };
 
-// <h2>Helper functions</h2>
-// <p>Given text, escape it so it formats correctly as HTML. Because the
-//     solution at <a href="https://stackoverflow.com/a/48054293">SO</a>
-//     transforms newlines in odd ways (see <a
-//         href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText">innerText</a>),
-//     it's not usable with code. Instead, this is a translation of Python's
-//     <code>html.escape</code> function.</p>
+// ## Helper functions
+//
+// Given text, escape it so it formats correctly as HTML. Because the solution
+// at [SO](https://stackoverflow.com/a/48054293) transforms newlines in odd ways
+// (see
+// [innerText](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText)),
+// it's not usable with code. Instead, this is a translation of Python's
+// `html.escape` function.
 const escapeHTML = (unsafeText: string): string => {
-    // <p>Must be done first!</p>
+    // Must be done first!
     unsafeText = unsafeText.replaceAll("&", "&amp;");
     unsafeText = unsafeText.replaceAll("<", "&lt;");
     unsafeText = unsafeText.replaceAll(">", "&gt;");
     return unsafeText;
 };
 
-// <p>This handles only three HTML entities, but no others!</p>
+// This handles only three HTML entities, but no others!
 const unescapeHTML = (html: string): string => {
     let text = html.replaceAll("&gt;", ">");
     text = text.replaceAll("&lt;", "<");
@@ -262,25 +258,25 @@ const unescapeHTML = (html: string): string => {
     return text;
 };
 
-// <p>True if this is a CodeChat Editor document (not a source file).</p>
+// True if this is a CodeChat Editor document (not a source file).
 const is_doc_only = () => {
     return current_metadata["mode"] === "markdown";
 };
 
-// <p>Per <a
-//         href="https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples">MDN</a>,
-//     here's the least bad way to choose between the control key and the
-//     command key.</p>
+// Per
+// [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
+// here's the least bad way to choose between the control key and the command
+// key.
 const os_is_osx =
     navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
         ? true
         : false;
 
-// <p>A great and simple idea taken from <a
-//         href="https://stackoverflow.com/a/54116079">SO</a>: wrap all testing
-//     exports in a single variable. This avoids namespace pollution, since only
-//     one name is exported, and it's clearly marked for testing only. Test code
-//     still gets access to everything it needs.</p>
+// A great and simple idea taken from
+// [SO](https://stackoverflow.com/a/54116079): wrap all testing exports in a
+// single variable. This avoids namespace pollution, since only one name is
+// exported, and it's clearly marked for testing only. Test code still gets
+// access to everything it needs.
 export const exportedForTesting = {
     EditorMode,
     open_lp,

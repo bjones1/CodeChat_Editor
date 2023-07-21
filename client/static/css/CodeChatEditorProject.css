@@ -1,19 +1,22 @@
-/*  <p>Copyright (C) 2023 Bryan A. Jones.</p>
-    <p>This file is part of the CodeChat Editor.</p>
-    <p>The CodeChat Editor is free software: you can redistribute it and/or
-        modify it under the terms of the GNU General Public License as
-        published by the Free Software Foundation, either version 3 of the
-        License, or (at your option) any later version.</p>
-    <p>The CodeChat Editor is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-        General Public License for more details.</p>
-    <p>You should have received a copy of the GNU General Public License
-        along with the CodeChat Editor. If not, see <a
-            href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
-    </p>
-<h1><code>CodeChatEditorProject.css</code> -- Styles for the CodeChat
-    Editor for projects</h1> */
+/* Copyright (C) 2023 Bryan A. Jones.
+
+This file is part of the CodeChat Editor.
+
+The CodeChat Editor is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+The CodeChat Editor is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a copy of the GNU General Public License along with
+the CodeChat Editor. If not, see
+[http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+
+# `CodeChatEditorProject.css` -- Styles for the CodeChat Editor for projects */
 :root {
     --sidebar-width: 15rem;
 }
@@ -22,8 +25,8 @@ body {
     overflow: hidden;
 }
 
-/* <p>TODO: This is a overly simple, non-responsive layout to create a sidebar.
-    Fix.</p> */
+/* TODO: This is a overly simple, non-responsive layout to create a sidebar.
+Fix. */
 #CodeChat-sidebar {
     width: var(--sidebar-width);
     height: calc(100vh - 2 * var(--body-padding));
