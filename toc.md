@@ -3,9 +3,6 @@
 ## Design
 
 1.  [CodeChat Editor Overview](README.md)
-    1.  [How to run](README.md#how-to-run)
-    2.  [Vision](README.md#vision)
-    3.  [Specification](README.md#specification)
 2.  [Implementation](docs/implementation.md)
 
 ## Implementation
@@ -19,7 +16,7 @@
     5.  [Cargo.toml](server/Cargo.toml)
 2.  Client
     1.  Editor
-        1.  [CodeChatEditor.mts](client/src/CodeChatEditor.mts)\
+        1.  [CodeChatEditor.mts](client/src/CodeChatEditor.mts)
             1.  [CodeMirror-integration.mts](client/src/CodeMirror-integration.mts)
             2.  [tinymce-config.mts](client/src/tinymce-config.mts)
             3.  [EditorComponents.mts](client/src/EditorComponents.mts)

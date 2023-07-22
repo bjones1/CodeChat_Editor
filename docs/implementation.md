@@ -18,78 +18,14 @@ the CodeChat Editor. If not, see
 
 # Implementation
 
-## <a id="an-implementation"></a>1.4 Architecture
-
-### Doc block markup
-
-- For any markup, must either have:
-  - Round-trip capable conversion: from x to HTML (load), then from HTML back
-    to x (save).
-  - A GUI editor that works on this markup language. I don't know of any
-    (except for HTML).
-- HTML is simple to implement (already done). However, it's less readable.
-- Markdown is very well known, due to GitHub's use of it, and is more readable.
-  Anything that can't be translated from HTML from Markdown can simply be left
-  as HTML, since Markdown allows HTML as a part of its syntax.
-
-### <span style="color: rgb(0, 0, 0);">Markdown to HTML Conversion Implementation</span>
-
-<span style="color: rgb(0, 0, 0);">Currently, CodeChat only loads and saves doc
-blocks in HTML format. This can make a CodeChat-edited script hard to read when
-opened in another IDE, due to the HTML markup language being syntax heavy. To
-make the output more readable, we propose having CodeChat's main input/output
-doc block language to be Markdown rather than HTML. Markdown is a markup
-language with lighter syntax that is more intuitive to read.</span>
-
-<span style="color: rgb(0, 0, 0);">Keeping HTML as the markup language may make
-the editor harder to use, which could scare away potential users of the
-software. We want to mitigate this from occurring by implementing Markdown in
-place of HTML.</span>
-
-<p style="padding-left: 40px;"><span style="color: rgb(0, 0, 0);">This implementation will transform files as normal, but instead of the code blocks undergoing the existing pipeline:</span></p>
-
-<p style="padding-left: 80px;"><span style="color: rgb(0, 0, 0);">Load File --&gt; Convert to HTML --&gt; Write Stuff --&gt; Convert to HTML --&gt; Save File,</span></p>
-
-<p style="padding-left: 40px;"><em><span style="color: rgb(0, 0, 0);">we will instead have:</span></em></p>
-
-<p style="padding-left: 80px;">Load File --&gt; <strong>Convert to Markdown </strong>--&gt; Convert to HTML --&gt; Write Stuff --&gt; Convert to HTML --&gt; <strong>Convert to Markdown</strong> --&gt; Save File.</p>
-
-<p style="padding-left: 40px;">To begin, we will be focusing on the <em>first</em> half of the pipeline, converting Markdown to HTML. We can simply convert Markdown to HTML using the pulldown-cmark crate, which should be implemented right after the doc and code blocks have been parsed.</p>
-
-#### CommonMark Info:
-
-- Guide to using Markdown: visit
-  [this link](https://www.markdownguide.org/getting-started/)
-- Specifications for CommonMark: see [this link](https://spec.commonmark.org/)
-- To view CommonMark syntax, visit [this link](https://commonmark.org/help/)
-
-#### Sources and Documentation for pulldown-cmark:
-
-- To download: visit
-  [this homepage link](https://crates.io/crates/pulldown-cmark)
-- To view documentation for pulldown-cmark, visit
-  [this link](https://docs.rs/pulldown-cmark/latest/pulldown_cmark/)
-- By default, only CommonMark features are implemented.
-  - To use tables, strikethrough text, footnotes, task lists, etc, we must
-    enable them in the Options struct. See
-    [this link](https://docs.rs/pulldown-cmark/latest/pulldown_cmark/struct.Options.html)
-    for details
-
-Once completed, doc blocks written in Markdown can be converted by the editor
-into HTML for further use. Then, the second half of the pipeline can be
-implemented.
-
-### Lexing
-
-TODO: describe the lexer implementation. Link to the walkthrough, discuss the
-language specification, etc.
+## <a id="an-implementation"></a>Architecture
 
 ### Client/server partitioning
 
-Code blocks consist of standard HTML augmented with custom HTML elements which
+Doc blocks consist of Markdown augmented with custom HTML elements which
 provide authoring support. Some of these elements depend only on information in
 the current page. For example, a GraphViz graph tag transforms the graph
-provided in its tag into an SVG; it doesn't  need information from other files.
+provided in its tag into an SVG; it doesn't need information from other files.
 Other elements, such as a cross-reference tag, depend on information from other
 pages (in this case, the page containing the referenced item). The client lacks
 the ability to access other files, while the server has direct access to these
@@ -104,61 +40,62 @@ files. Therefore, the overall strategy is:
   which implement custom tags which only need local information. For example, a
   GraphViz custom tag renders graphs based on a description of the graph inside
   the tag.
-- The client sends edits (including creating a tag or deleting it) to tags
-  which depend on server-side information to the server for transformation.
 - On save, the client sends its text back to the server, which de-transforms
-  custom tags which depend on information from other pages.
+  custom tags which depend on information from other pages. If de-transforms
+  disagree with the provided text, then re-load the updated text after the save
+  is complete. For example, after inserting an auto-titled link, the
+  auto-titled text is missing; a save/reload fixes this.
 
-Page processing pipeline
+### Page processing pipeline
 
 On load:
 
-- Server:
-  - Run pre-parse hooks: they receive source code, file metadata. Examples:
-    code formatters. Skip if cache is up to date.
-  - Parse the file into code and doc blocks.
-  - Run post-parse hooks: they receive an array of code and doc blocks. I can't
-    think of any sort of processing to do here, though.
+- Classify the file: binary, raw text or CodeChat. For CodeChat files:
+- Run pre-parse hooks: they receive source code, file metadata. Examples: code
+  formatters. Skip if cache is up to date.
+- Lex the file into code and doc blocks.
+- Run post-parse hooks: they receive an array of code and doc blocks.
+  - Transform Markdown to HTML.
+- Run HTML hooks:
   - Update the cache for the current file only if the current file's cache is
     stale. To do this, walk the DOM of each doc block. The hook specifies which
-    tags it wants, and the tree walked calls the hook when it encounters these.
-  - Update tags whose content depend on data from other files. Hooks work the
+    tags it wants, and the tree walker calls the hook when it encounters these.
+    If this requires adding/changing anything (anchors, for example), mark the
+    document as dirty.
+  - Update tags whose contents depend on data from other files. Hooks work the
     same as the cache updates, but have a different role. They're always run,
     while the cache update is skipped when the cache is current.
-  - Determine next/prev/up hyperlinks based on this file's location in the TOC.
-- Client:
-  - Any edits to items with a specific class are sent to the server for
-    processing/rendering.
+- Determine next/prev/up hyperlinks based on this file's location in the TOC.
+- Transform the code and doc blocks into CodeMirror's format.
 
-On save: the same process in reverse.
+On save:
+
+- Transform the CodeMirror format back to code and doc blocks.
+- Run HTML hooks:
+  - Update the cache for the current file. Mark the file as "dirty" (reload
+    needed) if any changes are made.
+  - Check tags whose contents depend on data from other files; if the contents
+    differ, mark the file as dirty.
+  - Transform HTML to Markdown.
+- Run post-parse hooks; mark the file as dirty if any changes are made.
+- De-lex the file into source code.
+- Run pre-parse hooks; mark the file as dirty if any changes are made.
+- Save the file to disk.
+- If dirty, re-load the file.
 
 ### Table of contents
 
 - While the TOC file must be placed in the root of the project, it will be
-  served alongside pages served from subdirectories. What's the best approach?
-  An iframe; otherwise, need to rewrite all URLs (images, links, etc.) which
-  sounds hard.
+  served alongside pages served from subdirectories. Therefore, place this in
+  an iframe to avoid regenerating it for every page.
 - The TOC is just HTML. Numbered sections are expressed as nested ordered
   lists, with links to each section inside these lists.
 - All numbering is stored internally as a number, instead of the corresponding
   marker (I, II, III, etc.). This allows styles to customize numbering easily.
-  In addition, while JavaScript can find the index of each item in an ordered
-  list, but it can't get the actual marker used (Roman numbers, bullets, or
-  things generated by
-  [list-style-type](https://developer.mozilla.org/en-US/docs/Web/CSS/list-style-type)).
-  There's a
-  CSS [::marker](https://developer.mozilla.org/en-US/docs/Web/CSS/::marker)
-  selector, but not way to get the rendered text. Even
-  [innerText](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText)
-  doesn't include the marker in the resulting text.
-- Old notes:
-  - Then, `document.querySelector('[href="https://example.com"]')` finds the
-    first instance of the current page's link, which takes care of scrolling
-    the TOC.
-  - Given the a element in the TOC, looking through its parents provides the
+  - Given an `a` element in the TOC, looking through its parents provides the
     section number. Given an array of section numbers, use CSS to style all the
-    headings. One approach, which makes it easy for a style sheet to include or
-    exclude section numbers, by making them CSS variables:\
+    headings. Implement numbering using CSS variables, which makes it easy for
+    a style sheet to include or exclude section numbers:
 
     `:root {`\
       `--section-counter-reset: s1 4 s2 5;`\
@@ -171,28 +108,6 @@ On save: the same process in reverse.
       `content: var(--section-counter-content);`\
     `}`
 
-  - Plan:
-    1.  Implement a project finder -- starting at the current directory, ascend
-        to the root looking for the project file. If so, return a web page
-        which includes the TOC as a sidebar plus some navigation (prev/next/up)
-        placeholders. For prev/next, use this:\
-        `t = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {` \
-          `acceptNode(node) {`\
-            `return node.nodeName === "A" ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;`\
-          `}` \
-        `});`\
-        `t.currentNode = <link corresponding to current page>`\
-        `next = t.nextNode();`
-    2.  Implement TOC scroll (on the client -- easy there). This means finding
-        the first hyperlink to the current page. Given that, it's fairly easy
-        to determine prev/next/up and section numbers. Implement all these.
-
-### <a id="combined-code-document-editor"></a>Combined code/document editor
-
-- Need to find some way to allow syntax highlighting, code folding, etc. to
-  work across code blocks. Need to have just the code blocks, along with a way
-  to map these code back to the resulting document.
-
 ### Cached state
 
 When hydrating a page (transforming all custom tags into standard HTML) on the
@@ -200,19 +115,43 @@ server, all needed hydration data should be stored in the cache.
 
 #### Data and format
 
-- For each file (including anything linkable -- images, videos, etc.), stored
-  as the relative path from the project's root directory to that file:
+What we need to know:
+
+- To generate the TOC, we need a way to find the linked file, then get a list
+  of all its headings.
+  - Problem: files can be moved. Better would be an invariant anchor, stored in
+    the file, which doesn't change. It would make sense to link to the only
+    \<h1> element...but there may not be one, or it may not be at the top of
+    the file. The easy solution would be an anchor tag at the beginning of the
+    file...but this would break shell scripts, for example. Another is
+    including an anchor tag somewhere in each document, but need authors to
+    understand what it is (and not delete it). Another possibility is to link
+    to any anchor in the file with a special query identifying it as link to
+    the underlying file.
+- To auto-title a link, need to look up an anchor and get its location (page
+  number, section number) and title.
+- For back links, need to look up all links to the given anchor, then get the
+  location and title of each link.
+- To generate the TOC containing all anchors, we need a list of all anchors on
+  a given page.
+
+Therefore, the cache must contain:
+
+- For each file, stored as the relative path from the project's root directory
+  to that file:
   - A time/date stamp to determine if this cached data is stale or not.
   - The global TOC numbering.
-  - A nested list of headings, represented by their anchor. For headings
-    without an anchor, assign one.
-- For each anchor:
-  - The page it's in, as a path to the file containing this page.
+  - A nested list of headings, represented by their anchor (supporting TOC
+    generation). For each heading, also provide a list of all non-heading
+    anchors it contains (supporting all anchors TOC generation).
+- For each anchor (including anything linkable -- images, videos, etc.):
+  - The page it's in, as a path to the file containing this page. This allows
+    references to look up the page numbering for this anchor.
   - The outer HTML of the item it refers to (self/sibling/etc.), for use with
     references.
   - Its numbering within the current page, also for use with references.
-  - A list of referring links, represented by their anchor. For links without
-    an anchor, assign one.
+- For each link:
+  - Its anchor and the anchor it links to, to support back link generation.
 
 #### Editing and cached state
 
@@ -271,34 +210,24 @@ with descriptions of each setting.
 
 ### <a id="next-steps"></a>Next steps
 
-1.  Implement Markdown. Use
-    [pulldown-cmark](https://docs.rs/pulldown-cmark/latest/pulldown_cmark/) to
-    transform Markdown to HTML.
-    [Turndown](https://github.com/mixmark-io/turndown) has all the features we
-    want, but is written in JavaScript.
-    [html2md](https://crates.io/crates/html2md) is written in Rust, but doesn't
-    support CommonMark or have the feature set we need. Another option is to
-    use [Pandoc](https://pandoc.org).
-2.  Refactor the webserver to pull out the processing step (converting source
+1.  Refactor the webserver to pull out the processing step (converting source
     code to code/doc blocks). Run this in a separate thread -- see the
     [Tokio docs](https://docs.rs/tokio/latest/tokio/#cpu-bound-tasks-and-blocking-code)
     on how to await a task running in another thread.
-3.  Implement caching for all anchors/headings.
-4.  Implement author support: TOC, auto-titled links.
-5.  Implement a good GUI for inserting hyperlinks.
-6.  Better support for template literals.
-7.  Decide how to handle nested block comments.
-8.  Define the architecture for IDE extensions/plug-ins. Goal: minimize
+2.  Implement caching for all anchors/headings.
+3.  Implement author support: TOC, auto-titled links.
+4.  Implement a good GUI for inserting hyperlinks.
+5.  Better support for template literals.
+6.  Decide how to handle nested block comments.
+7.  Define the architecture for IDE extensions/plug-ins. Goal: minimize
     extension/plug-in complexity.
-9.  Define desired UI behavior. Priority: auto-reload; dirty document
+8.  Define desired UI behavior. Priority: auto-reload; dirty document
     detection; auto-backup.
-10. Implement Markdown support.
-11. Propose visual styling, dark mode, etc.
+9.  Propose visual styling, dark mode, etc.
 
 ### To do
 
-1.  Improve accessibility -- use a `<main>` tag, `<nav>` tags, etc.
-2.  Open the TOC as a single-file edit? If not, at least hide the sidebar,
+1.  Open the TOC as a single-file edit? If not, at least hide the sidebar,
     since that's redundant.
 
 ### Open questions
@@ -317,7 +246,7 @@ with descriptions of each setting.
   [JSON Typedef](https://jsontypedef.com/)? Possibly, vlang can do this
   somewhat, since it wants to decode JSON into a V struct.)
 
-## 1.5 Organization
+## Organization
 
 ### Client
 
