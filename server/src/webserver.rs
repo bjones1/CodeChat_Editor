@@ -57,36 +57,38 @@ use super::lexer::supported_languages::LANGUAGE_LEXER_ARR;
 use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexersCompiled};
 
 /// ## Data structures
+///
+/// ### Translation between a local (traditional) source file and its web-editable, client-side representation
+#[derive(Serialize, Deserialize)]
+/// <a id="LexedSourceFile"></a>Define the JSON data structure used to
+/// represent a source file in a web-capable format.
+struct CodeChatForWeb<'a> {
+    metadata: SourceFileMetadata,
+    source: CodeMirror<'a>,
+}
+
 #[derive(Serialize, Deserialize)]
 /// <a id="SourceFileMetadata"></a>Metadata about a source file sent along with
-/// it both to and from the client.
+/// it both to and from the client. TODO: currently, this is too simple to
+/// justify a struct. This allows for future growth -- perhaps the valid types
+/// of comment delimiters?
 struct SourceFileMetadata {
     mode: String,
 }
 
 #[derive(Serialize, Deserialize)]
-/// <a id="ClientSourceFile"></a>A simple structure for accepting JSON input to
-/// the `save_source` endpoint. Use a tuple since serdes can auto-generate a
-/// deserializer for it.
-struct ClientSourceFile {
-    metadata: SourceFileMetadata,
-    // TODO: implement a serdes deserializer that would convert this directly to
-    // a CodeDocBlock?
-    code_doc_block_arr: Vec<(String, Option<String>, String)>,
-}
-
-#[derive(Serialize, Deserialize)]
 /// The format used by CodeMirror to serialize/deserialize editor contents.
+/// TODO: Link to JS code where this data structure is defined.
 struct CodeMirror<'a> {
     /// The document being edited.
     doc: String,
     /// Doc blocks
     doc_blocks: Vec<(
-        // From
+        // From -- the starting character this doc block is anchored to.
         usize,
-        // To
+        // To -- the ending character this doc block is anchored ti.
         usize,
-        // indent. This might be a borrowed reference or an owned reference.
+        // Indent. This might be a borrowed reference or an owned reference.
         // When the lexer transforms code and doc blocks into this CodeMirror
         // format, a borrow from those existing doc blocks is more efficient.
         // However, deserialization from JSON requires ownership, since the
@@ -100,16 +102,22 @@ struct CodeMirror<'a> {
     )>,
 }
 
-#[derive(Serialize, Deserialize)]
-/// <a id="LexedSourceFile"></a>Define the structure of JSON responses when
-/// sending a source file from the `/fs` endpoint.
-struct LexedSourceFile<'a> {
-    metadata: SourceFileMetadata,
-    source: CodeMirror<'a>,
-}
+/// On save, the process is CodeChatForWeb -> this -> Vec<CodeDocBlocks> -> source code.
+///
+/// This is like a `CodeDocBlock`, but allows doc blocks with an unspecified
+/// delimiter. Code blocks have `delimiter == ""` and `indent == ""`.
+type SortaCodeDocBlocks = Vec<(
+        // The indent.
+        String,
+        // The delimiter. If None, the delimiter wasn't specified; this code
+        // should select a valid delimiter for the language.
+        Option<String>,
+        // The contents.
+        String,
+    )>;
 
-/// This defines the structure of JSON responses from the `save_source`
-/// endpoint.
+/// This defines the structure of JSON responses returned by the `save_source`
+/// endpoint. TODO: Link to where this is used in the JS.
 #[derive(Serialize)]
 struct ErrorResponse {
     success: bool,
@@ -118,7 +126,7 @@ struct ErrorResponse {
 
 // ## Globals
 lazy_static! {
-    /// Matches a bare drive letter.
+    /// Matches a bare drive letter. Only needed on Windows.
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r#"CodeChat Editor lexer: (\w+)"#).unwrap();
@@ -126,27 +134,24 @@ lazy_static! {
 
 /// ## Save endpoint
 #[put("/fs/{path:.*}")]
-/// The Save button in the CodeChat Editor Client posts to this endpoint with
-/// the path of the file to save.
+/// The Save button in the CodeChat Editor Client posts to this endpoint.
 async fn save_source<'a>(
     // The path to save this file to.
     encoded_path: web::Path<String>,
-    // The file to save plus metadata, stored in the `LexedSourceFile`
-    lexed_source_file: web::Json<LexedSourceFile<'a>>,
-    // Lexer info, needed to transform the `LexedSourceFile` into source code.
+    // The source file to save, in web format.
+    codechat_for_web: web::Json<CodeChatForWeb<'a>>,
+    // Lexer info, needed to transform the `CodeChatForWeb` into source code. This is provided by the web framework, not the client.
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
-    // Takes the source file and the lexer and saves the source as a string.
-    let file_contents = match save_source_as_string(lexed_source_file, language_lexers_compiled) {
+    // Translate from the CodeChatForWeb format to the contents of a source file.
+    let file_contents = match CodeChatForWeb_to_source(codechat_for_web, language_lexers_compiled) {
         Ok(r) => r,
-        Err(e) => return e,
+        Err(message) => return save_source_response(false, &message),
     };
 
-    // ### Save file
-    //
-    // Save this string to a file. Add a leading slash for Linux: this changes
-    // from `foo/bar.c` to `/foo/bar.c`. Windows already starts with a drive
-    // letter, such as `C:\foo\bar.c`, so no changes are needed.
+    // Save this string to a file. Add a leading slash for Linux/OS X: this
+    // changes from `foo/bar.c` to `/foo/bar.c`. Windows already starts with a
+    // drive letter, such as `C:\foo\bar.c`, so no changes are needed.
     let save_file_path = if cfg!(windows) {
         "".to_string()
     } else {
@@ -165,25 +170,44 @@ async fn save_source<'a>(
     save_source_response(true, "")
 }
 
-// This function takes in a file with code and doc blocks and outputs a string
-// of the contents for testing.
-fn save_source_as_string(
+/// A convenience method to fill out then return the `ErrorResponse` struct from
+/// the `save_source` endpoint.
+fn save_source_response(success: bool, message: &str) -> HttpResponse {
+    let response = ErrorResponse {
+        success,
+        message: message.to_string(),
+    };
+    let body = serde_json::to_string(&response).unwrap();
+    if success {
+        HttpResponse::Ok()
+            .content_type(ContentType::json())
+            .body(body)
+    } else {
+        HttpResponse::UnprocessableEntity()
+            .content_type(ContentType::json())
+            .body(body)
+    }
+}
+
+// TODO: Better name for this function. This function takes in a file with code
+// and doc blocks and outputs a string of the contents for testing.
+fn CodeChatForWeb_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
-    lexed_source_file: web::Json<LexedSourceFile<'_>>,
+    codechat_for_web: web::Json<CodeChatForWeb<'_>>,
     // Lexer info, needed to transform the `LexedSourceFile` into source code.
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
-) -> Result<String, HttpResponse> {
-    // Convert from CodeMirror to a CodeDocBlockArray.
-    let client_source_file = code_mirror_to_client(&lexed_source_file.source, &lexed_source_file);
-
+) -> Result<String, String> {
     // Given the mode, find the lexer.
     let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match language_lexers_compiled
         .map_mode_to_lexer
-        .get(client_source_file.metadata.mode.as_str())
+        .get(codechat_for_web.metadata.mode.as_str())
     {
         Some(v) => v,
-        None => return Err(save_source_response(false, "Invalid mode")),
+        None => return Err("Invalid mode".to_string()),
     };
+
+    // Convert from CodeMirror to a CodeDocBlockArray.
+    let sorta_code_doc_blocks = code_mirror_to_client(&codechat_for_web.source);
 
     // Turn this back into code and doc blocks by filling in any missing comment
     // delimiters.
@@ -195,14 +219,14 @@ fn save_source_as_string(
     // would look like in this file.
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
     // The vector 'code_doc_block_vec' is what is used to store the strings from
-    // the site. There is an indent, a delimeter, and the contents. Each index
+    // the site. There is an indent, a delimiter, and the contents. Each index
     // in a vector has those three parameters.
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
     // 'some_empty' is just a string "".
     let some_empty = Some("".to_string());
     // This for loop sorts the data from the site into code blocks and doc
     // blocks.
-    for cdb in &client_source_file.code_doc_block_arr {
+    for cdb in &sorta_code_doc_blocks {
         let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
         code_doc_block_vec.push(if is_code_block {
             CodeDocBlock::CodeBlock(cdb.2.to_string())
@@ -221,10 +245,10 @@ fn save_source_as_string(
                         } else if let Some(bc) = block_comment {
                             bc.opening.to_string()
                         } else {
-                            return Err(save_source_response(
-                                false,
-                                "Neither inline nor block comments are defined for this language.",
-                            ));
+                            return Err(
+                                "Neither inline nor block comments are defined for this language."
+                                    .to_string(),
+                            );
                         }
                     }
                 },
@@ -281,12 +305,9 @@ fn save_source_as_string(
                     {
                         Some(index) => lexer.language_lexer.block_comment_delim_arr[index].closing,
                         None => {
-                            return Err(save_source_response(
-                                false,
-                                &format!(
-                                    "Unknown block comment opening delimiter '{}'.",
-                                    doc_block.delimiter
-                                ),
+                            return Err(format!(
+                                "Unknown block comment opening delimiter '{}'.",
+                                doc_block.delimiter
                             ))
                         }
                     };
@@ -314,23 +335,63 @@ fn save_source_as_string(
     Ok(file_contents)
 }
 
-/// A convenience method to fill out then return the `ErrorResponse` struct from
-/// the `save_source` endpoint.
-fn save_source_response(success: bool, message: &str) -> HttpResponse {
-    let response = ErrorResponse {
-        success,
-        message: message.to_string(),
-    };
-    let body = serde_json::to_string(&response).unwrap();
-    if success {
-        HttpResponse::Ok()
-            .content_type(ContentType::json())
-            .body(body)
-    } else {
-        HttpResponse::UnprocessableEntity()
-            .content_type(ContentType::json())
-            .body(body)
+/// Translate from CodeMirror to SortaCodeDocBlocks.
+fn code_mirror_to_client(code_mirror: &CodeMirror) -> SortaCodeDocBlocks {
+    //Declare 3 mutable variables. The CodeDocBlockArray to append all changes to, and a index for the last docblock and current
+    let mut code_doc_block_arr: Vec<(String, Option<String>, String)> = Vec::new();
+    let mut current_idx: usize = 0;
+    let mut last_doc_block_idx: Option<usize> = None;
+
+    // Iterate through Code Mirror Structure
+    for (idx, _) in code_mirror.doc.match_indices('\n') {
+        if let Some((from, to, indent, delimiter, contents)) = code_mirror
+            .doc_blocks
+            .iter()
+            .find(|(from, to, _, _, _)| *from <= current_idx && *to >= idx)
+        {
+            // Check if the current line belongs to a doc block
+            if let Some(doc_block_idx) = last_doc_block_idx {
+                // Merge consecutive doc blocks by appending the contents
+                let (_, _, prev_content) = &mut code_doc_block_arr[doc_block_idx];
+                *prev_content = format!("{}{}{}{}", prev_content, indent, delimiter, contents);
+            } else {
+                // Append a new code/doc block to the array
+                code_doc_block_arr.push((
+                    code_mirror
+                        .doc
+                        .get(current_idx..*from)
+                        .unwrap_or("")
+                        .to_string(),
+                    Some(indent.to_string()),
+                    format!("{}{}", delimiter, contents),
+                ));
+                last_doc_block_idx = Some(code_doc_block_arr.len() - 1);
+            }
+            current_idx = *to + 1;
+        } else {
+            // Else the current line is part of a code block, not a doc block
+            code_doc_block_arr.push((
+                code_mirror
+                    .doc
+                    .get(current_idx..idx)
+                    .unwrap_or("")
+                    .to_string(),
+                None,
+                "".to_string(),
+            ));
+            last_doc_block_idx = None;
+            current_idx = idx + 1;
+        }
     }
+
+    // Handle the remaining part of the document after the last newline
+    code_doc_block_arr.push((
+        code_mirror.doc.get(current_idx..).unwrap_or("").to_string(),
+        None,
+        "".to_string(),
+    ));
+
+    code_doc_block_arr
 }
 
 /// ## Load endpoints
@@ -550,6 +611,14 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     HttpResponse::Ok().body(html_wrapper(&body))
 }
 
+enum FileType<'a> {
+    // Text content, but not a CodeChat file
+    Text(String),
+    // A CodeChat file; the struct contains the file's contents translated to
+    // CodeMirror.
+    CodeChat(CodeChatForWeb<'a>),
+}
+
 // ### Serve a CodeChat Editor Client webpage
 async fn serve_file(
     file_path: &Path,
@@ -575,6 +644,29 @@ async fn serve_file(
         ),
         Err(_err) => (empty_string, false),
     };
+    let is_toc = mode == "toc";
+
+    // Look for a project file by searching the current directory, then all its
+    // parents, for a file named `toc.md`.
+    let mut is_project = false;
+    // The number of directories between this file to serve (in `path`) and the
+    // toc file.
+    let mut path_to_toc = PathBuf::new();
+    let mut current_dir = file_path.to_path_buf();
+    loop {
+        let mut project_file = current_dir.clone();
+        project_file.push("toc.md");
+        if project_file.is_file() {
+            path_to_toc.pop();
+            path_to_toc.push("toc.md");
+            is_project = true;
+            break;
+        }
+        if !current_dir.pop() {
+            break;
+        }
+        path_to_toc.push("../");
+    }
 
     // Read the file.
     let mut file_contents = String::new();
@@ -626,60 +718,14 @@ async fn serve_file(
         }
     }
 
-    // The TOC is a simplified web page requiring no additional processing. The
-    // script ensures that all hyperlinks target the enclosing page, not just
-    // the iframe containing this page.
-    if mode == "toc" {
-        return HttpResponse::Ok().body(format!(
-            r#"<!DOCTYPE html>
-<html lang="en">
-	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<title>{} - The CodeChat Editor</title>
-
-		<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
-		<link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
-		<script>
-			addEventListener("DOMContentLoaded", (event) => {{
-				document.querySelectorAll("a").forEach((a_element) => {{
-					a_element.target = "_parent"
-				}});
-			}});
-		</script>
-	</head>
-	<body>
-{}
-	</body>
-</html>
-"#,
-            name,
-            markdown_to_html(&file_contents)
-        ));
+    let file_type_wrapped = source_to_codechat_for_web(file_contents, ext, is_toc, language_lexers_compiled);
+    if let Err(err_string) = file_type_wrapped {
+        return html_not_found(&err_string);
     }
 
-    // Determine the lexer to use for this file.
-    let ace_mode;
-    // First, search for a lexer directive in the file contents.
-    let lexer = if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
-        ace_mode = captures[1].to_string();
-        match language_lexers_compiled
-            .map_mode_to_lexer
-            .get(&ace_mode.as_ref())
-        {
-            Some(v) => v,
-            None => return html_not_found(&format!("<p>Unknown lexer type {}.</p>", &ace_mode)),
-        }
-    } else {
-        // Otherwise, look up the lexer by the file's extension.
-        if let Some(llc) = language_lexers_compiled
-            .map_ext_to_lexer_vec
-            .get(ext.as_ref())
-        {
-            llc.first().unwrap()
-        } else {
-            // The file type is unknown. Serve it raw, assuming it's an
-            // image/video/etc.
+    let codechat_for_web = match file_type_wrapped.unwrap() {
+        FileType::Text(_text_file_contents) => {
+            // The file type is unknown. Serve it raw.
             match actix_files::NamedFile::open_async(file_path).await {
                 Ok(v) => {
                     let res = v.into_response(req);
@@ -694,59 +740,42 @@ async fn serve_file(
                 }
             }
         }
+        // TODO.
+        FileType::CodeChat(html) => html,
     };
 
-    // Lex the code and put it in a JSON structure.
-    let mut code_doc_block_arr;
-    let lexed_source_file = LexedSourceFile {
-        metadata: SourceFileMetadata {
-            mode: lexer.language_lexer.ace_mode.to_string(),
-        },
-        source: if lexer.language_lexer.ace_mode == "markdown" {
-            // Document-only files are easy: just encode the contents.
-            CodeMirror {
-                doc: markdown_to_html(&file_contents),
-                doc_blocks: vec![],
-            }
-        } else {
-            // Lex the code.
-            code_doc_block_arr = source_lexer(&file_contents, lexer);
+    if is_toc {
+        // The TOC is a simplified web page requiring no additional processing.
+        // The script ensures that all hyperlinks target the enclosing page, not
+        // just the iframe containing this page.
+        return HttpResponse::Ok().body(format!(
+            r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{} - The CodeChat Editor</title>
 
-            // Convert this into CodeMirror's format.
-            let mut code_mirror = CodeMirror {
-                doc: "".to_string(),
-                doc_blocks: Vec::new(),
-            };
-            for code_or_doc_block in &mut code_doc_block_arr {
-                match code_or_doc_block {
-                    CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(code_string),
-                    CodeDocBlock::DocBlock(doc_block) => {
-                        // Create the doc block.
-                        let len = code_mirror.doc.len();
-                        doc_block.contents = markdown_to_html(&doc_block.contents);
-                        code_mirror.doc_blocks.push((
-                            // From
-                            len,
-                            // To. Make this one line short, which allows
-                            // CodeMirror to correctly handle inserts at the
-                            // first character of the following code block.
-                            len + doc_block.lines - 1,
-                            std::borrow::Cow::Borrowed(&doc_block.indent),
-                            std::borrow::Cow::Borrowed(&doc_block.delimiter),
-                            std::borrow::Cow::Borrowed(&doc_block.contents),
-                        ));
-                        // Append newlines to the document; the doc block will
-                        // replace these in the editor. This keeps the line
-                        // numbering of non-doc blocks correct.
-                        code_mirror.doc.push_str(&"\n".repeat(doc_block.lines));
-                    }
-                }
-            }
-            code_mirror
-        },
-    };
+<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
+<link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
+<script>
+    addEventListener("DOMContentLoaded", (event) => {{
+        document.querySelectorAll("a").forEach((a_element) => {{
+            a_element.target = "_parent"
+        }});
+    }});
+</script>
+</head>
+<body>
+{}
+</body>
+</html>
+"#,
+            name, codechat_for_web.source.doc
+        ));
+    }
 
-    let lexed_source_file_string = match serde_json::to_string(&lexed_source_file) {
+    let codechat_for_web_json_string = match serde_json::to_string(&codechat_for_web) {
         Ok(v) => v,
         Err(err) => {
             return html_not_found(&format!(
@@ -757,28 +786,6 @@ async fn serve_file(
     }
     // Look for any script tags and prevent these from causing problems.
     .replace("</script>", "<\\/script>");
-
-    // Look for a project file by searching the current directory, then all its
-    // parents, for a file named `toc.md`.
-    let mut is_project = false;
-    // The number of directories between this file to serve (in `path`) and the
-    // toc file.
-    let mut path_to_toc = PathBuf::new();
-    let mut current_dir = file_path.to_path_buf();
-    loop {
-        let mut project_file = current_dir.clone();
-        project_file.push("toc.md");
-        if project_file.is_file() {
-            path_to_toc.pop();
-            path_to_toc.push("toc.md");
-            is_project = true;
-            break;
-        }
-        if !current_dir.pop() {
-            break;
-        }
-        path_to_toc.push("../");
-    }
 
     // For project files, add in the sidebar.
     let (sidebar_iframe, sidebar_css) = if is_project {
@@ -847,8 +854,94 @@ async fn serve_file(
         </div>
     </body>
 </html>
-"##, name, if is_test_mode { "-test" } else { "" }, lexed_source_file_string, testing_src, sidebar_css, sidebar_iframe, name, dir
+"##, name, if is_test_mode { "-test" } else { "" }, codechat_for_web_json_string, testing_src, sidebar_css, sidebar_iframe, name, dir
     ))
+}
+
+// Given the contents of a file, classify it and (often) convert it to HTML.
+fn source_to_codechat_for_web<'a>(
+    // The file's contents.
+    file_contents: String,
+    // The file's extension.
+    file_ext: &str,
+    // True if this file is a TOC.
+    _is_toc: bool,
+    // Lexers.
+    language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
+) -> Result<FileType<'a>, String> {
+    // Determine the lexer to use for this file.
+    let ace_mode;
+    // First, search for a lexer directive in the file contents.
+    let lexer = if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
+        ace_mode = captures[1].to_string();
+        match language_lexers_compiled
+            .map_mode_to_lexer
+            .get(&ace_mode.as_ref())
+        {
+            Some(v) => v,
+            None => return Err(format!("<p>Unknown lexer type {}.</p>", &ace_mode)),
+        }
+    } else {
+        // Otherwise, look up the lexer by the file's extension.
+        if let Some(llc) = language_lexers_compiled.map_ext_to_lexer_vec.get(file_ext) {
+            llc.first().unwrap()
+        } else {
+            // The file type is unknown; treat it as plain text.
+            return Ok(FileType::Text(file_contents));
+        }
+    };
+
+    // Lex the code and put it in a JSON structure.
+    let code_doc_block_arr;
+    let lexed_source_file = CodeChatForWeb {
+        metadata: SourceFileMetadata {
+            mode: lexer.language_lexer.ace_mode.to_string(),
+        },
+        source: if lexer.language_lexer.ace_mode == "markdown" {
+            // Document-only files are easy: just encode the contents.
+            CodeMirror {
+                doc: markdown_to_html(&file_contents),
+                doc_blocks: vec![],
+            }
+        } else {
+            // Lex the code.
+            code_doc_block_arr = source_lexer(&file_contents, lexer);
+
+            // Convert this into CodeMirror's format.
+            let mut code_mirror = CodeMirror {
+                doc: "".to_string(),
+                doc_blocks: Vec::new(),
+            };
+            for code_or_doc_block in code_doc_block_arr {
+                match code_or_doc_block {
+                    CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(&code_string),
+                    CodeDocBlock::DocBlock(mut doc_block) => {
+                        // Create the doc block.
+                        let len = code_mirror.doc.len();
+                        doc_block.contents = markdown_to_html(&doc_block.contents);
+                        code_mirror.doc_blocks.push((
+                            // From
+                            len,
+                            // To. Make this one line short, which allows
+                            // CodeMirror to correctly handle inserts at the
+                            // first character of the following code block.
+                            len + doc_block.lines - 1,
+                            std::borrow::Cow::Owned(doc_block.indent.to_string()),
+                            std::borrow::Cow::Owned(doc_block.delimiter.to_string()),
+                            std::borrow::Cow::Owned(doc_block.contents.to_string()),
+                        ));
+                        // Append newlines to the document; the doc block will
+                        // replace these in the editor. This keeps the line
+                        // numbering of non-doc blocks correct.
+                        code_mirror.doc.push_str(&"\n".repeat(doc_block.lines));
+                    }
+                }
+            }
+            code_mirror
+        },
+    };
+
+    Ok(FileType::CodeChat(lexed_source_file))
 }
 
 // ## Utilities
@@ -906,73 +999,6 @@ fn markdown_to_html(markdown: &str) -> String {
     html_output
 }
 
-// Conversion Function This function takes in two parameters, the CodeMirror
-// Structure and the Metadata from the Lexed Source File This function returns
-// the struct: ClientSourceFile to finish this conversion
-fn code_mirror_to_client(code_mirror: &CodeMirror, meta: &LexedSourceFile) -> ClientSourceFile {
-    //Declare 3 mutable variables. The CodeDocBlockArray to append all changes to, and a index for the last docblock and current
-    let mut code_doc_block_arr: Vec<(String, Option<String>, String)> = Vec::new();
-    let mut current_idx: usize = 0;
-    let mut last_doc_block_idx: Option<usize> = None;
-
-    // Iterate through Code Mirror Structure
-    for (idx, _) in code_mirror.doc.match_indices('\n') {
-        if let Some((from, to, indent, delimiter, contents)) = code_mirror
-            .doc_blocks
-            .iter()
-            .find(|(from, to, _, _, _)| *from <= current_idx && *to >= idx)
-        {
-            // Check if the current line belongs to a doc block
-            if let Some(doc_block_idx) = last_doc_block_idx {
-                // Merge consecutive doc blocks by appending the contents
-                let (_, _, prev_content) = &mut code_doc_block_arr[doc_block_idx];
-                *prev_content = format!("{}{}{}{}", prev_content, indent, delimiter, contents);
-            } else {
-                // Append a new code/doc block to the array
-                code_doc_block_arr.push((
-                    code_mirror
-                        .doc
-                        .get(current_idx..*from)
-                        .unwrap_or("")
-                        .to_string(),
-                    Some(indent.to_string()),
-                    format!("{}{}", delimiter, contents),
-                ));
-                last_doc_block_idx = Some(code_doc_block_arr.len() - 1);
-            }
-            current_idx = *to + 1;
-        } else {
-            // Else the current line is part of a code block, not a doc block
-            code_doc_block_arr.push((
-                code_mirror
-                    .doc
-                    .get(current_idx..idx)
-                    .unwrap_or("")
-                    .to_string(),
-                None,
-                "".to_string(),
-            ));
-            last_doc_block_idx = None;
-            current_idx = idx + 1;
-        }
-    }
-
-    // Handle the remaining part of the document after the last newline
-    code_doc_block_arr.push((
-        code_mirror.doc.get(current_idx..).unwrap_or("").to_string(),
-        None,
-        "".to_string(),
-    ));
-
-    // Create and return a ClientSourceFile with the converted data
-    ClientSourceFile {
-        metadata: SourceFileMetadata {
-            mode: meta.metadata.mode.clone(),
-        },
-        code_doc_block_arr,
-    }
-}
-
 // ## Webserver startup
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
@@ -1001,7 +1027,7 @@ pub async fn main() -> std::io::Result<()> {
             .route("/", web::get().to(_root_fs_redirect))
             .route("/fs", web::get().to(_root_fs_redirect))
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("127.0.0.1", 8081))?
     .run()
     .await
 }
@@ -1017,9 +1043,9 @@ pub async fn main() -> std::io::Result<()> {
 
 // ### Save Endpoint Testing
 mod tests {
-    use crate::webserver::save_source_as_string;
+    use crate::webserver::CodeChatForWeb_to_source;
     use crate::webserver::{
-        compile_lexers, CodeMirror, LexedSourceFile, SourceFileMetadata, LANGUAGE_LEXER_ARR,
+        compile_lexers, CodeMirror, CodeChatForWeb, SourceFileMetadata, LANGUAGE_LEXER_ARR,
     };
     use actix_web::web::Data;
     use std::borrow::Cow;
@@ -1036,7 +1062,7 @@ mod tests {
             Cow<'a, String>,
         )>,
     ) -> String {
-        let test_source_file = LexedSourceFile {
+        let test_source_file = CodeChatForWeb {
             metadata: SourceFileMetadata {
                 mode: mode.to_string(),
             },
@@ -1047,7 +1073,7 @@ mod tests {
         };
         let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
         let file_contents =
-            save_source_as_string(actix_web::web::Json(test_source_file), llc).unwrap();
+            CodeChatForWeb_to_source(actix_web::web::Json(test_source_file), llc).unwrap();
         file_contents
     }
 
