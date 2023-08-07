@@ -233,7 +233,7 @@ pub struct DocBlock {
     /// The contents of this block: documentation (with the comment delimiters
     /// removed).
     pub contents: String,
-    /// The number of source code lines in this doc block.
+    /// The number of source code lines in this doc block. Only valid when converting from source code to its web-editable equivalent; in the opposite conversion (web-editable to source file), this is not valid (it's always set to 0).
     pub lines: usize,
 }
 

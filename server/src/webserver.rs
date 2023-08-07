@@ -61,7 +61,7 @@ use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexersCompiled}
 /// ### Translation between a local (traditional) source file and its web-editable, client-side representation
 #[derive(Serialize, Deserialize)]
 /// <a id="LexedSourceFile"></a>Define the JSON data structure used to
-/// represent a source file in a web-capable format.
+/// represent a source file in a web-editable format.
 struct CodeChatForWeb<'a> {
     metadata: SourceFileMetadata,
     source: CodeMirror<'a>,
@@ -102,19 +102,19 @@ struct CodeMirror<'a> {
     )>,
 }
 
-/// On save, the process is CodeChatForWeb -> this -> Vec<CodeDocBlocks> -> source code.
+/// On save, the process is CodeChatForWeb -> SortaCodeDocBlocks -> Vec\<CodeDocBlocks> -> source code.
 ///
 /// This is like a `CodeDocBlock`, but allows doc blocks with an unspecified
 /// delimiter. Code blocks have `delimiter == ""` and `indent == ""`.
 type SortaCodeDocBlocks = Vec<(
-        // The indent.
-        String,
-        // The delimiter. If None, the delimiter wasn't specified; this code
-        // should select a valid delimiter for the language.
-        Option<String>,
-        // The contents.
-        String,
-    )>;
+    // The indent.
+    String,
+    // The delimiter. If None, the delimiter wasn't specified; this code
+    // should select a valid delimiter for the language.
+    Option<String>,
+    // The contents.
+    String,
+)>;
 
 /// This defines the structure of JSON responses returned by the `save_source`
 /// endpoint. TODO: Link to where this is used in the JS.
@@ -136,21 +136,24 @@ lazy_static! {
 #[put("/fs/{path:.*}")]
 /// The Save button in the CodeChat Editor Client posts to this endpoint.
 async fn save_source<'a>(
-    // The path to save this file to.
+    // The path to save this file to. See [Path](https://actix.rs/docs/extractors#path), which extracts parameters from the request's path.
     encoded_path: web::Path<String>,
-    // The source file to save, in web format.
+    // The source file to save, in web format. See [JSON](https://actix.rs/docs/extractors#json), which deserializes the request body into the provided struct (here, `CodeChatForWeb`).
     codechat_for_web: web::Json<CodeChatForWeb<'a>>,
-    // Lexer info, needed to transform the `CodeChatForWeb` into source code. This is provided by the web framework, not the client.
+    // Lexer info, needed to transform the `CodeChatForWeb` into source code. See [Data](https://docs.rs/actix-web/4.3.1/actix_web/web/struct.Data.html), which provides access to application-wide data. (TODO: link to where this is defined.)
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
     // Translate from the CodeChatForWeb format to the contents of a source file.
-    let file_contents = match CodeChatForWeb_to_source(codechat_for_web, language_lexers_compiled) {
+    let file_contents = match codechat_for_web_to_source(
+        codechat_for_web.into_inner(),
+        language_lexers_compiled.into_inner().as_ref(),
+    ) {
         Ok(r) => r,
         Err(message) => return save_source_response(false, &message),
     };
 
     // Save this string to a file. Add a leading slash for Linux/OS X: this
-    // changes from `foo/bar.c` to `/foo/bar.c`. Windows already starts with a
+    // changes from `foo/bar.c` to `/foo/bar.c`. Windows paths already starts with a
     // drive letter, such as `C:\foo\bar.c`, so no changes are needed.
     let save_file_path = if cfg!(windows) {
         "".to_string()
@@ -189,13 +192,12 @@ fn save_source_response(success: bool, message: &str) -> HttpResponse {
     }
 }
 
-// TODO: Better name for this function. This function takes in a file with code
-// and doc blocks and outputs a string of the contents for testing.
-fn CodeChatForWeb_to_source(
+// This function takes in a source file in web-editable format (the `CodeChatForWeb` struct) and transforms it into source code.
+fn codechat_for_web_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
-    codechat_for_web: web::Json<CodeChatForWeb<'_>>,
+    codechat_for_web: CodeChatForWeb<'_>,
     // Lexer info, needed to transform the `LexedSourceFile` into source code.
-    language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
+    language_lexers_compiled: &LanguageLexersCompiled<'_>,
 ) -> Result<String, String> {
     // Given the mode, find the lexer.
     let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match language_lexers_compiled
@@ -206,7 +208,7 @@ fn CodeChatForWeb_to_source(
         None => return Err("Invalid mode".to_string()),
     };
 
-    // Convert from CodeMirror to a CodeDocBlockArray.
+    // Convert from `CodeMirror` to a `SortaCodeDocBlocks`.
     let sorta_code_doc_blocks = code_mirror_to_client(&codechat_for_web.source);
 
     // Turn this back into code and doc blocks by filling in any missing comment
@@ -218,19 +220,19 @@ fn CodeChatForWeb_to_source(
     // This line assigns the variable 'block_comment' with what a block comment
     // would look like in this file.
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
-    // The vector 'code_doc_block_vec' is what is used to store the strings from
-    // the site. There is an indent, a delimiter, and the contents. Each index
-    // in a vector has those three parameters.
+    // The outcome of the translation: a vector of CodeDocBlock, in which all comment delimiters are now present.
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
     // 'some_empty' is just a string "".
     let some_empty = Some("".to_string());
     // This for loop sorts the data from the site into code blocks and doc
     // blocks.
     for cdb in &sorta_code_doc_blocks {
+        // A code block is a defines as an empty indent and an empty delimiter.
         let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
         code_doc_block_vec.push(if is_code_block {
             CodeDocBlock::CodeBlock(cdb.2.to_string())
         } else {
+            // It's a doc block; translate this from a sorta doc block to a real doc block by filling in the comment delimiter, if it's not provided (e.g. it's `None`).
             CodeDocBlock::DocBlock(DocBlock {
                 indent: cdb.0.to_string(),
                 // If no delimiter is provided, use an inline comment (if
@@ -240,10 +242,13 @@ fn CodeChatForWeb_to_source(
                     Some(v) => v.to_string(),
                     // No delimiter was provided -- fill one in.
                     None => {
+                        // Pick an inline comment, if this language has one.
                         if let Some(ic) = inline_comment {
                             ic.to_string()
+                        // Otherwise, use a block comment.
                         } else if let Some(bc) = block_comment {
                             bc.opening.to_string()
+                        // Neither are available. Help!
                         } else {
                             return Err(
                                 "Neither inline nor block comments are defined for this language."
@@ -260,7 +265,7 @@ fn CodeChatForWeb_to_source(
         });
     }
 
-    // Turn this vec of code/doc blocks into a string of source code.
+    // Turn this vec of CodeDocBlocks into a string of source code.
     let mut file_contents = String::new();
     for code_doc_block in code_doc_block_vec {
         match code_doc_block {
@@ -611,6 +616,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     HttpResponse::Ok().body(html_wrapper(&body))
 }
 
+/// TODO: A better name for this enum.
 enum FileType<'a> {
     // Text content, but not a CodeChat file
     Text(String),
@@ -718,7 +724,12 @@ async fn serve_file(
         }
     }
 
-    let file_type_wrapped = source_to_codechat_for_web(file_contents, ext, is_toc, language_lexers_compiled);
+    let file_type_wrapped = source_to_codechat_for_web(
+        file_contents,
+        ext,
+        is_toc,
+        language_lexers_compiled.into_inner().as_ref(),
+    );
     if let Err(err_string) = file_type_wrapped {
         return html_not_found(&err_string);
     }
@@ -867,7 +878,7 @@ fn source_to_codechat_for_web<'a>(
     // True if this file is a TOC.
     _is_toc: bool,
     // Lexers.
-    language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
+    language_lexers_compiled: &LanguageLexersCompiled<'_>,
 ) -> Result<FileType<'a>, String> {
     // Determine the lexer to use for this file.
     let ace_mode;
@@ -1043,9 +1054,9 @@ pub async fn main() -> std::io::Result<()> {
 
 // ### Save Endpoint Testing
 mod tests {
-    use crate::webserver::CodeChatForWeb_to_source;
+    use crate::webserver::codechat_for_web_to_source;
     use crate::webserver::{
-        compile_lexers, CodeMirror, CodeChatForWeb, SourceFileMetadata, LANGUAGE_LEXER_ARR,
+        compile_lexers, CodeChatForWeb, CodeMirror, SourceFileMetadata, LANGUAGE_LEXER_ARR,
     };
     use actix_web::web::Data;
     use std::borrow::Cow;
@@ -1073,7 +1084,7 @@ mod tests {
         };
         let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
         let file_contents =
-            CodeChatForWeb_to_source(actix_web::web::Json(test_source_file), llc).unwrap();
+            codechat_for_web_to_source(actix_web::web::Json(test_source_file), llc).unwrap();
         file_contents
     }
 
