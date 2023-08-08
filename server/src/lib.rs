@@ -19,5 +19,5 @@
 /// TODO: Add the ability to use
 /// [plugins](https://zicklag.github.io/rust-tutorials/rust-plugins.html).
 pub mod lexer;
-/// The webserver
+pub mod processing;
 pub mod webserver;
