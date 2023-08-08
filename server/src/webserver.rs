@@ -60,8 +60,8 @@ use crate::processing::{codechat_for_web_to_source, source_to_codechat_for_web};
 ///
 /// ### Translation between a local (traditional) source file and its web-editable, client-side representation
 #[derive(Serialize, Deserialize)]
-/// <a id="LexedSourceFile"></a>Define the JSON data structure used to
-/// represent a source file in a web-editable format.
+/// <a id="LexedSourceFile"></a>Define the JSON data structure used to represent
+/// a source file in a web-editable format.
 pub struct CodeChatForWeb<'a> {
     pub metadata: SourceFileMetadata,
     pub source: CodeMirror<'a>,
@@ -129,14 +129,23 @@ lazy_static! {
 #[put("/fs/{path:.*}")]
 /// The Save button in the CodeChat Editor Client posts to this endpoint.
 async fn save_source<'a>(
-    // The path to save this file to. See [Path](https://actix.rs/docs/extractors#path), which extracts parameters from the request's path.
+    // The path to save this file to. See
+    // [Path](https://actix.rs/docs/extractors#path), which extracts parameters
+    // from the request's path.
     encoded_path: web::Path<String>,
-    // The source file to save, in web format. See [JSON](https://actix.rs/docs/extractors#json), which deserializes the request body into the provided struct (here, `CodeChatForWeb`).
+    // The source file to save, in web format. See
+    // [JSON](https://actix.rs/docs/extractors#json), which deserializes the
+    // request body into the provided struct (here, `CodeChatForWeb`).
     codechat_for_web: web::Json<CodeChatForWeb<'a>>,
-    // Lexer info, needed to transform the `CodeChatForWeb` into source code. See [Data](https://docs.rs/actix-web/4.3.1/actix_web/web/struct.Data.html), which provides access to application-wide data. (TODO: link to where this is defined.)
+    // Lexer info, needed to transform the `CodeChatForWeb` into source code.
+    // See
+    // [Data](https://docs.rs/actix-web/4.3.1/actix_web/web/struct.Data.html),
+    // which provides access to application-wide data. (TODO: link to where this
+    // is defined.)
     language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
 ) -> impl Responder {
-    // Translate from the CodeChatForWeb format to the contents of a source file.
+    // Translate from the CodeChatForWeb format to the contents of a source
+    // file.
     let file_contents = match codechat_for_web_to_source(
         codechat_for_web.into_inner(),
         language_lexers_compiled.into_inner().as_ref(),
@@ -146,8 +155,8 @@ async fn save_source<'a>(
     };
 
     // Save this string to a file. Add a leading slash for Linux/OS X: this
-    // changes from `foo/bar.c` to `/foo/bar.c`. Windows paths already starts with a
-    // drive letter, such as `C:\foo\bar.c`, so no changes are needed.
+    // changes from `foo/bar.c` to `/foo/bar.c`. Windows paths already starts
+    // with a drive letter, such as `C:\foo\bar.c`, so no changes are needed.
     let save_file_path = if cfg!(windows) {
         "".to_string()
     } else {

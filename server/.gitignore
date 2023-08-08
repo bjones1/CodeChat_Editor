@@ -16,7 +16,8 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# <h1><code>.gitignore</code> -- files for Git to ignore</h1>
+# # `.gitignore` -- files for Git to ignore
+#
 # Rust build output
 target/
 

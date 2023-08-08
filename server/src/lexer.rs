@@ -233,7 +233,10 @@ pub struct DocBlock {
     /// The contents of this block: documentation (with the comment delimiters
     /// removed).
     pub contents: String,
-    /// The number of source code lines in this doc block. Only valid when converting from source code to its web-editable equivalent; in the opposite conversion (web-editable to source file), this is not valid (it's always set to 0).
+    /// The number of source code lines in this doc block. Only valid when
+    /// converting from source code to its web-editable equivalent; in the
+    /// opposite conversion (web-editable to source file), this is not valid
+    /// (it's always set to 0).
     pub lines: usize,
 }
 
@@ -714,7 +717,7 @@ pub fn source_lexer(
     // `language_lexer_compiled.next_token`, which is
     // `(\#)|(""")|(''')|(")|(')`. The first token found is
     // <span style="color: rgb(224, 62, 45);"><code>"""</code></span>.
-    // Everything up to the match is moved from the unlexed  source code to the
+    // Everything up to the match is moved from the unlexed source code to the
     // current code block, giving:
     //
     // <code><span style="background-color: rgb(191, 237, 210);">print(</span><span style="color: rgb(224, 62, 45); background-color: rgb(251, 238, 184);">"""¶</span></code>\
@@ -732,6 +735,7 @@ pub fn source_lexer(
     // The regex is accompanied by a map named `language_lexer_compiled.map`,
     // which connects the mapped group to which token it matched (see
     // `struct RegexDelimType`):
+    //
     // ```
     // Regex:           (#)       |  (""") | (''')  |  (")   |  (')
     // Mapping:    Inline comment   String   String   String   String

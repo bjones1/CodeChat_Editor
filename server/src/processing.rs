@@ -19,6 +19,7 @@
 /// ## Imports
 ///
 /// ### Standard library
+///
 /// None.
 // ### Third-party
 use lazy_static::lazy_static;
@@ -30,15 +31,17 @@ use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexersCompiled}
 use crate::webserver::{CodeChatForWeb, CodeMirror, FileType, SourceFileMetadata};
 
 /// ## Data structures
-/// On save, the process is CodeChatForWeb -> SortaCodeDocBlocks -> Vec\<CodeDocBlocks> -> source code.
+///
+/// On save, the process is CodeChatForWeb -> SortaCodeDocBlocks ->
+/// Vec\<CodeDocBlocks> -> source code.
 ///
 /// This is like a `CodeDocBlock`, but allows doc blocks with an unspecified
 /// delimiter. Code blocks have `delimiter == ""` and `indent == ""`.
 type SortaCodeDocBlocks = Vec<(
     // The indent.
     String,
-    // The delimiter. If None, the delimiter wasn't specified; this code
-    // should select a valid delimiter for the language.
+    // The delimiter. If None, the delimiter wasn't specified; this code should
+    // select a valid delimiter for the language.
     Option<String>,
     // The contents.
     String,
@@ -50,7 +53,8 @@ lazy_static! {
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r#"CodeChat Editor lexer: (\w+)"#).unwrap();
 }
 
-// This function takes in a source file in web-editable format (the `CodeChatForWeb` struct) and transforms it into source code.
+// This function takes in a source file in web-editable format (the
+// `CodeChatForWeb` struct) and transforms it into source code.
 pub fn codechat_for_web_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
     codechat_for_web: CodeChatForWeb<'_>,
@@ -78,7 +82,8 @@ pub fn codechat_for_web_to_source(
     // This line assigns the variable 'block_comment' with what a block comment
     // would look like in this file.
     let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
-    // The outcome of the translation: a vector of CodeDocBlock, in which all comment delimiters are now present.
+    // The outcome of the translation: a vector of CodeDocBlock, in which all
+    // comment delimiters are now present.
     let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
     // 'some_empty' is just a string "".
     let some_empty = Some("".to_string());
@@ -90,7 +95,9 @@ pub fn codechat_for_web_to_source(
         code_doc_block_vec.push(if is_code_block {
             CodeDocBlock::CodeBlock(cdb.2.to_string())
         } else {
-            // It's a doc block; translate this from a sorta doc block to a real doc block by filling in the comment delimiter, if it's not provided (e.g. it's `None`).
+            // It's a doc block; translate this from a sorta doc block to a real
+            // doc block by filling in the comment delimiter, if it's not
+            // provided (e.g. it's `None`).
             CodeDocBlock::DocBlock(DocBlock {
                 indent: cdb.0.to_string(),
                 // If no delimiter is provided, use an inline comment (if
@@ -303,7 +310,8 @@ pub fn source_to_codechat_for_web<'a>(
                 doc_blocks: vec![],
             }
         } else {
-            // Create an initially-empty struct; the source code will be translated to this.
+            // Create an initially-empty struct; the source code will be
+            // translated to this.
             let mut code_mirror = CodeMirror {
                 doc: "".to_string(),
                 doc_blocks: Vec::new(),
@@ -345,7 +353,8 @@ pub fn source_to_codechat_for_web<'a>(
     Ok(FileType::CodeChat(codechat_for_web))
 }
 
-// Convert markdown to HTML. (This assumes the Markdown defined in the CommonMark spec.)
+// Convert markdown to HTML. (This assumes the Markdown defined in the
+// CommonMark spec.)
 fn markdown_to_html(markdown: &str) -> String {
     let mut options = Options::all();
     // Turndown (which converts HTML back to Markdown) doesn't support smart

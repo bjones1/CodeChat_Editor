@@ -13,7 +13,8 @@
     3.  [lexer.rs](server/src/lexer.rs)
         1.  [supported_languages.rs](server/src/lexer/supported_languages.rs)
     4.  [webserver.rs](server/src/webserver.rs)
-    5.  [Cargo.toml](server/Cargo.toml)
+    5.  [processing.rs](server/src/processing.rs)
+    6.  [Cargo.toml](server/Cargo.toml)
 2.  Client
     1.  Editor
         1.  [CodeChatEditor.mts](client/src/CodeChatEditor.mts)
