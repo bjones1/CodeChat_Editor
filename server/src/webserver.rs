@@ -433,8 +433,6 @@ async fn serve_fs(
     #[cfg(not(target_os = "windows"))]
     let fixed_path = "/".to_string() + &fixed_path;
 
-    // On Windows, the returned path starts with `\\?\` per the
-    // [docs](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces).
     // Handle any
     // [errors](https://doc.rust-lang.org/std/fs/fn.canonicalize.html#errors).
     let canon_path = match Path::new(&fixed_path).canonicalize() {
@@ -902,9 +900,9 @@ fn source_to_codechat_for_web<'a>(
         }
     };
 
-    // Lex the code and put it in a JSON structure.
+    // Lex the code and put it in the `CodeChatForWeb` structure.
     let code_doc_block_arr;
-    let lexed_source_file = CodeChatForWeb {
+    let codechat_for_web = CodeChatForWeb {
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),
         },
@@ -915,14 +913,16 @@ fn source_to_codechat_for_web<'a>(
                 doc_blocks: vec![],
             }
         } else {
-            // Lex the code.
-            code_doc_block_arr = source_lexer(&file_contents, lexer);
-
-            // Convert this into CodeMirror's format.
+            // Create an initially-empty struct; the source code will be translated to this.
             let mut code_mirror = CodeMirror {
                 doc: "".to_string(),
                 doc_blocks: Vec::new(),
             };
+
+            // Lex the code.
+            code_doc_block_arr = source_lexer(&file_contents, lexer);
+
+            // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             for code_or_doc_block in code_doc_block_arr {
                 match code_or_doc_block {
                     CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(&code_string),
@@ -952,7 +952,7 @@ fn source_to_codechat_for_web<'a>(
         },
     };
 
-    Ok(FileType::CodeChat(lexed_source_file))
+    Ok(FileType::CodeChat(codechat_for_web))
 }
 
 // ## Utilities
@@ -961,13 +961,15 @@ fn source_to_codechat_for_web<'a>(
 fn path_display(p: &Path) -> String {
     let path_orig = p.to_string_lossy();
     if cfg!(windows) {
+        // On Windows, the returned path starts with `\\?\` per the
+        // [docs](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces).
         path_orig[4..].to_string()
     } else {
         path_orig.to_string()
     }
 }
 
-// Return a Not Found (404) errors with the provided HTML body.
+// Return a Not Found (404) error with the provided HTML body.
 fn html_not_found(msg: &str) -> HttpResponse {
     HttpResponse::NotFound().body(html_wrapper(msg))
 }
@@ -999,6 +1001,7 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+// Convert markdown to HTML. (This assumes the Markdown defined in the CommonMark spec.)
 fn markdown_to_html(markdown: &str) -> String {
     let mut options = Options::all();
     // Turndown (which converts HTML back to Markdown) doesn't support smart
@@ -1024,6 +1027,7 @@ pub async fn main() -> std::io::Result<()> {
 
         // Start the server.
         App::new()
+            // Provide data to all endpoints -- the compiler lexers.
             .app_data(web::Data::new(compile_lexers(LANGUAGE_LEXER_ARR)))
             // Serve static files per the
             // [docs](https://actix.rs/docs/static-files).
@@ -1031,7 +1035,7 @@ pub async fn main() -> std::io::Result<()> {
                 "/static",
                 client_static_path.as_os_str(),
             ))
-            // This endpoint serves the filesystem.
+            // These endpoints serve the files to/from the filesystem.
             .service(serve_fs)
             .service(save_source)
             // Reroute to the filesystem for typical user-requested URLs.
@@ -1084,7 +1088,7 @@ mod tests {
         };
         let llc = Data::new(compile_lexers(LANGUAGE_LEXER_ARR));
         let file_contents =
-            codechat_for_web_to_source(actix_web::web::Json(test_source_file), llc).unwrap();
+            codechat_for_web_to_source(test_source_file, &llc).unwrap();
         file_contents
     }
 

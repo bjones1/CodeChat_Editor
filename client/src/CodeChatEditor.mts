@@ -69,7 +69,7 @@ const turndownService = new TurndownService({
 turndownService.use(gfm);
 // The server passes this to the client to load a file. See
 // [LexedSourceFile](../../server/src/webserver.rs#LexedSourceFile).
-type LexedSourceFile = {
+type CodeChatForWeb = {
     metadata: { mode: string };
     source: {
         doc: string;
@@ -145,16 +145,16 @@ declare global {
 const open_lp = (
     // A data structure provided by the server, containing the source and
     // associated metadata. See [`AllSource`](#AllSource).
-    all_source: LexedSourceFile,
+    all_source: CodeChatForWeb,
     // See <code><a href="#EditorMode">EditorMode</a></code>.
-    editorMode: EditorMode
+    editorMode: EditorMode,
 ) => {
     // Get the <code><a href="#current_metadata">current_metadata</a></code>
     // from the provided `all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
     const codechat_body = document.getElementById(
-        "CodeChat-body"
+        "CodeChat-body",
     ) as HTMLDivElement;
     if (is_doc_only()) {
         // Special case: a CodeChat Editor document's HTML is stored in
@@ -162,7 +162,7 @@ const open_lp = (
         // treat it like a single doc block contents div./p>
         codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
         init({ selector: ".CodeChat-doc-contents" }).then((editors) =>
-            editors[0].focus()
+            editors[0].focus(),
         );
     } else {
         CodeMirror_load(codechat_body, source);
@@ -191,7 +191,7 @@ export const on_keydown = (event: KeyboardEvent) => {
 // Save CodeChat Editor contents.
 export const on_save = async () => {
     /// @ts-expect-error
-    let source: LexedSourceFile["source"] = {};
+    let source: CodeChatForWeb["source"] = {};
     if (is_doc_only()) {
         // To save a document only, simply get the HTML from the only Tiny MCE
         // div.
@@ -208,7 +208,7 @@ export const on_save = async () => {
 // <a id="save"></a>Save the provided contents back to the filesystem, by
 // sending a `PUT` request to the server. See the
 // [save_file endpoint](CodeChatEditorServer.v.html#save_file).
-const save = async (contents: LexedSourceFile) => {
+const save = async (contents: CodeChatForWeb) => {
     let response;
     try {
         response = await window.fetch(window.location.href, {
@@ -230,7 +230,7 @@ const save = async (contents: LexedSourceFile) => {
         return;
     }
     window.alert(
-        `Save failed -- server returned ${response.status}, ${response.statusText}.`
+        `Save failed -- server returned ${response.status}, ${response.statusText}.`,
     );
 };
 

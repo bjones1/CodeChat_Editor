@@ -50,10 +50,14 @@ files. Therefore, the overall strategy is:
 
 On load:
 
-- Classify the file: binary, raw text or CodeChat. For CodeChat files:
-- Run pre-parse hooks: they receive source code, file metadata. Examples: code
-  formatters. Skip if cache is up to date.
-- Lex the file into code and doc blocks.
+- Classify the file; input are mutable global state (which, if present,
+  indicates this is a project build), if the file is a TOC, the file's binary
+  data, and the file's path. Output of the classification: binary, raw text, a
+  CodeChat document (a Markdown file), or a CodeChat file. The load processing
+  pipelines For CodeChat files:
+- (CodeChat files only) Run pre-parse hooks: they receive source code, file
+  metadata. Examples: code formatters. Skip if cache is up to date.
+- (CodeChat files only) Lex the file into code and doc blocks.
 - Run post-parse hooks: they receive an array of code and doc blocks.
   - Transform Markdown to HTML.
 - Run HTML hooks:
@@ -67,6 +71,20 @@ On load:
     while the cache update is skipped when the cache is current.
 - Determine next/prev/up hyperlinks based on this file's location in the TOC.
 - Transform the code and doc blocks into CodeMirror's format.
+
+We want a clean separate between the webserver and the processing pipeline. The
+webserver should provide I/O between the local file system and the client, but
+do little processing. The processing pipeline should not perform I/O.
+Therefore:
+
+- On load, the webserver receives a request for a file. It should gather and
+  pass the following to the page processor:
+  - The loaded file as text (or an Err result).
+  - The global state (empty if this isn't a project build).
+  - The pathname of the file.
+  - If this file should be processed as a TOC or not.
+- The page processor returns:
+  - An Enum with the file's contents: a
 
 On save:
 
@@ -266,19 +284,7 @@ a smaller set of files. At a user's request, the CodeChat Editor server
 generates HTML which creates an editor around the user-requested file. This
 HTML loads the packaged dependencies to create the CodeChat Editor webpage.
 
-<graphviz-graph graph="digraph {
-    JS_lib [label = &quot;JavaScript libraries&quot;];
-    &quot;package.json&quot; -&gt; JS_lib [label = &quot;npm update&quot;];
-    JS_lib -&gt; esbuild;
-    CCE_source [label = &quot;CodeChat Editor\nclient-side source&quot;];
-    JS_lib -&gt; CCE_source [label = &quot;imports&quot;];
-    CCE_source -&gt; esbuild;
-    esbuild -&gt; &quot;Packaged JavaScript&quot;;
-    CCE_webpage [label = &quot;CodeChat Editor\nwebpage&quot;];
-    &quot;Packaged JavaScript&quot; -&gt; CCE_webpage;
-    server_HTML [label = &quot;CodeChat Editor\nserver-generated\nHTML&quot;];
-    server_HTML -&gt; CCE_webpage;
-}"></graphviz-graph>
+<graphviz-graph graph="digraph {&#10;    JS_lib [label = &quot;JavaScript libraries&quot;];&#10;    &quot;package.json&quot; -> JS_lib [label = &quot;npm update&quot;];&#10;    JS_lib -> esbuild;&#10;    CCE_source [label = &quot;CodeChat Editor\nclient-side source&quot;];&#10;    JS_lib -> CCE_source [label = &quot;imports&quot;];&#10;    CCE_source -> esbuild;&#10;    esbuild -> &quot;Packaged JavaScript&quot;;&#10;    CCE_webpage [label = &quot;CodeChat Editor\nwebpage&quot;];&#10;    &quot;Packaged JavaScript&quot; -> CCE_webpage;&#10;    server_HTML [label = &quot;CodeChat Editor\nserver-generated\nHTML&quot;];&#10;    server_HTML -> CCE_webpage;&#10;}"></graphviz-graph>
 
 However, esbuild's code splitting doesn't work with dynamic imports -- the
 splitter always picks Node-style default imports, while the Ace editor expects
@@ -289,29 +295,7 @@ TODO: GUIs using TinyMCE. See the
 
 ### System architecture
 
-<graphviz-graph graph="digraph {
-    bgcolor = transparent;
-    compound = true;
-    node [shape = box];
-    subgraph cluster_text_editor {
-        label = &quot;Text editor/IDE&quot;;
-        source_code [label = &quot;Source\ncode&quot;, style = dashed];
-        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];
-    }
-    subgraph cluster_server {
-        label = &lt;CodeChat Editor Server&gt;;
-        websocket_server [label = &quot;Websocket\nserver&quot;];
-        web_server [label = &quot;Web\nserver&quot;];
-    }
-    subgraph cluster_client {
-        label = &quot;CodeChat Editor Client&quot;;
-        rendered_code [label = &quot;Rendered code&quot;, style = dashed];
-        JavaScript;
-    }
-    CodeChat_plugin -&gt; websocket_server [dir = both];
-    websocket_server -&gt; JavaScript [dir = both];
-    web_server -&gt; JavaScript [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client];
-}"></graphviz-graph>
+<graphviz-graph graph="digraph {&#10;    bgcolor = transparent;&#10;    compound = true;&#10;    node [shape = box];&#10;    subgraph cluster_text_editor {&#10;        label = &quot;Text editor/IDE&quot;;&#10;        source_code [label = &quot;Source\ncode&quot;, style = dashed];&#10;        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];&#10;    }&#10;    subgraph cluster_server {&#10;        label = <CodeChat Editor Server>;&#10;        websocket_server [label = &quot;Websocket\nserver&quot;];&#10;        web_server [label = &quot;Web\nserver&quot;];&#10;    }&#10;    subgraph cluster_client {&#10;        label = &quot;CodeChat Editor Client&quot;;&#10;        rendered_code [label = &quot;Rendered code&quot;, style = dashed];&#10;        JavaScript;&#10;    }&#10;    CodeChat_plugin -> websocket_server [dir = both];&#10;    websocket_server -> JavaScript [dir = both];&#10;    web_server -> JavaScript [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client];&#10;}"></graphviz-graph>
 
 ## Code style
 
