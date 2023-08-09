@@ -15,7 +15,6 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// # `lexer.rs` -- Lex source code into code and doc blocks
-//
 // ## Submodule definitions
 pub mod supported_languages;
 
@@ -668,7 +667,8 @@ pub fn source_lexer(
     // purpose is to identify the start of the next special case. **This code
     // makes heavy use of regexes -- read the previous link thoroughly.**
     //
-    // To better explain the operation of the lexer, see the [lexer walkthrough](lexer-walkthrough.md).
+    // To better explain the operation of the lexer, see the
+    // [lexer walkthrough](lexer/lexer-walkthrough.md).
     //
     // ### Helper function
     //
@@ -1141,6 +1141,7 @@ pub fn source_lexer(
 //
 // Rust
 // [almost mandates](https://doc.rust-lang.org/book/ch11-03-test-organization.html)
-// putting tests in the same file as the source, which I dislike. Here's a way to place them in a separate file.
+// putting tests in the same file as the source, which I dislike. Here's a way
+// to place them in a separate file.
 #[cfg(test)]
 mod tests;
