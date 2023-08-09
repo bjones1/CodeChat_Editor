@@ -76,6 +76,24 @@ pub struct SourceFileMetadata {
     pub mode: String,
 }
 
+pub type CodeMirrorDocBlocks<'a> = Vec<(
+    // From -- the starting character this doc block is anchored to.
+    usize,
+    // To -- the ending character this doc block is anchored ti.
+    usize,
+    // Indent. This might be a borrowed reference or an owned reference.
+    // When the lexer transforms code and doc blocks into this CodeMirror
+    // format, a borrow from those existing doc blocks is more efficient.
+    // However, deserialization from JSON requires ownership, since the
+    // Actix web framework doesn't provide a place to borrow from. The
+    // following variables are clone-on-write for the same reason.
+    Cow<'a, String>,
+    // delimiter
+    Cow<'a, String>,
+    // contents
+    Cow<'a, String>,
+)>;
+
 #[derive(Serialize, Deserialize)]
 /// The format used by CodeMirror to serialize/deserialize editor contents.
 /// TODO: Link to JS code where this data structure is defined.
@@ -83,23 +101,7 @@ pub struct CodeMirror<'a> {
     /// The document being edited.
     pub doc: String,
     /// Doc blocks
-    pub doc_blocks: Vec<(
-        // From -- the starting character this doc block is anchored to.
-        usize,
-        // To -- the ending character this doc block is anchored ti.
-        usize,
-        // Indent. This might be a borrowed reference or an owned reference.
-        // When the lexer transforms code and doc blocks into this CodeMirror
-        // format, a borrow from those existing doc blocks is more efficient.
-        // However, deserialization from JSON requires ownership, since the
-        // Actix web framework doesn't provide a place to borrow from. The
-        // following variables are clone-on-write for the same reason.
-        Cow<'a, String>,
-        // delimiter
-        Cow<'a, String>,
-        // contents
-        Cow<'a, String>,
-    )>,
+    pub doc_blocks: CodeMirrorDocBlocks<'a>,
 }
 
 /// This defines the structure of JSON responses returned by the `save_source`

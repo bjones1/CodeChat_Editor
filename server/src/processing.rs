@@ -14,20 +14,23 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// # `processing.rs` -- Transforms source code to its web-editable equivalent and back
+/// # `processing.rs` -- Transform source code to its web-editable equivalent and back
 ///
-/// ## Imports
-///
-/// ### Standard library
-///
-/// None.
+// ## Imports
+// None.
+//
+// ### Standard library
+// None.
+//
 // ### Third-party
 use lazy_static::lazy_static;
 use pulldown_cmark::{html, Options, Parser};
 use regex::Regex;
 
 // ### Local
-use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexersCompiled};
+use crate::lexer::{
+    source_lexer, CodeDocBlock, DocBlock, LanguageLexerCompiled, LanguageLexersCompiled,
+};
 use crate::webserver::{CodeChatForWeb, CodeMirror, FileType, SourceFileMetadata};
 
 /// ## Data structures
@@ -53,8 +56,10 @@ lazy_static! {
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r#"CodeChat Editor lexer: (\w+)"#).unwrap();
 }
 
-// This function takes in a source file in web-editable format (the
-// `CodeChatForWeb` struct) and transforms it into source code.
+// ## Transform `CodeChatForWeb` to source code
+//
+// This function takes in a source file in web-editable format
+// (the `CodeChatForWeb` struct) and transforms it into source code.
 pub fn codechat_for_web_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
     codechat_for_web: CodeChatForWeb<'_>,
@@ -71,8 +76,75 @@ pub fn codechat_for_web_to_source(
     };
 
     // Convert from `CodeMirror` to a `SortaCodeDocBlocks`.
-    let sorta_code_doc_blocks = code_mirror_to_client(&codechat_for_web.source);
+    let sorta_code_doc_blocks = code_mirror_to_sorta_code_doc_blocks(&codechat_for_web.source);
+    let code_doc_block_vec =
+        sorta_code_doc_blocks_to_code_doc_blocks(sorta_code_doc_blocks, lexer)?;
+    code_doc_block_vec_to_source(code_doc_block_vec, lexer)
+}
 
+/// Translate from CodeMirror to SortaCodeDocBlocks.
+fn code_mirror_to_sorta_code_doc_blocks(code_mirror: &CodeMirror) -> SortaCodeDocBlocks {
+    //Declare 3 mutable variables. The CodeDocBlockArray to append all changes to, and a index for the last docblock and current
+    let mut code_doc_block_arr: Vec<(String, Option<String>, String)> = Vec::new();
+    let mut current_idx: usize = 0;
+    let mut last_doc_block_idx: Option<usize> = None;
+
+    // Iterate through Code Mirror Structure
+    for (idx, _) in code_mirror.doc.match_indices('\n') {
+        if let Some((from, to, indent, delimiter, contents)) = code_mirror
+            .doc_blocks
+            .iter()
+            .find(|(from, to, _, _, _)| *from <= current_idx && *to >= idx)
+        {
+            // Check if the current line belongs to a doc block
+            if let Some(doc_block_idx) = last_doc_block_idx {
+                // Merge consecutive doc blocks by appending the contents
+                let (_, _, prev_content) = &mut code_doc_block_arr[doc_block_idx];
+                *prev_content = format!("{}{}{}{}", prev_content, indent, delimiter, contents);
+            } else {
+                // Append a new code/doc block to the array
+                code_doc_block_arr.push((
+                    code_mirror
+                        .doc
+                        .get(current_idx..*from)
+                        .unwrap_or("")
+                        .to_string(),
+                    Some(indent.to_string()),
+                    format!("{}{}", delimiter, contents),
+                ));
+                last_doc_block_idx = Some(code_doc_block_arr.len() - 1);
+            }
+            current_idx = *to + 1;
+        } else {
+            // Else the current line is part of a code block, not a doc block
+            code_doc_block_arr.push((
+                code_mirror
+                    .doc
+                    .get(current_idx..idx)
+                    .unwrap_or("")
+                    .to_string(),
+                None,
+                "".to_string(),
+            ));
+            last_doc_block_idx = None;
+            current_idx = idx + 1;
+        }
+    }
+
+    // Handle the remaining part of the document after the last newline
+    code_doc_block_arr.push((
+        code_mirror.doc.get(current_idx..).unwrap_or("").to_string(),
+        None,
+        "".to_string(),
+    ));
+
+    code_doc_block_arr
+}
+
+fn sorta_code_doc_blocks_to_code_doc_blocks(
+    sorta_code_doc_blocks: SortaCodeDocBlocks,
+    lexer: &LanguageLexerCompiled,
+) -> Result<Vec<CodeDocBlock>, String> {
     // Turn this back into code and doc blocks by filling in any missing comment
     // delimiters.
     //
@@ -130,6 +202,13 @@ pub fn codechat_for_web_to_source(
         });
     }
 
+    Ok(code_doc_block_vec)
+}
+
+fn code_doc_block_vec_to_source(
+    code_doc_block_vec: Vec<CodeDocBlock>,
+    lexer: &LanguageLexerCompiled,
+) -> Result<String, String> {
     // Turn this vec of CodeDocBlocks into a string of source code.
     let mut file_contents = String::new();
     for code_doc_block in code_doc_block_vec {
@@ -205,65 +284,8 @@ pub fn codechat_for_web_to_source(
     Ok(file_contents)
 }
 
-/// Translate from CodeMirror to SortaCodeDocBlocks.
-fn code_mirror_to_client(code_mirror: &CodeMirror) -> SortaCodeDocBlocks {
-    //Declare 3 mutable variables. The CodeDocBlockArray to append all changes to, and a index for the last docblock and current
-    let mut code_doc_block_arr: Vec<(String, Option<String>, String)> = Vec::new();
-    let mut current_idx: usize = 0;
-    let mut last_doc_block_idx: Option<usize> = None;
-
-    // Iterate through Code Mirror Structure
-    for (idx, _) in code_mirror.doc.match_indices('\n') {
-        if let Some((from, to, indent, delimiter, contents)) = code_mirror
-            .doc_blocks
-            .iter()
-            .find(|(from, to, _, _, _)| *from <= current_idx && *to >= idx)
-        {
-            // Check if the current line belongs to a doc block
-            if let Some(doc_block_idx) = last_doc_block_idx {
-                // Merge consecutive doc blocks by appending the contents
-                let (_, _, prev_content) = &mut code_doc_block_arr[doc_block_idx];
-                *prev_content = format!("{}{}{}{}", prev_content, indent, delimiter, contents);
-            } else {
-                // Append a new code/doc block to the array
-                code_doc_block_arr.push((
-                    code_mirror
-                        .doc
-                        .get(current_idx..*from)
-                        .unwrap_or("")
-                        .to_string(),
-                    Some(indent.to_string()),
-                    format!("{}{}", delimiter, contents),
-                ));
-                last_doc_block_idx = Some(code_doc_block_arr.len() - 1);
-            }
-            current_idx = *to + 1;
-        } else {
-            // Else the current line is part of a code block, not a doc block
-            code_doc_block_arr.push((
-                code_mirror
-                    .doc
-                    .get(current_idx..idx)
-                    .unwrap_or("")
-                    .to_string(),
-                None,
-                "".to_string(),
-            ));
-            last_doc_block_idx = None;
-            current_idx = idx + 1;
-        }
-    }
-
-    // Handle the remaining part of the document after the last newline
-    code_doc_block_arr.push((
-        code_mirror.doc.get(current_idx..).unwrap_or("").to_string(),
-        None,
-        "".to_string(),
-    ));
-
-    code_doc_block_arr
-}
-
+// ## Transform from source code to `CodeChatForWeb`
+//
 // Given the contents of a file, classify it and (often) convert it to HTML.
 pub fn source_to_codechat_for_web<'a>(
     // The file's contents.
@@ -297,7 +319,7 @@ pub fn source_to_codechat_for_web<'a>(
         }
     };
 
-    // Lex the code and put it in the `CodeChatForWeb` structure.
+    // Transform the provided file into the `CodeChatForWeb` structure.
     let code_doc_block_arr;
     let codechat_for_web = CodeChatForWeb {
         metadata: SourceFileMetadata {
@@ -310,6 +332,8 @@ pub fn source_to_codechat_for_web<'a>(
                 doc_blocks: vec![],
             }
         } else {
+            // This is a source file.
+            //
             // Create an initially-empty struct; the source code will be
             // translated to this.
             let mut code_mirror = CodeMirror {
@@ -380,21 +404,12 @@ mod tests {
     use crate::lexer::compile_lexers;
     use crate::lexer::supported_languages::LANGUAGE_LEXER_ARR;
     use crate::processing::codechat_for_web_to_source;
-    use crate::webserver::{CodeChatForWeb, CodeMirror, SourceFileMetadata};
+    use crate::webserver::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
     use std::borrow::Cow;
 
     // Wrap the common test operations in a function.
-    fn run_test<'a>(
-        mode: &str,
-        doc: &str,
-        doc_blocks: Vec<(
-            usize,
-            usize,
-            Cow<'a, String>,
-            Cow<'a, String>,
-            Cow<'a, String>,
-        )>,
-    ) -> String {
+    fn run_test<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> String {
+        // Wrap the provided parameters in the necessary data structures.
         let test_source_file = CodeChatForWeb {
             metadata: SourceFileMetadata {
                 mode: mode.to_string(),
@@ -404,11 +419,15 @@ mod tests {
                 doc_blocks,
             },
         };
+
+        // Get the compiled lexerl
         let llc = compile_lexers(LANGUAGE_LEXER_ARR);
-        let file_contents = codechat_for_web_to_source(test_source_file, &llc).unwrap();
-        file_contents
+
+        // Return the translation.
+        codechat_for_web_to_source(test_source_file, &llc).unwrap()
     }
 
+    // Provide a way to construct one element of the `CodeMirrorDocBlocks` vector.
     fn build_doc_block<'a>(
         start: usize,
         end: usize,
@@ -468,7 +487,7 @@ mod tests {
             "// Test"
         );
 
-        // **Pass a block comment**
+        // Pass a block comment
         assert_eq!(
             run_test("c_cpp", "\n", vec![build_doc_block(0, 0, "", "/*", "Test")]),
             "// Test"
