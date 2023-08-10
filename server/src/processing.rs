@@ -84,59 +84,30 @@ pub fn codechat_for_web_to_source(
 
 /// Translate from CodeMirror to SortaCodeDocBlocks.
 fn code_mirror_to_sorta_code_doc_blocks(code_mirror: &CodeMirror) -> SortaCodeDocBlocks {
-    //Declare 3 mutable variables. The CodeDocBlockArray to append all changes to, and a index for the last docblock and current
-    let mut code_doc_block_arr: Vec<(String, Option<String>, String)> = Vec::new();
-    let mut current_idx: usize = 0;
-    let mut last_doc_block_idx: Option<usize> = None;
+    let doc_blocks = &code_mirror.doc_blocks;
+    // A CodeMirror "document" is really source code.
+    let code = &code_mirror.doc;
+    let mut code_doc_block_arr: SortaCodeDocBlocks = Vec::new();
+    // Keep track of the to index of the previous doc block. Since we haven't processed any doc blocks, start at 0.
+    let mut code_index: usize = 0;
 
-    // Iterate through Code Mirror Structure
-    for (idx, _) in code_mirror.doc.match_indices('\n') {
-        if let Some((from, to, indent, delimiter, contents)) = code_mirror
-            .doc_blocks
-            .iter()
-            .find(|(from, to, _, _, _)| *from <= current_idx && *to >= idx)
-        {
-            // Check if the current line belongs to a doc block
-            if let Some(doc_block_idx) = last_doc_block_idx {
-                // Merge consecutive doc blocks by appending the contents
-                let (_, _, prev_content) = &mut code_doc_block_arr[doc_block_idx];
-                *prev_content = format!("{}{}{}{}", prev_content, indent, delimiter, contents);
-            } else {
-                // Append a new code/doc block to the array
-                code_doc_block_arr.push((
-                    code_mirror
-                        .doc
-                        .get(current_idx..*from)
-                        .unwrap_or("")
-                        .to_string(),
-                    Some(indent.to_string()),
-                    format!("{}{}", delimiter, contents),
-                ));
-                last_doc_block_idx = Some(code_doc_block_arr.len() - 1);
-            }
-            current_idx = *to + 1;
-        } else {
-            // Else the current line is part of a code block, not a doc block
-            code_doc_block_arr.push((
-                code_mirror
-                    .doc
-                    .get(current_idx..idx)
-                    .unwrap_or("")
-                    .to_string(),
-                None,
-                "".to_string(),
-            ));
-            last_doc_block_idx = None;
-            current_idx = idx + 1;
+    // Walk through each doc block, inserting the previous code block followed by the doc block.
+    for codemirror_doc_block in doc_blocks {
+        // Append the code block, unless it's empty.
+        let code_contents = &code[code_index..codemirror_doc_block.0];
+        if !code_contents.is_empty() {
+            code_doc_block_arr.push(("".to_string(), Some("".to_string()), code_contents.to_string()));
         }
+        // Append the doc block.
+        code_doc_block_arr.push((codemirror_doc_block.2.to_string(), Some(codemirror_doc_block.3.to_string()), codemirror_doc_block.4.to_string()));
+        code_index = codemirror_doc_block.1 + 1;
     }
 
-    // Handle the remaining part of the document after the last newline
-    code_doc_block_arr.push((
-        code_mirror.doc.get(current_idx..).unwrap_or("").to_string(),
-        None,
-        "".to_string(),
-    ));
+    // See if there's a code block after the last doc block.
+    let code_contents = &code[code_index..];
+    if !code_contents.is_empty() {
+        code_doc_block_arr.push(("".to_string(), Some("".to_string()), code_contents.to_string()));
+    }
 
     code_doc_block_arr
 }
@@ -403,14 +374,16 @@ fn markdown_to_html(markdown: &str) -> String {
 mod tests {
     use crate::lexer::compile_lexers;
     use crate::lexer::supported_languages::LANGUAGE_LEXER_ARR;
-    use crate::processing::codechat_for_web_to_source;
+    use crate::processing::{codechat_for_web_to_source, code_mirror_to_sorta_code_doc_blocks};
     use crate::webserver::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
     use std::borrow::Cow;
 
-    // Wrap the common test operations in a function.
-    fn run_test<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> String {
+    use super::SortaCodeDocBlocks;
+
+    // ### Utilities
+    fn build_codechat_for_web<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks<'a>) -> CodeChatForWeb<'a> {
         // Wrap the provided parameters in the necessary data structures.
-        let test_source_file = CodeChatForWeb {
+        CodeChatForWeb {
             metadata: SourceFileMetadata {
                 mode: mode.to_string(),
             },
@@ -418,17 +391,11 @@ mod tests {
                 doc: doc.to_string(),
                 doc_blocks,
             },
-        };
-
-        // Get the compiled lexerl
-        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
-
-        // Return the translation.
-        codechat_for_web_to_source(test_source_file, &llc).unwrap()
+        }
     }
 
     // Provide a way to construct one element of the `CodeMirrorDocBlocks` vector.
-    fn build_doc_block<'a>(
+    fn build_codemirror_doc_blocks<'a>(
         start: usize,
         end: usize,
         indent: &str,
@@ -450,24 +417,42 @@ mod tests {
         )
     }
 
+    fn build_sorta_code_doc_block(indent: &str, delimiter: Option<&str>, contents: &str) -> (String, Option<String>, String) {
+        (indent.to_string(), match delimiter {
+            None => None,
+            Some(s) => Some(s.to_string())
+        }, contents.to_string())
+    }
+
+    fn run_test<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> String {
+        let test_source_file = build_codechat_for_web(mode, doc, doc_blocks);
+        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
+        codechat_for_web_to_source(test_source_file, &llc).unwrap()
+    }
+
+    fn run_test1<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> SortaCodeDocBlocks {
+        let codechat_for_web = build_codechat_for_web(mode, doc, doc_blocks);
+        code_mirror_to_sorta_code_doc_blocks(&codechat_for_web.source)
+    }
+
     // ### Python Tests
     #[test]
     fn test_save_endpoint_py() {
         // Pass nothing to the function.
-        assert_eq!(run_test("python", "", vec![]), "");
+        assert_eq!(run_test1("python", "", vec![]), vec![]);
 
         // Pass text only.
-        assert_eq!(run_test("python", "Test", vec![]), "Test");
+        assert_eq!(run_test1("python", "Test", vec![]), vec![build_sorta_code_doc_block("", Some(""), "Test")]);
 
         // Pass one doc block.
         assert_eq!(
-            run_test("python", "\n", vec![build_doc_block(0, 0, "", "#", "Test")],),
+            run_test("python", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "#", "Test")],),
             "# Test"
         );
 
         // Test a doc block with no delimiter provided.
         assert_eq!(
-            run_test("python", "\n", vec![build_doc_block(0, 0, "", "", "Test")]),
+            run_test("python", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "", "Test")]),
             "# Test"
         );
     }
@@ -477,19 +462,19 @@ mod tests {
     fn test_save_endpoint_cpp() {
         // Pass text without comment delimiter
         assert_eq!(
-            run_test("c_cpp", "\n", vec![build_doc_block(0, 0, "", "", "Test")]),
+            run_test("c_cpp", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "", "Test")]),
             "// Test"
         );
 
         // Pass an inline comment
         assert_eq!(
-            run_test("c_cpp", "\n", vec![build_doc_block(0, 0, "", "//", "Test")]),
+            run_test("c_cpp", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "//", "Test")]),
             "// Test"
         );
 
         // Pass a block comment
         assert_eq!(
-            run_test("c_cpp", "\n", vec![build_doc_block(0, 0, "", "/*", "Test")]),
+            run_test("c_cpp", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "/*", "Test")]),
             "// Test"
         );
     }
