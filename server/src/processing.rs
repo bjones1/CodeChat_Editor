@@ -15,7 +15,7 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// # `processing.rs` -- Transform source code to its web-editable equivalent and back
-///
+//
 // ## Imports
 // None.
 //
@@ -33,23 +33,11 @@ use crate::lexer::{
 };
 use crate::webserver::{CodeChatForWeb, CodeMirror, FileType, SourceFileMetadata};
 
-/// ## Data structures
-///
-/// On save, the process is CodeChatForWeb -> SortaCodeDocBlocks ->
-/// Vec\<CodeDocBlocks> -> source code.
-///
-/// This is like a `CodeDocBlock`, but allows doc blocks with an unspecified
-/// delimiter. Code blocks have `delimiter == ""` and `indent == ""`.
-type SortaCodeDocBlocks = Vec<(
-    // The indent.
-    String,
-    // The delimiter. If None, the delimiter wasn't specified; this code should
-    // select a valid delimiter for the language.
-    Option<String>,
-    // The contents.
-    String,
-)>;
-
+// ## Data structures
+//
+// On save, the process is CodeChatForWeb ->
+// Vec\<CodeDocBlocks> -> source code.
+//
 // ## Globals
 lazy_static! {
     /// Match the lexer directive in a source file.
@@ -76,18 +64,16 @@ pub fn codechat_for_web_to_source(
     };
 
     // Convert from `CodeMirror` to a `SortaCodeDocBlocks`.
-    let sorta_code_doc_blocks = code_mirror_to_sorta_code_doc_blocks(&codechat_for_web.source);
-    let code_doc_block_vec =
-        sorta_code_doc_blocks_to_code_doc_blocks(sorta_code_doc_blocks, lexer)?;
+    let code_doc_block_vec = code_mirror_to_code_doc_blocks(&codechat_for_web.source);
     code_doc_block_vec_to_source(code_doc_block_vec, lexer)
 }
 
-/// Translate from CodeMirror to SortaCodeDocBlocks.
-fn code_mirror_to_sorta_code_doc_blocks(code_mirror: &CodeMirror) -> SortaCodeDocBlocks {
+/// Translate from CodeMirror to CodeDocBlocks.
+fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock> {
     let doc_blocks = &code_mirror.doc_blocks;
     // A CodeMirror "document" is really source code.
     let code = &code_mirror.doc;
-    let mut code_doc_block_arr: SortaCodeDocBlocks = Vec::new();
+    let mut code_doc_block_arr: Vec<CodeDocBlock> = Vec::new();
     // Keep track of the to index of the previous doc block. Since we haven't processed any doc blocks, start at 0.
     let mut code_index: usize = 0;
 
@@ -96,84 +82,25 @@ fn code_mirror_to_sorta_code_doc_blocks(code_mirror: &CodeMirror) -> SortaCodeDo
         // Append the code block, unless it's empty.
         let code_contents = &code[code_index..codemirror_doc_block.0];
         if !code_contents.is_empty() {
-            code_doc_block_arr.push(("".to_string(), Some("".to_string()), code_contents.to_string()));
+            code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()))
         }
         // Append the doc block.
-        code_doc_block_arr.push((codemirror_doc_block.2.to_string(), Some(codemirror_doc_block.3.to_string()), codemirror_doc_block.4.to_string()));
+        code_doc_block_arr.push(CodeDocBlock::DocBlock(DocBlock {
+            indent: codemirror_doc_block.2.to_string(),
+            delimiter: codemirror_doc_block.3.to_string(),
+            contents: codemirror_doc_block.4.to_string(),
+            lines: 0,
+        }));
         code_index = codemirror_doc_block.1 + 1;
     }
 
     // See if there's a code block after the last doc block.
     let code_contents = &code[code_index..];
     if !code_contents.is_empty() {
-        code_doc_block_arr.push(("".to_string(), Some("".to_string()), code_contents.to_string()));
+        code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()));
     }
 
     code_doc_block_arr
-}
-
-fn sorta_code_doc_blocks_to_code_doc_blocks(
-    sorta_code_doc_blocks: SortaCodeDocBlocks,
-    lexer: &LanguageLexerCompiled,
-) -> Result<Vec<CodeDocBlock>, String> {
-    // Turn this back into code and doc blocks by filling in any missing comment
-    // delimiters.
-    //
-    // This line assigns the variable 'inline_comment' with what a inline
-    // comment would look like in this file.
-    let inline_comment = lexer.language_lexer.inline_comment_delim_arr.first();
-    // This line assigns the variable 'block_comment' with what a block comment
-    // would look like in this file.
-    let block_comment = lexer.language_lexer.block_comment_delim_arr.first();
-    // The outcome of the translation: a vector of CodeDocBlock, in which all
-    // comment delimiters are now present.
-    let mut code_doc_block_vec: Vec<CodeDocBlock> = Vec::new();
-    // 'some_empty' is just a string "".
-    let some_empty = Some("".to_string());
-    // This for loop sorts the data from the site into code blocks and doc
-    // blocks.
-    for cdb in &sorta_code_doc_blocks {
-        // A code block is a defines as an empty indent and an empty delimiter.
-        let is_code_block = cdb.0.is_empty() && cdb.1 == some_empty;
-        code_doc_block_vec.push(if is_code_block {
-            CodeDocBlock::CodeBlock(cdb.2.to_string())
-        } else {
-            // It's a doc block; translate this from a sorta doc block to a real
-            // doc block by filling in the comment delimiter, if it's not
-            // provided (e.g. it's `None`).
-            CodeDocBlock::DocBlock(DocBlock {
-                indent: cdb.0.to_string(),
-                // If no delimiter is provided, use an inline comment (if
-                // available), then a block comment.
-                delimiter: match &cdb.1 {
-                    // The delimiter was provided. Simply use that.
-                    Some(v) => v.to_string(),
-                    // No delimiter was provided -- fill one in.
-                    None => {
-                        // Pick an inline comment, if this language has one.
-                        if let Some(ic) = inline_comment {
-                            ic.to_string()
-                        // Otherwise, use a block comment.
-                        } else if let Some(bc) = block_comment {
-                            bc.opening.to_string()
-                        // Neither are available. Help!
-                        } else {
-                            return Err(
-                                "Neither inline nor block comments are defined for this language."
-                                    .to_string(),
-                            );
-                        }
-                    }
-                },
-                contents: cdb.2.to_string(),
-                // This doesn't matter when converting from edited code back to
-                // source code.
-                lines: 0,
-            })
-        });
-    }
-
-    Ok(code_doc_block_vec)
 }
 
 fn code_doc_block_vec_to_source(
@@ -210,7 +137,7 @@ fn code_doc_block_vec_to_source(
                 // Build a comment based on the type of the delimiter.
                 if is_inline_delim {
                     // Split the contents into a series of lines, adding the
-                    // inline comment delimiter to each line.
+                    // indent and inline comment delimiter to each line.
                     for content_line in doc_block.contents.split_inclusive('\n') {
                         append_doc_block(&doc_block.indent, &doc_block.delimiter, content_line);
                     }
@@ -226,14 +153,23 @@ fn code_doc_block_vec_to_source(
                         Some(index) => lexer.language_lexer.block_comment_delim_arr[index].closing,
                         None => {
                             return Err(format!(
-                                "Unknown block comment opening delimiter '{}'.",
+                                "Unknown comment opening delimiter '{}'.",
                                 doc_block.delimiter
                             ))
                         }
                     };
-                    // Produce the resulting block comment. They should always
-                    // end with a newline.
+                    // A block comment should always end with a newline.
                     assert!(&doc_block.contents.ends_with('\n'));
+
+                    // Split the contents into a series of lines, adding the
+                    // indent to each line.
+                    for content_line in doc_block.contents.split_inclusive('\n') {
+                        append_doc_block(&doc_block.indent, &doc_block.delimiter, content_line);
+                    }
+
+                    // Add the indent and opening delimiter to the first line, plus a space if the line has content (just like the inline comment case).
+                    // For body lines, add the indent only if the line has content (that is, it's more than just a newline).
+                    // Add the closing delimiter before the newline on the last line. Precede it with a space if the line has content.
                     append_doc_block(
                         &doc_block.indent,
                         &doc_block.delimiter,
@@ -372,16 +308,18 @@ fn markdown_to_html(markdown: &str) -> String {
 
 // ### Save Endpoint Testing
 mod tests {
-    use crate::lexer::compile_lexers;
     use crate::lexer::supported_languages::LANGUAGE_LEXER_ARR;
-    use crate::processing::{codechat_for_web_to_source, code_mirror_to_sorta_code_doc_blocks};
+    use crate::lexer::{compile_lexers, CodeDocBlock, DocBlock};
+    use crate::processing::{code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks};
     use crate::webserver::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
     use std::borrow::Cow;
 
-    use super::SortaCodeDocBlocks;
-
     // ### Utilities
-    fn build_codechat_for_web<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks<'a>) -> CodeChatForWeb<'a> {
+    fn build_codechat_for_web<'a>(
+        mode: &str,
+        doc: &str,
+        doc_blocks: CodeMirrorDocBlocks<'a>,
+    ) -> CodeChatForWeb<'a> {
         // Wrap the provided parameters in the necessary data structures.
         CodeChatForWeb {
             metadata: SourceFileMetadata {
@@ -417,65 +355,237 @@ mod tests {
         )
     }
 
-    fn build_sorta_code_doc_block(indent: &str, delimiter: Option<&str>, contents: &str) -> (String, Option<String>, String) {
-        (indent.to_string(), match delimiter {
-            None => None,
-            Some(s) => Some(s.to_string())
-        }, contents.to_string())
+    fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {
+        return CodeDocBlock::DocBlock(DocBlock {
+            indent: indent.to_string(),
+            delimiter: delimiter.to_string(),
+            contents: contents.to_string(),
+            lines: 0,
+        });
     }
 
-    fn run_test<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> String {
-        let test_source_file = build_codechat_for_web(mode, doc, doc_blocks);
-        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
-        codechat_for_web_to_source(test_source_file, &llc).unwrap()
+    fn build_code_block(contents: &str) -> CodeDocBlock {
+        return CodeDocBlock::CodeBlock(contents.to_string());
     }
 
-    fn run_test1<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> SortaCodeDocBlocks {
+    fn run_test1<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> Vec<CodeDocBlock> {
         let codechat_for_web = build_codechat_for_web(mode, doc, doc_blocks);
-        code_mirror_to_sorta_code_doc_blocks(&codechat_for_web.source)
+        code_mirror_to_code_doc_blocks(&codechat_for_web.source)
     }
 
-    // ### Python Tests
+    // ### Tests for `code_mirror_to_code_doc_blocks`
     #[test]
-    fn test_save_endpoint_py() {
+    fn test_codemirror_to_code_doc_blocks_py() {
         // Pass nothing to the function.
         assert_eq!(run_test1("python", "", vec![]), vec![]);
 
-        // Pass text only.
-        assert_eq!(run_test1("python", "Test", vec![]), vec![build_sorta_code_doc_block("", Some(""), "Test")]);
+        // Pass one code block.
+        assert_eq!(
+            run_test1("python", "Test", vec![]),
+            vec![build_code_block("Test")]
+        );
 
         // Pass one doc block.
         assert_eq!(
-            run_test("python", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "#", "Test")],),
-            "# Test"
+            run_test1(
+                "python",
+                "\n",
+                vec![build_codemirror_doc_blocks(0, 0, "", "#", "Test")],
+            ),
+            vec![build_doc_block("", "#", "Test")]
         );
 
-        // Test a doc block with no delimiter provided.
+        // A code block then a doc block
         assert_eq!(
-            run_test("python", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "", "Test")]),
-            "# Test"
+            run_test1(
+                "python",
+                "code\n\n",
+                vec![build_codemirror_doc_blocks(5, 5, "", "#", "doc")],
+            ),
+            vec![build_code_block("code\n"), build_doc_block("", "#", "doc")]
+        );
+
+        // A doc block then a code block
+        assert_eq!(
+            run_test1(
+                "python",
+                "\ncode\n",
+                vec![build_codemirror_doc_blocks(0, 0, "", "#", "doc")],
+            ),
+            vec![build_doc_block("", "#", "doc"), build_code_block("code\n")]
+        );
+
+        // A code block, then a doc block, then another code block
+        assert_eq!(
+            run_test1(
+                "python",
+                "\ncode\n\n",
+                vec![
+                    build_codemirror_doc_blocks(0, 0, "", "#", "doc 1"),
+                    build_codemirror_doc_blocks(6, 6, "", "#", "doc 2")
+                ],
+            ),
+            vec![
+                build_doc_block("", "#", "doc 1"),
+                build_code_block("code\n"),
+                build_doc_block("", "#", "doc 2")
+            ]
         );
     }
 
-    // ### C / C++ Tests
     #[test]
-    fn test_save_endpoint_cpp() {
-        // Pass text without comment delimiter
+    fn test_codemirror_to_code_doc_blocks_cpp() {
+        // Pass an inline comment.
         assert_eq!(
-            run_test("c_cpp", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "", "Test")]),
-            "// Test"
+            run_test1(
+                "c_cpp",
+                "\n",
+                vec![build_codemirror_doc_blocks(0, 0, "", "//", "Test")]
+            ),
+            vec![build_doc_block("", "//", "Test")]
         );
 
-        // Pass an inline comment
+        // Pass a block comment.
         assert_eq!(
-            run_test("c_cpp", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "//", "Test")]),
-            "// Test"
+            run_test1(
+                "c_cpp",
+                "\n",
+                vec![build_codemirror_doc_blocks(0, 0, "", "/*", "Test")]
+            ),
+            vec![build_doc_block("", "/*", "Test")]
         );
 
-        // Pass a block comment
+        // Two back-to-back doc blocks.
         assert_eq!(
-            run_test("c_cpp", "\n", vec![build_codemirror_doc_blocks(0, 0, "", "/*", "Test")]),
-            "// Test"
+            run_test1(
+                "c_cpp",
+                "\n\n",
+                vec![
+                    build_codemirror_doc_blocks(0, 0, "", "//", "Test 1"),
+                    build_codemirror_doc_blocks(1, 1, "", "/*", "Test 2")
+                ]
+            ),
+            vec![
+                build_doc_block("", "//", "Test 1"),
+                build_doc_block("", "/*", "Test 2")
+            ]
+        );
+    }
+
+    // ### Tests for `code_doc_block_vec_to_source`
+    //
+    // A language with just one inline comment delimiter and no block comments.
+    #[test]
+    fn test_code_doc_blocks_to_source_py() {
+        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
+        let py_lexer = llc.map_mode_to_lexer.get("python").unwrap();
+
+        // An empty document.
+        assert_eq!(code_doc_block_vec_to_source(vec![], py_lexer).unwrap(), "");
+        // A one-line comment.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "#", "Test")], py_lexer).unwrap(),
+            "# Test"
+        );
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "#", "Test\n")], py_lexer)
+                .unwrap(),
+            "# Test\n"
+        );
+        // Check empty doc block lines and multiple lines.
+        assert_eq!(
+            code_doc_block_vec_to_source(
+                vec![build_doc_block("", "#", "Test 1\n\nTest 2")],
+                py_lexer
+            )
+            .unwrap(),
+            "# Test 1\n#\n# Test 2"
+        );
+
+        // Repeat the above tests with an indent.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block(" ", "#", "Test")], py_lexer)
+                .unwrap(),
+            " # Test"
+        );
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("  ", "#", "Test\n")], py_lexer)
+                .unwrap(),
+            "  # Test\n"
+        );
+        assert_eq!(
+            code_doc_block_vec_to_source(
+                vec![build_doc_block("   ", "#", "Test 1\n\nTest 2")],
+                py_lexer
+            )
+            .unwrap(),
+            "   # Test 1\n   #\n   # Test 2"
+        );
+
+        // Basic code.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_code_block("Test")], py_lexer).unwrap(),
+            "Test"
+        );
+
+        // An incorrect delimiter.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "?", "Test")], py_lexer)
+                .unwrap_err(),
+            "Unknown comment opening delimiter '?'."
+        );
+    }
+
+    // A language with just one block comment delimiter and no inline comment delimiters.
+    #[test]
+    fn test_code_doc_blocks_to_source_css() {
+        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
+        let css_lexer = llc.map_mode_to_lexer.get("css").unwrap();
+
+        // An empty document.
+        assert_eq!(code_doc_block_vec_to_source(vec![], css_lexer).unwrap(), "");
+        // A one-line comment.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "/*", "Test\n")], css_lexer)
+                .unwrap(),
+            "/* Test */\n"
+        );
+        // Check empty doc block lines and multiple lines.
+        assert_eq!(
+            code_doc_block_vec_to_source(
+                vec![build_doc_block("", "/*", "Test 1\n\nTest 2\n")],
+                css_lexer
+            )
+            .unwrap(),
+            "/* Test 1\n\nTest 2 */\n"
+        );
+
+        // Repeat the above tests with an indent.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("  ", "/*", "Test\n")], css_lexer)
+                .unwrap(),
+            "  /* Test */\n"
+        );
+        assert_eq!(
+            code_doc_block_vec_to_source(
+                vec![build_doc_block("   ", "/*", "Test 1\n\nTest 2\n")],
+                css_lexer
+            )
+            .unwrap(),
+            "   /* Test 1\n\n   Test 2 */\n"
+        );
+
+        // Basic code.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_code_block("Test")], css_lexer).unwrap(),
+            "Test"
+        );
+
+        // An incorrect delimiter.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "?", "Test")], css_lexer)
+                .unwrap_err(),
+            "Unknown comment opening delimiter '?'."
         );
     }
 }
