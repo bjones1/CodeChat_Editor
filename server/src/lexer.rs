@@ -1001,7 +1001,7 @@ pub fn source_lexer(
                         post_closing_delimiter_line
                     );
 
-                    // Set the current code block to contain preceding code
+                    // Set the `current_code_block` to contain preceding code
                     // (which might be multiple lines) until the block comment
                     // delimiter. Split this on newlines, grouping all the lines
                     // before the last line into `code_lines_before_comment`
@@ -1021,7 +1021,6 @@ pub fn source_lexer(
                     // Move to the next block of source code to be lexed.
                     source_code_unlexed_index = newline_or_eof_after_closing_delimiter_index;
 
-                    // divide full comment into 3 components
                     #[cfg(feature = "lexer_explain")]
                     println!(
                         "current_code_block is '{}'\n\
@@ -1030,20 +1029,27 @@ pub fn source_lexer(
                         current_code_block, comment_line_prefix, code_lines_before_comment
                     );
 
-                    // next we have to determine if this is a doc block criteria
-                    // for doc blocks for a block comment:
+                    // Next, determine if this is a doc block. Criteria for doc
+                    // blocks for a block comment:
                     //
-                    // 1.  must have a space or newline after the opening
-                    //     delimiter
-                    // 2.  must not have anything besides whitespace before the
-                    //     opening comment delimiter on the same line
-                    // 3.  must not have anything besides whitespace after the
-                    //     closing comment delimiter on the same line
+                    // 1.  Must have a space or newline after the opening
+                    //     delimiter.
+                    // 2.  Must not have anything besides whitespace before the
+                    //     opening comment delimiter on the same line. This
+                    //     whitespace becomes the indent.
+                    // 3.  Must not have anything besides whitespace after the
+                    //     closing comment delimiter on the same line. This
+                    //     whitespace is included, as if it were inside the
+                    //     block comment. Rationale: this avoids deleting text
+                    //     (or, in this case, whitespace); moving that
+                    //     whitespace around seems like a better alternative
+                    //     than deleting it.
                     if (comment_body.starts_with(' ') || comment_body.starts_with('\n'))
                         && WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix)
                         && WHITESPACE_ONLY_REGEX.is_match(post_closing_delimiter_line)
                     {
-                        // put the code_lines_before_comment into the code block
+                        // Put the `code_lines_before_comment` into the code
+                        // block.
                         append_code_doc_block("", "", code_lines_before_comment);
 
                         // If there's a space at the end of the comment body,
@@ -1062,22 +1068,123 @@ pub fn source_lexer(
                         };
                         let trimmed_comment_body = &comment_body
                             [1..comment_body.len() - if ends_with_space { 1 } else { 0 }];
-
-                        // Add this doc block:
+                        // The contents of the doc block are the trimmed comment
+                        // body plus any whitespace after the closing comment
+                        // delimiter.
                         let contents =
                             &(trimmed_comment_body.to_string() + post_closing_delimiter_line);
-                        append_code_doc_block(
-                            // The indent is the whitespace before the opening
-                            // comment delimiter.
-                            comment_line_prefix,
-                            // The opening comment delimiter was captured in the
-                            // initial match.
-                            matching_group_str,
-                            // The contents of the doc block are the trimmed
-                            // comment body plus any whitespace after the
-                            // closing comment delimiter.
-                            contents,
-                        );
+                        // The indent is the whitespace before the opening
+                        // comment delimiter.
+                        let indent = comment_line_prefix;
+                        // The opening comment delimiter was captured in the
+                        // initial match.
+                        let delimiter = matching_group_str;
+
+                        // #### Block comment indentation processing
+                        //
+                        // There are several cases:
+                        //
+                        // - A single line: `/* comment */`. No special handling
+                        //   needed.
+                        // - Multiple lines, in two styles.
+                        //   - Each line of the comment is not consistently
+                        //     whitespace-indented. No special handling needed.
+                        //     For example:
+                        //
+                        //     ```C
+                        //     /* This is
+                        //       not
+                        //        consistently indented. */
+                        //     ```
+                        //
+                        //   - Each line of the comment is consistently
+                        //     whitespace-indented; for example:
+                        //
+                        //     ```C
+                        //     /* This is
+                        //        consistently indented. */
+                        //     ```
+                        //
+                        //     Consistently indented means the first
+                        //     non-whitespace character on a line aligns with,
+                        //     but never comes before, the comment's start.
+                        //     Another example:
+                        //
+                        //     ```C
+                        //     /* This is
+                        //        correct
+                        //
+                        //        indentation.
+                        //      */
+                        //     ```
+                        //
+                        //     Note that the third (blank) line doesn't have an
+                        //     indent; since that line consists only of
+                        //     whitespace, this is OK. Likewise, the last line
+                        //     (containing the closing comment delimiter of
+                        //     `*/`) consists only of whitespace after the
+                        //     comment delimiters are removed.
+                        //
+                        // Determine if this comment is indented.
+                        //
+                        // Determine the starting column of the indent (assuming
+                        // this block comment has a valid indent). The +1
+                        // represents the space after the opening delimiter.
+                        let indent_column = indent.len() + delimiter.len() + 1;
+                        let split_contents: Vec<&str> = contents.split_inclusive('\n').collect();
+                        // We need at least two lines of comment contents to
+                        // look for an indent. This is just a first guess at
+                        // `is_indented`, not the final value.
+                        let mut is_indented = if split_contents.len() > 1 { true } else { false };
+                        if is_indented {
+                            // Ignore the first line, since the indent and
+                            // delimiter have already been split out for that
+                            // line.
+                            for line in &split_contents[1..] {
+                                let this_line_indent = if line.len() < indent_column {
+                                    line
+                                } else {
+                                    &line[..indent_column]
+                                };
+                                if !WHITESPACE_ONLY_REGEX.is_match(this_line_indent) {
+                                    is_indented = false;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // If the comment was indented, dedent it; otherwise,
+                        // leave it unchanged.
+                        let mut buf = String::new();
+                        let dedented_contents = if is_indented {
+                            // If this is indented, then the first line must
+                            // exist.
+                            buf += split_contents[0];
+                            for line in &split_contents[1..] {
+                                // Remove the indent, unless this line didn't
+                                // have an indent (just whitespace).
+                                buf += if line.len() < indent_column {
+                                    // Tricky case: in the middle of a comment,
+                                    // every line always ends with a newline; if
+                                    // there's not enough whitespace to remove
+                                    // the indent, then replace that with just a
+                                    // newline. At the end of a comment which is
+                                    // the last line of a file, a lack of
+                                    // whitespace shouldn't be replaced with a
+                                    // newline, since it's not there in the
+                                    // original.
+                                    if line.ends_with('\n') { "\n" } else { "" }
+                                } else {
+                                    &line[indent_column..]
+                                };
+                            }
+                            &buf
+                        } else {
+                            contents
+                        };
+
+                        // Add this doc block:
+                        append_code_doc_block(indent, delimiter, dedented_contents);
 
                         // print the doc block
                         #[cfg(feature = "lexer_explain")]

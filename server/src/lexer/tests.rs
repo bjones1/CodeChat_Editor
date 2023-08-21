@@ -322,6 +322,104 @@ fn test_js() {
         ]
     );
 
+    // Indented block comments.
+    assert_eq!(
+        source_lexer(
+            r#"test_1();
+/* Test
+   2 */"#,
+            js
+        ),
+        [
+            build_code_block("test_1();\n"),
+            build_doc_block("", "/*", "Test\n2"),
+        ]
+    );
+
+    assert_eq!(
+        source_lexer(
+            r#"test_1();
+  /* Test
+     2 */"#,
+            js
+        ),
+        [
+            build_code_block("test_1();\n"),
+            build_doc_block("  ", "/*", "Test\n2"),
+        ]
+    );
+
+    assert_eq!(
+        source_lexer(
+            r#"test_1();
+/* Test
+   2
+ */"#,
+            js
+        ),
+        [
+            build_code_block("test_1();\n"),
+            build_doc_block("", "/*", "Test\n2\n"),
+        ]
+    );
+
+    assert_eq!(
+        source_lexer(
+            r#"test_1();
+  /* Test
+     2
+   */"#,
+            js
+        ),
+        [
+            build_code_block("test_1();\n"),
+            build_doc_block("  ", "/*", "Test\n2\n"),
+        ]
+    );
+
+    assert_eq!(
+        source_lexer(
+            r#"test_1();
+  /* Test
+     2
+
+     3
+   */"#,
+            js
+        ),
+        [
+            build_code_block("test_1();\n"),
+            build_doc_block("  ", "/*", "Test\n2\n\n3\n"),
+        ]
+    );
+
+    // Mis-indented block comments.
+    assert_eq!(
+        source_lexer(
+            r#"test_1();
+/* Test
+  2 */"#,
+            js
+        ),
+        [
+            build_code_block("test_1();\n"),
+            build_doc_block("", "/*", "Test\n  2"),
+        ]
+    );
+
+    assert_eq!(
+        source_lexer(
+            r#"test_1();
+ /* Test
+   2 */"#,
+            js
+        ),
+        [
+            build_code_block("test_1();\n"),
+            build_doc_block(" ", "/*", "Test\n   2"),
+        ]
+    );
+
     // Some basic template literal tests. Comments inside template literal
     // expressions aren't parsed correctly; neither are nested template
     // literals.
