@@ -15,11 +15,12 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// # `processing.rs` -- Transform source code to its web-editable equivalent and back
-//
 // ## Imports
+//
 // None.
 //
 // ### Standard library
+//
 // None.
 //
 // ### Third-party
@@ -35,8 +36,7 @@ use crate::webserver::{CodeChatForWeb, CodeMirror, FileType, SourceFileMetadata}
 
 // ## Data structures
 //
-// On save, the process is CodeChatForWeb ->
-// Vec\<CodeDocBlocks> -> source code.
+// On save, the process is CodeChatForWeb -> Vec\<CodeDocBlocks> -> source code.
 //
 // ## Globals
 lazy_static! {
@@ -74,10 +74,12 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     // A CodeMirror "document" is really source code.
     let code = &code_mirror.doc;
     let mut code_doc_block_arr: Vec<CodeDocBlock> = Vec::new();
-    // Keep track of the to index of the previous doc block. Since we haven't processed any doc blocks, start at 0.
+    // Keep track of the to index of the previous doc block. Since we haven't
+    // processed any doc blocks, start at 0.
     let mut code_index: usize = 0;
 
-    // Walk through each doc block, inserting the previous code block followed by the doc block.
+    // Walk through each doc block, inserting the previous code block followed
+    // by the doc block.
     for codemirror_doc_block in doc_blocks {
         // Append the code block, unless it's empty.
         let code_contents = &code[code_index..codemirror_doc_block.0];
@@ -103,11 +105,11 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     code_doc_block_arr
 }
 
+// Turn this vec of CodeDocBlocks into a string of source code.
 fn code_doc_block_vec_to_source(
     code_doc_block_vec: Vec<CodeDocBlock>,
     lexer: &LanguageLexerCompiled,
 ) -> Result<String, String> {
-    // Turn this vec of CodeDocBlocks into a string of source code.
     let mut file_contents = String::new();
     for code_doc_block in code_doc_block_vec {
         match code_doc_block {
@@ -136,14 +138,18 @@ fn code_doc_block_vec_to_source(
 
                 // Build a comment based on the type of the delimiter.
                 if is_inline_delim {
-                    // Split the contents into a series of lines, adding the
-                    // indent and inline comment delimiter to each line.
+                    // To produce an inline comment, split the contents into a
+                    // series of lines, adding the indent and inline comment
+                    // delimiter to each line.
                     for content_line in doc_block.contents.split_inclusive('\n') {
                         append_doc_block(&doc_block.indent, &doc_block.delimiter, content_line);
                     }
+
                 } else {
-                    // Determine the closing comment delimiter matching the
-                    // provided opening delimiter.
+                    // Block comments are more complex.
+                    //
+                    // First, determine the closing comment delimiter matching
+                    // the provided opening delimiter.
                     let block_comment_closing_delimiter = match lexer
                         .language_lexer
                         .block_comment_delim_arr
@@ -158,28 +164,72 @@ fn code_doc_block_vec_to_source(
                             ))
                         }
                     };
-                    // A block comment should always end with a newline.
-                    assert!(&doc_block.contents.ends_with('\n'));
 
-                    // Split the contents into a series of lines, adding the
-                    // indent to each line.
-                    for content_line in doc_block.contents.split_inclusive('\n') {
-                        append_doc_block(&doc_block.indent, &doc_block.delimiter, content_line);
+                    // Then, split the contents into a series of lines. Build a
+                    // properly-indented block comment around these lines.
+                    let content_lines: Vec<&str> =
+                        doc_block.contents.split_inclusive('\n').collect();
+                    for (index, content_line) in content_lines.iter().enumerate() {
+                        let is_last = index == content_lines.len() - 1;
+                        // Process each line, based on its location (first/not
+                        // first/last). Note that the first line can also be the
+                        // last line in a one-line comment.
+                        //
+                        // On the last line, include a properly-formatted
+                        // closing comment delimiter:
+                        let content_line_updated = if is_last {
+                            match content_line.strip_suffix('\n') {
+                                // include a space then the closing delimiter
+                                // before the final newline (if it exists; at
+                                // the end of a file, it may not);
+                                Some(stripped_line) => {
+                                    stripped_line.to_string()
+                                        + " "
+                                        + block_comment_closing_delimiter
+                                        + "\n"
+                                }
+                                // otherwise (i.e. there's no final newline),
+                                // just include a space and the closing
+                                // delimiter.
+                                None => {
+                                    content_line.to_string() + " " + block_comment_closing_delimiter
+                                }
+                            }
+                        } else {
+                            // Since this isn't the last line, don't include the
+                            // closing comment delimiter.
+                            content_line.to_string()
+                        };
+
+                        // On the first line, include the indent and opening
+                        // delimiter.
+                        let is_first = index == 0;
+                        if is_first {
+                            append_doc_block(
+                                &doc_block.indent,
+                                &doc_block.delimiter,
+                                &content_line_updated,
+                            );
+                        // Since this isn't a first line:
+                        } else {
+                            // - If this line is just a newline, include just
+                            //   the newline.
+                            if *content_line == "\n" {
+                                append_doc_block("", "", "\n");
+                            // - Otherwise, include spaces in place of the
+                            //   delimiter.
+                            } else {
+                                append_doc_block(
+                                    &doc_block.indent,
+                                    &" ".repeat(doc_block.delimiter.len()),
+                                    &content_line_updated,
+                                );
+                            }
+                        }
                     }
-
-                    // Add the indent and opening delimiter to the first line, plus a space if the line has content (just like the inline comment case).
-                    // For body lines, add the indent only if the line has content (that is, it's more than just a newline).
-                    // Add the closing delimiter before the newline on the last line. Precede it with a space if the line has content.
-                    append_doc_block(
-                        &doc_block.indent,
-                        &doc_block.delimiter,
-                        // Omit the newline, so we can instead put on the
-                        // closing delimiter, then the newline.
-                        &doc_block.contents[..&doc_block.contents.len() - 1],
-                    );
-                    file_contents = file_contents + " " + block_comment_closing_delimiter + "\n";
                 }
             }
+
             CodeDocBlock::CodeBlock(contents) =>
             // This is code. Simply append it (by definition, indent and
             // delimiter are empty).
@@ -332,7 +382,8 @@ mod tests {
         }
     }
 
-    // Provide a way to construct one element of the `CodeMirrorDocBlocks` vector.
+    // Provide a way to construct one element of the `CodeMirrorDocBlocks`
+    // vector.
     fn build_codemirror_doc_blocks<'a>(
         start: usize,
         end: usize,
@@ -536,7 +587,8 @@ mod tests {
         );
     }
 
-    // A language with just one block comment delimiter and no inline comment delimiters.
+    // A language with just one block comment delimiter and no inline comment
+    // delimiters.
     #[test]
     fn test_code_doc_blocks_to_source_css() {
         let llc = compile_lexers(LANGUAGE_LEXER_ARR);
@@ -550,14 +602,26 @@ mod tests {
                 .unwrap(),
             "/* Test */\n"
         );
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "/*", "Test")], css_lexer)
+                .unwrap(),
+            "/* Test */"
+        );
         // Check empty doc block lines and multiple lines.
         assert_eq!(
             code_doc_block_vec_to_source(
-                vec![build_doc_block("", "/*", "Test 1\n\nTest 2\n")],
+                vec![
+                    build_code_block("Test_0\n"),
+                    build_doc_block("", "/*", "Test 1\n\nTest 2\n")
+                ],
                 css_lexer
             )
             .unwrap(),
-            "/* Test 1\n\nTest 2 */\n"
+            r#"Test_0
+/* Test 1
+
+   Test 2 */
+"#
         );
 
         // Repeat the above tests with an indent.
@@ -568,11 +632,18 @@ mod tests {
         );
         assert_eq!(
             code_doc_block_vec_to_source(
-                vec![build_doc_block("   ", "/*", "Test 1\n\nTest 2\n")],
+                vec![
+                    build_code_block("Test_0\n"),
+                    build_doc_block("   ", "/*", "Test 1\n\nTest 2\n")
+                ],
                 css_lexer
             )
             .unwrap(),
-            "   /* Test 1\n\n   Test 2 */\n"
+            r#"Test_0
+   /* Test 1
+
+      Test 2 */
+"#
         );
 
         // Basic code.
