@@ -144,7 +144,6 @@ fn code_doc_block_vec_to_source(
                     for content_line in doc_block.contents.split_inclusive('\n') {
                         append_doc_block(&doc_block.indent, &doc_block.delimiter, content_line);
                     }
-
                 } else {
                     // Block comments are more complex.
                     //
@@ -348,15 +347,7 @@ fn markdown_to_html(markdown: &str) -> String {
 }
 
 // ## Tests
-//
-// As mentioned in the lexer.rs tests, Rust
-// [almost mandates](https://doc.rust-lang.org/book/ch11-03-test-organization.html)
-// putting tests in the same file as the source. Here's some
-// [good information](http://xion.io/post/code/rust-unit-test-placement.html) on
-// how to put tests in another file, for future refactoring reference.
 #[cfg(test)]
-
-// ### Save Endpoint Testing
 mod tests {
     use crate::lexer::supported_languages::LANGUAGE_LEXER_ARR;
     use crate::lexer::{compile_lexers, CodeDocBlock, DocBlock};
@@ -419,7 +410,7 @@ mod tests {
         return CodeDocBlock::CodeBlock(contents.to_string());
     }
 
-    fn run_test1<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> Vec<CodeDocBlock> {
+    fn run_test<'a>(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> Vec<CodeDocBlock> {
         let codechat_for_web = build_codechat_for_web(mode, doc, doc_blocks);
         code_mirror_to_code_doc_blocks(&codechat_for_web.source)
     }
@@ -428,17 +419,17 @@ mod tests {
     #[test]
     fn test_codemirror_to_code_doc_blocks_py() {
         // Pass nothing to the function.
-        assert_eq!(run_test1("python", "", vec![]), vec![]);
+        assert_eq!(run_test("python", "", vec![]), vec![]);
 
         // Pass one code block.
         assert_eq!(
-            run_test1("python", "Test", vec![]),
+            run_test("python", "Test", vec![]),
             vec![build_code_block("Test")]
         );
 
         // Pass one doc block.
         assert_eq!(
-            run_test1(
+            run_test(
                 "python",
                 "\n",
                 vec![build_codemirror_doc_blocks(0, 0, "", "#", "Test")],
@@ -448,7 +439,7 @@ mod tests {
 
         // A code block then a doc block
         assert_eq!(
-            run_test1(
+            run_test(
                 "python",
                 "code\n\n",
                 vec![build_codemirror_doc_blocks(5, 5, "", "#", "doc")],
@@ -458,7 +449,7 @@ mod tests {
 
         // A doc block then a code block
         assert_eq!(
-            run_test1(
+            run_test(
                 "python",
                 "\ncode\n",
                 vec![build_codemirror_doc_blocks(0, 0, "", "#", "doc")],
@@ -468,7 +459,7 @@ mod tests {
 
         // A code block, then a doc block, then another code block
         assert_eq!(
-            run_test1(
+            run_test(
                 "python",
                 "\ncode\n\n",
                 vec![
@@ -488,7 +479,7 @@ mod tests {
     fn test_codemirror_to_code_doc_blocks_cpp() {
         // Pass an inline comment.
         assert_eq!(
-            run_test1(
+            run_test(
                 "c_cpp",
                 "\n",
                 vec![build_codemirror_doc_blocks(0, 0, "", "//", "Test")]
@@ -498,7 +489,7 @@ mod tests {
 
         // Pass a block comment.
         assert_eq!(
-            run_test1(
+            run_test(
                 "c_cpp",
                 "\n",
                 vec![build_codemirror_doc_blocks(0, 0, "", "/*", "Test")]
@@ -508,7 +499,7 @@ mod tests {
 
         // Two back-to-back doc blocks.
         assert_eq!(
-            run_test1(
+            run_test(
                 "c_cpp",
                 "\n\n",
                 vec![
@@ -659,4 +650,52 @@ mod tests {
             "Unknown comment opening delimiter '?'."
         );
     }
+
+    // A language with multiple inline and block comment styles.
+    #[test]
+    fn test_code_doc_blocks_to_source_csharp() {
+        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
+        let csharp_lexer = llc.map_mode_to_lexer.get("csharp").unwrap();
+
+        // An empty document.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![], csharp_lexer).unwrap(),
+            ""
+        );
+
+        // An invalid comment.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "?", "Test\n")], csharp_lexer)
+                .unwrap_err(),
+            "Unknown comment opening delimiter '?'."
+        );
+
+        // Inline comments.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "//", "Test\n")], csharp_lexer)
+                .unwrap(),
+            "// Test\n"
+        );
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "///", "Test\n")], csharp_lexer)
+                .unwrap(),
+            "/// Test\n"
+        );
+
+        // Block comments.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "/*", "Test\n")], csharp_lexer)
+                .unwrap(),
+            "/* Test */\n"
+        );
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![build_doc_block("", "/**", "Test\n")], csharp_lexer)
+                .unwrap(),
+            "/** Test */\n"
+        );
+    }
+
+    // ### Tests for `source_to_codechat_for_web`
+    //
+    // TODO.
 }
