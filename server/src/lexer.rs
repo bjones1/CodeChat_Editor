@@ -1135,7 +1135,7 @@ pub fn source_lexer(
                         // We need at least two lines of comment contents to
                         // look for an indent. This is just a first guess at
                         // `is_indented`, not the final value.
-                        let mut is_indented = if split_contents.len() > 1 { true } else { false };
+                        let mut is_indented = split_contents.len() > 1;
                         if is_indented {
                             // Ignore the first line, since the indent and
                             // delimiter have already been split out for that
@@ -1173,7 +1173,11 @@ pub fn source_lexer(
                                     // whitespace shouldn't be replaced with a
                                     // newline, since it's not there in the
                                     // original.
-                                    if line.ends_with('\n') { "\n" } else { "" }
+                                    if line.ends_with('\n') {
+                                        "\n"
+                                    } else {
+                                        ""
+                                    }
                                 } else {
                                     &line[indent_column..]
                                 };
