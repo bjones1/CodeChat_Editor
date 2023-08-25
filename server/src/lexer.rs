@@ -535,11 +535,11 @@ fn build_lexer_regex<'a>(
                 // whitespace capture as discussed earlier.
                 "(?m:" +
                     // Look for whitespace before the opening comment delimiter.
-                    r#"^\s*"# +
+                    r"^\s*" +
                     // Capture just the opening comment delimiter,
-                    r#"(%\{)"# +
+                    r"(%\{)" +
                     // followed by whitespace until the end of the line.
-                    r#"\s*$"# +
+                    r"\s*$" +
                 // End the multi-line mode and this non-capturing group.
                 ")",
             );
@@ -547,7 +547,7 @@ fn build_lexer_regex<'a>(
                 0,
                 RegexDelimType::BlockComment(
                     // Use a similar strategy for finding the closing delimiter.
-                    Regex::new(r#"(?m:^\s*%\}\s*$)"#).unwrap(),
+                    Regex::new(r"(?m:^\s*%\}\s*$)").unwrap(),
                 ),
             );
         }

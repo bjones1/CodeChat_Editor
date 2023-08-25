@@ -59,7 +59,7 @@ use crate::processing::{codechat_for_web_to_source, source_to_codechat_for_web};
 /// ## Data structures
 ///
 /// ### Translation between a local (traditional) source file and its web-editable, client-side representation
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 /// <a id="LexedSourceFile"></a>Define the JSON data structure used to represent
 /// a source file in a web-editable format.
 pub struct CodeChatForWeb<'a> {
@@ -67,7 +67,7 @@ pub struct CodeChatForWeb<'a> {
     pub source: CodeMirror<'a>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 /// <a id="SourceFileMetadata"></a>Metadata about a source file sent along with
 /// it both to and from the client. TODO: currently, this is too simple to
 /// justify a struct. This allows for future growth -- perhaps the valid types
@@ -94,7 +94,7 @@ pub type CodeMirrorDocBlocks<'a> = Vec<(
     Cow<'a, String>,
 )>;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 /// The format used by CodeMirror to serialize/deserialize editor contents.
 /// TODO: Link to JS code where this data structure is defined.
 pub struct CodeMirror<'a> {
@@ -113,6 +113,7 @@ struct ErrorResponse {
 }
 
 /// TODO: A better name for this enum.
+#[derive(Debug, PartialEq)]
 pub enum FileType<'a> {
     // Text content, but not a CodeChat file
     Text(String),

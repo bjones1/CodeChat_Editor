@@ -41,7 +41,7 @@ use crate::webserver::{CodeChatForWeb, CodeMirror, FileType, SourceFileMetadata}
 // ## Globals
 lazy_static! {
     /// Match the lexer directive in a source file.
-    static ref LEXER_DIRECTIVE: Regex = Regex::new(r#"CodeChat Editor lexer: (\w+)"#).unwrap();
+    static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
 }
 
 // ## Transform `CodeChatForWeb` to source code
@@ -351,8 +351,12 @@ fn markdown_to_html(markdown: &str) -> String {
 mod tests {
     use crate::lexer::supported_languages::LANGUAGE_LEXER_ARR;
     use crate::lexer::{compile_lexers, CodeDocBlock, DocBlock};
-    use crate::processing::{code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks};
-    use crate::webserver::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
+    use crate::processing::{
+        code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, source_to_codechat_for_web,
+    };
+    use crate::webserver::{
+        CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, FileType, SourceFileMetadata,
+    };
     use std::borrow::Cow;
 
     // ### Utilities
@@ -698,4 +702,13 @@ mod tests {
     // ### Tests for `source_to_codechat_for_web`
     //
     // TODO.
+    #[test]
+    fn test_source_to_codechat_for_web_1() {
+        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
+
+        assert_eq!(
+            source_to_codechat_for_web("".to_string(), ".xxx", false, &llc).unwrap(),
+            FileType::Text("".to_string())
+        );
+    }
 }
