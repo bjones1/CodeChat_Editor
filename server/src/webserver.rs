@@ -380,14 +380,16 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             ));
         }
 
-        return HttpResponse::Ok().body(html_wrapper(&format!(
-            "<h1>Drives</h1>
+        return HttpResponse::Ok()
+            .content_type(ContentType::html())
+            .body(html_wrapper(&format!(
+                "<h1>Drives</h1>
 <ul>
 {}
 </ul>
 ",
-            drive_html
-        )));
+                drive_html
+            )));
     }
 
     // <p>List each file/directory with appropriate links.</p>
@@ -513,7 +515,9 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         file_html
     );
 
-    HttpResponse::Ok().body(body)
+    HttpResponse::Ok()
+        .content_type(ContentType::html())
+        .body(body)
 }
 
 // <h3>Serve a CodeChat Editor Client webpage</h3>
@@ -602,8 +606,10 @@ async fn serve_file(
     //     The script ensures that all hyperlinks target the enclosing page, not
     //     just the iframe containing this page.</p>
     if mode == "toc" {
-        return HttpResponse::Ok().body(format!(
-            r#"<!DOCTYPE html>
+        return HttpResponse::Ok()
+            .content_type(ContentType::html())
+            .body(format!(
+                r#"<!DOCTYPE html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8">
@@ -625,8 +631,9 @@ async fn serve_file(
 	</body>
 </html>
 "#,
-            name, markdown_to_html(&file_contents)
-        ));
+                name,
+                markdown_to_html(&file_contents)
+            ));
     }
 
     // <p>Determine the lexer to use for this file.</p>
@@ -669,7 +676,11 @@ async fn serve_file(
 
     // <p>Lex the code and put it in a JSON structure.</p>
     let mut code_doc_block_arr = if lexer.language_lexer.ace_mode == "markdown" {
-        vec![CodeDocBlock::DocBlock(DocBlock { indent: "".to_string(), delimiter: "".to_string(), contents: file_contents })]
+        vec![CodeDocBlock::DocBlock(DocBlock {
+            indent: "".to_string(),
+            delimiter: "".to_string(),
+            contents: file_contents,
+        })]
     } else {
         source_lexer(&file_contents, lexer)
     };
@@ -746,7 +757,7 @@ async fn serve_file(
     };
 
     // <p>Build and return the webpage.</p>
-    HttpResponse::Ok().body(format!(
+    HttpResponse::Ok().content_type(ContentType::html()).body(format!(
         r##"<!DOCTYPE html>
 <html lang="en">
     <head>
@@ -806,7 +817,9 @@ fn path_display(p: &Path) -> String {
 
 // <p>Return a Not Found (404) errors with the provided HTML body.</p>
 fn html_not_found(msg: &str) -> HttpResponse {
-    HttpResponse::NotFound().body(html_wrapper(msg))
+    HttpResponse::NotFound()
+        .content_type(ContentType::html())
+        .body(html_wrapper(msg))
 }
 
 // <p>Wrap the provided HTML body in DOCTYPE/html/head tags.</p>
