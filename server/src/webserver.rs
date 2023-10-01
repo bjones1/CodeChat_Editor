@@ -277,14 +277,16 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             ));
         }
 
-        return HttpResponse::Ok().content_type(ContentType::html()).body(html_wrapper(&format!(
-            "<h1>Drives</h1>
+        return HttpResponse::Ok()
+            .content_type(ContentType::html())
+            .body(html_wrapper(&format!(
+                "<h1>Drives</h1>
 <ul>
 {}
 </ul>
 ",
-            drive_html
-        )));
+                drive_html
+            )));
     }
 
     // List each file/directory with appropriate links.
@@ -409,7 +411,9 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         file_html
     );
 
-    HttpResponse::Ok().content_type(ContentType::html()).body(html_wrapper(&body))
+    HttpResponse::Ok()
+        .content_type(ContentType::html())
+        .body(html_wrapper(&body))
 }
 
 // ### Serve a CodeChat Editor Client webpage
@@ -546,8 +550,10 @@ async fn serve_file(
         // The TOC is a simplified web page requiring no additional processing.
         // The script ensures that all hyperlinks target the enclosing page, not
         // just the iframe containing this page.
-        return HttpResponse::Ok().content_type(ContentType::html()).body(format!(
-            r#"<!DOCTYPE html>
+        return HttpResponse::Ok()
+            .content_type(ContentType::html())
+            .body(format!(
+                r#"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -569,8 +575,8 @@ async fn serve_file(
 </body>
 </html>
 "#,
-            name, codechat_for_web.source.doc
-        ));
+                name, codechat_for_web.source.doc
+            ));
     }
 
     let codechat_for_web_json_string = match serde_json::to_string(&codechat_for_web) {
@@ -672,7 +678,9 @@ fn path_display(p: &Path) -> String {
 
 // Return a Not Found (404) error with the provided HTML body.
 fn html_not_found(msg: &str) -> HttpResponse {
-    HttpResponse::NotFound().content_type(ContentType::html()).body(html_wrapper(msg))
+    HttpResponse::NotFound()
+        .content_type(ContentType::html())
+        .body(html_wrapper(msg))
 }
 
 // Wrap the provided HTML body in DOCTYPE/html/head tags.
