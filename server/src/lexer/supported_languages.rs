@@ -89,7 +89,7 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     LanguageLexer {
         ace_mode: "c_cpp",
         // Note that the `.ino` extension is for Arduino source files.
-        ext_arr: &["c", "cc", "cpp", "ino"],
+        ext_arr: &["c", "cc", "cpp", "h", "hh", "hpp", "ino"],
         inline_comment_delim_arr: &["//"],
         block_comment_delim_arr: &[BlockCommentDelim {
             opening: "/*",
