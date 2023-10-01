@@ -21,4 +21,8 @@
 # Rust build output
 target/
 
+# Output from profiling.
+*.profraw
+tarpaulin-report.html
+
 # CodeChat Editor lexer: python. See TODO.

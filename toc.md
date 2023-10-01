@@ -42,6 +42,8 @@
         2.  [tsconfig.json](client/tsconfig.json)
         3.  [.eslintrc.yml](client/.eslintrc.yml)
         4.  [.prettierignore](.prettierignore)
+    3.  Misc
+        1.  [config](server/.cargo/config) - for rust code coverage
 
 ## Misc
 

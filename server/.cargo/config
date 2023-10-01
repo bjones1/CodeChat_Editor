@@ -1,7 +1,20 @@
 # # `config` - a Cargo configuration file
 #
 # See the [docs](https://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/cargo/reference/config.html) for this file.
+#
+# Code coverage, the manual way:
+#
+# 1. Run `cargo install rustfilt` per the [code coverage docs](https://doc.rust-lang.org/rustc/instrument-coverage.html#building-the-demangler).
+# 2. You must manually run `rustup component add llvm-tools-preview` following the [coverge docs](https://doc.rust-lang.org/rustc/instrument-coverage.html#installing-llvm-coverage-tools). Per some searching, also run `cargo install cargo-binutils` to put these tools in the path.
+# 3. In Powershell, `$Env:RUSTFLAGS = "-C instrument-coverage"` then `cargo test`. When the tests run, record the name of the test binary.
+# 4. `rust-profdata merge -sparse default_*.profraw -o default.profdata`.
+# 5. `rust-cov show --Xdemangler=rustfilt target\debug\deps\code_chat_editor-4dbe5c7815a53cd9.exe --instr-profile=default.profdata --ignore-filename-regex=\\.cargo\\registry --format=html --output-dir=coverage`, replacing the binary path with the one recorded in step 3.
+# 6. Open the file `coverage\index.html`.
+#
+# Or, `cargo install cargo-tarpaulin` then `cargo tarpaulin --ignore-panics --out=html --skip-clean`.
 
 [build]
 # Set these to match the output from `cargo tarpaulin --print-rust-flags` to avoid recompiles.
 rustflags = ["-Cdebuginfo=2", "--cfg=tarpaulin", "-Cinstrument-coverage"]
+
+# CodeChat Editor lexer: python.
