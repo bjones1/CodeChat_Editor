@@ -555,7 +555,7 @@ fn build_lexer_regex<'a>(
 
     // This must be last, since it includes one group (so the index of all
     // future items will be off by 1). Build a regex for a heredoc start.
-    let &regex_str;
+    let regex_str;
     if let Some(heredoc_delim) = language_lexer.heredoc_delim {
         // First, create the string which defines the regex.
         regex_str = format!(
@@ -1055,17 +1055,15 @@ pub fn source_lexer(
                         // If there's a space at the end of the comment body,
                         // remove it; also remove the initial space/newline at
                         // the beginning of the comment body.
-                        let ends_with_space = match comment_body.chars().last() {
-                            Some(last_char) => {
-                                last_char == ' ' &&
-                                // Don't remove a space at the end of the
-                                // comment body when it's also the space at the
-                                // beginning of the comment body (meaning it's a
-                                // single-character comment body).
-                                comment_body.len() > 1
-                            }
-                            None => false,
-                        };
+                        //
+                        // This `unwrap()` is always safe, since we know that `comment_body` starts with a space or newline.
+                        let last_char = comment_body.chars().last().unwrap();
+                        let ends_with_space = last_char == ' ' &&
+                            // Don't remove a space at the end of the
+                            // comment body when it's also the space at the
+                            // beginning of the comment body (meaning it's a
+                            // single-character comment body).
+                            comment_body.len() > 1;
                         let trimmed_comment_body = &comment_body
                             [1..comment_body.len() - if ends_with_space { 1 } else { 0 }];
                         // The contents of the doc block are the trimmed comment
