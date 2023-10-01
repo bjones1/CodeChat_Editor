@@ -277,7 +277,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             ));
         }
 
-        return HttpResponse::Ok().body(html_wrapper(&format!(
+        return HttpResponse::Ok().content_type(ContentType::html()).body(html_wrapper(&format!(
             "<h1>Drives</h1>
 <ul>
 {}
@@ -409,7 +409,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         file_html
     );
 
-    HttpResponse::Ok().body(html_wrapper(&body))
+    HttpResponse::Ok().content_type(ContentType::html()).body(html_wrapper(&body))
 }
 
 // ### Serve a CodeChat Editor Client webpage
@@ -546,7 +546,7 @@ async fn serve_file(
         // The TOC is a simplified web page requiring no additional processing.
         // The script ensures that all hyperlinks target the enclosing page, not
         // just the iframe containing this page.
-        return HttpResponse::Ok().body(format!(
+        return HttpResponse::Ok().content_type(ContentType::html()).body(format!(
             r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -609,7 +609,7 @@ async fn serve_file(
     };
 
     // Build and return the webpage.
-    HttpResponse::Ok().body(format!(
+    HttpResponse::Ok().content_type(ContentType::html()).body(format!(
         r##"<!DOCTYPE html>
 <html lang="en">
     <head>
@@ -672,7 +672,7 @@ fn path_display(p: &Path) -> String {
 
 // Return a Not Found (404) error with the provided HTML body.
 fn html_not_found(msg: &str) -> HttpResponse {
-    HttpResponse::NotFound().body(html_wrapper(msg))
+    HttpResponse::NotFound().content_type(ContentType::html()).body(html_wrapper(msg))
 }
 
 // Wrap the provided HTML body in DOCTYPE/html/head tags.
