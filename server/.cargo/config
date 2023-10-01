@@ -1,0 +1,7 @@
+# # `config` - a Cargo configuration file
+#
+# See the [docs](https://web.mit.edu/rust-lang_v1.25/arch/amd64_ubuntu1404/share/doc/rust/html/cargo/reference/config.html) for this file.
+
+[build]
+# Set these to match the output from `cargo tarpaulin --print-rust-flags` to avoid recompiles.
+rustflags = ["-Cdebuginfo=2", "--cfg=tarpaulin", "-Cinstrument-coverage"]
