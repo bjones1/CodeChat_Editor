@@ -682,7 +682,10 @@ pub fn source_lexer(
             assert!(indent.is_empty());
             return;
         }
-        // Define a line as any characters up to an including a newline. If the contents doesn't end in a newline, then add an extra line. The reasoning: A string such as "foo" is one line (not zero lines), even without a final newline. Only the empty string "" is zero lines.
+        // Define a line as any characters up to an including a newline. If the
+        // contents doesn't end in a newline, then add an extra line. The
+        // reasoning: A string such as "foo" is one line (not zero lines), even
+        // without a final newline. Only the empty string "" is zero lines.
         let lines = contents.matches('\n').count()
             + (if contents.chars().last().unwrap_or('\n') == '\n' {
                 0
@@ -1062,13 +1065,14 @@ pub fn source_lexer(
                         // remove it; also remove the initial space/newline at
                         // the beginning of the comment body.
                         //
-                        // This `unwrap()` is always safe, since we know that `comment_body` starts with a space or newline.
+                        // This `unwrap()` is always safe, since we know that
+                        // `comment_body` starts with a space or newline.
                         let last_char = comment_body.chars().last().unwrap();
                         let ends_with_space = last_char == ' ' &&
-                            // Don't remove a space at the end of the
-                            // comment body when it's also the space at the
-                            // beginning of the comment body (meaning it's a
-                            // single-character comment body).
+                            // Don't remove a space at the end of the comment
+                            // body when it's also the space at the beginning of
+                            // the comment body (meaning it's a single-character
+                            // comment body).
                             comment_body.len() > 1;
                         let trimmed_comment_body = &comment_body
                             [1..comment_body.len() - if ends_with_space { 1 } else { 0 }];
