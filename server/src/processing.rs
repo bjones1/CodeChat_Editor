@@ -285,8 +285,10 @@ pub fn source_to_codechat_for_web<'a>(
         },
         source: if lexer.language_lexer.ace_mode == "markdown" {
             // Document-only files are easy: just encode the contents.
+            let html = markdown_to_html(&file_contents);
+            // TODO: process the HTML.
             CodeMirror {
-                doc: markdown_to_html(&file_contents),
+                doc: html,
                 doc_blocks: vec![],
             }
         } else {
@@ -316,11 +318,13 @@ pub fn source_to_codechat_for_web<'a>(
                 }
             }
             let combined_doc_blocks = &doc_block_contents_vec.join(DOC_BLOCK_SEPARATOR_STRING);
-            let markdown = markdown_to_html(combined_doc_blocks);
+            let html = markdown_to_html(combined_doc_blocks);
+            // Now that we have HTML, process it. TODO.
+            //
             // After processing by Markdown, the double newline at the of the
             // doc block separate string becomes a single newline; split using
             // this slightly shorter string.
-            doc_block_contents_vec = markdown
+            doc_block_contents_vec = html
                 .split(&DOC_BLOCK_SEPARATOR_STRING[0..DOC_BLOCK_SEPARATOR_STRING.len() - 1])
                 .collect();
 
