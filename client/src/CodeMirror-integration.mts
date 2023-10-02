@@ -617,8 +617,6 @@ export const CodeMirror_save = () => {
     let source = current_view.state.toJSON(CodeMirror_JSON_fields);
     // Don't record the current selection when saving.
     delete source.selection;
-    // Then, wrap these in a
-    // [struct the server expects](../server/src/webserver.rs#ClientSourceFile)
-    // and send it.
+
     return source;
 };
