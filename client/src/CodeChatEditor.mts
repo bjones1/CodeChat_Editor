@@ -73,7 +73,7 @@ type CodeChatForWeb = {
     metadata: { mode: string };
     source: {
         doc: string;
-        doc_blocks: [DocBlockJSON];
+        doc_blocks: DocBlockJSON[];
         selection: any;
     };
 };
@@ -196,6 +196,7 @@ export const on_save = async () => {
         // To save a document only, simply get the HTML from the only Tiny MCE
         // div.
         source.doc = tinymce.get(0)!.getContent();
+        source.doc_blocks = [];
     } else {
         source = CodeMirror_save();
     }
