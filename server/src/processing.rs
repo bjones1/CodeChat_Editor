@@ -352,7 +352,8 @@ mod tests {
     use crate::lexer::supported_languages::LANGUAGE_LEXER_ARR;
     use crate::lexer::{compile_lexers, CodeDocBlock, DocBlock};
     use crate::processing::{
-        code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, source_to_codechat_for_web,
+        code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
+        source_to_codechat_for_web,
     };
     use crate::webserver::{
         CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, FileType, SourceFileMetadata,
@@ -379,7 +380,7 @@ mod tests {
 
     // Provide a way to construct one element of the `CodeMirrorDocBlocks`
     // vector.
-    fn build_codemirror_doc_blocks<'a>(
+    fn build_codemirror_doc_block<'a>(
         start: usize,
         end: usize,
         indent: &str,
@@ -419,6 +420,26 @@ mod tests {
         code_mirror_to_code_doc_blocks(&codechat_for_web.source)
     }
 
+    // ### Tests for `codechat_for_web_to_source`
+    //
+    // Since it just invokes `code_mirror_to_code_doc_blocks` and `code_doc_block_vec_to_source`, both of which have their own set of tests, we just need to do a bit of testing.
+    #[test]
+    fn test_codechat_for_web_to_source() {
+        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
+
+        let codechat_for_web = build_codechat_for_web("python", "", vec![]);
+        assert_eq!(
+            codechat_for_web_to_source(codechat_for_web, &llc),
+            Result::Ok("".to_string())
+        );
+
+        let codechat_for_web = build_codechat_for_web("undefined", "", vec![]);
+        assert_eq!(
+            codechat_for_web_to_source(codechat_for_web, &llc),
+            Result::Err("Invalid mode".to_string())
+        );
+    }
+
     // ### Tests for `code_mirror_to_code_doc_blocks`
     #[test]
     fn test_codemirror_to_code_doc_blocks_py() {
@@ -436,7 +457,7 @@ mod tests {
             run_test(
                 "python",
                 "\n",
-                vec![build_codemirror_doc_blocks(0, 0, "", "#", "Test")],
+                vec![build_codemirror_doc_block(0, 0, "", "#", "Test")],
             ),
             vec![build_doc_block("", "#", "Test")]
         );
@@ -446,7 +467,7 @@ mod tests {
             run_test(
                 "python",
                 "code\n\n",
-                vec![build_codemirror_doc_blocks(5, 5, "", "#", "doc")],
+                vec![build_codemirror_doc_block(5, 5, "", "#", "doc")],
             ),
             vec![build_code_block("code\n"), build_doc_block("", "#", "doc")]
         );
@@ -456,7 +477,7 @@ mod tests {
             run_test(
                 "python",
                 "\ncode\n",
-                vec![build_codemirror_doc_blocks(0, 0, "", "#", "doc")],
+                vec![build_codemirror_doc_block(0, 0, "", "#", "doc")],
             ),
             vec![build_doc_block("", "#", "doc"), build_code_block("code\n")]
         );
@@ -467,8 +488,8 @@ mod tests {
                 "python",
                 "\ncode\n\n",
                 vec![
-                    build_codemirror_doc_blocks(0, 0, "", "#", "doc 1"),
-                    build_codemirror_doc_blocks(6, 6, "", "#", "doc 2")
+                    build_codemirror_doc_block(0, 0, "", "#", "doc 1"),
+                    build_codemirror_doc_block(6, 6, "", "#", "doc 2")
                 ],
             ),
             vec![
@@ -486,7 +507,7 @@ mod tests {
             run_test(
                 "c_cpp",
                 "\n",
-                vec![build_codemirror_doc_blocks(0, 0, "", "//", "Test")]
+                vec![build_codemirror_doc_block(0, 0, "", "//", "Test")]
             ),
             vec![build_doc_block("", "//", "Test")]
         );
@@ -496,7 +517,7 @@ mod tests {
             run_test(
                 "c_cpp",
                 "\n",
-                vec![build_codemirror_doc_blocks(0, 0, "", "/*", "Test")]
+                vec![build_codemirror_doc_block(0, 0, "", "/*", "Test")]
             ),
             vec![build_doc_block("", "/*", "Test")]
         );
@@ -507,8 +528,8 @@ mod tests {
                 "c_cpp",
                 "\n\n",
                 vec![
-                    build_codemirror_doc_blocks(0, 0, "", "//", "Test 1"),
-                    build_codemirror_doc_blocks(1, 1, "", "/*", "Test 2")
+                    build_codemirror_doc_block(0, 0, "", "//", "Test 1"),
+                    build_codemirror_doc_block(1, 1, "", "/*", "Test 2")
                 ]
             ),
             vec![
@@ -706,9 +727,114 @@ mod tests {
     fn test_source_to_codechat_for_web_1() {
         let llc = compile_lexers(LANGUAGE_LEXER_ARR);
 
+        // A file with an unknown extension and no lexer, which is classified as a text file.
         assert_eq!(
             source_to_codechat_for_web("".to_string(), ".xxx", false, &llc).unwrap(),
             FileType::Text("".to_string())
+        );
+
+        // A file with an invalid lexer specification
+        assert_eq!(
+            source_to_codechat_for_web(
+                "CodeChat Editor lexer: unknown".to_string(),
+                ".xxx",
+                false,
+                &llc
+            ),
+            Result::Err("<p>Unknown lexer type unknown.</p>".to_string())
+        );
+
+        // A CodeChat Editor document via filename.
+        assert_eq!(
+            source_to_codechat_for_web("".to_string(), "md", false, &llc).unwrap(),
+            FileType::CodeChat(build_codechat_for_web("markdown", "", vec![]))
+        );
+
+        // A CodeChat Editor document via lexer specification.
+        assert_eq!(
+            source_to_codechat_for_web(
+                "CodeChat Editor lexer: markdown".to_string(),
+                "xxx",
+                false,
+                &llc
+            )
+            .unwrap(),
+            FileType::CodeChat(build_codechat_for_web(
+                "markdown",
+                "<p>CodeChat Editor lexer: markdown</p>\n",
+                vec![]
+            ))
+        );
+
+        // An empty source file.
+        assert_eq!(
+            source_to_codechat_for_web("".to_string(), "js", false, &llc).unwrap(),
+            FileType::CodeChat(build_codechat_for_web("javascript", "", vec![]))
+        );
+
+        // A zero doc block source file.
+        assert_eq!(
+            source_to_codechat_for_web("let a = 1;".to_string(), "js", false, &llc).unwrap(),
+            FileType::CodeChat(build_codechat_for_web("javascript", "let a = 1;", vec![]))
+        );
+
+        // One doc block source files.
+        assert_eq!(
+            source_to_codechat_for_web("// Test".to_string(), "js", false, &llc).unwrap(),
+            FileType::CodeChat(build_codechat_for_web(
+                "javascript",
+                "\n",
+                vec![build_codemirror_doc_block(0, 0, "", "//", "<p>Test</p>\n")]
+            ))
+        );
+        assert_eq!(
+            source_to_codechat_for_web("let a = 1;\n// Test".to_string(), "js", false, &llc)
+                .unwrap(),
+            FileType::CodeChat(build_codechat_for_web(
+                "javascript",
+                "let a = 1;\n\n",
+                vec![build_codemirror_doc_block(
+                    11,
+                    11,
+                    "",
+                    "//",
+                    "<p>Test</p>\n"
+                )]
+            ))
+        );
+        assert_eq!(
+            source_to_codechat_for_web("// Test\nlet a = 1;".to_string(), "js", false, &llc)
+                .unwrap(),
+            FileType::CodeChat(build_codechat_for_web(
+                "javascript",
+                "\nlet a = 1;",
+                vec![build_codemirror_doc_block(0, 0, "", "//", "<p>Test</p>\n")]
+            ))
+        );
+
+        // A two doc block source file.
+        assert_eq!(
+            source_to_codechat_for_web(
+                "// [Link][1]\nlet a = 1;\n/* [1]: http://b.org */".to_string(),
+                "js",
+                false,
+                &llc
+            )
+            .unwrap(),
+            FileType::CodeChat(build_codechat_for_web(
+                "javascript",
+                "\nlet a = 1;\n\n",
+                vec![
+                    build_codemirror_doc_block(
+                        0,
+                        0,
+                        "",
+                        "//",
+                        "<p><a href=\"http://b.org\">Link</a></p>"
+                    ),
+                    build_codemirror_doc_block(12, 12, "", "/*", "")
+                ]
+            ))
         );
     }
 }
