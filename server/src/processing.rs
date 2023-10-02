@@ -44,6 +44,8 @@ lazy_static! {
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
 }
 
+static DOC_BLOCK_SEPARATOR_STRING: &str = "\n<CodeChatEditor-separator/>\n\n";
+
 // ## Transform `CodeChatForWeb` to source code
 //
 // This function takes in a source file in web-editable format
@@ -300,14 +302,36 @@ pub fn source_to_codechat_for_web<'a>(
             // Lex the code.
             code_doc_block_arr = source_lexer(&file_contents, lexer);
 
+            // Combine all the doc blocks into a single string, separated by a
+            // delimiter. Transform this to markdown, then split the transformed
+            // content back into the doc blocks they came from. This is
+            // necessary to allow references between doc blocks to work; for
+            // example, `[Link][1]` in one doc block, then `[1]: http:/foo.org`
+            // in another doc block requires both to be in the same Markdown
+            // document to translate correctly.
+            let mut doc_block_contents_vec: Vec<&str> = Vec::new();
+            for code_or_doc_block in &code_doc_block_arr {
+                if let CodeDocBlock::DocBlock(doc_block) = code_or_doc_block {
+                    doc_block_contents_vec.push(&doc_block.contents);
+                }
+            }
+            let combined_doc_blocks = &doc_block_contents_vec.join(DOC_BLOCK_SEPARATOR_STRING);
+            let markdown = markdown_to_html(combined_doc_blocks);
+            // After processing by Markdown, the double newline at the of the
+            // doc block separate string becomes a single newline; split using
+            // this slightly shorter string.
+            doc_block_contents_vec = markdown
+                .split(&DOC_BLOCK_SEPARATOR_STRING[0..DOC_BLOCK_SEPARATOR_STRING.len() - 1])
+                .collect();
+
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
+            let mut index = 0;
             for code_or_doc_block in code_doc_block_arr {
                 match code_or_doc_block {
                     CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(&code_string),
-                    CodeDocBlock::DocBlock(mut doc_block) => {
+                    CodeDocBlock::DocBlock(doc_block) => {
                         // Create the doc block.
                         let len = code_mirror.doc.len();
-                        doc_block.contents = markdown_to_html(&doc_block.contents);
                         code_mirror.doc_blocks.push((
                             // From
                             len,
@@ -317,8 +341,11 @@ pub fn source_to_codechat_for_web<'a>(
                             len + doc_block.lines - 1,
                             std::borrow::Cow::Owned(doc_block.indent.to_string()),
                             std::borrow::Cow::Owned(doc_block.delimiter.to_string()),
-                            std::borrow::Cow::Owned(doc_block.contents.to_string()),
+                            // Used the markdown-translated replacement for this
+                            // doc block, rather than the original string.
+                            std::borrow::Cow::Owned(doc_block_contents_vec[index].to_string()),
                         ));
+                        index += 1;
                         // Append newlines to the document; the doc block will
                         // replace these in the editor. This keeps the line
                         // numbering of non-doc blocks correct.
@@ -422,7 +449,9 @@ mod tests {
 
     // ### Tests for `codechat_for_web_to_source`
     //
-    // Since it just invokes `code_mirror_to_code_doc_blocks` and `code_doc_block_vec_to_source`, both of which have their own set of tests, we just need to do a bit of testing.
+    // Since it just invokes `code_mirror_to_code_doc_blocks` and
+    // `code_doc_block_vec_to_source`, both of which have their own set of
+    // tests, we just need to do a bit of testing.
     #[test]
     fn test_codechat_for_web_to_source() {
         let llc = compile_lexers(LANGUAGE_LEXER_ARR);
@@ -727,20 +756,18 @@ mod tests {
     fn test_source_to_codechat_for_web_1() {
         let llc = compile_lexers(LANGUAGE_LEXER_ARR);
 
-        // A file with an unknown extension and no lexer, which is classified as a text file.
+        // A file with an unknown extension and no lexer, which is classified as
+        // a text file.
         assert_eq!(
             source_to_codechat_for_web("".to_string(), ".xxx", false, &llc).unwrap(),
             FileType::Text("".to_string())
         );
 
-        // A file with an invalid lexer specification
+        // A file with an invalid lexer specification. Obscure this, so that
+        // this file can be successfully lexed by the CodeChat editor.
+        let lexer_spec = format!("{}{}", "CodeChat Editor ", "lexer: ");
         assert_eq!(
-            source_to_codechat_for_web(
-                "CodeChat Editor lexer: unknown".to_string(),
-                ".xxx",
-                false,
-                &llc
-            ),
+            source_to_codechat_for_web(format!("{}unknown", lexer_spec), ".xxx", false, &llc),
             Result::Err("<p>Unknown lexer type unknown.</p>".to_string())
         );
 
@@ -752,16 +779,11 @@ mod tests {
 
         // A CodeChat Editor document via lexer specification.
         assert_eq!(
-            source_to_codechat_for_web(
-                "CodeChat Editor lexer: markdown".to_string(),
-                "xxx",
-                false,
-                &llc
-            )
-            .unwrap(),
+            source_to_codechat_for_web(format!("{}markdown", lexer_spec), "xxx", false, &llc)
+                .unwrap(),
             FileType::CodeChat(build_codechat_for_web(
                 "markdown",
-                "<p>CodeChat Editor lexer: markdown</p>\n",
+                &format!("<p>{}markdown</p>\n", lexer_spec),
                 vec![]
             ))
         );
