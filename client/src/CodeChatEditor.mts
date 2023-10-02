@@ -43,6 +43,8 @@
 // ### JavaScript/TypeScript
 import "./EditorComponents.mjs";
 import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
+import prettier from "prettier/esm/standalone.mjs";
+import parserMarkdown from "prettier/esm/parser-markdown.mjs";
 import "./graphviz-webcomponent-setup.mts";
 import "graphviz-webcomponent";
 import { tinymce, init } from "./tinymce-config.mjs";
@@ -195,7 +197,8 @@ export const on_save = async () => {
     if (is_doc_only()) {
         // To save a document only, simply get the HTML from the only Tiny MCE
         // div.
-        source.doc = tinymce.get(0)!.getContent();
+        const html = tinymce.get(0)!.getContent();
+        source.doc = await html_to_markdown(html, 80);
         source.doc_blocks = [];
     } else {
         source = CodeMirror_save();
@@ -236,27 +239,24 @@ const save = async (contents: CodeChatForWeb) => {
 };
 
 // ## Helper functions
-//
-// Given text, escape it so it formats correctly as HTML. Because the solution
-// at [SO](https://stackoverflow.com/a/48054293) transforms newlines in odd ways
-// (see
-// [innerText](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/innerText)),
-// it's not usable with code. Instead, this is a translation of Python's
-// `html.escape` function.
-const escapeHTML = (unsafeText: string): string => {
-    // Must be done first!
-    unsafeText = unsafeText.replaceAll("&", "&amp;");
-    unsafeText = unsafeText.replaceAll("<", "&lt;");
-    unsafeText = unsafeText.replaceAll(">", "&gt;");
-    return unsafeText;
-};
+const html_to_markdown = async (html: string, print_width: number) => {
+    const markdown = turndownService.turndown(html);
+    // Wrap the turndown output at 80 characters
+    const prettier_markdown = await prettier.format(markdown, {
+        // See [prettier from ES modules](https://prettier.io/docs/en/browser.html#es-modules).
+        parser: "markdown",
+        // TODO:
+        //
+        // -    Unfortunately, Prettier doesn't know how to format HTML embedded in Markdown; see [issue 8480](https://github.com/prettier/prettier/issues/8480).
+        // -    Prettier formats headings using the ATX style; this isn't configurable per the [source](https://github.com/prettier/prettier/blob/main/src/language-markdown/printer-markdown.js#L228).
+        plugins: [parserMarkdown],
+        // See [prettier options](https://prettier.io/docs/en/options.html).
+        printWidth: print_width,
+        // Without this option, most lines aren't wrapped.
+        proseWrap: "always",
+    });
 
-// This handles only three HTML entities, but no others!
-const unescapeHTML = (html: string): string => {
-    let text = html.replaceAll("&gt;", ">");
-    text = text.replaceAll("&lt;", "<");
-    text = text.replaceAll("&amp;", "&");
-    return text;
+    return prettier_markdown;
 };
 
 // True if this is a CodeChat Editor document (not a source file).
