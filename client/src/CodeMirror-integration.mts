@@ -123,7 +123,7 @@ const docBlockField = StateField.define<DecorationSet>({
                                 effect.value.indent,
                                 effect.value.delimiter,
                                 effect.value.content,
-                                null
+                                null,
                             ),
                             block: true,
                         }).range(effect.value.from, effect.value.to),
@@ -145,7 +145,7 @@ const docBlockField = StateField.define<DecorationSet>({
                         // Assume that there's only one doc block for this
                         // range: stop looking for any others.
                         return false;
-                    }
+                    },
                 );
                 // Remove the old doc block and create a new one to replace it.
                 // (Recall that this is the functional approach required by
@@ -164,14 +164,14 @@ const docBlockField = StateField.define<DecorationSet>({
                                 effect.value.indent,
                                 effect.value.delimiter,
                                 effect.value.content,
-                                effect.value.dom
+                                effect.value.dom,
                             ),
                             block: true,
                         }).range(
                             from,
                             // We know that the to value will always be found;
                             // make TypeScript happy.
-                            to as unknown as number
+                            to as unknown as number,
                         ),
                     ],
                 });
@@ -211,11 +211,11 @@ const docBlockField = StateField.define<DecorationSet>({
                         indent,
                         delimiter,
                         contents,
-                        null
+                        null,
                     ),
                     block: true,
-                }).range(from, to)
-            )
+                }).range(from, to),
+            ),
         ),
 });
 
@@ -271,7 +271,7 @@ class DocBlockWidget extends WidgetType {
         readonly contents: string,
         // Only used in an update to avoid changing an already-modified doc
         // block.
-        readonly dom: null | HTMLDivElement
+        readonly dom: null | HTMLDivElement,
     ) {
         // TODO: I don't understand why I don't need to store the provided
         // parameters in the object: `this.indent = indent;`, etc.
@@ -383,7 +383,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 const target = target_or_false as HTMLDivElement;
                 if (
                     (event.target as HTMLElement).closest(
-                        ".CodeChat-doc-contents"
+                        ".CodeChat-doc-contents",
                     ) === null
                 ) {
                     return false;
@@ -415,24 +415,27 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                             // Find a path from the selection back to the
                             // containing div.
                             for (
-                                let current_node = sel.anchorNode;
+                                let current_node = sel.anchorNode,
+                                    is_first = true;
                                 // Continue until we find the div which contains
                                 // the doc block contents: either it's not an
                                 // element (such as a div), ...
                                 current_node.nodeType !== Node.ELEMENT_NODE ||
                                 // or it's not the doc block contents div.
                                 !(current_node as Element).classList.contains(
-                                    "CodeChat-doc-contents"
+                                    "CodeChat-doc-contents",
                                 );
-                                current_node = current_node.parentNode!
+                                current_node = current_node.parentNode!,
+                                    is_first = false
                             ) {
-                                // Store the index of this node in its's parent
-                                // list of child nodes.
+                                // Store the index of this node in its' parent
+                                // list of child nodes/children. Use `childNodes` on the first iteration, since the selection is often in a text node, which isn't in the `parents` list. However, using `childNodes` all the time causes trouble when reversing the selection -- sometimes, the `childNodes` change based on whether text nodes (such as a newline) are included are not after tinyMCE parses the content.
+                                let p = current_node.parentNode!;
                                 selection_path.unshift(
                                     Array.prototype.indexOf.call(
-                                        current_node.parentNode!.childNodes,
-                                        current_node
-                                    )
+                                        is_first ? p.childNodes : p.children,
+                                        current_node,
+                                    ),
                                 );
                             }
                         }
@@ -449,11 +452,11 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                         old_contents_div.contentEditable = "true";
                         old_contents_div.replaceChildren(
                             ...tinymce_singleton!.getContentAreaContainer()
-                                .childNodes
+                                .childNodes,
                         );
                         tinymce_div.parentNode!.insertBefore(
                             old_contents_div,
-                            null
+                            null,
                         );
                         // Move TinyMCE to the new location, then remove the old
                         // div it will replace.
@@ -479,14 +482,18 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                             for (
                                 ;
                                 selection_path.length;
-                                selection_node = selection_node.childNodes[
-                                    selection_path.shift()!
-                                ]! as HTMLElement
+                                selection_node =
+                                    // As before, use the more-consistent `children` except for the last element, where we might be selecting a `text` node.
+                                    (
+                                        selection_path.length > 1
+                                            ? selection_node.children
+                                            : selection_node.childNodes
+                                    )[selection_path.shift()!]! as HTMLElement
                             );
                             // Use that to set the selection.
                             tinymce_singleton!.selection.setCursorLocation(
                                 selection_node,
-                                selection_offset
+                                selection_offset,
                             );
                         }
                     }, 0);
@@ -500,7 +507,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                     /// @ts-ignore
                     indent_div.addEventListener(
                         "beforeinput",
-                        doc_block_indent_on_before_input
+                        doc_block_indent_on_before_input,
                     );
                 }
                 return false;
@@ -537,7 +544,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 return false;
             },
         },
-    }
+    },
 );
 
 // TODO: this an the next function show how to create a keyboard-activated
@@ -578,7 +585,7 @@ export const CodeMirror_load = async (
     // The div to place the loaded document in.
     codechat_body: HTMLDivElement,
     // The document to load.
-    source: any
+    source: any,
 ) => {
     codechat_body.innerHTML =
         '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents"></div>';
@@ -594,7 +601,7 @@ export const CodeMirror_load = async (
                 EditorView.lineWrapping,
             ],
         },
-        CodeMirror_JSON_fields
+        CodeMirror_JSON_fields,
     );
     current_view = new EditorView({
         parent: codechat_body.childNodes[0] as HTMLDivElement,
