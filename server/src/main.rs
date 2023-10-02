@@ -17,6 +17,7 @@
 /// # `main.rs` -- Entrypoint for the CodeChat Editor Server
 use code_chat_editor::webserver;
 
+#[cfg(not(tarpaulin_include))]
 fn main() {
     webserver::main().unwrap();
 }
