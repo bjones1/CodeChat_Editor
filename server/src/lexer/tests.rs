@@ -28,7 +28,12 @@ fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBloc
         indent: indent.to_string(),
         delimiter: delimiter.to_string(),
         contents: contents.to_string(),
-        lines: contents.matches("\n").count(),
+        lines: contents.matches("\n").count()
+            + (if contents.chars().last().unwrap_or('\n') == '\n' {
+                0
+            } else {
+                1
+            }),
     });
 }
 

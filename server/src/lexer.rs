@@ -682,7 +682,13 @@ pub fn source_lexer(
             assert!(indent.is_empty());
             return;
         }
-        let lines = contents.matches('\n').count();
+        // Define a line as any characters up to an including a newline. If the contents doesn't end in a newline, then add an extra line. The reasoning: A string such as "foo" is one line (not zero lines), even without a final newline. Only the empty string "" is zero lines.
+        let lines = contents.matches('\n').count()
+            + (if contents.chars().last().unwrap_or('\n') == '\n' {
+                0
+            } else {
+                1
+            });
         let is_code_block = indent.is_empty() && delimiter.is_empty();
         // See if there's a previous entry to potentially append to.
         if !classified_source.is_empty() {
