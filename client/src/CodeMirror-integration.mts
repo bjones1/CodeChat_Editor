@@ -294,7 +294,9 @@ class DocBlockWidget extends WidgetType {
         wrap.innerHTML =
             // This doc block's indent. TODO: allow paste, but must only allow
             // pasting whitespace.
-            `<div class="CodeChat-doc-indent" contenteditable onpaste="return false">${this.indent}</div>` +
+            `<div class="CodeChat-doc-indent" contenteditable onpaste="return false" data-delimiter=${JSON.stringify(
+                this.delimiter,
+            )}>${this.indent}</div>` +
             // The contents of this doc block.
             `<div class="CodeChat-doc-contents" contenteditable>` +
             this.contents +
@@ -524,8 +526,9 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 // element.
                 const target = target_or_false as HTMLDivElement;
                 const pos = view.posAtDOM(target);
-                const indent = (target.childNodes[0] as HTMLDivElement)
-                    .innerHTML;
+                const indent_div = target.childNodes[0] as HTMLDivElement;
+                const indent = indent_div.innerHTML;
+                const delimiter = indent_div.getAttribute("data-delimiter")!;
                 const [contents_div, is_tinymce] = get_contents(target);
                 const content = is_tinymce
                     ? tinymce_singleton!.getContent()
@@ -534,7 +537,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                     updateDocBlock.of({
                         pos,
                         indent,
-                        delimiter: "",
+                        delimiter: delimiter,
                         content: content,
                         dom: target,
                     }),
