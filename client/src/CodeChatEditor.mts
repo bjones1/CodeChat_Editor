@@ -203,7 +203,11 @@ export const on_save = async () => {
         source.doc_blocks = [];
     } else {
         source = CodeMirror_save();
-        // Join all the doc blocks, then convert them to Markdown, then split them back.
+        // Join all the doc blocks, then convert them to Markdown, then split
+        // them back.
+        //
+        // Turndown currently removes HTML blocks with no content; add random
+        // content to avoid this.
         const separator =
             "<codechateditor-separator>a</codechateditor-separator>";
         const combined_doc_blocks_html = source.doc_blocks
@@ -215,7 +219,9 @@ export const on_save = async () => {
         const doc_blocks_markdown = combined_doc_blocks_markdown.split(
             `\n${separator}\n\n`,
         );
-        // Wrap each doc block based on the available width on this line: 80 - indent - delimiter length - 1 space that always follows the delimiter. Use a minimum width of 40 characters.
+        // Wrap each doc block based on the available width on this line: 80 -
+        // indent - delimiter length - 1 space that always follows the
+        // delimiter. Use a minimum width of 40 characters.
         for (const [index, doc_block] of source.doc_blocks.entries()) {
             doc_block[4] = await prettier_markdown(
                 doc_blocks_markdown[index],
@@ -264,12 +270,17 @@ const save = async (contents: CodeChatForWeb) => {
 // ## Helper functions
 const prettier_markdown = async (markdown: string, print_width: number) => {
     return await prettier.format(markdown, {
-        // See [prettier from ES modules](https://prettier.io/docs/en/browser.html#es-modules).
+        // See
+        // [prettier from ES modules](https://prettier.io/docs/en/browser.html#es-modules).
         parser: "markdown",
         // TODO:
         //
-        // -    Unfortunately, Prettier doesn't know how to format HTML embedded in Markdown; see [issue 8480](https://github.com/prettier/prettier/issues/8480).
-        // -    Prettier formats headings using the ATX style; this isn't configurable per the [source](https://github.com/prettier/prettier/blob/main/src/language-markdown/printer-markdown.js#L228).
+        // - Unfortunately, Prettier doesn't know how to format HTML embedded in
+        //   Markdown; see
+        //   [issue 8480](https://github.com/prettier/prettier/issues/8480).
+        // - Prettier formats headings using the ATX style; this isn't
+        //   configurable per the
+        //   [source](https://github.com/prettier/prettier/blob/main/src/language-markdown/printer-markdown.js#L228).
         plugins: [parserMarkdown],
         // See [prettier options](https://prettier.io/docs/en/options.html).
         printWidth: print_width,
