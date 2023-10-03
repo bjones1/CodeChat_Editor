@@ -51,6 +51,8 @@ import "tinymce/plugins/emoticons/index.js";
 import "tinymce/plugins/emoticons/js/emojis.js";
 import "tinymce/plugins/emoticons/js/emojiimages.js";
 import "tinymce/plugins/help/index.js";
+// TODO: this should be a dynamic import.
+import "tinymce/plugins/help/js/i18n/keynav/en.js";
 import "tinymce/plugins/image/index.js";
 import "tinymce/plugins/link/index.js";
 import "tinymce/plugins/lists/index.js";
@@ -73,7 +75,7 @@ import "tinymce/plugins/visualchars/index.js";
 export const init = async (
     // Provide editor options; don't set \`\`plugins\`\` or \`\`skin\`\`, since
     // these must be accompanied by the correct imports.
-    options: RawEditorOptions
+    options: RawEditorOptions,
 ) =>
     // See
     // [init()](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#init).
@@ -130,5 +132,5 @@ export const init = async (
                 "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale]",
             custom_elements:
                 "graphviz-graph,graphviz-script-editor,graphviz-combined",
-        })
+        }),
     );
