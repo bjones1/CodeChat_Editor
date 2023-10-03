@@ -1,34 +1,33 @@
-# <details>
-#     <summary>License</summary>
-#     <p>Copyright (C) 2022 Bryan A. Jones.</p>
-#     <p>This file is part of the CodeChat Editor.</p>
-#     <p>The CodeChat Editor is free software: you can redistribute it and/or
-#         modify it under the terms of the GNU General Public License as
-#         published by the Free Software Foundation, either version 3 of the
-#         License, or (at your option) any later version.</p>
-#     <p>The CodeChat Editor is distributed in the hope that it will be useful,
-#         but WITHOUT ANY WARRANTY; without even the implied warranty of
-#         MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-#         General Public License for more details.</p>
-#     <p>You should have received a copy of the GNU General Public License along
-#         with the CodeChat Editor. If not, see <a
-#             href="http://www.gnu.org/licenses/">http://www.gnu.org/licenses/</a>.
-#     </p>
-# </details>
-# <h1><code>Cargo.toml</code> - Rust build/package management config</h1>
+# Copyright (C) 2023 Bryan A. Jones.
+#
+# This file is part of the CodeChat Editor.
+#
+# The CodeChat Editor is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option) any
+# later version.
+#
+# The CodeChat Editor is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# the CodeChat Editor. If not, see
+# [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+#
+# # `Cargo.toml` -- Rust build/package management config
 [package]
 name = "server"
 version = "0.1.0"
 edition = "2021"
 
-# <p>This library allows other packages to use core CodeChat Editor features.
-# </p>
+# This library allows other packages to use core CodeChat Editor features.
 [lib]
 name = "code_chat_editor"
 
-# <p>See more <a
-#         href="https://doc.rust-lang.org/cargo/reference/manifest.html">keys
-#         and their definitions</a>.</p>
+# See more
+# [keys and their definitions](https://doc.rust-lang.org/cargo/reference/manifest.html).
 [dependencies]
 actix-files = "0.6"
 actix-web = "4"
@@ -38,23 +37,20 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
-# <p>Per the <a>docs</a>, avoid building the binary.</p>
+# Per the <a>docs</a>, avoid building the binary.
 pulldown-cmark = { version = "0.9", default-features = false }
-# <p><a
-#         href="https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies">Windows-only
-#         dependencies</a>.</p>
+# [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"
 
 [dev-dependencies]
-# <p>See the <a href="https://github.com/rust-lang/rust-clippy#usage">docs</a>
-#     to install clippy; it can't be installed as a dev-dependency. See the <a
-#         href="https://github.com/rust-lang/rustfmt#quick-start">fmt docs</a>
-#     to install fmt.</p>
+# See the [docs](https://github.com/rust-lang/rust-clippy#usage) to install
+# clippy; it can't be installed as a dev-dependency. See the
+# [fmt docs](https://github.com/rust-lang/rustfmt#quick-start) to install fmt.
 #clippy = "0.0.302"
 
-# <p>See https://doc.rust-lang.org/cargo/reference/features.html.</p>
+# See the [docs](https://doc.rust-lang.org/cargo/reference/features.html).
 [features]
-# <p>Uncomment this to show an explanation of the lexing process.</p>
+# Uncomment this to show an explanation of the lexing process.
 #default = ["lexer_explain"]
 lexer_explain = []

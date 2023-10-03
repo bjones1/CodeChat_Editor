@@ -16,12 +16,11 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# # `.gitignore` -- files for Git to ignore
+# # .prettierignore -- files for Prettier to ignore
 #
 # NPM
-node_modules/
+client/node_modules/
+# Edits to CodeMirror source
+client/src/codemirror/*
 
-# The phrase "CodeChat Editor lexer: python" sets the lexer for this file, so
-# that the CodeChat Editor will render it correctly. While this isn't Python
-# (meaning syntax highlighting will be broken), it does at least use `#` for
-# inline comments.
+# CodeChat Editor lexer: python. See TODO.

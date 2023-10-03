@@ -1,0 +1,46 @@
+<h1>Literate Programming Project 2: Save Format</h1>
+<h2>Contributors: Brandon Black and Jeffrey Greer</h2>
+<p>&nbsp;</p>
+<h1>Save Format Project Description:&nbsp;</h1>
+<h2>Features that will be Added:</h2>
+<p>In the Code Mirror format of the Code Chat Editor, the goal is to create
+    a&nbsp;new save format that writes converts the written code in Code Chat into code blocks and doc blocks.</p>
+<h2>Repository/Repositories that Code will be Added to:</h2>
+<p>We will be adding to the CodeChat_Editor Repository, specifically the
+    CodeMirror Branch in that repository.&nbsp;</p>
+<h2>Libraries, Languages, and Interfaces:</h2>
+<p>We will be working in the Code Chat interface. The primary language we will
+    be working in is the Rust language on the back end of the Code Chat Editor.
+    We will also be examining HTML and Javascript on the front end of the Code
+    Chat Editor.&nbsp;</p>
+<h2>Steps to Complete:</h2>
+<p>1. Find and understand the data structures in the save function by debugging through the main branch. Having a good understanding on the current save function is crucial to changing it.&nbsp;</p>
+<p>2. Add code blocks where new lines have parameters for code blocks.</p>
+<p>3. Add doc blocks where new lines have parameter that signify a doc block.</p>
+<p>4. Implement a save format that can replace both Source Code and Doc Blocks
+    and save both as intended.&nbsp;</p>
+<h2>Tests to Demonstrate New Feature:</h2>
+<p>To test these changes, we intend to pull up a document in Code Mirror Branch
+    and open the Javascript of the Website. We will then put a breakpoint over
+    the save function and view the values of the data structures to ensure that
+    the save function is working properly. We intend to also run tests on the
+    backend using a Rust Debugger to view the structures on both ends of the
+    Code Chat Editor.&nbsp;</p>
+<h2>Goals for Pull Requests:</h2>
+<p>1. Understand and practice Rust and test how it handles data structures with
+    code in a Rust Debugger.&nbsp;</p>
+<p>2. Implement new save function code to correctly save the source code and
+    dot block code back to how it originally should look.&nbsp;</p>
+<p>3. We then implemented a new function that would that the lexed code mirror source file and convert it into the original format of the client source file.&nbsp;</p>
+<h2>Results:</h2>
+<p>1. After time, we were able to understand the Rust code and implement the Rust Debugger to understand exactly
+    what was being pulled from the file that needs to be saved and what the format looks like.&nbsp;</p>
+<p>2. We downloaded the Rust Analyzer and had to create a launch.json file that would launch the debugger and have it operate alongside
+    the Code Chat Editor.&nbsp;</p>
+<p>3. We then implemented a new function that would that the lexed code mirror source file and convert it into the original format of the client source file.&nbsp;</p>
+<p>4. The function logically looks as if it would work as planned, but we were unable to test it. Which leads me to remaining issues.&nbsp;</p>
+<h2>Issues and Future Work:</h2>
+<p>1. No matter what adjustments made, anytime the lexed source file was in use, a lifetime error would pop up. It stated that one lifetime needed to outlive another 
+    and that it would not. Due to this error, the code would not compile.&nbsp;</p>
+<p>1. The first issue that would need to be fixed is the lifetime error. It could be simple or complex, but once this is resolved, the save functionality should work as intended. 
+    If it does not, I am sure that we were able to give a good function that may just need to take a little bit of tweaking for the next coder.&nbsp;</p>
