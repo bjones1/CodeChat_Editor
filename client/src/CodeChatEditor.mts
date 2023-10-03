@@ -198,10 +198,33 @@ export const on_save = async () => {
         // To save a document only, simply get the HTML from the only Tiny MCE
         // div.
         const html = tinymce.get(0)!.getContent();
-        source.doc = await html_to_markdown(html, 80);
+        const markdown = turndownService.turndown(html);
+        source.doc = await prettier_markdown(markdown, 80);
         source.doc_blocks = [];
     } else {
         source = CodeMirror_save();
+        // Join all the doc blocks, then convert them to Markdown, then split them back.
+        const separator =
+            "<codechateditor-separator>a</codechateditor-separator>";
+        const combined_doc_blocks_html = source.doc_blocks
+            .map((doc_block_JSON) => doc_block_JSON[4])
+            .join(separator);
+        const combined_doc_blocks_markdown = turndownService.turndown(
+            combined_doc_blocks_html,
+        );
+        const doc_blocks_markdown = combined_doc_blocks_markdown.split(
+            `\n${separator}\n\n`,
+        );
+        // Wrap each doc block based on the available width on this line: 80 - indent - delimiter length - 1 space that always follows the delimiter. Use a minimum width of 40 characters.
+        for (const [index, doc_block] of source.doc_blocks.entries()) {
+            doc_block[4] = await prettier_markdown(
+                doc_blocks_markdown[index],
+                Math.max(
+                    40,
+                    80 - doc_block[3].length - doc_block[2].length - 1,
+                ),
+            );
+        }
     }
     await save({
         metadata: current_metadata,
@@ -239,10 +262,8 @@ const save = async (contents: CodeChatForWeb) => {
 };
 
 // ## Helper functions
-const html_to_markdown = async (html: string, print_width: number) => {
-    const markdown = turndownService.turndown(html);
-    // Wrap the turndown output at 80 characters
-    const prettier_markdown = await prettier.format(markdown, {
+const prettier_markdown = async (markdown: string, print_width: number) => {
+    return await prettier.format(markdown, {
         // See [prettier from ES modules](https://prettier.io/docs/en/browser.html#es-modules).
         parser: "markdown",
         // TODO:
@@ -255,8 +276,6 @@ const html_to_markdown = async (html: string, print_width: number) => {
         // Without this option, most lines aren't wrapped.
         proseWrap: "always",
     });
-
-    return prettier_markdown;
 };
 
 // True if this is a CodeChat Editor document (not a source file).
