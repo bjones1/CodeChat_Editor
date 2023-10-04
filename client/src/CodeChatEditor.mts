@@ -42,14 +42,13 @@
 //
 // ### JavaScript/TypeScript
 import "./EditorComponents.mjs";
-import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
 import prettier from "prettier/esm/standalone.mjs";
 import parserMarkdown from "prettier/esm/parser-markdown.mjs";
 import "./graphviz-webcomponent-setup.mts";
 import "graphviz-webcomponent";
 import { tinymce, init } from "./tinymce-config.mjs";
-// @ts-ignore - Turndown doesn't have types.
 import TurndownService from "./turndown/turndown.browser.es.js";
+import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
 
 // ### CSS
 import "./../static/css/CodeChatEditor.css";

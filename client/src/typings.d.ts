@@ -27,13 +27,12 @@ type DocBlockJSON = [
     // Delimiter
     string,
     // Contents
-    string
+    string,
 ];
 
 // These modules keep TypeScript from complaining about missing type definitions
-// for Turndown and Turndown plugin imports. See
+// for Javascript libraries used in this project. See
 // [CodeChatEditor.mts](CodeChatEditor.mts).
-declare module "@joplin/turndown-plugin-gfm";
 declare module "prettier/esm/standalone.mjs";
 declare module "prettier/esm/parser-markdown.mjs";
 declare module "prettier/esm/parser-html.mjs";

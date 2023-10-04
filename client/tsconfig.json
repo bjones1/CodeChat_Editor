@@ -28,7 +28,7 @@
         // see also
         // [the TypeScript docs](https://www.typescriptlang.org/tsconfig#isolatedModules).
         "isolatedModules": true,
-        "module": "ES2022",
+        "module": "nodenext",
         "moduleResolution": "nodenext",
         "outDir": "out",
         "rootDir": "src",
