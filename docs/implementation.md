@@ -12,8 +12,8 @@ WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
 FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 details.
 
-You should have received a copy of the GNU General Public License along with
-the CodeChat Editor. If not, see
+You should have received a copy of the GNU General Public License along with the
+CodeChat Editor. If not, see
 [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 
 # Implementation
@@ -22,13 +22,13 @@ the CodeChat Editor. If not, see
 
 ### Client/server partitioning
 
-Doc blocks consist of Markdown augmented with custom HTML elements which
-provide authoring support. Some of these elements depend only on information in
-the current page. For example, a GraphViz graph tag transforms the graph
-provided in its tag into an SVG; it doesn't need information from other files.
-Other elements, such as a cross-reference tag, depend on information from other
-pages (in this case, the page containing the referenced item). The client lacks
-the ability to access other files, while the server has direct access to these
+Doc blocks consist of Markdown augmented with custom HTML elements which provide
+authoring support. Some of these elements depend only on information in the
+current page. For example, a GraphViz graph tag transforms the graph provided in
+its tag into an SVG; it doesn't need information from other files. Other
+elements, such as a cross-reference tag, depend on information from other pages
+(in this case, the page containing the referenced item). The client lacks the
+ability to access other files, while the server has direct access to these
 files. Therefore, the overall strategy is:
 
 - On page load, the server transforms custom tags which depend on information
@@ -43,8 +43,8 @@ files. Therefore, the overall strategy is:
 - On save, the client sends its text back to the server, which de-transforms
   custom tags which depend on information from other pages. If de-transforms
   disagree with the provided text, then re-load the updated text after the save
-  is complete. For example, after inserting an auto-titled link, the
-  auto-titled text is missing; a save/reload fixes this.
+  is complete. For example, after inserting an auto-titled link, the auto-titled
+  text is missing; a save/reload fixes this.
 
 ### Page processing pipeline
 
@@ -74,8 +74,7 @@ On load:
 
 We want a clean separate between the webserver and the processing pipeline. The
 webserver should provide I/O between the local file system and the client, but
-do little processing. The processing pipeline should not perform I/O.
-Therefore:
+do little processing. The processing pipeline should not perform I/O. Therefore:
 
 - On load, the webserver receives a request for a file. It should gather and
   pass the following to the page processor:
@@ -104,16 +103,16 @@ On save:
 ### Table of contents
 
 - While the TOC file must be placed in the root of the project, it will be
-  served alongside pages served from subdirectories. Therefore, place this in
-  an iframe to avoid regenerating it for every page.
-- The TOC is just HTML. Numbered sections are expressed as nested ordered
-  lists, with links to each section inside these lists.
+  served alongside pages served from subdirectories. Therefore, place this in an
+  iframe to avoid regenerating it for every page.
+- The TOC is just HTML. Numbered sections are expressed as nested ordered lists,
+  with links to each section inside these lists.
 - All numbering is stored internally as a number, instead of the corresponding
   marker (I, II, III, etc.). This allows styles to customize numbering easily.
   - Given an `a` element in the TOC, looking through its parents provides the
     section number. Given an array of section numbers, use CSS to style all the
-    headings. Implement numbering using CSS variables, which makes it easy for
-    a style sheet to include or exclude section numbers:
+    headings. Implement numbering using CSS variables, which makes it easy for a
+    style sheet to include or exclude section numbers:
 
     `:root {`\
       `--section-counter-reset: s1 4 s2 5;`\
@@ -135,49 +134,74 @@ server, all needed hydration data should be stored in the cache.
 
 What we need to know:
 
-- To generate the TOC, we need a way to find the linked file, then get a list
-  of all its headings.
+- To generate the TOC, we need a way to find the linked file, then get a list of
+  all its headings.
   - Problem: files can be moved. Better would be an invariant anchor, stored in
     the file, which doesn't change. It would make sense to link to the only
-    \<h1> element...but there may not be one, or it may not be at the top of
-    the file. The easy solution would be an anchor tag at the beginning of the
-    file...but this would break shell scripts, for example. Another is
-    including an anchor tag somewhere in each document, but need authors to
-    understand what it is (and not delete it). Another possibility is to link
-    to any anchor in the file with a special query identifying it as link to
-    the underlying file.
+    \<h1> element...but there may not be one, or it may not be at the top of the
+    file. The easy solution would be an anchor tag at the beginning of the
+    file...but this would break shell scripts, for example. Another is including
+    an anchor tag somewhere in each document, but need authors to understand
+    what it is (and not delete it). Another possibility is to link to any anchor
+    in the file with a special query identifying it as link to the underlying
+    file.
 - To auto-title a link, need to look up an anchor and get its location (page
   number, section number) and title.
 - For back links, need to look up all links to the given anchor, then get the
   location and title of each link.
-- To generate the TOC containing all anchors, we need a list of all anchors on
-  a given page.
+- To generate the TOC containing all anchors, we need a list of all anchors on a
+  given page.
 
 Therefore, the cache must contain:
 
-- For each file, stored as the relative path from the project's root directory
-  to that file:
-  - A time/date stamp to determine if this cached data is stale or not.
-  - The global TOC numbering.
-  - A nested list of headings, represented by their anchor (supporting TOC
-    generation). For each heading, also provide a list of all non-heading
-    anchors it contains (supporting all anchors TOC generation).
-- For each anchor (including anything linkable -- images, videos, etc.):
-  - The page it's in, as a path to the file containing this page. This allows
-    references to look up the page numbering for this anchor.
-  - The outer HTML of the item it refers to (self/sibling/etc.), for use with
-    references.
-  - Its numbering within the current page, also for use with references.
-- For each link:
-  - Its anchor and the anchor it links to, to support back link generation.
+- A non-HTML file (image, PDF, etc.). Generate an ID based on a checksum of the
+  file. Basically, this provides some way to find the (unmodified) file if it's
+  moved/renamed. Cache data: |path, ID, file's metadata, &set of referring
+  links|.
+- A HTML file. Store an ID as a comment in it somewhere, probably at the end of
+  the file. Cache data: |path, ID, file's metadata, &set of referring links|,
+  TOC numbering. It also contains a vector of headings and a vector of all
+  non-heading anchors:
+  - A heading anchor in an HTML file: |&containing file, ID, anchor's inner
+    HTML, a &set of all referring links, optional hyperlink|, numbering on this
+    page, a vector of non-heading anchors contained in this heading.
+  - A non-heading anchor in an HTML file: |&containing file, ID, anchor's inner
+    HTML, a &set of all referring links, optional hyperlink|, optional
+    &containing heading, snippet of surrounding text, numbering group, number.
+
+A hyperlink consists of a &path and &ID.
+
+Globals:
+
+- A map of &paths to files
+- A map of &IDs to (&anchors, set of &referring links)
+
+How to keep the sets of referring links up to date? If a link is deleted, we
+won't know until that file is removed. To fix, add a validate() function that
+looks up each link and drops anything that doesn't exist.
+
+How to deal with a link to an anchor not in the cache? Need a stub for that
+until the actual anchor is found. Therefore, have a stub/nonexistent file that
+holds all missing anchors. This file contains a single non-heading anchor, which
+has an empty id.
+
+How to represent TOC numbering?  In the end, it has to becomes a series of
+digits. I'd like to allow headings mixed with ordered lists, since this seems a
+reasonable/common way to express the TOC. But these could easily be assembled in
+a lot of weird ways. If a make a simplifying assumption -- put headings,
+followed by ordered lists -- then this is easier. But, what to do if headings
+appear in ordered lists? My goal is to produce something sensible from a wide
+range of valid inputs. Options are: always treat headings as a higher level of
+organization than lists; or treat them equivalently. The second option is
+simplest, and would seem to be what the author is saying.
 
 #### Editing and cached state
 
-Edits to the document of any cached items cause the browser to push this edit
-to the server; the server then propagates the edits to open windows and updates
-its state. If a modified file is closed without saving it (meaning the cached
-state for this file is now invalid), then all that cache state must be flushed.
-To flush, simply set the date/time stamp of that file to something old/invalid.
+Edits to the document of any cached items cause the browser to push this edit to
+the server; the server then propagates the edits to open windows and updates its
+state. If a modified file is closed without saving it (meaning the cached state
+for this file is now invalid), then all that cache state must be flushed. To
+flush, simply set the date/time stamp of that file to something old/invalid.
 
 ### TOC custom tag
 
@@ -239,14 +263,14 @@ with descriptions of each setting.
 6.  Decide how to handle nested block comments.
 7.  Define the architecture for IDE extensions/plug-ins. Goal: minimize
     extension/plug-in complexity.
-8.  Define desired UI behavior. Priority: auto-reload; dirty document
-    detection; auto-backup.
+8.  Define desired UI behavior. Priority: auto-reload; dirty document detection;
+    auto-backup.
 9.  Propose visual styling, dark mode, etc.
 
 ### To do
 
-1.  Open the TOC as a single-file edit? If not, at least hide the sidebar,
-    since that's redundant.
+1.  Open the TOC as a single-file edit? If not, at least hide the sidebar, since
+    that's redundant.
 
 ### Open questions
 
@@ -256,10 +280,10 @@ with descriptions of each setting.
   then restart a new indent and section). In addition, it requires that code is
   nested inside doc blocks, which is tricky. However, I would like to do this.
 - How to handle images/videos/PDFs/etc. when file are moved? Currently, we
-  expect the user to move them as well. There's not an easy way to tag them
-  with an unique ID, then refer to them using that ID than I can think of.
-- Config file format: I really like and prefer Python's strictyaml. Basically,
-  I want something that includes type validation and allows comments within the
+  expect the user to move them as well. There's not an easy way to tag them with
+  an unique ID, then refer to them using that ID than I can think of.
+- Config file format: I really like and prefer Python's strictyaml. Basically, I
+  want something that includes type validation and allows comments within the
   config file. Perhaps JSON with a pre-parse step to discard comments then
   [JSON Typedef](https://jsontypedef.com/)? Possibly, vlang can do this
   somewhat, since it wants to decode JSON into a V struct.)
@@ -270,10 +294,10 @@ with descriptions of each setting.
 
 As shown in the figure below, the CodeChat Editor client starts with
 `client/webpack/package.json`, which tells
-[NPM](<https://en.wikipedia.org/wiki/Npm_(software)>) which JavaScript
-libraries are used in this project. Running `npm update` copies these libraries
-and all their dependencies to the `client/webpack/node_modules` directory. The
-CodeChat Editor client source code (see
+[NPM](<https://en.wikipedia.org/wiki/Npm_(software)>) which JavaScript libraries
+are used in this project. Running `npm update` copies these libraries and all
+their dependencies to the `client/webpack/node_modules` directory. The CodeChat
+Editor client source code (see
 [CodeChat-editor.mts](../client/webpack/CodeChat-editor.mts)) imports these
 libraries.
 
@@ -281,8 +305,8 @@ Next, [esbuild](https://esbuild.github.io/) analyzes the CodeChat Editor client
 based by transforming any [TypeScript](https://www.typescriptlang.org/) into
 JavaScript then packaging all dependencies (JavaScript, CSS, images, etc.) into
 a smaller set of files. At a user's request, the CodeChat Editor server
-generates HTML which creates an editor around the user-requested file. This
-HTML loads the packaged dependencies to create the CodeChat Editor webpage.
+generates HTML which creates an editor around the user-requested file. This HTML
+loads the packaged dependencies to create the CodeChat Editor webpage.
 
 <graphviz-graph graph="digraph {&#10;    JS_lib [label = &quot;JavaScript libraries&quot;];&#10;    &quot;package.json&quot; -> JS_lib [label = &quot;npm update&quot;];&#10;    JS_lib -> esbuild;&#10;    CCE_source [label = &quot;CodeChat Editor\nclient-side source&quot;];&#10;    JS_lib -> CCE_source [label = &quot;imports&quot;];&#10;    CCE_source -> esbuild;&#10;    esbuild -> &quot;Packaged JavaScript&quot;;&#10;    CCE_webpage [label = &quot;CodeChat Editor\nwebpage&quot;];&#10;    &quot;Packaged JavaScript&quot; -> CCE_webpage;&#10;    server_HTML [label = &quot;CodeChat Editor\nserver-generated\nHTML&quot;];&#10;    server_HTML -> CCE_webpage;&#10;}"></graphviz-graph>
 

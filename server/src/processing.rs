@@ -17,11 +17,17 @@
 /// # `processing.rs` -- Transform source code to its web-editable equivalent and back
 // ## Imports
 //
-// None.
-//
 // ### Standard library
-//
-// None.
+// For commented-out caching code.
+/**
+use std::collections::{HashMap, HashSet};
+use std::fs::Metadata;
+use std::io;
+use std::ops::Deref;
+use std::path::Path;
+use std::path::PathBuf;
+use std::rc::{Rc, Weak};
+*/
 //
 // ### Third-party
 use lazy_static::lazy_static;
@@ -364,8 +370,8 @@ pub fn source_to_codechat_for_web<'a>(
     Ok(FileType::CodeChat(codechat_for_web))
 }
 
-// Convert markdown to HTML. (This assumes the Markdown defined in the
-// CommonMark spec.)
+/// Convert markdown to HTML. (This assumes the Markdown defined in the
+/// CommonMark spec.)
 fn markdown_to_html(markdown: &str) -> String {
     let mut options = Options::all();
     // Turndown (which converts HTML back to Markdown) doesn't support smart
@@ -376,6 +382,216 @@ fn markdown_to_html(markdown: &str) -> String {
     html::push_html(&mut html_output, parser);
     html_output
 }
+
+// Goal: make it easy to update the data structure. We update on every
+// load/save, then do some accesses during those processes.
+//
+// Top-level data structures: a file HashSet<PathBuf, FileAnchor> and an id
+// HashMap<id, {Anchor, HashSet<referring_id>}>. Some FileAnchors in the file
+// HashSet are also in a pending load list.
+//
+// - To update a file:
+//   - Remove the old file from the file HasHMap. Add an empty FileAnchor to the
+//     file HashMap.
+//   - For each id, see if that id already exists.
+//     - If the id exists: if it refers to an id in the old FileAnchor, replace
+//       it with the new one. If not, need to perform resolution on this id (we
+//       have a non-unique id; how to fix?).
+//     - If the id doesn't exist: create a new one.
+//   - For each hyperlink, see if that id already exists.
+//     - If so, upsert the referring id. Check the metadata on the id to make
+//       sure that data is current. If not, add this to the pending hyperlinks
+//       list. If the file is missing, delete it from the cache.
+//     - If not, create a new entry in the id HashSet and add the referring id
+//       to the HashSet. Add the file to a pending hyperlinks list.
+//   - When the file is processed:
+//     - Look for all entries in the pending file list that refer to the current
+//       file and resolve these. Start another task to load in all pending
+//       files.
+//     - Look at the old file; remove each id that's still in the id HashMap. If
+//       the id was in the HashMap and it also was a Hyperlink, remove that from
+//       the HashSet.
+// - To remove a file from the HashMap:
+//   - Remove it from the file HashMap.
+//   - For each hyperlink, remove it from the HashSet of referring links (if
+//     that id still exists).
+//   - For each id, remove it from the id HashMap.
+// - To add a file from the HashSet:
+//   - Perform an update with an empty FileAnchor.
+//
+// Pending hyperlinks list: for each hyperlink,
+//
+// - check if the id is now current in the cache. If so, add the referring id to
+//   the HashSet then move to the next hyperlink.
+// - check if the file is now current in the cache. If not, load the file and
+//   update the cache, then go to step 1.
+// - The id was not found, even in the expected file. Add the hyperlink to a
+//   broken links set?
+//
+// Global operations:
+//
+// - Scan all files, then perform add/upsert/removes based on differences with
+//   the cache.
+//
+// Functions:
+//
+// - Upsert an Anchor.
+// - Upsert a Hyperlink.
+// - Upsert a file.
+// - Remove a file.
+/**
+/// There are two types of files that can serve as an anchor: these are file
+/// anchor targets.
+enum FileAnchor {
+    Plain(PlainFileAnchor),
+    Html(HtmlFileAnchor),
+}
+
+/// This is the cached metadata for a file that serves as an anchor: perhaps an
+/// image, a PDF, or a video.
+struct PlainFileAnchor {
+    /// A relative path to this file, rooted at the project's TOC.
+    path: Rc<PathBuf>,
+    /// The globally-unique anchor used to link to this file. It's generated
+    /// based on hash of the file's contents, so that each file will have a
+    /// unique identifier.
+    anchor: String,
+    /// Metadata captured when this data was cached. If it disagrees with the
+    /// file's current state, then this cached data should be re=generated from
+    /// the file.
+    file_metadata: Metadata,
+}
+
+/// Cached metadata for an HTML file.
+struct HtmlFileAnchor {
+    /// The file containing this HTML.
+    file_anchor: PlainFileAnchor,
+    /// The TOC numbering of this file.
+    numbering: Vec<Option<u32>>,
+    /// The headings in this file.
+    headings: Vec<HeadingAnchor>,
+    /// Anchors which appear before the first heading.
+    pre_anchors: Vec<NonHeadingAnchor>,
+}
+
+/// Cached metadata shared by both headings (which are also anchors) and
+/// non-heading anchors.
+struct AnchorCommon {
+    /// The HTML file containing this anchor.
+    html_file_anchor: Weak<FileAnchor>,
+    /// The globally-unique anchor used to link to this object.
+    anchor: String,
+    /// The inner HTML of this anchor.
+    inner_html: String,
+    /// The hyperlink this anchor contains.
+    hyperlink: Option<Rc<Hyperlink>>,
+}
+
+/// An anchor is defined only in these two places: the anchor source.
+enum HtmlAnchor {
+    Heading(HeadingAnchor),
+    NonHeading(NonHeadingAnchor),
+}
+
+/// Cached metadata for a heading (which is always also an anchor).
+struct HeadingAnchor {
+    anchor_common: AnchorCommon,
+    /// The numbering of this heading on the HTML file containing it.
+    numbering: Vec<Option<u32>>,
+    /// Non-heading anchors which appear after this heading but before the next
+    /// heading.
+    non_heading_anchors: Vec<NonHeadingAnchor>,
+}
+
+/// Cached metadata for a non-heading anchor.
+struct NonHeadingAnchor {
+    anchor_common: AnchorCommon,
+    /// The heading this anchor appears after (unless it appears before the
+    /// first heading in this file).
+    parent_heading: Option<Weak<HeadingAnchor>>,
+    /// A snippet of HTML preceding this anchor.
+    pre_snippet: String,
+    /// A snippet of HTML following this anchor.
+    post_snippet: String,
+    /// If this is a numbered item, the name of the numbering group it belongs
+    /// to.
+    numbering_group: Option<String>,
+    /// If this is a numbered item, its number.
+    number: u32,
+}
+
+/// An anchor can refer to any of these structs: these are all possible anchor
+/// targets.
+enum Anchor {
+    Html(HtmlAnchor),
+    File(FileAnchor),
+}
+
+/// The metadata for a hyperlink.
+struct Hyperlink {
+    /// The file this hyperlink refers to.
+    file: PathBuf,
+    /// The anchor this hyperlink refers to.
+    html_anchor: String,
+}
+
+/// The value stored in the id HashMap.
+struct AnchorVal {
+    /// The target anchor this id refers to.
+    anchor: Anchor,
+    /// All hyperlinks which target this anchor.
+    referring_links: Rc<HashSet<String>>,
+}
+
+// Given HTML, catalog all link targets and link-like items, ensuring that they
+// have a globally unique id.
+fn html_analyze(
+    file_path: &Path,
+    html: &str,
+    mut file_map: HashMap<Rc<PathBuf>, Rc<FileAnchor>>,
+    mut anchor_map: HashMap<Rc<String>, HashSet<AnchorVal>>,
+) -> io::Result<String> {
+    // Create the missing anchors:
+    //
+    // A missing file.
+    let missing_html_file_anchor = Rc::new(FileAnchor::Html(HtmlFileAnchor {
+        file_anchor: PlainFileAnchor {
+            path: Rc::new(PathBuf::new()),
+            anchor: "".to_string(),
+            // TODO: is there some way to create generic/empty metadata?
+            file_metadata: Path::new(".").metadata().unwrap(),
+        },
+        numbering: Vec::new(),
+        headings: Vec::new(),
+        pre_anchors: Vec::new(),
+    }));
+    // Define an anchor in this file.
+    let missing_anchor = NonHeadingAnchor {
+        anchor_common: AnchorCommon {
+            html_file_anchor: Rc::downgrade(&missing_html_file_anchor),
+            anchor: "".to_string(),
+            hyperlink: None,
+            inner_html: "".to_string(),
+        },
+        parent_heading: None,
+        pre_snippet: "".to_string(),
+        post_snippet: "".to_string(),
+        numbering_group: None,
+        number: 0,
+    };
+    // Add this to the top-level hashes.
+    let anchor_val = AnchorVal {
+        anchor: Anchor::Html(HtmlAnchor::NonHeading(missing_anchor)),
+        referring_links: Rc::new(HashSet::new()),
+    };
+    //file_map.insert(mfa.file_anchor.path, missing_html_file_anchor);
+    //let anchor_val_set: HashSet<AnchorVal> = HashSet::new();
+    //anchor_val_set.insert(anchor_val);
+    //anchor_map.insert(&mfa.file_anchor.anchor, anchor_val_set);
+
+    Ok("".to_string())
+}
+*/
 
 // ## Tests
 #[cfg(test)]
