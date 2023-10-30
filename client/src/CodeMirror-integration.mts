@@ -340,7 +340,16 @@ class DocBlockWidget extends WidgetType {
         }
     }
 
-    destroy(dom: HTMLElement): void {}
+    // Per the [docs](https://codemirror.net/docs/ref/#view.WidgetType.destroy), "This is called when the an instance of the widget is removed from the editor view."
+    destroy(dom: HTMLElement): void {
+        // If this is the TinyMCE editor, save it.
+        const [contents_div, is_tinymce] = get_contents(dom);
+        if (is_tinymce) {
+            const codechat_body = document.getElementById("CodeChat-body")!;
+            const tinymce_div = document.getElementById("TinyMCE-inst")!;
+            codechat_body.insertBefore(tinymce_div, null);
+        }
+    }
 }
 
 // Given a doc block div element, return the contents div and if TinyMCE is
