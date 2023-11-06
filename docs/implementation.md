@@ -152,29 +152,30 @@ What we need to know:
 - To generate the TOC containing all anchors, we need a list of all anchors on a
   given page.
 
-Therefore, the cache must contain:
+Therefore, the cache must contain a `FileAnchor`, an enum of:
 
-- A non-HTML file (image, PDF, etc.). Generate an ID based on a checksum of the
-  file. Basically, this provides some way to find the (unmodified) file if it's
-  moved/renamed. Cache data: |path, ID, file's metadata, &set of referring
-  links|.
-- A HTML file. Store an ID as a comment in it somewhere, probably at the end of
-  the file. Cache data: |path, ID, file's metadata, &set of referring links|,
-  TOC numbering. It also contains a vector of headings and a vector of all
-  non-heading anchors:
-  - A heading anchor in an HTML file: |&containing file, ID, anchor's inner
-    HTML, a &set of all referring links, optional hyperlink|, numbering on this
-    page, a vector of non-heading anchors contained in this heading.
-  - A non-heading anchor in an HTML file: |&containing file, ID, anchor's inner
-    HTML, a &set of all referring links, optional hyperlink|, optional
-    &containing heading, snippet of surrounding text, numbering group, number.
+- A `PlainFileAnchor` (a non-HTML file -- an image, PDF, etc.). Generate an ID
+  based on a checksum of the file. Basically, this provides some way to find the
+  (unmodified) file if it's moved/renamed. Cache data: |path, ID, file's
+  metadata|.
+- An `HtmlFileAnchor` (an HTML file). Store an ID as a comment in it somewhere,
+  probably at the end of the file. Cache data: |path, ID, file's metadata|, TOC
+  numbering, a vector of `HeadingAnchor`s, a vector of `NonHeadingAnchor`s:
+  - A `HeadingAnchor` in an HTML file: |weak ref to the containing
+    `HtmlFileAnchor`, ID, anchor's inner HTML, optional hyperlink|, numbering on
+    this page, a vector of `NonHeadingAanchors` contained in this heading.
+  - A `NonHeadingAnchor` in an HTML file: |weak ref to the containing
+    `HtmlFileAnchor`, ID, anchor's inner HTML, optional hyperlink|, optional
+    parent heading, snippet of surrounding text, numbering group, number.
 
-A hyperlink consists of a &path and &ID.
+A `Hyperlink` consists of a path and ID the link refers to.\
+An `HtmlAnchor` is an enum of `HeadingAnchor` and `NonHeadingAnchor`.\
+An `Anchor` is an enum of a `FileAnchor` and an `HtmlAnchor`.
 
 Globals:
 
-- A map of &paths to files
-- A map of &IDs to (&anchors, set of &referring links)
+- A map of `PathBuf`s to `FileAnchors`.
+- A map of IDs to (`Anchor`, set of IDs of referring links)
 
 How to keep the sets of referring links up to date? If a link is deleted, we
 won't know until that file is removed. To fix, add a validate() function that
