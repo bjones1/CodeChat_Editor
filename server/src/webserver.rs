@@ -31,13 +31,15 @@ use std::{
 };
 
 // ### Third-party
+use actix::{Actor, StreamHandler};
 use actix_files;
 use actix_web::{
     get,
     http::header,
     http::header::{ContentDisposition, ContentType},
-    put, web, App, HttpRequest, HttpResponse, HttpServer, Responder,
+    put, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
+use actix_web_actors::ws;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -710,6 +712,32 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// Define HTTP actor
+struct MyWs;
+
+impl Actor for MyWs {
+    type Context = ws::WebsocketContext<Self>;
+}
+
+/// Handler for ws::Message message
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        match msg {
+            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            Ok(ws::Message::Text(text)) => ctx.text(text),
+            Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
+            _ => (),
+        }
+    }
+}
+
+async fn index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
+    println!("Here");
+    let resp = ws::start(MyWs {}, &req, stream);
+    println!("{:?}", resp);
+    resp
+}
+
 // ## Webserver startup
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
@@ -738,6 +766,7 @@ pub async fn main() -> std::io::Result<()> {
             // Reroute to the filesystem for typical user-requested URLs.
             .route("/", web::get().to(_root_fs_redirect))
             .route("/fs", web::get().to(_root_fs_redirect))
+            .route("/ws/", web::get().to(index))
     })
     .bind(("127.0.0.1", 8080))?
     .run()

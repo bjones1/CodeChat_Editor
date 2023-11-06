@@ -49,6 +49,7 @@ import "graphviz-webcomponent";
 import { tinymce, init } from "./tinymce-config.mjs";
 import TurndownService from "./turndown/turndown.browser.es.js";
 import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
+import ReconnectingWebSocket from "./ReconnectingWebSocket.cjs";
 
 // ### CSS
 import "./../static/css/CodeChatEditor.css";
@@ -63,6 +64,29 @@ const turndownService = new TurndownService({
     codeBlockStyle: "fenced",
     renderAsPure: false,
 });
+
+export const ws = new ReconnectingWebSocket!("ws://localhost:8080/ws/");
+// Identify this client on connection.
+ws.onopen = () => {
+    console.log(`CodeChat Client: websocket to CodeChat Server open.`);
+    ws.send("testing");
+};
+
+// Provide logging to help track down errors.
+ws.onerror = (event: any) => {
+    console.error(`CodeChat Client: websocket error ${event}.`);
+};
+
+ws.onclose = (event: any) => {
+    console.log(
+        `CodeChat Client: websocket closed by event ${event}. This should only happen on shutdown.`,
+    );
+};
+
+// Handle messages.
+ws.onmessage = (event: any) => {
+    console.log(`Message received: ${event}.`);
+};
 
 // Add the plugins from
 // [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm)
