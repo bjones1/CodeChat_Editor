@@ -58,6 +58,7 @@ import {
 import {
     ChangeDesc,
     EditorState,
+    Extension,
     StateField,
     StateEffect,
     EditorSelection,
@@ -224,7 +225,7 @@ const docBlockField = StateField.define<DecorationSet>({
 // transaction. They are often useful to model changes to custom state fields,
 // when those changes aren't implicit in document or selection changes." In this
 // case, provide a way to add a doc block.
-const addDocBlock = StateEffect.define<{
+export const addDocBlock = StateEffect.define<{
     from: number;
     to: number;
     indent: string;
@@ -244,7 +245,7 @@ const addDocBlock = StateEffect.define<{
 
 // Define an update. Note that we have only a position (the only data a view can
 // gather), rather than a from/to.
-const updateDocBlock = StateEffect.define<{
+export const updateDocBlock = StateEffect.define<{
     pos: number;
     indent: string;
     delimiter: string;
@@ -340,7 +341,9 @@ class DocBlockWidget extends WidgetType {
         }
     }
 
-    // Per the [docs](https://codemirror.net/docs/ref/#view.WidgetType.destroy), "This is called when the an instance of the widget is removed from the editor view."
+    // Per the [docs](https://codemirror.net/docs/ref/#view.WidgetType.destroy),
+    // "This is called when the an instance of the widget is removed from the
+    // editor view."
     destroy(dom: HTMLElement): void {
         // If this is the TinyMCE editor, save it.
         const [contents_div, is_tinymce] = get_contents(dom);
@@ -440,7 +443,15 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                                     is_first = false
                             ) {
                                 // Store the index of this node in its' parent
-                                // list of child nodes/children. Use `childNodes` on the first iteration, since the selection is often in a text node, which isn't in the `parents` list. However, using `childNodes` all the time causes trouble when reversing the selection -- sometimes, the `childNodes` change based on whether text nodes (such as a newline) are included are not after tinyMCE parses the content.
+                                // list of child nodes/children. Use
+                                // `childNodes` on the first iteration, since
+                                // the selection is often in a text node, which
+                                // isn't in the `parents` list. However, using
+                                // `childNodes` all the time causes trouble when
+                                // reversing the selection -- sometimes, the
+                                // `childNodes` change based on whether text
+                                // nodes (such as a newline) are included are
+                                // not after tinyMCE parses the content.
                                 let p = current_node.parentNode!;
                                 selection_path.unshift(
                                     Array.prototype.indexOf.call(
@@ -494,7 +505,10 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                                 ;
                                 selection_path.length;
                                 selection_node =
-                                    // As before, use the more-consistent `children` except for the last element, where we might be selecting a `text` node.
+                                    // As before, use the more-consistent
+                                    // `children` except for the last element,
+                                    // where we might be selecting a `text`
+                                    // node.
                                     (
                                         selection_path.length > 1
                                             ? selection_node.children
@@ -598,6 +612,8 @@ export const CodeMirror_load = async (
     codechat_body: HTMLDivElement,
     // The document to load.
     source: any,
+    // Additional extensions.
+    extensions: [Extension],
 ) => {
     codechat_body.innerHTML =
         '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents"></div>';
@@ -611,6 +627,7 @@ export const CodeMirror_load = async (
                 basicSetup,
                 underlineKeymap,
                 EditorView.lineWrapping,
+                ...extensions,
             ],
         },
         CodeMirror_JSON_fields,

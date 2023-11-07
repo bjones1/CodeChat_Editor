@@ -39,21 +39,33 @@
 //     writes this code to the disk.
 //
 // ## Imports
-//
+
 // ### JavaScript/TypeScript
-import "./EditorComponents.mjs";
+//
+// #### Third-party
+import { EditorView, ViewUpdate } from "@codemirror/view";
 import prettier from "prettier/esm/standalone.mjs";
 import parserMarkdown from "prettier/esm/parser-markdown.mjs";
-import "./graphviz-webcomponent-setup.mts";
-import "graphviz-webcomponent";
-import { tinymce, init } from "./tinymce-config.mjs";
+import ReconnectingWebSocket from "./ReconnectingWebSocket.cjs";
 import TurndownService from "./turndown/turndown.browser.es.js";
 import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
-import ReconnectingWebSocket from "./ReconnectingWebSocket.cjs";
+
+// #### Local
+import {
+    CodeMirror_load,
+    CodeMirror_save,
+    addDocBlock,
+    updateDocBlock,
+} from "./CodeMirror-integration.mjs";
+import "./EditorComponents.mjs";
+import "./graphviz-webcomponent-setup.mts";
+// This must be imported _after_ the previous setup import, so it's placed here,
+// instead of in the third-party category above.
+import "graphviz-webcomponent";
+import { tinymce, init } from "./tinymce-config.mjs";
 
 // ### CSS
 import "./../static/css/CodeChatEditor.css";
-import { CodeMirror_load, CodeMirror_save } from "./CodeMirror-integration.mjs";
 
 // ## Initialization
 //
@@ -190,7 +202,7 @@ const open_lp = (
             editors[0].focus(),
         );
     } else {
-        CodeMirror_load(codechat_body, source);
+        CodeMirror_load(codechat_body, source, [autosaveExtension]);
     }
 
     // <a id="CodeChatEditor_test"></a>If tests should be run, then the
@@ -289,6 +301,63 @@ const save = async (contents: CodeChatForWeb) => {
         `Save failed -- server returned ${response.status}, ${response.statusText}.`,
     );
 };
+
+// Autosave feature
+//
+// The ID of the autosave timer; when this timer expires, the document will be
+// autosaved.
+let autosaveTimeoutId: null | number = null;
+
+// True to enable autosave.
+let autosaveEnabled = true;
+
+// There doesn't seem to be any tracking of a dirty/clean flag built into
+// CodeMirror v6 (although
+// [v5 does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've
+// found is a
+// [forum post](https://discuss.codemirror.net/t/codemirror-6-proper-way-to-listen-for-changes/2395/11)
+// showing code to do this, which I use below.
+//
+// How this works: the
+// [EditorView.updateListener](https://codemirror.net/docs/ref/#codemirror) is a
+// [Facet](https://codemirror.net/docs/ref/#state.Facet) with an
+// [of function](https://codemirror.net/docs/ref/#state.Facet.of) that creates a
+// CodeMirror extension.
+const autosaveExtension = EditorView.updateListener.of(
+    // CodeMirror passes this function a
+    // [ViewUpdate](https://codemirror.net/docs/ref/#view.ViewUpdate) which
+    // describes a change being made to the document.
+    (v: ViewUpdate) => {
+        // The
+        // [docChanged](https://codemirror.net/docs/ref/#view.ViewUpdate.docChanged)
+        // flag is the relevant part of this change description. However, this only describes changes to the code blocks (the document, from CodeMirror's perspective).
+        let isChanged = v.docChanged;
+        // Look for changes to doc blocks as well; skip if a change was already detected for efficiency.
+        if (!v.docChanged && v.transactions?.length) {
+            // Check each effect of each transaction.
+            outer: for (let tr of v.transactions) {
+                for (let effect of tr.effects) {
+                    // Look for a change to a doc block.
+                    if (effect.is(addDocBlock) || effect.is(updateDocBlock)) {
+                        isChanged = true;
+                        break outer;
+                    }
+                }
+            }
+        }
+        if (isChanged) {
+            // When the document is changed, perform an autosave after no
+            // changes have occurred for a little while. To do this, first
+            // cancel any current timeout...
+            if (autosaveEnabled && autosaveTimeoutId !== null) {
+                clearTimeout(autosaveTimeoutId);
+            }
+            // ...then start another timeout which saves the document when it
+            // expires.
+            autosaveTimeoutId = setTimeout(on_save, 1000);
+        }
+    },
+);
 
 // ## Helper functions
 const prettier_markdown = async (markdown: string, print_width: number) => {
