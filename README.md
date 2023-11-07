@@ -36,21 +36,21 @@ These form a set of high-level requirements to guide the project.
   <a id="vision-ide-integration"></a>[wide variety of IDEs/text editors](index.md#ide-integration).
 - Load a document from source code, allow edits in a GUI, then save it back to
   source code.
-  - Provide word processor GUI tools (insert hyperlink, images, headings,
-    change font, etc) for doc blocks.
+  - Provide word processor GUI tools (insert hyperlink, images, headings, change
+    font, etc) for doc blocks.
   - Provide text editor/IDE tools (syntax highlighting, line numbers, show
     linter feedback) for code blocks.
 - Zero build: eliminate the traditional project build process -- make it almost
   instantaneous.
 - Doc block markup should be readable and well-known.
 - Support both a single-file mode and a project mode.
-  - A project is a specific directory tree, identified by the presence of a
-    TOC. A TOC is just a plain Markdown file with a specific name.
+  - A project is a specific directory tree, identified by the presence of a TOC.
+    A TOC is just a plain Markdown file with a specific name.
   - A page in a project build is a single-file page plus:
     - A TOC, along with previous/next/up navigation. The TOC is synchronized to
       the current page.
-    - Numbering comes from the current page's location within the TOC. Pages
-      not in the TOC aren't numbered.
+    - Numbering comes from the current page's location within the TOC. Pages not
+      in the TOC aren't numbered.
 - <a id="authoring-support"></a>Provide
   [authoring support](index.md#authoring-support), which allows authors to
   easily create book/project-like features. In particular:
@@ -100,8 +100,8 @@ This design treats source code on a line-by-line basis. It does not classify at
 any deeper granularity -- for example, it does not support a mix of code block
 and doc block on the same line.
 
-A code block consists of all lines in a source file which aren't classified as
-a doc block. Note that code blocks may consist entirely of a comment, as
+A code block consists of all lines in a source file which aren't classified as a
+doc block. Note that code blocks may consist entirely of a comment, as
 illustrated below.
 
 A doc block consists of a comment (inline or block) optionally preceded by
@@ -128,6 +128,32 @@ and IEEE Spectrum's
 
 Initial targets come from the Stack Overflow Developer Survey 2022's section on
 [integrated development environments](https://survey.stackoverflow.co/2022/#section-most-popular-technologies-integrated-development-environment).
+
+There are two basic approaches:
+
+- Sync with current window (simplest): have an additional IDE window open that
+  displays the file currently being edited. This requires:
+  - Auto-save: the CodeChat Editor autosaves any changes made, to keep files
+    synced. Have the host IDE auto-save, so that updates get pushed quickly.
+  - Auto-reload: if a the currently-opened file changes, then automatically
+    reload it. Have the host IDE do the same.
+  - Current file sync: when the current tab changes, update the CodeChat Editor
+    with the new file. Ideally, also sync the cursor position.
+- Switchable editor (better, complex): provide a command to switch the current
+  editor with the CodeChat Editor and vice versa. This requires:
+  - To switch from the IDE editor to CodeChat, need to send the text of the
+    IDE's editor to CodeChat. For the opposite, need to get the CodeChat Editor
+    text and send that to the IDE's editor.
+  - Need to preserve the current cursor location across switches. This is harder
+    inside a doc block. An approximate find might be a good option.
+
+Additional features:
+
+- Smart navigation: following links to a locally-editable file will open that
+  file in the current editor, saving any edits before navigating away. Following
+  non-local links opens the file in an external browser.
+- Memory: the editor remembers the last cursor location for recently-opened
+  files, restoring that on the next file open.
 
 ### Zero-build support
 

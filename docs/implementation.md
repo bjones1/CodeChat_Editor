@@ -100,6 +100,17 @@ On save:
 - Save the file to disk.
 - If dirty, re-load the file.
 
+### IDE/editor integration
+
+- Use a websocket to send a load command to the CodeChat Editor, causing it to
+  load the specified text.
+- Use a websocket to send a save command, which causes the CodeChat Editor to
+  save the current file.
+
+How to specify a filename? Current, we use the URL's path. But, want another way
+to store this so we can load a new file in the current editor to improve
+performance, flexibility.
+
 ### Table of contents
 
 - While the TOC file must be placed in the root of the project, it will be
