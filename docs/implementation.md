@@ -102,14 +102,42 @@ On save:
 
 ### IDE/editor integration
 
-- Use a websocket to send a load command to the CodeChat Editor, causing it to
-  load the specified text.
-- Use a websocket to send a save command, which causes the CodeChat Editor to
-  save the current file.
+Clients send two commands:
 
-How to specify a filename? Current, we use the URL's path. But, want another way
-to store this so we can load a new file in the current editor to improve
-performance, flexibility.
+- On startup, they send an ID and some metadata (type of IDE, plugin version,
+  etc.) Perhaps replace this with URL parameters on first connection.
+- They send an update command, with file path, file contents, and cursor/scroll
+  position. If a field is omitted, it means there's no change to it since the
+  last command. For example, sending just a cursor/scroll position is used when
+  the user scrolls but doesn't edit.
+- They send a close command.
+
+Clients always come in pairs: one IDE client is always paired with one CodeChat
+Editor client. The server relays messages from one client to the other, using a
+queue. It translates file contents between source code and the CodeChat Editor
+format.
+
+The CodeChat Editor changes all links to documents on the local filesystem, so
+that following a link turns into a websocket-based update command, instead of a
+page reload. In addition, this allows us to save the file before the current
+page is closed.
+
+Simplest non-IDE integration: the file watcher.
+
+- On startup, it sends the current file to the CodeChat Editor.
+- It uses a file watcher to send update commands when the current file changes.
+- It writes a file to disk when it receives an update command.
+
+Simplest IDE integration:
+
+- On startup, it sends the current file to the CodeChat Editor.
+- It sends update commands if edits are made in the IDE, when scrolling, or when
+  the active editor changes.
+- It updates the IDE contents or opens a new file when it receives a update
+  command.
+
+More complex IDE integration: everything that the simple IDE does, plus the
+ability to toggle between the IDE's editor and the CodeChat Editor.
 
 ### Table of contents
 
