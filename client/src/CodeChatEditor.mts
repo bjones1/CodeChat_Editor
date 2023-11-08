@@ -62,7 +62,7 @@ import "./graphviz-webcomponent-setup.mts";
 // This must be imported _after_ the previous setup import, so it's placed here,
 // instead of in the third-party category above.
 import "graphviz-webcomponent";
-import { tinymce, init } from "./tinymce-config.mjs";
+import { tinymce, init, Editor } from "./tinymce-config.mjs";
 
 // ### CSS
 import "./../static/css/CodeChatEditor.css";
@@ -198,9 +198,24 @@ const open_lp = (
         // \`source.doc\`. We don't need the CodeMirror editor at all; instead,
         // treat it like a single doc block contents div./p>
         codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
-        init({ selector: ".CodeChat-doc-contents" }).then((editors) =>
-            editors[0].focus(),
-        );
+        init({
+            selector: ".CodeChat-doc-contents",
+            // In the doc-only mode, add autosave functionality. While there is
+            // an
+            // [autosave plugin](https://www.tiny.cloud/docs/tinymce/6/autosave/),
+            // this autosave functionality is completely different from the
+            // autosave provided here. Per
+            // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
+            // this is how to create a TinyMCE event handler.
+            setup: (editor: Editor) => {
+                // The
+                // [supported browser-native events list](https://www.tiny.cloud/docs/tinymce/6/events/#supported-browser-native-events)
+                // includes the `input` event.
+                editor.on("input", (_event: Event) => {
+                    startAutosaveTimer();
+                });
+            },
+        }).then((editors) => editors[0].focus());
     } else {
         CodeMirror_load(codechat_body, source, [autosaveExtension]);
     }
@@ -311,6 +326,21 @@ let autosaveTimeoutId: null | number = null;
 // True to enable autosave.
 let autosaveEnabled = true;
 
+// Schedule an autosave; call this whenever the document is modified.
+const startAutosaveTimer = () => {
+    if (!autosaveEnabled) {
+        return;
+    }
+    // When the document is changed, perform an autosave after no changes have
+    // occurred for a little while. To do this, first cancel any current
+    // timeout...
+    if (autosaveTimeoutId !== null) {
+        clearTimeout(autosaveTimeoutId);
+    }
+    // ...then start another timeout which saves the document when it expires.
+    autosaveTimeoutId = setTimeout(on_save, 1000);
+};
+
 // There doesn't seem to be any tracking of a dirty/clean flag built into
 // CodeMirror v6 (although
 // [v5 does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've
@@ -330,9 +360,12 @@ const autosaveExtension = EditorView.updateListener.of(
     (v: ViewUpdate) => {
         // The
         // [docChanged](https://codemirror.net/docs/ref/#view.ViewUpdate.docChanged)
-        // flag is the relevant part of this change description. However, this only describes changes to the code blocks (the document, from CodeMirror's perspective).
+        // flag is the relevant part of this change description. However, this
+        // only describes changes to the code blocks (the document, from
+        // CodeMirror's perspective).
         let isChanged = v.docChanged;
-        // Look for changes to doc blocks as well; skip if a change was already detected for efficiency.
+        // Look for changes to doc blocks as well; skip if a change was already
+        // detected for efficiency.
         if (!v.docChanged && v.transactions?.length) {
             // Check each effect of each transaction.
             outer: for (let tr of v.transactions) {
@@ -346,15 +379,7 @@ const autosaveExtension = EditorView.updateListener.of(
             }
         }
         if (isChanged) {
-            // When the document is changed, perform an autosave after no
-            // changes have occurred for a little while. To do this, first
-            // cancel any current timeout...
-            if (autosaveEnabled && autosaveTimeoutId !== null) {
-                clearTimeout(autosaveTimeoutId);
-            }
-            // ...then start another timeout which saves the document when it
-            // expires.
-            autosaveTimeoutId = setTimeout(on_save, 1000);
+            startAutosaveTimer();
         }
     },
 );
