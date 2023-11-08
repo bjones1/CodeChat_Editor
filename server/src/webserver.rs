@@ -147,17 +147,16 @@ async fn save_source<'a>(
     // [Data](https://docs.rs/actix-web/4.3.1/actix_web/web/struct.Data.html),
     // which provides access to application-wide data. (TODO: link to where this
     // is defined.)
-    language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
+    app_state: web::Data<AppState<'_>>,
 ) -> impl Responder {
     // Translate from the CodeChatForWeb format to the contents of a source
     // file.
-    let file_contents = match codechat_for_web_to_source(
-        codechat_for_web.into_inner(),
-        language_lexers_compiled.into_inner().as_ref(),
-    ) {
-        Ok(r) => r,
-        Err(message) => return save_source_response(false, &message),
-    };
+    let language_lexers_compiled = &app_state.lexers;
+    let file_contents =
+        match codechat_for_web_to_source(codechat_for_web.into_inner(), language_lexers_compiled) {
+            Ok(r) => r,
+            Err(message) => return save_source_response(false, &message),
+        };
 
     // Save this string to a file. Add a leading slash for Linux/OS X: this
     // changes from `foo/bar.c` to `/foo/bar.c`. Windows paths already starts
@@ -213,7 +212,7 @@ async fn _root_fs_redirect() -> impl Responder {
 #[get("/fs/{path:.*}")]
 async fn serve_fs(
     req: HttpRequest,
-    language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
+    app_state: web::Data<AppState<'_>>,
     orig_path: web::Path<String>,
 ) -> impl Responder {
     let mut fixed_path = orig_path.to_string();
@@ -247,7 +246,7 @@ async fn serve_fs(
     if canon_path.is_dir() {
         return dir_listing(orig_path.as_str(), &canon_path).await;
     } else if canon_path.is_file() {
-        return serve_file(&canon_path, &req, language_lexers_compiled).await;
+        return serve_file(&canon_path, &req, app_state).await;
     }
 
     // It's not a directory or a file...we give up. For simplicity, don't handle
@@ -422,7 +421,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
 async fn serve_file(
     file_path: &Path,
     req: &HttpRequest,
-    language_lexers_compiled: web::Data<LanguageLexersCompiled<'_>>,
+    app_state: web::Data<AppState<'_>>,
 ) -> HttpResponse {
     let raw_dir = file_path.parent().unwrap();
     // Use a lossy conversion, since this is UI display, not filesystem access.
@@ -517,12 +516,9 @@ async fn serve_file(
         }
     }
 
-    let file_type_wrapped = source_to_codechat_for_web(
-        file_contents,
-        ext,
-        is_toc,
-        language_lexers_compiled.into_inner().as_ref(),
-    );
+    let language_lexers_compiled = &app_state.lexers;
+    let file_type_wrapped =
+        source_to_codechat_for_web(file_contents, ext, is_toc, language_lexers_compiled);
     if let Err(err_string) = file_type_wrapped {
         return html_not_found(&err_string);
     }
@@ -738,6 +734,11 @@ async fn index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, E
     resp
 }
 
+// Define the [state](https://actix.rs/docs/application/#state) available to all endpoints.
+struct AppState<'a> {
+    lexers: LanguageLexersCompiled<'a>,
+}
+
 // ## Webserver startup
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
@@ -753,7 +754,9 @@ pub async fn main() -> std::io::Result<()> {
         // Start the server.
         App::new()
             // Provide data to all endpoints -- the compiler lexers.
-            .app_data(web::Data::new(compile_lexers(LANGUAGE_LEXER_ARR)))
+            .app_data(web::Data::new(AppState {
+                lexers: compile_lexers(LANGUAGE_LEXER_ARR),
+            }))
             // Serve static files per the
             // [docs](https://actix.rs/docs/static-files).
             .service(actix_files::Files::new(
