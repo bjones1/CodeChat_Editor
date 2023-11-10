@@ -266,7 +266,14 @@ pub const LANGUAGE_LEXER_ARR: &[LanguageLexer] = &[
     // ### JavaScript
     LanguageLexer {
         ace_mode: "javascript",
-        ext_arr: &["js", "mjs"],
+        ext_arr: &[
+            "js", "mjs",
+            // Note that
+            // [Qt's QML language](https://doc.qt.io/qt-6/qtqml-syntax-basics.html)
+            // is basically JSON with some embedded JavaScript. Treat it as
+            // JavaScript, since those rules include template literals.
+            "qml",
+        ],
         // See
         // [§12.4 Comments](https://262.ecma-international.org/13.0/#sec-comments)
         inline_comment_delim_arr: &["//"],
