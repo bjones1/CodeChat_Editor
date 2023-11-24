@@ -102,15 +102,17 @@ On save:
 
 ### IDE/editor integration
 
-Clients send two commands:
+Client messages:
 
 - On startup, they send an ID and some metadata (type of IDE, plugin version,
-  etc.) Perhaps replace this with URL parameters on first connection.
-- They send an update command, with file path, file contents, and cursor/scroll
+  etc.)
+- They send an update message, with file path, file contents, and cursor/scroll
   position. If a field is omitted, it means there's no change to it since the
   last command. For example, sending just a cursor/scroll position is used when
   the user scrolls but doesn't edit.
-- They send a close command.
+- CodeChat Client only: a load message, which requests the IDE to send an update
+  with the contents of the loaded file.
+- They send a close message.
 
 Clients always come in pairs: one IDE client is always paired with one CodeChat
 Editor client. The server relays messages from one client to the other, using a
@@ -118,9 +120,8 @@ queue. It translates file contents between source code and the CodeChat Editor
 format.
 
 The CodeChat Editor changes all links to documents on the local filesystem, so
-that following a link turns into a websocket-based update command, instead of a
-page reload. In addition, this allows us to save the file before the current
-page is closed.
+that following a link turns into an update message, instead of a page reload. In
+addition, this allows us to save the file before the current page is closed.
 
 Simplest non-IDE integration: the file watcher.
 
