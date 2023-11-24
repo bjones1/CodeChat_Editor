@@ -28,10 +28,11 @@ use std::{
     env,
     ffi::OsStr,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 // ### Third-party
-use actix::{Actor, StreamHandler};
+use actix::{Actor, Addr, StreamHandler};
 use actix_files;
 use actix_web::{
     get,
@@ -708,15 +709,95 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Define HTTP actor
-struct MyWs;
+/// Define the actor for a CodeChat Editor client websocket.
+struct ClientWebsocket<'a> {
+    app_state: &'a AppState<'a>,
+    ide_address: Addr<IdeExtensionWebsocket>
+}
 
-impl Actor for MyWs {
+impl<'a> Actor for ClientWebsocket<'a> {
     type Context = ws::WebsocketContext<Self>;
 }
 
 /// Handler for ws::Message message
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for ClientWebsocket {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        match msg {
+            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            Ok(ws::Message::Text(text)) => {
+                let client_message: ClientMessage = serde_json::from_str(&text)
+        .expect("JSON does not have correct format.");
+
+                // Does this message contain an `Update` with `contents`?
+                if let ClientMessage::Update(update_message_contents) = client_message {
+                    if let Some(contents) = update_message_contents.contents {
+                        let codechat_for_web = if let ContentsType::Client(cfw) = contents { cfw
+                        } else {
+                            panic!("The CodeChat Client sent an update message containing source code.")
+                        };
+                        // Yes, os translate the message contents from the CodeChatForWeb format to source code.
+                        let language_lexers_compiled = &ctx.app_state.lexers;
+                        let source_contents =
+                            match codechat_for_web_to_source(codechat_for_web, language_lexers_compiled) {
+                                Ok(r) => r,
+                                Err(message) => {
+                                    let response = ErrorResponse {
+                                        success: false,
+                                        message: message.to_string(),
+                                    };
+                                    let body = serde_json::to_string(&response).unwrap();
+                                    ctx.text(body);
+                                    return;
+                                }
+                            };
+                        // Update the message to contain the equivalent source code.
+                        contents = ContentsType::Source(source_contents);
+                    }
+                }
+
+                self.ide_address.try_send(client_message);
+
+                ctx.text(text)
+            },
+            Ok(ws::Message::Binary(bin)) => ctx.text(format!("Unexpected binary data {:?}", &bin)),
+            _ => (),
+        }
+    }
+}
+
+/// The endpoint for a CodeChat Editor client websocket.
+async fn ws_client(req: HttpRequest, stream: web::Payload, app_state: web::Data<AppState<'_>>) -> Result<HttpResponse, Error> {
+    // Look for an unpaired client.
+    let mut unpaired_clients = app_state.unpaired_clients.lock().unwrap();
+    if let Some(mut first_unpaired_client) = unpaired_clients.pop() {
+        // Pair it with this CodeChat Editor client.
+        let client_websocket = ClientWebsocket { app_state: app_state.as_ref(), ide_address: first_unpaired_client.ide_address.clone() };
+
+        // Unfortunately, `ws::start` doesn't provide the address of the Actor it starts. The following lines implement `let resp = ws::start(tmp, &req, stream);` but also capture the address.
+        let mut res = ws::handshake(&req)?;
+        let (address, stream_) = ws::WebsocketContext::create_with_addr(client_websocket, stream);
+        let resp = Ok(res.streaming(stream_));
+
+        first_unpaired_client.codechat_address = Some(address);
+        app_state.clients.lock().unwrap().push(first_unpaired_client);
+        resp
+    } else {
+        // Error: no waiting IDE extension to pair with. Return an error.
+        Ok(HttpResponse::UnprocessableEntity()
+            .content_type(ContentType::json())
+            .body("No IDE client to pair with"))
+    }
+}
+
+/// Define the actor for an IDE extension websocket.
+struct IdeExtensionWebsocket;
+
+impl Actor for IdeExtensionWebsocket {
+    type Context = ws::WebsocketContext<Self>;
+}
+
+/// Handler for ws::Message message
+impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for IdeExtensionWebsocket {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
             Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
@@ -727,9 +808,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for MyWs {
     }
 }
 
-async fn index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
-    println!("Here");
-    let resp = ws::start(MyWs {}, &req, stream);
+// The endpoint for an IDE websocket.
+async fn ws_ide(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, Error> {
+    let resp = ws::start(IdeExtensionWebsocket {}, &req, stream);
     println!("{:?}", resp);
     resp
 }
@@ -737,9 +818,59 @@ async fn index(req: HttpRequest, stream: web::Payload) -> Result<HttpResponse, E
 // Define the [state](https://actix.rs/docs/application/#state) available to all endpoints.
 struct AppState<'a> {
     lexers: LanguageLexersCompiled<'a>,
+    /// Paired IDE plugin/CodeChat Editor clients, which message each other through this server.
+    clients: Mutex<Vec<ClientData>>,
+    /// IDE clients waiting for a CodeChat Editor to pair with.
+    unpaired_clients: Mutex<Vec<ClientData>>,
 }
 
-// ## Webserver startup
+// This contains a pair of websockets (an IDE extension and the CodeChat Editor client), along with queues for each client and some supporting information.
+struct ClientData {
+    /// The address of the IDE extension's actor.
+    ide_address: Addr<IdeExtensionWebsocket>,
+    /// This is None if a CodeChat Editor hasn't connected yet; otherwise, it's the address of the CodeChat Editor client's actor.
+    codechat_address: Option<Addr<ClientWebsocket>>,
+    /// The absolute path to the file in use.
+    path: PathBuf
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum IdeType {
+    FileWatcher,
+    VSCode,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum ClientMessage<'a> {
+    /// This is sent when the client first starts up.
+    Opened(IdeType),
+    /// This sends an update; any missing fields are unchanged.
+    Update(UpdateMessageContents<'a>),
+    /// Only the CodeChat Client editor may send this; it requests the IDE to load the provided file.
+    Load(PathBuf),
+    /// Sent when the client is closing.
+    Closing,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct UpdateMessageContents<'a> {
+    /// An absolute path to the file currently in use.
+    path: Option<PathBuf>,
+    /// The contents of this file.
+    contents: Option<ContentsType<'a>>,
+    /// The current cursor position in the file, where 0 = before the first character in the file and contents.length() = after the last character in the file. TODO: Selections are not yet supported.
+    cursor_position: Option<u32>,
+    /// The normalized vertical scroll position in the file, where 0 = top and 1 = bottom.
+    scroll_position: Option<f32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum ContentsType<'a> {
+    Source(String),
+    Client(CodeChatForWeb<'a>),
+}
+
+/// ## Webserver startup
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
@@ -753,9 +884,13 @@ pub async fn main() -> std::io::Result<()> {
 
         // Start the server.
         App::new()
-            // Provide data to all endpoints -- the compiler lexers.
+            // Provide data to all endpoints:
             .app_data(web::Data::new(AppState {
+                // ...lexers,
                 lexers: compile_lexers(LANGUAGE_LEXER_ARR),
+                // and client pairs.
+                clients: vec![].into(),
+                unpaired_clients: vec![].into(),
             }))
             // Serve static files per the
             // [docs](https://actix.rs/docs/static-files).
@@ -769,7 +904,9 @@ pub async fn main() -> std::io::Result<()> {
             // Reroute to the filesystem for typical user-requested URLs.
             .route("/", web::get().to(_root_fs_redirect))
             .route("/fs", web::get().to(_root_fs_redirect))
-            .route("/ws/", web::get().to(index))
+            // Websockets for the IDE extension and the CodeChat Editor client.
+            .route("/ws/client", web::get().to(ws_client))
+            .route("/ws/ide", web::get().to(ws_ide))
     })
     .bind(("127.0.0.1", 8080))?
     .run()
