@@ -60,12 +60,12 @@ pub fn codechat_for_web_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
     codechat_for_web: CodeChatForWeb<'_>,
     // Lexer info, needed to transform the `LexedSourceFile` into source code.
-    language_lexers_compiled: &LanguageLexersCompiled<'_>,
+    language_lexers_compiled: &LanguageLexersCompiled,
 ) -> Result<String, String> {
     // Given the mode, find the lexer.
     let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match language_lexers_compiled
         .map_mode_to_lexer
-        .get(codechat_for_web.metadata.mode.as_str())
+        .get(&codechat_for_web.metadata.mode)
     {
         Some(v) => v,
         None => return Err("Invalid mode".to_string()),
@@ -142,7 +142,7 @@ fn code_doc_block_vec_to_source(
                 let is_inline_delim = lexer
                     .language_lexer
                     .inline_comment_delim_arr
-                    .contains(&doc_block.delimiter.as_str());
+                    .contains(&doc_block.delimiter);
 
                 // Build a comment based on the type of the delimiter.
                 if is_inline_delim {
@@ -163,7 +163,7 @@ fn code_doc_block_vec_to_source(
                         .iter()
                         .position(|bc| bc.opening == doc_block.delimiter)
                     {
-                        Some(index) => lexer.language_lexer.block_comment_delim_arr[index].closing,
+                        Some(index) => &lexer.language_lexer.block_comment_delim_arr[index].closing,
                         None => {
                             return Err(format!(
                                 "Unknown comment opening delimiter '{}'.",
@@ -192,14 +192,16 @@ fn code_doc_block_vec_to_source(
                                 Some(stripped_line) => {
                                     stripped_line.to_string()
                                         + " "
-                                        + block_comment_closing_delimiter
+                                        + &block_comment_closing_delimiter
                                         + "\n"
                                 }
                                 // otherwise (i.e. there's no final newline),
                                 // just include a space and the closing
                                 // delimiter.
                                 None => {
-                                    content_line.to_string() + " " + block_comment_closing_delimiter
+                                    content_line.to_string()
+                                        + " "
+                                        + &block_comment_closing_delimiter
                                 }
                             }
                         } else {
@@ -259,23 +261,23 @@ pub fn source_to_codechat_for_web<'a>(
     // True if this file is a TOC.
     _is_toc: bool,
     // Lexers.
-    language_lexers_compiled: &LanguageLexersCompiled<'_>,
+    language_lexers_compiled: &LanguageLexersCompiled,
 ) -> Result<FileType<'a>, String> {
     // Determine the lexer to use for this file.
     let ace_mode;
     // First, search for a lexer directive in the file contents.
     let lexer = if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
         ace_mode = captures[1].to_string();
-        match language_lexers_compiled
-            .map_mode_to_lexer
-            .get(&ace_mode.as_ref())
-        {
+        match language_lexers_compiled.map_mode_to_lexer.get(&ace_mode) {
             Some(v) => v,
             None => return Err(format!("<p>Unknown lexer type {}.</p>", &ace_mode)),
         }
     } else {
         // Otherwise, look up the lexer by the file's extension.
-        if let Some(llc) = language_lexers_compiled.map_ext_to_lexer_vec.get(file_ext) {
+        if let Some(llc) = language_lexers_compiled
+            .map_ext_to_lexer_vec
+            .get(&file_ext.to_string())
+        {
             llc.first().unwrap()
         } else {
             // The file type is unknown; treat it as plain text.
@@ -289,7 +291,7 @@ pub fn source_to_codechat_for_web<'a>(
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.ace_mode.to_string(),
         },
-        source: if lexer.language_lexer.ace_mode == "markdown" {
+        source: if lexer.language_lexer.ace_mode.as_str() == "markdown" {
             // Document-only files are easy: just encode the contents.
             let html = markdown_to_html(&file_contents);
             // TODO: process the HTML.
@@ -596,8 +598,9 @@ fn html_analyze(
 // ## Tests
 #[cfg(test)]
 mod tests {
-    use crate::lexer::supported_languages::LANGUAGE_LEXER_ARR;
-    use crate::lexer::{compile_lexers, CodeDocBlock, DocBlock};
+    use crate::lexer::{
+        compile_lexers, supported_languages::get_language_lexer_vec, CodeDocBlock, DocBlock,
+    };
     use crate::processing::{
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
         source_to_codechat_for_web,
@@ -674,7 +677,7 @@ mod tests {
     // tests, we just need to do a bit of testing.
     #[test]
     fn test_codechat_for_web_to_source() {
-        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
+        let llc = compile_lexers(get_language_lexer_vec());
 
         let codechat_for_web = build_codechat_for_web("python", "", vec![]);
         assert_eq!(
@@ -793,8 +796,8 @@ mod tests {
     // A language with just one inline comment delimiter and no block comments.
     #[test]
     fn test_code_doc_blocks_to_source_py() {
-        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
-        let py_lexer = llc.map_mode_to_lexer.get("python").unwrap();
+        let llc = compile_lexers(get_language_lexer_vec());
+        let py_lexer = llc.map_mode_to_lexer.get(&"python".to_string()).unwrap();
 
         // An empty document.
         assert_eq!(code_doc_block_vec_to_source(vec![], py_lexer).unwrap(), "");
@@ -856,8 +859,8 @@ mod tests {
     // delimiters.
     #[test]
     fn test_code_doc_blocks_to_source_css() {
-        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
-        let css_lexer = llc.map_mode_to_lexer.get("css").unwrap();
+        let llc = compile_lexers(get_language_lexer_vec());
+        let css_lexer = llc.map_mode_to_lexer.get(&"css".to_string()).unwrap();
 
         // An empty document.
         assert_eq!(code_doc_block_vec_to_source(vec![], css_lexer).unwrap(), "");
@@ -928,8 +931,8 @@ mod tests {
     // A language with multiple inline and block comment styles.
     #[test]
     fn test_code_doc_blocks_to_source_csharp() {
-        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
-        let csharp_lexer = llc.map_mode_to_lexer.get("csharp").unwrap();
+        let llc = compile_lexers(get_language_lexer_vec());
+        let csharp_lexer = llc.map_mode_to_lexer.get(&"csharp".to_string()).unwrap();
 
         // An empty document.
         assert_eq!(
@@ -974,7 +977,7 @@ mod tests {
     // TODO.
     #[test]
     fn test_source_to_codechat_for_web_1() {
-        let llc = compile_lexers(LANGUAGE_LEXER_ARR);
+        let llc = compile_lexers(get_language_lexer_vec());
 
         // A file with an unknown extension and no lexer, which is classified as
         // a text file.

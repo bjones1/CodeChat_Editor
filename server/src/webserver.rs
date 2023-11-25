@@ -134,7 +134,7 @@ lazy_static! {
 /// ## Save endpoint
 #[put("/fs/{path:.*}")]
 /// The Save button in the CodeChat Editor Client posts to this endpoint.
-async fn save_source<'a>(
+async fn save_source(
     // The path to save this file to. See
     // [Path](https://actix.rs/docs/extractors#path), which extracts parameters
     // from the request's path.
@@ -142,13 +142,13 @@ async fn save_source<'a>(
     // The source file to save, in web format. See
     // [JSON](https://actix.rs/docs/extractors#json), which deserializes the
     // request body into the provided struct (here, `CodeChatForWeb`).
-    codechat_for_web: web::Json<CodeChatForWeb<'a>>,
+    codechat_for_web: web::Json<CodeChatForWeb<'_>>,
     // Lexer info, needed to transform the `CodeChatForWeb` into source code.
     // See
     // [Data](https://docs.rs/actix-web/4.3.1/actix_web/web/struct.Data.html),
     // which provides access to application-wide data. (TODO: link to where this
     // is defined.)
-    app_state: web::Data<AppState<'_>>,
+    app_state: web::Data<AppState>,
 ) -> impl Responder {
     // Translate from the CodeChatForWeb format to the contents of a source
     // file.
@@ -213,7 +213,7 @@ async fn _root_fs_redirect() -> impl Responder {
 #[get("/fs/{path:.*}")]
 async fn serve_fs(
     req: HttpRequest,
-    app_state: web::Data<AppState<'_>>,
+    app_state: web::Data<AppState>,
     orig_path: web::Path<String>,
 ) -> impl Responder {
     let mut fixed_path = orig_path.to_string();
@@ -422,7 +422,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
 async fn serve_file(
     file_path: &Path,
     req: &HttpRequest,
-    app_state: web::Data<AppState<'_>>,
+    app_state: web::Data<AppState>,
 ) -> HttpResponse {
     let raw_dir = file_path.parent().unwrap();
     // Use a lossy conversion, since this is UI display, not filesystem access.
@@ -887,7 +887,7 @@ pub async fn main() -> std::io::Result<()> {
             // Provide data to all endpoints:
             .app_data(web::Data::new(AppState {
                 // ...lexers,
-                lexers: compile_lexers(LANGUAGE_LEXER_ARR),
+                lexers: compile_lexers(get_language_lexer_vec()),
                 // and client pairs.
                 clients: vec![].into(),
                 unpaired_clients: vec![].into(),

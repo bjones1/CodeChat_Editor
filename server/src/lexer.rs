@@ -62,16 +62,18 @@ use regex::Regex;
 ///     newlines in strings, a separate case, are handled correctly).
 ///
 /// This struct defines the delimiters for a block comment.
-pub struct BlockCommentDelim<'a> {
+#[derive(Clone)]
+pub struct BlockCommentDelim {
     /// A string specifying the opening comment delimiter for a block comment.
-    pub opening: &'a str,
+    pub opening: String,
     /// A string specifying the closing comment delimiter for a block comment.
-    pub closing: &'a str,
+    pub closing: String,
     /// True if block comment may be nested.
     is_nestable: bool,
 }
 
 /// Define the types of newlines supported in a string.
+#[derive(Clone)]
 enum NewlineSupport {
     /// This string delimiter allows unescaped newlines. This is a multiline
     /// string.
@@ -85,13 +87,14 @@ enum NewlineSupport {
 }
 
 /// Define a string from the lexer's perspective.
-struct StringDelimiterSpec<'a> {
+#[derive(Clone)]
+struct StringDelimiterSpec {
     /// Delimiter to indicate the start and end of a string.
-    delimiter: &'a str,
+    delimiter: String,
     /// Escape character, to allow inserting the string delimiter into the
     /// string. Empty if this string delimiter doesn't provide an escape
     /// character.
-    escape_char: &'a str,
+    escape_char: String,
     /// Newline handling. This value cannot be `Escaped` if the `escape_char` is
     /// empty.
     newline_support: NewlineSupport,
@@ -100,17 +103,17 @@ struct StringDelimiterSpec<'a> {
 /// This defines the delimiters for a
 /// [heredoc](https://en.wikipedia.org/wiki/Here_document) (or heredoc-like
 /// literal).
-struct HeredocDelim<'a> {
+struct HeredocDelim {
     /// The prefix before the heredoc's delimiting identifier.
-    start_prefix: &'a str,
+    start_prefix: String,
     /// A regex which matches the delimiting identifier.
-    delim_ident_regex: &'a str,
+    delim_ident_regex: String,
     /// The suffix after the delimiting identifier.
-    start_suffix: &'a str,
+    start_suffix: String,
     /// The prefix before the second (closing) delimiting identifier.
-    stop_prefix: &'a str,
+    stop_prefix: String,
     /// The suffix after the heredoc's closing delimiting identifier.
-    stop_suffix: &'a str,
+    stop_suffix: String,
 }
 
 /// Provide a method to handle special cases that don't fit within the current
@@ -132,39 +135,39 @@ enum SpecialCase {
 
 /// Define a language by providing everything this lexer needs in order to split
 /// it into code and doc blocks.
-pub struct LanguageLexer<'a> {
+pub struct LanguageLexer {
     /// The [Ace](https://ace.c9.io/)
     /// [mode](https://github.com/ajaxorg/ace/tree/master/src/mode) to use for
     /// this language. The CodeChat Editor Client uses this to tell Ace the mode
     /// to use. It's can also be used in a specially-formatted comment in a
     /// source file to override the lexer chosen by looking at the file's
     /// extension.
-    pub ace_mode: &'a str,
+    pub ace_mode: Arc<String>,
     /// An array of file extensions for this language. They \_do not_begin with
     /// a period, such as `rs`. This is the typical way that the CodeChat Editor
     /// uses to determine which lexer to use for a given source file.
-    ext_arr: &'a [&'a str],
+    ext_arr: Vec<Arc<String>>,
     /// An array of strings which specify inline comment delimiters. Empty if
     /// this language doesn't provide inline comments.
-    pub inline_comment_delim_arr: &'a [&'a str],
+    pub inline_comment_delim_arr: Vec<String>,
     /// An array which specifies opening and closing block comment delimiters.
     /// Empty if this language doesn't provide block comments.
-    pub block_comment_delim_arr: &'a [BlockCommentDelim<'a>],
+    pub block_comment_delim_arr: Vec<BlockCommentDelim>,
     /// Specify the strings supported by this language. While this could be
     /// empty, such a language would be very odd.
-    string_delim_spec_arr: &'a [StringDelimiterSpec<'a>],
+    string_delim_spec_arr: Vec<StringDelimiterSpec>,
     /// A [heredoc](https://en.wikipedia.org/wiki/Here_document) delimiter;
     /// `None` if heredocs aren't supported.
-    heredoc_delim: Option<&'a HeredocDelim<'a>>,
+    heredoc_delim: Option<HeredocDelim>,
     /// Any special case treatment for this language.
     special_case: SpecialCase,
 }
 
 /// ### Compiled language definition
 // Store the results of compiling a language lexer.
-pub struct LanguageLexerCompiled<'a> {
-    /// Provide a reference back to the language definition this came from.
-    pub language_lexer: &'a LanguageLexer<'a>,
+pub struct LanguageLexerCompiled {
+    /// Provide the language definition this came from.
+    pub language_lexer: LanguageLexer,
     /// A regex used to identify the next token when in a code block.
     next_token: Regex,
     /// A mapping from groups in this regex to the corresponding delimiter type
@@ -173,13 +176,13 @@ pub struct LanguageLexerCompiled<'a> {
 }
 
 // Store all lexers and their associated maps after they're compiled.
-pub struct LanguageLexersCompiled<'a> {
+pub struct LanguageLexersCompiled {
     // The resulting compiled lexers.
-    pub language_lexer_compiled_vec: Vec<Arc<LanguageLexerCompiled<'a>>>,
+    pub language_lexer_compiled_vec: Vec<Arc<LanguageLexerCompiled>>,
     // Maps a file extension to indices into the lexers vector.
-    pub map_ext_to_lexer_vec: HashMap<&'a str, Vec<Arc<LanguageLexerCompiled<'a>>>>,
+    pub map_ext_to_lexer_vec: HashMap<Arc<String>, Vec<Arc<LanguageLexerCompiled>>>,
     // Maps an Ace mode to an index into the lexers vector.
-    pub map_mode_to_lexer: HashMap<&'a str, Arc<LanguageLexerCompiled<'a>>>,
+    pub map_mode_to_lexer: HashMap<Arc<String>, Arc<LanguageLexerCompiled>>,
 }
 
 /// Define which delimiter corresponds to a given regex group.
@@ -290,11 +293,11 @@ const C_SHARP_VERBATIM_STRING_CLOSING: &str =
 /// ### Language "compiler"
 ///
 /// "Compile" a language description into regexes used to lex the language.
-fn build_lexer_regex<'a>(
+fn build_lexer_regex(
     // The language description to build regexes for.
-    language_lexer: &'a LanguageLexer,
+    language_lexer: LanguageLexer,
     // The "compiled" form of this language lexer.
-) -> LanguageLexerCompiled<'a> {
+) -> LanguageLexerCompiled {
     // Produce the overall regex from regexes which find a specific special
     // case. See the lexer walkthrough for an example.
     let mut regex_strings_arr: Vec<String> = Vec::new();
@@ -311,7 +314,7 @@ fn build_lexer_regex<'a>(
     let mut regex_builder = |//
                              // An array of alternative delimiters, which will
                              // be combined with a regex or (`|`) operator.
-                             string_arr: &Vec<&str>,
+                             string_arr: &Vec<String>,
                              // The type of delimiter in `string_arr`.
                              regex_delim_type: RegexDelimType| {
         // If there are no delimiters, then there's nothing to do.
@@ -327,9 +330,9 @@ fn build_lexer_regex<'a>(
 
     // Add the opening block comment delimiter to the overall regex; add the
     // closing block comment delimiter to the map for the corresponding group.
-    let mut block_comment_opening_delim: Vec<&str> = vec![""];
-    for block_comment_delim in language_lexer.block_comment_delim_arr {
-        block_comment_opening_delim[0] = block_comment_delim.opening;
+    let mut block_comment_opening_delim: Vec<String> = vec!["".to_string()];
+    for block_comment_delim in &language_lexer.block_comment_delim_arr {
+        block_comment_opening_delim[0] = block_comment_delim.opening.clone();
         regex_builder(
             &block_comment_opening_delim,
             // Determine the block closing regex:
@@ -339,12 +342,12 @@ fn build_lexer_regex<'a>(
                     // closing delimiter.
                     format!(
                         "({})|({})",
-                        regex::escape(block_comment_delim.opening),
-                        regex::escape(block_comment_delim.closing)
+                        regex::escape(&block_comment_delim.opening),
+                        regex::escape(&block_comment_delim.closing)
                     )
                 } else {
                     // Otherwise, just look for the closing delimiter.
-                    regex::escape(block_comment_delim.closing)
+                    regex::escape(&block_comment_delim.closing)
                 })
                 .unwrap(),
             ),
@@ -355,7 +358,7 @@ fn build_lexer_regex<'a>(
         RegexDelimType::InlineComment,
     );
     // Build regexes for each string delimiter.
-    for string_delim_spec in language_lexer.string_delim_spec_arr {
+    for string_delim_spec in &language_lexer.string_delim_spec_arr {
         // Generate a regex based on the characteristics of this string.
         let has_escape_char = !string_delim_spec.escape_char.is_empty();
         // For multi-character string delimiters, build a regex: `'''` becomes
@@ -384,10 +387,10 @@ fn build_lexer_regex<'a>(
             // Convert this vector into a regex.
             format!("({})", v.join("|"))
         };
-        let string_partial_delimiter = string_partial_builder(string_delim_spec.delimiter);
+        let string_partial_delimiter = string_partial_builder(&string_delim_spec.delimiter);
         // Look for
-        let escaped_delimiter = regex::escape(string_delim_spec.delimiter);
-        let escaped_escape_char = regex::escape(string_delim_spec.escape_char);
+        let escaped_delimiter = regex::escape(&string_delim_spec.delimiter);
+        let escaped_escape_char = regex::escape(&string_delim_spec.escape_char);
         let end_of_string_regex = match (has_escape_char, &string_delim_spec.newline_support) {
             // This is the most complex case. This type of string can be
             // terminated by an unescaped newline or an unescaped delimiter.
@@ -482,7 +485,7 @@ fn build_lexer_regex<'a>(
         }
         .unwrap();
         regex_builder(
-            &[regex::escape(string_delim_spec.delimiter).as_str()].to_vec(),
+            &[regex::escape(&string_delim_spec.delimiter)].to_vec(),
             RegexDelimType::String(end_of_string_regex),
         );
     }
@@ -492,7 +495,7 @@ fn build_lexer_regex<'a>(
         // A C# verbatim string has asymmetric opening and closing delimiters,
         // making it a special case.
         SpecialCase::CSharpVerbatimStringLiteral => regex_builder(
-            &["@\""].to_vec(),
+            &vec!["@\"".to_string()],
             RegexDelimType::String(Regex::new(C_SHARP_VERBATIM_STRING_CLOSING).unwrap()),
         ),
         SpecialCase::TemplateLiteral => {
@@ -507,7 +510,7 @@ fn build_lexer_regex<'a>(
             //
             // TODO: match either an unescaped `${` -- which causes a nested
             // parse -- or the closing backtick (which must be unescaped).
-            regex_builder(&["`"].to_vec(), RegexDelimType::TemplateLiteral);
+            regex_builder(&vec!["`".to_string()], RegexDelimType::TemplateLiteral);
         }
         SpecialCase::Matlab => {
             // MATLAB supports block comments, when the comment delimiters
@@ -556,19 +559,19 @@ fn build_lexer_regex<'a>(
     // This must be last, since it includes one group (so the index of all
     // future items will be off by 1). Build a regex for a heredoc start.
     let regex_str;
-    if let Some(heredoc_delim) = language_lexer.heredoc_delim {
+    if let Some(heredoc_delim) = &language_lexer.heredoc_delim {
         // First, create the string which defines the regex.
         regex_str = format!(
             "{}({}){}",
-            regex::escape(heredoc_delim.start_prefix),
+            regex::escape(&heredoc_delim.start_prefix),
             heredoc_delim.delim_ident_regex,
-            regex::escape(heredoc_delim.start_suffix)
+            regex::escape(&heredoc_delim.start_suffix)
         );
         // Then add it. Do this manually, since we don't want the regex escaped.
         regex_strings_arr.push(regex_str);
         regex_group_map.push(RegexDelimType::Heredoc(
-            regex::escape(heredoc_delim.stop_prefix),
-            regex::escape(heredoc_delim.stop_suffix),
+            regex::escape(&heredoc_delim.stop_prefix),
+            regex::escape(&heredoc_delim.stop_suffix),
         ));
     }
 
@@ -584,9 +587,7 @@ fn build_lexer_regex<'a>(
 }
 
 // ## Compile lexers
-pub fn compile_lexers<'a>(
-    language_lexer_arr: &'a [LanguageLexer<'a>],
-) -> LanguageLexersCompiled<'a> {
+pub fn compile_lexers(language_lexer_arr: Vec<LanguageLexer>) -> LanguageLexersCompiled {
     let mut language_lexers_compiled = LanguageLexersCompiled {
         language_lexer_compiled_vec: Vec::new(),
         map_ext_to_lexer_vec: HashMap::new(),
@@ -601,13 +602,13 @@ pub fn compile_lexers<'a>(
             .push(Arc::clone(&llc));
 
         // Add all its extensions to the extension map.
-        for ext in language_lexer.ext_arr {
+        for ext in &llc.language_lexer.ext_arr {
             match language_lexers_compiled.map_ext_to_lexer_vec.get_mut(ext) {
                 None => {
                     let new_lexer_vec = vec![Arc::clone(&llc)];
                     language_lexers_compiled
                         .map_ext_to_lexer_vec
-                        .insert(ext, new_lexer_vec);
+                        .insert(ext.clone(), new_lexer_vec);
                 }
                 Some(v) => v.push(Arc::clone(&llc)),
             }
@@ -616,7 +617,7 @@ pub fn compile_lexers<'a>(
         // Add its mode to the mode map.
         language_lexers_compiled
             .map_mode_to_lexer
-            .insert(language_lexer.ace_mode, llc);
+            .insert(llc.language_lexer.ace_mode.clone(), llc);
     }
 
     language_lexers_compiled

@@ -1,3 +1,5 @@
+use crate::lexer::supported_languages::get_language_lexer_vec;
+
 /// Copyright (C) 2023 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -17,7 +19,6 @@
 /// # `test.rs` -- Unit tests for the lexer
 //
 // ## Imports
-use super::supported_languages::LANGUAGE_LEXER_ARR;
 use super::{compile_lexers, source_lexer, CodeDocBlock, DocBlock};
 
 // ## Utilities
@@ -44,8 +45,8 @@ fn build_code_block(contents: &str) -> CodeDocBlock {
 // ### Source lexer tests
 #[test]
 fn test_py() {
-    let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-    let py = llc.map_mode_to_lexer.get("python").unwrap();
+    let llc = compile_lexers(get_language_lexer_vec());
+    let py = llc.map_mode_to_lexer.get(&"python".to_string()).unwrap();
 
     // Try basic cases: make sure than newlines are processed correctly.
     assert_eq!(source_lexer("", py), []);
@@ -220,8 +221,11 @@ fn test_py() {
 
 #[test]
 fn test_js() {
-    let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-    let js = llc.map_mode_to_lexer.get("javascript").unwrap();
+    let llc = compile_lexers(get_language_lexer_vec());
+    let js = llc
+        .map_mode_to_lexer
+        .get(&"javascript".to_string())
+        .unwrap();
 
     // JavaScript tests.
     //
@@ -456,8 +460,8 @@ fn test_js() {
 
 #[test]
 fn test_cpp() {
-    let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-    let cpp = llc.map_mode_to_lexer.get("c_cpp").unwrap();
+    let llc = compile_lexers(get_language_lexer_vec());
+    let cpp = llc.map_mode_to_lexer.get(&"c_cpp".to_string()).unwrap();
 
     // Try out a C++ heredoc.
     assert_eq!(
@@ -471,8 +475,8 @@ fn test_cpp() {
 
 #[test]
 fn test_csharp() {
-    let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-    let csharp = llc.map_mode_to_lexer.get("csharp").unwrap();
+    let llc = compile_lexers(get_language_lexer_vec());
+    let csharp = llc.map_mode_to_lexer.get(&"csharp".to_string()).unwrap();
 
     // Try out a verbatim string literal with embedded double quotes.
     assert_eq!(
@@ -486,8 +490,8 @@ fn test_csharp() {
 
 #[test]
 fn test_matlab() {
-    let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-    let matlab = llc.map_mode_to_lexer.get("matlab").unwrap();
+    let llc = compile_lexers(get_language_lexer_vec());
+    let matlab = llc.map_mode_to_lexer.get(&"matlab".to_string()).unwrap();
 
     // Test both inline comment styles. Verify that escaped quotes are
     // ignored, and that doubled quotes are handled correctly.
@@ -530,8 +534,8 @@ a = 2
 
 #[test]
 fn test_rust() {
-    let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-    let rust = llc.map_mode_to_lexer.get("rust").unwrap();
+    let llc = compile_lexers(get_language_lexer_vec());
+    let rust = llc.map_mode_to_lexer.get(&"rust".to_string()).unwrap();
 
     // Test Rust raw strings.
     assert_eq!(
@@ -555,8 +559,8 @@ fn test_rust() {
 
 #[test]
 fn test_sql() {
-    let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-    let sql = llc.map_mode_to_lexer.get("sql").unwrap();
+    let llc = compile_lexers(get_language_lexer_vec());
+    let sql = llc.map_mode_to_lexer.get(&"sql".to_string()).unwrap();
 
     // Test strings with embedded single quotes.
     assert_eq!(
@@ -570,9 +574,9 @@ fn test_sql() {
 
 #[test]
 fn test_toml() {
-    let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
-    let toml = llc.map_mode_to_lexer.get("toml").unwrap();
-    assert_eq!(toml.language_lexer.ace_mode, "toml");
+    let llc = compile_lexers(get_language_lexer_vec());
+    let toml = llc.map_mode_to_lexer.get(&"toml".to_string()).unwrap();
+    assert_eq!(toml.language_lexer.ace_mode.as_str(), "toml");
 
     // Multi-line literal strings don't have escapes.
     assert_eq!(
@@ -595,17 +599,18 @@ fn test_toml() {
 // ### Compiler tests
 #[test]
 fn test_compiler() {
-    let llc = compile_lexers(&LANGUAGE_LEXER_ARR);
+    let llc = compile_lexers(get_language_lexer_vec());
 
-    let c_ext_lexer_arr = llc.map_ext_to_lexer_vec.get("c").unwrap();
+    let c_ext_lexer_arr = llc.map_ext_to_lexer_vec.get(&"c".to_string()).unwrap();
     assert_eq!(c_ext_lexer_arr.len(), 1);
-    assert_eq!(c_ext_lexer_arr[0].language_lexer.ace_mode, "c_cpp");
+    assert_eq!(c_ext_lexer_arr[0].language_lexer.ace_mode.as_str(), "c_cpp");
     assert_eq!(
         llc.map_mode_to_lexer
-            .get("verilog")
+            .get(&"verilog".to_string())
             .unwrap()
             .language_lexer
-            .ace_mode,
+            .ace_mode
+            .as_str(),
         "verilog"
     );
 }
