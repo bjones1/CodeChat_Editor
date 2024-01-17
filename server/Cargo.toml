@@ -31,8 +31,9 @@ name = "code_chat_editor"
 [dependencies]
 actix = "0.13.1"
 actix-files = "0.6"
+actix-rt = "2.9.0"
 actix-web = "4"
-actix-web-actors = "4.2.0"
+actix-ws = "0.2.5"
 lazy_static = "1"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
@@ -41,6 +42,7 @@ tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
 # Per the <a>docs</a>, avoid building the binary.
 pulldown-cmark = { version = "0.9", default-features = false }
+futures-util = "0.3.29"
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"
@@ -56,3 +58,7 @@ win_partitions = "0.3.0"
 # Uncomment this to show an explanation of the lexing process.
 #default = ["lexer_explain"]
 lexer_explain = []
+
+[patch.crates-io]
+#actix = { path = "../../actix/actix" }
+#actix-rt = { path = "../../actix-net/actix-rt" }
