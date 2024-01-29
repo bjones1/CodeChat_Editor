@@ -41,6 +41,8 @@ use actix_web::{
 use actix_ws::Message;
 use futures_util::StreamExt;
 use lazy_static::lazy_static;
+// Trait for extending std::path::PathBuf
+use path_slash::PathBufExt as _;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -588,12 +590,12 @@ async fn serve_file(
     // Look for any script tags and prevent these from causing problems.
     .replace("</script>", "<\\/script>");
 
-    // For project files, add in the sidebar.
+    // For project files, add in the sidebar. Convert this from a Windows path to a Posix path if necessary.
     let (sidebar_iframe, sidebar_css) = if is_project {
         (
             format!(
                 r##"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"##,
-                path_to_toc.to_string_lossy()
+                path_to_toc.to_slash_lossy()
             ),
             r#"<link rel="stylesheet" href="/static/css/CodeChatEditorProject.css">"#,
         )
