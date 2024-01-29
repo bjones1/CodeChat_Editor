@@ -169,8 +169,14 @@ block, the first element of the first element in the doc block, etc.</span> */
 }
 
 /* Provide nicer defaults for tables. */
-.CodeChat-TinyMCE > table, .CodeChat-TinyMCE > th, .CodeChat-TinyMCE > tr {
+.CodeChat-doc-contents table, .CodeChat-doc-contents th, .CodeChat-doc-contents td {
     border-collapse: collapse;
-    /* TODO: unfortunately, this get overridden by the TinyMCE skin. */
+    padding-left: 4px;
+    padding-right: 4px;
     border: 1px solid;
+}
+
+/* CodeMirror draws its own caret, hiding the actual caret. Disable this inside embedded TinyMCE blocks, which use the native caret. */
+.CodeChat-doc-contents {
+    caret-color: black;
 }
