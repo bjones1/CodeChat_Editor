@@ -440,7 +440,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         // ### Verilog
         make_language_lexer(
             "verilog",
-            &["v"],
+            &["v", "sv"],
             &["//"],
             &[make_block_comment_delim(
                 "/*", "*/", false,
