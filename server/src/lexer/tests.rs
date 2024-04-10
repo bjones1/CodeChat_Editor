@@ -573,6 +573,83 @@ fn test_sql() {
 }
 
 #[test]
+fn test_swift() {
+    let llc = compile_lexers(get_language_lexer_vec());
+    let swift = llc.map_mode_to_lexer.get(&"swift".to_string()).unwrap();
+
+    // Test comments.
+    assert_eq!(
+        source_lexer(" // An inline comment\nsome_code()", swift),
+        [
+            build_doc_block(" ", "//", "An inline comment\n"),
+            build_code_block("some_code()")
+        ]
+    );
+    assert_eq!(
+        source_lexer("  /* A block comment */\nsome_code()", swift),
+        [
+            build_doc_block("  ", "/*", "A block comment\n"),
+            build_code_block("some_code()")
+        ]
+    );
+
+    // Test strings.
+    assert_eq!(
+        source_lexer(
+            r#"// Test 1
+foo("// a string\"")"#,
+            swift
+        ),
+        [
+            build_doc_block("", "//", "Test 1\n"),
+            build_code_block(r#"foo("// a string\"")"#)
+        ]
+    );
+
+    assert_eq!(
+        source_lexer(
+            r#"// Test 1
+foo("""
+// Test 2
+)""""#,
+            swift
+        ),
+        [
+            build_doc_block("", "//", "Test 1\n"),
+            build_code_block(
+                r#"foo("""
+// Test 2
+)""""#
+            )
+        ]
+    );
+
+    // Test extended string delimiters for a string literal.
+    assert_eq!(
+        source_lexer(
+            r##"// Test 1
+foo(#"""
+// Test 2
+"""
+// Test 3
+)"""#"##,
+            swift
+        ),
+        [
+            build_doc_block("", "//", "Test 1\n"),
+            build_code_block(
+                r##"foo(#"""
+// Test 2
+"""
+// Test 3
+)"""#"##
+            )
+        ]
+    );
+
+}
+
+#[test]
 fn test_toml() {
     let llc = compile_lexers(get_language_lexer_vec());
     let toml = llc.map_mode_to_lexer.get(&"toml".to_string()).unwrap();

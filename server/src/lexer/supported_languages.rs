@@ -42,7 +42,6 @@
 /// strings. In this case, they would be `'She'` and `'s here.'`. While this
 /// doesn't parse the string correctly, it does correctly identify where
 /// comments can't be, which is all that the lexer needs to do.
-///
 // ## Imports
 //
 // ### Standard library
@@ -57,6 +56,7 @@ use super::SpecialCase;
 use super::StringDelimiterSpec;
 
 // ## Helper functions
+//
 // These functions simplify the syntax needed to create a `LanguageLexer`.
 fn make_language_lexer(
     ace_mode: &str,
@@ -130,9 +130,9 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
                 make_string_delimiter_spec("\"", "\\", NewlineSupport::Unescaped),
                 make_string_delimiter_spec("'", "\\", NewlineSupport::Unescaped),
             ],
-            // This doesn't quite match the spec (search for here documents in the
-            // bash man page), since it doesn't correctly handle unmatched or
-            // mismatched quote; for example, `TODO`.
+            // This doesn't quite match the spec (search for here documents in
+            // the bash man page), since it doesn't correctly handle unmatched
+            // or mismatched quote; for example, `TODO`.
             make_heredoc_delim("<<-?('|\")?", "\\w+", "('|\")?", "", ""),
             SpecialCase::None,
         ),
@@ -149,9 +149,9 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
                 NewlineSupport::Escaped,
             )],
             // Note: the C/C++ support expects C++11 or newer. Don't worry about
-            // supporting C or older C++ using another lexer entry, since the raw
-            // string syntax in C++11 and newer is IMHO so rare we won't encounter
-            // it in older code. See the C++
+            // supporting C or older C++ using another lexer entry, since the
+            // raw string syntax in C++11 and newer is IMHO so rare we won't
+            // encounter it in older code. See the C++
             // [string literals docs for the reasoning behind the start body regex.](https://en.cppreference.com/w/cpp/language/string_literal)
             make_heredoc_delim("R\"", "[^()\\\\[[:space:]]]*", "(", ")", "\""),
             SpecialCase::None,
@@ -166,12 +166,8 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // [documentation comments](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/documentation-comments).
             &["//", "///"],
             &[
-                make_block_comment_delim(
-                    "/*", "*/", false,
-                ),
-                make_block_comment_delim(
-                    "/**", "*/", false,
-                ),
+                make_block_comment_delim("/*", "*/", false),
+                make_block_comment_delim("/**", "*/", false),
             ],
             &[make_string_delimiter_spec(
                 // See
@@ -188,9 +184,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             "css",
             &["css"],
             &[],
-            &[make_block_comment_delim(
-                "/*", "*/", false,
-            )],
+            &[make_block_comment_delim("/*", "*/", false)],
             &[
                 make_string_delimiter_spec("\"", "\\", NewlineSupport::Unescaped),
                 make_string_delimiter_spec("'", "\\", NewlineSupport::Unescaped),
@@ -235,9 +229,9 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // See the
             // [Java Language Specification, Java SE 19 edition](https://docs.oracle.com/javase/specs/jls/se19/html/index.html),
             // [§3.7. Comments](https://docs.oracle.com/javase/specs/jls/se19/html/jls-3.html#jls-3.7).
-            // The end of this section notes that <q>comments do not occur within
-            // character literals, string literals, or text blocks,</q> which
-            // describes the approach of this lexer nicely.
+            // The end of this section notes that <q>comments do not occur
+            // within character literals, string literals, or text blocks,</q>
+            // which describes the approach of this lexer nicely.
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
             // See
@@ -246,9 +240,9 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
                 make_string_delimiter_spec(
                     "\"",
                     "\\",
-                    // Per the previous link, <q>It is a compile-time error for a
-                    // line terminator (§3.4) to appear after the opening " and
-                    // before the matching closing "."</q>
+                    // Per the previous link, <q>It is a compile-time error for
+                    // a line terminator (§3.4) to appear after the opening "
+                    // and before the matching closing "."</q>
                     NewlineSupport::None,
                 ),
                 // See
@@ -272,9 +266,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // See
             // [§12.4 Comments](https://262.ecma-international.org/13.0/#sec-comments)
             &["//"],
-            &[make_block_comment_delim(
-                "/*", "*/", false,
-            )],
+            &[make_block_comment_delim("/*", "*/", false)],
             &[
                 // See
                 // [§12.8.4 String Literals](https://262.ecma-international.org/13.0/#prod-StringLiteral).
@@ -289,9 +281,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             "json5",
             &["json"],
             &["//"],
-            &[make_block_comment_delim(
-                "/*", "*/", false,
-            )],
+            &[make_block_comment_delim("/*", "*/", false)],
             &[
                 make_string_delimiter_spec("\"", "\\", NewlineSupport::Escaped),
                 make_string_delimiter_spec("'", "\\", NewlineSupport::Escaped),
@@ -360,7 +350,8 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         make_language_lexer(
             "sql",
             &["sql"],
-            // See [Wikipedia](https://en.wikipedia.org/wiki/SQL_syntax#Comments).
+            // See
+            // [Wikipedia](https://en.wikipedia.org/wiki/SQL_syntax#Comments).
             // The
             // [SQL specification isn't free](https://en.wikipedia.org/wiki/SQL#Standardization_history),
             // sadly. Oracle publishes their flavor of the 2016 spec; see
@@ -369,19 +360,47 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // [comments](https://www.postgresql.org/docs/15/sql-syntax-lexical.html#SQL-SYNTAX-COMMENTS)
             // as well.
             &["--"],
-            &[make_block_comment_delim(
-                "/*", "*/", false,
-            )],
+            &[make_block_comment_delim("/*", "*/", false)],
             &[
-                // SQL standard strings allow newlines and don't provide an escape
-                // character. This language uses
+                // SQL standard strings allow newlines and don't provide an
+                // escape character. This language uses
                 // [string delimiter doubling](#string_delimiter_doubling).
                 // Unfortunately, each variant of SQL also supports their custom
-                // definition of strings; these must be handled by vendor-specific
-                // flavors of this basic lexer definition.
+                // definition of strings; these must be handled by
+                // vendor-specific flavors of this basic lexer definition.
                 make_string_delimiter_spec("'", "", NewlineSupport::Unescaped),
             ],
             None,
+            SpecialCase::None,
+        ),
+        // ### [Swift](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/)
+        make_language_lexer(
+            "swift",
+            &["swift"],
+            // See
+            // [comments](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics#Comments).
+            &["//"],
+            &[make_block_comment_delim("/*", "*/", true)],
+            // See
+            // [Strings and Characters](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters).
+            &[
+                // Technically, this would include optional whitespace after the
+                // triple quotes then a newlines then end with a newline before
+                // the closing triple quotes. However, not doing this is a
+                // syntax error, so we ignore this subtlety.
+                make_string_delimiter_spec("\"\"\"", "\\", NewlineSupport::Unescaped),
+                make_string_delimiter_spec("\"", "\\", NewlineSupport::None),
+            ],
+            // Swift supports
+            // [extended string delimiters](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters#Extended-String-Delimiters)
+            // in both string literal and multiline string flavors. Since this
+            // parser only supports a single heredoc type, we ignore the string
+            // literal flavor: we might mis-parse a string, but any newline will
+            // correct the parse. For example, the string
+            // `r#"Not the end now " but actually now"#\n` will parse into two
+            // code blocks of `r#"Not the end now "` and
+            // `\ but actually now"#\n`, which is acceptable.
+            make_heredoc_delim("", "#+", "\"\"\"", "\"\"\"", ""),
             SpecialCase::None,
         ),
         // ### [TOML](https://toml.io/en/)
@@ -408,9 +427,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             "typescript",
             &["ts", "mts"],
             &["//"],
-            &[make_block_comment_delim(
-                "/*", "*/", false,
-            )],
+            &[make_block_comment_delim("/*", "*/", false)],
             &[
                 make_string_delimiter_spec("\"", "\\", NewlineSupport::Unescaped),
                 make_string_delimiter_spec("'", "\\", NewlineSupport::Unescaped),
@@ -427,11 +444,9 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             &["vhdl", "vhd", "bsd", "bsdl"],
             // See section 15.9 of the standard.
             &["--"],
-            &[make_block_comment_delim(
-                "/*", "*/", false,
-            )],
-            // Per section 15.7 of the standard, strings may not contain newlines.
-            // This language uses
+            &[make_block_comment_delim("/*", "*/", false)],
+            // Per section 15.7 of the standard, strings may not contain
+            // newlines. This language uses
             // [string delimiter doubling](#string_delimiter_doubling).
             &[make_string_delimiter_spec("\"", "", NewlineSupport::None)],
             None,
@@ -442,9 +457,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             "verilog",
             &["v", "sv"],
             &["//"],
-            &[make_block_comment_delim(
-                "/*", "*/", false,
-            )],
+            &[make_block_comment_delim("/*", "*/", false)],
             &[make_string_delimiter_spec(
                 "\"",
                 "\\",
@@ -461,9 +474,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // See
             // [Comments](https://github.com/vlang/v/blob/master/doc/docs.md#comments).
             &["//"],
-            &[make_block_comment_delim(
-                "/*", "*/", false,
-            )],
+            &[make_block_comment_delim("/*", "*/", false)],
             // See
             // [Strings](https://github.com/vlang/v/blob/master/doc/docs.md#strings).
             &[
@@ -482,18 +493,18 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             &[
                 // See
                 // [double-quoted style](https://yaml.org/spec/1.2.2/#double-quoted-style).
-                // Something I don't understand and will probably ignore: "Single-
-                // and double-quoted scalars are restricted to a single line when
-                // contained inside an implicit key."
+                // Something I don't understand and will probably ignore:
+                // "Single- and double-quoted scalars are restricted to a single
+                // line when contained inside an implicit key."
                 make_string_delimiter_spec("\"", "\\", NewlineSupport::Unescaped),
                 // See
                 // [single-quoted style](https://yaml.org/spec/1.2.2/#single-quoted-style).
                 // Single-quoted strings escape a single quote by repeating it
-                // twice: `'That''s unusual.'` Rather than try to parse this, treat
-                // it as two back-to-back strings: `'That'` and `'s unusual.'` We
-                // don't care about getting the correct value for strings; the only
-                // purpose is to avoid interpreting string contents as inline or
-                // block comments.
+                // twice: `'That''s unusual.'` Rather than try to parse this,
+                // treat it as two back-to-back strings: `'That'` and
+                // `'s unusual.'` We don't care about getting the correct value
+                // for strings; the only purpose is to avoid interpreting string
+                // contents as inline or block comments.
                 make_string_delimiter_spec("'", "", NewlineSupport::Unescaped),
             ],
             None,
