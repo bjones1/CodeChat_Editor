@@ -229,7 +229,7 @@ fn test_js() {
 
     // JavaScript tests.
     //
-    // simple inline comment
+    // A simple inline comment.
     assert_eq!(
         source_lexer("// Test", js),
         [build_doc_block("", "//", "Test"),]
@@ -553,6 +553,26 @@ fn test_rust() {
         [
             build_code_block("test_1();\n"),
             build_doc_block("", "/*", "Test 2\n")
+        ]
+    );
+
+    assert_eq!(
+        source_lexer(
+            r#"/* Depth 1
+  /* Depth 2 comment */
+  /* Depth 2
+    /* Depth 3 */ */
+More depth 1 */"#,
+            rust
+        ),
+        [
+            build_code_block("/* Depth 1\n"),
+            build_doc_block("  ", "/*", "Depth 2 comment\n"),
+            build_code_block(
+                r#"  /* Depth 2
+    /* Depth 3 */ */
+More depth 1 */"#
+            ),
         ]
     );
 }
