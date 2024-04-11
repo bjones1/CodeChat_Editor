@@ -22,7 +22,7 @@
 // ## Imports
 //
 // I can't get Mocha to work with ESBuild, so I import it using a script tag.
-import chai from "chai";
+import "chai";
 import {
     exportedForTesting,
     code_or_doc_block,
