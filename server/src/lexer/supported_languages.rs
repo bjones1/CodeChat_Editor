@@ -395,11 +395,10 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // [extended string delimiters](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters#Extended-String-Delimiters)
             // in both string literal and multiline string flavors. Since this
             // parser only supports a single heredoc type, we ignore the string
-            // literal flavor: we might mis-parse a string, but any newline will
-            // correct the parse. For example, the string
-            // `r#"Not the end now " but actually now"#\n` will parse into two
-            // code blocks of `r#"Not the end now "` and
-            // `\ but actually now"#\n`, which is acceptable.
+            // literal flavor. This is a bug: consider the string `#"Not a
+            // comment "/*"#`. This would parse as a code block containing just
+            // `#`, then the string `"Not a comment "` then a comment starting with
+            // `/*"#`.
             make_heredoc_delim("", "#+", "\"\"\"", "\"\"\"", ""),
             SpecialCase::None,
         ),
