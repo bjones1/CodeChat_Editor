@@ -77,7 +77,7 @@ const turndownService = new TurndownService({
     renderAsPure: false,
 });
 
-export const ws = new ReconnectingWebSocket!("ws://localhost:8080/ws/");
+export const ws = new ReconnectingWebSocket!("ws://localhost:8080/client_ws/");
 // Identify this client on connection.
 ws.onopen = () => {
     console.log(`CodeChat Client: websocket to CodeChat Server open.`);
@@ -97,7 +97,7 @@ ws.onclose = (event: any) => {
 
 // Handle messages.
 ws.onmessage = (event: any) => {
-    console.log(`Message received: ${event}.`);
+    console.log(`Message received: ${event.data}.`);
 };
 
 // Add the plugins from

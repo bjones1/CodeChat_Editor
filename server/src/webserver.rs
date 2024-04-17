@@ -24,10 +24,10 @@
 /// ### Standard library
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     env,
-    ffi::OsStr,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 // ### Third-party
@@ -38,7 +38,7 @@ use actix_web::{
     http::header::{ContentDisposition, ContentType},
     put, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
-use actix_ws::Message;
+use actix_ws::{Message, Session};
 use futures_util::StreamExt;
 use lazy_static::lazy_static;
 // Trait for extending std::path::PathBuf
@@ -49,6 +49,8 @@ use serde_json;
 use tokio::{
     fs::{self, DirEntry, File},
     io::AsyncReadExt,
+    sync::mpsc,
+    sync::mpsc::{Receiver, Sender},
 };
 use urlencoding::{self, encode};
 #[cfg(target_os = "windows")]
@@ -57,7 +59,7 @@ use win_partitions::win_api::get_logical_drive;
 // ### Local
 use crate::lexer::LanguageLexersCompiled;
 use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
-use crate::processing::{codechat_for_web_to_source, source_to_codechat_for_web};
+use crate::processing::{codechat_for_web_to_source, source_to_codechat_for_web_string};
 
 /// ## Data structures
 ///
@@ -84,12 +86,12 @@ pub type CodeMirrorDocBlocks<'a> = Vec<(
     usize,
     // To -- the ending character this doc block is anchored ti.
     usize,
-    // Indent. This might be a borrowed reference or an owned reference.
-    // When the lexer transforms code and doc blocks into this CodeMirror
-    // format, a borrow from those existing doc blocks is more efficient.
-    // However, deserialization from JSON requires ownership, since the
-    // Actix web framework doesn't provide a place to borrow from. The
-    // following variables are clone-on-write for the same reason.
+    // Indent. This might be a borrowed reference or an owned reference. When
+    // the lexer transforms code and doc blocks into this CodeMirror format, a
+    // borrow from those existing doc blocks is more efficient. However,
+    // deserialization from JSON requires ownership, since the Actix web
+    // framework doesn't provide a place to borrow from. The following variables
+    // are clone-on-write for the same reason.
     Cow<'a, String>,
     // delimiter
     Cow<'a, String>,
@@ -115,14 +117,19 @@ struct ErrorResponse {
     message: String,
 }
 
-/// TODO: A better name for this enum.
+/// This enum contains the results of translating a source file to a string
+/// rendering of the CodeChat Editor format.
 #[derive(Debug, PartialEq)]
-pub enum FileType<'a> {
-    // Text content, but not a CodeChat file
-    Text(String),
-    // A CodeChat file; the struct contains the file's contents translated to
-    // CodeMirror.
-    CodeChat(CodeChatForWeb<'a>),
+pub enum TranslationResultsString {
+    // This file is unknown to and therefore not supported by the CodeChat
+    // Editor.
+    Unknown,
+    // This is a CodeChat Editor file but it contains errors that prevent its
+    // translation. The string contains the error message.
+    Err(String),
+    // A CodeChat Editor file; the struct contains the file's contents
+    // translated to CodeMirror.
+    CodeChat(String),
 }
 
 // ## Globals
@@ -424,14 +431,28 @@ async fn serve_file(
     req: &HttpRequest,
     app_state: web::Data<AppState>,
 ) -> HttpResponse {
+    // Create a JointEditor for this requested file.
     let raw_dir = file_path.parent().unwrap();
+    let (tx, mut rx) = mpsc::channel(10);
+    app_state
+        .joint_editors
+        .lock()
+        .unwrap()
+        .push_front(JointEditor {
+            ide_queue: tx.clone(),
+            client_queue: None,
+        });
+
+    actix_rt::spawn(async move {
+        while let Some(m) = rx.recv().await {
+            println!("{:?}", &m);
+        }
+        rx.close();
+    });
+
     // Use a lossy conversion, since this is UI display, not filesystem access.
     let dir = escape_html(path_display(raw_dir).as_str());
     let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
-    let ext = &file_path
-        .extension()
-        .unwrap_or_else(|| OsStr::new(""))
-        .to_string_lossy();
 
     // Get the `mode` and `test` query parameters.
     let empty_string = "".to_string();
@@ -444,28 +465,6 @@ async fn serve_file(
         Err(_err) => (empty_string, false),
     };
     let is_toc = mode == "toc";
-
-    // Look for a project file by searching the current directory, then all its
-    // parents, for a file named `toc.md`.
-    let mut is_project = false;
-    // The number of directories between this file to serve (in `path`) and the
-    // toc file.
-    let mut path_to_toc = PathBuf::new();
-    let mut current_dir = file_path.to_path_buf();
-    loop {
-        let mut project_file = current_dir.clone();
-        project_file.push("toc.md");
-        if project_file.is_file() {
-            path_to_toc.pop();
-            path_to_toc.push("toc.md");
-            is_project = true;
-            break;
-        }
-        if !current_dir.pop() {
-            break;
-        }
-        path_to_toc.push("../");
-    }
 
     // Read the file.
     let mut file_contents = String::new();
@@ -482,18 +481,8 @@ async fn serve_file(
     .read_to_string(&mut file_contents)
     .await;
 
-    // Categorize the file:
-    //
-    // - A binary file (meaning we can't read the contents as UTF-8): just serve
-    //   it raw. Assume this is an image/video/etc.
-    // - A text file - first determine the type. Based on the type:
-    //   - If it's an unknown type (such as a source file we don't know or a
-    //     plain text file): just serve it raw.
-    //   - If the client requested a table of contents, then serve it wrapped in
-    //     a CodeChat TOC.
-    //   - If it's Markdown, serve it wrapped in a CodeChat Document Editor.
-    //   - Otherwise, it must be a recognized file type. Serve it wrapped in a
-    //     CodeChat Editor.
+    // If this is a binary file (meaning we can't read the contents as UTF-8),
+    // just serve it raw; assume this is an image/video/etc.
     if let Err(_err) = read_ret {
         // TODO: make a better decision, don't duplicate code. The file type is
         // unknown. Serve it raw, assuming it's an image/video/etc.
@@ -517,16 +506,12 @@ async fn serve_file(
         }
     }
 
-    let language_lexers_compiled = &app_state.lexers;
-    let file_type_wrapped =
-        source_to_codechat_for_web(file_contents, ext, is_toc, language_lexers_compiled);
-    if let Err(err_string) = file_type_wrapped {
-        return html_not_found(&err_string);
-    }
-
-    let codechat_for_web = match file_type_wrapped.unwrap() {
-        FileType::Text(_text_file_contents) => {
-            // The file type is unknown. Serve it raw.
+    let (translation_results_string, path_to_toc) =
+        source_to_codechat_for_web_string(file_contents, file_path, is_toc, &app_state.lexers);
+    let is_project = path_to_toc.is_some();
+    let codechat_for_web_string_raw = match translation_results_string {
+        // The file type is unknown. Serve it raw.
+        TranslationResultsString::Unknown => {
             match actix_files::NamedFile::open_async(file_path).await {
                 Ok(v) => {
                     let res = v.into_response(req);
@@ -541,12 +526,15 @@ async fn serve_file(
                 }
             }
         }
-        // TODO.
-        FileType::CodeChat(html) => html,
+        // Report a lexer error.
+        TranslationResultsString::Err(err_string) => return html_not_found(&err_string),
+        // This is a CodeChat file. The following code wraps the CodeChat for
+        // web results in a CodeChat Editor Client webpage.
+        TranslationResultsString::CodeChat(codechat_for_web) => codechat_for_web,
     };
 
     if is_toc {
-        // The TOC is a simplified web page requiring no additional processing.
+        // The TOC is a simplified web page requires no additional processing.
         // The script ensures that all hyperlinks target the enclosing page, not
         // just the iframe containing this page.
         return HttpResponse::Ok()
@@ -574,28 +562,20 @@ async fn serve_file(
 </body>
 </html>
 "#,
-                name, codechat_for_web.source.doc
+                name, codechat_for_web_string_raw
             ));
     }
 
-    let codechat_for_web_json_string = match serde_json::to_string(&codechat_for_web) {
-        Ok(v) => v,
-        Err(err) => {
-            return html_not_found(&format!(
-                "<p>Unable to convert code_doc_block_arr to JSON: {}.</p>",
-                err
-            ))
-        }
-    }
     // Look for any script tags and prevent these from causing problems.
-    .replace("</script>", "<\\/script>");
+    let codechat_for_web_string = codechat_for_web_string_raw.replace("</script>", "<\\/script>");
 
-    // For project files, add in the sidebar. Convert this from a Windows path to a Posix path if necessary.
+    // For project files, add in the sidebar. Convert this from a Windows path
+    // to a Posix path if necessary.
     let (sidebar_iframe, sidebar_css) = if is_project {
         (
             format!(
                 r##"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"##,
-                path_to_toc.to_slash_lossy()
+                path_to_toc.unwrap().to_slash_lossy()
             ),
             r#"<link rel="stylesheet" href="/static/css/CodeChatEditorProject.css">"#,
         )
@@ -657,7 +637,7 @@ async fn serve_file(
         </div>
     </body>
 </html>
-"##, name, if is_test_mode { "-test" } else { "" }, codechat_for_web_json_string, testing_src, sidebar_css, sidebar_iframe, name, dir
+"##, name, if is_test_mode { "-test" } else { "" }, codechat_for_web_string, testing_src, sidebar_css, sidebar_iframe, name, dir
     ))
 }
 
@@ -709,13 +689,59 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Define HTTP actor
-async fn ws(
+/// ## Websockets
+///
+/// Each CodeChat Editor IDE instance pairs with a CodeChat Editor Client
+/// through the CodeChat Editor Server. Together, these form a joint editor,
+/// allowing the user to edit the plain text of the source code in the IDE, or
+/// make GUI-enhanced edits of the source code rendered by the CodeChat Editor
+/// Client.
+///
+/// The IDE and the CodeChat Editor Client communicate to each other through
+/// websocket connections to this server. Typically, each IDE is paired with an
+/// associated editor. For the editor to send and receive messages with the
+/// client, the websocket server for the IDE needs a way to pass messages to the
+/// websocket server for the client and vice versa. TODO: how do I do this? In
+/// addition, the server needs a way to close all clients when it shuts down.
+/// TODO: do I need to handle this, or is it done automatically?
+///
+/// Messages to exchange:
+///
+/// - Ready (once, the first message from both client and IDE)
+/// - Update (provide new contents / path / cursor position / scroll position)
+/// - Load (only the client may send this; requests the IDE to load another
+///   file)
+/// - Closing
+///
+/// Define a websocket handler for the CodeChat Client.
+async fn client_ws(
     req: HttpRequest,
     body: web::Payload,
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
+
+    // Find a `JointEditor` that needs a client and assign this one to it.
+    let (tx, mut rx) = mpsc::channel(10);
+    let joint_editor_wrapped = app_state.joint_editors.lock().unwrap().pop_front();
+    if joint_editor_wrapped.is_none() {
+        // TODO: return an error and report it instead!
+        println!("Error: no joint editor available.");
+        return Ok(response);
+    }
+    let mut joint_editor = joint_editor_wrapped.unwrap();
+    if joint_editor.client_queue.is_some() {
+        // TODO: return an error and report it instead!
+        println!("Error: joint editor already assigned.");
+        return Ok(response);
+    }
+    joint_editor.client_queue = Some(tx.clone());
+    let ide_tx = joint_editor.ide_queue.clone();
+    app_state
+        .joint_editors
+        .lock()
+        .unwrap()
+        .push_back(joint_editor);
 
     actix_rt::spawn(async move {
         while let Some(Ok(msg)) = msg_stream.next().await {
@@ -726,12 +752,15 @@ async fn ws(
                     }
                 }
                 Message::Text(s) => {
-                    println!(
-                        "Got text, {}",
-                        app_state.lexers.language_lexer_compiled_vec[0]
-                            .language_lexer
-                            .ace_mode
-                    );
+                    println!("Got text, {}", s);
+                    if let Result::Err(err) =
+                        ide_tx.send(JointMessage::Opened(IdeType::VSCode)).await
+                    {
+                        panic!("{}", err);
+                    };
+                    if session.text("Testing").await.is_err() {
+                        return;
+                    }
                 }
                 _ => break,
             }
@@ -740,24 +769,89 @@ async fn ws(
         let _ = session.close(None).await;
     });
 
+    actix_rt::spawn(async move {
+        while let Some(m) = rx.recv().await {
+            println!("{:?}", &m);
+        }
+        rx.close();
+    });
+
     Ok(response)
 }
 
-// Define the [state](https://actix.rs/docs/application/#state) available to all endpoints.
+// Provide queues which send data to the IDE and the CodeChat Editor Client.
+struct JointEditor {
+    /// Data to send to the IDE.
+    ide_queue: Sender<JointMessage>,
+    /// Data to send to the CodeChat Editor Client.
+    client_queue: Option<Sender<JointMessage>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum IdeType {
+    FileWatcher,
+    VSCode,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum JointMessage {
+    /// This is the first message sent when the IDE or client starts up.
+    Opened(IdeType),
+    /// This sends an update; any missing fields are unchanged.
+    Update(UpdateMessageContents),
+    /// Only the CodeChat Client editor may send this; it requests the IDE to
+    /// load the provided file. The IDE should respond by sending an `Update`
+    /// with the requested file.
+    Load(PathBuf),
+    /// Sent when the IDE or client are closing.
+    Closing,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct UpdateMessageContents {
+    /// An absolute path to the file currently in use.
+    path: Option<PathBuf>,
+    /// The contents of this file.
+    contents: Option<String>,
+    /// The current cursor position in the file, where 0 = before the first
+    /// character in the file and contents.length() = after the last character
+    /// in the file. TODO: Selections are not yet supported.
+    cursor_position: Option<u32>,
+    /// The normalized vertical scroll position in the file, where 0 = top and 1
+    /// = bottom.
+    scroll_position: Option<f32>,
+}
+
+// The client task receives a JointMessage, translates the code, then sends it
+// to its paired IDE by calling this function. Likewise, the IDE task receives a
+// ClientMessage, translates the code, then sends it to its paired client by
+// calling this function.
+
+// Define the [state](https://actix.rs/docs/application/#state) available to all
+// endpoints.
 struct AppState {
     lexers: LanguageLexersCompiled,
+    joint_editors: Mutex<VecDeque<JointEditor>>,
 }
 
 // ## Webserver startup
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
-    HttpServer::new(|| {
+    // See
+    // [shared mutable state](https://actix.rs/docs/application#shared-mutable-state).
+    let app_data = web::Data::new(AppState {
+        lexers: compile_lexers(get_language_lexer_vec()),
+        joint_editors: Mutex::new(VecDeque::new()),
+    });
+    HttpServer::new(move || {
         // Get the path to this executable. Assume that static files for the
         // webserver are located relative to it.
         let exe_path = env::current_exe().unwrap();
         let exe_dir = exe_path.parent().unwrap();
         let mut client_static_path = PathBuf::from(exe_dir);
-        // When in debug, use the layout of the Git repo to find client files. In release mode, we assume the static folder is a subdirectory of the directory containing the executable.
+        // When in debug, use the layout of the Git repo to find client files.
+        // In release mode, we assume the static folder is a subdirectory of the
+        // directory containing the executable.
         #[cfg(debug_assertions)]
         client_static_path.push("../../../client");
         client_static_path.push("static");
@@ -766,9 +860,7 @@ pub async fn main() -> std::io::Result<()> {
         // Start the server.
         App::new()
             // Provide data to all endpoints -- the compiler lexers.
-            .app_data(web::Data::new(AppState {
-                lexers: compile_lexers(get_language_lexer_vec()),
-            }))
+            .app_data(app_data.clone())
             // Serve static files per the
             // [docs](https://actix.rs/docs/static-files).
             .service(actix_files::Files::new(
@@ -781,7 +873,7 @@ pub async fn main() -> std::io::Result<()> {
             // Reroute to the filesystem for typical user-requested URLs.
             .route("/", web::get().to(_root_fs_redirect))
             .route("/fs", web::get().to(_root_fs_redirect))
-            .route("/ws/", web::get().to(ws))
+            .route("/client_ws/", web::get().to(client_ws))
     })
     .bind(("127.0.0.1", 8080))?
     .run()

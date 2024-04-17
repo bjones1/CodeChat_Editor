@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 /// Copyright (C) 2023 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -18,17 +19,18 @@
 // ## Imports
 //
 // ### Standard library
+//
 // For commented-out caching code.
 /**
 use std::collections::{HashMap, HashSet};
 use std::fs::Metadata;
 use std::io;
 use std::ops::Deref;
-use std::path::Path;
-use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 */
-//
+use std::path::Path;
+use std::path::PathBuf;
+
 // ### Third-party
 use lazy_static::lazy_static;
 use pulldown_cmark::{html, Options, Parser};
@@ -38,10 +40,25 @@ use regex::Regex;
 use crate::lexer::{
     source_lexer, CodeDocBlock, DocBlock, LanguageLexerCompiled, LanguageLexersCompiled,
 };
-use crate::webserver::{CodeChatForWeb, CodeMirror, FileType, SourceFileMetadata};
+use crate::webserver::TranslationResultsString;
+use crate::webserver::{CodeChatForWeb, CodeMirror, SourceFileMetadata};
 
 // ## Data structures
-//
+/// This enum contains the results of translating a source file to the CodeChat
+/// Editor format.
+#[derive(Debug, PartialEq)]
+pub enum TranslationResults<'a> {
+    // This file is unknown to and therefore not supported by the CodeChat
+    // Editor.
+    Unknown,
+    // This is a CodeChat Editor file but it contains errors that prevent its
+    // translation. The string contains the error message.
+    Err(String),
+    // A CodeChat Editor file; the struct contains the file's contents
+    // translated to CodeMirror.
+    CodeChat(CodeChatForWeb<'a>),
+}
+
 // On save, the process is CodeChatForWeb -> Vec\<CodeDocBlocks> -> source code.
 //
 // ## Globals
@@ -51,6 +68,28 @@ lazy_static! {
 }
 
 static DOC_BLOCK_SEPARATOR_STRING: &str = "\n<CodeChatEditor-separator/>\n\n";
+
+// ## Determine if the provided file is part of a project.
+pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
+    // To determine if this source code is part of a project, look for a project
+    // file by searching the current directory, then all its parents, for a file
+    // named `toc.md`.
+    let mut path_to_toc = PathBuf::new();
+    let mut current_dir = file_path.to_path_buf();
+    loop {
+        let mut project_file = current_dir.clone();
+        project_file.push("toc.md");
+        if project_file.is_file() {
+            path_to_toc.pop();
+            path_to_toc.push("toc.md");
+            return Some(path_to_toc);
+        }
+        if !current_dir.pop() {
+            return None;
+        }
+        path_to_toc.push("../");
+    }
+}
 
 // ## Transform `CodeChatForWeb` to source code
 //
@@ -252,7 +291,8 @@ fn code_doc_block_vec_to_source(
 
 // ## Transform from source code to `CodeChatForWeb`
 //
-// Given the contents of a file, classify it and (often) convert it to HTML.
+// Given the contents of a file, classify it and (for CodeChat Editor files)
+// convert it to the `CodeChatForWeb` format.
 pub fn source_to_codechat_for_web<'a>(
     // The file's contents.
     file_contents: String,
@@ -260,9 +300,11 @@ pub fn source_to_codechat_for_web<'a>(
     file_ext: &str,
     // True if this file is a TOC.
     _is_toc: bool,
+    // True if this file is part of a project.
+    _is_project: bool,
     // Lexers.
     language_lexers_compiled: &LanguageLexersCompiled,
-) -> Result<FileType<'a>, String> {
+) -> TranslationResults<'a> {
     // Determine the lexer to use for this file.
     let ace_mode;
     // First, search for a lexer directive in the file contents.
@@ -270,7 +312,9 @@ pub fn source_to_codechat_for_web<'a>(
         ace_mode = captures[1].to_string();
         match language_lexers_compiled.map_mode_to_lexer.get(&ace_mode) {
             Some(v) => v,
-            None => return Err(format!("<p>Unknown lexer type {}.</p>", &ace_mode)),
+            None => {
+                return TranslationResults::Err(format!("<p>Unknown lexer type {}.</p>", &ace_mode))
+            }
         }
     } else {
         // Otherwise, look up the lexer by the file's extension.
@@ -281,7 +325,7 @@ pub fn source_to_codechat_for_web<'a>(
             llc.first().unwrap()
         } else {
             // The file type is unknown; treat it as plain text.
-            return Ok(FileType::Text(file_contents));
+            return TranslationResults::Unknown;
         }
     };
 
@@ -369,7 +413,63 @@ pub fn source_to_codechat_for_web<'a>(
         },
     };
 
-    Ok(FileType::CodeChat(codechat_for_web))
+    TranslationResults::CodeChat(codechat_for_web)
+}
+
+// Like `source_to_codechat_for_web`, translate a source file to the CodeChat
+// Editor client format. This wraps a call to that function with additional
+// processing (determine if this is part of a project, encode the output as
+// necessary, etc.).
+pub fn source_to_codechat_for_web_string(
+    // The file's contents.
+    file_contents: String,
+    // The path to this file.
+    file_path: &Path,
+    // True if this file is a TOC.
+    is_toc: bool,
+    // Lexers.
+    language_lexers_compiled: &LanguageLexersCompiled,
+) -> (TranslationResultsString, Option<PathBuf>) {
+    // Determine the file's extension, in order to look up a lexer.
+    let ext = &file_path
+        .extension()
+        .unwrap_or_else(|| OsStr::new(""))
+        .to_string_lossy();
+
+    // To determine if this source code is part of a project, look for a project
+    // file by searching the current directory, then all its parents, for a file
+    // named `toc.md`.
+    let path_to_toc = find_path_to_toc(file_path);
+    let is_project = path_to_toc.is_some();
+
+    (
+        match source_to_codechat_for_web(
+            file_contents,
+            ext,
+            is_toc,
+            is_project,
+            language_lexers_compiled,
+        ) {
+            TranslationResults::CodeChat(codechat_for_web) => {
+                if is_toc {
+                    // For the table of contents sidebar, which is pure
+                    // markdown, just return the resulting HTML, rather than the
+                    // editable CodeChat for web format.
+                    TranslationResultsString::CodeChat(codechat_for_web.source.doc)
+                } else {
+                    // Otherwise, transform this data structure to JSON, so it
+                    // can be sent to the CodeChat Editor Client.
+                    match serde_json::to_string(&codechat_for_web) {
+                        Ok(v) => TranslationResultsString::CodeChat(v),
+                        Err(err) => TranslationResultsString::Err(err.to_string()),
+                    }
+                }
+            }
+            TranslationResults::Unknown => TranslationResultsString::Unknown,
+            TranslationResults::Err(err) => TranslationResultsString::Err(err),
+        },
+        path_to_toc,
+    )
 }
 
 /// Convert markdown to HTML. (This assumes the Markdown defined in the
@@ -598,6 +698,7 @@ fn html_analyze(
 // ## Tests
 #[cfg(test)]
 mod tests {
+    use super::TranslationResults;
     use crate::lexer::{
         compile_lexers, supported_languages::get_language_lexer_vec, CodeDocBlock, DocBlock,
     };
@@ -605,9 +706,7 @@ mod tests {
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
         source_to_codechat_for_web,
     };
-    use crate::webserver::{
-        CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, FileType, SourceFileMetadata,
-    };
+    use crate::webserver::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
     use std::borrow::Cow;
 
     // ### Utilities
@@ -982,29 +1081,40 @@ mod tests {
         // A file with an unknown extension and no lexer, which is classified as
         // a text file.
         assert_eq!(
-            source_to_codechat_for_web("".to_string(), ".xxx", false, &llc).unwrap(),
-            FileType::Text("".to_string())
+            source_to_codechat_for_web("".to_string(), ".xxx", false, false, &llc),
+            TranslationResults::Unknown
         );
 
         // A file with an invalid lexer specification. Obscure this, so that
         // this file can be successfully lexed by the CodeChat editor.
         let lexer_spec = format!("{}{}", "CodeChat Editor ", "lexer: ");
         assert_eq!(
-            source_to_codechat_for_web(format!("{}unknown", lexer_spec), ".xxx", false, &llc),
-            Result::Err("<p>Unknown lexer type unknown.</p>".to_string())
+            source_to_codechat_for_web(
+                format!("{}unknown", lexer_spec),
+                ".xxx",
+                false,
+                false,
+                &llc
+            ),
+            TranslationResults::Err("<p>Unknown lexer type unknown.</p>".to_string())
         );
 
         // A CodeChat Editor document via filename.
         assert_eq!(
-            source_to_codechat_for_web("".to_string(), "md", false, &llc).unwrap(),
-            FileType::CodeChat(build_codechat_for_web("markdown", "", vec![]))
+            source_to_codechat_for_web("".to_string(), "md", false, false, &llc),
+            TranslationResults::CodeChat(build_codechat_for_web("markdown", "", vec![]))
         );
 
         // A CodeChat Editor document via lexer specification.
         assert_eq!(
-            source_to_codechat_for_web(format!("{}markdown", lexer_spec), "xxx", false, &llc)
-                .unwrap(),
-            FileType::CodeChat(build_codechat_for_web(
+            source_to_codechat_for_web(
+                format!("{}markdown", lexer_spec),
+                "xxx",
+                false,
+                false,
+                &llc
+            ),
+            TranslationResults::CodeChat(build_codechat_for_web(
                 "markdown",
                 &format!("<p>{}markdown</p>\n", lexer_spec),
                 vec![]
@@ -1013,29 +1123,32 @@ mod tests {
 
         // An empty source file.
         assert_eq!(
-            source_to_codechat_for_web("".to_string(), "js", false, &llc).unwrap(),
-            FileType::CodeChat(build_codechat_for_web("javascript", "", vec![]))
+            source_to_codechat_for_web("".to_string(), "js", false, false, &llc),
+            TranslationResults::CodeChat(build_codechat_for_web("javascript", "", vec![]))
         );
 
         // A zero doc block source file.
         assert_eq!(
-            source_to_codechat_for_web("let a = 1;".to_string(), "js", false, &llc).unwrap(),
-            FileType::CodeChat(build_codechat_for_web("javascript", "let a = 1;", vec![]))
+            source_to_codechat_for_web("let a = 1;".to_string(), "js", false, false, &llc),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "javascript",
+                "let a = 1;",
+                vec![]
+            ))
         );
 
         // One doc block source files.
         assert_eq!(
-            source_to_codechat_for_web("// Test".to_string(), "js", false, &llc).unwrap(),
-            FileType::CodeChat(build_codechat_for_web(
+            source_to_codechat_for_web("// Test".to_string(), "js", false, false, &llc),
+            TranslationResults::CodeChat(build_codechat_for_web(
                 "javascript",
                 "\n",
                 vec![build_codemirror_doc_block(0, 0, "", "//", "<p>Test</p>\n")]
             ))
         );
         assert_eq!(
-            source_to_codechat_for_web("let a = 1;\n// Test".to_string(), "js", false, &llc)
-                .unwrap(),
-            FileType::CodeChat(build_codechat_for_web(
+            source_to_codechat_for_web("let a = 1;\n// Test".to_string(), "js", false, false, &llc),
+            TranslationResults::CodeChat(build_codechat_for_web(
                 "javascript",
                 "let a = 1;\n\n",
                 vec![build_codemirror_doc_block(
@@ -1048,9 +1161,8 @@ mod tests {
             ))
         );
         assert_eq!(
-            source_to_codechat_for_web("// Test\nlet a = 1;".to_string(), "js", false, &llc)
-                .unwrap(),
-            FileType::CodeChat(build_codechat_for_web(
+            source_to_codechat_for_web("// Test\nlet a = 1;".to_string(), "js", false, false, &llc),
+            TranslationResults::CodeChat(build_codechat_for_web(
                 "javascript",
                 "\nlet a = 1;",
                 vec![build_codemirror_doc_block(0, 0, "", "//", "<p>Test</p>\n")]
@@ -1063,10 +1175,10 @@ mod tests {
                 "// [Link][1]\nlet a = 1;\n/* [1]: http://b.org */".to_string(),
                 "js",
                 false,
+                false,
                 &llc
-            )
-            .unwrap(),
-            FileType::CodeChat(build_codechat_for_web(
+            ),
+            TranslationResults::CodeChat(build_codechat_for_web(
                 "javascript",
                 "\nlet a = 1;\n\n",
                 vec![
