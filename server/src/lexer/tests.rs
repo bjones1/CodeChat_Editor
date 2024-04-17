@@ -672,7 +672,7 @@ foo(#"""
 fn test_toml() {
     let llc = compile_lexers(get_language_lexer_vec());
     let toml = llc.map_mode_to_lexer.get(&"toml".to_string()).unwrap();
-    assert_eq!(toml.language_lexer.ace_mode.as_str(), "toml");
+    assert_eq!(toml.language_lexer.lexer_name.as_str(), "toml");
 
     // Multi-line literal strings don't have escapes.
     assert_eq!(
@@ -699,13 +699,13 @@ fn test_compiler() {
 
     let c_ext_lexer_arr = llc.map_ext_to_lexer_vec.get(&"c".to_string()).unwrap();
     assert_eq!(c_ext_lexer_arr.len(), 1);
-    assert_eq!(c_ext_lexer_arr[0].language_lexer.ace_mode.as_str(), "c_cpp");
+    assert_eq!(c_ext_lexer_arr[0].language_lexer.lexer_name.as_str(), "c_cpp");
     assert_eq!(
         llc.map_mode_to_lexer
             .get(&"verilog".to_string())
             .unwrap()
             .language_lexer
-            .ace_mode
+            .lexer_name
             .as_str(),
         "verilog"
     );

@@ -59,7 +59,7 @@ use super::StringDelimiterSpec;
 //
 // These functions simplify the syntax needed to create a `LanguageLexer`.
 fn make_language_lexer(
-    ace_mode: &str,
+    lexer_name: &str,
     ext_arr: &[&str],
     inline_comment_delim_arr: &[&str],
     block_comment_delim_arr: &[BlockCommentDelim],
@@ -68,7 +68,7 @@ fn make_language_lexer(
     special_case: SpecialCase,
 ) -> LanguageLexer {
     LanguageLexer {
-        ace_mode: Arc::new(ace_mode.to_string()),
+        lexer_name: Arc::new(lexer_name.to_string()),
         ext_arr: ext_arr.iter().map(|x| Arc::new(x.to_string())).collect(),
         inline_comment_delim_arr: inline_comment_delim_arr
             .iter()

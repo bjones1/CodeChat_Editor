@@ -306,14 +306,14 @@ pub fn source_to_codechat_for_web<'a>(
     language_lexers_compiled: &LanguageLexersCompiled,
 ) -> TranslationResults<'a> {
     // Determine the lexer to use for this file.
-    let ace_mode;
+    let lexer_name;
     // First, search for a lexer directive in the file contents.
     let lexer = if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
-        ace_mode = captures[1].to_string();
-        match language_lexers_compiled.map_mode_to_lexer.get(&ace_mode) {
+        lexer_name = captures[1].to_string();
+        match language_lexers_compiled.map_mode_to_lexer.get(&lexer_name) {
             Some(v) => v,
             None => {
-                return TranslationResults::Err(format!("<p>Unknown lexer type {}.</p>", &ace_mode))
+                return TranslationResults::Err(format!("<p>Unknown lexer type {}.</p>", &lexer_name))
             }
         }
     } else {
@@ -333,9 +333,9 @@ pub fn source_to_codechat_for_web<'a>(
     let code_doc_block_arr;
     let codechat_for_web = CodeChatForWeb {
         metadata: SourceFileMetadata {
-            mode: lexer.language_lexer.ace_mode.to_string(),
+            mode: lexer.language_lexer.lexer_name.to_string(),
         },
-        source: if lexer.language_lexer.ace_mode.as_str() == "markdown" {
+        source: if lexer.language_lexer.lexer_name.as_str() == "markdown" {
             // Document-only files are easy: just encode the contents.
             let html = markdown_to_html(&file_contents);
             // TODO: process the HTML.

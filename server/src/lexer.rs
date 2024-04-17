@@ -138,13 +138,11 @@ enum SpecialCase {
 /// Define a language by providing everything this lexer needs in order to split
 /// it into code and doc blocks.
 pub struct LanguageLexer {
-    /// The [Ace](https://ace.c9.io/)
-    /// [mode](https://github.com/ajaxorg/ace/tree/master/src/mode) to use for
-    /// this language. The CodeChat Editor Client uses this to tell Ace the mode
+    /// The lexer name which the CodeChat Editor Client uses this to tell CodeMirror the mode
     /// to use. It's can also be used in a specially-formatted comment in a
     /// source file to override the lexer chosen by looking at the file's
     /// extension.
-    pub ace_mode: Arc<String>,
+    pub lexer_name: Arc<String>,
     /// An array of file extensions for this language. They \_do not_begin with
     /// a period, such as `rs`. This is the typical way that the CodeChat Editor
     /// uses to determine which lexer to use for a given source file.
@@ -474,8 +472,8 @@ fn build_lexer_regex(
             // This case makes no sense: there's no escape character, yet the
             // string allows escaped newlines?
             (false, NewlineSupport::Escaped) => panic!(
-                "Invalid parameters for the language lexer where ace_mode = {} and ext_arr = {:?}.",
-                language_lexer.ace_mode, language_lexer.ext_arr
+                "Invalid parameters for the language lexer where lexer_name = {} and ext_arr = {:?}.",
+                language_lexer.lexer_name, language_lexer.ext_arr
             ),
 
             // The simplest case: just look for the delimiter!
@@ -619,7 +617,7 @@ pub fn compile_lexers(language_lexer_arr: Vec<LanguageLexer>) -> LanguageLexersC
         // Add its mode to the mode map.
         language_lexers_compiled
             .map_mode_to_lexer
-            .insert(llc.language_lexer.ace_mode.clone(), llc);
+            .insert(llc.language_lexer.lexer_name.clone(), llc);
     }
 
     language_lexers_compiled
