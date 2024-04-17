@@ -64,7 +64,15 @@ import {
     EditorSelection,
     Transaction,
 } from "@codemirror/state";
-import { javascript } from "@codemirror/lang-javascript";
+import { cpp } from "@codemirror/lang-cpp";
+import { css } from "@codemirror/lang-css";
+import { go } from "@codemirror/lang-go";
+import { html } from "@codemirror/lang-html";
+import { java } from "@codemirror/lang-java";
+import { javascript, typescriptLanguage } from "@codemirror/lang-javascript";
+import { json } from "@codemirror/lang-json";
+import { python } from "@codemirror/lang-python";
+import { rust } from "@codemirror/lang-rust";
 import { Editor, init, tinymce } from "./tinymce-config.mjs";
 
 let tinymce_singleton: Editor | undefined;
@@ -598,18 +606,48 @@ export const CodeMirror_load = async (
     codechat_body: HTMLDivElement,
     // The document to load.
     source: any,
+    // The name of the lexer to use.
+    lexer_name: string,
     // Additional extensions.
     extensions: [Extension],
 ) => {
     codechat_body.innerHTML =
         '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents"></div>';
     source.selection = EditorSelection.single(0).toJSON();
+    let parser;
+    // TODO: dynamically load the parser.
+    switch (lexer_name) {
+        // Languages with a parser
+        case "sh": parser = cpp(); break;
+        case "c_cpp": parser = cpp(); break;
+        case "csharp": parser = javascript(); break;
+        case "css": parser = css(); break;
+        case "golang": parser = go(); break;
+        case "html": parser = html(); break;
+        case "java": parser = java(); break;
+        case "javascript": parser = javascript(); break;
+        case "python": parser = python(); break;
+        case "rust": parser = rust(); break;
+        case "typescript": parser = javascript({typescript: true}); break;
+
+        // Languages without a parser.
+        case "json5": parser = json(); break;
+        case "matlab": parser = python(); break;
+        case "sql": parser = python(); break;
+        case "swift": parser = python(); break;
+        case "toml": parser = json(); break;
+        case "vhdl": parser = cpp(); break;
+        case "verilog": parser = cpp(); break;
+        case "v": parser = javascript(); break;
+
+        default: parser = javascript(); console.log(`Unknown lexer name ${lexer_name}`); break;
+    }
     const state = EditorState.fromJSON(
         source,
         {
             extensions: [
                 DocBlockPlugin,
-                javascript(),
+                parser,
                 basicSetup,
                 EditorView.lineWrapping,
                 ...extensions,

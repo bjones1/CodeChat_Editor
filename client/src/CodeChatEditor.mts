@@ -217,7 +217,7 @@ const open_lp = (
             },
         }).then((editors) => editors[0].focus());
     } else {
-        CodeMirror_load(codechat_body, source, [autosaveExtension]);
+        CodeMirror_load(codechat_body, source, current_metadata.mode, [autosaveExtension]);
     }
 
     // <a id="CodeChatEditor_test"></a>If tests should be run, then the
