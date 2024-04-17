@@ -573,20 +573,6 @@ const DocBlockPlugin = ViewPlugin.fromClass(
     },
 );
 
-// TODO: this an the next function show how to create a keyboard-activated
-// function. Remove them at some point.
-function underlineSelection(view: EditorView) {
-    return true;
-}
-
-const underlineKeymap = keymap.of([
-    {
-        key: "Mod-h",
-        preventDefault: true,
-        run: underlineSelection,
-    },
-]);
-
 // ## UI
 //
 // Allow only spaces and delete/backspaces when editing the indent of a doc
@@ -625,7 +611,6 @@ export const CodeMirror_load = async (
                 DocBlockPlugin,
                 javascript(),
                 basicSetup,
-                underlineKeymap,
                 EditorView.lineWrapping,
                 ...extensions,
             ],
