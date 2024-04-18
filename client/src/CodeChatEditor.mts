@@ -81,7 +81,8 @@ export const ws = new ReconnectingWebSocket!("ws://localhost:8080/client_ws/");
 // Identify this client on connection.
 ws.onopen = () => {
     console.log(`CodeChat Client: websocket to CodeChat Server open.`);
-    ws.send("testing");
+    // Tell the CodeChat Editor Server we're ready to receive.
+    ws.send(JSON.stringify({Opened: "CodeChatEditorClient"}));
 };
 
 // Provide logging to help track down errors.
@@ -95,9 +96,40 @@ ws.onclose = (event: any) => {
     );
 };
 
+interface UpdateMessageContents {
+    path: string,
+    contents: string,
+    cursor_position: number,
+    scroll_position: number
+}
+
 // Handle messages.
 ws.onmessage = (event: any) => {
-    console.log(`Message received: ${event.data}.`);
+    // Parse the received message, which must be a single element of a dictionary representing a `JointMessage`.
+    const joint_message = JSON.parse(event.data);
+    const keys = Object.keys(joint_message);
+    console.assert(keys.length == 1);
+    const joint_message_type = keys[0];
+    const joint_message_data = Object.values(joint_message)[0];
+
+    // Process this message.
+    switch (joint_message_type) {
+        case "Opened":
+        const IdeType = joint_message_data as string;
+        // There's no additional steps to take currently.
+        console.log(`Opened(${IdeType})`);
+        break;
+
+        case "Update":
+        // Load this data in.
+        const {path, contents, cursor_position, scroll_position} = joint_message_data as UpdateMessageContents;
+        console.log(`Update(path: ${path}, contents: ${contents}, cursor_position: ${cursor_position}, scroll_position: ${scroll_position})`);
+        break;
+
+        default:
+        console.log(`Unhandled message ${joint_message_type}(${joint_message_data})`);
+        break;
+    }
 };
 
 // Add the plugins from

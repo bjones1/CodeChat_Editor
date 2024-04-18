@@ -27,6 +27,7 @@ use std::{
     collections::{HashMap, VecDeque},
     env,
     path::{Path, PathBuf},
+    rc::Rc,
     sync::Mutex,
 };
 
@@ -38,11 +39,11 @@ use actix_web::{
     http::header::{ContentDisposition, ContentType},
     put, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
-use actix_ws::{Message, Session};
+use actix_ws::Message;
+use bytes::Bytes;
 use futures_util::StreamExt;
 use lazy_static::lazy_static;
-// Trait for extending std::path::PathBuf
-use path_slash::PathBufExt as _;
+use path_slash::PathBufExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -431,25 +432,8 @@ async fn serve_file(
     req: &HttpRequest,
     app_state: web::Data<AppState>,
 ) -> HttpResponse {
-    // Create a JointEditor for this requested file.
+    // Create `JointEditor` queues.
     let raw_dir = file_path.parent().unwrap();
-    let (tx, mut rx) = mpsc::channel(10);
-    app_state
-        .joint_editors
-        .lock()
-        .unwrap()
-        .push_front(JointEditor {
-            ide_queue: tx.clone(),
-            client_queue: None,
-        });
-
-    actix_rt::spawn(async move {
-        while let Some(m) = rx.recv().await {
-            println!("{:?}", &m);
-        }
-        rx.close();
-    });
-
     // Use a lossy conversion, since this is UI display, not filesystem access.
     let dir = escape_html(path_display(raw_dir).as_str());
     let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
@@ -534,7 +518,7 @@ async fn serve_file(
     };
 
     if is_toc {
-        // The TOC is a simplified web page requires no additional processing.
+        // The TOC is a simplified web page which requires no additional processing.
         // The script ensures that all hyperlinks target the enclosing page, not
         // just the iframe containing this page.
         return HttpResponse::Ok()
@@ -565,6 +549,60 @@ async fn serve_file(
                 name, codechat_for_web_string_raw
             ));
     }
+
+    // This is a CodeChat Editor file. Start a FileWatcher IDE to handle it.
+    let (ide_tx, mut ide_rx) = mpsc::channel(10);
+    let (client_tx, client_rx) = mpsc::channel(10);
+    app_state
+        .joint_editors
+        .lock()
+        .unwrap()
+        .push_front(JointEditor {
+            ide_tx_queue: ide_tx,
+            client_tx_queue: client_tx.clone(),
+            client_rx_queue: client_rx,
+        });
+
+    // Handle `JointMessage` data from the CodeChat Editor Client for this file.
+    let file_pathbuf = Rc::new(file_path.to_path_buf());
+    actix_rt::spawn(async move {
+        while let Some(m) = ide_rx.recv().await {
+            match m {
+                JointMessage::Opened(ide_type) => {
+                    assert!(ide_type == IdeType::CodeChatEditorClient);
+                    // Tell the CodeChat Editor Client the type of this IDE.
+                    if let Err(err) = client_tx
+                        .send(JointMessage::Opened(IdeType::FileWatcher))
+                        .await
+                    {
+                        println!("Unable to enqueue: {}", err);
+                        break;
+                    }
+                    // Provide it a file to open.
+                    if let Err(err) = client_tx
+                        .send(JointMessage::Update(UpdateMessageContents {
+                            contents: Some("testing".to_string()),
+                            cursor_position: Some(0),
+                            path: Some(file_pathbuf.to_path_buf()),
+                            scroll_position: Some(0.0),
+                        }))
+                        .await
+                    {
+                        println!("Unable to enqueue: {}", err);
+                        break;
+                    }
+                }
+                other => {
+                    println!("Unhandled message {:?}", other);
+                }
+            }
+        }
+        ide_rx.close();
+        // Drain any remaining messages after closing the queue.
+        while let Some(m) = ide_rx.recv().await {
+            println!("Dropped queued message {:?}", &m);
+        }
+    });
 
     // Look for any script tags and prevent these from causing problems.
     let codechat_for_web_string = codechat_for_web_string_raw.replace("</script>", "<\\/script>");
@@ -722,79 +760,112 @@ async fn client_ws(
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
     // Find a `JointEditor` that needs a client and assign this one to it.
-    let (tx, mut rx) = mpsc::channel(10);
     let joint_editor_wrapped = app_state.joint_editors.lock().unwrap().pop_front();
     if joint_editor_wrapped.is_none() {
         // TODO: return an error and report it instead!
         println!("Error: no joint editor available.");
         return Ok(response);
     }
-    let mut joint_editor = joint_editor_wrapped.unwrap();
-    if joint_editor.client_queue.is_some() {
-        // TODO: return an error and report it instead!
-        println!("Error: joint editor already assigned.");
-        return Ok(response);
-    }
-    joint_editor.client_queue = Some(tx.clone());
-    let ide_tx = joint_editor.ide_queue.clone();
-    app_state
-        .joint_editors
-        .lock()
-        .unwrap()
-        .push_back(joint_editor);
-
+    let joint_editor = joint_editor_wrapped.unwrap();
+    let ide_tx = joint_editor.ide_tx_queue;
+    let client_tx = joint_editor.client_tx_queue;
+    let mut client_rx = joint_editor.client_rx_queue;
+    // Start a task to handle receiving `JointMessage` websocket data from the CodeChat Editor Client.
     actix_rt::spawn(async move {
         while let Some(Ok(msg)) = msg_stream.next().await {
             match msg {
+                // Enqueue a ping to this thread's tx queue, to send a pong. Trying to send here means borrow errors, or resorting to a mutex/correctly locking and unlocking it.
                 Message::Ping(bytes) => {
-                    if session.pong(&bytes).await.is_err() {
-                        return;
-                    }
-                }
-                Message::Text(s) => {
-                    println!("Got text, {}", s);
-                    if let Result::Err(err) =
-                        ide_tx.send(JointMessage::Opened(IdeType::VSCode)).await
-                    {
-                        panic!("{}", err);
+                    if let Result::Err(err) = client_tx.send(JointMessage::Ping(bytes)).await {
+                        println!("Unable to enqueue: {}", err);
+                        break;
                     };
-                    if session.text("Testing").await.is_err() {
-                        return;
+                }
+
+                // Decode text messages as JSON then dispatch.
+                Message::Text(b) => {
+                    // The CodeChat Editor Client should always send valid JSON.
+                    match serde_json::from_str(&b) {
+                        Err(err) => {
+                            println!(
+                                "Unable to decode JSON message from the CodeChat Editor client: {}",
+                                err.to_string()
+                            );
+                            break;
+                        }
+                        // Send the `JointMessage` to the IDE for processing.
+                        Ok(joint_message) => {
+                            if let Result::Err(err) = ide_tx.send(joint_message).await {
+                                println!("Unable to enqueue: {}", err);
+                                break;
+                            }
+                        }
                     }
                 }
-                _ => break,
+
+                Message::Close(reason) => {
+                    println!("Closing per client request: {:?}", reason);
+                    break;
+                }
+
+                other => {
+                    println!("Unexpected message {:?}", &other);
+                    break;
+                }
             }
         }
-
-        let _ = session.close(None).await;
+        // TODO: shut down rx task.
     });
 
+    // Start a task to forward `JointMessage` data from the IDE to the CodeChat Editor Client.
     actix_rt::spawn(async move {
-        while let Some(m) = rx.recv().await {
-            println!("{:?}", &m);
+        while let Some(m) = client_rx.recv().await {
+            match m {
+                JointMessage::Ping(bytes) => {
+                    if let Err(err) = session.pong(&bytes).await {
+                        println!("Unable to send pong: {}", err.to_string());
+                        return;
+                    }
+                }
+                other => match serde_json::to_string(&other) {
+                    Ok(s) => {
+                        if let Err(err) = session.text(&s).await {
+                            println!("Unable to send: {}", err.to_string());
+                            break;
+                        }
+                    }
+                    Err(err) => panic!("Encoding failure {}", err.to_string()),
+                },
+            }
         }
-        rx.close();
+        // Shut down the session, to stop any incoming messages.
+        if let Err(err) = session.close(None).await {
+            println!("Unable to close session: {}", err);
+        }
+
+        client_rx.close();
+        // Drain any remaining messages after closing the queue.
+        while let Some(m) = client_rx.recv().await {
+            println!("Dropped queued message {:?}", &m);
+        }
     });
 
     Ok(response)
 }
 
-// Provide queues which send data to the IDE and the CodeChat Editor Client.
+/// Provide queues which send data to the IDE and the CodeChat Editor Client.
 struct JointEditor {
     /// Data to send to the IDE.
-    ide_queue: Sender<JointMessage>,
+    ide_tx_queue: Sender<JointMessage>,
     /// Data to send to the CodeChat Editor Client.
-    client_queue: Option<Sender<JointMessage>>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-enum IdeType {
-    FileWatcher,
-    VSCode,
+    client_tx_queue: Sender<JointMessage>,
+    client_rx_queue: Receiver<JointMessage>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum JointMessage {
+    /// Pings sent by the underlying websocket protocol.
+    Ping(Bytes),
     /// This is the first message sent when the IDE or client starts up.
     Opened(IdeType),
     /// This sends an update; any missing fields are unchanged.
@@ -805,6 +876,16 @@ enum JointMessage {
     Load(PathBuf),
     /// Sent when the IDE or client are closing.
     Closing,
+}
+
+/// Specify the type of IDE that this client represents.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum IdeType {
+    /// The CodeChat Editor Client always sends this.
+    CodeChatEditorClient,
+    // The IDE client sends one of these.
+    FileWatcher,
+    VSCode,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
