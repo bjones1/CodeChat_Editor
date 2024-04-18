@@ -313,7 +313,10 @@ pub fn source_to_codechat_for_web<'a>(
         match language_lexers_compiled.map_mode_to_lexer.get(&lexer_name) {
             Some(v) => v,
             None => {
-                return TranslationResults::Err(format!("<p>Unknown lexer type {}.</p>", &lexer_name))
+                return TranslationResults::Err(format!(
+                    "<p>Unknown lexer type {}.</p>",
+                    &lexer_name
+                ))
             }
         }
     } else {

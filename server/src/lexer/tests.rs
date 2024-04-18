@@ -699,7 +699,10 @@ fn test_compiler() {
 
     let c_ext_lexer_arr = llc.map_ext_to_lexer_vec.get(&"c".to_string()).unwrap();
     assert_eq!(c_ext_lexer_arr.len(), 1);
-    assert_eq!(c_ext_lexer_arr[0].language_lexer.lexer_name.as_str(), "c_cpp");
+    assert_eq!(
+        c_ext_lexer_arr[0].language_lexer.lexer_name.as_str(),
+        "c_cpp"
+    );
     assert_eq!(
         llc.map_mode_to_lexer
             .get(&"verilog".to_string())
