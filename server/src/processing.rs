@@ -47,7 +47,7 @@ use crate::webserver::{CodeChatForWeb, CodeMirror, SourceFileMetadata};
 /// This enum contains the results of translating a source file to the CodeChat
 /// Editor format.
 #[derive(Debug, PartialEq)]
-pub enum TranslationResults<'a> {
+pub enum TranslationResults {
     // This file is unknown to and therefore not supported by the CodeChat
     // Editor.
     Unknown,
@@ -56,7 +56,7 @@ pub enum TranslationResults<'a> {
     Err(String),
     // A CodeChat Editor file; the struct contains the file's contents
     // translated to CodeMirror.
-    CodeChat(CodeChatForWeb<'a>),
+    CodeChat(CodeChatForWeb),
 }
 
 // On save, the process is CodeChatForWeb -> Vec\<CodeDocBlocks> -> source code.
@@ -97,7 +97,7 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
 // (the `CodeChatForWeb` struct) and transforms it into source code.
 pub fn codechat_for_web_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
-    codechat_for_web: CodeChatForWeb<'_>,
+    codechat_for_web: CodeChatForWeb,
     // Lexer info, needed to transform the `LexedSourceFile` into source code.
     language_lexers_compiled: &LanguageLexersCompiled,
 ) -> Result<String, String> {
@@ -293,7 +293,7 @@ fn code_doc_block_vec_to_source(
 //
 // Given the contents of a file, classify it and (for CodeChat Editor files)
 // convert it to the `CodeChatForWeb` format.
-pub fn source_to_codechat_for_web<'a>(
+pub fn source_to_codechat_for_web(
     // The file's contents.
     file_contents: String,
     // The file's extension.
@@ -304,7 +304,7 @@ pub fn source_to_codechat_for_web<'a>(
     _is_project: bool,
     // Lexers.
     language_lexers_compiled: &LanguageLexersCompiled,
-) -> TranslationResults<'a> {
+) -> TranslationResults {
     // Determine the lexer to use for this file.
     let lexer_name;
     // First, search for a lexer directive in the file contents.
@@ -398,11 +398,11 @@ pub fn source_to_codechat_for_web<'a>(
                             // CodeMirror to correctly handle inserts at the
                             // first character of the following code block.
                             len + doc_block.lines - 1,
-                            std::borrow::Cow::Owned(doc_block.indent.to_string()),
-                            std::borrow::Cow::Owned(doc_block.delimiter.to_string()),
+                            doc_block.indent.to_string(),
+                            doc_block.delimiter.to_string(),
                             // Used the markdown-translated replacement for this
                             // doc block, rather than the original string.
-                            std::borrow::Cow::Owned(doc_block_contents_vec[index].to_string()),
+                            doc_block_contents_vec[index].to_string(),
                         ));
                         index += 1;
                         // Append newlines to the document; the doc block will
@@ -710,14 +710,13 @@ mod tests {
         source_to_codechat_for_web,
     };
     use crate::webserver::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
-    use std::borrow::Cow;
 
     // ### Utilities
     fn build_codechat_for_web<'a>(
         mode: &str,
         doc: &str,
-        doc_blocks: CodeMirrorDocBlocks<'a>,
-    ) -> CodeChatForWeb<'a> {
+        doc_blocks: CodeMirrorDocBlocks,
+    ) -> CodeChatForWeb {
         // Wrap the provided parameters in the necessary data structures.
         CodeChatForWeb {
             metadata: SourceFileMetadata {
@@ -732,7 +731,7 @@ mod tests {
 
     // Provide a way to construct one element of the `CodeMirrorDocBlocks`
     // vector.
-    fn build_codemirror_doc_block<'a>(
+    fn build_codemirror_doc_block(
         start: usize,
         end: usize,
         indent: &str,
@@ -741,16 +740,16 @@ mod tests {
     ) -> (
         usize,
         usize,
-        Cow<'a, String>,
-        Cow<'a, String>,
-        Cow<'a, String>,
+        String,
+        String,
+        String,
     ) {
         (
             start,
             end,
-            Cow::Owned(indent.to_string()),
-            Cow::Owned(delimiter.to_string()),
-            Cow::Owned(contents.to_string()),
+            indent.to_string(),
+            delimiter.to_string(),
+            contents.to_string(),
         )
     }
 

@@ -23,7 +23,6 @@
 ///
 /// ### Standard library
 use std::{
-    borrow::Cow,
     collections::{HashMap, VecDeque},
     env,
     path::{Path, PathBuf},
@@ -68,9 +67,9 @@ use crate::processing::{codechat_for_web_to_source, source_to_codechat_for_web_s
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 /// <a id="LexedSourceFile"></a>Define the JSON data structure used to represent
 /// a source file in a web-editable format.
-pub struct CodeChatForWeb<'a> {
+pub struct CodeChatForWeb {
     pub metadata: SourceFileMetadata,
-    pub source: CodeMirror<'a>,
+    pub source: CodeMirror,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -82,32 +81,27 @@ pub struct SourceFileMetadata {
     pub mode: String,
 }
 
-pub type CodeMirrorDocBlocks<'a> = Vec<(
+pub type CodeMirrorDocBlocks = Vec<(
     // From -- the starting character this doc block is anchored to.
     usize,
     // To -- the ending character this doc block is anchored ti.
     usize,
-    // Indent. This might be a borrowed reference or an owned reference. When
-    // the lexer transforms code and doc blocks into this CodeMirror format, a
-    // borrow from those existing doc blocks is more efficient. However,
-    // deserialization from JSON requires ownership, since the Actix web
-    // framework doesn't provide a place to borrow from. The following variables
-    // are clone-on-write for the same reason.
-    Cow<'a, String>,
+    // Indent.
+    String,
     // delimiter
-    Cow<'a, String>,
+    String,
     // contents
-    Cow<'a, String>,
+    String,
 )>;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 /// The format used by CodeMirror to serialize/deserialize editor contents.
 /// TODO: Link to JS code where this data structure is defined.
-pub struct CodeMirror<'a> {
+pub struct CodeMirror {
     /// The document being edited.
     pub doc: String,
     /// Doc blocks
-    pub doc_blocks: CodeMirrorDocBlocks<'a>,
+    pub doc_blocks: CodeMirrorDocBlocks,
 }
 
 /// This defines the structure of JSON responses returned by the `save_source`
@@ -150,7 +144,7 @@ async fn save_source(
     // The source file to save, in web format. See
     // [JSON](https://actix.rs/docs/extractors#json), which deserializes the
     // request body into the provided struct (here, `CodeChatForWeb`).
-    codechat_for_web: web::Json<CodeChatForWeb<'_>>,
+    codechat_for_web: web::Json<CodeChatForWeb>,
     // Lexer info, needed to transform the `CodeChatForWeb` into source code.
     // See
     // [Data](https://docs.rs/actix-web/4.3.1/actix_web/web/struct.Data.html),
