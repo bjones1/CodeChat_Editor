@@ -124,7 +124,7 @@ ws.onmessage = (event: any) => {
             // Load this data in.
             const { path, contents, cursor_position, scroll_position } = joint_message_data as UpdateMessageContents;
             console.log(`Update(path: ${path}, cursor_position: ${cursor_position}, scroll_position: ${scroll_position})`);
-            page_init(JSON.parse(contents));
+            page_init(contents);
             break;
 
         default:

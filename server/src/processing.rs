@@ -458,14 +458,9 @@ pub fn source_to_codechat_for_web_string(
                     // For the table of contents sidebar, which is pure
                     // markdown, just return the resulting HTML, rather than the
                     // editable CodeChat for web format.
-                    TranslationResultsString::CodeChat(codechat_for_web.source.doc)
+                    TranslationResultsString::Toc(codechat_for_web.source.doc)
                 } else {
-                    // Otherwise, transform this data structure to JSON, so it
-                    // can be sent to the CodeChat Editor Client.
-                    match serde_json::to_string(&codechat_for_web) {
-                        Ok(v) => TranslationResultsString::CodeChat(v),
-                        Err(err) => TranslationResultsString::Err(err.to_string()),
-                    }
+                    TranslationResultsString::CodeChat(codechat_for_web)
                 }
             }
             TranslationResults::Unknown => TranslationResultsString::Unknown,
@@ -737,13 +732,7 @@ mod tests {
         indent: &str,
         delimiter: &str,
         contents: &str,
-    ) -> (
-        usize,
-        usize,
-        String,
-        String,
-        String,
-    ) {
+    ) -> (usize, usize, String, String, String) {
         (
             start,
             end,

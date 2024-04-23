@@ -64,7 +64,7 @@ use crate::processing::{codechat_for_web_to_source, source_to_codechat_for_web_s
 /// ## Data structures
 ///
 /// ### Translation between a local (traditional) source file and its web-editable, client-side representation
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 /// <a id="LexedSourceFile"></a>Define the JSON data structure used to represent
 /// a source file in a web-editable format.
 pub struct CodeChatForWeb {
@@ -72,7 +72,7 @@ pub struct CodeChatForWeb {
     pub source: CodeMirror,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 /// <a id="SourceFileMetadata"></a>Metadata about a source file sent along with
 /// it both to and from the client. TODO: currently, this is too simple to
 /// justify a struct. This allows for future growth -- perhaps the valid types
@@ -94,7 +94,7 @@ pub type CodeMirrorDocBlocks = Vec<(
     String,
 )>;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 /// The format used by CodeMirror to serialize/deserialize editor contents.
 /// TODO: Link to JS code where this data structure is defined.
 pub struct CodeMirror {
@@ -124,7 +124,9 @@ pub enum TranslationResultsString {
     Err(String),
     // A CodeChat Editor file; the struct contains the file's contents
     // translated to CodeMirror.
-    CodeChat(String),
+    CodeChat(CodeChatForWeb),
+    // The table of contents file, translated to HTML.
+    Toc(String),
 }
 
 // ## Globals
@@ -487,7 +489,7 @@ async fn serve_file(
     let (translation_results_string, path_to_toc) =
         source_to_codechat_for_web_string(file_contents, file_path, is_toc, &app_state.lexers);
     let is_project = path_to_toc.is_some();
-    let codechat_for_web_string_raw = match translation_results_string {
+    let codechat_for_web = match translation_results_string {
         // The file type is unknown. Serve it raw.
         TranslationResultsString::Unknown => {
             match actix_files::NamedFile::open_async(file_path).await {
@@ -509,19 +511,14 @@ async fn serve_file(
         // This is a CodeChat file. The following code wraps the CodeChat for
         // web results in a CodeChat Editor Client webpage.
         TranslationResultsString::CodeChat(codechat_for_web) => codechat_for_web,
-    };
-
-    // Look for any script tags and prevent these from causing problems.
-    let codechat_for_web_string = codechat_for_web_string_raw.replace("</script>", "<\\/script>");
-
-    if is_toc {
-        // The TOC is a simplified web page which requires no additional processing.
-        // The script ensures that all hyperlinks target the enclosing page, not
-        // just the iframe containing this page.
-        return HttpResponse::Ok()
-            .content_type(ContentType::html())
-            .body(format!(
-                r#"<!DOCTYPE html>
+        TranslationResultsString::Toc(html) => {
+            // The TOC is a simplified web page which requires no additional processing.
+            // The script ensures that all hyperlinks target the enclosing page, not
+            // just the iframe containing this page.
+            return HttpResponse::Ok()
+                .content_type(ContentType::html())
+                .body(format!(
+                    r#"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -543,9 +540,12 @@ async fn serve_file(
 </body>
 </html>
 "#,
-                name, codechat_for_web_string
-            ));
-    }
+                    name,
+                    // Look for any script tags and prevent these from causing problems.
+                    html.replace("</script>", "<\\/script>")
+                ));
+        }
+    };
 
     // This is a CodeChat Editor file. Start a FileWatcher IDE to handle it.
     let (ide_tx, mut ide_rx) = mpsc::channel(10);
@@ -578,7 +578,7 @@ async fn serve_file(
                     // Provide it a file to open.
                     if let Err(err) = client_tx
                         .send(JointMessage::Update(UpdateMessageContents {
-                            contents: Some(codechat_for_web_string.clone()),
+                            contents: Some(codechat_for_web.clone()),
                             cursor_position: Some(0),
                             path: Some(file_pathbuf.to_path_buf()),
                             scroll_position: Some(0.0),
@@ -883,7 +883,7 @@ struct UpdateMessageContents {
     /// An absolute path to the file currently in use.
     path: Option<PathBuf>,
     /// The contents of this file.
-    contents: Option<String>,
+    contents: Option<CodeChatForWeb>,
     /// The current cursor position in the file, where 0 = before the first
     /// character in the file and contents.length() = after the last character
     /// in the file. TODO: Selections are not yet supported.
