@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 /// Copyright (C) 2023 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -28,6 +27,7 @@ use std::io;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 */
+use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
 

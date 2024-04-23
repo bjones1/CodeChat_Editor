@@ -517,6 +517,9 @@ async fn serve_file(
         TranslationResultsString::CodeChat(codechat_for_web) => codechat_for_web,
     };
 
+    // Look for any script tags and prevent these from causing problems.
+    let codechat_for_web_string = codechat_for_web_string_raw.replace("</script>", "<\\/script>");
+
     if is_toc {
         // The TOC is a simplified web page which requires no additional processing.
         // The script ensures that all hyperlinks target the enclosing page, not
@@ -546,7 +549,7 @@ async fn serve_file(
 </body>
 </html>
 "#,
-                name, codechat_for_web_string_raw
+                name, codechat_for_web_string
             ));
     }
 
@@ -581,7 +584,7 @@ async fn serve_file(
                     // Provide it a file to open.
                     if let Err(err) = client_tx
                         .send(JointMessage::Update(UpdateMessageContents {
-                            contents: Some("testing".to_string()),
+                            contents: Some(codechat_for_web_string.clone()),
                             cursor_position: Some(0),
                             path: Some(file_pathbuf.to_path_buf()),
                             scroll_position: Some(0.0),
@@ -603,9 +606,6 @@ async fn serve_file(
             println!("Dropped queued message {:?}", &m);
         }
     });
-
-    // Look for any script tags and prevent these from causing problems.
-    let codechat_for_web_string = codechat_for_web_string_raw.replace("</script>", "<\\/script>");
 
     // For project files, add in the sidebar. Convert this from a Windows path
     // to a Posix path if necessary.
@@ -647,10 +647,6 @@ async fn serve_file(
             //         href="https://stackoverflow.com/questions/44590393/es6-modules-undefined-onclick-function-after-import">SO</a>.
             // </p>
             window.CodeChatEditor = {{ on_keydown, on_save }};
-
-            page_init(
-{},
-);
         </script>
         {}
         {}
@@ -675,7 +671,7 @@ async fn serve_file(
         </div>
     </body>
 </html>
-"##, name, if is_test_mode { "-test" } else { "" }, codechat_for_web_string, testing_src, sidebar_css, sidebar_iframe, name, dir
+"##, name, if is_test_mode { "-test" } else { "" }, testing_src, sidebar_css, sidebar_iframe, name, dir
     ))
 }
 
@@ -789,7 +785,7 @@ async fn client_ws(
                         Err(err) => {
                             println!(
                                 "Unable to decode JSON message from the CodeChat Editor client: {}",
-                                err.to_string()
+                                err
                             );
                             break;
                         }
@@ -823,18 +819,18 @@ async fn client_ws(
             match m {
                 JointMessage::Ping(bytes) => {
                     if let Err(err) = session.pong(&bytes).await {
-                        println!("Unable to send pong: {}", err.to_string());
+                        println!("Unable to send pong: {}", err);
                         return;
                     }
                 }
                 other => match serde_json::to_string(&other) {
                     Ok(s) => {
                         if let Err(err) = session.text(&s).await {
-                            println!("Unable to send: {}", err.to_string());
+                            println!("Unable to send: {}", err);
                             break;
                         }
                     }
-                    Err(err) => panic!("Encoding failure {}", err.to_string()),
+                    Err(err) => panic!("Encoding failure {}", err),
                 },
             }
         }

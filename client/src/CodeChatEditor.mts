@@ -82,7 +82,7 @@ export const ws = new ReconnectingWebSocket!("ws://localhost:8080/client_ws/");
 ws.onopen = () => {
     console.log(`CodeChat Client: websocket to CodeChat Server open.`);
     // Tell the CodeChat Editor Server we're ready to receive.
-    ws.send(JSON.stringify({Opened: "CodeChatEditorClient"}));
+    ws.send(JSON.stringify({ Opened: "CodeChatEditorClient" }));
 };
 
 // Provide logging to help track down errors.
@@ -115,20 +115,21 @@ ws.onmessage = (event: any) => {
     // Process this message.
     switch (joint_message_type) {
         case "Opened":
-        const IdeType = joint_message_data as string;
-        // There's no additional steps to take currently.
-        console.log(`Opened(${IdeType})`);
-        break;
+            const IdeType = joint_message_data as string;
+            // There's no additional steps to take currently.
+            console.log(`Opened(${IdeType})`);
+            break;
 
         case "Update":
-        // Load this data in.
-        const {path, contents, cursor_position, scroll_position} = joint_message_data as UpdateMessageContents;
-        console.log(`Update(path: ${path}, contents: ${contents}, cursor_position: ${cursor_position}, scroll_position: ${scroll_position})`);
-        break;
+            // Load this data in.
+            const { path, contents, cursor_position, scroll_position } = joint_message_data as UpdateMessageContents;
+            console.log(`Update(path: ${path}, cursor_position: ${cursor_position}, scroll_position: ${scroll_position})`);
+            page_init(JSON.parse(contents));
+            break;
 
         default:
-        console.log(`Unhandled message ${joint_message_type}(${joint_message_data})`);
-        break;
+            console.log(`Unhandled message ${joint_message_type}(${joint_message_data})`);
+            break;
     }
 };
 
