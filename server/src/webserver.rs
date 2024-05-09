@@ -23,10 +23,11 @@
 ///
 /// ### Standard library
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     env,
     path::{Path, PathBuf},
     rc::Rc,
+    str::FromStr,
     sync::Mutex,
 };
 
@@ -36,7 +37,7 @@ use actix_web::{
     get,
     http::header,
     http::header::{ContentDisposition, ContentType},
-    put, web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
+    web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_ws::Message;
 use bytes::Bytes;
@@ -133,74 +134,6 @@ pub enum TranslationResultsString {
 lazy_static! {
     /// Matches a bare drive letter. Only needed on Windows.
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
-}
-
-/// ## Save endpoint
-#[put("/fs/{path:.*}")]
-/// The Save button in the CodeChat Editor Client posts to this endpoint.
-async fn save_source(
-    // The path to save this file to. See
-    // [Path](https://actix.rs/docs/extractors#path), which extracts parameters
-    // from the request's path.
-    encoded_path: web::Path<String>,
-    // The source file to save, in web format. See
-    // [JSON](https://actix.rs/docs/extractors#json), which deserializes the
-    // request body into the provided struct (here, `CodeChatForWeb`).
-    codechat_for_web: web::Json<CodeChatForWeb>,
-    // Lexer info, needed to transform the `CodeChatForWeb` into source code.
-    // See
-    // [Data](https://docs.rs/actix-web/4.3.1/actix_web/web/struct.Data.html),
-    // which provides access to application-wide data. (TODO: link to where this
-    // is defined.)
-    app_state: web::Data<AppState>,
-) -> impl Responder {
-    // Translate from the CodeChatForWeb format to the contents of a source
-    // file.
-    let language_lexers_compiled = &app_state.lexers;
-    let file_contents =
-        match codechat_for_web_to_source(codechat_for_web.into_inner(), language_lexers_compiled) {
-            Ok(r) => r,
-            Err(message) => return save_source_response(false, &message),
-        };
-
-    // Save this string to a file. Add a leading slash for Linux/OS X: this
-    // changes from `foo/bar.c` to `/foo/bar.c`. Windows paths already starts
-    // with a drive letter, such as `C:\foo\bar.c`, so no changes are needed.
-    let save_file_path = if cfg!(windows) {
-        "".to_string()
-    } else {
-        "/".to_string()
-    } + &encoded_path;
-    match fs::write(save_file_path.to_string(), file_contents).await {
-        Ok(v) => v,
-        Err(err) => {
-            return save_source_response(
-                false,
-                &format!("Unable to save file {}: {}.", save_file_path, err),
-            )
-        }
-    }
-
-    save_source_response(true, "")
-}
-
-/// A convenience method to fill out then return the `ErrorResponse` struct from
-/// the `save_source` endpoint.
-fn save_source_response(success: bool, message: &str) -> HttpResponse {
-    let response = ErrorResponse {
-        success,
-        message: message.to_string(),
-    };
-    let body = serde_json::to_string(&response).unwrap();
-    if success {
-        HttpResponse::Ok()
-            .content_type(ContentType::json())
-            .body(body)
-    } else {
-        HttpResponse::UnprocessableEntity()
-            .content_type(ContentType::json())
-            .body(body)
-    }
 }
 
 /// ## Load endpoints
@@ -550,15 +483,11 @@ async fn serve_file(
     // This is a CodeChat Editor file. Start a FileWatcher IDE to handle it.
     let (ide_tx, mut ide_rx) = mpsc::channel(10);
     let (client_tx, client_rx) = mpsc::channel(10);
-    app_state
-        .joint_editors
-        .lock()
-        .unwrap()
-        .push_front(JointEditor {
-            ide_tx_queue: ide_tx,
-            client_tx_queue: client_tx.clone(),
-            client_rx_queue: client_rx,
-        });
+    app_state.joint_editors.lock().unwrap().push(JointEditor {
+        ide_tx_queue: ide_tx,
+        client_tx_queue: client_tx.clone(),
+        client_rx_queue: client_rx,
+    });
 
     // Handle `JointMessage` data from the CodeChat Editor Client for this file.
     let file_pathbuf = Rc::new(file_path.to_path_buf());
@@ -589,6 +518,63 @@ async fn serve_file(
                         break;
                     }
                 }
+
+                JointMessage::Update(update_message_contents) => {
+                    if let Some(codechat_for_web1) = update_message_contents.contents {
+                        if update_message_contents.path.is_none() {
+                            println!("Update rejected: no path provided.");
+                            continue;
+                        }
+                        println!(
+                            "Update: {}, {}, {}",
+                            update_message_contents
+                                .path
+                                .as_ref()
+                                .unwrap()
+                                .to_string_lossy(),
+                            update_message_contents.cursor_position.unwrap_or(0),
+                            update_message_contents.scroll_position.unwrap_or(-1.0)
+                        );
+
+                        // Translate from the CodeChatForWeb format to the contents of a source
+                        // file.
+                        let language_lexers_compiled = &app_state.lexers;
+                        let file_contents = match codechat_for_web_to_source(
+                            codechat_for_web1,
+                            language_lexers_compiled,
+                        ) {
+                            Ok(r) => r,
+                            Err(message) => {
+                                println!("Unable to translate to source: {}", message);
+                                continue;
+                            }
+                        };
+
+                        // Save this string to a file. Add a leading slash for Linux/OS X: this
+                        // changes from `foo/bar.c` to `/foo/bar.c`. Windows paths already start
+                        // with a drive letter, such as `C:\foo\bar.c`, so no changes are needed.
+                        let mut save_file_path = if cfg!(windows) {
+                            PathBuf::from_str("")
+                        } else {
+                            PathBuf::from_str("/")
+                        }
+                        .unwrap();
+                        save_file_path.push(&update_message_contents.path.unwrap());
+                        match fs::write(save_file_path.as_path(), file_contents).await {
+                            Ok(v) => v,
+                            Err(err) => {
+                                println!(
+                                    "Unable to save file {}: {}.",
+                                    save_file_path.to_string_lossy(),
+                                    err
+                                );
+                            }
+                        }
+                    } else {
+                        println!("Error")
+                    }
+                }
+
                 other => {
                     println!("Unhandled message {:?}", other);
                 }
@@ -742,6 +728,7 @@ fn escape_html(unsafe_text: &str) -> String {
 /// - Closing
 ///
 /// Define a websocket handler for the CodeChat Client.
+///
 async fn client_ws(
     req: HttpRequest,
     body: web::Payload,
@@ -750,7 +737,7 @@ async fn client_ws(
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
     // Find a `JointEditor` that needs a client and assign this one to it.
-    let joint_editor_wrapped = app_state.joint_editors.lock().unwrap().pop_front();
+    let joint_editor_wrapped = app_state.joint_editors.lock().unwrap().pop();
     if joint_editor_wrapped.is_none() {
         // TODO: return an error and report it instead!
         println!("Error: no joint editor available.");
@@ -762,49 +749,60 @@ async fn client_ws(
     let mut client_rx = joint_editor.client_rx_queue;
     // Start a task to handle receiving `JointMessage` websocket data from the CodeChat Editor Client.
     actix_rt::spawn(async move {
-        while let Some(Ok(msg)) = msg_stream.next().await {
-            match msg {
-                // Enqueue a ping to this thread's tx queue, to send a pong. Trying to send here means borrow errors, or resorting to a mutex/correctly locking and unlocking it.
-                Message::Ping(bytes) => {
-                    if let Result::Err(err) = client_tx.send(JointMessage::Ping(bytes)).await {
-                        println!("Unable to enqueue: {}", err);
-                        break;
-                    };
-                }
+        msg_stream = msg_stream.max_size(1_000_000);
+        while let Some(msg_wrapped) = msg_stream.next().await {
+            match msg_wrapped {
+                Ok(msg) => {
+                    match msg {
+                        // Enqueue a ping to this thread's tx queue, to send a pong. Trying to send here means borrow errors, or resorting to a mutex/correctly locking and unlocking it.
+                        Message::Ping(bytes) => {
+                            if let Result::Err(err) =
+                                client_tx.send(JointMessage::Ping(bytes)).await
+                            {
+                                println!("Unable to enqueue: {}", err);
+                                break;
+                            };
+                        }
 
-                // Decode text messages as JSON then dispatch.
-                Message::Text(b) => {
-                    // The CodeChat Editor Client should always send valid JSON.
-                    match serde_json::from_str(&b) {
-                        Err(err) => {
-                            println!(
+                        // Decode text messages as JSON then dispatch.
+                        Message::Text(b) => {
+                            // The CodeChat Editor Client should always send valid JSON.
+                            match serde_json::from_str(&b) {
+                                Err(err) => {
+                                    println!(
                                 "Unable to decode JSON message from the CodeChat Editor client: {}",
                                 err
                             );
+                                    break;
+                                }
+                                // Send the `JointMessage` to the IDE for processing.
+                                Ok(joint_message) => {
+                                    if let Result::Err(err) = ide_tx.send(joint_message).await {
+                                        println!("Unable to enqueue: {}", err);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        Message::Close(reason) => {
+                            println!("Closing per client request: {:?}", reason);
                             break;
                         }
-                        // Send the `JointMessage` to the IDE for processing.
-                        Ok(joint_message) => {
-                            if let Result::Err(err) = ide_tx.send(joint_message).await {
-                                println!("Unable to enqueue: {}", err);
-                                break;
-                            }
+
+                        other => {
+                            println!("Unexpected message {:?}", &other);
+                            break;
                         }
                     }
                 }
-
-                Message::Close(reason) => {
-                    println!("Closing per client request: {:?}", reason);
-                    break;
-                }
-
-                other => {
-                    println!("Unexpected message {:?}", &other);
-                    break;
+                Err(err) => {
+                    println!("websocket receive error {:?}", err);
                 }
             }
         }
         // TODO: shut down rx task.
+        println!("TX ended")
     });
 
     // Start a task to forward `JointMessage` data from the IDE to the CodeChat Editor Client.
@@ -902,7 +900,7 @@ struct UpdateMessageContents {
 // endpoints.
 struct AppState {
     lexers: LanguageLexersCompiled,
-    joint_editors: Mutex<VecDeque<JointEditor>>,
+    joint_editors: Mutex<Vec<JointEditor>>,
 }
 
 // ## Webserver startup
@@ -912,7 +910,7 @@ pub async fn main() -> std::io::Result<()> {
     // [shared mutable state](https://actix.rs/docs/application#shared-mutable-state).
     let app_data = web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
-        joint_editors: Mutex::new(VecDeque::new()),
+        joint_editors: Mutex::new(Vec::new()),
     });
     HttpServer::new(move || {
         // Get the path to this executable. Assume that static files for the
@@ -938,9 +936,8 @@ pub async fn main() -> std::io::Result<()> {
                 "/static",
                 client_static_path.as_os_str(),
             ))
-            // These endpoints serve the files to/from the filesystem.
+            // These endpoints serve the files from the filesystem.
             .service(serve_fs)
-            .service(save_source)
             // Reroute to the filesystem for typical user-requested URLs.
             .route("/", web::get().to(_root_fs_redirect))
             .route("/fs", web::get().to(_root_fs_redirect))

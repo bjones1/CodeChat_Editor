@@ -92,13 +92,13 @@ ws.onerror = (event: any) => {
 
 ws.onclose = (event: any) => {
     console.log(
-        `CodeChat Client: websocket closed by event ${event}. This should only happen on shutdown.`,
+        `CodeChat Client: websocket closed by event type ${event.type}: ${event.detail}. This should only happen on shutdown.`,
     );
 };
 
 interface UpdateMessageContents {
     path: string,
-    contents: string,
+    contents: CodeChatForWeb,
     cursor_position: number,
     scroll_position: number
 }
@@ -122,9 +122,9 @@ ws.onmessage = (event: any) => {
 
         case "Update":
             // Load this data in.
-            const { path, contents, cursor_position, scroll_position } = joint_message_data as UpdateMessageContents;
-            console.log(`Update(path: ${path}, cursor_position: ${cursor_position}, scroll_position: ${scroll_position})`);
-            page_init(contents);
+            current_update = joint_message_data as UpdateMessageContents;
+            console.log(`Update(path: ${current_update.path}, cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
+            page_init(current_update.contents);
             break;
 
         default:
@@ -155,6 +155,8 @@ type CodeChatForWeb = {
 let current_metadata: {
     mode: string;
 };
+
+let current_update: UpdateMessageContents;
 
 // Load code when the DOM is ready.
 export const page_init = (all_source: any) => {
@@ -315,39 +317,14 @@ export const on_save = async () => {
             );
         }
     }
-    await save({
+
+    // <a id="save"></a>Save the provided contents back to the filesystem, by
+    // send an update message over the websocket.
+    current_update.contents = {
         metadata: current_metadata,
         source,
-    });
-};
-
-// <a id="save"></a>Save the provided contents back to the filesystem, by
-// sending a `PUT` request to the server. See the
-// [save_file endpoint](CodeChatEditorServer.v.html#save_file).
-const save = async (contents: CodeChatForWeb) => {
-    let response;
-    try {
-        response = await window.fetch(window.location.href, {
-            method: "PUT",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(contents),
-        });
-    } catch (error) {
-        window.alert(`Save failed -- ${error}.`);
-        return;
-    }
-    if (response.ok) {
-        const response_body = await response.json();
-        if (response_body.success !== true) {
-            window.alert("Save failed.");
-        }
-        return;
-    }
-    window.alert(
-        `Save failed -- server returned ${response.status}, ${response.statusText}.`,
-    );
+    };
+    ws.send(JSON.stringify({ Update: current_update }))
 };
 
 // Autosave feature
