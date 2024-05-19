@@ -231,16 +231,14 @@ fn code_doc_block_vec_to_source(
                                 Some(stripped_line) => {
                                     stripped_line.to_string()
                                         + " "
-                                        + &block_comment_closing_delimiter
+                                        + block_comment_closing_delimiter
                                         + "\n"
                                 }
                                 // otherwise (i.e. there's no final newline),
                                 // just include a space and the closing
                                 // delimiter.
                                 None => {
-                                    content_line.to_string()
-                                        + " "
-                                        + &block_comment_closing_delimiter
+                                    content_line.to_string() + " " + block_comment_closing_delimiter
                                 }
                             }
                         } else {
@@ -1063,8 +1061,6 @@ mod tests {
     }
 
     // ### Tests for `source_to_codechat_for_web`
-    //
-    // TODO.
     #[test]
     fn test_source_to_codechat_for_web_1() {
         let llc = compile_lexers(get_language_lexer_vec());

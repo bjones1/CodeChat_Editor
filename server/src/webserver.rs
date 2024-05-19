@@ -82,6 +82,7 @@ pub struct SourceFileMetadata {
     pub mode: String,
 }
 
+/// This defines a doc block for CodeMirror.
 pub type CodeMirrorDocBlocks = Vec<(
     // From -- the starting character this doc block is anchored to.
     usize,
@@ -103,14 +104,6 @@ pub struct CodeMirror {
     pub doc: String,
     /// Doc blocks
     pub doc_blocks: CodeMirrorDocBlocks,
-}
-
-/// This defines the structure of JSON responses returned by the `save_source`
-/// endpoint. TODO: Link to where this is used in the JS.
-#[derive(Serialize)]
-struct ErrorResponse {
-    success: bool,
-    message: String,
 }
 
 /// This enum contains the results of translating a source file to a string

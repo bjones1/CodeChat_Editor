@@ -332,7 +332,7 @@ fn build_lexer_regex(
     // closing block comment delimiter to the map for the corresponding group.
     let mut block_comment_opening_delim: Vec<String> = vec!["".to_string()];
     for block_comment_delim in &language_lexer.block_comment_delim_arr {
-        block_comment_opening_delim[0] = block_comment_delim.opening.clone();
+        block_comment_opening_delim[0].clone_from(&block_comment_delim.opening);
         regex_builder(
             &block_comment_opening_delim,
             // Determine the block closing regex:
