@@ -123,6 +123,58 @@ pub enum TranslationResultsString {
     Toc(String),
 }
 
+/// Provide queues which send data to the IDE and the CodeChat Editor Client.
+struct JointEditor {
+    /// Data to send to the IDE.
+    ide_tx_queue: Sender<JointMessage>,
+    /// Data to send to the CodeChat Editor Client.
+    client_tx_queue: Sender<JointMessage>,
+    client_rx_queue: Receiver<JointMessage>,
+}
+
+/// Define the data structure used to pass data between the CodeChat Editor Client, the IDE, and the CodeChat Editor Server.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum JointMessage {
+    /// Pings sent by the underlying websocket protocol.
+    Ping(Bytes),
+    /// This is the first message sent when the IDE or client starts up.
+    Opened(IdeType),
+    /// This sends an update; any missing fields are unchanged.
+    Update(UpdateMessageContents),
+    /// Only the CodeChat Client editor may send this; it requests the IDE to
+    /// load the provided file. The IDE should respond by sending an `Update`
+    /// with the requested file.
+    Load(PathBuf),
+    /// Sent when the IDE or client are closing.
+    Closing,
+}
+
+/// Specify the type of IDE that this client represents.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum IdeType {
+    /// The CodeChat Editor Client always sends this.
+    CodeChatEditorClient,
+    // The IDE client sends one of these.
+    FileWatcher,
+    VSCode,
+}
+
+/// Contents of the `Update` message.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct UpdateMessageContents {
+    /// An absolute path to the file currently in use.
+    path: Option<PathBuf>,
+    /// The contents of this file.
+    contents: Option<CodeChatForWeb>,
+    /// The current cursor position in the file, where 0 = before the first
+    /// character in the file and contents.length() = after the last character
+    /// in the file. TODO: Selections are not yet supported.
+    cursor_position: Option<u32>,
+    /// The normalized vertical scroll position in the file, where 0 = top and 1
+    /// = bottom.
+    scroll_position: Option<f32>,
+}
+
 // ## Globals
 lazy_static! {
     /// Matches a bare drive letter. Only needed on Windows.
@@ -140,6 +192,9 @@ async fn _root_fs_redirect() -> impl Responder {
 
 /// The load endpoint: dispatch to support functions which serve either a
 /// directory listing, a CodeChat Editor file, or a normal file.
+///
+/// Omit code coverage -- this is a temporary interface, until IDE integration replaces this.
+#[cfg(not(tarpaulin_include))]
 #[get("/fs/{path:.*}")]
 async fn serve_fs(
     req: HttpRequest,
@@ -192,6 +247,9 @@ async fn serve_fs(
 ///
 /// Create a web page listing all files and subdirectories of the provided
 /// directory.
+///
+/// Omit code coverage -- this is a temporary interface, until IDE integration replaces this.
+#[cfg(not(tarpaulin_include))]
 async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     // Special case on Windows: list drive letters.
     #[cfg(target_os = "windows")]
@@ -648,54 +706,6 @@ async fn serve_file(
     ))
 }
 
-// ## Utilities
-//
-// Given a `Path`, transform it into a displayable string.
-fn path_display(p: &Path) -> String {
-    let path_orig = p.to_string_lossy();
-    if cfg!(windows) {
-        // On Windows, the returned path starts with `\\?\` per the
-        // [docs](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces).
-        path_orig[4..].to_string()
-    } else {
-        path_orig.to_string()
-    }
-}
-
-// Return a Not Found (404) error with the provided HTML body.
-fn html_not_found(msg: &str) -> HttpResponse {
-    HttpResponse::NotFound()
-        .content_type(ContentType::html())
-        .body(html_wrapper(msg))
-}
-
-// Wrap the provided HTML body in DOCTYPE/html/head tags.
-fn html_wrapper(body: &str) -> String {
-    format!(
-        "<!DOCTYPE html>
-<html lang=\"en\">
-    <head>
-        <meta charset=\"UTF-8\">
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-        <title>The CodeChat Editor</title>
-    </head>
-    <body>
-        {}
-    </body>
-</html>",
-        body
-    )
-}
-
-// Given text, escape it so it formats correctly as HTML. This is a translation
-// of Python's `html.escape` function.
-fn escape_html(unsafe_text: &str) -> String {
-    unsafe_text
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-}
-
 /// ## Websockets
 ///
 /// Each CodeChat Editor IDE instance pairs with a CodeChat Editor Client
@@ -704,24 +714,7 @@ fn escape_html(unsafe_text: &str) -> String {
 /// make GUI-enhanced edits of the source code rendered by the CodeChat Editor
 /// Client.
 ///
-/// The IDE and the CodeChat Editor Client communicate to each other through
-/// websocket connections to this server. Typically, each IDE is paired with an
-/// associated editor. For the editor to send and receive messages with the
-/// client, the websocket server for the IDE needs a way to pass messages to the
-/// websocket server for the client and vice versa. TODO: how do I do this? In
-/// addition, the server needs a way to close all clients when it shuts down.
-/// TODO: do I need to handle this, or is it done automatically?
-///
-/// Messages to exchange:
-///
-/// - Ready (once, the first message from both client and IDE)
-/// - Update (provide new contents / path / cursor position / scroll position)
-/// - Load (only the client may send this; requests the IDE to load another
-///   file)
-/// - Closing
-///
-/// Define a websocket handler for the CodeChat Client.
-///
+/// Define a websocket handler for the CodeChat Editor Client.
 async fn client_ws(
     req: HttpRequest,
     body: web::Payload,
@@ -834,60 +827,9 @@ async fn client_ws(
     Ok(response)
 }
 
-/// Provide queues which send data to the IDE and the CodeChat Editor Client.
-struct JointEditor {
-    /// Data to send to the IDE.
-    ide_tx_queue: Sender<JointMessage>,
-    /// Data to send to the CodeChat Editor Client.
-    client_tx_queue: Sender<JointMessage>,
-    client_rx_queue: Receiver<JointMessage>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-enum JointMessage {
-    /// Pings sent by the underlying websocket protocol.
-    Ping(Bytes),
-    /// This is the first message sent when the IDE or client starts up.
-    Opened(IdeType),
-    /// This sends an update; any missing fields are unchanged.
-    Update(UpdateMessageContents),
-    /// Only the CodeChat Client editor may send this; it requests the IDE to
-    /// load the provided file. The IDE should respond by sending an `Update`
-    /// with the requested file.
-    Load(PathBuf),
-    /// Sent when the IDE or client are closing.
-    Closing,
-}
-
-/// Specify the type of IDE that this client represents.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-enum IdeType {
-    /// The CodeChat Editor Client always sends this.
-    CodeChatEditorClient,
-    // The IDE client sends one of these.
-    FileWatcher,
-    VSCode,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-struct UpdateMessageContents {
-    /// An absolute path to the file currently in use.
-    path: Option<PathBuf>,
-    /// The contents of this file.
-    contents: Option<CodeChatForWeb>,
-    /// The current cursor position in the file, where 0 = before the first
-    /// character in the file and contents.length() = after the last character
-    /// in the file. TODO: Selections are not yet supported.
-    cursor_position: Option<u32>,
-    /// The normalized vertical scroll position in the file, where 0 = top and 1
-    /// = bottom.
-    scroll_position: Option<f32>,
-}
-
 // The client task receives a JointMessage, translates the code, then sends it
-// to its paired IDE by calling this function. Likewise, the IDE task receives a
-// ClientMessage, translates the code, then sends it to its paired client by
-// calling this function.
+// to its paired IDE.. Likewise, the IDE task receives a
+// `ClientMessage``, translates the code, then sends it to its paired client.
 
 // Define the [state](https://actix.rs/docs/application/#state) available to all
 // endpoints.
@@ -939,6 +881,54 @@ pub async fn main() -> std::io::Result<()> {
     .bind(("127.0.0.1", 8080))?
     .run()
     .await
+}
+
+// ## Utilities
+//
+// Given a `Path`, transform it into a displayable string.
+fn path_display(p: &Path) -> String {
+    let path_orig = p.to_string_lossy();
+    if cfg!(windows) {
+        // On Windows, the returned path starts with `\\?\` per the
+        // [docs](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces).
+        path_orig[4..].to_string()
+    } else {
+        path_orig.to_string()
+    }
+}
+
+// Return a Not Found (404) error with the provided HTML body.
+fn html_not_found(msg: &str) -> HttpResponse {
+    HttpResponse::NotFound()
+        .content_type(ContentType::html())
+        .body(html_wrapper(msg))
+}
+
+// Wrap the provided HTML body in DOCTYPE/html/head tags.
+fn html_wrapper(body: &str) -> String {
+    format!(
+        "<!DOCTYPE html>
+<html lang=\"en\">
+    <head>
+        <meta charset=\"UTF-8\">
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+        <title>The CodeChat Editor</title>
+    </head>
+    <body>
+        {}
+    </body>
+</html>",
+        body
+    )
+}
+
+// Given text, escape it so it formats correctly as HTML. This is a translation
+// of Python's `html.escape` function.
+fn escape_html(unsafe_text: &str) -> String {
+    unsafe_text
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 // ## Tests
