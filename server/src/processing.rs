@@ -694,7 +694,11 @@ fn html_analyze(
 // ## Tests
 #[cfg(test)]
 mod tests {
-    use super::TranslationResults;
+    use std::env;
+    use std::path::PathBuf;
+    use std::str::FromStr;
+
+    use super::{find_path_to_toc, TranslationResults};
     use crate::lexer::{
         compile_lexers, supported_languages::get_language_lexer_vec, CodeDocBlock, DocBlock,
     };
@@ -703,6 +707,8 @@ mod tests {
         source_to_codechat_for_web,
     };
     use crate::webserver::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
+    use assert_fs::fixture::PathCopy;
+    use assert_fs::TempDir;
 
     // ### Utilities
     fn build_codechat_for_web<'a>(
@@ -1180,5 +1186,44 @@ mod tests {
                 ]
             ))
         );
+    }
+
+    // Use the `tests/fixtures` path (relative to the root of this Rust project) to store files for testing. A subdirectory, named by the name of the test function by convention, contains everything needed for this test. Copy this over to a temporary directory, then run tests there.
+    fn prep_test_dir(test_name: &str) -> (TempDir, PathBuf) {
+        // First, get the project root directory, based on the [location of the cargo.toml file](https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates).
+        let root_dir = &env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR");
+        let mut source_path = PathBuf::from(root_dir);
+        // Append the path for test files.
+        source_path.push("tests/fixtures");
+        // For debugging, append [.into_persistent()](https://docs.rs/assert_fs/latest/assert_fs/fixture/struct.TempDir.html#method.into_persistent).
+        let temp_dir = TempDir::new().unwrap();
+        // Create a temporary directory, then copy everything needed for this test to it. Since the `patterns` parameter is a glob, append `/**` to the directory to copy to get all files/subdirectories.
+        temp_dir
+            .copy_from(source_path, &[format!("{test_name}/**")])
+            .unwrap();
+        // This is a path where testing takes place.
+        let test_dir = temp_dir.path().join(test_name);
+
+        (temp_dir, test_dir)
+    }
+
+    #[test]
+    fn test_find_path_to_toc_1() {
+        let (temp_dir, test_dir) = prep_test_dir("test_find_path_to_toc_1");
+
+        // Test 1: the TOC is in the same directory as the file.
+        let fp = find_path_to_toc(&test_dir.join("1/foo.py"));
+        assert_eq!(fp, Some(PathBuf::from_str("toc.md").unwrap()));
+
+        // Test 2: no TOC. (We assume all temp directory parent lack a TOC as well.)
+        let fp = find_path_to_toc(&test_dir.join("2/foo.py"));
+        assert_eq!(fp, None);
+
+        // Test 3: the TOC is a few levels above the file.
+        let fp = find_path_to_toc(&test_dir.join("3/bar/baz/foo.py"));
+        assert_eq!(fp, Some(PathBuf::from_str("../../toc.md").unwrap()));
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
     }
 }
