@@ -17,6 +17,6 @@
 # Set these to match the output from `cargo tarpaulin --print-rust-flags` to avoid recompiles.
 #
 # This is commented out; for development, uncomment this.
-##rustflags = ["-Cdebuginfo=2", "--cfg=tarpaulin", "-Cinstrument-coverage"]
+##rustflags = ["-Cdebuginfo=2", "-Cstrip=none", "--cfg=tarpaulin", "-Cinstrument-coverage"]
 
 # CodeChat Editor lexer: python.
