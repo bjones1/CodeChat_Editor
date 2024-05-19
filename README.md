@@ -42,7 +42,7 @@ These form a set of high-level requirements to guide the project.
     linter feedback) for code blocks.
 - Zero build: eliminate the traditional project build process -- make it almost
   instantaneous.
-- Doc block markup should be readable and well-known.
+- Doc block markup should be readable and well-known: markdown.
 - Support both a single-file mode and a project mode.
   - A project is a specific directory tree, identified by the presence of a TOC.
     A TOC is just a plain Markdown file with a specific name.
@@ -80,7 +80,7 @@ These form a set of high-level requirements to guide the project.
 ### Nice to have features
 
 - Simple to install locally; provide a template CodeSpaces repo for web-based
-  editing?
+  editing.
 - Support a static build: producing a set of view-only HTML files which don't
   need a server for a project, or a single HTML file outside a project.
 - An API-only view (Doxygen/Javadoc like feature).
@@ -115,7 +115,7 @@ Doc blocks are differentiated by their indent: the whitespace characters
 preceding the opening comment delimiter. Adjacent doc blocks with identical
 indents are combined into a single, larger doc block.
 
-<pre>// This is all one doc block, since only the preceding<br>//   whitespace (there is none) matters, not the amount of <br>// whitespace following the opening comment delimiters.<br>  // This is the beginning of a different doc<br>  // block, since the indent is different.<br>    // Here's a third doc block; inline and block comments<br>    /* combine as long as the whitespace preceeding the comment<br>delimiters is identical. Whitespace inside the comment doesn't affect<br>       the classification. */<br>// These are two separate doc blocks,<br>void foo();<br>// since they are separated by a code block.</pre>
+<pre>// This is all one doc block, since only the preceding<br>//   whitespace (there is none) matters, not the amount of <br>// whitespace following the opening comment delimiters.<br>  // This is the beginning of a different doc<br>  // block, since the indent is different.<br>    // Here's a third doc block; inline and block comments<br>    /* combine as long as the whitespace preceding the comment<br>delimiters is identical. Whitespace inside the comment doesn't affect<br>       the classification. */<br>// These are two separate doc blocks,<br>void foo();<br>// since they are separated by a code block.</pre>
 
 ### <a id="implementation-programming-language-support"></a>[Programming language support](index.md#programming-language-support)
 
