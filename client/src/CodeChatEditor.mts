@@ -77,12 +77,15 @@ const turndownService = new TurndownService({
     renderAsPure: false,
 });
 
+let ws_id = 0;
+
+
 export const ws = new ReconnectingWebSocket!("ws://localhost:8080/client_ws/");
 // Identify this client on connection.
 ws.onopen = () => {
     console.log(`CodeChat Client: websocket to CodeChat Server open.`);
     // Tell the CodeChat Editor Server we're ready to receive.
-    ws.send(JSON.stringify({ Opened: "CodeChatEditorClient" }));
+    ws.send(JSON.stringify({ id: ws_id++, message: { Opened: "CodeChatEditorClient" } }));
 };
 
 // Provide logging to help track down errors.
@@ -96,39 +99,67 @@ ws.onclose = (event: any) => {
     );
 };
 
+interface JointMessage {
+    id: number,
+    message: JointMessageContents
+}
+
+interface JointMessageContents {
+    Opened?: IdeType,
+    Update?: UpdateMessageContents,
+    Load?: String,
+    Closing?: undefined,
+    Result?: string
+}
+
+enum IdeType {
+    CodeChatEditorClient,
+    FileWatcher,
+    VSCode,
+}
+
 interface UpdateMessageContents {
-    path: string,
-    contents: CodeChatForWeb,
-    cursor_position: number,
-    scroll_position: number
+    path: string | undefined,
+    contents: CodeChatForWeb | undefined,
+    cursor_position: number | undefined,
+    scroll_position: number | undefined
 }
 
 // Handle messages.
 ws.onmessage = (event: any) => {
     // Parse the received message, which must be a single element of a dictionary representing a `JointMessage`.
-    const joint_message = JSON.parse(event.data);
-    const keys = Object.keys(joint_message);
-    console.assert(keys.length == 1);
-    const joint_message_type = keys[0];
-    const joint_message_data = Object.values(joint_message)[0];
+    const joint_message = JSON.parse(event.data) as JointMessage;
+    const { id: id, message: message } = joint_message;
+    console.assert(id !== undefined)
+    console.assert(message !== undefined)
+    const keys = Object.keys(message);
+    console.assert(keys.length === 1)
+    const key = keys[0];
+    const value = Object.values(message)[0];
 
     // Process this message.
-    switch (joint_message_type) {
+    switch (key) {
         case "Opened":
-            const IdeType = joint_message_data as string;
+            const ideType = value as IdeType;
             // There's no additional steps to take currently.
             console.log(`Opened(${IdeType})`);
             break;
 
         case "Update":
             // Load this data in.
-            current_update = joint_message_data as UpdateMessageContents;
+            current_update = value as UpdateMessageContents;
             console.log(`Update(path: ${current_update.path}, cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
             page_init(current_update.contents);
             break;
 
+        case "Result":
+            const err = value as string;
+            if (value !== "") {
+                console.log(`Error in message ${id}: ${err}.`)
+            }
+
         default:
-            console.log(`Unhandled message ${joint_message_type}(${joint_message_data})`);
+            console.log(`Unhandled message ${key}(${value})`);
             break;
     }
 };
@@ -324,7 +355,7 @@ export const on_save = async () => {
         metadata: current_metadata,
         source,
     };
-    ws.send(JSON.stringify({ Update: current_update }))
+    ws.send(JSON.stringify({ id: ws_id++, message: { Update: current_update } }))
 };
 
 // Autosave feature

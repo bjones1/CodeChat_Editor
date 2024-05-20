@@ -134,7 +134,16 @@ struct JointEditor {
 
 /// Define the data structure used to pass data between the CodeChat Editor Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-enum JointMessage {
+struct JointMessage {
+    /// A value unique to this message; it's used to report results (success/failure) back to the sender.
+    id: u32,
+    /// The actual message.
+    message: JointMessageContents,
+}
+
+/// Define the data structure used to pass data between the CodeChat Editor Client, the IDE, and the CodeChat Editor Server.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum JointMessageContents {
     /// Pings sent by the underlying websocket protocol.
     Ping(Bytes),
     /// This is the first message sent when the IDE or client starts up.
@@ -147,6 +156,8 @@ enum JointMessage {
     Load(PathBuf),
     /// Sent when the IDE or client are closing.
     Closing,
+    /// Sent as a response to any of the above messages (except `Ping`), reporting success/error. An empty string indicates success; otherwise, the string contains the error message.
+    Result(String),
 }
 
 /// Specify the type of IDE that this client represents.
@@ -173,6 +184,13 @@ struct UpdateMessageContents {
     /// The normalized vertical scroll position in the file, where 0 = top and 1
     /// = bottom.
     scroll_position: Option<f32>,
+}
+
+// Define the [state](https://actix.rs/docs/application/#state) available to all
+// endpoints.
+struct AppState {
+    lexers: LanguageLexersCompiled,
+    joint_editors: Mutex<Vec<JointEditor>>,
 }
 
 // ## Globals
@@ -543,26 +561,35 @@ async fn serve_file(
     // Handle `JointMessage` data from the CodeChat Editor Client for this file.
     let file_pathbuf = Rc::new(file_path.to_path_buf());
     actix_rt::spawn(async move {
+        let mut id: u32 = 0;
         while let Some(m) = ide_rx.recv().await {
-            match m {
-                JointMessage::Opened(ide_type) => {
+            match m.message {
+                JointMessageContents::Opened(ide_type) => {
                     assert!(ide_type == IdeType::CodeChatEditorClient);
                     // Tell the CodeChat Editor Client the type of this IDE.
+                    id += 1;
                     if let Err(err) = client_tx
-                        .send(JointMessage::Opened(IdeType::FileWatcher))
+                        .send(JointMessage {
+                            id,
+                            message: JointMessageContents::Opened(IdeType::FileWatcher),
+                        })
                         .await
                     {
                         println!("Unable to enqueue: {}", err);
                         break;
                     }
                     // Provide it a file to open.
+                    id += 1;
                     if let Err(err) = client_tx
-                        .send(JointMessage::Update(UpdateMessageContents {
-                            contents: Some(codechat_for_web.clone()),
-                            cursor_position: Some(0),
-                            path: Some(file_pathbuf.to_path_buf()),
-                            scroll_position: Some(0.0),
-                        }))
+                        .send(JointMessage {
+                            id,
+                            message: JointMessageContents::Update(UpdateMessageContents {
+                                contents: Some(codechat_for_web.clone()),
+                                cursor_position: Some(0),
+                                path: Some(file_pathbuf.to_path_buf()),
+                                scroll_position: Some(0.0),
+                            }),
+                        })
                         .await
                     {
                         println!("Unable to enqueue: {}", err);
@@ -570,7 +597,7 @@ async fn serve_file(
                     }
                 }
 
-                JointMessage::Update(update_message_contents) => {
+                JointMessageContents::Update(update_message_contents) => {
                     if let Some(codechat_for_web1) = update_message_contents.contents {
                         if update_message_contents.path.is_none() {
                             println!("Update rejected: no path provided.");
@@ -624,6 +651,10 @@ async fn serve_file(
                     } else {
                         println!("Error")
                     }
+                }
+
+                JointMessageContents::Result(err) => {
+                    println!("Error in message {}: {err}.", m.id);
                 }
 
                 other => {
@@ -743,7 +774,13 @@ async fn client_ws(
                         // Enqueue a ping to this thread's tx queue, to send a pong. Trying to send here means borrow errors, or resorting to a mutex/correctly locking and unlocking it.
                         Message::Ping(bytes) => {
                             if let Result::Err(err) =
-                                client_tx.send(JointMessage::Ping(bytes)).await
+                                // For a ping, we don't need a unique ID, since ping/pongs are handled outside our framework.
+                                client_tx
+                                    .send(JointMessage {
+                                        id: 0,
+                                        message: JointMessageContents::Ping(bytes),
+                                    })
+                                    .await
                             {
                                 println!("Unable to enqueue: {}", err);
                                 break;
@@ -794,14 +831,14 @@ async fn client_ws(
     // Start a task to forward `JointMessage` data from the IDE to the CodeChat Editor Client.
     actix_rt::spawn(async move {
         while let Some(m) = client_rx.recv().await {
-            match m {
-                JointMessage::Ping(bytes) => {
+            match m.message {
+                JointMessageContents::Ping(bytes) => {
                     if let Err(err) = session.pong(&bytes).await {
                         println!("Unable to send pong: {}", err);
                         return;
                     }
                 }
-                other => match serde_json::to_string(&other) {
+                ref _other => match serde_json::to_string(&m) {
                     Ok(s) => {
                         if let Err(err) = session.text(&s).await {
                             println!("Unable to send: {}", err);
@@ -830,13 +867,6 @@ async fn client_ws(
 // The client task receives a JointMessage, translates the code, then sends it
 // to its paired IDE.. Likewise, the IDE task receives a
 // `ClientMessage``, translates the code, then sends it to its paired client.
-
-// Define the [state](https://actix.rs/docs/application/#state) available to all
-// endpoints.
-struct AppState {
-    lexers: LanguageLexersCompiled,
-    joint_editors: Mutex<Vec<JointEditor>>,
-}
 
 // ## Webserver startup
 #[actix_web::main]
