@@ -27,6 +27,7 @@ use std::io;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 */
+use std::cmp::max;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
@@ -375,10 +376,10 @@ pub fn source_to_codechat_for_web(
             // Now that we have HTML, process it. TODO.
             //
             // After processing by Markdown, the double newline at the of the
-            // doc block separate string becomes a single newline; split using
+            // doc block separator string becomes a single newline; split using
             // this slightly shorter string.
             doc_block_contents_vec = html
-                .split(&DOC_BLOCK_SEPARATOR_STRING[0..DOC_BLOCK_SEPARATOR_STRING.len() - 1])
+                .split(&DOC_BLOCK_SEPARATOR_STRING[1..DOC_BLOCK_SEPARATOR_STRING.len() - 1])
                 .collect();
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
@@ -394,8 +395,10 @@ pub fn source_to_codechat_for_web(
                             len,
                             // To. Make this one line short, which allows
                             // CodeMirror to correctly handle inserts at the
-                            // first character of the following code block.
-                            len + doc_block.lines - 1,
+                            // first character of the following code block. Note
+                            // that the last doc block could be zero length, so
+                            // handle this case.
+                            len + max(doc_block.lines, 1) - 1,
                             doc_block.indent.to_string(),
                             doc_block.delimiter.to_string(),
                             // Used the markdown-translated replacement for this
@@ -1180,24 +1183,49 @@ mod tests {
                         0,
                         "",
                         "//",
-                        "<p><a href=\"http://b.org\">Link</a></p>"
+                        "<p><a href=\"http://b.org\">Link</a></p>\n"
                     ),
                     build_codemirror_doc_block(12, 12, "", "/*", "")
                 ]
             ))
         );
+
+        // Trigger special cases:
+        //
+        // - An empty doc block at the beginning of the file.
+        // - A doc block in the middle of the file
+        // - A doc block with no trailing newline at the end of the file.
+        assert_eq!(
+            source_to_codechat_for_web("//\n\n//\n\n//".to_string(), "cpp", false, false, &llc),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "c_cpp",
+                "\n\n\n\n",
+                vec![
+                    build_codemirror_doc_block(0, 0, "", "//", ""),
+                    build_codemirror_doc_block(2, 2, "", "//", ""),
+                    build_codemirror_doc_block(4, 4, "", "//", "")
+                ]
+            ))
+        );
     }
 
-    // Use the `tests/fixtures` path (relative to the root of this Rust project) to store files for testing. A subdirectory, named by the name of the test function by convention, contains everything needed for this test. Copy this over to a temporary directory, then run tests there.
+    // Use the `tests/fixtures` path (relative to the root of this Rust project)
+    // to store files for testing. A subdirectory, named by the name of the test
+    // function by convention, contains everything needed for this test. Copy
+    // this over to a temporary directory, then run tests there.
     fn prep_test_dir(test_name: &str) -> (TempDir, PathBuf) {
-        // First, get the project root directory, based on the [location of the cargo.toml file](https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates).
+        // First, get the project root directory, based on the
+        // [location of the cargo.toml file](https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates).
         let root_dir = &env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR");
         let mut source_path = PathBuf::from(root_dir);
         // Append the path for test files.
         source_path.push("tests/fixtures");
-        // For debugging, append [.into_persistent()](https://docs.rs/assert_fs/latest/assert_fs/fixture/struct.TempDir.html#method.into_persistent).
+        // For debugging, append
+        // [.into_persistent()](https://docs.rs/assert_fs/latest/assert_fs/fixture/struct.TempDir.html#method.into_persistent).
         let temp_dir = TempDir::new().unwrap();
-        // Create a temporary directory, then copy everything needed for this test to it. Since the `patterns` parameter is a glob, append `/**` to the directory to copy to get all files/subdirectories.
+        // Create a temporary directory, then copy everything needed for this
+        // test to it. Since the `patterns` parameter is a glob, append `/**` to
+        // the directory to copy to get all files/subdirectories.
         temp_dir
             .copy_from(source_path, &[format!("{test_name}/**")])
             .unwrap();
@@ -1215,7 +1243,8 @@ mod tests {
         let fp = find_path_to_toc(&test_dir.join("1/foo.py"));
         assert_eq!(fp, Some(PathBuf::from_str("toc.md").unwrap()));
 
-        // Test 2: no TOC. (We assume all temp directory parent lack a TOC as well.)
+        // Test 2: no TOC. (We assume all temp directory parent lack a TOC as
+        // well.)
         let fp = find_path_to_toc(&test_dir.join("2/foo.py"));
         assert_eq!(fp, None);
 
