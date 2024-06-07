@@ -56,9 +56,9 @@ use regex::Regex;
 ///     doc block:\
 ///     `// This is an odd\`\
 ///     `two-line inline comment.`\
-///     However, this such such unusual syntax (most authors would instead use either
-///     a block comment or another inline comment) that recognizing it adds little
-///     value.
+///     However, this such such unusual syntax (most authors would instead use
+///     either a block comment or another inline comment) that recognizing it
+///     adds little value.
 /// 2.  I'm unaware of any valid syntax in which ignoring a line continuation
 ///     would cause the lexer to mis-recognize code as a comment. (Escaped
 ///     newlines in strings, a separate case, are handled correctly).
@@ -138,10 +138,10 @@ enum SpecialCase {
 /// Define a language by providing everything this lexer needs in order to split
 /// it into code and doc blocks.
 pub struct LanguageLexer {
-    /// The lexer name which the CodeChat Editor Client uses this to tell CodeMirror the mode
-    /// to use. It's can also be used in a specially-formatted comment in a
-    /// source file to override the lexer chosen by looking at the file's
-    /// extension.
+    /// The lexer name which the CodeChat Editor Client uses this to tell
+    /// CodeMirror the mode to use. It's can also be used in a
+    /// specially-formatted comment in a source file to override the lexer
+    /// chosen by looking at the file's extension.
     pub lexer_name: Arc<String>,
     /// An array of file extensions for this language. They \_do not_begin with
     /// a period, such as `rs`. This is the typical way that the CodeChat Editor

@@ -513,10 +513,9 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                                 ;
                                 selection_path.length;
                                 selection_node =
-                                // As before, use the more-consistent
-                                // `children` except for the last element,
-                                // where we might be selecting a `text`
-                                // node.
+                                // As before, use the more-consistent `children`
+                                // except for the last element, where we might
+                                // be selecting a `text` node.
                                 (
                                     selection_path.length > 1
                                         ? selection_node.children

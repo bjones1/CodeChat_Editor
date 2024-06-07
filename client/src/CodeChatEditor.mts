@@ -127,7 +127,8 @@ interface UpdateMessageContents {
 
 // Handle messages.
 ws.onmessage = (event: any) => {
-    // Parse the received message, which must be a single element of a dictionary representing a `JointMessage`.
+    // Parse the received message, which must be a single element of a
+    // dictionary representing a `JointMessage`.
     const joint_message = JSON.parse(event.data) as JointMessage;
     const { id: id, message: message } = joint_message;
     console.assert(id !== undefined)

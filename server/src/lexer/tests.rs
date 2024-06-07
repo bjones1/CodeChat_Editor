@@ -1,5 +1,3 @@
-use crate::lexer::supported_languages::get_language_lexer_vec;
-
 /// Copyright (C) 2023 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -17,8 +15,8 @@ use crate::lexer::supported_languages::get_language_lexer_vec;
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// # `test.rs` -- Unit tests for the lexer
-//
 // ## Imports
+use super::supported_languages::get_language_lexer_vec;
 use super::{compile_lexers, source_lexer, CodeDocBlock, DocBlock};
 
 // ## Utilities
@@ -193,8 +191,8 @@ fn test_py() {
             build_doc_block("", "#", "Test 2")
         ]
     );
-    // An empty string, follow by a comment which ignores the fake
-    // multi-line string.
+    // An empty string, follow by a comment which ignores the fake multi-line
+    // string.
     assert_eq!(
         source_lexer("''\n# Test 1'''\n# Test 2", py),
         [
@@ -493,8 +491,8 @@ fn test_matlab() {
     let llc = compile_lexers(get_language_lexer_vec());
     let matlab = llc.map_mode_to_lexer.get(&"matlab".to_string()).unwrap();
 
-    // Test both inline comment styles. Verify that escaped quotes are
-    // ignored, and that doubled quotes are handled correctly.
+    // Test both inline comment styles. Verify that escaped quotes are ignored,
+    // and that doubled quotes are handled correctly.
     assert_eq!(
         source_lexer(
             r#"% Test 1
@@ -525,8 +523,8 @@ a = 2
         ),
         [
             build_code_block("%{ Test 1\na = 1\n"),
-            // TODO: currently, whitespace on the line containing the
-            // closing block delimiter isn't captured. Fix this.
+            // TODO: currently, whitespace on the line containing the closing
+            // block delimiter isn't captured. Fix this.
             build_doc_block("  ", "%{", "a = 2\n"),
         ]
     );

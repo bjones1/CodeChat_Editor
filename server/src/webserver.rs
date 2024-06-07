@@ -86,7 +86,7 @@ pub struct SourceFileMetadata {
 pub type CodeMirrorDocBlocks = Vec<(
     // From -- the starting character this doc block is anchored to.
     usize,
-    // To -- the ending character this doc block is anchored ti.
+    // To -- the ending character this doc block is anchored to.
     usize,
     // Indent.
     String,
@@ -132,16 +132,19 @@ struct JointEditor {
     client_rx_queue: Receiver<JointMessage>,
 }
 
-/// Define the data structure used to pass data between the CodeChat Editor Client, the IDE, and the CodeChat Editor Server.
+/// Define the data structure used to pass data between the CodeChat Editor
+/// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct JointMessage {
-    /// A value unique to this message; it's used to report results (success/failure) back to the sender.
+    /// A value unique to this message; it's used to report results
+    /// (success/failure) back to the sender.
     id: u32,
     /// The actual message.
     message: JointMessageContents,
 }
 
-/// Define the data structure used to pass data between the CodeChat Editor Client, the IDE, and the CodeChat Editor Server.
+/// Define the data structure used to pass data between the CodeChat Editor
+/// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum JointMessageContents {
     /// Pings sent by the underlying websocket protocol.
@@ -156,7 +159,9 @@ enum JointMessageContents {
     Load(PathBuf),
     /// Sent when the IDE or client are closing.
     Closing,
-    /// Sent as a response to any of the above messages (except `Ping`), reporting success/error. An empty string indicates success; otherwise, the string contains the error message.
+    /// Sent as a response to any of the above messages (except `Ping`),
+    /// reporting success/error. An empty string indicates success; otherwise,
+    /// the string contains the error message.
     Result(String),
 }
 
@@ -211,7 +216,8 @@ async fn _root_fs_redirect() -> impl Responder {
 /// The load endpoint: dispatch to support functions which serve either a
 /// directory listing, a CodeChat Editor file, or a normal file.
 ///
-/// Omit code coverage -- this is a temporary interface, until IDE integration replaces this.
+/// Omit code coverage -- this is a temporary interface, until IDE integration
+/// replaces this.
 #[cfg(not(tarpaulin_include))]
 #[get("/fs/{path:.*}")]
 async fn serve_fs(
@@ -266,7 +272,8 @@ async fn serve_fs(
 /// Create a web page listing all files and subdirectories of the provided
 /// directory.
 ///
-/// Omit code coverage -- this is a temporary interface, until IDE integration replaces this.
+/// Omit code coverage -- this is a temporary interface, until IDE integration
+/// replaces this.
 #[cfg(not(tarpaulin_include))]
 async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     // Special case on Windows: list drive letters.
@@ -514,9 +521,9 @@ async fn serve_file(
         // web results in a CodeChat Editor Client webpage.
         TranslationResultsString::CodeChat(codechat_for_web) => codechat_for_web,
         TranslationResultsString::Toc(html) => {
-            // The TOC is a simplified web page which requires no additional processing.
-            // The script ensures that all hyperlinks target the enclosing page, not
-            // just the iframe containing this page.
+            // The TOC is a simplified web page which requires no additional
+            // processing. The script ensures that all hyperlinks target the
+            // enclosing page, not just the iframe containing this page.
             return HttpResponse::Ok()
                 .content_type(ContentType::html())
                 .body(format!(
@@ -543,7 +550,8 @@ async fn serve_file(
 </html>
 "#,
                     name,
-                    // Look for any script tags and prevent these from causing problems.
+                    // Look for any script tags and prevent these from causing
+                    // problems.
                     html.replace("</script>", "<\\/script>")
                 ));
         }
@@ -614,8 +622,8 @@ async fn serve_file(
                             update_message_contents.scroll_position.unwrap_or(-1.0)
                         );
 
-                        // Translate from the CodeChatForWeb format to the contents of a source
-                        // file.
+                        // Translate from the CodeChatForWeb format to the
+                        // contents of a source file.
                         let language_lexers_compiled = &app_state.lexers;
                         let file_contents = match codechat_for_web_to_source(
                             codechat_for_web1,
@@ -628,9 +636,11 @@ async fn serve_file(
                             }
                         };
 
-                        // Save this string to a file. Add a leading slash for Linux/OS X: this
-                        // changes from `foo/bar.c` to `/foo/bar.c`. Windows paths already start
-                        // with a drive letter, such as `C:\foo\bar.c`, so no changes are needed.
+                        // Save this string to a file. Add a leading slash for
+                        // Linux/OS X: this changes from `foo/bar.c` to
+                        // `/foo/bar.c`. Windows paths already start with a
+                        // drive letter, such as `C:\foo\bar.c`, so no changes
+                        // are needed.
                         let mut save_file_path = if cfg!(windows) {
                             PathBuf::from_str("")
                         } else {
@@ -764,17 +774,22 @@ async fn client_ws(
     let ide_tx = joint_editor.ide_tx_queue;
     let client_tx = joint_editor.client_tx_queue;
     let mut client_rx = joint_editor.client_rx_queue;
-    // Start a task to handle receiving `JointMessage` websocket data from the CodeChat Editor Client.
+    // Start a task to handle receiving `JointMessage` websocket data from the
+    // CodeChat Editor Client.
     actix_rt::spawn(async move {
         msg_stream = msg_stream.max_size(1_000_000);
         while let Some(msg_wrapped) = msg_stream.next().await {
             match msg_wrapped {
                 Ok(msg) => {
                     match msg {
-                        // Enqueue a ping to this thread's tx queue, to send a pong. Trying to send here means borrow errors, or resorting to a mutex/correctly locking and unlocking it.
+                        // Enqueue a ping to this thread's tx queue, to send a
+                        // pong. Trying to send here means borrow errors, or
+                        // resorting to a mutex/correctly locking and unlocking
+                        // it.
                         Message::Ping(bytes) => {
                             if let Result::Err(err) =
-                                // For a ping, we don't need a unique ID, since ping/pongs are handled outside our framework.
+                                // For a ping, we don't need a unique ID, since
+                                // ping/pongs are handled outside our framework.
                                 client_tx
                                     .send(JointMessage {
                                         id: 0,
@@ -789,7 +804,8 @@ async fn client_ws(
 
                         // Decode text messages as JSON then dispatch.
                         Message::Text(b) => {
-                            // The CodeChat Editor Client should always send valid JSON.
+                            // The CodeChat Editor Client should always send
+                            // valid JSON.
                             match serde_json::from_str(&b) {
                                 Err(err) => {
                                     println!(
@@ -798,7 +814,8 @@ async fn client_ws(
                             );
                                     break;
                                 }
-                                // Send the `JointMessage` to the IDE for processing.
+                                // Send the `JointMessage` to the IDE for
+                                // processing.
                                 Ok(joint_message) => {
                                     if let Result::Err(err) = ide_tx.send(joint_message).await {
                                         println!("Unable to enqueue: {}", err);
@@ -828,7 +845,8 @@ async fn client_ws(
         println!("TX ended")
     });
 
-    // Start a task to forward `JointMessage` data from the IDE to the CodeChat Editor Client.
+    // Start a task to forward `JointMessage` data from the IDE to the CodeChat
+    // Editor Client.
     actix_rt::spawn(async move {
         while let Some(m) = client_rx.recv().await {
             match m.message {
@@ -865,8 +883,8 @@ async fn client_ws(
 }
 
 // The client task receives a JointMessage, translates the code, then sends it
-// to its paired IDE.. Likewise, the IDE task receives a
-// `ClientMessage``, translates the code, then sends it to its paired client.
+// to its paired IDE.. Likewise, the IDE task receives a `ClientMessage`,
+// translates the code, then sends it to its paired client.
 
 // ## Webserver startup
 #[actix_web::main]

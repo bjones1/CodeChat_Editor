@@ -43,7 +43,7 @@
         3.  [.eslintrc.yml](client/.eslintrc.yml)
         4.  [.prettierignore](.prettierignore)
     3.  Misc
-        1.  [config](server/.cargo/config) - for rust code coverage
+        1.  [config.toml](server/.cargo/config.toml) - for rust code coverage
 
 ## Misc
 

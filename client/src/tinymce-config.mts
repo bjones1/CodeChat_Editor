@@ -120,7 +120,8 @@ export const init = async (
             // with a few more from plugins. I like the default, so this is
             // currently disabled.
             //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
-            // See [License key](https://www.tiny.cloud/docs/tinymce/latest/license-key).
+            // See
+            // [License key](https://www.tiny.cloud/docs/tinymce/latest/license-key).
             license_key: "gpl",
 
             // Settings for plugins
