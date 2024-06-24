@@ -21,3 +21,6 @@
 pub mod lexer;
 pub mod processing;
 pub mod webserver;
+
+#[cfg(test)]
+pub mod test_utils;
