@@ -28,7 +28,25 @@ use std::path::MAIN_SEPARATOR_STR;
 use assert_fs::fixture::PathCopy;
 use assert_fs::TempDir;
 
-// ## Code
+// # macros
+// Extract a known enum variant or fail. More concise than the alternative (`if let``, or `let else`). From [SO](https://stackoverflow.com/a/69324393). The macro does not handle nested pattern like `Some(Animal(cat))`.
+#[macro_export]
+macro_rules! cast {
+    ($target: expr, $pat: path) => {
+        {
+            // The if let exploits recent Rust compiler's smart pattern matching. Contrary to other solutions like `into_variant`` and friends, this one macro covers all ownership usage like `self``, `&self`` and `&mut self``. On the other hand `{into,as,as_mut}_{variant}`` solution usually needs 3 * N method definitions where N is the number of variants.
+            if let $pat(a) = $target {
+                a
+            } else {
+                // If the variant and value mismatch, the macro will simply panic and report the expected pattern.
+                panic!(
+                    "mismatch variant when cast to {}",
+                    stringify!($pat));
+            }
+        }
+    };
+}
+
 // Get the name (and module path) to the current function. From [SO](https://stackoverflow.com/a/40234666).
 #[macro_export]
 macro_rules! function_name {
@@ -53,6 +71,7 @@ macro_rules! prep_test_dir {
     }};
 }
 
+// ## Code
 // Use the `tests/fixtures` path (relative to the root of this Rust project)
 // to store files for testing. A subdirectory tree, named by the module path then name of the test
 // function by convention, contains everything needed for this test. Copy

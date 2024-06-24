@@ -34,9 +34,9 @@ use std::{
 // ### Third-party
 use actix_files;
 use actix_web::{
+    dev::{ServiceFactory, ServiceRequest},
     get,
-    http::header,
-    http::header::{ContentDisposition, ContentType},
+    http::header::{self, ContentDisposition, ContentType},
     web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_ws::Message;
@@ -883,55 +883,62 @@ async fn client_ws(
 }
 
 // The client task receives a JointMessage, translates the code, then sends it
-// to its paired IDE.. Likewise, the IDE task receives a `ClientMessage`,
+// to its paired IDE. Likewise, the IDE task receives a `ClientMessage`,
 // translates the code, then sends it to its paired client.
 
 // ## Webserver startup
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
-    // See
-    // [shared mutable state](https://actix.rs/docs/application#shared-mutable-state).
+    HttpServer::new(move || configure_app(App::new()))
+        .bind(("127.0.0.1", 8080))?
+        .run()
+        .await
+}
+
+// ## Utilities
+//
+// Configure the web application. I'd like to make this return an `App<AppEntry>`, but `AppEntry` is a private module.
+fn configure_app<T>(app: App<T>) -> App<T>
+where
+    T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+{
     let app_data = web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
         joint_editors: Mutex::new(Vec::new()),
     });
-    HttpServer::new(move || {
-        // Get the path to this executable. Assume that static files for the
-        // webserver are located relative to it.
-        let exe_path = env::current_exe().unwrap();
-        let exe_dir = exe_path.parent().unwrap();
-        let mut client_static_path = PathBuf::from(exe_dir);
-        // When in debug, use the layout of the Git repo to find client files.
-        // In release mode, we assume the static folder is a subdirectory of the
-        // directory containing the executable.
-        #[cfg(debug_assertions)]
-        client_static_path.push("../../../client");
-        client_static_path.push("static");
-        client_static_path = client_static_path.canonicalize().unwrap();
 
-        // Start the server.
-        App::new()
-            // Provide data to all endpoints -- the compiler lexers.
-            .app_data(app_data.clone())
-            // Serve static files per the
-            // [docs](https://actix.rs/docs/static-files).
-            .service(actix_files::Files::new(
-                "/static",
-                client_static_path.as_os_str(),
-            ))
-            // These endpoints serve the files from the filesystem.
-            .service(serve_fs)
-            // Reroute to the filesystem for typical user-requested URLs.
-            .route("/", web::get().to(_root_fs_redirect))
-            .route("/fs", web::get().to(_root_fs_redirect))
-            .route("/client_ws/", web::get().to(client_ws))
-    })
-    .bind(("127.0.0.1", 8080))?
-    .run()
-    .await
+    let exe_path = env::current_exe().unwrap();
+    let exe_dir = exe_path.parent().unwrap();
+    let mut client_static_path = PathBuf::from(exe_dir);
+    // When in debug or running tests, use the layout of the Git repo to find client files.
+    // In release mode, we assume the static folder is a subdirectory of the
+    // directory containing the executable.
+    #[cfg(test)]
+    client_static_path.push("..");
+    // Note that `debug_assertions` is also enabled for testing, so this adds to the previous line when running tests.
+    #[cfg(debug_assertions)]
+    client_static_path.push("../../../client");
+
+    client_static_path.push("static");
+    client_static_path = client_static_path.canonicalize().unwrap();
+
+    app
+        // Provide data to all endpoints -- the compiler lexers.
+        .app_data(app_data.clone())
+        // Serve static files per the
+        // [docs](https://actix.rs/docs/static-files).
+        .service(actix_files::Files::new(
+            "/static",
+            client_static_path.as_os_str(),
+        ))
+        // These endpoints serve the files from the filesystem.
+        .service(serve_fs)
+        // Reroute to the filesystem for typical user-requested URLs.
+        .route("/", web::get().to(_root_fs_redirect))
+        .route("/fs", web::get().to(_root_fs_redirect))
+        .route("/client_ws/", web::get().to(client_ws))
 }
 
-// ## Utilities
 //
 // Given a `Path`, transform it into a displayable string.
 fn path_display(p: &Path) -> String {
@@ -980,13 +987,70 @@ fn escape_html(unsafe_text: &str) -> String {
 }
 
 // ## Tests
-//
-// As mentioned in the lexer.rs tests, Rust
-// [almost mandates](https://doc.rust-lang.org/book/ch11-03-test-organization.html)
-// putting tests in the same file as the source. Here's some
-// [good information](http://xion.io/post/code/rust-unit-test-placement.html) on
-// how to put tests in another file, for future refactoring reference.
 #[cfg(test)]
+mod tests {
+    use actix_web::{test, web, App};
+    use crate::{cast, prep_test_dir};
+    use crate::lexer::{
+        compile_lexers, supported_languages::get_language_lexer_vec,
+    };
+    use crate::processing::{source_to_codechat_for_web, TranslationResults};
+    use super::configure_app;
+    use super::{AppState, IdeType, JointMessage, JointMessageContents};
 
-// ### TODO!
-mod tests {}
+    #[actix_web::test]
+    async fn test_index_get() {
+        let app = test::init_service(configure_app(App::new())).await;
+
+        // Load in a test source file to create a websocket.
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let uri = format!("/fs/{}/test.py", test_dir.to_string_lossy());
+        let req = test::TestRequest::get().uri(&uri).to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+        //println!("{:?}", resp.response());
+
+        // The web page has been served; fake the connected websocket by getting the appropriate tx/rx queues.
+        let app_state = resp.request().app_data::<web::Data<AppState>>().unwrap();
+        let mut joint_editors = app_state.joint_editors.lock().unwrap();
+        assert!(joint_editors.len() == 1);
+        let je = joint_editors.pop().unwrap();
+        let ide_tx_queue = je.ide_tx_queue;
+        let mut client_rx = je.client_rx_queue;
+
+        // Send a message from the client saying the page was opened.
+        ide_tx_queue
+            .send(JointMessage {
+                id: 1,
+                message: JointMessageContents::Opened(IdeType::CodeChatEditorClient),
+            })
+            .await
+            .unwrap();
+        // We should get a return message specifying the IDE client type.
+        let recv = client_rx.recv().await;
+        let msg = recv.unwrap().message;
+        assert!(msg == JointMessageContents::Opened(IdeType::FileWatcher));
+        // Next, we should get the initial contents.
+        let recv = client_rx.recv().await;
+        let msg = recv.unwrap().message;
+        let umc = cast!(msg, JointMessageContents::Update);
+        assert!(umc.cursor_position == Some(0));
+        assert!(umc.scroll_position == Some(0.0));
+
+        // Check the path.
+        let mut test_path = test_dir.clone();
+        test_path.push("test.py");
+        // The comparison below fails without this.
+        let test_path = test_path.canonicalize().unwrap();
+        assert!(umc.path == Some(test_path));
+
+        // Check the contents.
+        let llc = compile_lexers(get_language_lexer_vec());
+        let translation_results = source_to_codechat_for_web("".to_string(), "py", false, false, &llc);
+        let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
+        assert!(umc.contents == Some(codechat_for_web));
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+}
