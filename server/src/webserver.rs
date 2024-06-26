@@ -989,32 +989,39 @@ fn escape_html(unsafe_text: &str) -> String {
 // ## Tests
 #[cfg(test)]
 mod tests {
-    use actix_web::{test, web, App};
-    use crate::{cast, prep_test_dir};
-    use crate::lexer::{
-        compile_lexers, supported_languages::get_language_lexer_vec,
-    };
-    use crate::processing::{source_to_codechat_for_web, TranslationResults};
-    use super::configure_app;
-    use super::{AppState, IdeType, JointMessage, JointMessageContents};
+    use std::path::PathBuf;
 
-    #[actix_web::test]
-    async fn test_index_get() {
+    use actix_web::{test, web, App};
+
+    use super::configure_app;
+    use super::{AppState, IdeType, JointEditor, JointMessage, JointMessageContents};
+    use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
+    use crate::processing::{source_to_codechat_for_web, TranslationResults};
+    use crate::{cast, prep_test_dir};
+
+    async fn get_websocket_queues(
+        // A path to the temporary directory where the source file is located.
+        test_dir: &PathBuf,
+    ) -> JointEditor {
         let app = test::init_service(configure_app(App::new())).await;
 
         // Load in a test source file to create a websocket.
-        let (temp_dir, test_dir) = prep_test_dir!();
         let uri = format!("/fs/{}/test.py", test_dir.to_string_lossy());
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
-        //println!("{:?}", resp.response());
 
         // The web page has been served; fake the connected websocket by getting the appropriate tx/rx queues.
         let app_state = resp.request().app_data::<web::Data<AppState>>().unwrap();
         let mut joint_editors = app_state.joint_editors.lock().unwrap();
         assert!(joint_editors.len() == 1);
-        let je = joint_editors.pop().unwrap();
+        return joint_editors.pop().unwrap();
+    }
+
+    #[actix_web::test]
+    async fn test_websocket_opened() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.ide_tx_queue;
         let mut client_rx = je.client_rx_queue;
 
@@ -1046,7 +1053,8 @@ mod tests {
 
         // Check the contents.
         let llc = compile_lexers(get_language_lexer_vec());
-        let translation_results = source_to_codechat_for_web("".to_string(), "py", false, false, &llc);
+        let translation_results =
+            source_to_codechat_for_web("".to_string(), "py", false, false, &llc);
         let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
         assert!(umc.contents == Some(codechat_for_web));
 
