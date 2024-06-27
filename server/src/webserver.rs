@@ -28,7 +28,7 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     str::FromStr,
-    sync::Mutex,
+    sync::Mutex, time::Duration,
 };
 
 // ### Third-party
@@ -48,10 +48,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::{
-    fs::{self, DirEntry, File},
-    io::AsyncReadExt,
-    sync::mpsc,
-    sync::mpsc::{Receiver, Sender},
+    fs::{self, DirEntry, File}, io::AsyncReadExt, sync::mpsc::{self, Receiver, Sender}, task::JoinHandle, time::sleep
 };
 use urlencoding::{self, encode};
 #[cfg(target_os = "windows")]
@@ -196,6 +193,7 @@ struct UpdateMessageContents {
 struct AppState {
     lexers: LanguageLexersCompiled,
     joint_editors: Mutex<Vec<JointEditor>>,
+    pending_messages: Mutex<HashMap<u32, JoinHandle<()>>>
 }
 
 // ## Globals
@@ -573,34 +571,56 @@ async fn serve_file(
         while let Some(m) = ide_rx.recv().await {
             match m.message {
                 JointMessageContents::Opened(ide_type) => {
-                    assert!(ide_type == IdeType::CodeChatEditorClient);
-                    // Tell the CodeChat Editor Client the type of this IDE.
-                    id += 1;
+                    let result = if ide_type == IdeType::CodeChatEditorClient {
+                        // Tell the CodeChat Editor Client the type of this IDE.
+                        id += 1;
+                        if let Err(err) = client_tx
+                            .send(JointMessage {
+                                id,
+                                message: JointMessageContents::Opened(IdeType::FileWatcher),
+                            })
+                            .await
+                        {
+                            eprintln!("Unable to enqueue: {}", err);
+                            break;
+                        }
+                        create_timeout(&app_state, id);
+
+                        // Provide it a file to open.
+                        id += 1;
+                        if let Err(err) = client_tx
+                            .send(JointMessage {
+                                id,
+                                message: JointMessageContents::Update(UpdateMessageContents {
+                                    contents: Some(codechat_for_web.clone()),
+                                    cursor_position: Some(0),
+                                    path: Some(file_pathbuf.to_path_buf()),
+                                    scroll_position: Some(0.0),
+                                }),
+                            })
+                            .await
+                        {
+                            eprintln!("Unable to enqueue: {}", err);
+                            break;
+                        }
+                        create_timeout(&app_state, id);
+
+                        // An empty result string indicates no errors...
+                        ""
+                    } else {
+                        // ...as opposed to this.
+                        "Incorrect IDE type "
+                    };
+
+                    // Send a result back after processing this message.
                     if let Err(err) = client_tx
                         .send(JointMessage {
-                            id,
-                            message: JointMessageContents::Opened(IdeType::FileWatcher),
+                            id: m.id,
+                            message: JointMessageContents::Result(result.to_string()),
                         })
                         .await
                     {
-                        println!("Unable to enqueue: {}", err);
-                        break;
-                    }
-                    // Provide it a file to open.
-                    id += 1;
-                    if let Err(err) = client_tx
-                        .send(JointMessage {
-                            id,
-                            message: JointMessageContents::Update(UpdateMessageContents {
-                                contents: Some(codechat_for_web.clone()),
-                                cursor_position: Some(0),
-                                path: Some(file_pathbuf.to_path_buf()),
-                                scroll_position: Some(0.0),
-                            }),
-                        })
-                        .await
-                    {
-                        println!("Unable to enqueue: {}", err);
+                        eprintln!("Unable to enqueue: {}", err);
                         break;
                     }
                 }
@@ -608,7 +628,7 @@ async fn serve_file(
                 JointMessageContents::Update(update_message_contents) => {
                     if let Some(codechat_for_web1) = update_message_contents.contents {
                         if update_message_contents.path.is_none() {
-                            println!("Update rejected: no path provided.");
+                            eprintln!("Update rejected: no path provided.");
                             continue;
                         }
                         println!(
@@ -631,7 +651,7 @@ async fn serve_file(
                         ) {
                             Ok(r) => r,
                             Err(message) => {
-                                println!("Unable to translate to source: {}", message);
+                                eprintln!("Unable to translate to source: {}", message);
                                 continue;
                             }
                         };
@@ -651,7 +671,7 @@ async fn serve_file(
                         match fs::write(save_file_path.as_path(), file_contents).await {
                             Ok(v) => v,
                             Err(err) => {
-                                println!(
+                                eprintln!(
                                     "Unable to save file {}: {}.",
                                     save_file_path.to_string_lossy(),
                                     err
@@ -659,23 +679,32 @@ async fn serve_file(
                             }
                         }
                     } else {
-                        println!("Error")
+                        eprintln!("Error")
                     }
                 }
 
                 JointMessageContents::Result(err) => {
-                    println!("Error in message {}: {err}.", m.id);
+                    // Cancel the timeout for this result.
+                    let mut pm = app_state.pending_messages.lock().unwrap();
+                    if let Some(task) = pm.remove(&m.id) {
+                        task.abort();
+                    }
+
+                    // Report errors.
+                    if !err.is_empty() {
+                        eprintln!("Error in message {}: {err}.", m.id);
+                    }
                 }
 
                 other => {
-                    println!("Unhandled message {:?}", other);
+                    eprintln!("Unhandled message {:?}", other);
                 }
             }
         }
         ide_rx.close();
         // Drain any remaining messages after closing the queue.
         while let Some(m) = ide_rx.recv().await {
-            println!("Dropped queued message {:?}", &m);
+            eprintln!("Dropped queued message {:?}", &m);
         }
     });
 
@@ -747,6 +776,21 @@ async fn serve_file(
     ))
 }
 
+// Start a timeout task in case a message isn't delivered.
+fn create_timeout(
+    // The global state, which containts the hashmap of pending messages to modify.
+    app_state: &AppState,
+    // The id of the message just sent.
+    id: u32
+) {
+    let mut pm = app_state.pending_messages.lock().unwrap();
+    let waiting_task = actix_rt::spawn(async move {
+        sleep(Duration::from_secs(2)).await;
+        eprintln!("Timeout: message id {id} unacknowledged.");
+    });
+    pm.insert(id, waiting_task);
+}
+
 /// ## Websockets
 ///
 /// Each CodeChat Editor IDE instance pairs with a CodeChat Editor Client
@@ -767,7 +811,7 @@ async fn client_ws(
     let joint_editor_wrapped = app_state.joint_editors.lock().unwrap().pop();
     if joint_editor_wrapped.is_none() {
         // TODO: return an error and report it instead!
-        println!("Error: no joint editor available.");
+        eprintln!("Error: no joint editor available.");
         return Ok(response);
     }
     let joint_editor = joint_editor_wrapped.unwrap();
@@ -797,7 +841,7 @@ async fn client_ws(
                                     })
                                     .await
                             {
-                                println!("Unable to enqueue: {}", err);
+                                eprintln!("Unable to enqueue: {}", err);
                                 break;
                             };
                         }
@@ -808,7 +852,7 @@ async fn client_ws(
                             // valid JSON.
                             match serde_json::from_str(&b) {
                                 Err(err) => {
-                                    println!(
+                                    eprintln!(
                                 "Unable to decode JSON message from the CodeChat Editor client: {}",
                                 err
                             );
@@ -831,13 +875,13 @@ async fn client_ws(
                         }
 
                         other => {
-                            println!("Unexpected message {:?}", &other);
+                            eprintln!("Unexpected message {:?}", &other);
                             break;
                         }
                     }
                 }
                 Err(err) => {
-                    println!("websocket receive error {:?}", err);
+                    eprintln!("websocket receive error {:?}", err);
                 }
             }
         }
@@ -852,7 +896,7 @@ async fn client_ws(
             match m.message {
                 JointMessageContents::Ping(bytes) => {
                     if let Err(err) = session.pong(&bytes).await {
-                        println!("Unable to send pong: {}", err);
+                        eprintln!("Unable to send pong: {}", err);
                         return;
                     }
                 }
@@ -905,6 +949,7 @@ where
     let app_data = web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
         joint_editors: Mutex::new(Vec::new()),
+        pending_messages: Mutex::new(HashMap::new())
     });
 
     let exe_path = env::current_exe().unwrap();
@@ -989,9 +1034,13 @@ fn escape_html(unsafe_text: &str) -> String {
 // ## Tests
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
     use std::path::PathBuf;
 
     use actix_web::{test, web, App};
+    use gag::BufferRedirect;
+    use tokio::sync::mpsc::Sender;
+    use tokio::time::{sleep, Duration};
 
     use super::configure_app;
     use super::{AppState, IdeType, JointEditor, JointMessage, JointMessageContents};
@@ -1018,8 +1067,18 @@ mod tests {
         return joint_editors.pop().unwrap();
     }
 
+    async fn send_response(ide_tx_queue: &Sender<JointMessage>, result: &str) {
+        ide_tx_queue
+            .send(JointMessage {
+                id: 1,
+                message: JointMessageContents::Result(result.to_string()),
+            })
+            .await
+            .unwrap();
+    }
+
     #[actix_web::test]
-    async fn test_websocket_opened() {
+    async fn test_websocket_opened_1() {
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.ide_tx_queue;
@@ -1033,11 +1092,14 @@ mod tests {
             })
             .await
             .unwrap();
-        // We should get a return message specifying the IDE client type.
+
+        // 1. We should get a return message specifying the IDE client type.
         let recv = client_rx.recv().await;
         let msg = recv.unwrap().message;
         assert!(msg == JointMessageContents::Opened(IdeType::FileWatcher));
-        // Next, we should get the initial contents.
+        send_response(&ide_tx_queue, "").await;
+
+        // 2. We should get the initial contents.
         let recv = client_rx.recv().await;
         let msg = recv.unwrap().message;
         let umc = cast!(msg, JointMessageContents::Update);
@@ -1057,6 +1119,81 @@ mod tests {
             source_to_codechat_for_web("".to_string(), "py", false, false, &llc);
         let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
         assert!(umc.contents == Some(codechat_for_web));
+        send_response(&ide_tx_queue, "").await;
+
+        // 3. We should get a return message confirming no errors.
+        let recv = client_rx.recv().await;
+        let msg = recv.unwrap().message;
+        assert!(msg == JointMessageContents::Result("".to_string()));
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    #[actix_web::test]
+    async fn test_websocket_opened_2() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let je = get_websocket_queues(&test_dir).await;
+        let ide_tx_queue = je.ide_tx_queue;
+        let mut client_rx = je.client_rx_queue;
+
+        // Send a message from the client saying the page was opened, but with an invalid IDE type.
+        ide_tx_queue
+            .send(JointMessage {
+                id: 1,
+                message: JointMessageContents::Opened(IdeType::FileWatcher),
+            })
+            .await
+            .unwrap();
+
+        // We should get a return message confirming an error.
+        let recv = client_rx.recv().await;
+        let msg = recv.unwrap().message;
+        let result = cast!(msg, JointMessageContents::Result);
+        assert!(result != "");
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    #[actix_web::test]
+    async fn test_websocket_timeout() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let je = get_websocket_queues(&test_dir).await;
+        let ide_tx_queue = je.ide_tx_queue;
+        let mut client_rx = je.client_rx_queue;
+
+        // Send a message from the client saying the page was opened.
+        ide_tx_queue
+            .send(JointMessage {
+                id: 1,
+                message: JointMessageContents::Opened(IdeType::CodeChatEditorClient),
+            })
+            .await
+            .unwrap();
+
+        // We should get a return message specifying the IDE client type.
+        let recv = client_rx.recv().await;
+        let msg = recv.unwrap().message;
+        assert!(msg == JointMessageContents::Opened(IdeType::FileWatcher));
+
+        // We should get the initial contents.
+        let recv = client_rx.recv().await;
+        let msg = recv.unwrap().message;
+        cast!(msg, JointMessageContents::Update);
+
+        // Don't send any acknowledgements to these message and see if we get errors. The stderr redirection covers only this block.
+        let mut output = String::new();
+        {
+            let mut buf = BufferRedirect::stderr().unwrap();
+            sleep(Duration::from_secs(3)).await;
+
+            // Check for stderr for timeout errors.
+            buf.read_to_string(&mut output).unwrap();
+        }
+        // The assertion (which prints to stderr) must be outside the redirection block.
+        println!("{}", &output[..]);
+        assert!(&output[..].starts_with("Timeout"));
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
