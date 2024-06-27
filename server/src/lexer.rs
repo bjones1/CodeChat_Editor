@@ -1043,6 +1043,7 @@ pub fn source_lexer(
                             nesting_depth += 1;
                             // Mark all previous text as code, then continue the
                             // loop.
+                            #[cfg(feature = "lexer_explain")]
                             println!(
                                 "opening_delimiter.start() = {}, opening_delimiter.len() = {}",
                                 opening_delimiter.start(),
