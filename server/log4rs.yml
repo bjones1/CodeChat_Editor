@@ -1,0 +1,13 @@
+# # `log4rs.yml` - configure logging
+# This file configures log4rs for this application.
+#
+appenders:
+  # An appender named "stdout" that writes to stdout
+  stdout:
+    kind: console
+
+# Set the default logging level to "warn" and attach the "stdout" appender to the root
+root:
+  level: info
+  appenders:
+    - stdout

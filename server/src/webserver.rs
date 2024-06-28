@@ -28,7 +28,8 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     str::FromStr,
-    sync::Mutex, time::Duration,
+    sync::Mutex,
+    time::Duration,
 };
 
 // ### Third-party
@@ -43,12 +44,18 @@ use actix_ws::Message;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use lazy_static::lazy_static;
+use log::{error, info, warn};
+use log4rs;
 use path_slash::PathBufExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::{
-    fs::{self, DirEntry, File}, io::AsyncReadExt, sync::mpsc::{self, Receiver, Sender}, task::JoinHandle, time::sleep
+    fs::{self, DirEntry, File},
+    io::AsyncReadExt,
+    sync::mpsc::{self, Receiver, Sender},
+    task::JoinHandle,
+    time::sleep,
 };
 use urlencoding::{self, encode};
 #[cfg(target_os = "windows")]
@@ -193,13 +200,24 @@ struct UpdateMessageContents {
 struct AppState {
     lexers: LanguageLexersCompiled,
     joint_editors: Mutex<Vec<JointEditor>>,
-    pending_messages: Mutex<HashMap<u32, JoinHandle<()>>>
+    pending_messages: Mutex<HashMap<u32, JoinHandle<()>>>,
 }
 
 // ## Globals
 lazy_static! {
     /// Matches a bare drive letter. Only needed on Windows.
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
+}
+
+// The timeout for a reply from a websocket. Use a short timeout to speed up unit tests.
+static REPLY_TIMEOUT: Duration = if cfg!(test) {
+    Duration::from_millis(50)
+} else {
+    Duration::from_millis(2000)
+};
+
+pub fn configure_logger() {
+    log4rs::init_file("log4rs.yml", Default::default()).unwrap();
 }
 
 /// ## Load endpoints
@@ -581,7 +599,7 @@ async fn serve_file(
                             })
                             .await
                         {
-                            eprintln!("Unable to enqueue: {}", err);
+                            error!("Unable to enqueue: {}", err);
                             break;
                         }
                         create_timeout(&app_state, id);
@@ -600,7 +618,7 @@ async fn serve_file(
                             })
                             .await
                         {
-                            eprintln!("Unable to enqueue: {}", err);
+                            error!("Unable to enqueue: {}", err);
                             break;
                         }
                         create_timeout(&app_state, id);
@@ -620,7 +638,7 @@ async fn serve_file(
                         })
                         .await
                     {
-                        eprintln!("Unable to enqueue: {}", err);
+                        error!("Unable to enqueue: {}", err);
                         break;
                     }
                 }
@@ -628,10 +646,11 @@ async fn serve_file(
                 JointMessageContents::Update(update_message_contents) => {
                     if let Some(codechat_for_web1) = update_message_contents.contents {
                         if update_message_contents.path.is_none() {
-                            eprintln!("Update rejected: no path provided.");
-                            continue;
+                            // TODO: send this as a response instead.
+                            error!("Update rejected: no path provided.");
+                            break;
                         }
-                        println!(
+                        info!(
                             "Update: {}, {}, {}",
                             update_message_contents
                                 .path
@@ -651,8 +670,9 @@ async fn serve_file(
                         ) {
                             Ok(r) => r,
                             Err(message) => {
-                                eprintln!("Unable to translate to source: {}", message);
-                                continue;
+                                // TODO: send this as a response instead.
+                                error!("Unable to translate to source: {}", message);
+                                break;
                             }
                         };
 
@@ -671,7 +691,7 @@ async fn serve_file(
                         match fs::write(save_file_path.as_path(), file_contents).await {
                             Ok(v) => v,
                             Err(err) => {
-                                eprintln!(
+                                error!(
                                     "Unable to save file {}: {}.",
                                     save_file_path.to_string_lossy(),
                                     err
@@ -679,7 +699,8 @@ async fn serve_file(
                             }
                         }
                     } else {
-                        eprintln!("Error")
+                        // TODO: send this as a response instead.
+                        error!("Error: no message contents.")
                     }
                 }
 
@@ -692,19 +713,19 @@ async fn serve_file(
 
                     // Report errors.
                     if !err.is_empty() {
-                        eprintln!("Error in message {}: {err}.", m.id);
+                        error!("Error in message {}: {err}.", m.id);
                     }
                 }
 
                 other => {
-                    eprintln!("Unhandled message {:?}", other);
+                    warn!("Unhandled message {:?}", other);
                 }
             }
         }
         ide_rx.close();
         // Drain any remaining messages after closing the queue.
         while let Some(m) = ide_rx.recv().await {
-            eprintln!("Dropped queued message {:?}", &m);
+            warn!("Dropped queued message {:?}", &m);
         }
     });
 
@@ -781,12 +802,12 @@ fn create_timeout(
     // The global state, which containts the hashmap of pending messages to modify.
     app_state: &AppState,
     // The id of the message just sent.
-    id: u32
+    id: u32,
 ) {
     let mut pm = app_state.pending_messages.lock().unwrap();
     let waiting_task = actix_rt::spawn(async move {
-        sleep(Duration::from_secs(2)).await;
-        eprintln!("Timeout: message id {id} unacknowledged.");
+        sleep(REPLY_TIMEOUT).await;
+        error!("Timeout: message id {id} unacknowledged.");
     });
     pm.insert(id, waiting_task);
 }
@@ -811,7 +832,7 @@ async fn client_ws(
     let joint_editor_wrapped = app_state.joint_editors.lock().unwrap().pop();
     if joint_editor_wrapped.is_none() {
         // TODO: return an error and report it instead!
-        eprintln!("Error: no joint editor available.");
+        error!("Error: no joint editor available.");
         return Ok(response);
     }
     let joint_editor = joint_editor_wrapped.unwrap();
@@ -841,7 +862,7 @@ async fn client_ws(
                                     })
                                     .await
                             {
-                                eprintln!("Unable to enqueue: {}", err);
+                                error!("Unable to enqueue: {}", err);
                                 break;
                             };
                         }
@@ -852,7 +873,7 @@ async fn client_ws(
                             // valid JSON.
                             match serde_json::from_str(&b) {
                                 Err(err) => {
-                                    eprintln!(
+                                    error!(
                                 "Unable to decode JSON message from the CodeChat Editor client: {}",
                                 err
                             );
@@ -862,7 +883,7 @@ async fn client_ws(
                                 // processing.
                                 Ok(joint_message) => {
                                     if let Result::Err(err) = ide_tx.send(joint_message).await {
-                                        println!("Unable to enqueue: {}", err);
+                                        error!("Unable to enqueue: {}", err);
                                         break;
                                     }
                                 }
@@ -870,23 +891,21 @@ async fn client_ws(
                         }
 
                         Message::Close(reason) => {
-                            println!("Closing per client request: {:?}", reason);
+                            info!("Closing per client request: {:?}", reason);
                             break;
                         }
 
                         other => {
-                            eprintln!("Unexpected message {:?}", &other);
+                            warn!("Unexpected message {:?}", &other);
                             break;
                         }
                     }
                 }
                 Err(err) => {
-                    eprintln!("websocket receive error {:?}", err);
+                    error!("websocket receive error {:?}", err);
                 }
             }
         }
-        // TODO: shut down rx task.
-        println!("TX ended")
     });
 
     // Start a task to forward `JointMessage` data from the IDE to the CodeChat
@@ -896,30 +915,32 @@ async fn client_ws(
             match m.message {
                 JointMessageContents::Ping(bytes) => {
                     if let Err(err) = session.pong(&bytes).await {
-                        eprintln!("Unable to send pong: {}", err);
+                        error!("Unable to send pong: {}", err);
                         return;
                     }
                 }
                 ref _other => match serde_json::to_string(&m) {
                     Ok(s) => {
                         if let Err(err) = session.text(&s).await {
-                            println!("Unable to send: {}", err);
+                            error!("Unable to send: {}", err);
                             break;
                         }
                     }
-                    Err(err) => panic!("Encoding failure {}", err),
+                    Err(err) => {
+                        error!("Encoding failure {}", err)
+                    }
                 },
             }
         }
         // Shut down the session, to stop any incoming messages.
         if let Err(err) = session.close(None).await {
-            println!("Unable to close session: {}", err);
+            error!("Unable to close session: {}", err);
         }
 
         client_rx.close();
         // Drain any remaining messages after closing the queue.
         while let Some(m) = client_rx.recv().await {
-            println!("Dropped queued message {:?}", &m);
+            warn!("Dropped queued message {:?}", &m);
         }
     });
 
@@ -949,7 +970,7 @@ where
     let app_data = web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
         joint_editors: Mutex::new(Vec::new()),
-        pending_messages: Mutex::new(HashMap::new())
+        pending_messages: Mutex::new(HashMap::new()),
     });
 
     let exe_path = env::current_exe().unwrap();
@@ -1034,15 +1055,16 @@ fn escape_html(unsafe_text: &str) -> String {
 // ## Tests
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
     use std::path::PathBuf;
 
+    use crate::testing_logger;
     use actix_web::{test, web, App};
-    use gag::BufferRedirect;
+    use log::Level;
     use tokio::sync::mpsc::Sender;
-    use tokio::time::{sleep, Duration};
+    use tokio::time::sleep;
 
     use super::configure_app;
+    use super::REPLY_TIMEOUT;
     use super::{AppState, IdeType, JointEditor, JointMessage, JointMessageContents};
     use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
     use crate::processing::{source_to_codechat_for_web, TranslationResults};
@@ -1077,12 +1099,17 @@ mod tests {
             .unwrap();
     }
 
+    fn configure_logger() {
+        testing_logger::setup();
+    }
+
     #[actix_web::test]
     async fn test_websocket_opened_1() {
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.ide_tx_queue;
         let mut client_rx = je.client_rx_queue;
+        configure_logger();
 
         // Send a message from the client saying the page was opened.
         ide_tx_queue
@@ -1136,6 +1163,7 @@ mod tests {
         let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.ide_tx_queue;
         let mut client_rx = je.client_rx_queue;
+        configure_logger();
 
         // Send a message from the client saying the page was opened, but with an invalid IDE type.
         ide_tx_queue
@@ -1150,6 +1178,7 @@ mod tests {
         let recv = client_rx.recv().await;
         let msg = recv.unwrap().message;
         let result = cast!(msg, JointMessageContents::Result);
+
         assert!(result != "");
 
         // Report any errors produced when removing the temporary directory.
@@ -1162,6 +1191,8 @@ mod tests {
         let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.ide_tx_queue;
         let mut client_rx = je.client_rx_queue;
+        // Configure the logger here; otherwise, the glob used to copy files outputs some debug-level logs.
+        configure_logger();
 
         // Send a message from the client saying the page was opened.
         ide_tx_queue
@@ -1183,17 +1214,26 @@ mod tests {
         cast!(msg, JointMessageContents::Update);
 
         // Don't send any acknowledgements to these message and see if we get errors. The stderr redirection covers only this block.
-        let mut output = String::new();
-        {
-            let mut buf = BufferRedirect::stderr().unwrap();
-            sleep(Duration::from_secs(3)).await;
+        sleep(REPLY_TIMEOUT).await;
+        sleep(REPLY_TIMEOUT).await;
 
-            // Check for stderr for timeout errors.
-            buf.read_to_string(&mut output).unwrap();
-        }
-        // The assertion (which prints to stderr) must be outside the redirection block.
-        println!("{}", &output[..]);
-        assert!(&output[..].starts_with("Timeout"));
+        // We should get two errors.
+        testing_logger::validate(|captured_logs| {
+            assert_eq!(captured_logs.len(), 2);
+            assert_eq!(captured_logs[0].target, "code_chat_editor::webserver");
+            assert_eq!(
+                captured_logs[0].body,
+                "Timeout: message id 1 unacknowledged."
+            );
+            assert_eq!(captured_logs[0].level, Level::Error);
+
+            assert_eq!(captured_logs[0].target, "code_chat_editor::webserver");
+            assert_eq!(
+                captured_logs[1].body,
+                "Timeout: message id 2 unacknowledged."
+            );
+            assert_eq!(captured_logs[1].level, Level::Error);
+        });
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();

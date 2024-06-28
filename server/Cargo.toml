@@ -36,6 +36,8 @@ actix-web = "4"
 actix-ws = "0.2.5"
 bytes = { version = "1", features = ["serde"] }
 lazy_static = "1"
+log = "0.4"
+log4rs = "1.3"
 path-slash = "0.2.1"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
@@ -51,7 +53,6 @@ win_partitions = "0.3.0"
 
 [dev-dependencies]
 assert_fs = "1"
-gag = "1"
 # See the [docs](https://github.com/rust-lang/rust-clippy#usage) to install
 # clippy; it can't be installed as a dev-dependency. See the
 # [fmt docs](https://github.com/rust-lang/rustfmt#quick-start) to install fmt.

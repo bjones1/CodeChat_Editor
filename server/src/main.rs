@@ -19,5 +19,6 @@ use code_chat_editor::webserver;
 
 #[cfg(not(tarpaulin_include))]
 fn main() {
+    webserver::configure_logger();
     webserver::main().unwrap();
 }
