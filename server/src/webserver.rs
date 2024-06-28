@@ -627,28 +627,22 @@ async fn serve_file(
                         ""
                     } else {
                         // ...as opposed to this.
-                        "Incorrect IDE type "
+                        "Incorrect IDE type"
                     };
 
                     // Send a result back after processing this message.
-                    if let Err(err) = client_tx
-                        .send(JointMessage {
-                            id: m.id,
-                            message: JointMessageContents::Result(result.to_string()),
-                        })
-                        .await
-                    {
-                        error!("Unable to enqueue: {}", err);
-                        break;
-                    }
+                    send_response(&client_tx, m.id, result).await;
                 }
 
                 JointMessageContents::Update(update_message_contents) => {
-                    if let Some(codechat_for_web1) = update_message_contents.contents {
+                    let result = 'process: {
+                        // With code or a path, there's nothing to save. TODO: this should store and remember the path, instead of needing it repeated each time.
+                        let codechat_for_web1 = match update_message_contents.contents {
+                            None => break 'process "".to_string(),
+                            Some(cwf) => cwf,
+                        };
                         if update_message_contents.path.is_none() {
-                            // TODO: send this as a response instead.
-                            error!("Update rejected: no path provided.");
-                            break;
+                            break 'process "".to_string();
                         }
                         info!(
                             "Update: {}, {}, {}",
@@ -670,9 +664,10 @@ async fn serve_file(
                         ) {
                             Ok(r) => r,
                             Err(message) => {
-                                // TODO: send this as a response instead.
-                                error!("Unable to translate to source: {}", message);
-                                break;
+                                break 'process format!(
+                                    "Unable to translate to source: {}",
+                                    message
+                                );
                             }
                         };
 
@@ -688,20 +683,16 @@ async fn serve_file(
                         }
                         .unwrap();
                         save_file_path.push(&update_message_contents.path.unwrap());
-                        match fs::write(save_file_path.as_path(), file_contents).await {
-                            Ok(v) => v,
-                            Err(err) => {
-                                error!(
-                                    "Unable to save file {}: {}.",
-                                    save_file_path.to_string_lossy(),
-                                    err
-                                );
-                            }
+                        if let Err(err) = fs::write(save_file_path.as_path(), file_contents).await {
+                            break 'process format!(
+                                "Unable to save file '{}': {}.",
+                                save_file_path.to_string_lossy(),
+                                err
+                            );
                         }
-                    } else {
-                        // TODO: send this as a response instead.
-                        error!("Error: no message contents.")
-                    }
+                        "".to_string()
+                    };
+                    send_response(&client_tx, m.id, &result).await;
                 }
 
                 JointMessageContents::Result(err) => {
@@ -711,7 +702,7 @@ async fn serve_file(
                         task.abort();
                     }
 
-                    // Report errors.
+                    // Report errors to the log.
                     if !err.is_empty() {
                         error!("Error in message {}: {err}.", m.id);
                     }
@@ -799,7 +790,7 @@ async fn serve_file(
 
 // Start a timeout task in case a message isn't delivered.
 fn create_timeout(
-    // The global state, which containts the hashmap of pending messages to modify.
+    // The global state, which contains the hashmap of pending messages to modify.
     app_state: &AppState,
     // The id of the message just sent.
     id: u32,
@@ -810,6 +801,18 @@ fn create_timeout(
         error!("Timeout: message id {id} unacknowledged.");
     });
     pm.insert(id, waiting_task);
+}
+
+async fn send_response(client_tx: &Sender<JointMessage>, id: u32, result: &str) {
+    if let Err(err) = client_tx
+        .send(JointMessage {
+            id,
+            message: JointMessageContents::Result(result.to_string()),
+        })
+        .await
+    {
+        error!("Unable to enqueue: {}", err);
+    }
 }
 
 /// ## Websockets
@@ -1056,18 +1059,24 @@ fn escape_html(unsafe_text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::fs::File;
+    use std::io::Read;
 
-    use crate::testing_logger;
     use actix_web::{test, web, App};
     use log::Level;
-    use tokio::sync::mpsc::Sender;
+    use tokio::sync::mpsc::{Sender, Receiver};
     use tokio::time::sleep;
+    use assertables::{assert_starts_with, assert_starts_with_as_result};
 
     use super::configure_app;
     use super::REPLY_TIMEOUT;
-    use super::{AppState, IdeType, JointEditor, JointMessage, JointMessageContents};
+    use super::{
+        AppState, CodeChatForWeb, CodeMirror, IdeType, JointEditor, JointMessage,
+        JointMessageContents, SourceFileMetadata, UpdateMessageContents,
+    };
     use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
     use crate::processing::{source_to_codechat_for_web, TranslationResults};
+    use crate::testing_logger;
     use crate::{cast, prep_test_dir};
 
     async fn get_websocket_queues(
@@ -1110,6 +1119,17 @@ mod tests {
         testing_logger::setup();
     }
 
+    async fn get_message(client_rx: &mut Receiver<JointMessage>) -> JointMessageContents {
+        let recv = client_rx.recv().await;
+        recv.unwrap().message
+    }
+
+    macro_rules! get_message {
+        ($client_rx: expr, $cast_type: ty) => {
+            cast!(get_message(&mut $client_rx).await, $cast_type)
+        }
+    }
+
     #[actix_web::test]
     async fn test_websocket_opened_1() {
         let (temp_dir, test_dir) = prep_test_dir!();
@@ -1128,15 +1148,11 @@ mod tests {
             .unwrap();
 
         // 1. We should get a return message specifying the IDE client type.
-        let recv = client_rx.recv().await;
-        let msg = recv.unwrap().message;
-        assert!(msg == JointMessageContents::Opened(IdeType::FileWatcher));
+        assert!(get_message!(client_rx, JointMessageContents::Opened) == IdeType::FileWatcher);
         send_response(&ide_tx_queue, "").await;
 
         // 2. We should get the initial contents.
-        let recv = client_rx.recv().await;
-        let msg = recv.unwrap().message;
-        let umc = cast!(msg, JointMessageContents::Update);
+        let umc = get_message!(client_rx, JointMessageContents::Update);
         assert!(umc.cursor_position == Some(0));
         assert!(umc.scroll_position == Some(0.0));
 
@@ -1156,9 +1172,7 @@ mod tests {
         send_response(&ide_tx_queue, "").await;
 
         // 3. We should get a return message confirming no errors.
-        let recv = client_rx.recv().await;
-        let msg = recv.unwrap().message;
-        assert!(msg == JointMessageContents::Result("".to_string()));
+        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "".to_string());
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
@@ -1182,11 +1196,7 @@ mod tests {
             .unwrap();
 
         // We should get a return message confirming an error.
-        let recv = client_rx.recv().await;
-        let msg = recv.unwrap().message;
-        let result = cast!(msg, JointMessageContents::Result);
-
-        assert!(result != "");
+        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "Incorrect IDE type");
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
@@ -1211,14 +1221,10 @@ mod tests {
             .unwrap();
 
         // We should get a return message specifying the IDE client type.
-        let recv = client_rx.recv().await;
-        let msg = recv.unwrap().message;
-        assert!(msg == JointMessageContents::Opened(IdeType::FileWatcher));
+        assert_eq!(get_message!(client_rx, JointMessageContents::Opened), IdeType::FileWatcher);
 
         // We should get the initial contents.
-        let recv = client_rx.recv().await;
-        let msg = recv.unwrap().message;
-        cast!(msg, JointMessageContents::Update);
+        get_message!(client_rx, JointMessageContents::Update);
 
         // Don't send any acknowledgements to these message and see if we get errors. The stderr redirection covers only this block.
         sleep(REPLY_TIMEOUT).await;
@@ -1241,6 +1247,147 @@ mod tests {
             );
             assert_eq!(captured_logs[1].level, Level::Error);
         });
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    #[actix_web::test]
+    async fn test_websocket_update_1() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let je = get_websocket_queues(&test_dir).await;
+        let ide_tx_queue = je.ide_tx_queue;
+        let mut client_rx = je.client_rx_queue;
+        // Configure the logger here; otherwise, the glob used to copy files outputs some debug-level logs.
+        configure_logger();
+
+        // 1. Send an update message with no contents.
+        ide_tx_queue
+            .send(JointMessage {
+                id: 1,
+                message: JointMessageContents::Update(UpdateMessageContents {
+                    contents: None,
+                    path: Some(PathBuf::new()),
+                    cursor_position: None,
+                    scroll_position: None,
+                }),
+            })
+            .await
+            .unwrap();
+
+        // Check that it produces no error.
+        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
+
+        // 2. Send an update message with no path.
+        ide_tx_queue
+            .send(JointMessage {
+                id: 2,
+                message: JointMessageContents::Update(UpdateMessageContents {
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "".to_string(),
+                            doc_blocks: vec![(
+                                0,
+                                0,
+                                "".to_string(),
+                                "".to_string(),
+                                "".to_string(),
+                            )],
+                        },
+                    }),
+                    path: None,
+                    cursor_position: None,
+                    scroll_position: None,
+                }),
+            })
+            .await
+            .unwrap();
+
+        // Check that it produces no error.
+        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
+
+        // 3. Send an update message with unknown source language.
+        ide_tx_queue
+            .send(JointMessage {
+                id: 3,
+                message: JointMessageContents::Update(UpdateMessageContents {
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "nope".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "testing".to_string(),
+                            doc_blocks: vec![],
+                        },
+                    }),
+                    path: Some(PathBuf::new()),
+                    cursor_position: None,
+                    scroll_position: None,
+                }),
+            })
+            .await
+            .unwrap();
+
+        // Check that it produces an error.
+        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "Unable to translate to source: Invalid mode");
+
+        // 4. Send an update message with an invalid path.
+        ide_tx_queue
+            .send(JointMessage {
+                id: 3,
+                message: JointMessageContents::Update(UpdateMessageContents {
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "python".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "".to_string(),
+                            doc_blocks: vec![],
+                        },
+                    }),
+                    path: Some(PathBuf::new()),
+                    cursor_position: None,
+                    scroll_position: None,
+                }),
+            })
+            .await
+            .unwrap();
+
+        // Check that it produces an error.
+        assert_starts_with!(get_message!(client_rx, JointMessageContents::Result), "Unable to save file '':");
+
+        // 5. Send a valid message.
+        let mut file_path = test_dir.clone();
+        file_path.push("test.py");
+        ide_tx_queue
+            .send(JointMessage {
+                id: 3,
+                message: JointMessageContents::Update(UpdateMessageContents {
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "python".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "testing()".to_string(),
+                            doc_blocks: vec![],
+                        },
+                    }),
+                    path: Some(file_path.clone()),
+                    cursor_position: None,
+                    scroll_position: None,
+                }),
+            })
+            .await
+            .unwrap();
+
+        // Check that this succeeds.
+        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
+        let mut s = String::new();
+        File::open(file_path).unwrap().read_to_string(&mut s).unwrap();
+        assert_eq!(s, "testing()");
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();

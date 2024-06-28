@@ -52,6 +52,7 @@ futures-util = "0.3.29"
 win_partitions = "0.3.0"
 
 [dev-dependencies]
+assertables = "7.0.1"
 assert_fs = "1"
 # See the [docs](https://github.com/rust-lang/rust-clippy#usage) to install
 # clippy; it can't be installed as a dev-dependency. See the

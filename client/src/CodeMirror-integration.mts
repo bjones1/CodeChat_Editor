@@ -666,7 +666,13 @@ export const CodeMirror_save = () => {
     // This is the data to write — the source code. First, transform the HTML
     // back into code and doc blocks.
     let source = current_view.state.toJSON(CodeMirror_JSON_fields);
-    // Don't record the current selection when saving.
+    // Don't record the current selection when saving. TODO: this is wrong -- we
+    // need to save and restore both the current selection and the current
+    // viewport for a given document. However, these shouldn't be saved to a
+    // file, merely stored in the server. If this data is lost, it's an
+    // inconvenience, not an error.
+    console.log(source.selection)
+    console.log(current_view.viewport)
     delete source.selection;
 
     return source;
