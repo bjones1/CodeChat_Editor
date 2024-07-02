@@ -153,7 +153,8 @@ struct JointMessage {
 enum JointMessageContents {
     /// Pings sent by the underlying websocket protocol.
     Ping(Bytes),
-    /// This is the first message sent when the IDE or client starts up.
+    /// This is the first message sent when the IDE or client starts up or
+    /// reconnects.
     Opened(IdeType),
     /// This sends an update; any missing fields are unchanged.
     Update(UpdateMessageContents),
@@ -209,7 +210,8 @@ lazy_static! {
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
 }
 
-// The timeout for a reply from a websocket. Use a short timeout to speed up unit tests.
+// The timeout for a reply from a websocket. Use a short timeout to speed up
+// unit tests.
 static REPLY_TIMEOUT: Duration = if cfg!(test) {
     Duration::from_millis(50)
 } else {
@@ -447,7 +449,13 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         .body(html_wrapper(&body))
 }
 
-// ### Serve a CodeChat Editor Client webpage
+// ### Serve file
+//
+// This could be a plain text file (for example, one not recognized as source
+// code that this program supports), a binary file (image/video/etc.), a
+// CodeChat Editor file, or a non-existent file. Determine which type this file
+// is then serve it.Serve a CodeChat Editor Client webpage using the FileWatcher
+// "IDE"
 async fn serve_file(
     file_path: &Path,
     req: &HttpRequest,
@@ -511,6 +519,7 @@ async fn serve_file(
         }
     }
 
+    // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) =
         source_to_codechat_for_web_string(file_contents, file_path, is_toc, &app_state.lexers);
     let is_project = path_to_toc.is_some();
@@ -636,7 +645,9 @@ async fn serve_file(
 
                 JointMessageContents::Update(update_message_contents) => {
                     let result = 'process: {
-                        // With code or a path, there's nothing to save. TODO: this should store and remember the path, instead of needing it repeated each time.
+                        // With code or a path, there's nothing to save. TODO:
+                        // this should store and remember the path, instead of
+                        // needing it repeated each time.
                         let codechat_for_web1 = match update_message_contents.contents {
                             None => break 'process "".to_string(),
                             Some(cwf) => cwf,
@@ -790,7 +801,8 @@ async fn serve_file(
 
 // Start a timeout task in case a message isn't delivered.
 fn create_timeout(
-    // The global state, which contains the hashmap of pending messages to modify.
+    // The global state, which contains the hashmap of pending messages to
+    // modify.
     app_state: &AppState,
     // The id of the message just sent.
     id: u32,
@@ -965,7 +977,8 @@ pub async fn main() -> std::io::Result<()> {
 
 // ## Utilities
 //
-// Configure the web application. I'd like to make this return an `App<AppEntry>`, but `AppEntry` is a private module.
+// Configure the web application. I'd like to make this return an
+// `App<AppEntry>`, but `AppEntry` is a private module.
 fn configure_app<T>(app: App<T>) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
@@ -979,12 +992,13 @@ where
     let exe_path = env::current_exe().unwrap();
     let exe_dir = exe_path.parent().unwrap();
     let mut client_static_path = PathBuf::from(exe_dir);
-    // When in debug or running tests, use the layout of the Git repo to find client files.
-    // In release mode, we assume the static folder is a subdirectory of the
-    // directory containing the executable.
+    // When in debug or running tests, use the layout of the Git repo to find
+    // client files. In release mode, we assume the static folder is a
+    // subdirectory of the directory containing the executable.
     #[cfg(test)]
     client_static_path.push("..");
-    // Note that `debug_assertions` is also enabled for testing, so this adds to the previous line when running tests.
+    // Note that `debug_assertions` is also enabled for testing, so this adds to
+    // the previous line when running tests.
     #[cfg(debug_assertions)]
     client_static_path.push("../../../client");
 
@@ -1008,7 +1022,6 @@ where
         .route("/client_ws/", web::get().to(client_ws))
 }
 
-//
 // Given a `Path`, transform it into a displayable string.
 fn path_display(p: &Path) -> String {
     let path_orig = p.to_string_lossy();
@@ -1091,7 +1104,8 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
 
-        // The web page has been served; fake the connected websocket by getting the appropriate tx/rx queues.
+        // The web page has been served; fake the connected websocket by getting
+        // the appropriate tx/rx queues.
         let app_state = resp.request().app_data::<web::Data<AppState>>().unwrap();
         let mut joint_editors = app_state.joint_editors.lock().unwrap();
         assert!(joint_editors.len() == 1);
@@ -1108,13 +1122,23 @@ mod tests {
             .unwrap();
     }
 
-    // Testing with logs is subtle. If logs won't be examined by unit tests, this is straightforward. However, to sometimes simply log data and at other times examine logs requires care:
+    // Testing with logs is subtle. If logs won't be examined by unit tests,
+    // this is straightforward. However, to sometimes simply log data and at
+    // other times examine logs requires care:
     //
-    // 1. The global logger can only be configured once. Configuring it for one test for the production logger and for another test using the testing logger doesn't work.
-    // 2. Since tests are run by default in multiple threads, the logger used should keep each thread's logs separate.
-    // 3. The logger needs to be initialized for all tests and for production, preferably without adding code to each test.
+    // 1.  The global logger can only be configured once. Configuring it for one
+    //     test for the production logger and for another test using the testing
+    //     logger doesn't work.
+    // 2.  Since tests are run by default in multiple threads, the logger used
+    //     should keep each thread's logs separate.
+    // 3.  The logger needs to be initialized for all tests and for production,
+    //     preferably without adding code to each test.
     //
-    // The modified `testing_logger` takes care of items 2 and 3. For item 3, I don't have a way to auto-initialize the logger for all tests easily; [test-log](https://crates.io/crates/test-log) seems like a possibility, but it works only for `env_logger`. While `rstest` offers fixtures, this seems like a bit of overkill to call one function for each test.
+    // The modified `testing_logger` takes care of items 2 and 3. For item 3, I
+    // don't have a way to auto-initialize the logger for all tests easily;
+    // [test-log](https://crates.io/crates/test-log) seems like a possibility,
+    // but it works only for `env_logger`. While `rstest` offers fixtures, this
+    // seems like a bit of overkill to call one function for each test.
     fn configure_logger() {
         testing_logger::setup();
     }
@@ -1147,11 +1171,11 @@ mod tests {
             .await
             .unwrap();
 
-        // 1. We should get a return message specifying the IDE client type.
+        // 1.  We should get a return message specifying the IDE client type.
         assert!(get_message!(client_rx, JointMessageContents::Opened) == IdeType::FileWatcher);
         send_response(&ide_tx_queue, "").await;
 
-        // 2. We should get the initial contents.
+        // 2.  We should get the initial contents.
         let umc = get_message!(client_rx, JointMessageContents::Update);
         assert!(umc.cursor_position == Some(0));
         assert!(umc.scroll_position == Some(0.0));
@@ -1171,7 +1195,7 @@ mod tests {
         assert!(umc.contents == Some(codechat_for_web));
         send_response(&ide_tx_queue, "").await;
 
-        // 3. We should get a return message confirming no errors.
+        // 3.  We should get a return message confirming no errors.
         assert_eq!(get_message!(client_rx, JointMessageContents::Result), "".to_string());
 
         // Report any errors produced when removing the temporary directory.
@@ -1186,7 +1210,8 @@ mod tests {
         let mut client_rx = je.client_rx_queue;
         configure_logger();
 
-        // Send a message from the client saying the page was opened, but with an invalid IDE type.
+        // Send a message from the client saying the page was opened, but with
+        // an invalid IDE type.
         ide_tx_queue
             .send(JointMessage {
                 id: 1,
@@ -1208,7 +1233,8 @@ mod tests {
         let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.ide_tx_queue;
         let mut client_rx = je.client_rx_queue;
-        // Configure the logger here; otherwise, the glob used to copy files outputs some debug-level logs.
+        // Configure the logger here; otherwise, the glob used to copy files
+        // outputs some debug-level logs.
         configure_logger();
 
         // Send a message from the client saying the page was opened.
@@ -1226,7 +1252,8 @@ mod tests {
         // We should get the initial contents.
         get_message!(client_rx, JointMessageContents::Update);
 
-        // Don't send any acknowledgements to these message and see if we get errors. The stderr redirection covers only this block.
+        // Don't send any acknowledgements to these message and see if we get
+        // errors. The stderr redirection covers only this block.
         sleep(REPLY_TIMEOUT).await;
         sleep(REPLY_TIMEOUT).await;
 
@@ -1258,10 +1285,11 @@ mod tests {
         let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.ide_tx_queue;
         let mut client_rx = je.client_rx_queue;
-        // Configure the logger here; otherwise, the glob used to copy files outputs some debug-level logs.
+        // Configure the logger here; otherwise, the glob used to copy files
+        // outputs some debug-level logs.
         configure_logger();
 
-        // 1. Send an update message with no contents.
+        // 1.  Send an update message with no contents.
         ide_tx_queue
             .send(JointMessage {
                 id: 1,
@@ -1278,7 +1306,7 @@ mod tests {
         // Check that it produces no error.
         assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
 
-        // 2. Send an update message with no path.
+        // 2.  Send an update message with no path.
         ide_tx_queue
             .send(JointMessage {
                 id: 2,
@@ -1309,7 +1337,7 @@ mod tests {
         // Check that it produces no error.
         assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
 
-        // 3. Send an update message with unknown source language.
+        // 3.  Send an update message with unknown source language.
         ide_tx_queue
             .send(JointMessage {
                 id: 3,
@@ -1334,7 +1362,7 @@ mod tests {
         // Check that it produces an error.
         assert_eq!(get_message!(client_rx, JointMessageContents::Result), "Unable to translate to source: Invalid mode");
 
-        // 4. Send an update message with an invalid path.
+        // 4.  Send an update message with an invalid path.
         ide_tx_queue
             .send(JointMessage {
                 id: 3,
@@ -1359,7 +1387,7 @@ mod tests {
         // Check that it produces an error.
         assert_starts_with!(get_message!(client_rx, JointMessageContents::Result), "Unable to save file '':");
 
-        // 5. Send a valid message.
+        // 5.  Send a valid message.
         let mut file_path = test_dir.clone();
         file_path.push("test.py");
         ide_tx_queue
