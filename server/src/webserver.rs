@@ -969,26 +969,29 @@ async fn client_ws(
 // ## Webserver startup
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
-    HttpServer::new(move || configure_app(App::new()))
+    let app_data = make_app_data();
+    HttpServer::new(move || configure_app(App::new(), &app_data))
         .bind(("127.0.0.1", 8080))?
         .run()
         .await
 }
 
 // ## Utilities
-//
-// Configure the web application. I'd like to make this return an
-// `App<AppEntry>`, but `AppEntry` is a private module.
-fn configure_app<T>(app: App<T>) -> App<T>
-where
-    T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
-{
-    let app_data = web::Data::new(AppState {
+// Quoting the [docs](https://actix.rs/docs/application#shared-mutable-state), "To achieve *globally* shared state, it must be created **outside** of the closure passed to `HttpServer::new`` and moved/cloned in." Putting this code inside `configure_app` places it inside the closure which calls `configure_app`, preventing globally shared state.
+fn make_app_data() -> web::Data<AppState> {
+    web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
         joint_editors: Mutex::new(Vec::new()),
         pending_messages: Mutex::new(HashMap::new()),
-    });
+    })
+}
 
+// Configure the web application. I'd like to make this return an
+// `App<AppEntry>`, but `AppEntry` is a private module.
+fn configure_app<T>(app: App<T>, app_data: &web::Data<AppState>) -> App<T>
+where
+    T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+{
     let exe_path = env::current_exe().unwrap();
     let exe_dir = exe_path.parent().unwrap();
     let mut client_static_path = PathBuf::from(exe_dir);
@@ -1071,18 +1074,18 @@ fn escape_html(unsafe_text: &str) -> String {
 // ## Tests
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use std::fs::File;
     use std::io::Read;
+    use std::path::PathBuf;
 
     use actix_web::{test, web, App};
-    use log::Level;
-    use tokio::sync::mpsc::{Sender, Receiver};
-    use tokio::time::sleep;
     use assertables::{assert_starts_with, assert_starts_with_as_result};
+    use log::Level;
+    use tokio::sync::mpsc::{Receiver, Sender};
+    use tokio::time::sleep;
 
-    use super::configure_app;
     use super::REPLY_TIMEOUT;
+    use super::{configure_app, make_app_data};
     use super::{
         AppState, CodeChatForWeb, CodeMirror, IdeType, JointEditor, JointMessage,
         JointMessageContents, SourceFileMetadata, UpdateMessageContents,
@@ -1096,7 +1099,8 @@ mod tests {
         // A path to the temporary directory where the source file is located.
         test_dir: &PathBuf,
     ) -> JointEditor {
-        let app = test::init_service(configure_app(App::new())).await;
+        let app_data = make_app_data();
+        let app = test::init_service(configure_app(App::new(), &app_data)).await;
 
         // Load in a test source file to create a websocket.
         let uri = format!("/fs/{}/test.py", test_dir.to_string_lossy());
@@ -1151,7 +1155,7 @@ mod tests {
     macro_rules! get_message {
         ($client_rx: expr, $cast_type: ty) => {
             cast!(get_message(&mut $client_rx).await, $cast_type)
-        }
+        };
     }
 
     #[actix_web::test]
@@ -1196,7 +1200,10 @@ mod tests {
         send_response(&ide_tx_queue, "").await;
 
         // 3.  We should get a return message confirming no errors.
-        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "".to_string());
+        assert_eq!(
+            get_message!(client_rx, JointMessageContents::Result),
+            "".to_string()
+        );
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
@@ -1221,7 +1228,10 @@ mod tests {
             .unwrap();
 
         // We should get a return message confirming an error.
-        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "Incorrect IDE type");
+        assert_eq!(
+            get_message!(client_rx, JointMessageContents::Result),
+            "Incorrect IDE type"
+        );
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
@@ -1247,7 +1257,10 @@ mod tests {
             .unwrap();
 
         // We should get a return message specifying the IDE client type.
-        assert_eq!(get_message!(client_rx, JointMessageContents::Opened), IdeType::FileWatcher);
+        assert_eq!(
+            get_message!(client_rx, JointMessageContents::Opened),
+            IdeType::FileWatcher
+        );
 
         // We should get the initial contents.
         get_message!(client_rx, JointMessageContents::Update);
@@ -1360,7 +1373,10 @@ mod tests {
             .unwrap();
 
         // Check that it produces an error.
-        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "Unable to translate to source: Invalid mode");
+        assert_eq!(
+            get_message!(client_rx, JointMessageContents::Result),
+            "Unable to translate to source: Invalid mode"
+        );
 
         // 4.  Send an update message with an invalid path.
         ide_tx_queue
@@ -1385,7 +1401,10 @@ mod tests {
             .unwrap();
 
         // Check that it produces an error.
-        assert_starts_with!(get_message!(client_rx, JointMessageContents::Result), "Unable to save file '':");
+        assert_starts_with!(
+            get_message!(client_rx, JointMessageContents::Result),
+            "Unable to save file '':"
+        );
 
         // 5.  Send a valid message.
         let mut file_path = test_dir.clone();
@@ -1414,7 +1433,10 @@ mod tests {
         // Check that this succeeds.
         assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
         let mut s = String::new();
-        File::open(file_path).unwrap().read_to_string(&mut s).unwrap();
+        File::open(file_path)
+            .unwrap()
+            .read_to_string(&mut s)
+            .unwrap();
         assert_eq!(s, "testing()");
 
         // Report any errors produced when removing the temporary directory.
