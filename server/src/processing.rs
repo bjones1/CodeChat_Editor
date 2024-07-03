@@ -68,7 +68,7 @@ lazy_static! {
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
 }
 
-static DOC_BLOCK_SEPARATOR_STRING: &str = "\n<CodeChatEditor-separator/>\n\n";
+const DOC_BLOCK_SEPARATOR_STRING: &str = "\n<CodeChatEditor-separator/>\n\n";
 
 // ## Determine if the provided file is part of a project.
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
