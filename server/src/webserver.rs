@@ -28,7 +28,7 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     str::FromStr,
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -53,7 +53,9 @@ use serde_json;
 use tokio::{
     fs::{self, DirEntry, File},
     io::AsyncReadExt,
+    select,
     sync::mpsc::{self, Receiver, Sender},
+    sync::Notify,
     task::JoinHandle,
     time::sleep,
 };
@@ -151,8 +153,9 @@ struct JointMessage {
 /// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum JointMessageContents {
-    /// Pings sent by the underlying websocket protocol.
-    Ping(Bytes),
+    /// A pong to send by the underlying websocket protocol. The websocket
+    /// interface generates this; IDEs should not need to use this message.
+    Pong(Bytes),
     /// This is the first message sent when the IDE or client starts up or
     /// reconnects.
     Opened(IdeType),
@@ -212,11 +215,13 @@ lazy_static! {
 
 // The timeout for a reply from a websocket. Use a short timeout to speed up
 // unit tests.
-static REPLY_TIMEOUT: Duration = if cfg!(test) {
+const REPLY_TIMEOUT: Duration = if cfg!(test) {
     Duration::from_millis(50)
 } else {
     Duration::from_millis(2000)
 };
+
+const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 
 pub fn configure_logger() {
     log4rs::init_file("log4rs.yml", Default::default()).unwrap();
@@ -854,99 +859,161 @@ async fn client_ws(
     let ide_tx = joint_editor.ide_tx_queue;
     let client_tx = joint_editor.client_tx_queue;
     let mut client_rx = joint_editor.client_rx_queue;
-    // Start a task to handle receiving `JointMessage` websocket data from the
-    // CodeChat Editor Client.
-    actix_rt::spawn(async move {
-        msg_stream = msg_stream.max_size(1_000_000);
-        while let Some(msg_wrapped) = msg_stream.next().await {
-            match msg_wrapped {
-                Ok(msg) => {
-                    match msg {
-                        // Enqueue a ping to this thread's tx queue, to send a
-                        // pong. Trying to send here means borrow errors, or
-                        // resorting to a mutex/correctly locking and unlocking
-                        // it.
-                        Message::Ping(bytes) => {
-                            if let Result::Err(err) =
-                                // For a ping, we don't need a unique ID, since
-                                // ping/pongs are handled outside our framework.
-                                client_tx
-                                    .send(JointMessage {
-                                        id: 0,
-                                        message: JointMessageContents::Ping(bytes),
-                                    })
-                                    .await
-                            {
-                                error!("Unable to enqueue: {}", err);
-                                break;
-                            };
-                        }
+    let shutdown_notify_rx = Arc::new(Notify::new());
+    let shutdown_notify_tx = shutdown_notify_rx.clone();
 
-                        // Decode text messages as JSON then dispatch.
-                        Message::Text(b) => {
-                            // The CodeChat Editor Client should always send
-                            // valid JSON.
-                            match serde_json::from_str(&b) {
-                                Err(err) => {
-                                    error!(
-                                "Unable to decode JSON message from the CodeChat Editor client: {}",
-                                err
-                            );
-                                    break;
-                                }
-                                // Send the `JointMessage` to the IDE for
-                                // processing.
-                                Ok(joint_message) => {
-                                    if let Result::Err(err) = ide_tx.send(joint_message).await {
+    // Receive task: start a task to handle receiving `JointMessage` websocket
+    // data from the CodeChat Editor Client.
+    actix_rt::spawn(async move {
+        // True if the client requested the websocket to close.
+        let mut client_closed = false;
+        msg_stream = msg_stream.max_size(1_000_000);
+
+        loop {
+            select! {
+                // Shut down if the TX thread has shut down.
+                _ = shutdown_notify_rx.notified() => {
+                    break;
+                }
+
+                // If we haven't received anything for a while (such as a pong),
+                // the websocket must be broken.
+                _ = sleep(WEBSOCKET_PING_DELAY*2) => {
+                    break;
+                }
+
+                // Process a message received from the websocket.
+                Some(msg_wrapped) = msg_stream.next() => {
+
+                    match msg_wrapped {
+                        Ok(msg) => {
+                            match msg {
+                                // Enqueue a pong to this thread's tx queue.
+                                // Trying to send here means borrow errors, or
+                                // resorting to a mutex/correctly locking and
+                                // unlocking it.
+                                Message::Ping(bytes) => {
+                                    info!("Ping");
+                                    if let Result::Err(err) =
+                                        // For a pong, we don't need a unique ID,
+                                        // since ping/pongs are handled outside our
+                                        // framework.
+                                        client_tx
+                                            .send(JointMessage {
+                                                id: 0,
+                                                message: JointMessageContents::Pong(bytes),
+                                            })
+                                            .await
+                                    {
                                         error!("Unable to enqueue: {}", err);
                                         break;
+                                    };
+                                }
+
+                                Message::Pong(bytes) => {
+                                    info!("Pong {:?}", bytes);
+                                }
+
+                                // Decode text messages as JSON then dispatch.
+                                Message::Text(b) => {
+                                    // The CodeChat Editor Client should always
+                                    // send valid JSON.
+                                    match serde_json::from_str(&b) {
+                                        Err(err) => {
+                                            error!(
+                                        "Unable to decode JSON message from the CodeChat Editor client: {}",
+                                        err
+                                    );
+                                            break;
+                                        }
+                                        // Send the `JointMessage` to the IDE for
+                                        // processing.
+                                        Ok(joint_message) => {
+                                            if let Result::Err(err) = ide_tx.send(joint_message).await {
+                                                error!("Unable to enqueue: {}", err);
+                                                break;
+                                            }
+                                        }
                                     }
+                                }
+
+                                Message::Close(reason) => {
+                                    info!("Closing per client request: {:?}", reason);
+                                    client_closed = true;
+                                    break;
+                                }
+
+                                other => {
+                                    warn!("Unexpected message {:?}", &other);
+                                    break;
                                 }
                             }
                         }
-
-                        Message::Close(reason) => {
-                            info!("Closing per client request: {:?}", reason);
-                            break;
-                        }
-
-                        other => {
-                            warn!("Unexpected message {:?}", &other);
-                            break;
+                        Err(err) => {
+                            error!("websocket receive error {:?}", err);
                         }
                     }
                 }
-                Err(err) => {
-                    error!("websocket receive error {:?}", err);
-                }
+
+                else => break,
             }
+        }
+
+        // Put this back on the queue.
+        info!("RX websocket closed.");
+        shutdown_notify_rx.notify_one();
+        if !client_closed {
+            info!("TODO: re-enqueue me!");
         }
     });
 
-    // Start a task to forward `JointMessage` data from the IDE to the CodeChat
-    // Editor Client.
+    // Transmit task: start a task to forward `JointMessage` data from the IDE
+    // to the CodeChat Editor Client.
     actix_rt::spawn(async move {
-        while let Some(m) = client_rx.recv().await {
-            match m.message {
-                JointMessageContents::Ping(bytes) => {
-                    if let Err(err) = session.pong(&bytes).await {
-                        error!("Unable to send pong: {}", err);
-                        return;
+        loop {
+            select! {
+                // Shut down if the RX thread has shut down.
+                _ = shutdown_notify_tx.notified() => {
+                    break;
+                }
+
+                _ = sleep(WEBSOCKET_PING_DELAY) => {
+                // Send a ping to check that the websocket is still open. For
+                // example, putting a PC to sleep then waking it breaks the
+                // websocket, but the server doesn't detect this without sending
+                // a ping (which then fails).
+                    if let Err(err) = session.ping(&Bytes::new()).await {
+                        error!("Unable to send ping: {}", err);
+                        break;
                     }
                 }
-                ref _other => match serde_json::to_string(&m) {
-                    Ok(s) => {
-                        if let Err(err) = session.text(&s).await {
-                            error!("Unable to send: {}", err);
-                            break;
+
+                Some(m) = client_rx.recv() => {
+                    match m.message {
+                        JointMessageContents::Pong(bytes) => {
+                            if let Err(err) = session.pong(&bytes).await {
+                                error!("Unable to send pong: {}", err);
+                                break;
+                            }
                         }
+                        ref _other => match serde_json::to_string(&m) {
+                            Ok(s) => {
+                                if let Err(err) = session.text(&s).await {
+                                    error!("Unable to send: {}", err);
+                                    break;
+                                }
+                            }
+                            Err(err) => {
+                                error!("Encoding failure {}", err)
+                            }
+                        },
                     }
-                    Err(err) => {
-                        error!("Encoding failure {}", err)
-                    }
-                },
-            }
+                }
+
+                else => break,
+            };
         }
+
         // Shut down the session, to stop any incoming messages.
         if let Err(err) = session.close(None).await {
             error!("Unable to close session: {}", err);
@@ -957,6 +1024,9 @@ async fn client_ws(
         while let Some(m) = client_rx.recv().await {
             warn!("Dropped queued message {:?}", &m);
         }
+
+        info!("TX websocket closed.");
+        shutdown_notify_tx.notify_one();
     });
 
     Ok(response)
@@ -977,7 +1047,12 @@ pub async fn main() -> std::io::Result<()> {
 }
 
 // ## Utilities
-// Quoting the [docs](https://actix.rs/docs/application#shared-mutable-state), "To achieve *globally* shared state, it must be created **outside** of the closure passed to `HttpServer::new`` and moved/cloned in." Putting this code inside `configure_app` places it inside the closure which calls `configure_app`, preventing globally shared state.
+//
+// Quoting the [docs](https://actix.rs/docs/application#shared-mutable-state),
+// "To achieve _globally_ shared state, it must be created **outside** of the
+// closure passed to `HttpServer::new` and moved/cloned in." Putting this code
+// inside `configure_app` places it inside the closure which calls
+// `configure_app`, preventing globally shared state.
 fn make_app_data() -> web::Data<AppState> {
     web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
