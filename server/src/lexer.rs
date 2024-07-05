@@ -185,6 +185,7 @@ pub struct LanguageLexersCompiled {
     pub map_mode_to_lexer: HashMap<Arc<String>, Arc<LanguageLexerCompiled>>,
 }
 
+#[allow(clippy::four_forward_slashes)]
 /// Define which delimiter corresponds to a given regex group.
 ///
 /// This struct stores the results of "compiling" a `LanguageLexer` into a set
