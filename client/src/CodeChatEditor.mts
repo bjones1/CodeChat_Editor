@@ -125,7 +125,38 @@ interface UpdateMessageContents {
     scroll_position: number | undefined
 }
 
-// Handle messages.
+// A map of message id to timer id for all pending messages.
+let pending_messages: Record<number, number> = {}
+
+// Report an error from the server.
+const report_server_timeout = (message_id: number) => {
+    delete pending_messages[message_id]
+    console.log(`Error: server timeout for message id ${message_id}`)
+}
+
+// Send a message expecting a result to the server.
+const send_message = (id: number, message: JointMessageContents) => {
+    const jm: JointMessage = {
+        id: id,
+        message: message
+    }
+    ws.send(JSON.stringify(jm))
+    pending_messages[id] = setTimeout(report_server_timeout, 2000, id)
+}
+
+// Send a result (a response to a message from the server) back to the server.
+const send_result = (id: number, result: string = "") => {
+    // We can't simply call `send_message` because that function expects a result message back from the server.
+    const jm: JointMessage = {
+        id: id,
+        message: {
+            Result: result
+        }
+    }
+    ws.send(JSON.stringify(jm))
+}
+
+// Handle websocket messages.
 ws.onmessage = (event: any) => {
     // Parse the received message, which must be a single element of a
     // dictionary representing a `JointMessage`.
@@ -143,7 +174,8 @@ ws.onmessage = (event: any) => {
         case "Opened":
             const ideType = value as IdeType;
             // There's no additional steps to take currently.
-            console.log(`Opened(${IdeType})`);
+            console.log(`Opened(${ideType})`);
+            send_result(id)
             break;
 
         case "Update":
@@ -151,9 +183,18 @@ ws.onmessage = (event: any) => {
             current_update = value as UpdateMessageContents;
             console.log(`Update(path: ${current_update.path}, cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
             page_init(current_update.contents);
+            send_result(id)
             break;
 
         case "Result":
+            // Cancel the timer for this message and remove it from `pending_messages`.
+            const timer_id = pending_messages[id]
+            if (timer_id !== undefined) {
+                clearTimeout(timer_id)
+                delete pending_messages[id]
+            }
+
+            // Report if this was an error.
             const err = value as string;
             if (value !== "") {
                 console.log(`Error in message ${id}: ${err}.`)
