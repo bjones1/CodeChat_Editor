@@ -69,7 +69,7 @@ import "./../static/css/CodeChatEditor.css";
 
 // ## Initialization
 //
-// Instantiate \[turndown\](https://github.com/mixmark-io/turndown) for HTML to
+// Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to
 // Markdown conversion
 const turndownService = new TurndownService({
     br: "\\",
@@ -77,8 +77,10 @@ const turndownService = new TurndownService({
     renderAsPure: false,
 });
 
-let ws_id = 0;
 
+
+// Use a unique ID for each websocket message sent.
+let ws_id = 0;
 
 export const ws = new ReconnectingWebSocket!("ws://localhost:8080/client_ws/");
 // Identify this client on connection.
@@ -146,7 +148,8 @@ const send_message = (id: number, message: JointMessageContents) => {
 
 // Send a result (a response to a message from the server) back to the server.
 const send_result = (id: number, result: string = "") => {
-    // We can't simply call `send_message` because that function expects a result message back from the server.
+    // We can't simply call `send_message` because that function expects a
+    // result message back from the server.
     const jm: JointMessage = {
         id: id,
         message: {
@@ -187,7 +190,8 @@ ws.onmessage = (event: any) => {
             break;
 
         case "Result":
-            // Cancel the timer for this message and remove it from `pending_messages`.
+            // Cancel the timer for this message and remove it from
+            // `pending_messages`.
             const timer_id = pending_messages[id]
             if (timer_id !== undefined) {
                 clearTimeout(timer_id)
@@ -199,6 +203,7 @@ ws.onmessage = (event: any) => {
             if (value !== "") {
                 console.log(`Error in message ${id}: ${err}.`)
             }
+            break;
 
         default:
             console.log(`Unhandled message ${key}(${value})`);
@@ -502,6 +507,59 @@ const os_is_osx =
     navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
         ? true
         : false;
+
+// Since this is experimental, TypeScript doesn't define it. See the
+// [docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
+interface NavigateEvent extends Event {
+    canIntercept: boolean
+    destination: any
+    downloadRequest: String | null
+    formData: any
+    hashChange: boolean
+    info: any
+    navigationType: String
+    signal: AbortSignal
+    userInitiated: boolean
+    intercept: any
+    scroll: any
+}
+
+// The TOC and this page calls this when a hyperlink is clicked. This saves the
+// current document before navigating.
+export const on_navigate = (navigateEvent: NavigateEvent) => {
+    if (
+        // Some of this was copied from
+        // [Modern client-side routing: the Navigation API](https://developer.chrome.com/docs/web-platform/navigation-api/#deciding_how_to_handle_a_navigation).
+        // If we're navigating within the document, ignore this.
+        navigateEvent.hashChange ||
+        // If this is a download, let the browser perform the download.
+        navigateEvent.downloadRequest ||
+        // If this is a form submission, let that go to the server.
+        navigateEvent.formData
+    ) {
+        return
+    }
+
+    // If we can't intercept this, we can't save the current content. TODO --
+    // this is a problem is data wasn't saved! Need a sync way to do this. Store
+    // it in local data or something.
+    if (!navigateEvent.canIntercept) {
+        return
+    }
+
+    // Intercept this navigation so we can save the document first.
+    navigateEvent.intercept()
+    on_save().then((_value) => {
+        // Avoid recursion!
+        /// @ts-ignore
+        removeEventListener("navigate", on_navigate)
+        window.location.href = navigateEvent.destination.url;
+    })
+}
+
+// Intercept links in this document to save before following the link.
+/// @ts-ignore
+addEventListener("navigate", on_navigate)
 
 // A great and simple idea taken from
 // [SO](https://stackoverflow.com/a/54116079): wrap all testing exports in a

@@ -568,10 +568,10 @@ async fn serve_file(
 <link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
 <script>
     addEventListener("DOMContentLoaded", (event) => {{
-        document.querySelectorAll("a").forEach((a_element) => {{
-            a_element.target = "_parent"
-        }});
-    }});
+        navigation.addEventListener("navigate", (event) => {{
+            parent.CodeChatEditor.on_navigate(event)
+        }})
+    }})
 </script>
 </head>
 <body>
@@ -782,11 +782,11 @@ async fn serve_file(
 
         <link rel="stylesheet" href="/static/bundled/CodeChatEditor.css">
         <script type="module">
-            import {{ page_init, on_keydown, on_save }} from "/static/bundled/CodeChatEditor{}.js"
+            import {{ page_init, on_keydown, on_save, on_navigate }} from "/static/bundled/CodeChatEditor{}.js"
             // <p>Make these accessible on the onxxx handlers below. See <a
             //         href="https://stackoverflow.com/questions/44590393/es6-modules-undefined-onclick-function-after-import">SO</a>.
             // </p>
-            window.CodeChatEditor = {{ on_keydown, on_save }};
+            window.CodeChatEditor = {{ on_keydown, on_save, on_navigate }};
         </script>
         {}
         {}
@@ -921,7 +921,9 @@ async fn client_ws(
                                 }
 
                                 Message::Pong(_bytes) => {
-                                    // Simply receiving this message restarts the timeout timer. There's nothing else that needs doing.
+                                    // Simply receiving this message restarts
+                                    // the timeout timer. There's nothing else
+                                    // that needs doing.
                                     //info!("Pong {:?}", bytes);
                                 }
 
@@ -1194,7 +1196,8 @@ mod tests {
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
-        // Even after the webpage is served, the websocket task hasn't started. Wait a bit for that.
+        // Even after the webpage is served, the websocket task hasn't started.
+        // Wait a bit for that.
         sleep(Duration::from_millis(10)).await;
 
         // The web page has been served; fake the connected websocket by getting
