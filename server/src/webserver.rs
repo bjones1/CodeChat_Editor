@@ -46,6 +46,11 @@ use futures_util::StreamExt;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
 use log4rs;
+use notify_debouncer_full::{
+    new_debouncer,
+    notify::{RecursiveMode, Watcher},
+    DebounceEventResult,
+};
 use path_slash::PathBufExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -587,7 +592,8 @@ async fn serve_file(
         }
     };
 
-    // Handle `JointMessage` data from the CodeChat Editor Client for this file.
+    // Handle `JointMessage` data from the CodeChat Editor Client for this
+    // file..
     let file_pathbuf = Rc::new(file_path.to_path_buf());
     actix_rt::spawn(async move {
         let mut is_closing = false;
@@ -600,6 +606,36 @@ async fn serve_file(
                 client_tx_queue: client_tx.clone(),
                 client_rx_queue: client_rx,
             });
+
+            // Watch this file. Use the debouncer, to avoid multiple
+            // notifications for the same file. This approach returns a result
+            // of either a working debouncer or any errors that occurred. The
+            // debouncer's scope needs live as long as this connection does;
+            // dropping it early means losing file change notifications.
+            let debouncer = match new_debouncer(
+                Duration::from_secs(2),
+                None,
+                |result: DebounceEventResult| match result {
+                    Ok(events) => events.iter().for_each(|event| info!("{event:?}")),
+                    Err(errors) => errors.iter().for_each(|error| error!("{error:?}")),
+                },
+            ) {
+                Ok(mut debouncer) => {
+                    match debouncer
+                        .watcher()
+                        .watch(file_pathbuf.as_path(), RecursiveMode::NonRecursive)
+                    {
+                        Ok(()) => Ok(debouncer),
+                        Err(err) => Err(err),
+                    }
+                }
+                Err(err) => Err(err),
+            };
+
+            if let Err(err) = debouncer {
+                error!("Debouncer error: {}", err);
+            }
+
             let mut id: u32 = 0;
             while let Some(m) = ide_rx.recv().await {
                 match m.message {
