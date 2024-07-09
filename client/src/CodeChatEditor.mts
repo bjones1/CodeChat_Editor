@@ -67,22 +67,15 @@ import { tinymce, init, Editor } from "./tinymce-config.mjs";
 // ### CSS
 import "./../static/css/CodeChatEditor.css";
 
-// ## Initialization
+// ## Websocket
 //
-// Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to
-// Markdown conversion
-const turndownService = new TurndownService({
-    br: "\\",
-    codeBlockStyle: "fenced",
-    renderAsPure: false,
-});
-
-
-
+// This code communicates with the CodeChat Editor Server via its websocket
+// interface.
+//
 // Use a unique ID for each websocket message sent.
 let ws_id = 0;
 
-export const ws = new ReconnectingWebSocket!("ws://localhost:8080/client_ws/");
+const ws = new ReconnectingWebSocket!("ws://localhost:8080/client_ws/");
 // Identify this client on connection.
 ws.onopen = () => {
     console.log(`CodeChat Client: websocket to CodeChat Server open.`);
@@ -101,6 +94,10 @@ ws.onclose = (event: any) => {
     );
 };
 
+// ### Message types
+//
+// These mirror the same definitions in the Rust webserver, so that the two can
+// exchange messages.
 interface JointMessage {
     id: number,
     message: JointMessageContents
@@ -211,6 +208,16 @@ ws.onmessage = (event: any) => {
     }
 };
 
+// ## Markdown to HTML conversion
+//
+// Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to
+// Markdown conversion
+const turndownService = new TurndownService({
+    br: "\\",
+    codeBlockStyle: "fenced",
+    renderAsPure: false,
+});
+
 // Add the plugins from
 // [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm)
 // to enable conversions for tables, task lists, and strikethroughs.
@@ -226,15 +233,22 @@ type CodeChatForWeb = {
     };
 };
 
-// Store the lexer info for the currently-loaded language.
+// ## Page initialization
 //
-// <a id="current_metadata"></a>This mirrors the data provided by the server --
-// see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
-let current_metadata: {
-    mode: string;
-};
-
-let current_update: UpdateMessageContents;
+// <a id="EditorMode"></a>Define all possible editor modes; these are passed as
+// a [query string](https://en.wikipedia.org/wiki/Query_string)
+// (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
+enum EditorMode {
+    // Display the source code using CodeChat, but disallow editing.
+    view,
+    // For this source, the same a view; the server uses this to avoid recursive
+    // iframes of the table of contents.
+    toc,
+    // The full CodeChat editor.
+    edit,
+    // Show only raw source code; ignore doc blocks, treating them also as code.
+    raw,
+}
 
 // Load code when the DOM is ready.
 export const page_init = (all_source: any) => {
@@ -266,27 +280,22 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
     }
 };
 
-// <a id="EditorMode"></a>Define all possible editor modes; these are passed as
-// a [query string](https://en.wikipedia.org/wiki/Query_string)
-// (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
-enum EditorMode {
-    // Display the source code using CodeChat, but disallow editing.
-    view,
-    // For this source, the same a view; the server uses this to avoid recursive
-    // iframes of the table of contents.
-    toc,
-    // The full CodeChat editor.
-    edit,
-    // Show only raw source code; ignore doc blocks, treating them also as code.
-    raw,
-}
+// ## File handling
+//
+// Store the lexer info for the currently-loaded language.
+//
+// <a id="current_metadata"></a>This mirrors the data provided by the server --
+// see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
+let current_metadata: {
+    mode: string;
+};
 
-// Tell TypeScript about the global namespace this program defines.
-declare global {
-    interface Window {
-        CodeChatEditor_test: any;
-    }
-}
+let current_update: UpdateMessageContents;
+
+// True if this is a CodeChat Editor document (not a source file).
+const is_doc_only = () => {
+    return current_metadata["mode"] === "markdown";
+};
 
 // This function is called on page load to "load" a file. Before this point, the
 // server has already lexed the source file into code and doc blocks; this
@@ -340,6 +349,15 @@ const open_lp = (
         window.CodeChatEditor_test();
     }
 };
+
+// Per
+// [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
+// here's the least bad way to choose between the control key and the command
+// key.
+const os_is_osx =
+    navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
+        ? true
+        : false;
 
 // Provide a shortcut of ctrl-s (or command-s) to save the current file.
 export const on_keydown = (event: KeyboardEvent) => {
@@ -405,7 +423,7 @@ export const on_save = async () => {
     ws.send(JSON.stringify({ id: ws_id++, message: { Update: current_update } }))
 };
 
-// Autosave feature
+// ### Autosave feature
 //
 // The ID of the autosave timer; when this timer expires, the document will be
 // autosaved.
@@ -472,7 +490,7 @@ const autosaveExtension = EditorView.updateListener.of(
     },
 );
 
-// ## Helper functions
+// User `prettier` to word-wrap Markdown before saving it.
 const prettier_markdown = async (markdown: string, print_width: number) => {
     return await prettier.format(markdown, {
         // See
@@ -494,20 +512,8 @@ const prettier_markdown = async (markdown: string, print_width: number) => {
     });
 };
 
-// True if this is a CodeChat Editor document (not a source file).
-const is_doc_only = () => {
-    return current_metadata["mode"] === "markdown";
-};
-
-// Per
-// [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
-// here's the least bad way to choose between the control key and the command
-// key.
-const os_is_osx =
-    navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
-        ? true
-        : false;
-
+// ## Navigation
+//
 // Since this is experimental, TypeScript doesn't define it. See the
 // [docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
 interface NavigateEvent extends Event {
@@ -560,6 +566,15 @@ export const on_navigate = (navigateEvent: NavigateEvent) => {
 // Intercept links in this document to save before following the link.
 /// @ts-ignore
 addEventListener("navigate", on_navigate)
+
+// ## Testing
+//
+// Tell TypeScript about the global namespace this program defines.
+declare global {
+    interface Window {
+        CodeChatEditor_test: any;
+    }
+}
 
 // A great and simple idea taken from
 // [SO](https://stackoverflow.com/a/54116079): wrap all testing exports in a

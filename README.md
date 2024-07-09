@@ -37,7 +37,7 @@ These form a set of high-level requirements to guide the project.
 - Load a document from source code, allow edits in a GUI, then save it back to
   source code.
   - Provide word processor GUI tools (insert hyperlink, images, headings, change
-    font, etc) for doc blocks.
+    font, etc.) for doc blocks.
   - Provide text editor/IDE tools (syntax highlighting, line numbers, show
     linter feedback) for code blocks.
 - Zero build: eliminate the traditional project build process -- make it almost
