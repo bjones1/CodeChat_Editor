@@ -33,7 +33,7 @@ actix = "0.13.1"
 actix-files = "0.6"
 actix-rt = "2.9.0"
 actix-web = "4"
-actix-ws = "0.2.5"
+actix-ws = { git = "https://github.com/asonix/actix-extras.git", branch = "asonix/ws-receive-large-payloads" }
 bytes = { version = "1", features = ["serde"] }
 lazy_static = "1"
 log = "0.4"

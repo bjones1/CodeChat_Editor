@@ -17,7 +17,7 @@
 /// # `webserver.rs` -- Serve CodeChat Editor Client webpages
 ///
 /// TODO: auto-reload when the current file changes on disk. Use
-/// [notify](https://docs.rs/notify/latest/notify/).
+/// [notify](https://docs.rs/notify/latest/notify/)..
 ///
 /// ## Imports
 ///
@@ -41,7 +41,7 @@ use actix_web::{
     http::header::{self, ContentDisposition, ContentType},
     web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
 };
-use actix_ws::Message;
+use actix_ws::AggregatedMessage;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use lazy_static::lazy_static;
@@ -1058,8 +1058,9 @@ async fn client_ws(
     // Receive task: start a task to handle receiving `JointMessage` websocket
     // data from the CodeChat Editor Client.
     actix_rt::spawn(async move {
-        // True if the client requested the websocket to close.
-        msg_stream = msg_stream.max_size(1_000_000);
+        msg_stream = msg_stream.max_frame_size(1_000_000);
+        let mut aggregated_msg_stream = msg_stream.aggregate_continuations();
+        aggregated_msg_stream = aggregated_msg_stream.max_continuation_size(10_000_000);
 
         loop {
             select! {
@@ -1075,7 +1076,7 @@ async fn client_ws(
                 }
 
                 // Process a message received from the websocket.
-                Some(msg_wrapped) = msg_stream.next() => {
+                Some(msg_wrapped) = aggregated_msg_stream.next() => {
 
                     match msg_wrapped {
                         Ok(msg) => {
@@ -1084,7 +1085,7 @@ async fn client_ws(
                                 // Trying to send here means borrow errors, or
                                 // resorting to a mutex/correctly locking and
                                 // unlocking it.
-                                Message::Ping(bytes) => {
+                                AggregatedMessage::Ping(bytes) => {
                                     info!("Ping");
                                     if let Result::Err(err) =
                                         // For a pong, we don't need a unique ID,
@@ -1102,7 +1103,7 @@ async fn client_ws(
                                     };
                                 }
 
-                                Message::Pong(_bytes) => {
+                                AggregatedMessage::Pong(_bytes) => {
                                     // Simply receiving this message restarts
                                     // the timeout timer. There's nothing else
                                     // that needs doing.
@@ -1110,7 +1111,7 @@ async fn client_ws(
                                 }
 
                                 // Decode text messages as JSON then dispatch.
-                                Message::Text(b) => {
+                                AggregatedMessage::Text(b) => {
                                     // The CodeChat Editor Client should always
                                     // send valid JSON.
                                     match serde_json::from_str(&b) {
@@ -1132,7 +1133,7 @@ async fn client_ws(
                                     }
                                 }
 
-                                Message::Close(reason) => {
+                                AggregatedMessage::Close(reason) => {
                                     info!("Closing per client request: {:?}", reason);
                                     *is_closing.borrow_mut() = true;
                                     if let Result::Err(err) = ide_tx.send(JointMessage { id: 0, message: JointMessageContents::Closing }).await {
@@ -1195,7 +1196,7 @@ async fn client_ws(
                         }
                         ref _other => match serde_json::to_string(&m) {
                             Ok(s) => {
-                                if let Err(err) = session.text(&s).await {
+                                if let Err(err) = session.text(&*s).await {
                                     error!("Unable to send: {}", err);
                                     break;
                                 }
