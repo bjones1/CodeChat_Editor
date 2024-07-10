@@ -23,7 +23,14 @@
 ///
 /// ### Standard library
 use std::{
-    cell::RefCell, collections::HashMap, env, path::{Path, PathBuf}, rc::Rc, str::FromStr, sync::{Arc, Mutex}, time::Duration
+    cell::RefCell,
+    collections::HashMap,
+    env,
+    path::{Path, PathBuf},
+    rc::Rc,
+    str::FromStr,
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 
 // ### Third-party
@@ -42,7 +49,7 @@ use log::{error, info, warn};
 use log4rs;
 use notify_debouncer_full::{
     new_debouncer,
-    notify::{RecursiveMode, Watcher},
+    notify::{EventKind, RecursiveMode, Watcher},
     DebounceEventResult,
 };
 use path_slash::PathBufExt;
@@ -589,6 +596,7 @@ async fn serve_file(
     // Handle `JointMessage` data from the CodeChat Editor Client for this
     // file..
     let file_pathbuf = Rc::new(file_path.to_path_buf());
+    let file_pathbuf_watcher = file_pathbuf.clone();
     let (ide_tx, mut ide_rx) = mpsc::channel(10);
     let (client_tx, client_rx) = mpsc::channel(10);
     app_state.joint_editors.lock().unwrap().push(JointEditor {
@@ -596,176 +604,320 @@ async fn serve_file(
         client_tx_queue: client_tx.clone(),
         client_rx_queue: client_rx,
     });
+    let (ignore_file_modify_tx, mut ignore_file_modify_rx) = mpsc::channel(10);
+    let app_state_watcher = app_state.clone();
     let client_tx_debouncer = client_tx.clone();
+    let shutdown_notify_watcher = Arc::new(Notify::new());
+    let shutdown_notify_rx = shutdown_notify_watcher.clone();
+    let mut id: u32 = 0;
     actix_rt::spawn(async move {
         // This is a CodeChat Editor file. Start a FileWatcher IDE to handle it.
 
+        // Use a channel to send from the watcher (which runs in another thread)
+        // into this async context.
+        let (watcher_tx, mut watcher_rx) = mpsc::channel(1);
         // Watch this file. Use the debouncer, to avoid multiple notifications
         // for the same file. This approach returns a result of either a working
         // debouncer or any errors that occurred. The debouncer's scope needs
         // live as long as this connection does; dropping it early means losing
         // file change notifications.
-        let debouncer = match new_debouncer(
+        let debounced_watcher = match new_debouncer(
             Duration::from_secs(2),
             None,
-            move |result: DebounceEventResult| match result {
-                Ok(events) => events.iter().for_each(|event| info!("{event:?}")),
-                Err(errors) => errors.iter().for_each(|error| {
-                    //send_response(&client_tx_debouncer, 0, &format!("File watcher error: {error:?}")).await;
-                }),
+            // Note that this runs in a separate thread created by the watcher,
+            // not in an async context. Therefore, use a blocking send.
+            move |result: DebounceEventResult| {
+                if let Err(err) = watcher_tx.blocking_send(result) {
+                    error!("Unable to send: {err}");
+                }
             },
         ) {
-            Ok(mut debouncer) => {
-                match debouncer
+            Ok(mut debounced_watcher) => {
+                match debounced_watcher
                     .watcher()
-                    .watch(file_pathbuf.as_path(), RecursiveMode::NonRecursive)
+                    .watch(file_pathbuf_watcher.as_path(), RecursiveMode::NonRecursive)
                 {
-                    Ok(()) => Ok(debouncer),
+                    Ok(()) => Ok(debounced_watcher),
                     Err(err) => Err(err),
                 }
             }
             Err(err) => Err(err),
         };
 
-        if let Err(err) = debouncer {
+        if let Err(err) = debounced_watcher {
             error!("Debouncer error: {}", err);
         }
 
-        let mut id: u32 = 0;
-        while let Some(m) = ide_rx.recv().await {
-            match m.message {
-                JointMessageContents::Opened(ide_type) => {
-                    let result = if ide_type == IdeType::CodeChatEditorClient {
-                        // Tell the CodeChat Editor Client the type of this IDE.
-                        id += 1;
-                        if let Err(err) = client_tx
-                            .send(JointMessage {
-                                id,
-                                message: JointMessageContents::Opened(IdeType::FileWatcher),
-                            })
-                            .await
-                        {
-                            error!("Unable to enqueue: {}", err);
-                            break;
-                        }
-                        create_timeout(&app_state, id);
+        // Process results produced by the file watcher.
+        let mut ignore_file_modify = false;
+        loop {
+            select! {
+                _ = shutdown_notify_watcher.notified() => break,
 
-                        // Provide it a file to open.
-                        id += 1;
-                        if let Err(err) = client_tx
-                            .send(JointMessage {
-                                id,
-                                message: JointMessageContents::Update(UpdateMessageContents {
-                                    contents: Some(codechat_for_web.clone()),
-                                    cursor_position: Some(0),
-                                    path: Some(file_pathbuf.to_path_buf()),
-                                    scroll_position: Some(0.0),
-                                }),
-                            })
-                            .await
-                        {
-                            error!("Unable to enqueue: {}", err);
-                            break;
-                        }
-                        create_timeout(&app_state, id);
+                Some(_) = ignore_file_modify_rx.recv() => ignore_file_modify = true,
 
-                        // An empty result string indicates no errors...
-                        ""
-                    } else {
-                        // ...as opposed to this.
-                        "Incorrect IDE type"
-                    };
+                Some(result) = watcher_rx.recv() => {
+                    match result {
+                        Ok(debounced_event_vec) => {
+                            for debounced_event in debounced_event_vec {
+                                match debounced_event.event.kind {
+                                    EventKind::Modify(_modify_kind) => {
+                                        if ignore_file_modify {
+                                            ignore_file_modify = false;
+                                            info!("Ignored file modification.");
+                                        } else {
+                                            // On Windows, the `_modify_kind` is `Any`;
+                                            // therefore; ignore it rather than trying
+                                            // to look at only content modifications.
+                                            info!("Watcher event: modified {:?}, {:?}", debounced_event.event.paths, _modify_kind);
+                                            // As long as the parent of both files is
+                                            // identical, we can update the contents.
+                                            // Otherwise, we need to load in the new
+                                            // URL.
+                                            if debounced_event.event.paths.len() == 1 && debounced_event.event.paths[0].parent() == file_pathbuf_watcher.parent() {
+                                                // Since the parents are identical, send an
+                                                // update. First, read the modified file.
+                                                let mut file_contents = String::new();
+                                                let read_ret = match File::open(file_pathbuf_watcher.as_path()).await {
+                                                    Ok(fc) => fc,
+                                                    Err(err) => {
+                                                        id += 1;
+                                                        send_response(&client_tx_debouncer, id, &format!("Unable to open file: {err}")).await;
+                                                        continue;
+                                                    }
+                                                }
+                                                .read_to_string(&mut file_contents)
+                                                .await;
 
-                    // Send a result back after processing this message.
-                    send_response(&client_tx, m.id, result).await;
-                }
+                                                // Close the file if it can't be read as
+                                                // Unicode text.
+                                                if read_ret.is_err() {
+                                                    id +=1 ;
+                                                    if let Err(err) = client_tx_debouncer.send(JointMessage {
+                                                        id,
+                                                        message: JointMessageContents::Closing
+                                                    }).await {
+                                                        error!("Unable to send: {err}");
+                                                        break;
+                                                    }
+                                                    create_timeout(&app_state_watcher, id);
+                                                }
 
-                JointMessageContents::Update(update_message_contents) => {
-                    let result = 'process: {
-                        // With code or a path, there's nothing to save. TODO:
-                        // this should store and remember the path, instead of
-                        // needing it repeated each time.
-                        let codechat_for_web1 = match update_message_contents.contents {
-                            None => break 'process "".to_string(),
-                            Some(cwf) => cwf,
-                        };
-                        if update_message_contents.path.is_none() {
-                            break 'process "".to_string();
-                        }
-                        info!(
-                            "Update: {}, {}, {}",
-                            update_message_contents
-                                .path
-                                .as_ref()
-                                .unwrap()
-                                .to_string_lossy(),
-                            update_message_contents.cursor_position.unwrap_or(0),
-                            update_message_contents.scroll_position.unwrap_or(-1.0)
-                        );
+                                                // Translate the file.
+                                                let (translation_results_string, _path_to_toc) =
+                                                source_to_codechat_for_web_string(file_contents, file_pathbuf_watcher.as_path(), false, &app_state_watcher.lexers);
+                                                if let TranslationResultsString::CodeChat(cc) = translation_results_string {
+                                                    // Send the new contents
+                                                    id += 1;
+                                                    if let Err(err) = client_tx_debouncer
+                                                        .send(JointMessage {
+                                                            id,
+                                                            message: JointMessageContents::Update(UpdateMessageContents {
+                                                                contents: Some(cc),
+                                                                cursor_position: None,
+                                                                path: Some(debounced_event.event.paths[0].to_path_buf()),
+                                                                scroll_position: None,
+                                                            }),
+                                                        })
+                                                        .await
+                                                    {
+                                                        error!("Unable to enqueue: {}", err);
+                                                        break;
+                                                    }
+                                                    create_timeout(&app_state_watcher, id);
 
-                        // Translate from the CodeChatForWeb format to the
-                        // contents of a source file.
-                        let language_lexers_compiled = &app_state.lexers;
-                        let file_contents = match codechat_for_web_to_source(
-                            codechat_for_web1,
-                            language_lexers_compiled,
-                        ) {
-                            Ok(r) => r,
-                            Err(message) => {
-                                break 'process format!(
-                                    "Unable to translate to source: {}",
-                                    message
-                                );
+                                                } else {
+                                                    // Close the file -- it's not CodeChat
+                                                    // anymore.
+                                                    id +=1 ;
+                                                    if let Err(err) = client_tx_debouncer.send(JointMessage {
+                                                        id,
+                                                        message: JointMessageContents::Closing
+                                                    }).await {
+                                                        error!("Unable to send: {err}");
+                                                        break;
+                                                    }
+                                                    create_timeout(&app_state_watcher, id);
+                                                }
+
+                                            } else {
+                                                warn!("TODO: Modification to different parent.")
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        info!("Watcher event: {debounced_event:?}.");
+                                    }
+                                }
                             }
-                        };
-
-                        // Save this string to a file. Add a leading slash for
-                        // Linux/OS X: this changes from `foo/bar.c` to
-                        // `/foo/bar.c`. Windows paths already start with a
-                        // drive letter, such as `C:\foo\bar.c`, so no changes
-                        // are needed.
-                        let mut save_file_path = if cfg!(windows) {
-                            PathBuf::from_str("")
-                        } else {
-                            PathBuf::from_str("/")
                         }
-                        .unwrap();
-                        save_file_path.push(&update_message_contents.path.unwrap());
-                        if let Err(err) = fs::write(save_file_path.as_path(), file_contents).await {
-                            break 'process format!(
-                                "Unable to save file '{}': {}.",
-                                save_file_path.to_string_lossy(),
-                                err
-                            );
+                        Err(err_vec) => {
+                            for err in err_vec {
+                                // Report errors locally and to the CodeChat
+                                // Editor.
+                                let msg = format!("Watcher error: {err}");
+                                error!("{}", msg);
+                                send_response(&client_tx_debouncer, 0, &msg).await;
+                            }
                         }
-                        "".to_string()
-                    };
-                    send_response(&client_tx, m.id, &result).await;
-                }
-
-                JointMessageContents::Result(err) => {
-                    // Cancel the timeout for this result.
-                    let mut pm = app_state.pending_messages.lock().unwrap();
-                    if let Some(task) = pm.remove(&m.id) {
-                        task.abort();
-                    }
-
-                    // Report errors to the log.
-                    if !err.is_empty() {
-                        error!("Error in message {}: {err}.", m.id);
                     }
                 }
 
-                JointMessageContents::Closing => {
-                    info!("Filewatcher closing");
-                }
+                else => break
+            }
+        }
+        ignore_file_modify_rx.close();
+        shutdown_notify_watcher.notify_one();
+        info!("Watcher closed.");
+    });
 
-                other => {
-                    warn!("Unhandled message {:?}", other);
+    actix_rt::spawn(async move {
+        loop {
+            select! {
+                _ = shutdown_notify_rx.notified() => break,
+
+                Some(m) = ide_rx.recv() => {
+                    match m.message {
+                        JointMessageContents::Opened(ide_type) => {
+                            let result = if ide_type == IdeType::CodeChatEditorClient {
+                                // Tell the CodeChat Editor Client the type of
+                                // this IDE.
+                                id += 1;
+                                if let Err(err) = client_tx
+                                    .send(JointMessage {
+                                        id,
+                                        message: JointMessageContents::Opened(IdeType::FileWatcher),
+                                    })
+                                    .await
+                                {
+                                    error!("Unable to enqueue: {}", err);
+                                    break;
+                                }
+                                create_timeout(&app_state, id);
+
+                                // Provide it a file to open.
+                                id += 1;
+                                if let Err(err) = client_tx
+                                    .send(JointMessage {
+                                        id,
+                                        message: JointMessageContents::Update(UpdateMessageContents {
+                                            contents: Some(codechat_for_web.clone()),
+                                            cursor_position: Some(0),
+                                            path: Some(file_pathbuf.to_path_buf()),
+                                            scroll_position: Some(0.0),
+                                        }),
+                                    })
+                                    .await
+                                {
+                                    error!("Unable to enqueue: {}", err);
+                                    break;
+                                }
+                                create_timeout(&app_state, id);
+
+                                // An empty result string indicates no errors...
+                                ""
+                            } else {
+                                // ...as opposed to this.
+                                "Incorrect IDE type"
+                            };
+
+                            // Send a result back after processing this message.
+                            send_response(&client_tx, m.id, result).await;
+                        }
+
+                        JointMessageContents::Update(update_message_contents) => {
+                            let result = 'process: {
+                                // With code or a path, there's nothing to save.
+                                // TODO: this should store and remember the
+                                // path, instead of needing it repeated each
+                                // time.
+                                let codechat_for_web1 = match update_message_contents.contents {
+                                    None => break 'process "".to_string(),
+                                    Some(cwf) => cwf,
+                                };
+                                if update_message_contents.path.is_none() {
+                                    break 'process "".to_string();
+                                }
+                                info!(
+                                    "Update: {}, {}, {}",
+                                    update_message_contents
+                                        .path
+                                        .as_ref()
+                                        .unwrap()
+                                        .to_string_lossy(),
+                                    update_message_contents.cursor_position.unwrap_or(0),
+                                    update_message_contents.scroll_position.unwrap_or(-1.0)
+                                );
+
+                                // Translate from the CodeChatForWeb format to
+                                // the contents of a source file.
+                                let language_lexers_compiled = &app_state.lexers;
+                                let file_contents = match codechat_for_web_to_source(
+                                    codechat_for_web1,
+                                    language_lexers_compiled,
+                                ) {
+                                    Ok(r) => r,
+                                    Err(message) => {
+                                        break 'process format!(
+                                            "Unable to translate to source: {}",
+                                            message
+                                        );
+                                    }
+                                };
+
+                                // Save this string to a file. Add a leading
+                                // slash for Linux/OS X: this changes from
+                                // `foo/bar.c` to `/foo/bar.c`. Windows paths
+                                // already start with a drive letter, such as
+                                // `C:\foo\bar.c`, so no changes are needed.
+                                let mut save_file_path = if cfg!(windows) {
+                                    PathBuf::from_str("")
+                                } else {
+                                    PathBuf::from_str("/")
+                                }
+                                .unwrap();
+                                save_file_path.push(&update_message_contents.path.unwrap());
+                                if let Err(err) = fs::write(save_file_path.as_path(), file_contents).await {
+                                    break 'process format!(
+                                        "Unable to save file '{}': {}.",
+                                        save_file_path.to_string_lossy(),
+                                        err
+                                    );
+                                }
+                                if let Err(err) = ignore_file_modify_tx.send(true).await {
+                                    break 'process format!("Unable to send: {err}.");
+                                }
+                                "".to_string()
+                            };
+                            send_response(&client_tx, m.id, &result).await;
+                        }
+
+                        JointMessageContents::Result(err) => {
+                            // Cancel the timeout for this result.
+                            let mut pm = app_state.pending_messages.lock().unwrap();
+                            if let Some(task) = pm.remove(&m.id) {
+                                task.abort();
+                            }
+
+                            // Report errors to the log.
+                            if !err.is_empty() {
+                                error!("Error in message {}: {err}.", m.id);
+                            }
+                        }
+
+                        JointMessageContents::Closing => {
+                            info!("Filewatcher closing");
+                        }
+
+                        other => {
+                            warn!("Unhandled message {:?}", other);
+                        }
+                    }
                 }
             }
         }
         ide_rx.close();
+        shutdown_notify_rx.notify_one();
         // Drain any remaining messages after closing the queue.
         while let Some(m) = ide_rx.recv().await {
             warn!("Dropped queued message {:?}", &m);
