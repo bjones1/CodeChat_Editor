@@ -69,7 +69,7 @@ import { css } from "@codemirror/lang-css";
 import { go } from "@codemirror/lang-go";
 import { html } from "@codemirror/lang-html";
 import { java } from "@codemirror/lang-java";
-import { javascript, typescriptLanguage } from "@codemirror/lang-javascript";
+import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
@@ -610,6 +610,12 @@ export const CodeMirror_load = async (
     // Additional extensions.
     extensions: [Extension],
 ) => {
+    // Save the current scroll position, to prevent the view from scrolling back to the top after an update/reload.
+    let scrollSnapshot;
+    if (current_view !== undefined) {
+        scrollSnapshot = current_view.scrollSnapshot()
+    }
+
     codechat_body.innerHTML =
         '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents"></div>';
     source.selection = EditorSelection.single(0).toJSON();
@@ -657,7 +663,10 @@ export const CodeMirror_load = async (
     current_view = new EditorView({
         parent: codechat_body.childNodes[0] as HTMLDivElement,
         state,
+        scrollTo: scrollSnapshot
     });
+    // For reloads, we need to remove previous instances; otherwise, Bad Things happen.
+    tinymce.remove()
     tinymce_singleton = (await init({ selector: "#TinyMCE-inst" }))[0];
 };
 
