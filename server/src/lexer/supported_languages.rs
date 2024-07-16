@@ -335,7 +335,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             "rust",
             &["rs"],
             // Support both rustdoc-style comments and plain Rust comments.
-            &["///", "//"],
+            &["///", "//!", "//"],
             &[make_block_comment_delim("/*", "*/", true)],
             &[
                 // Byte strings behave like strings for this lexer.
