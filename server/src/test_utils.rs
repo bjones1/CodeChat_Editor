@@ -94,7 +94,8 @@ pub fn _prep_test_dir(
 
     // First, get the project root directory, based on the
     // [location of the cargo.toml file](https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates).
-    let root_dir = &env::var("CARGO_MANIFEST_DIR").expect("$CARGO_MANIFEST_DIR");
+    let root_dir = &env::var("CARGO_MANIFEST_DIR")
+        .expect("Environment variable CARGO_MANIFEST_DIR not defined.");
     let mut source_path = PathBuf::from(root_dir);
     // Append the path for test files.
     source_path.push("tests/fixtures");

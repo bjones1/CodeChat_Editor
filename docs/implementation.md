@@ -104,12 +104,13 @@ On save:
 
 Client messages:
 
-- On startup, they send an ID and some metadata (type of IDE, plugin version,
-  etc.)
-- They send an update message, with file path, file contents, and cursor/scroll
-  position. If a field is omitted, it means there's no change to it since the
-  last command. For example, sending just a cursor/scroll position is used when
-  the user scrolls but doesn't edit.
+- On startup, the CodeChat Editor client sends an Opened message; the IDE client
+  responds with an Opened message, followed by an Update message with the
+  contents of the requested file.
+- The IDE client and the CodeChat Editor client send update messages, with file
+  path, file contents, and cursor/scroll position. If a field is omitted, it
+  means there's no change to it since the last command. For example, sending
+  just a cursor/scroll position is used when the user scrolls but doesn't edit.
 - CodeChat Client only: a load message, which requests the IDE to send an update
   with the contents of the loaded file.
 - They send a close message.
@@ -122,6 +123,29 @@ format.
 The CodeChat Editor changes all links to documents on the local filesystem, so
 that following a link turns into an update message, instead of a page reload. In
 addition, this allows us to save the file before the current page is closed.
+
+The server uses a set of queues to decouple websocket protocol activity from the
+core processing needed to translate source code between a CodeChat Editor Client
+and an IDE client. Specifically, two tasks that handle the receive and transmit
+function for the websocket:
+
+- The transmit task sends a periodic ping to the CodeChat Editor Client.
+- The receive task waits for a periodic ping, closing the connection if the ping
+  isn't received in a timely manner. This helps detect a broken websocket
+  connection produced when a computer is put to sleep then wakes back up.
+- Likewise, the receive task responds to a ping message from the CodeChat Editor
+  Client by putting a pong message in the websocket's transmit queue.
+- If the websocket is closed purposefully (for example, by closing a CodeChat
+  Editor Client tab in a web browser), the receive task detects this and shuts
+  down the websocket along with the associated IDE client tasks.
+
+To decouple these low-level websocket details from high-level processing (such
+as translating between source code and its web equivalent), the websocket tasks
+enqueue all high-level messages to the ide queue; they listen to any enqueued
+messages in the client queue, passing these on via the websocket connection. For
+example, the following diagram illustrates the file watcher IDE:
+
+<graphviz-graph graph="digraph {&#10;    ccc -> client_rx&#10;    client_tx -> ccc&#10;    client_rx -> client_tx [ label = &quot;client_tx&quot;]&#10;    client_rx -> ide_proc [ label = &quot;ide_tx&quot;]&#10;    ide_proc -> client_tx [ label = &quot;client_tx&quot; ]&#10;    ide_fw -> client_tx [ label = &quot;client_tx&quot; ]&#10;    ide_proc -> ide_fw [ dir = &quot;both&quot;, style=&quot;dotted&quot;, label = &quot;File writes&quot;]&#10;    ccc [ label = &quot;CodeChat Editor\nClient websocket&quot;]&#10;    client_rx [ label = &quot;client receive task&quot;]&#10;    client_tx [ label = &quot;client transmit task&quot;]&#10;    ide_fw [ label = &quot;IDE filewatcher task&quot;]&#10;    ide_proc [ label = &quot;IDE processing task&quot;]}"></graphviz-graph>
 
 Simplest non-IDE integration: the file watcher.
 
@@ -156,8 +180,7 @@ ability to toggle between the IDE's editor and the CodeChat Editor.
 
     `:root {`\
       `--section-counter-reset: s1 4 s2 5;`\
-     
-    `--section-counter-content: counter(s1, numeric) '-' counter(s2, numeric);`\
+      `--section-counter-content: counter(s1, numeric) '-' counter(s2, numeric);`\
     `}`
 
     `h1::before {`\

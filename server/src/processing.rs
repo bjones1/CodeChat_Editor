@@ -36,15 +36,69 @@ use std::path::PathBuf;
 use lazy_static::lazy_static;
 use pulldown_cmark::{html, Options, Parser};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 // ### Local
 use crate::lexer::{
     source_lexer, CodeDocBlock, DocBlock, LanguageLexerCompiled, LanguageLexersCompiled,
 };
-use crate::webserver::TranslationResultsString;
-use crate::webserver::{CodeChatForWeb, CodeMirror, SourceFileMetadata};
 
 // ## Data structures
+//
+// ### Translation between a local (traditional) source file and its web-editable, client-side representation
+//
+// There are three ways that a source file is represented:
+//
+// 1.  As traditional source code, in a plain text file.
+// 2.  As a alternating series of code and doc blocks, produced by the lexer.
+//     See `lexer.rs\CodeDocBlock`.
+// 3.  As a CodeMirror data structure, which consists of a single block of text,
+//     to which are attached doc blocks at specific character offsets.
+//
+// The lexer translates between items 1 and 2; `processing.rs` translates
+// between 2 and 3. The following data structures define the format for item 3.
+
+/// <a id="LexedSourceFile"></a>Define the JSON data structure used to represent
+/// a source file in a web-editable format.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CodeChatForWeb {
+    pub metadata: SourceFileMetadata,
+    pub source: CodeMirror,
+}
+
+/// <a id="SourceFileMetadata"></a>Metadata about a source file sent along with
+/// it both to and from the client. TODO: currently, this is too simple to
+/// justify a struct. This allows for future growth -- perhaps the valid types
+/// of comment delimiters?
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct SourceFileMetadata {
+    pub mode: String,
+}
+
+/// The format used by CodeMirror to serialize/deserialize editor contents.
+/// TODO: Link to JS code where this data structure is defined.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CodeMirror {
+    /// The document being edited.
+    pub doc: String,
+    /// Doc blocks
+    pub doc_blocks: CodeMirrorDocBlocks,
+}
+
+/// This defines a doc block for CodeMirror.
+pub type CodeMirrorDocBlocks = Vec<(
+    // From -- the starting character this doc block is anchored to.
+    usize,
+    // To -- the ending character this doc block is anchored to.
+    usize,
+    // Indent.
+    String,
+    // delimiter
+    String,
+    // contents
+    String,
+)>;
+
 /// This enum contains the results of translating a source file to the CodeChat
 /// Editor format.
 #[derive(Debug, PartialEq)]
@@ -58,6 +112,23 @@ pub enum TranslationResults {
     // A CodeChat Editor file; the struct contains the file's contents
     // translated to CodeMirror.
     CodeChat(CodeChatForWeb),
+}
+
+/// This enum contains the results of translating a source file to a string
+/// rendering of the CodeChat Editor format.
+#[derive(Debug, PartialEq)]
+pub enum TranslationResultsString {
+    // This file is unknown to and therefore not supported by the CodeChat
+    // Editor.
+    Unknown,
+    // This is a CodeChat Editor file but it contains errors that prevent its
+    // translation. The string contains the error message.
+    Err(String),
+    // A CodeChat Editor file; the struct contains the file's contents
+    // translated to CodeMirror.
+    CodeChat(CodeChatForWeb),
+    // The table of contents file, translated to HTML.
+    Toc(String),
 }
 
 // On save, the process is CodeChatForWeb -> Vec\<CodeDocBlocks> -> source code.
@@ -701,6 +772,7 @@ mod tests {
     use std::str::FromStr;
 
     use super::{find_path_to_toc, TranslationResults};
+    use super::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
     use crate::lexer::{
         compile_lexers, supported_languages::get_language_lexer_vec, CodeDocBlock, DocBlock,
     };
@@ -708,7 +780,6 @@ mod tests {
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
         source_to_codechat_for_web,
     };
-    use crate::webserver::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
 
     use crate::prep_test_dir;
 

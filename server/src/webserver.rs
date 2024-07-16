@@ -37,9 +37,10 @@ use std::{
 use actix_files;
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
+    error::{Error, ErrorMisdirectedRequest},
     get,
     http::header::{self, ContentDisposition, ContentType},
-    web, App, Error, HttpRequest, HttpResponse, HttpServer, Responder,
+    web, App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_ws::AggregatedMessage;
 use bytes::Bytes;
@@ -72,75 +73,22 @@ use win_partitions::win_api::get_logical_drive;
 // ### Local
 use crate::lexer::LanguageLexersCompiled;
 use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
-use crate::processing::{codechat_for_web_to_source, source_to_codechat_for_web_string};
+use crate::processing::TranslationResultsString;
+use crate::processing::{
+    codechat_for_web_to_source, source_to_codechat_for_web_string, CodeChatForWeb,
+};
 
 /// ## Data structures
 ///
-/// ### Translation between a local (traditional) source file and its web-editable, client-side representation
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-/// <a id="LexedSourceFile"></a>Define the JSON data structure used to represent
-/// a source file in a web-editable format.
-pub struct CodeChatForWeb {
-    pub metadata: SourceFileMetadata,
-    pub source: CodeMirror,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-/// <a id="SourceFileMetadata"></a>Metadata about a source file sent along with
-/// it both to and from the client. TODO: currently, this is too simple to
-/// justify a struct. This allows for future growth -- perhaps the valid types
-/// of comment delimiters?
-pub struct SourceFileMetadata {
-    pub mode: String,
-}
-
-/// This defines a doc block for CodeMirror.
-pub type CodeMirrorDocBlocks = Vec<(
-    // From -- the starting character this doc block is anchored to.
-    usize,
-    // To -- the ending character this doc block is anchored to.
-    usize,
-    // Indent.
-    String,
-    // delimiter
-    String,
-    // contents
-    String,
-)>;
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-/// The format used by CodeMirror to serialize/deserialize editor contents.
-/// TODO: Link to JS code where this data structure is defined.
-pub struct CodeMirror {
-    /// The document being edited.
-    pub doc: String,
-    /// Doc blocks
-    pub doc_blocks: CodeMirrorDocBlocks,
-}
-
-/// This enum contains the results of translating a source file to a string
-/// rendering of the CodeChat Editor format.
-#[derive(Debug, PartialEq)]
-pub enum TranslationResultsString {
-    // This file is unknown to and therefore not supported by the CodeChat
-    // Editor.
-    Unknown,
-    // This is a CodeChat Editor file but it contains errors that prevent its
-    // translation. The string contains the error message.
-    Err(String),
-    // A CodeChat Editor file; the struct contains the file's contents
-    // translated to CodeMirror.
-    CodeChat(CodeChatForWeb),
-    // The table of contents file, translated to HTML.
-    Toc(String),
-}
-
+/// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
+///
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
 struct JointEditor {
     /// Data to send to the IDE.
     ide_tx_queue: Sender<JointMessage>,
     /// Data to send to the CodeChat Editor Client.
     client_tx_queue: Sender<JointMessage>,
+    /// Data received from the CodeChat Editor Client.
     client_rx_queue: Receiver<JointMessage>,
 }
 
@@ -173,7 +121,7 @@ enum JointMessageContents {
     Load(PathBuf),
     /// Sent when the IDE or client are closing.
     Closing,
-    /// Sent as a response to any of the above messages (except `Ping`),
+    /// Sent as a response to any of the above messages (except `Pong`),
     /// reporting success/error. An empty string indicates success; otherwise,
     /// the string contains the error message.
     Result(String),
@@ -205,8 +153,10 @@ struct UpdateMessageContents {
     scroll_position: Option<f32>,
 }
 
-// Define the [state](https://actix.rs/docs/application/#state) available to all
-// endpoints.
+/// ### Data structures used by the webserver
+///
+/// Define the [state](https://actix.rs/docs/application/#state) available to
+/// all endpoints.
 struct AppState {
     lexers: LanguageLexersCompiled,
     joint_editors: Mutex<Vec<JointEditor>>,
@@ -227,13 +177,15 @@ const REPLY_TIMEOUT: Duration = if cfg!(test) {
     Duration::from_millis(2000)
 };
 
+/// The time to wait for a pong from the websocket in response to a ping sent by
+/// this server.
 const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 
-pub fn configure_logger() {
-    log4rs::init_file("log4rs.yml", Default::default()).unwrap();
-}
-
-/// ## Load endpoints
+/// ## File browser endpoints
+///
+/// The file browser provides a very crude interface, allowing a user to select
+/// a file from the local filesystem for editing. Long term, this should be
+/// replaced by something better.
 ///
 /// Redirect from the root of the filesystem to the actual root path on this OS.
 async fn _root_fs_redirect() -> impl Responder {
@@ -242,8 +194,8 @@ async fn _root_fs_redirect() -> impl Responder {
         .finish()
 }
 
-/// The load endpoint: dispatch to support functions which serve either a
-/// directory listing, a CodeChat Editor file, or a normal file.
+/// Dispatch to support functions which serve either a directory listing, a
+/// CodeChat Editor file, or a normal file.
 ///
 /// Omit code coverage -- this is a temporary interface, until IDE integration
 /// replaces this.
@@ -465,14 +417,13 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
 // This could be a plain text file (for example, one not recognized as source
 // code that this program supports), a binary file (image/video/etc.), a
 // CodeChat Editor file, or a non-existent file. Determine which type this file
-// is then serve it.Serve a CodeChat Editor Client webpage using the FileWatcher
-// "IDE"
+// is then serve it. Serve a CodeChat Editor Client webpage using the
+// FileWatcher "IDE".
 async fn serve_file(
     file_path: &Path,
     req: &HttpRequest,
     app_state: web::Data<AppState>,
 ) -> HttpResponse {
-    // Create `JointEditor` queues.
     let raw_dir = file_path.parent().unwrap();
     // Use a lossy conversion, since this is UI display, not filesystem access.
     let dir = escape_html(path_display(raw_dir).as_str());
@@ -558,8 +509,9 @@ async fn serve_file(
         TranslationResultsString::CodeChat(codechat_for_web) => codechat_for_web,
         TranslationResultsString::Toc(html) => {
             // The TOC is a simplified web page which requires no additional
-            // processing. The script ensures that all hyperlinks target the
-            // enclosing page, not just the iframe containing this page.
+            // processing. The script ensures that all hyperlinks notify the
+            // encoding page (the CodeChat Editor Client), allowing it to save
+            // before navigating.
             return HttpResponse::Ok()
                 .content_type(ContentType::html())
                 .body(format!(
@@ -593,29 +545,44 @@ async fn serve_file(
         }
     };
 
-    // Handle `JointMessage` data from the CodeChat Editor Client for this
-    // file..
-    let file_pathbuf = Rc::new(file_path.to_path_buf());
-    let file_pathbuf_watcher = file_pathbuf.clone();
+    // #### Filewatcher IDE
+    //
+    // This is a CodeChat Editor file. Start up the Filewatcher IDE tasks:
+    //
+    // 1.  A task to watch for changes to the file, notifying the CodeChat
+    //     Editor Client when the file should be reloaded.
+    // 2.  A task to receive and respond to messages from the CodeChat Editor
+    //     Client.
+    //
+    // First, allocate variables needed by these two tasks.
+    //
+    // The path to the CodeChat Editor file to operate on.
+    let file_pathbuf_receiver = Rc::new(file_path.to_path_buf());
+    let file_pathbuf_watcher = file_pathbuf_receiver.clone();
+    // Handle `JointMessage` data from the CodeChat Editor Client for this file.
     let (ide_tx, mut ide_rx) = mpsc::channel(10);
     let (client_tx, client_rx) = mpsc::channel(10);
+    let client_tx_watcher = client_tx.clone();
     app_state.joint_editors.lock().unwrap().push(JointEditor {
         ide_tx_queue: ide_tx,
         client_tx_queue: client_tx.clone(),
         client_rx_queue: client_rx,
     });
+    // When the CodeChat Editor Client saves a file, tell the file watcher to
+    // ignore this change.
     let (ignore_file_modify_tx, mut ignore_file_modify_rx) = mpsc::channel(10);
     let app_state_watcher = app_state.clone();
-    let client_tx_debouncer = client_tx.clone();
+    // Provide a way for either task to shut down the other.
     let shutdown_notify_watcher = Arc::new(Notify::new());
-    let shutdown_notify_rx = shutdown_notify_watcher.clone();
+    let shutdown_notify_receiver = shutdown_notify_watcher.clone();
+    // Provide a unique ID for each message sent to the CodeChat Editor Client.
     let mut id: u32 = 0;
-    actix_rt::spawn(async move {
-        // This is a CodeChat Editor file. Start a FileWatcher IDE to handle it.
 
+    // Run the file watcher task.
+    actix_rt::spawn(async move {
         // Use a channel to send from the watcher (which runs in another thread)
-        // into this async context.
-        let (watcher_tx, mut watcher_rx) = mpsc::channel(1);
+        // into this async (task) context.
+        let (watcher_tx, mut watcher_rx) = mpsc::channel(10);
         // Watch this file. Use the debouncer, to avoid multiple notifications
         // for the same file. This approach returns a result of either a working
         // debouncer or any errors that occurred. The debouncer's scope needs
@@ -635,7 +602,7 @@ async fn serve_file(
             Ok(mut debounced_watcher) => {
                 match debounced_watcher
                     .watcher()
-                    .watch(file_pathbuf_watcher.as_path(), RecursiveMode::NonRecursive)
+                    .watch(&file_pathbuf_watcher, RecursiveMode::NonRecursive)
                 {
                     Ok(()) => Ok(debounced_watcher),
                     Err(err) => Err(err),
@@ -658,18 +625,29 @@ async fn serve_file(
 
                 Some(result) = watcher_rx.recv() => {
                     match result {
+                        Err(err_vec) => {
+                            for err in err_vec {
+                                // Report errors locally and to the CodeChat
+                                // Editor.
+                                let msg = format!("Watcher error: {err}");
+                                error!("{}", msg);
+                                // Send using ID 0 to indicate this isn't a
+                                // response to a message received from the
+                                // client.
+                                send_response(&client_tx_watcher, 0, &msg).await;
+                            }
+                        }
+
                         Ok(debounced_event_vec) => {
                             for debounced_event in debounced_event_vec {
                                 match debounced_event.event.kind {
                                     EventKind::Modify(_modify_kind) => {
                                         if ignore_file_modify {
                                             ignore_file_modify = false;
-                                            info!("Ignored file modification.");
                                         } else {
                                             // On Windows, the `_modify_kind` is `Any`;
                                             // therefore; ignore it rather than trying
                                             // to look at only content modifications.
-                                            info!("Watcher event: modified {:?}, {:?}", debounced_event.event.paths, _modify_kind);
                                             // As long as the parent of both files is
                                             // identical, we can update the contents.
                                             // Otherwise, we need to load in the new
@@ -678,11 +656,11 @@ async fn serve_file(
                                                 // Since the parents are identical, send an
                                                 // update. First, read the modified file.
                                                 let mut file_contents = String::new();
-                                                let read_ret = match File::open(file_pathbuf_watcher.as_path()).await {
+                                                let read_ret = match File::open(file_pathbuf_watcher.as_ref()).await {
                                                     Ok(fc) => fc,
                                                     Err(err) => {
                                                         id += 1;
-                                                        send_response(&client_tx_debouncer, id, &format!("Unable to open file: {err}")).await;
+                                                        send_response(&client_tx_watcher, id, &format!("Unable to open file: {err}")).await;
                                                         continue;
                                                     }
                                                 }
@@ -693,7 +671,7 @@ async fn serve_file(
                                                 // Unicode text.
                                                 if read_ret.is_err() {
                                                     id +=1 ;
-                                                    if let Err(err) = client_tx_debouncer.send(JointMessage {
+                                                    if let Err(err) = client_tx_watcher.send(JointMessage {
                                                         id,
                                                         message: JointMessageContents::Closing
                                                     }).await {
@@ -705,11 +683,11 @@ async fn serve_file(
 
                                                 // Translate the file.
                                                 let (translation_results_string, _path_to_toc) =
-                                                source_to_codechat_for_web_string(file_contents, file_pathbuf_watcher.as_path(), false, &app_state_watcher.lexers);
+                                                source_to_codechat_for_web_string(file_contents, &file_pathbuf_watcher, false, &app_state_watcher.lexers);
                                                 if let TranslationResultsString::CodeChat(cc) = translation_results_string {
                                                     // Send the new contents
                                                     id += 1;
-                                                    if let Err(err) = client_tx_debouncer
+                                                    if let Err(err) = client_tx_watcher
                                                         .send(JointMessage {
                                                             id,
                                                             message: JointMessageContents::Update(UpdateMessageContents {
@@ -730,7 +708,7 @@ async fn serve_file(
                                                     // Close the file -- it's not CodeChat
                                                     // anymore.
                                                     id +=1 ;
-                                                    if let Err(err) = client_tx_debouncer.send(JointMessage {
+                                                    if let Err(err) = client_tx_watcher.send(JointMessage {
                                                         id,
                                                         message: JointMessageContents::Closing
                                                     }).await {
@@ -746,18 +724,10 @@ async fn serve_file(
                                         }
                                     }
                                     _ => {
+                                        // TODO: handle delete.
                                         info!("Watcher event: {debounced_event:?}.");
                                     }
                                 }
-                            }
-                        }
-                        Err(err_vec) => {
-                            for err in err_vec {
-                                // Report errors locally and to the CodeChat
-                                // Editor.
-                                let msg = format!("Watcher error: {err}");
-                                error!("{}", msg);
-                                send_response(&client_tx_debouncer, 0, &msg).await;
                             }
                         }
                     }
@@ -774,7 +744,7 @@ async fn serve_file(
     actix_rt::spawn(async move {
         loop {
             select! {
-                _ = shutdown_notify_rx.notified() => break,
+                _ = shutdown_notify_receiver.notified() => break,
 
                 Some(m) = ide_rx.recv() => {
                     match m.message {
@@ -803,7 +773,7 @@ async fn serve_file(
                                         message: JointMessageContents::Update(UpdateMessageContents {
                                             contents: Some(codechat_for_web.clone()),
                                             cursor_position: Some(0),
-                                            path: Some(file_pathbuf.to_path_buf()),
+                                            path: Some(file_pathbuf_receiver.to_path_buf()),
                                             scroll_position: Some(0.0),
                                         }),
                                     })
@@ -838,16 +808,6 @@ async fn serve_file(
                                 if update_message_contents.path.is_none() {
                                     break 'process "".to_string();
                                 }
-                                info!(
-                                    "Update: {}, {}, {}",
-                                    update_message_contents
-                                        .path
-                                        .as_ref()
-                                        .unwrap()
-                                        .to_string_lossy(),
-                                    update_message_contents.cursor_position.unwrap_or(0),
-                                    update_message_contents.scroll_position.unwrap_or(-1.0)
-                                );
 
                                 // Translate from the CodeChatForWeb format to
                                 // the contents of a source file.
@@ -878,11 +838,12 @@ async fn serve_file(
                                 .unwrap();
                                 save_file_path.push(&update_message_contents.path.unwrap());
                                 if let Err(err) = fs::write(save_file_path.as_path(), file_contents).await {
-                                    break 'process format!(
+                                    let msg = format!(
                                         "Unable to save file '{}': {}.",
                                         save_file_path.to_string_lossy(),
                                         err
                                     );
+                                    break 'process msg;
                                 }
                                 if let Err(err) = ignore_file_modify_tx.send(true).await {
                                     break 'process format!("Unable to send: {err}.");
@@ -892,6 +853,7 @@ async fn serve_file(
                             send_response(&client_tx, m.id, &result).await;
                         }
 
+                        // Process a result, the respond to a message we sent.
                         JointMessageContents::Result(err) => {
                             // Cancel the timeout for this result.
                             let mut pm = app_state.pending_messages.lock().unwrap();
@@ -917,7 +879,7 @@ async fn serve_file(
             }
         }
         ide_rx.close();
-        shutdown_notify_rx.notify_one();
+        shutdown_notify_receiver.notify_one();
         // Drain any remaining messages after closing the queue.
         while let Some(m) = ide_rx.recv().await {
             warn!("Dropped queued message {:?}", &m);
@@ -931,7 +893,7 @@ async fn serve_file(
     let (sidebar_iframe, sidebar_css) = if is_project {
         (
             format!(
-                r##"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"##,
+                r#"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"#,
                 path_to_toc.unwrap().to_slash_lossy()
             ),
             r#"<link rel="stylesheet" href="/static/css/CodeChatEditorProject.css">"#,
@@ -1010,6 +972,7 @@ fn create_timeout(
     pm.insert(id, waiting_task);
 }
 
+// Send a response to the client after processing a message from the client.
 async fn send_response(client_tx: &Sender<JointMessage>, id: u32, result: &str) {
     if let Err(err) = client_tx
         .send(JointMessage {
@@ -1041,22 +1004,33 @@ async fn client_ws(
     // Find a `JointEditor` that needs a client and assign this one to it.
     let joint_editor_wrapped = app_state.joint_editors.lock().unwrap().pop();
     if joint_editor_wrapped.is_none() {
-        // TODO: return an error and report it instead!
         error!("Error: no joint editor available.");
-        return Ok(response);
+        return Err(ErrorMisdirectedRequest("No joint editor available."));
     }
     let joint_editor = joint_editor_wrapped.unwrap();
+
+    // Prepare variables that will be owned the the transitter and receiver
+    // tasks.
+    //
+    // Used to send messages from the client to the IDE.
     let ide_tx = joint_editor.ide_tx_queue;
+    // Receives message from the IDE for the client.
     let client_tx = joint_editor.client_tx_queue;
+    // Extra copies of the queues used when the websocket connection is
+    // interrupted and should be later resumed.
     let ide_tx_extra = ide_tx.clone();
     let client_tx_extra = client_tx.clone();
+    // Provide a way for either the transmit or receive task to shut the other
+    // task down.
     let shutdown_notify_rx = Arc::new(Notify::new());
     let shutdown_notify_tx = shutdown_notify_rx.clone();
+    // True when the client requests the websocket to close; otherwise, closing
+    // represents an interruption (such as the computer going to sleep).
     let is_closing = Rc::new(RefCell::new(false));
     let is_closing_rx = is_closing.clone();
 
     // Receive task: start a task to handle receiving `JointMessage` websocket
-    // data from the CodeChat Editor Client.
+    // data from the CodeChat Editor Client and forward it to the IDE.
     actix_rt::spawn(async move {
         msg_stream = msg_stream.max_frame_size(1_000_000);
         let mut aggregated_msg_stream = msg_stream.aggregate_continuations();
@@ -1081,7 +1055,7 @@ async fn client_ws(
                     match msg_wrapped {
                         Ok(msg) => {
                             match msg {
-                                // Enqueue a pong to this thread's tx queue.
+                                // Enqueue a pong to the websocket tx queue.
                                 // Trying to send here means borrow errors, or
                                 // resorting to a mutex/correctly locking and
                                 // unlocking it.
@@ -1107,10 +1081,10 @@ async fn client_ws(
                                     // Simply receiving this message restarts
                                     // the timeout timer. There's nothing else
                                     // that needs doing.
-                                    //info!("Pong {:?}", bytes);
                                 }
 
-                                // Decode text messages as JSON then dispatch.
+                                // Decode text messages as JSON then dispatch
+                                // then to the IDE.
                                 AggregatedMessage::Text(b) => {
                                     // The CodeChat Editor Client should always
                                     // send valid JSON.
@@ -1133,6 +1107,10 @@ async fn client_ws(
                                     }
                                 }
 
+                                // Forward a close message from the client to
+                                // the IDE, so that both this websocket
+                                // connection and the IDE connection will both
+                                // be closed.
                                 AggregatedMessage::Close(reason) => {
                                     info!("Closing per client request: {:?}", reason);
                                     *is_closing.borrow_mut() = true;
@@ -1175,6 +1153,7 @@ async fn client_ws(
                     break;
                 }
 
+                // Send pings on a regular basis.
                 _ = sleep(WEBSOCKET_PING_DELAY) => {
                 // Send a ping to check that the websocket is still open. For
                 // example, putting a PC to sleep then waking it breaks the
@@ -1186,14 +1165,19 @@ async fn client_ws(
                     }
                 }
 
+                // Forward a message from the IDE to the client.
                 Some(m) = client_rx.recv() => {
                     match m.message {
+                        // Send the pong in response to a recieved ping.
                         JointMessageContents::Pong(bytes) => {
                             if let Err(err) = session.pong(&bytes).await {
                                 error!("Unable to send pong: {}", err);
                                 break;
                             }
                         }
+
+                        // For all other messages, simply pass them through
+                        // after encoding the message as JSON.
                         ref _other => match serde_json::to_string(&m) {
                             Ok(s) => {
                                 if let Err(err) = session.text(&*s).await {
@@ -1220,7 +1204,7 @@ async fn client_ws(
         // Shutdown the RX websocket.
         shutdown_notify_tx.notify_one();
 
-        // Re-enqueue this.
+        // Re-enqueue this unless the client requested the websocket to close.
         if *is_closing_rx.borrow() {
             info!("TX websocket closed.");
             client_rx.close();
@@ -1243,10 +1227,6 @@ async fn client_ws(
     Ok(response)
 }
 
-// The client task receives a JointMessage, translates the code, then sends it
-// to its paired IDE. Likewise, the IDE task receives a `ClientMessage`,
-// translates the code, then sends it to its paired client.
-
 // ## Webserver startup
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
@@ -1258,7 +1238,10 @@ pub async fn main() -> std::io::Result<()> {
 }
 
 // ## Utilities
-//
+pub fn configure_logger() {
+    log4rs::init_file("log4rs.yml", Default::default()).unwrap();
+}
+
 // Quoting the [docs](https://actix.rs/docs/application#shared-mutable-state),
 // "To achieve _globally_ shared state, it must be created **outside** of the
 // closure passed to `HttpServer::new` and moved/cloned in." Putting this code
@@ -1374,11 +1357,13 @@ mod tests {
     use super::REPLY_TIMEOUT;
     use super::{configure_app, make_app_data};
     use super::{
-        AppState, CodeChatForWeb, CodeMirror, IdeType, JointEditor, JointMessage,
-        JointMessageContents, SourceFileMetadata, UpdateMessageContents,
+        AppState, IdeType, JointEditor, JointMessage, JointMessageContents, UpdateMessageContents,
     };
     use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
-    use crate::processing::{source_to_codechat_for_web, TranslationResults};
+    use crate::processing::{
+        source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
+        TranslationResults,
+    };
     use crate::testing_logger;
     use crate::{cast, prep_test_dir};
 
