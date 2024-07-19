@@ -1343,8 +1343,7 @@ fn escape_html(unsafe_text: &str) -> String {
 // ## Tests
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-    use std::io::Read;
+    use std::fs;
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -1710,12 +1709,31 @@ mod tests {
 
         // Check that this succeeds.
         assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
-        let mut s = String::new();
-        File::open(file_path)
-            .unwrap()
-            .read_to_string(&mut s)
-            .unwrap();
+        let mut s = fs::read_to_string(&file_path).unwrap();
         assert_eq!(s, "testing()");
+        // Wait for the filewatcher to debounce this file write.
+        sleep(Duration::from_secs(1)).await;
+
+        // Change this file and verify that this produces an update.
+        s.push_str("123");
+        fs::write(&file_path, s).unwrap();
+        assert_eq!(
+            get_message!(client_rx, JointMessageContents::Update),
+            UpdateMessageContents {
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirror {
+                        doc: "testing()123".to_string(),
+                        doc_blocks: vec![],
+                    },
+                }),
+                path: Some(file_path.clone().canonicalize().unwrap()),
+                cursor_position: None,
+                scroll_position: None,
+            }
+        );
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
