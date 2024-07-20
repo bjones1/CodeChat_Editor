@@ -78,6 +78,17 @@ use crate::processing::{
     codechat_for_web_to_source, source_to_codechat_for_web_string, CodeChatForWeb,
 };
 
+// ## Macros
+/// Create a macro to report an error when enqueueing an item.
+macro_rules! queue_send {
+    ($tx: expr) => {{
+        if let Err(err) = $tx.await {
+            error!("Unable to enqueue: {}", err);
+            break;
+        }
+    }};
+}
+
 /// ## Data structures
 ///
 /// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
@@ -578,7 +589,7 @@ async fn serve_file(
     // Provide a unique ID for each message sent to the CodeChat Editor Client.
     let mut id: u32 = 0;
 
-    // Run the file watcher task.
+    // #### The file watcher task.
     actix_rt::spawn(async move {
         // Use a channel to send from the watcher (which runs in another thread)
         // into this async (task) context.
@@ -658,9 +669,13 @@ async fn serve_file(
                                                 let mut file_contents = String::new();
                                                 let read_ret = match File::open(file_pathbuf_watcher.as_ref()).await {
                                                     Ok(fc) => fc,
-                                                    Err(err) => {
+                                                    Err(_err) => {
                                                         id += 1;
-                                                        send_response(&client_tx_watcher, id, &format!("Unable to open file: {err}")).await;
+                                                        // We can't open the file -- it's been moved or deleted. Close the file.
+                                                        queue_send!(client_tx_watcher.send(JointMessage {
+                                                            id,
+                                                            message: JointMessageContents::Closing
+                                                        }));
                                                         continue;
                                                     }
                                                 }
@@ -671,13 +686,10 @@ async fn serve_file(
                                                 // Unicode text.
                                                 if read_ret.is_err() {
                                                     id +=1 ;
-                                                    if let Err(err) = client_tx_watcher.send(JointMessage {
+                                                    queue_send!(client_tx_watcher.send(JointMessage {
                                                         id,
                                                         message: JointMessageContents::Closing
-                                                    }).await {
-                                                        error!("Unable to send: {err}");
-                                                        break;
-                                                    }
+                                                    }));
                                                     create_timeout(&app_state_watcher, id);
                                                 }
 
@@ -687,7 +699,7 @@ async fn serve_file(
                                                 if let TranslationResultsString::CodeChat(cc) = translation_results_string {
                                                     // Send the new contents
                                                     id += 1;
-                                                    if let Err(err) = client_tx_watcher
+                                                    queue_send!(client_tx_watcher
                                                         .send(JointMessage {
                                                             id,
                                                             message: JointMessageContents::Update(UpdateMessageContents {
@@ -696,25 +708,17 @@ async fn serve_file(
                                                                 path: Some(debounced_event.event.paths[0].to_path_buf()),
                                                                 scroll_position: None,
                                                             }),
-                                                        })
-                                                        .await
-                                                    {
-                                                        error!("Unable to enqueue: {}", err);
-                                                        break;
-                                                    }
+                                                        }));
                                                     create_timeout(&app_state_watcher, id);
 
                                                 } else {
                                                     // Close the file -- it's not CodeChat
                                                     // anymore.
                                                     id +=1 ;
-                                                    if let Err(err) = client_tx_watcher.send(JointMessage {
+                                                    queue_send!(client_tx_watcher.send(JointMessage {
                                                         id,
                                                         message: JointMessageContents::Closing
-                                                    }).await {
-                                                        error!("Unable to send: {err}");
-                                                        break;
-                                                    }
+                                                    }));
                                                     create_timeout(&app_state_watcher, id);
                                                 }
 
@@ -741,6 +745,7 @@ async fn serve_file(
         info!("Watcher closed.");
     });
 
+    // #### The IDE processing task
     actix_rt::spawn(async move {
         loop {
             select! {
@@ -753,22 +758,15 @@ async fn serve_file(
                                 // Tell the CodeChat Editor Client the type of
                                 // this IDE.
                                 id += 1;
-                                if let Err(err) = client_tx
-                                    .send(JointMessage {
+                                queue_send!(client_tx.send(JointMessage {
                                         id,
                                         message: JointMessageContents::Opened(IdeType::FileWatcher),
-                                    })
-                                    .await
-                                {
-                                    error!("Unable to enqueue: {}", err);
-                                    break;
-                                }
+                                }));
                                 create_timeout(&app_state, id);
 
                                 // Provide it a file to open.
                                 id += 1;
-                                if let Err(err) = client_tx
-                                    .send(JointMessage {
+                                queue_send!(client_tx.send(JointMessage {
                                         id,
                                         message: JointMessageContents::Update(UpdateMessageContents {
                                             contents: Some(codechat_for_web.clone()),
@@ -776,12 +774,7 @@ async fn serve_file(
                                             path: Some(file_pathbuf_receiver.to_path_buf()),
                                             scroll_position: Some(0.0),
                                         }),
-                                    })
-                                    .await
-                                {
-                                    error!("Unable to enqueue: {}", err);
-                                    break;
-                                }
+                                }));
                                 create_timeout(&app_state, id);
 
                                 // An empty result string indicates no errors...
@@ -1061,20 +1054,14 @@ async fn client_ws(
                                 // unlocking it.
                                 AggregatedMessage::Ping(bytes) => {
                                     info!("Ping");
-                                    if let Result::Err(err) =
-                                        // For a pong, we don't need a unique ID,
-                                        // since ping/pongs are handled outside our
-                                        // framework.
-                                        client_tx
-                                            .send(JointMessage {
-                                                id: 0,
-                                                message: JointMessageContents::Pong(bytes),
-                                            })
-                                            .await
-                                    {
-                                        error!("Unable to enqueue: {}", err);
-                                        break;
-                                    };
+                                    // For a pong, we don't need a unique ID,
+                                    // since ping/pongs are handled outside our
+                                    // framework.
+                                    queue_send!(client_tx
+                                        .send(JointMessage {
+                                            id: 0,
+                                            message: JointMessageContents::Pong(bytes),
+                                    }));
                                 }
 
                                 AggregatedMessage::Pong(_bytes) => {
@@ -1099,10 +1086,7 @@ async fn client_ws(
                                         // Send the `JointMessage` to the IDE for
                                         // processing.
                                         Ok(joint_message) => {
-                                            if let Result::Err(err) = ide_tx.send(joint_message).await {
-                                                error!("Unable to enqueue: {}", err);
-                                                break;
-                                            }
+                                            queue_send!(ide_tx.send(joint_message));
                                         }
                                     }
                                 }
@@ -1114,10 +1098,7 @@ async fn client_ws(
                                 AggregatedMessage::Close(reason) => {
                                     info!("Closing per client request: {:?}", reason);
                                     *is_closing.borrow_mut() = true;
-                                    if let Result::Err(err) = ide_tx.send(JointMessage { id: 0, message: JointMessageContents::Closing }).await {
-                                        error!("Unable to enqueue: {}", err);
-                                        break;
-                                    }
+                                    queue_send!(ide_tx.send(JointMessage { id: 0, message: JointMessageContents::Closing }));
                                     break;
                                 }
 
@@ -1350,6 +1331,7 @@ mod tests {
     use actix_web::{test, web, App};
     use assertables::{assert_starts_with, assert_starts_with_as_result};
     use log::Level;
+    use tokio::select;
     use tokio::sync::mpsc::{Receiver, Sender};
     use tokio::time::sleep;
 
@@ -1422,8 +1404,15 @@ mod tests {
     }
 
     async fn get_message(client_rx: &mut Receiver<JointMessage>) -> JointMessageContents {
-        let recv = client_rx.recv().await;
-        recv.unwrap().message
+        select! {
+            data = client_rx.recv() => {
+                let m = data.unwrap().message;
+                // For debugging, print out each message.
+                println!("{:?}", m);
+                m
+            }
+            _ = sleep(Duration::from_secs(3)) => panic!("Timeout waiting for message")
+        }
     }
 
     macro_rules! get_message {
@@ -1706,9 +1695,9 @@ mod tests {
             })
             .await
             .unwrap();
-
-        // Check that this succeeds.
         assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
+
+        // Check that the requested file is written.
         let mut s = fs::read_to_string(&file_path).unwrap();
         assert_eq!(s, "testing()");
         // Wait for the filewatcher to debounce this file write.
@@ -1732,6 +1721,26 @@ mod tests {
                 path: Some(file_path.clone().canonicalize().unwrap()),
                 cursor_position: None,
                 scroll_position: None,
+            }
+        );
+        // Acknowledge this message.
+        ide_tx_queue
+            .send(JointMessage {
+                id: 1,
+                message: JointMessageContents::Result("".to_string()),
+            })
+            .await
+            .unwrap();
+
+        // Rename it and check for an close (the file watcher can't detect the destination file, so it's treated as the file is deleted).
+        let mut dest = file_path.clone().parent().unwrap().to_path_buf();
+        dest.push("test2.py");
+        fs::rename(file_path, dest.as_path()).unwrap();
+        assert_eq!(
+            client_rx.recv().await.unwrap(),
+            JointMessage {
+                id: 2,
+                message: JointMessageContents::Closing
             }
         );
 
