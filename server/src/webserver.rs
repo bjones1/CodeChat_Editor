@@ -20,13 +20,12 @@
 ///
 /// ### Standard library
 use std::{
-    cell::RefCell,
     collections::HashMap,
     env,
     path::{Path, PathBuf},
     rc::Rc,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::Mutex,
     time::Duration,
 };
 
@@ -59,7 +58,6 @@ use tokio::{
     io::AsyncReadExt,
     select,
     sync::mpsc::{self, Receiver, Sender},
-    sync::Notify,
     task::JoinHandle,
     time::sleep,
 };
@@ -93,11 +91,11 @@ macro_rules! queue_send {
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
 struct JointEditor {
     /// Data to send to the IDE.
-    ide_tx_queue: Sender<JointMessage>,
+    from_client_tx: Sender<JointMessage>,
     /// Data to send to the CodeChat Editor Client.
-    client_tx_queue: Sender<JointMessage>,
+    to_client_tx: Sender<JointMessage>,
     /// Data received from the CodeChat Editor Client.
-    client_rx_queue: Receiver<JointMessage>,
+    to_client_rx: Receiver<JointMessage>,
 }
 
 /// Define the data structure used to pass data between the CodeChat Editor
@@ -115,9 +113,6 @@ struct JointMessage {
 /// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum JointMessageContents {
-    /// A pong to send by the underlying websocket protocol. The websocket
-    /// interface generates this; IDEs should not need to use this message.
-    Pong(Bytes),
     /// This is the first message sent when the IDE or client starts up or
     /// reconnects.
     Opened(IdeType),
@@ -565,29 +560,21 @@ async fn serve_file(
     // First, allocate variables needed by these two tasks.
     //
     // The path to the CodeChat Editor file to operate on.
-    let file_pathbuf_receiver = Rc::new(file_path.to_path_buf());
-    let file_pathbuf_watcher = file_pathbuf_receiver.clone();
+    let file_pathbuf = Rc::new(file_path.to_path_buf());
     // Handle `JointMessage` data from the CodeChat Editor Client for this file.
-    let (ide_tx, mut ide_rx) = mpsc::channel(10);
-    let (client_tx, client_rx) = mpsc::channel(10);
-    let client_tx_watcher = client_tx.clone();
+    let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
+    let (to_client_tx, to_client_rx) = mpsc::channel(10);
     app_state.joint_editors.lock().unwrap().push(JointEditor {
-        ide_tx_queue: ide_tx,
-        client_tx_queue: client_tx.clone(),
-        client_rx_queue: client_rx,
+        from_client_tx,
+        to_client_tx: to_client_tx.clone(),
+        to_client_rx,
     });
-    // When the CodeChat Editor Client saves a file, tell the file watcher to
-    // ignore this change.
-    let (ignore_file_modify_tx, mut ignore_file_modify_rx) = mpsc::channel(10);
-    let app_state_watcher = app_state.clone();
-    // Provide a way for either task to shut down the other.
-    let shutdown_notify_watcher = Arc::new(Notify::new());
-    let shutdown_notify_receiver = shutdown_notify_watcher.clone();
-    // Provide a unique ID for each message sent to the CodeChat Editor Client.
-    let mut id: u32 = 0;
 
     // #### The file watcher task.
     actix_rt::spawn(async move {
+        // Provide a unique ID for each message sent to the CodeChat Editor
+        // Client.
+        let mut id: u32 = 0;
         // Use a channel to send from the watcher (which runs in another thread)
         // into this async (task) context.
         let (watcher_tx, mut watcher_rx) = mpsc::channel(10);
@@ -610,7 +597,7 @@ async fn serve_file(
             Ok(mut debounced_watcher) => {
                 match debounced_watcher
                     .watcher()
-                    .watch(&file_pathbuf_watcher, RecursiveMode::NonRecursive)
+                    .watch(&file_pathbuf, RecursiveMode::NonRecursive)
                 {
                     Ok(()) => Ok(debounced_watcher),
                     Err(err) => Err(err),
@@ -627,10 +614,6 @@ async fn serve_file(
         let mut ignore_file_modify = false;
         loop {
             select! {
-                _ = shutdown_notify_watcher.notified() => break,
-
-                Some(_) = ignore_file_modify_rx.recv() => ignore_file_modify = true,
-
                 Some(result) = watcher_rx.recv() => {
                     match result {
                         Err(err_vec) => {
@@ -642,7 +625,7 @@ async fn serve_file(
                                 // Send using ID 0 to indicate this isn't a
                                 // response to a message received from the
                                 // client.
-                                send_response(&client_tx_watcher, 0, &msg).await;
+                                send_response(&to_client_tx, 0, &msg).await;
                             }
                         }
 
@@ -660,17 +643,17 @@ async fn serve_file(
                                             // identical, we can update the contents.
                                             // Otherwise, we need to load in the new
                                             // URL.
-                                            if debounced_event.event.paths.len() == 1 && debounced_event.event.paths[0].parent() == file_pathbuf_watcher.parent() {
+                                            if debounced_event.event.paths.len() == 1 && debounced_event.event.paths[0].parent() == file_pathbuf.parent() {
                                                 // Since the parents are identical, send an
                                                 // update. First, read the modified file.
                                                 let mut file_contents = String::new();
-                                                let read_ret = match File::open(file_pathbuf_watcher.as_ref()).await {
+                                                let read_ret = match File::open(file_pathbuf.as_ref()).await {
                                                     Ok(fc) => fc,
                                                     Err(_err) => {
                                                         id += 1;
                                                         // We can't open the file -- it's been
                                                         // moved or deleted. Close the file.
-                                                        queue_send!(client_tx_watcher.send(JointMessage {
+                                                        queue_send!(to_client_tx.send(JointMessage {
                                                             id,
                                                             message: JointMessageContents::Closing
                                                         }));
@@ -684,21 +667,20 @@ async fn serve_file(
                                                 // Unicode text.
                                                 if read_ret.is_err() {
                                                     id +=1 ;
-                                                    queue_send!(client_tx_watcher.send(JointMessage {
+                                                    queue_send!(to_client_tx.send(JointMessage {
                                                         id,
                                                         message: JointMessageContents::Closing
                                                     }));
-                                                    create_timeout(&app_state_watcher, id);
+                                                    create_timeout(&app_state, id);
                                                 }
 
                                                 // Translate the file.
                                                 let (translation_results_string, _path_to_toc) =
-                                                source_to_codechat_for_web_string(file_contents, &file_pathbuf_watcher, false, &app_state_watcher.lexers);
+                                                source_to_codechat_for_web_string(file_contents, &file_pathbuf, false, &app_state.lexers);
                                                 if let TranslationResultsString::CodeChat(cc) = translation_results_string {
                                                     // Send the new contents
                                                     id += 1;
-                                                    queue_send!(client_tx_watcher
-                                                        .send(JointMessage {
+                                                    queue_send!(to_client_tx.send(JointMessage {
                                                             id,
                                                             message: JointMessageContents::Update(UpdateMessageContents {
                                                                 contents: Some(cc),
@@ -707,17 +689,17 @@ async fn serve_file(
                                                                 scroll_position: None,
                                                             }),
                                                         }));
-                                                    create_timeout(&app_state_watcher, id);
+                                                    create_timeout(&app_state, id);
 
                                                 } else {
                                                     // Close the file -- it's not CodeChat
                                                     // anymore.
                                                     id +=1 ;
-                                                    queue_send!(client_tx_watcher.send(JointMessage {
+                                                    queue_send!(to_client_tx.send(JointMessage {
                                                         id,
                                                         message: JointMessageContents::Closing
                                                     }));
-                                                    create_timeout(&app_state_watcher, id);
+                                                    create_timeout(&app_state, id);
                                                 }
 
                                             } else {
@@ -735,28 +717,14 @@ async fn serve_file(
                     }
                 }
 
-                else => break
-            }
-        }
-        ignore_file_modify_rx.close();
-        shutdown_notify_watcher.notify_one();
-        info!("Watcher closed.");
-    });
-
-    // #### The IDE processing task
-    actix_rt::spawn(async move {
-        loop {
-            select! {
-                _ = shutdown_notify_receiver.notified() => break,
-
-                Some(m) = ide_rx.recv() => {
+                Some(m) = from_client_rx.recv() => {
                     match m.message {
                         JointMessageContents::Opened(ide_type) => {
                             let result = if ide_type == IdeType::CodeChatEditorClient {
                                 // Tell the CodeChat Editor Client the type of
                                 // this IDE.
                                 id += 1;
-                                queue_send!(client_tx.send(JointMessage {
+                                queue_send!(to_client_tx.send(JointMessage {
                                         id,
                                         message: JointMessageContents::Opened(IdeType::FileWatcher),
                                 }));
@@ -764,12 +732,12 @@ async fn serve_file(
 
                                 // Provide it a file to open.
                                 id += 1;
-                                queue_send!(client_tx.send(JointMessage {
+                                queue_send!(to_client_tx.send(JointMessage {
                                         id,
                                         message: JointMessageContents::Update(UpdateMessageContents {
                                             contents: Some(codechat_for_web.clone()),
                                             cursor_position: Some(0),
-                                            path: Some(file_pathbuf_receiver.to_path_buf()),
+                                            path: Some(file_pathbuf.to_path_buf()),
                                             scroll_position: Some(0.0),
                                         }),
                                 }));
@@ -783,7 +751,7 @@ async fn serve_file(
                             };
 
                             // Send a result back after processing this message.
-                            send_response(&client_tx, m.id, result).await;
+                            send_response(&to_client_tx, m.id, result).await;
                         }
 
                         JointMessageContents::Update(update_message_contents) => {
@@ -836,12 +804,10 @@ async fn serve_file(
                                     );
                                     break 'process msg;
                                 }
-                                if let Err(err) = ignore_file_modify_tx.send(true).await {
-                                    break 'process format!("Unable to send: {err}.");
-                                }
+                                ignore_file_modify = true;
                                 "".to_string()
                             };
-                            send_response(&client_tx, m.id, &result).await;
+                            send_response(&to_client_tx, m.id, &result).await;
                         }
 
                         // Process a result, the respond to a message we sent.
@@ -867,16 +833,18 @@ async fn serve_file(
                         }
                     }
                 }
+
+                else => break
             }
         }
-        ide_rx.close();
-        shutdown_notify_receiver.notify_one();
+
+        from_client_rx.close();
         // Drain any remaining messages after closing the queue.
-        while let Some(m) = ide_rx.recv().await {
+        while let Some(m) = from_client_rx.recv().await {
             warn!("Dropped queued message {:?}", &m);
         }
 
-        info!("FileWatcher done.");
+        info!("Watcher closed.");
     });
 
     // For project files, add in the sidebar. Convert this from a Windows path
@@ -1000,72 +968,64 @@ async fn client_ws(
     }
     let joint_editor = joint_editor_wrapped.unwrap();
 
-    // Prepare variables that will be owned the the transitter and receiver
-    // tasks.
-    //
-    // Used to send messages from the client to the IDE.
-    let ide_tx = joint_editor.ide_tx_queue;
-    // Receives message from the IDE for the client.
-    let client_tx = joint_editor.client_tx_queue;
-    // Extra copies of the queues used when the websocket connection is
-    // interrupted and should be later resumed.
-    let ide_tx_extra = ide_tx.clone();
-    let client_tx_extra = client_tx.clone();
-    // Provide a way for either the transmit or receive task to shut the other
-    // task down.
-    let shutdown_notify_rx = Arc::new(Notify::new());
-    let shutdown_notify_tx = shutdown_notify_rx.clone();
-    // True when the client requests the websocket to close; otherwise, closing
-    // represents an interruption (such as the computer going to sleep).
-    let is_closing = Rc::new(RefCell::new(false));
-    let is_closing_rx = is_closing.clone();
-
-    // Receive task: start a task to handle receiving `JointMessage` websocket
-    // data from the CodeChat Editor Client and forward it to the IDE.
+    // Websocket task: start a task to handle receiving `JointMessage` websocket
+    // data from the CodeChat Editor Client and forwarding it to the IDE and
+    // vice versa. It also handles low-level details (ping/pong, websocket
+    // errors/closing).
     actix_rt::spawn(async move {
         msg_stream = msg_stream.max_frame_size(1_000_000);
         let mut aggregated_msg_stream = msg_stream.aggregate_continuations();
         aggregated_msg_stream = aggregated_msg_stream.max_continuation_size(10_000_000);
+        // Used to send messages from the client to the IDE.
+        let from_client_tx = joint_editor.from_client_tx;
+        // Receives message from the IDE for the client.
+        let to_client_tx = joint_editor.to_client_tx;
+        let mut to_client_rx = joint_editor.to_client_rx;
+
+        // True when the client requests the websocket to close; otherwise,
+        // closing represents an interruption (such as the computer going to
+        // sleep).
+        let mut is_closing = false;
+        // True if a ping was sent, but a matching pong wasn't yet received.
+        let mut sent_ping = false;
 
         loop {
             select! {
-                // Shut down if the TX thread has shut down.
-                _ = shutdown_notify_rx.notified() => {
-                    break;
-                }
-
-                // If we haven't received anything for a while (such as a pong),
-                // the websocket must be broken.
-                _ = sleep(WEBSOCKET_PING_DELAY*2) => {
-                    break;
+                // Send pings on a regular basis.
+                _ = sleep(WEBSOCKET_PING_DELAY) => {
+                    if sent_ping {
+                        // If we haven't received the answering pong, the
+                        // websocket must be broken.
+                        break;
+                    }
+                    // Send a ping to check that the websocket is still open.
+                    // For example, putting a PC to sleep then waking it breaks
+                    // the websocket, but the server doesn't detect this without
+                    // sending a ping (which then fails).
+                    if let Err(err) = session.ping(&Bytes::new()).await {
+                        error!("Unable to send ping: {}", err);
+                        break;
+                    }
+                    sent_ping = true;
                 }
 
                 // Process a message received from the websocket.
                 Some(msg_wrapped) = aggregated_msg_stream.next() => {
-
                     match msg_wrapped {
                         Ok(msg) => {
                             match msg {
-                                // Enqueue a pong to the websocket tx queue.
-                                // Trying to send here means borrow errors, or
-                                // resorting to a mutex/correctly locking and
-                                // unlocking it.
+                                // Send a pong in response to a ping.
                                 AggregatedMessage::Ping(bytes) => {
-                                    info!("Ping");
-                                    // For a pong, we don't need a unique ID,
-                                    // since ping/pongs are handled outside our
-                                    // framework.
-                                    queue_send!(client_tx
-                                        .send(JointMessage {
-                                            id: 0,
-                                            message: JointMessageContents::Pong(bytes),
-                                    }));
+                                    if let Err(err) = session.pong(&bytes).await {
+                                        error!("Unable to send pong: {}", err);
+                                        break;
+                                    }
                                 }
 
                                 AggregatedMessage::Pong(_bytes) => {
-                                    // Simply receiving this message restarts
-                                    // the timeout timer. There's nothing else
-                                    // that needs doing.
+                                    // Acknowledge the matching pong to the ping
+                                    // that was most recently sent.
+                                    sent_ping = false;
                                 }
 
                                 // Decode text messages as JSON then dispatch
@@ -1084,7 +1044,7 @@ async fn client_ws(
                                         // Send the `JointMessage` to the IDE for
                                         // processing.
                                         Ok(joint_message) => {
-                                            queue_send!(ide_tx.send(joint_message));
+                                            queue_send!(from_client_tx.send(joint_message));
                                         }
                                     }
                                 }
@@ -1095,8 +1055,8 @@ async fn client_ws(
                                 // be closed.
                                 AggregatedMessage::Close(reason) => {
                                     info!("Closing per client request: {:?}", reason);
-                                    *is_closing.borrow_mut() = true;
-                                    queue_send!(ide_tx.send(JointMessage { id: 0, message: JointMessageContents::Closing }));
+                                    is_closing = true;
+                                    queue_send!(from_client_tx.send(JointMessage { id: 0, message: JointMessageContents::Closing }));
                                     break;
                                 }
 
@@ -1112,67 +1072,23 @@ async fn client_ws(
                     }
                 }
 
-                else => break,
-            }
-        }
-
-        info!("RX websocket closed.");
-        // Tell the TX websocket to shut down.
-        shutdown_notify_rx.notify_one();
-    });
-
-    // Transmit task: start a task to forward `JointMessage` data from the IDE
-    // to the CodeChat Editor Client.
-    actix_rt::spawn(async move {
-        let mut client_rx = joint_editor.client_rx_queue;
-        loop {
-            select! {
-                // Shut down if the RX thread has shut down.
-                _ = shutdown_notify_tx.notified() => {
-                    break;
-                }
-
-                // Send pings on a regular basis.
-                _ = sleep(WEBSOCKET_PING_DELAY) => {
-                // Send a ping to check that the websocket is still open. For
-                // example, putting a PC to sleep then waking it breaks the
-                // websocket, but the server doesn't detect this without sending
-                // a ping (which then fails).
-                    if let Err(err) = session.ping(&Bytes::new()).await {
-                        error!("Unable to send ping: {}", err);
-                        break;
-                    }
-                }
-
                 // Forward a message from the IDE to the client.
-                Some(m) = client_rx.recv() => {
-                    match m.message {
-                        // Send the pong in response to a recieved ping.
-                        JointMessageContents::Pong(bytes) => {
-                            if let Err(err) = session.pong(&bytes).await {
-                                error!("Unable to send pong: {}", err);
+                Some(m) = to_client_rx.recv() => {
+                    match serde_json::to_string(&m) {
+                        Ok(s) => {
+                            if let Err(err) = session.text(&*s).await {
+                                error!("Unable to send: {}", err);
                                 break;
                             }
                         }
-
-                        // For all other messages, simply pass them through
-                        // after encoding the message as JSON.
-                        ref _other => match serde_json::to_string(&m) {
-                            Ok(s) => {
-                                if let Err(err) = session.text(&*s).await {
-                                    error!("Unable to send: {}", err);
-                                    break;
-                                }
-                            }
-                            Err(err) => {
-                                error!("Encoding failure {}", err)
-                            }
-                        },
+                        Err(err) => {
+                            error!("Encoding failure {}", err);
+                        }
                     }
                 }
 
                 else => break,
-            };
+            }
         }
 
         // Shut down the session, to stop any incoming messages.
@@ -1180,27 +1096,24 @@ async fn client_ws(
             error!("Unable to close session: {}", err);
         }
 
-        // Shutdown the RX websocket.
-        shutdown_notify_tx.notify_one();
-
         // Re-enqueue this unless the client requested the websocket to close.
-        if *is_closing_rx.borrow() {
-            info!("TX websocket closed.");
-            client_rx.close();
+        if is_closing {
+            info!("Websocket closed.");
+            to_client_rx.close();
             // Drain any remaining messages after closing the queue.
-            while let Some(m) = client_rx.recv().await {
+            while let Some(m) = to_client_rx.recv().await {
                 warn!("Dropped queued message {:?}", &m);
             }
         } else {
-            info!("TX websocket re-enqueued.");
+            info!("Websocket re-enqueued.");
             app_state.joint_editors.lock().unwrap().push(JointEditor {
-                ide_tx_queue: ide_tx_extra,
-                client_tx_queue: client_tx_extra,
-                client_rx_queue: client_rx,
+                from_client_tx,
+                to_client_tx,
+                to_client_rx,
             });
         }
 
-        info!("TX websocket exiting.");
+        info!("Websocket exiting.");
     });
 
     Ok(response)
@@ -1423,8 +1336,8 @@ mod tests {
     async fn test_websocket_opened_1() {
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.ide_tx_queue;
-        let mut client_rx = je.client_rx_queue;
+        let ide_tx_queue = je.from_client_tx;
+        let mut client_rx = je.to_client_rx;
         configure_logger();
 
         // Send a message from the client saying the page was opened.
@@ -1477,8 +1390,8 @@ mod tests {
     async fn test_websocket_opened_2() {
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.ide_tx_queue;
-        let mut client_rx = je.client_rx_queue;
+        let ide_tx_queue = je.from_client_tx;
+        let mut client_rx = je.to_client_rx;
         configure_logger();
 
         // Send a message from the client saying the page was opened, but with
@@ -1505,8 +1418,8 @@ mod tests {
     async fn test_websocket_timeout() {
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.ide_tx_queue;
-        let mut client_rx = je.client_rx_queue;
+        let ide_tx_queue = je.from_client_tx;
+        let mut client_rx = je.to_client_rx;
         // Configure the logger here; otherwise, the glob used to copy files
         // outputs some debug-level logs.
         configure_logger();
@@ -1560,8 +1473,8 @@ mod tests {
     async fn test_websocket_update_1() {
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.ide_tx_queue;
-        let mut client_rx = je.client_rx_queue;
+        let ide_tx_queue = je.from_client_tx;
+        let mut client_rx = je.to_client_rx;
         // Configure the logger here; otherwise, the glob used to copy files
         // outputs some debug-level logs.
         configure_logger();

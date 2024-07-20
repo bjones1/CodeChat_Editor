@@ -83,7 +83,7 @@ do little processing. The processing pipeline should not perform I/O. Therefore:
   - The pathname of the file.
   - If this file should be processed as a TOC or not.
 - The page processor returns:
-  - An Enum with the file's contents: a
+  - An Enum with the file's contents:
 
 On save:
 
@@ -128,26 +128,26 @@ closed. TODO: relocate this paragraph to a more appropriate section.
 
 The server uses a set of queues to decouple websocket protocol activity from the
 core processing needed to translate source code between a CodeChat Editor Client
-and an IDE client. Specifically, two tasks that handle the receive and transmit
+and an IDE client. Specifically, one task handles the receive and transmit
 function for the websocket:
 
-- The transmit task sends a periodic ping to the CodeChat Editor Client.
-- The receive task waits for a periodic ping, closing the connection if the ping
-  isn't received in a timely manner. This helps detect a broken websocket
-  connection produced when a computer is put to sleep then wakes back up.
-- Likewise, the receive task responds to a ping message from the CodeChat Editor
-  Client by putting a pong message in the websocket's transmit queue.
+- The task sends a periodic ping to the CodeChat Editor Client, then waits for a
+  pong, closing the connection if the pong isn't received in a timely manner.
+  This helps detect a broken websocket connection produced when a computer is
+  put to sleep then wakes back up.
+- Likewise, the task responds to a ping message from the CodeChat Editor Client
+  by sending a pong in response.
 - If the websocket is closed purposefully (for example, by closing a CodeChat
   Editor Client tab in a web browser), the receive task detects this and shuts
   down the websocket along with the associated IDE client tasks.
 
 To decouple these low-level websocket details from high-level processing (such
 as translating between source code and its web equivalent), the websocket tasks
-enqueue all high-level messages to the ide queue; they listen to any enqueued
-messages in the client queue, passing these on via the websocket connection. The
-following diagram illustrates the file watcher IDE:
+enqueue all high-level messages to the processing task; they listen to any
+enqueued messages in the client or ide queue, passing these on via the websocket
+connection. The following diagram illustrates this approach:
 
-<graphviz-graph graph="digraph {&#10;    ccc -> client_rx&#10;    client_tx -> ccc&#10;    client_rx -> client_tx [ label = &quot;client_tx&quot;]&#10;    client_rx -> ide_proc [ label = &quot;ide_tx&quot;]&#10;    ide_proc -> client_tx [ label = &quot;client_tx&quot; ]&#10;    ide_fw -> client_tx [ label = &quot;client_tx&quot; ]&#10;    ide_proc -> ide_fw [ dir = &quot;both&quot;, style=&quot;dotted&quot;, label = &quot;File writes&quot;]&#10;    ccc [ label = &quot;CodeChat Editor\nClient websocket&quot;]&#10;    client_rx [ label = &quot;client receive task&quot;]&#10;    client_tx [ label = &quot;client transmit task&quot;]&#10;    ide_fw [ label = &quot;IDE filewatcher task&quot;]&#10;    ide_proc [ label = &quot;IDE processing task&quot;]}"></graphviz-graph>
+<graphviz-graph graph="digraph {&#10;    ccc -> client_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]&#10;    client_task -> from_client&#10;    from_client -> processing&#10;    processing -> to_client&#10;    to_client -> client_task&#10;    ide -> ide_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]&#10;    ide_task -> from_ide&#10;    from_ide -> processing&#10;    processing -> to_ide&#10;    to_ide -> ide_task&#10;    { rank = same; to_client; from_client }&#10;    { rank = same; to_ide; from_ide }&#10;    { rank = max; ide }&#10;    ccc [ label = &quot;CodeChat Editor\nClient&quot;]&#10;    client_task [ label = &quot;Client websocket\ntask&quot;]&#10;    from_client [ label = &quot;queue from client&quot; shape=&quot;rectangle&quot;]&#10;    processing [ label = &quot;Processing task&quot; ]&#10;    to_client [ label = &quot;queue to client&quot; shape=&quot;rectangle&quot;]&#10;    ide [ label = &quot;CodeChat Editor\nIDE plugin&quot;]&#10;    ide_task [ label = &quot;IDE websocket\ntask&quot; ]&#10;    from_ide [ label = &quot;queue from IDE&quot; shape=&quot;rectangle&quot; ]&#10;    to_ide [ label = &quot;queue to IDE&quot; shape=&quot;rectangle&quot; ]&#10;}"></graphviz-graph>
 
 The queues use multiple-sender, single receiver (mpsc) types; hence, a single
 task in the diagram receives data from a queue, while multiple tasks send data
