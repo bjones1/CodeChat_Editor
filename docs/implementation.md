@@ -107,10 +107,11 @@ Client messages:
 - On startup, the CodeChat Editor client sends an Opened message; the IDE client
   responds with an Opened message, followed by an Update message with the
   contents of the requested file.
-- The IDE client and the CodeChat Editor client send update messages, with file
-  path, file contents, and cursor/scroll position. If a field is omitted, it
-  means there's no change to it since the last command. For example, sending
-  just a cursor/scroll position is used when the user scrolls but doesn't edit.
+- The IDE client and the CodeChat Editor client send update messages, with a
+  file path, the file contents, and the cursor/scroll position. If a field is
+  omitted, it means there's no change to it since the last command. For example,
+  sending just a cursor/scroll position is used when the user scrolls but
+  doesn't edit.
 - CodeChat Client only: a load message, which requests the IDE to send an update
   with the contents of the loaded file.
 - They send a close message.
@@ -122,7 +123,8 @@ format.
 
 The CodeChat Editor changes all links to documents on the local filesystem, so
 that following a link turns into an update message, instead of a page reload. In
-addition, this allows us to save the file before the current page is closed.
+addition, this allows the editor to save the file before the current page is
+closed. TODO: relocate this paragraph to a more appropriate section.
 
 The server uses a set of queues to decouple websocket protocol activity from the
 core processing needed to translate source code between a CodeChat Editor Client
@@ -142,16 +144,23 @@ function for the websocket:
 To decouple these low-level websocket details from high-level processing (such
 as translating between source code and its web equivalent), the websocket tasks
 enqueue all high-level messages to the ide queue; they listen to any enqueued
-messages in the client queue, passing these on via the websocket connection. For
-example, the following diagram illustrates the file watcher IDE:
+messages in the client queue, passing these on via the websocket connection. The
+following diagram illustrates the file watcher IDE:
 
 <graphviz-graph graph="digraph {&#10;    ccc -> client_rx&#10;    client_tx -> ccc&#10;    client_rx -> client_tx [ label = &quot;client_tx&quot;]&#10;    client_rx -> ide_proc [ label = &quot;ide_tx&quot;]&#10;    ide_proc -> client_tx [ label = &quot;client_tx&quot; ]&#10;    ide_fw -> client_tx [ label = &quot;client_tx&quot; ]&#10;    ide_proc -> ide_fw [ dir = &quot;both&quot;, style=&quot;dotted&quot;, label = &quot;File writes&quot;]&#10;    ccc [ label = &quot;CodeChat Editor\nClient websocket&quot;]&#10;    client_rx [ label = &quot;client receive task&quot;]&#10;    client_tx [ label = &quot;client transmit task&quot;]&#10;    ide_fw [ label = &quot;IDE filewatcher task&quot;]&#10;    ide_proc [ label = &quot;IDE processing task&quot;]}"></graphviz-graph>
+
+The queues use multiple-sender, single receiver (mpsc) types; hence, a single
+task in the diagram receives data from a queue, while multiple tasks send data
+to a queue. When the IDE processing task writes updated content to the file
+being edited, it notifies the file watcher to ignore the next file update (hence
+the dotted arrow).
 
 Simplest non-IDE integration: the file watcher.
 
 - On startup, it sends the current file to the CodeChat Editor.
 - It uses a file watcher to send update commands when the current file changes.
 - It writes a file to disk when it receives an update command.
+- It closes the editor if the file is deleted or moved.
 
 Simplest IDE integration:
 

@@ -16,9 +16,6 @@
 ///
 /// # `webserver.rs` -- Serve CodeChat Editor Client webpages
 ///
-/// TODO: auto-reload when the current file changes on disk. Use
-/// [notify](https://docs.rs/notify/latest/notify/)..
-///
 /// ## Imports
 ///
 /// ### Standard library
@@ -671,7 +668,8 @@ async fn serve_file(
                                                     Ok(fc) => fc,
                                                     Err(_err) => {
                                                         id += 1;
-                                                        // We can't open the file -- it's been moved or deleted. Close the file.
+                                                        // We can't open the file -- it's been
+                                                        // moved or deleted. Close the file.
                                                         queue_send!(client_tx_watcher.send(JointMessage {
                                                             id,
                                                             message: JointMessageContents::Closing
@@ -1732,7 +1730,8 @@ mod tests {
             .await
             .unwrap();
 
-        // Rename it and check for an close (the file watcher can't detect the destination file, so it's treated as the file is deleted).
+        // Rename it and check for an close (the file watcher can't detect the
+        // destination file, so it's treated as the file is deleted).
         let mut dest = file_path.clone().parent().unwrap().to_path_buf();
         dest.push("test2.py");
         fs::rename(file_path, dest.as_path()).unwrap();
