@@ -44,7 +44,7 @@
         "@codemirror/lang-python": "^6",
         "@codemirror/lang-rust": "^6",
         "@codemirror/lang-xml": "^6",
-        "@codemirror/view": "<6.18",
+        "@codemirror/view": "^6",
         "codemirror": "^6",
         "graphviz-webcomponent": "=2.0.0",
         "tinymce": "^7"
