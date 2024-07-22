@@ -316,28 +316,38 @@ const open_lp = (
         "CodeChat-body",
     ) as HTMLDivElement;
     if (is_doc_only()) {
-        // Special case: a CodeChat Editor document's HTML is stored in
-        // \`source.doc\`. We don't need the CodeMirror editor at all; instead,
-        // treat it like a single doc block contents div./p>
-        codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
-        init({
-            selector: ".CodeChat-doc-contents",
-            // In the doc-only mode, add autosave functionality. While there is
-            // an
-            // [autosave plugin](https://www.tiny.cloud/docs/tinymce/6/autosave/),
-            // this autosave functionality is completely different from the
-            // autosave provided here. Per
-            // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
-            // this is how to create a TinyMCE event handler.
-            setup: (editor: Editor) => {
-                // The
-                // [supported browser-native events list](https://www.tiny.cloud/docs/tinymce/6/events/#supported-browser-native-events)
-                // includes the `input` event.
-                editor.on("input", (_event: Event) => {
-                    startAutosaveTimer();
-                });
-            },
-        }).then((editors) => editors[0].focus());
+        if (tinymce.activeEditor === null) {
+            // Special case: a CodeChat Editor document's HTML is stored in
+            // \`source.doc\`. We don't need the CodeMirror editor at all;
+            // instead, treat it like a single doc block contents div./p>
+            codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
+            init({
+                selector: ".CodeChat-doc-contents",
+                // In the doc-only mode, add autosave functionality. While there
+                // is an
+                // [autosave plugin](https://www.tiny.cloud/docs/tinymce/6/autosave/),
+                // this autosave functionality is completely different from the
+                // autosave provided here. Per
+                // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
+                // this is how to create a TinyMCE event handler.
+                setup: (editor: Editor) => {
+                    // The
+                    // [supported browser-native events list](https://www.tiny.cloud/docs/tinymce/6/events/#supported-browser-native-events)
+                    // includes the `input` event.
+                    editor.on("input", (_event: Event) => {
+                        startAutosaveTimer();
+                    });
+                },
+            }).then((editors) => editors[0].focus());
+        } else {
+            // Save and restore cursor/scroll location after an update per the
+            // [docs](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.dom.bookmarkmanager).
+            // However, this doesn't seem to work for the cursor location.
+            // Perhaps when TinyMCE normalizes the document, this gets lost?
+            const bm = tinymce.activeEditor!.selection.getBookmark()
+            tinymce.activeEditor!.setContent(source.doc)
+            tinymce.activeEditor!.selection.moveToBookmark(bm)
+        }
     } else {
         CodeMirror_load(codechat_body, source, current_metadata.mode, [autosaveExtension]);
     }
