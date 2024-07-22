@@ -318,8 +318,8 @@ const open_lp = (
     if (is_doc_only()) {
         if (tinymce.activeEditor === null) {
             // Special case: a CodeChat Editor document's HTML is stored in
-            // \`source.doc\`. We don't need the CodeMirror editor at all;
-            // instead, treat it like a single doc block contents div./p>
+            // `source.doc`. We don't need the CodeMirror editor at all;
+            // instead, treat it like a single doc block contents div.
             codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
             init({
                 selector: ".CodeChat-doc-contents",
