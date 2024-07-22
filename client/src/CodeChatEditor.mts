@@ -24,16 +24,15 @@
 // 2.  The server sees a request for a file supported by the CodeChat Editor. It
 //     lexes the files into code and doc blocks, then wraps these in a webpage
 //     which contains this program (the CodeChat Editor).
-// 3.  On load, this program (the CodeChat Editor) transforms these code and doc
-//     blocks into HTML. Specifically, code blocks are placed in
-//     [ACE editor](https://ace.c9.io/) instances, while doc blocks are placed
-//     in [TinyMCE](https://www.tiny.cloud/) instances.
+// 3.  On load, this program (the CodeChat Editor) loads these code and doc
+//     blocks into the CodeMirror text editor, using TinyMCE to provide a GUI
+//     editor within CodeMirror for doc blocks.
 //
-// The user then uses the editing capabilities of ACE/TinyMCE to edit their
-// program. When the user saves a file:
+// The user then uses the editing capabilities of CodeMirror/TinyMCE to edit
+// their program. When the user saves a file:
 //
-// 1.  This program looks through the HTML, converting ACE editor/TinyMCE
-//     instances back into code blocks and doc blocks.
+// 1.  This program serializes the CodeMirror text plus doc blocks, and
+//     transforms HTML back to markdown.
 // 2.  It sends these code/doc blocks back to the server.
 // 3.  The server then transforms these code/doc blocks into source code, then
 //     writes this code to the disk.
