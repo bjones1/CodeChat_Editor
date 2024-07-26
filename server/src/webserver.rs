@@ -561,17 +561,19 @@ async fn serve_file(
     //
     // The path to the CodeChat Editor file to operate on.
     let file_pathbuf = Rc::new(file_path.to_path_buf());
-    // Handle `JointMessage` data from the CodeChat Editor Client for this file.
-    let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
-    let (to_client_tx, to_client_rx) = mpsc::channel(10);
-    app_state.joint_editors.lock().unwrap().push(JointEditor {
-        from_client_tx,
-        to_client_tx: to_client_tx.clone(),
-        to_client_rx,
-    });
-
     // #### The file watcher task.
     actix_rt::spawn(async move {
+        // Handle `JointMessage` data from the CodeChat Editor Client for this file.
+        let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
+        let (to_client_tx, to_client_rx) = mpsc::channel(10);
+        app_state.joint_editors.lock().unwrap().push(JointEditor {
+            from_client_tx,
+            to_client_tx: to_client_tx.clone(),
+            to_client_rx,
+        });
+
+        info!("Filewatcher starting.");
+
         // Provide a unique ID for each message sent to the CodeChat Editor
         // Client.
         let mut id: u32 = 0;
@@ -826,6 +828,7 @@ async fn serve_file(
 
                         JointMessageContents::Closing => {
                             info!("Filewatcher closing");
+                            break;
                         }
 
                         other => {
