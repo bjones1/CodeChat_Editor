@@ -17,17 +17,28 @@
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
 # # `Cargo.toml` -- Rust build/package management config
+#
+# ## General package configuration
 [package]
-name = "server"
-version = "0.1.0"
+authors = ["Bryan A. Jones", "Peter Loux"]
+categories = ["development-tools", "text-editors"]
+description = "A programmer's word processor."
 edition = "2021"
+# TODO: manually copy over the `../client/bundled` directory, except for the
+# `*.map` files and the `.gitignore`. Excluding them here doesn't work.
+include = ["src/**", "log4rs.yml", "static/**",]
+keywords = ["literate programming"]
+license = "GPL-3.0-only"
+name = "codechat-editor-server"
+readme = "../README.md"
+repository = "https://github.com/bjones1/CodeChat_Editor"
+version = "0.1.0"
 
 # This library allows other packages to use core CodeChat Editor features.
 [lib]
 name = "code_chat_editor"
 
-# See more
-# [keys and their definitions](https://doc.rust-lang.org/cargo/reference/manifest.html).
+# Dependencies
 [dependencies]
 actix = "0.13.1"
 actix-files = "0.6"
@@ -45,13 +56,15 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
-# Per the [docs](https://docs.rs/crate/pulldown-cmark/latest), skip building the binary.
+# Per the [docs](https://docs.rs/crate/pulldown-cmark/latest), skip building the
+# binary.
 pulldown-cmark = { version = "0.11.0", default-features = false, features = ["html"] }
 futures-util = "0.3.29"
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"
 
+# ### Development-only dependencies
 [dev-dependencies]
 assertables = "7.0.1"
 assert_fs = "1"
@@ -59,18 +72,50 @@ assert_fs = "1"
 # clippy; it can't be installed as a dev-dependency. See the
 # [fmt docs](https://github.com/rust-lang/rustfmt#quick-start) to install fmt.
 
-# Specify release-only features for pulldown. See the [docs](https://docs.rs/crate/pulldown-cmark/latest).
+# #### Use local packages for development
+[patch.crates-io]
+# Commented out for now; uncomment to resume use.
+#actix = { path = "../../actix/actix" }
+#actix-rt = { path = "../../actix-net/actix-rt" }
+
+# ## Release
+# Specify release-only features for pulldown. See the
+# [docs](https://docs.rs/crate/pulldown-cmark/latest).
 [profile.release]
 lto = true
 codegen-units = 1
 panic = "abort"
 
+# ## Features
 # See the [docs](https://doc.rust-lang.org/cargo/reference/features.html).
 [features]
 # Uncomment this to show an explanation of the lexing process.
 #default = ["lexer_explain"]
 lexer_explain = []
 
-[patch.crates-io]
-#actix = { path = "../../actix/actix" }
-#actix-rt = { path = "../../actix-net/actix-rt" }
+# ## Distribution
+# The profile that `cargo dist` will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+# Config for 'cargo dist'
+[workspace.metadata.dist]
+# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.19.1"
+# Extra static files to include in each App (path relative to this Cargo.toml's dir)
+include = ["log4rs.yml", "../client/static"]
+# The installers to generate for each app
+installers = ["msi"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# CI backends to support
+ci = "github"
+# Publish jobs to run in CI
+pr-run-mode = "plan"
+
+[package.metadata.wix]
+upgrade-guid = "5B17D308-C9EF-4B26-86F6-88EF5D0953DE"
+path-guid = "22FB97BF-3F93-4AE5-B83C-A5BC12D1DBF1"
+license = false
+eula = false

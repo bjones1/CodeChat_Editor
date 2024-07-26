@@ -25,4 +25,7 @@ target/
 *.profraw
 tarpaulin-report.html
 
+# Copied files needed to `cargo publish`.
+static/
+
 # CodeChat Editor lexer: python. See TODO.
