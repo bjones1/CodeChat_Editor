@@ -1,0 +1,26 @@
+# # `npm-build.yml` - Build JavaScript bundle containing the CodeChat Editor Client.
+name: NPM build
+
+on:
+  # Defining workflow_call means that this workflow can be called from
+  # your main workflow job
+  workflow_call:
+    # cargo-dist exposes the plan from the plan step, as a JSON string,
+    # to your job if it needs it
+    inputs:
+      plan:
+        required: true
+        type: string
+
+jobs:
+  greeter:
+    runs-on: ubuntu-latest
+    # This is optional; it exposes the plan to your job as an environment variable
+    env:
+      PLAN: ${{ inputs.plan }}
+    steps:
+      - name: NPM build
+        run: |
+          cd client
+          npm run dist
+          echo "Plan is: ${PLAN}"

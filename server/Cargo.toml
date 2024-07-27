@@ -94,6 +94,8 @@ panic = "abort"
 lexer_explain = []
 
 # ## Distribution
+# This uses [cargo dist](https://opensource.axo.dev/cargo-dist) to build binaries across multiple platforms.
+#
 # The profile that `cargo dist` will build with
 [profile.dist]
 inherits = "release"
@@ -113,6 +115,8 @@ targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-
 ci = "github"
 # Publish jobs to run in CI
 pr-run-mode = "plan"
+# Publish jobs to run in CI
+publish-jobs = ["./npm-build"]
 
 [package.metadata.wix]
 upgrade-guid = "5B17D308-C9EF-4B26-86F6-88EF5D0953DE"

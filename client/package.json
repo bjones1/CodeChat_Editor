@@ -10,7 +10,9 @@
         "build": "run-script-os",
         "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
         "build:default": "node_modules/.bin/esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
-        "dist": "TODO"
+        "dist": "run-script-os",
+        "dist:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --minify --format=esm --splitting",
+        "dist:default": "node_modules/.bin/esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --minify --format=esm --splitting"
     },
     "keywords": [],
     "author": "Bryan A. Jones",
