@@ -74,6 +74,7 @@ jobs:
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         run: |
+          cd server
           cargo dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
           echo "cargo dist ran successfully"
           cat plan-dist-manifest.json
@@ -129,6 +130,7 @@ jobs:
           ${{ matrix.packages_install }}
       - name: Build artifacts
         run: |
+          cd server
           # Actually do builds and make zips and whatnot
           cargo dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "cargo dist ran successfully"
@@ -139,6 +141,7 @@ jobs:
         # inconsistent syntax between shell and powershell.
         shell: bash
         run: |
+          cd server
           # Parse out what we just built and upload it to scratch storage
           echo "paths<<EOF" >> "$GITHUB_OUTPUT"
           jq --raw-output ".upload_files[]" dist-manifest.json >> "$GITHUB_OUTPUT"
@@ -182,6 +185,7 @@ jobs:
       - id: cargo-dist
         shell: bash
         run: |
+          cd server
           cargo dist build ${{ needs.plan.outputs.tag-flag }} --output-format=json "--artifacts=global" > dist-manifest.json
           echo "cargo dist ran successfully"
 
@@ -231,6 +235,7 @@ jobs:
       - id: host
         shell: bash
         run: |
+          cd server
           cargo dist host ${{ needs.plan.outputs.tag-flag }} --steps=upload --steps=release --output-format=json > dist-manifest.json
           echo "artifacts uploaded and released successfully"
           cat dist-manifest.json
