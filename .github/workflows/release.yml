@@ -83,7 +83,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-plan-dist-manifest
-          path: plan-dist-manifest.json
+          path: server/plan-dist-manifest.json
 
   # Build and packages all the platform-specific things
   build-local-artifacts:
@@ -123,7 +123,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: artifacts-*
-          path: target/distrib/
+          path: server/target/distrib/
           merge-multiple: true
       - name: Install dependencies
         run: |
@@ -180,7 +180,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: artifacts-*
-          path: target/distrib/
+          path: server/target/distrib/
           merge-multiple: true
       - id: cargo-dist
         shell: bash
@@ -230,7 +230,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: artifacts-*
-          path: target/distrib/
+          path: server/target/distrib/
           merge-multiple: true
       - id: host
         shell: bash
@@ -245,7 +245,7 @@ jobs:
         with:
           # Overwrite the previous copy
           name: artifacts-dist-manifest
-          path: dist-manifest.json
+          path: server/dist-manifest.json
       # Create a GitHub Release while uploading all files to it
       - name: "Download GitHub Artifacts"
         uses: actions/download-artifact@v4
