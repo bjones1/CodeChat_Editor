@@ -18,14 +18,15 @@
 #
 # # `Cargo.toml` -- Rust build/package management config
 #
-# ## General package configuration
+# ## General package configurations
 [package]
 authors = ["Bryan A. Jones", "Peter Loux"]
 categories = ["development-tools", "text-editors"]
 description = "A programmer's word processor."
 edition = "2021"
-# TODO: manually copy over the `../client/bundled` directory, except for the
-# `*.map` files and the `.gitignore`. Excluding them here doesn't work.
+# TODO: manually copy over the `../client/static` directory to `./client`, except
+# for the `*.map` files and the `.gitignore`. Excluding them here doesn't work;
+# referencing them directly also doesn't work.
 include = ["src/**", "log4rs.yml", "static/**",]
 keywords = ["literate programming"]
 license = "GPL-3.0-only"
@@ -38,7 +39,7 @@ version = "0.1.0"
 [lib]
 name = "code_chat_editor"
 
-# Dependencies
+# ## Dependencies
 [dependencies]
 actix = "0.13.1"
 actix-files = "0.6"
@@ -79,6 +80,7 @@ assert_fs = "1"
 #actix-rt = { path = "../../actix-net/actix-rt" }
 
 # ## Release
+#
 # Specify release-only features for pulldown. See the
 # [docs](https://docs.rs/crate/pulldown-cmark/latest).
 [profile.release]
@@ -87,25 +89,33 @@ codegen-units = 1
 panic = "abort"
 
 # ## Features
+#
 # See the [docs](https://doc.rust-lang.org/cargo/reference/features.html).
 [features]
 # Uncomment this to show an explanation of the lexing process.
 #default = ["lexer_explain"]
 lexer_explain = []
 
+[lints.rust]
+# Avoid a lint about tarpaulin.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+
 # ## Distribution
-# This uses [cargo dist](https://opensource.axo.dev/cargo-dist) to build binaries across multiple platforms.
 #
-# The profile that `cargo dist` will build with
+# This uses [cargo dist](https://opensource.axo.dev/cargo-dist) to build
+# binaries across multiple platforms. TODO: it doesn't work yet.
+#
+# The profile that `cargo dist` will build with.
 [profile.dist]
 inherits = "release"
 lto = "thin"
 
-# Config for 'cargo dist'
+# ### Config for `cargo dist`
 [workspace.metadata.dist]
 # The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.19.1"
-# Extra static files to include in each App (path relative to this Cargo.toml's dir)
+# Extra static files to include in each App (path relative to this Cargo.toml's
+# dir)
 include = ["log4rs.yml", "../client/static"]
 # The installers to generate for each app
 installers = ["msi"]
@@ -121,5 +131,6 @@ publish-jobs = ["./npm-build"]
 [package.metadata.wix]
 upgrade-guid = "5B17D308-C9EF-4B26-86F6-88EF5D0953DE"
 path-guid = "22FB97BF-3F93-4AE5-B83C-A5BC12D1DBF1"
+# Don't require users to agree to the license or EULA before installing.
 license = false
 eula = false
