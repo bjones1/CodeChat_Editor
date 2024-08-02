@@ -89,12 +89,10 @@ macro_rules! queue_send {
 /// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
 ///
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
-struct JointEditor {
-    /// Data to send to the IDE.
+struct ClientQueues {
+    /// Data from the CodeChat Editor Client.
     from_client_tx: Sender<JointMessage>,
-    /// Data to send to the CodeChat Editor Client.
-    to_client_tx: Sender<JointMessage>,
-    /// Data received from the CodeChat Editor Client.
+    /// Data to the CodeChat Editor Client.
     to_client_rx: Receiver<JointMessage>,
 }
 
@@ -124,7 +122,7 @@ enum JointMessageContents {
     Load(PathBuf),
     /// Sent when the IDE or client are closing.
     Closing,
-    /// Sent as a response to any of the above messages (except `Pong`),
+    /// Sent as a response to any of the above messages,
     /// reporting success/error. An empty string indicates success; otherwise,
     /// the string contains the error message.
     Result(String),
@@ -162,7 +160,7 @@ struct UpdateMessageContents {
 /// all endpoints.
 struct AppState {
     lexers: LanguageLexersCompiled,
-    filewatcher_joint_editors: Mutex<Vec<JointEditor>>,
+    filewatcher_joint_editors: Mutex<Vec<ClientQueues>>,
     pending_messages: Mutex<HashMap<u32, JoinHandle<()>>>,
 }
 
@@ -193,7 +191,7 @@ const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 /// Redirect from the root of the filesystem to the actual root path on this OS.
 async fn _root_fs_redirect() -> impl Responder {
     HttpResponse::TemporaryRedirect()
-        .insert_header((header::LOCATION, "/fs/"))
+        .insert_header((header::LOCATION, "/fw/fs/"))
         .finish()
 }
 
@@ -203,7 +201,7 @@ async fn _root_fs_redirect() -> impl Responder {
 /// Omit code coverage -- this is a temporary interface, until IDE integration
 /// replaces this.
 #[cfg(not(tarpaulin_include))]
-#[get("/fs/{path:.*}")]
+#[get("/fw/fs/{path:.*}")]
 async fn serve_fs(
     req: HttpRequest,
     app_state: web::Data<AppState>,
@@ -271,7 +269,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         };
         for drive_letter in logical_drives {
             drive_html.push_str(&format!(
-                "<li><a href='/fs/{}:/'>{}:</a></li>\n",
+                "<li><a href='/fw/fs/{}:/'>{}:</a></li>\n",
                 drive_letter, drive_letter
             ));
         }
@@ -357,7 +355,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         };
         let encoded_dir = encode(&dir_name);
         dir_html += &format!(
-            "<li><a href='/fs/{}{}{}'>{}</a></li>\n",
+            "<li><a href='/fw/fs/{}{}{}'>{}</a></li>\n",
             web_path,
             // If this is a raw drive letter, then the path already ends with a
             // slash, such as `C:/`. Don't add a second slash in this case.
@@ -390,7 +388,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         };
         let encoded_file = encode(&file_name);
         file_html += &format!(
-            "<li><a href=\"/fs/{}/{}\" target=\"_blank\">{}</a></li>\n",
+            "<li><a href=\"/fw/fs/{}/{}\" target=\"_blank\">{}</a></li>\n",
             web_path, encoded_file, file_name
         );
     }
@@ -574,11 +572,14 @@ async fn serve_file(
         // file.
         let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
         let (to_client_tx, to_client_rx) = mpsc::channel(10);
-        app_state.filewatcher_joint_editors.lock().unwrap().push(JointEditor {
-            from_client_tx,
-            to_client_tx: to_client_tx.clone(),
-            to_client_rx,
-        });
+        app_state
+            .filewatcher_joint_editors
+            .lock()
+            .unwrap()
+            .push(ClientQueues {
+                from_client_tx,
+                to_client_rx,
+            });
 
         info!("Filewatcher starting.");
 
@@ -1013,14 +1014,22 @@ async fn filewatcher_websocket(
     }
     let joint_editor = joint_editor_wrapped.unwrap();
 
-    client_websocket(req, body, app_state, joint_editor).await
+    client_websocket(
+        req,
+        body,
+        app_state,
+        joint_editor.from_client_tx,
+        joint_editor.to_client_rx,
+    )
+    .await
 }
 
 async fn client_websocket(
     req: HttpRequest,
     body: web::Payload,
     app_state: web::Data<AppState>,
-    joint_editor: JointEditor,
+    from_websocket_tx: Sender<JointMessage>,
+    mut to_websocket_rx: Receiver<JointMessage>,
 ) -> Result<HttpResponse, Error> {
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
@@ -1032,11 +1041,6 @@ async fn client_websocket(
         msg_stream = msg_stream.max_frame_size(1_000_000);
         let mut aggregated_msg_stream = msg_stream.aggregate_continuations();
         aggregated_msg_stream = aggregated_msg_stream.max_continuation_size(10_000_000);
-        // Used to send messages from the client to the IDE.
-        let from_client_tx = joint_editor.from_client_tx;
-        // Receives message from the IDE for the client.
-        let to_client_tx = joint_editor.to_client_tx;
-        let mut to_client_rx = joint_editor.to_client_rx;
 
         // True when the client requests the websocket to close; otherwise,
         // closing represents an interruption (such as the computer going to
@@ -1100,7 +1104,7 @@ async fn client_websocket(
                                         // Send the `JointMessage` to the IDE for
                                         // processing.
                                         Ok(joint_message) => {
-                                            queue_send!(from_client_tx.send(joint_message));
+                                            queue_send!(from_websocket_tx.send(joint_message));
                                         }
                                     }
                                 }
@@ -1112,7 +1116,7 @@ async fn client_websocket(
                                 AggregatedMessage::Close(reason) => {
                                     info!("Closing per client request: {:?}", reason);
                                     is_closing = true;
-                                    queue_send!(from_client_tx.send(JointMessage { id: 0, message: JointMessageContents::Closing }));
+                                    queue_send!(from_websocket_tx.send(JointMessage { id: 0, message: JointMessageContents::Closing }));
                                     break;
                                 }
 
@@ -1129,7 +1133,7 @@ async fn client_websocket(
                 }
 
                 // Forward a message from the IDE to the client.
-                Some(m) = to_client_rx.recv() => {
+                Some(m) = to_websocket_rx.recv() => {
                     match serde_json::to_string(&m) {
                         Ok(s) => {
                             if let Err(err) = session.text(&*s).await {
@@ -1155,18 +1159,21 @@ async fn client_websocket(
         // Re-enqueue this unless the client requested the websocket to close.
         if is_closing {
             info!("Websocket closed.");
-            to_client_rx.close();
+            to_websocket_rx.close();
             // Drain any remaining messages after closing the queue.
-            while let Some(m) = to_client_rx.recv().await {
+            while let Some(m) = to_websocket_rx.recv().await {
                 warn!("Dropped queued message {:?}", &m);
             }
         } else {
             info!("Websocket re-enqueued.");
-            app_state.filewatcher_joint_editors.lock().unwrap().push(JointEditor {
-                from_client_tx,
-                to_client_tx,
-                to_client_rx,
-            });
+            app_state
+                .filewatcher_joint_editors
+                .lock()
+                .unwrap()
+                .push(ClientQueues {
+                    from_client_tx: from_websocket_tx,
+                    to_client_rx: to_websocket_rx,
+                });
         }
 
         info!("Websocket exiting.");
@@ -1238,8 +1245,8 @@ where
         .service(serve_fs)
         // Reroute to the filesystem for typical user-requested URLs.
         .route("/", web::get().to(_root_fs_redirect))
-        .route("/fs", web::get().to(_root_fs_redirect))
-        .route("/ws/fw/", web::get().to(filewatcher_websocket))
+        .route("/fw/fs", web::get().to(_root_fs_redirect))
+        .route("/fw/ws", web::get().to(filewatcher_websocket))
 }
 
 // Given a `Path`, transform it into a displayable string.
@@ -1305,7 +1312,7 @@ mod tests {
     use super::REPLY_TIMEOUT;
     use super::{configure_app, make_app_data};
     use super::{
-        AppState, IdeType, JointEditor, JointMessage, JointMessageContents, UpdateMessageContents,
+        AppState, ClientQueues, IdeType, JointMessage, JointMessageContents, UpdateMessageContents,
     };
     use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
     use crate::processing::{
@@ -1318,12 +1325,12 @@ mod tests {
     async fn get_websocket_queues(
         // A path to the temporary directory where the source file is located.
         test_dir: &PathBuf,
-    ) -> JointEditor {
+    ) -> ClientQueues {
         let app_data = make_app_data();
         let app = test::init_service(configure_app(App::new(), &app_data)).await;
 
         // Load in a test source file to create a websocket.
-        let uri = format!("/fs/{}/test.py", test_dir.to_string_lossy());
+        let uri = format!("/fw/fs/{}/test.py", test_dir.to_string_lossy());
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());

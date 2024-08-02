@@ -74,7 +74,7 @@ import "./../static/css/CodeChatEditor.css";
 // Use a unique ID for each websocket message sent.
 let ws_id = 0;
 
-const ws = new ReconnectingWebSocket!("ws://localhost:8080/ws/fw/");
+const ws = new ReconnectingWebSocket!("ws://localhost:8080/fw/ws");
 // Identify this client on connection.
 ws.onopen = () => {
     console.log(`CodeChat Client: websocket to CodeChat Server open.`);
