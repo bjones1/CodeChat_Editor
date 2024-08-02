@@ -365,7 +365,7 @@ fn code_doc_block_vec_to_source(
 // convert it to the `CodeChatForWeb` format.
 pub fn source_to_codechat_for_web(
     // The file's contents.
-    file_contents: String,
+    file_contents: &str,
     // The file's extension.
     file_ext: &str,
     // True if this file is a TOC.
@@ -378,7 +378,7 @@ pub fn source_to_codechat_for_web(
     // Determine the lexer to use for this file.
     let lexer_name;
     // First, search for a lexer directive in the file contents.
-    let lexer = if let Some(captures) = LEXER_DIRECTIVE.captures(&file_contents) {
+    let lexer = if let Some(captures) = LEXER_DIRECTIVE.captures(file_contents) {
         lexer_name = captures[1].to_string();
         match language_lexers_compiled.map_mode_to_lexer.get(&lexer_name) {
             Some(v) => v,
@@ -410,7 +410,7 @@ pub fn source_to_codechat_for_web(
         },
         source: if lexer.language_lexer.lexer_name.as_str() == "markdown" {
             // Document-only files are easy: just encode the contents.
-            let html = markdown_to_html(&file_contents);
+            let html = markdown_to_html(file_contents);
             // TODO: process the HTML.
             CodeMirror {
                 doc: html,
@@ -427,7 +427,7 @@ pub fn source_to_codechat_for_web(
             };
 
             // Lex the code.
-            code_doc_block_arr = source_lexer(&file_contents, lexer);
+            code_doc_block_arr = source_lexer(file_contents, lexer);
 
             // Combine all the doc blocks into a single string, separated by a
             // delimiter. Transform this to markdown, then split the transformed
@@ -497,7 +497,7 @@ pub fn source_to_codechat_for_web(
 // necessary, etc.).
 pub fn source_to_codechat_for_web_string(
     // The file's contents.
-    file_contents: String,
+    file_contents: &str,
     // The path to this file.
     file_path: &Path,
     // True if this file is a TOC.
@@ -1147,7 +1147,7 @@ mod tests {
         // A file with an unknown extension and no lexer, which is classified as
         // a text file.
         assert_eq!(
-            source_to_codechat_for_web("".to_string(), ".xxx", false, false, &llc),
+            source_to_codechat_for_web(&"".to_string(), ".xxx", false, false, &llc),
             TranslationResults::Unknown
         );
 
@@ -1156,7 +1156,7 @@ mod tests {
         let lexer_spec = format!("{}{}", "CodeChat Editor ", "lexer: ");
         assert_eq!(
             source_to_codechat_for_web(
-                format!("{}unknown", lexer_spec),
+                &format!("{}unknown", lexer_spec),
                 ".xxx",
                 false,
                 false,
@@ -1167,14 +1167,14 @@ mod tests {
 
         // A CodeChat Editor document via filename.
         assert_eq!(
-            source_to_codechat_for_web("".to_string(), "md", false, false, &llc),
+            source_to_codechat_for_web(&"".to_string(), "md", false, false, &llc),
             TranslationResults::CodeChat(build_codechat_for_web("markdown", "", vec![]))
         );
 
         // A CodeChat Editor document via lexer specification.
         assert_eq!(
             source_to_codechat_for_web(
-                format!("{}markdown", lexer_spec),
+                &format!("{}markdown", lexer_spec),
                 "xxx",
                 false,
                 false,
@@ -1189,13 +1189,13 @@ mod tests {
 
         // An empty source file.
         assert_eq!(
-            source_to_codechat_for_web("".to_string(), "js", false, false, &llc),
+            source_to_codechat_for_web(&"".to_string(), "js", false, false, &llc),
             TranslationResults::CodeChat(build_codechat_for_web("javascript", "", vec![]))
         );
 
         // A zero doc block source file.
         assert_eq!(
-            source_to_codechat_for_web("let a = 1;".to_string(), "js", false, false, &llc),
+            source_to_codechat_for_web(&"let a = 1;".to_string(), "js", false, false, &llc),
             TranslationResults::CodeChat(build_codechat_for_web(
                 "javascript",
                 "let a = 1;",
@@ -1205,7 +1205,7 @@ mod tests {
 
         // One doc block source files.
         assert_eq!(
-            source_to_codechat_for_web("// Test".to_string(), "js", false, false, &llc),
+            source_to_codechat_for_web(&"// Test".to_string(), "js", false, false, &llc),
             TranslationResults::CodeChat(build_codechat_for_web(
                 "javascript",
                 "\n",
@@ -1213,7 +1213,13 @@ mod tests {
             ))
         );
         assert_eq!(
-            source_to_codechat_for_web("let a = 1;\n// Test".to_string(), "js", false, false, &llc),
+            source_to_codechat_for_web(
+                &"let a = 1;\n// Test".to_string(),
+                "js",
+                false,
+                false,
+                &llc
+            ),
             TranslationResults::CodeChat(build_codechat_for_web(
                 "javascript",
                 "let a = 1;\n\n",
@@ -1227,7 +1233,13 @@ mod tests {
             ))
         );
         assert_eq!(
-            source_to_codechat_for_web("// Test\nlet a = 1;".to_string(), "js", false, false, &llc),
+            source_to_codechat_for_web(
+                &"// Test\nlet a = 1;".to_string(),
+                "js",
+                false,
+                false,
+                &llc
+            ),
             TranslationResults::CodeChat(build_codechat_for_web(
                 "javascript",
                 "\nlet a = 1;",
@@ -1238,7 +1250,7 @@ mod tests {
         // A two doc block source file.
         assert_eq!(
             source_to_codechat_for_web(
-                "// [Link][1]\nlet a = 1;\n/* [1]: http://b.org */".to_string(),
+                &"// [Link][1]\nlet a = 1;\n/* [1]: http://b.org */".to_string(),
                 "js",
                 false,
                 false,
@@ -1266,7 +1278,7 @@ mod tests {
         // - A doc block in the middle of the file
         // - A doc block with no trailing newline at the end of the file.
         assert_eq!(
-            source_to_codechat_for_web("//\n\n//\n\n//".to_string(), "cpp", false, false, &llc),
+            source_to_codechat_for_web(&"//\n\n//\n\n//".to_string(), "cpp", false, false, &llc),
             TranslationResults::CodeChat(build_codechat_for_web(
                 "c_cpp",
                 "\n\n\n\n",

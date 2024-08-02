@@ -240,7 +240,7 @@ async fn serve_fs(
     if canon_path.is_dir() {
         return dir_listing(orig_path.as_str(), &canon_path).await;
     } else if canon_path.is_file() {
-        return serve_file(&canon_path, &req, app_state).await;
+        return serve_filewatcher(&canon_path, &req, app_state).await;
     }
 
     // It's not a directory or a file...we give up. For simplicity, don't handle
@@ -422,38 +422,31 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
 // CodeChat Editor file, or a non-existent file. Determine which type this file
 // is then serve it. Serve a CodeChat Editor Client webpage using the
 // FileWatcher "IDE".
-async fn serve_file(
+async fn serve_filewatcher(
     file_path: &Path,
     req: &HttpRequest,
     app_state: web::Data<AppState>,
 ) -> HttpResponse {
-    let raw_dir = file_path.parent().unwrap();
-    // Use a lossy conversion, since this is UI display, not filesystem access.
-    let dir = escape_html(path_display(raw_dir).as_str());
-    let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
-
-    // Get the `mode` and `test` query parameters.
-    let empty_string = "".to_string();
-    let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
-    let (mode, is_test_mode) = match query_params {
-        Ok(query) => (
-            query.get("mode").unwrap_or(&empty_string).clone(),
-            query.get("test").is_some(),
-        ),
-        Err(_err) => (empty_string, false),
+    let file_contents = match smart_read(file_path, req).await {
+        Ok(fc) => fc,
+        Err(err) => return err,
     };
-    let is_toc = mode == "toc";
+    serve_file(file_path, &file_contents, req, app_state).await
+}
 
-    // Read the file.
+// Smart file reader. This returns an HTTP response if the provided file should
+// be served directly (including an error if necessary), or a string containing
+// the text of the file when it's Unicode.
+async fn smart_read(file_path: &Path, req: &HttpRequest) -> Result<String, HttpResponse> {
     let mut file_contents = String::new();
     let read_ret = match File::open(file_path).await {
         Ok(fc) => fc,
         Err(err) => {
-            return html_not_found(&format!(
+            return Err(html_not_found(&format!(
                 "<p>Error opening file {}: {}.",
                 path_display(file_path),
                 err
-            ))
+            )))
         }
     }
     .read_to_string(&mut file_contents)
@@ -472,17 +465,31 @@ async fn serve_file(
                         parameters: vec![],
                     })
                     .into_response(req);
-                return res;
+                // This isn't an error per se, but it does indicate that the
+                // caller should return with this value immediately, rather than
+                // continue processing.
+                return Err(res);
             }
             Err(err) => {
-                return html_not_found(&format!(
+                return Err(html_not_found(&format!(
                     "<p>Error opening file {}: {}.",
                     path_display(file_path),
                     err
-                ))
+                )))
             }
         }
     }
+
+    Ok(file_contents)
+}
+
+async fn serve_file(
+    file_path: &Path,
+    file_contents: &str,
+    req: &HttpRequest,
+    app_state: web::Data<AppState>,
+) -> HttpResponse {
+    let (name, dir, _mode, is_test_mode, is_toc) = parse_web(file_path, req);
 
     // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) =
@@ -561,9 +568,10 @@ async fn serve_file(
     //
     // The path to the CodeChat Editor file to operate on.
     let file_pathbuf = Rc::new(file_path.to_path_buf());
-    // #### The file watcher task.
+    // #### The filewatcher task.
     actix_rt::spawn(async move {
-        // Handle `JointMessage` data from the CodeChat Editor Client for this file.
+        // Handle `JointMessage` data from the CodeChat Editor Client for this
+        // file.
         let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
         let (to_client_tx, to_client_rx) = mpsc::channel(10);
         app_state.joint_editors.lock().unwrap().push(JointEditor {
@@ -678,7 +686,7 @@ async fn serve_file(
 
                                                 // Translate the file.
                                                 let (translation_results_string, _path_to_toc) =
-                                                source_to_codechat_for_web_string(file_contents, &file_pathbuf, false, &app_state.lexers);
+                                                source_to_codechat_for_web_string(&file_contents, &file_pathbuf, false, &app_state.lexers);
                                                 if let TranslationResultsString::CodeChat(cc) = translation_results_string {
                                                     // Send the new contents
                                                     id += 1;
@@ -916,6 +924,42 @@ async fn serve_file(
 </html>
 "##, name, if is_test_mode { "-test" } else { "" }, testing_src, sidebar_css, sidebar_iframe, name, dir
     ))
+}
+
+// Provided info from the HTTP request, determine the following parameters.
+fn parse_web(
+    file_path: &Path,
+    req: &HttpRequest,
+) -> (
+    // The name of the file, as a string.
+    String,
+    // THe path to the file, as a string.
+    String,
+    // The rendering mode for this file (view, test, etc.)
+    String,
+    // True if this web page wants to run unit tests.
+    bool,
+    // True if this file should be rendered as a table of contents.
+    bool,
+) {
+    let raw_dir = file_path.parent().unwrap();
+    // Use a lossy conversion, since this is UI display, not filesystem access.
+    let dir = escape_html(path_display(raw_dir).as_str());
+    let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
+
+    // Get the `mode` and `test` query parameters.
+    let empty_string = "".to_string();
+    let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
+    let (mode, is_test_mode) = match query_params {
+        Ok(query) => (
+            query.get("mode").unwrap_or(&empty_string).clone(),
+            query.get("test").is_some(),
+        ),
+        Err(_err) => (empty_string, false),
+    };
+    let is_toc = mode == "toc";
+
+    (name, dir, mode, is_test_mode, is_toc)
 }
 
 // Start a timeout task in case a message isn't delivered.
@@ -1374,7 +1418,7 @@ mod tests {
         // Check the contents.
         let llc = compile_lexers(get_language_lexer_vec());
         let translation_results =
-            source_to_codechat_for_web("".to_string(), "py", false, false, &llc);
+            source_to_codechat_for_web(&"".to_string(), "py", false, false, &llc);
         let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
         assert_eq!(umc.contents, Some(codechat_for_web));
         send_response(&ide_tx_queue, "").await;
