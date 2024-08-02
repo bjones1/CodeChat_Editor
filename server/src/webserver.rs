@@ -797,7 +797,7 @@ async fn serve_file(
                                     PathBuf::from_str("/")
                                 }
                                 .unwrap();
-                                save_file_path.push(&update_message_contents.path.unwrap());
+                                save_file_path.push(update_message_contents.path.unwrap());
                                 if let Err(err) = fs::write(save_file_path.as_path(), file_contents).await {
                                     let msg = format!(
                                         "Unable to save file '{}': {}.",
