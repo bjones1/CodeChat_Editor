@@ -162,7 +162,7 @@ struct UpdateMessageContents {
 /// all endpoints.
 struct AppState {
     lexers: LanguageLexersCompiled,
-    joint_editors: Mutex<Vec<JointEditor>>,
+    filewatcher_joint_editors: Mutex<Vec<JointEditor>>,
     pending_messages: Mutex<HashMap<u32, JoinHandle<()>>>,
 }
 
@@ -574,7 +574,7 @@ async fn serve_file(
         // file.
         let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
         let (to_client_tx, to_client_rx) = mpsc::channel(10);
-        app_state.joint_editors.lock().unwrap().push(JointEditor {
+        app_state.filewatcher_joint_editors.lock().unwrap().push(JointEditor {
             from_client_tx,
             to_client_tx: to_client_tx.clone(),
             to_client_rx,
@@ -1000,20 +1000,29 @@ async fn send_response(client_tx: &Sender<JointMessage>, id: u32, result: &str) 
 /// Client.
 ///
 /// Define a websocket handler for the CodeChat Editor Client.
-async fn client_ws(
+async fn filewatcher_websocket(
     req: HttpRequest,
     body: web::Payload,
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
-
     // Find a `JointEditor` that needs a client and assign this one to it.
-    let joint_editor_wrapped = app_state.joint_editors.lock().unwrap().pop();
+    let joint_editor_wrapped = app_state.filewatcher_joint_editors.lock().unwrap().pop();
     if joint_editor_wrapped.is_none() {
         error!("Error: no joint editor available.");
         return Err(ErrorMisdirectedRequest("No joint editor available."));
     }
     let joint_editor = joint_editor_wrapped.unwrap();
+
+    client_websocket(req, body, app_state, joint_editor).await
+}
+
+async fn client_websocket(
+    req: HttpRequest,
+    body: web::Payload,
+    app_state: web::Data<AppState>,
+    joint_editor: JointEditor,
+) -> Result<HttpResponse, Error> {
+    let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
     // Websocket task: start a task to handle receiving `JointMessage` websocket
     // data from the CodeChat Editor Client and forwarding it to the IDE and
@@ -1153,7 +1162,7 @@ async fn client_ws(
             }
         } else {
             info!("Websocket re-enqueued.");
-            app_state.joint_editors.lock().unwrap().push(JointEditor {
+            app_state.filewatcher_joint_editors.lock().unwrap().push(JointEditor {
                 from_client_tx,
                 to_client_tx,
                 to_client_rx,
@@ -1189,7 +1198,7 @@ pub fn configure_logger() {
 fn make_app_data() -> web::Data<AppState> {
     web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
-        joint_editors: Mutex::new(Vec::new()),
+        filewatcher_joint_editors: Mutex::new(Vec::new()),
         pending_messages: Mutex::new(HashMap::new()),
     })
 }
@@ -1230,7 +1239,7 @@ where
         // Reroute to the filesystem for typical user-requested URLs.
         .route("/", web::get().to(_root_fs_redirect))
         .route("/fs", web::get().to(_root_fs_redirect))
-        .route("/client_ws/", web::get().to(client_ws))
+        .route("/client_ws/", web::get().to(filewatcher_websocket))
 }
 
 // Given a `Path`, transform it into a displayable string.
@@ -1325,7 +1334,7 @@ mod tests {
         // The web page has been served; fake the connected websocket by getting
         // the appropriate tx/rx queues.
         let app_state = resp.request().app_data::<web::Data<AppState>>().unwrap();
-        let mut joint_editors = app_state.joint_editors.lock().unwrap();
+        let mut joint_editors = app_state.filewatcher_joint_editors.lock().unwrap();
         assert_eq!(joint_editors.len(), 1);
         return joint_editors.pop().unwrap();
     }
