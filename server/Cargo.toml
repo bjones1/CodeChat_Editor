@@ -24,10 +24,20 @@ authors = ["Bryan A. Jones", "Peter Loux"]
 categories = ["development-tools", "text-editors"]
 description = "A programmer's word processor."
 edition = "2021"
-# TODO: manually copy over the `../client/static` directory to `./client`, except
-# for the `*.map` files and the `.gitignore`. Excluding them here doesn't work;
-# referencing them directly also doesn't work.
-include = ["src/**", "log4rs.yml", "static/**",]
+# We don't currently (fully) support publishing via cargo. The expected process:
+#
+# 1.  In `client/`, remove all the files in `static/bundled` then run
+#     `npm run dist`.
+# 2.  Copy `../client/static` to `./static`.
+# 3.  Package away.
+include = [
+    "src/**",
+    "log4rs.yml",
+    # Referencing `../client/static` causes the files not to be included when
+    # packaging. So, copy them manually (see the steps above). I'd like to
+    # exclude `.gitignore`, but don't see how to do this.
+    "static/**",
+]
 keywords = ["literate programming"]
 license = "GPL-3.0-only"
 name = "codechat-editor-server"
@@ -103,7 +113,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
 # ## Distribution
 #
 # This uses [cargo dist](https://opensource.axo.dev/cargo-dist) to build
-# binaries across multiple platforms. TODO: it doesn't work yet.
+# binaries across multiple platforms using github's CI/CD.
 #
 # The profile that `cargo dist` will build with.
 [profile.dist]
