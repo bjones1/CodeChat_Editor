@@ -1239,7 +1239,7 @@ where
         // Reroute to the filesystem for typical user-requested URLs.
         .route("/", web::get().to(_root_fs_redirect))
         .route("/fs", web::get().to(_root_fs_redirect))
-        .route("/client_ws/", web::get().to(filewatcher_websocket))
+        .route("/ws/fw/", web::get().to(filewatcher_websocket))
 }
 
 // Given a `Path`, transform it into a displayable string.
