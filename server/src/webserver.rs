@@ -245,8 +245,7 @@ async fn serve_fs(
         Ok(p) => p,
         Err(err) => {
             return html_not_found(&format!(
-                "<p>The requested path <code>{}</code> is not valid: {}.</p>",
-                fixed_path, err
+                "<p>The requested path <code>{fixed_path}</code> is not valid: {err}.</p>"
             ))
         }
     };
@@ -284,8 +283,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         };
         for drive_letter in logical_drives {
             drive_html.push_str(&format!(
-                "<li><a href='/fw/fs/{}:/'>{}:</a></li>\n",
-                drive_letter, drive_letter
+                "<li><a href='/fw/fs/{drive_letter}:/'>{drive_letter}:</a></li>\n"
             ));
         }
 
@@ -294,10 +292,9 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             .body(html_wrapper(&format!(
                 "<h1>Drives</h1>
 <ul>
-{}
+{drive_html}
 </ul>
-",
-                drive_html
+"
             )));
     }
 
@@ -306,9 +303,8 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         Ok(p) => p,
         Err(err) => {
             return html_not_found(&format!(
-                "<p>Unable to list the directory {}: {}/</p>",
-                path_display(dir_path),
-                err
+                "<p>Unable to list the directory {}: {err}/</p>",
+                path_display(dir_path)
             ))
         }
     };
@@ -324,9 +320,8 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
                         Ok(x) => x,
                         Err(err) => {
                             return html_not_found(&format!(
-                                "<p>Unable to determine the type of {}: {}.",
+                                "<p>Unable to determine the type of {}: {err}.",
                                 path_display(&dir_entry.path()),
-                                err
                             ))
                         }
                     };
@@ -341,7 +336,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
                 }
             }
             Err(err) => {
-                return html_not_found(&format!("<p>Unable to read file in directory: {}.", err))
+                return html_not_found(&format!("<p>Unable to read file in directory: {err}."))
             }
         };
     }
@@ -363,15 +358,13 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             Ok(v) => v,
             Err(err) => {
                 return html_not_found(&format!(
-                    "<p>Unable to decode directory name '{:?}' as UTF-8.",
-                    err
+                    "<p>Unable to decode directory name '{err:?}' as UTF-8."
                 ))
             }
         };
         let encoded_dir = encode(&dir_name);
         dir_html += &format!(
-            "<li><a href='/fw/fs/{}{}{}'>{}</a></li>\n",
-            web_path,
+            "<li><a href='/fw/fs/{web_path}{}{encoded_dir}'>{dir_name}</a></li>\n",
             // If this is a raw drive letter, then the path already ends with a
             // slash, such as `C:/`. Don't add a second slash in this case.
             // Otherwise, add a slash to make `C:/foo` into `C:/foo/`.
@@ -383,9 +376,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
                 ""
             } else {
                 "/"
-            },
-            encoded_dir,
-            dir_name
+            }
         );
     }
 
@@ -395,32 +386,26 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         let file_name = match file.file_name().into_string() {
             Ok(v) => v,
             Err(err) => {
-                return html_not_found(&format!(
-                    "<p>Unable to decode file name {:?} as UTF-8.",
-                    err
-                ))
+                return html_not_found(&format!("<p>Unable to decode file name {err:?} as UTF-8.",))
             }
         };
         let encoded_file = encode(&file_name);
         file_html += &format!(
-            "<li><a href=\"/fw/fs/{}/{}\" target=\"_blank\">{}</a></li>\n",
-            web_path, encoded_file, file_name
+            "<li><a href=\"/fw/fs/{web_path}/{encoded_file}\" target=\"_blank\">{file_name}</a></li>\n"
         );
     }
     let body = format!(
         "<h1>Directory {}</h1>
 <h2>Subdirectories</h2>
 <ul>
-{}
+{dir_html}
 </ul>
 <h2>Files</h2>
 <ul>
-{}
+{file_html}
 </ul>
 ",
-        path_display(dir_path),
-        dir_html,
-        file_html
+        path_display(dir_path)
     );
 
     HttpResponse::Ok()
@@ -444,7 +429,7 @@ async fn serve_filewatcher(
         Ok(fc) => fc,
         Err(err) => return err,
     };
-    serve_file(file_path, &file_contents, req, app_state).await
+    serve_file(file_path, &file_contents, "fw", req, app_state).await
 }
 
 // Smart file reader. This returns an HTTP response if the provided file should
@@ -456,9 +441,8 @@ async fn smart_read(file_path: &Path, req: &HttpRequest) -> Result<String, HttpR
         Ok(fc) => fc,
         Err(err) => {
             return Err(html_not_found(&format!(
-                "<p>Error opening file {}: {}.",
-                path_display(file_path),
-                err
+                "<p>Error opening file {}: {err}.",
+                path_display(file_path)
             )))
         }
     }
@@ -485,9 +469,8 @@ async fn smart_read(file_path: &Path, req: &HttpRequest) -> Result<String, HttpR
             }
             Err(err) => {
                 return Err(html_not_found(&format!(
-                    "<p>Error opening file {}: {}.",
-                    path_display(file_path),
-                    err
+                    "<p>Error opening file {}: {err}.",
+                    path_display(file_path)
                 )))
             }
         }
@@ -519,9 +502,8 @@ async fn serve_file(
                 }
                 Err(err) => {
                     return html_not_found(&format!(
-                        "<p>Error opening file {}: {}.",
+                        "<p>Error opening file {}: {err}.",
                         path_display(file_path),
-                        err
                     ))
                 }
             }
@@ -544,7 +526,7 @@ async fn serve_file(
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{} - The CodeChat Editor</title>
+<title>{name} - The CodeChat Editor</title>
 
 <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
 <link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
@@ -555,7 +537,6 @@ async fn serve_file(
 </body>
 </html>
 "#,
-                    name,
                     // Look for any script tags and prevent these from causing
                     // problems.
                     html.replace("</script>", "<\\/script>")
@@ -802,8 +783,7 @@ async fn serve_file(
                                     Ok(r) => r,
                                     Err(message) => {
                                         break 'process format!(
-                                            "Unable to translate to source: {}",
-                                            message
+                                            "Unable to translate to source: {message}"
                                         );
                                     }
                                 };
@@ -822,9 +802,8 @@ async fn serve_file(
                                 save_file_path.push(update_message_contents.path.unwrap());
                                 if let Err(err) = fs::write(save_file_path.as_path(), file_contents).await {
                                     let msg = format!(
-                                        "Unable to save file '{}': {}.",
-                                        save_file_path.to_string_lossy(),
-                                        err
+                                        "Unable to save file '{}': {err}.",
+                                        save_file_path.to_string_lossy()
                                     );
                                     break 'process msg;
                                 }
@@ -899,9 +878,15 @@ async fn serve_file(
     // Build and return the webpage.
     let js_test_suffix = if is_test_mode { "-test" } else { "" };
     // Quote the string using JSON to handle any necessary escapes.
-    let ws_url = match serde_json::to_string(&format!("ws://localhost:8080/{ide_path}/ws/{connection_id}")) {
+    let ws_url = match serde_json::to_string(&format!(
+        "ws://localhost:8080/{ide_path}/ws/{connection_id}"
+    )) {
         Ok(v) => v,
-        Err(err) => return html_not_found(&format!("Unable to encode websocket URL for {ide_path}, id {connection_id}: {err}"))
+        Err(err) => {
+            return html_not_found(&format!(
+                "Unable to encode websocket URL for {ide_path}, id {connection_id}: {err}"
+            ))
+        }
     };
     HttpResponse::Ok()
         .content_type(ContentType::html())
@@ -1308,10 +1293,9 @@ fn html_wrapper(body: &str) -> String {
         <title>The CodeChat Editor</title>
     </head>
     <body>
-        {}
+        {body}
     </body>
-</html>",
-        body
+</html>"
     )
 }
 
