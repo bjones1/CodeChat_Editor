@@ -102,29 +102,36 @@ On save:
 
 ### IDE/editor integration
 
-Client messages:
+Client messages
 
-- On startup, the CodeChat Editor client sends an Opened message; the IDE client
-  responds with an Opened message, followed by an Update message with the
-  contents of the requested file.
+- On startup, the IDE client requests an ID from the server via a websocket.
+  Next, it sends an Opened message to a websockeet URL based on the ID. The
+  server replies with either the text of a web page to display or a URL to the
+  web page, depending on the Opened message contents.
+- When the CodeChat Editor Client starts, it also sends an Opened message; the
+  ID for this client is part of its websocket URL.
+- After the IDE client sends the Opened message, it immediately follows with an
+  Update message with the contents of the file from the IDE.
 - The IDE client and the CodeChat Editor client send update messages, with a
   file path, the file contents, and the cursor/scroll position. If a field is
   omitted, it means there's no change to it since the last command. For example,
   sending just a cursor/scroll position is used when the user scrolls but
   doesn't edit.
-- CodeChat Client only: a load message, which requests the IDE to send an update
-  with the contents of the loaded file.
-- They send a close message.
+- When the active file in the IDE changes, the IDE sends an Update message. When
+  following a hyperlink changes the active file, the CodeChat Editor Client
+  sends a Load message, which requests the IDE to send an update with the
+  contents of the hyperlinked file.
+- When the PC goes to sleep then wakes up, the IDE client and the Editor client
+  both reconnect to the websocket URL containing their assigned ID.
+- If the Editor client or the IDE client are closed, they send a Close messages
+  which ends the session.
+- If the server is stopped (or crashes), both clients shut down after several
+  reconnect retries.
 
 Clients always come in pairs: one IDE client is always paired with one CodeChat
-Editor client. The server relays messages from one client to the other, using a
-queue. It translates file contents between source code and the CodeChat Editor
-format.
-
-The CodeChat Editor changes all links to documents on the local filesystem, so
-that following a link turns into an update message, instead of a page reload. In
-addition, this allows the editor to save the file before the current page is
-closed. TODO: relocate this paragraph to a more appropriate section.
+Editor client. The server relays messages from one client to the other, using
+queues (see diagram). It translates file contents between source code and the
+CodeChat Editor format.
 
 The server uses a set of queues to decouple websocket protocol activity from the
 core processing needed to translate source code between a CodeChat Editor Client
