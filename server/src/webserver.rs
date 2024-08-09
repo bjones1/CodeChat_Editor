@@ -92,36 +92,36 @@ macro_rules! queue_send {
 #[derive(Debug)]
 struct ClientQueues {
     /// Data from the CodeChat Editor Client.
-    from_client_tx: Sender<JointMessage>,
+    from_client_tx: Sender<EditorMessage>,
     /// Data to the CodeChat Editor Client.
-    to_client_rx: Receiver<JointMessage>,
+    to_client_rx: Receiver<EditorMessage>,
 }
 
 struct IdeQueues {
-    from_ide_tx: Sender<JointMessage>,
-    to_ide_rx: Receiver<JointMessage>,
+    from_ide_tx: Sender<EditorMessage>,
+    to_ide_rx: Receiver<EditorMessage>,
 }
 
 struct ProcessingQueues {
-    to_ide_tx: Sender<JointMessage>,
-    from_ide_rx: Receiver<JointMessage>,
+    to_ide_tx: Sender<EditorMessage>,
+    from_ide_rx: Receiver<EditorMessage>,
 }
 
 /// Define the data structure used to pass data between the CodeChat Editor
 /// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-struct JointMessage {
+struct EditorMessage {
     /// A value unique to this message; it's used to report results
     /// (success/failure) back to the sender.
     id: u32,
     /// The actual message.
-    message: JointMessageContents,
+    message: EditorMessageContents,
 }
 
 /// Define the data structure used to pass data between the CodeChat Editor
 /// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-enum JointMessageContents {
+enum EditorMessageContents {
     /// This is the first message sent when the IDE or client starts up or
     /// reconnects.
     Opened(IdeType),
@@ -130,7 +130,9 @@ enum JointMessageContents {
     /// Only the CodeChat Client editor may send this; it requests the IDE to
     /// load the provided file. The IDE should respond by sending an `Update`
     /// with the requested file.
-    Load(PathBuf),
+    LoadFile(PathBuf),
+    /// Only the server may send this to the IDE. It contains HTML to display in its built-in browser.
+    LoadHtml(String),
     /// Sent when the IDE or client are closing.
     Closing,
     /// Sent as a response to any of the above messages,
@@ -142,11 +144,9 @@ enum JointMessageContents {
 /// Specify the type of IDE that this client represents.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum IdeType {
-    /// The CodeChat Editor Client always sends this.
-    CodeChatEditorClient,
-    // The IDE client sends one of these.
     FileWatcher,
-    VSCode(String),
+    /// True if the CodeChat Editor will be hosted inside VSCode; false means it should be hosted in an external browser.
+    VSCode(bool),
 }
 
 /// Contents of the `Update` message.
@@ -617,7 +617,32 @@ async fn serve_file(
 
         // Process results produced by the file watcher.
         let mut ignore_file_modify = false;
+        let mut just_opened = true;
         loop {
+            // On first opening the websocket, send the Editor an `Opened` then an `Update` message.
+            if just_opened {
+                queue_send!(to_client_tx.send(EditorMessage {
+                    id,
+                    message: EditorMessageContents::Opened(IdeType::FileWatcher),
+                }));
+                create_timeout(&app_state, id);
+
+                // Provide it a file to open.
+                id += 1;
+                queue_send!(to_client_tx.send(EditorMessage {
+                        id,
+                        message: EditorMessageContents::Update(UpdateMessageContents {
+                            contents: Some(codechat_for_web.clone()),
+                            cursor_position: Some(0),
+                            path: Some(file_pathbuf.to_path_buf()),
+                            scroll_position: Some(0.0),
+                        }),
+                }));
+                create_timeout(&app_state, id);
+                id += 1;
+                just_opened = false;
+            }
+
             select! {
                 Some(result) = watcher_rx.recv() => {
                     match result {
@@ -658,9 +683,9 @@ async fn serve_file(
                                                         id += 1;
                                                         // We can't open the file -- it's been
                                                         // moved or deleted. Close the file.
-                                                        queue_send!(to_client_tx.send(JointMessage {
+                                                        queue_send!(to_client_tx.send(EditorMessage {
                                                             id,
-                                                            message: JointMessageContents::Closing
+                                                            message: EditorMessageContents::Closing
                                                         }));
                                                         continue;
                                                     }
@@ -672,9 +697,9 @@ async fn serve_file(
                                                 // Unicode text.
                                                 if read_ret.is_err() {
                                                     id +=1 ;
-                                                    queue_send!(to_client_tx.send(JointMessage {
+                                                    queue_send!(to_client_tx.send(EditorMessage {
                                                         id,
-                                                        message: JointMessageContents::Closing
+                                                        message: EditorMessageContents::Closing
                                                     }));
                                                     create_timeout(&app_state, id);
                                                 }
@@ -685,9 +710,9 @@ async fn serve_file(
                                                 if let TranslationResultsString::CodeChat(cc) = translation_results_string {
                                                     // Send the new contents
                                                     id += 1;
-                                                    queue_send!(to_client_tx.send(JointMessage {
+                                                    queue_send!(to_client_tx.send(EditorMessage {
                                                             id,
-                                                            message: JointMessageContents::Update(UpdateMessageContents {
+                                                            message: EditorMessageContents::Update(UpdateMessageContents {
                                                                 contents: Some(cc),
                                                                 cursor_position: None,
                                                                 path: Some(debounced_event.event.paths[0].to_path_buf()),
@@ -700,9 +725,9 @@ async fn serve_file(
                                                     // Close the file -- it's not CodeChat
                                                     // anymore.
                                                     id +=1 ;
-                                                    queue_send!(to_client_tx.send(JointMessage {
+                                                    queue_send!(to_client_tx.send(EditorMessage {
                                                         id,
-                                                        message: JointMessageContents::Closing
+                                                        message: EditorMessageContents::Closing
                                                     }));
                                                     create_timeout(&app_state, id);
                                                 }
@@ -724,42 +749,7 @@ async fn serve_file(
 
                 Some(m) = from_client_rx.recv() => {
                     match m.message {
-                        JointMessageContents::Opened(ide_type) => {
-                            let result = if ide_type == IdeType::CodeChatEditorClient {
-                                // Tell the CodeChat Editor Client the type of
-                                // this IDE.
-                                id += 1;
-                                queue_send!(to_client_tx.send(JointMessage {
-                                        id,
-                                        message: JointMessageContents::Opened(IdeType::FileWatcher),
-                                }));
-                                create_timeout(&app_state, id);
-
-                                // Provide it a file to open.
-                                id += 1;
-                                queue_send!(to_client_tx.send(JointMessage {
-                                        id,
-                                        message: JointMessageContents::Update(UpdateMessageContents {
-                                            contents: Some(codechat_for_web.clone()),
-                                            cursor_position: Some(0),
-                                            path: Some(file_pathbuf.to_path_buf()),
-                                            scroll_position: Some(0.0),
-                                        }),
-                                }));
-                                create_timeout(&app_state, id);
-
-                                // An empty result string indicates no errors...
-                                ""
-                            } else {
-                                // ...as opposed to this.
-                                "Incorrect IDE type"
-                            };
-
-                            // Send a result back after processing this message.
-                            send_response(&to_client_tx, m.id, result).await;
-                        }
-
-                        JointMessageContents::Update(update_message_contents) => {
+                        EditorMessageContents::Update(update_message_contents) => {
                             let result = 'process: {
                                 // With code or a path, there's nothing to save.
                                 // TODO: this should store and remember the
@@ -814,7 +804,7 @@ async fn serve_file(
                         }
 
                         // Process a result, the respond to a message we sent.
-                        JointMessageContents::Result(err) => {
+                        EditorMessageContents::Result(err) => {
                             // Cancel the timeout for this result.
                             let mut pm = app_state.pending_messages.lock().unwrap();
                             if let Some(task) = pm.remove(&m.id) {
@@ -827,7 +817,7 @@ async fn serve_file(
                             }
                         }
 
-                        JointMessageContents::Closing => {
+                        EditorMessageContents::Closing => {
                             info!("Filewatcher closing");
                             break;
                         }
@@ -983,11 +973,11 @@ fn create_timeout(
 }
 
 // Send a response to the client after processing a message from the client.
-async fn send_response(client_tx: &Sender<JointMessage>, id: u32, result: &str) {
+async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: &str) {
     if let Err(err) = client_tx
-        .send(JointMessage {
+        .send(EditorMessage {
             id,
-            message: JointMessageContents::Result(result.to_string()),
+            message: EditorMessageContents::Result(result.to_string()),
         })
         .await
     {
@@ -1039,8 +1029,8 @@ async fn client_websocket(
     req: HttpRequest,
     body: web::Payload,
     app_state: web::Data<AppState>,
-    from_websocket_tx: Sender<JointMessage>,
-    mut to_websocket_rx: Receiver<JointMessage>,
+    from_websocket_tx: Sender<EditorMessage>,
+    mut to_websocket_rx: Receiver<EditorMessage>,
 ) -> Result<HttpResponse, Error> {
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
@@ -1127,7 +1117,7 @@ async fn client_websocket(
                                 AggregatedMessage::Close(reason) => {
                                     info!("Closing per client request: {:?}", reason);
                                     is_closing = true;
-                                    queue_send!(from_websocket_tx.send(JointMessage { id: 0, message: JointMessageContents::Closing }));
+                                    queue_send!(from_websocket_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closing }));
                                     break;
                                 }
 
@@ -1317,7 +1307,7 @@ mod tests {
 
     use actix_web::{test, web, App};
     use assertables::{assert_starts_with, assert_starts_with_as_result};
-    use log::{info, Level};
+    use log::Level;
     use tokio::select;
     use tokio::sync::mpsc::{Receiver, Sender};
     use tokio::time::sleep;
@@ -1325,7 +1315,7 @@ mod tests {
     use super::REPLY_TIMEOUT;
     use super::{configure_app, make_app_data};
     use super::{
-        AppState, ClientQueues, IdeType, JointMessage, JointMessageContents, UpdateMessageContents,
+        AppState, ClientQueues, IdeType, EditorMessage, EditorMessageContents, UpdateMessageContents,
     };
     use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
     use crate::processing::{
@@ -1360,11 +1350,11 @@ mod tests {
         return joint_editors.remove(&connection_id.to_string()).unwrap();
     }
 
-    async fn send_response(ide_tx_queue: &Sender<JointMessage>, result: &str) {
+    async fn send_response(id: u32, ide_tx_queue: &Sender<EditorMessage>, result: &str) {
         ide_tx_queue
-            .send(JointMessage {
-                id: 1,
-                message: JointMessageContents::Result(result.to_string()),
+            .send(EditorMessage {
+                id,
+                message: EditorMessageContents::Result(result.to_string()),
             })
             .await
             .unwrap();
@@ -1391,7 +1381,7 @@ mod tests {
         testing_logger::setup();
     }
 
-    async fn get_message(client_rx: &mut Receiver<JointMessage>) -> JointMessageContents {
+    async fn get_message(client_rx: &mut Receiver<EditorMessage>) -> EditorMessageContents {
         select! {
             data = client_rx.recv() => {
                 let m = data.unwrap().message;
@@ -1417,24 +1407,15 @@ mod tests {
         let mut client_rx = je.to_client_rx;
         configure_logger();
 
-        // Send a message from the client saying the page was opened.
-        ide_tx_queue
-            .send(JointMessage {
-                id: 1,
-                message: JointMessageContents::Opened(IdeType::CodeChatEditorClient),
-            })
-            .await
-            .unwrap();
-
-        // 1.  We should get a return message specifying the IDE client type.
+        // 1.  We should get a message specifying the IDE client type.
         assert_eq!(
-            get_message!(client_rx, JointMessageContents::Opened),
+            get_message!(client_rx, EditorMessageContents::Opened),
             IdeType::FileWatcher
         );
-        send_response(&ide_tx_queue, "").await;
+        send_response(0, &ide_tx_queue, "").await;
 
         // 2.  We should get the initial contents.
-        let umc = get_message!(client_rx, JointMessageContents::Update);
+        let umc = get_message!(client_rx, EditorMessageContents::Update);
         assert_eq!(umc.cursor_position, Some(0));
         assert_eq!(umc.scroll_position, Some(0.0));
 
@@ -1451,41 +1432,7 @@ mod tests {
             source_to_codechat_for_web(&"".to_string(), "py", false, false, &llc);
         let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
         assert_eq!(umc.contents, Some(codechat_for_web));
-        send_response(&ide_tx_queue, "").await;
-
-        // 3.  We should get a return message confirming no errors.
-        assert_eq!(
-            get_message!(client_rx, JointMessageContents::Result),
-            "".to_string()
-        );
-
-        // Report any errors produced when removing the temporary directory.
-        temp_dir.close().unwrap();
-    }
-
-    #[actix_web::test]
-    async fn test_websocket_opened_2() {
-        let (temp_dir, test_dir) = prep_test_dir!();
-        let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.from_client_tx;
-        let mut client_rx = je.to_client_rx;
-        configure_logger();
-
-        // Send a message from the client saying the page was opened, but with
-        // an invalid IDE type.
-        ide_tx_queue
-            .send(JointMessage {
-                id: 1,
-                message: JointMessageContents::Opened(IdeType::FileWatcher),
-            })
-            .await
-            .unwrap();
-
-        // We should get a return message confirming an error.
-        assert_eq!(
-            get_message!(client_rx, JointMessageContents::Result),
-            "Incorrect IDE type"
-        );
+        send_response(1, &ide_tx_queue, "").await;
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
@@ -1495,29 +1442,19 @@ mod tests {
     async fn test_websocket_timeout() {
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.from_client_tx;
         let mut client_rx = je.to_client_rx;
         // Configure the logger here; otherwise, the glob used to copy files
         // outputs some debug-level logs.
         configure_logger();
 
-        // Send a message from the client saying the page was opened.
-        ide_tx_queue
-            .send(JointMessage {
-                id: 1,
-                message: JointMessageContents::Opened(IdeType::CodeChatEditorClient),
-            })
-            .await
-            .unwrap();
-
-        // We should get a return message specifying the IDE client type.
+        // We should get a message specifying the IDE client type.
         assert_eq!(
-            get_message!(client_rx, JointMessageContents::Opened),
+            get_message!(client_rx, EditorMessageContents::Opened),
             IdeType::FileWatcher
         );
 
         // We should get the initial contents.
-        get_message!(client_rx, JointMessageContents::Update);
+        get_message!(client_rx, EditorMessageContents::Update);
 
         // Don't send any acknowledgements to these message and see if we get
         // errors. The stderr redirection covers only this block.
@@ -1530,14 +1467,14 @@ mod tests {
             assert_eq!(captured_logs[0].target, "code_chat_editor::webserver");
             assert_eq!(
                 captured_logs[0].body,
-                "Timeout: message id 1 unacknowledged."
+                "Timeout: message id 0 unacknowledged."
             );
             assert_eq!(captured_logs[0].level, Level::Error);
 
             assert_eq!(captured_logs[0].target, "code_chat_editor::webserver");
             assert_eq!(
                 captured_logs[1].body,
-                "Timeout: message id 2 unacknowledged."
+                "Timeout: message id 1 unacknowledged."
             );
             assert_eq!(captured_logs[1].level, Level::Error);
         });
@@ -1556,11 +1493,20 @@ mod tests {
         // outputs some debug-level logs.
         configure_logger();
 
+        // We should get a message specifying the IDE client type.
+        assert_eq!(
+            get_message!(client_rx, EditorMessageContents::Opened),
+            IdeType::FileWatcher
+        );
+
+        // We should get the initial contents.
+        get_message!(client_rx, EditorMessageContents::Update);
+
         // 1.  Send an update message with no contents.
         ide_tx_queue
-            .send(JointMessage {
+            .send(EditorMessage {
                 id: 1,
-                message: JointMessageContents::Update(UpdateMessageContents {
+                message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: None,
                     path: Some(PathBuf::new()),
                     cursor_position: None,
@@ -1571,13 +1517,13 @@ mod tests {
             .unwrap();
 
         // Check that it produces no error.
-        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
+        assert_eq!(get_message!(client_rx, EditorMessageContents::Result), "");
 
         // 2.  Send an update message with no path.
         ide_tx_queue
-            .send(JointMessage {
+            .send(EditorMessage {
                 id: 2,
-                message: JointMessageContents::Update(UpdateMessageContents {
+                message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "".to_string(),
@@ -1602,13 +1548,13 @@ mod tests {
             .unwrap();
 
         // Check that it produces no error.
-        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
+        assert_eq!(get_message!(client_rx, EditorMessageContents::Result), "");
 
         // 3.  Send an update message with unknown source language.
         ide_tx_queue
-            .send(JointMessage {
+            .send(EditorMessage {
                 id: 3,
-                message: JointMessageContents::Update(UpdateMessageContents {
+                message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "nope".to_string(),
@@ -1628,15 +1574,15 @@ mod tests {
 
         // Check that it produces an error.
         assert_eq!(
-            get_message!(client_rx, JointMessageContents::Result),
+            get_message!(client_rx, EditorMessageContents::Result),
             "Unable to translate to source: Invalid mode"
         );
 
         // 4.  Send an update message with an invalid path.
         ide_tx_queue
-            .send(JointMessage {
+            .send(EditorMessage {
                 id: 3,
-                message: JointMessageContents::Update(UpdateMessageContents {
+                message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1656,7 +1602,7 @@ mod tests {
 
         // Check that it produces an error.
         assert_starts_with!(
-            get_message!(client_rx, JointMessageContents::Result),
+            get_message!(client_rx, EditorMessageContents::Result),
             "Unable to save file '':"
         );
 
@@ -1664,9 +1610,9 @@ mod tests {
         let mut file_path = test_dir.clone();
         file_path.push("test.py");
         ide_tx_queue
-            .send(JointMessage {
+            .send(EditorMessage {
                 id: 3,
-                message: JointMessageContents::Update(UpdateMessageContents {
+                message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1683,7 +1629,7 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(get_message!(client_rx, JointMessageContents::Result), "");
+        assert_eq!(get_message!(client_rx, EditorMessageContents::Result), "");
 
         // Check that the requested file is written.
         let mut s = fs::read_to_string(&file_path).unwrap();
@@ -1695,7 +1641,7 @@ mod tests {
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         assert_eq!(
-            get_message!(client_rx, JointMessageContents::Update),
+            get_message!(client_rx, EditorMessageContents::Update),
             UpdateMessageContents {
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
@@ -1712,13 +1658,7 @@ mod tests {
             }
         );
         // Acknowledge this message.
-        ide_tx_queue
-            .send(JointMessage {
-                id: 1,
-                message: JointMessageContents::Result("".to_string()),
-            })
-            .await
-            .unwrap();
+        send_response(1, &ide_tx_queue, "");
 
         // Rename it and check for an close (the file watcher can't detect the
         // destination file, so it's treated as the file is deleted).
@@ -1727,9 +1667,9 @@ mod tests {
         fs::rename(file_path, dest.as_path()).unwrap();
         assert_eq!(
             client_rx.recv().await.unwrap(),
-            JointMessage {
-                id: 2,
-                message: JointMessageContents::Closing
+            EditorMessage {
+                id: 4,
+                message: EditorMessageContents::Closing
             }
         );
 

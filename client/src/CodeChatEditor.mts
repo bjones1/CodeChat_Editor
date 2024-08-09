@@ -75,12 +75,12 @@ import "./../static/css/CodeChatEditor.css";
 //
 // These mirror the same definitions in the Rust webserver, so that the two can
 // exchange messages.
-interface JointMessage {
+interface EditorMessage {
     id: number,
-    message: JointMessageContents
+    message: EditorMessageContents
 }
 
-interface JointMessageContents {
+interface EditorMessageContents {
     Opened?: IdeType,
     Update?: UpdateMessageContents,
     Load?: String,
@@ -88,16 +88,10 @@ interface JointMessageContents {
     Result?: string
 }
 
-enum IdeTypeEnum {
-    CodeChatEditorClient = "CodeChatEditorClient",
-    FileWatcher = "FileWatcher",
+enum IdeType {
+    FileWatcher,
+    VSCode,
 }
-
-interface IdeTypeMap {
-    VSCode: string
-}
-
-type IdeType = IdeTypeEnum | IdeTypeMap
 
 interface UpdateMessageContents {
     path: string | undefined,
@@ -123,14 +117,6 @@ class WebSocketComm {
         // Identify this client on connection.
         this.ws.onopen = () => {
             console.log(`CodeChat Client: websocket to CodeChat Server open.`);
-            // Tell the CodeChat Editor Server we're ready to receive.
-            let jm: JointMessage = {
-                id: this.ws_id++,
-                message: {
-                    Opened: IdeTypeEnum.CodeChatEditorClient
-                }
-            }
-            this.ws.send(JSON.stringify(jm));
         };
 
         // Provide logging to help track down errors.
@@ -148,7 +134,7 @@ class WebSocketComm {
         this.ws.onmessage = (event: any) => {
             // Parse the received message, which must be a single element of a
             // dictionary representing a `JointMessage`.
-            const joint_message = JSON.parse(event.data) as JointMessage;
+            const joint_message = JSON.parse(event.data) as EditorMessage;
             const { id: id, message: message } = joint_message;
             console.assert(id !== undefined)
             console.assert(message !== undefined)
@@ -209,8 +195,8 @@ class WebSocketComm {
     }
 
     // Send a message expecting a result to the server.
-    send_message = (id: number, message: JointMessageContents) => {
-        const jm: JointMessage = {
+    send_message = (id: number, message: EditorMessageContents) => {
+        const jm: EditorMessage = {
             id: id,
             message: message
         }
@@ -222,7 +208,7 @@ class WebSocketComm {
     send_result = (id: number, result: string = "") => {
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
-        const jm: JointMessage = {
+        const jm: EditorMessage = {
             id: id,
             message: {
                 Result: result
