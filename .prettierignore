@@ -20,6 +20,7 @@
 #
 # NPM
 client/node_modules/
+extensions/VSCode/node_modules/
 # Edits to CodeMirror source
 client/src/codemirror/*
 

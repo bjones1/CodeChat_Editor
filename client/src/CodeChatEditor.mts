@@ -71,28 +71,6 @@ import "./../static/css/CodeChatEditor.css";
 // This code communicates with the CodeChat Editor Server via its websocket
 // interface.
 //
-// Use a unique ID for each websocket message sent.
-let ws_id = 0;
-
-const ws = new ReconnectingWebSocket!("ws://localhost:8080/fw/ws");
-// Identify this client on connection.
-ws.onopen = () => {
-    console.log(`CodeChat Client: websocket to CodeChat Server open.`);
-    // Tell the CodeChat Editor Server we're ready to receive.
-    ws.send(JSON.stringify({ id: ws_id++, message: { Opened: "CodeChatEditorClient" } }));
-};
-
-// Provide logging to help track down errors.
-ws.onerror = (event: any) => {
-    console.error(`CodeChat Client: websocket error ${event}.`);
-};
-
-ws.onclose = (event: any) => {
-    console.log(
-        `CodeChat Client: websocket closed by event type ${event.type}: ${event.detail}. This should only happen on shutdown.`,
-    );
-};
-
 // ### Message types
 //
 // These mirror the same definitions in the Rust webserver, so that the two can
@@ -110,11 +88,16 @@ interface JointMessageContents {
     Result?: string
 }
 
-enum IdeType {
-    CodeChatEditorClient,
-    FileWatcher,
-    VSCode,
+enum IdeTypeEnum {
+    CodeChatEditorClient = "CodeChatEditorClient",
+    FileWatcher = "FileWatcher",
 }
+
+interface IdeTypeMap {
+    VSCode: string
+}
+
+type IdeType = IdeTypeEnum | IdeTypeMap
 
 interface UpdateMessageContents {
     path: string | undefined,
@@ -123,89 +106,132 @@ interface UpdateMessageContents {
     scroll_position: number | undefined
 }
 
-// A map of message id to timer id for all pending messages.
-let pending_messages: Record<number, number> = {}
+let webSocketComm: WebSocketComm
 
-// Report an error from the server.
-const report_server_timeout = (message_id: number) => {
-    delete pending_messages[message_id]
-    console.log(`Error: server timeout for message id ${message_id}`)
-}
+class WebSocketComm {
+    // Use a unique ID for each websocket message sent.
+    ws_id = 0;
+    // The websocket used by this class. Really a `ReconnectingWebSocket`, but that's not a type.
+    ws: WebSocket
+    // A map of message id to timer id for all pending messages.
+    pending_messages: Record<number, number> = {}
 
-// Send a message expecting a result to the server.
-const send_message = (id: number, message: JointMessageContents) => {
-    const jm: JointMessage = {
-        id: id,
-        message: message
+    constructor(ws_url: string) {
+        // The `ReconnectingWebSocket` doesn't provide ALL the `WebSocket` methods. Ignore this, since we can't use `ReconnectingWebSocket` as a type.
+        /// @ts-ignore
+        this.ws = new ReconnectingWebSocket!(ws_url);
+        // Identify this client on connection.
+        this.ws.onopen = () => {
+            console.log(`CodeChat Client: websocket to CodeChat Server open.`);
+            // Tell the CodeChat Editor Server we're ready to receive.
+            let jm: JointMessage = {
+                id: this.ws_id++,
+                message: {
+                    Opened: IdeTypeEnum.CodeChatEditorClient
+                }
+            }
+            this.ws.send(JSON.stringify(jm));
+        };
+
+        // Provide logging to help track down errors.
+        this.ws.onerror = (event: any) => {
+            console.error(`CodeChat Client: websocket error ${event}.`);
+        };
+
+        this.ws.onclose = (event: any) => {
+            console.log(
+                `CodeChat Client: websocket closed by event type ${event.type}: ${event.detail}. This should only happen on shutdown.`,
+            );
+        };
+
+        // Handle websocket messages.
+        this.ws.onmessage = (event: any) => {
+            // Parse the received message, which must be a single element of a
+            // dictionary representing a `JointMessage`.
+            const joint_message = JSON.parse(event.data) as JointMessage;
+            const { id: id, message: message } = joint_message;
+            console.assert(id !== undefined)
+            console.assert(message !== undefined)
+            const keys = Object.keys(message);
+            console.assert(keys.length === 1)
+            const key = keys[0];
+            const value = Object.values(message)[0];
+
+            // Process this message.
+            switch (key) {
+                case "Opened":
+                    const ideType = value as IdeType;
+                    // There's no additional steps to take currently.
+                    console.log(`Opened(${ideType})`);
+                    this.send_result(id)
+                    break;
+
+                case "Update":
+                    // Load this data in.
+                    current_update = value as UpdateMessageContents;
+                    console.log(`Update(path: ${current_update.path}, cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
+                    if (current_update.contents !== undefined) {
+                        open_lp(current_update.contents);
+                    }
+                    this.send_result(id)
+                    break;
+
+                case "Result":
+                    // Cancel the timer for this message and remove it from
+                    // `pending_messages`.
+                    const timer_id = this.pending_messages[id]
+                    if (timer_id !== undefined) {
+                        clearTimeout(timer_id)
+                        delete this.pending_messages[id]
+                    }
+
+                    // Report if this was an error.
+                    const err = value as string;
+                    if (value !== "") {
+                        console.log(`Error in message ${id}: ${err}.`)
+                    }
+                    break;
+
+                default:
+                    console.log(`Unhandled message ${key}(${value})`);
+                    break;
+            }
+        };
     }
-    ws.send(JSON.stringify(jm))
-    pending_messages[id] = setTimeout(report_server_timeout, 2000, id)
-}
 
-// Send a result (a response to a message from the server) back to the server.
-const send_result = (id: number, result: string = "") => {
-    // We can't simply call `send_message` because that function expects a
-    // result message back from the server.
-    const jm: JointMessage = {
-        id: id,
-        message: {
-            Result: result
+    send = (data: any) => this.ws.send(data)
+    close = (...args: any) => this.ws.close(...args)
+
+    // Report an error from the server.
+    report_server_timeout = (message_id: number) => {
+        delete this.pending_messages[message_id]
+        console.log(`Error: server timeout for message id ${message_id}`)
+    }
+
+    // Send a message expecting a result to the server.
+    send_message = (id: number, message: JointMessageContents) => {
+        const jm: JointMessage = {
+            id: id,
+            message: message
         }
+        this.ws.send(JSON.stringify(jm))
+        this.pending_messages[id] = setTimeout(this.report_server_timeout, 2000, id)
     }
-    ws.send(JSON.stringify(jm))
+
+    // Send a result (a response to a message from the server) back to the server.
+    send_result = (id: number, result: string = "") => {
+        // We can't simply call `send_message` because that function expects a
+        // result message back from the server.
+        const jm: JointMessage = {
+            id: id,
+            message: {
+                Result: result
+            }
+        }
+        this.ws.send(JSON.stringify(jm))
+    }
+
 }
-
-// Handle websocket messages.
-ws.onmessage = (event: any) => {
-    // Parse the received message, which must be a single element of a
-    // dictionary representing a `JointMessage`.
-    const joint_message = JSON.parse(event.data) as JointMessage;
-    const { id: id, message: message } = joint_message;
-    console.assert(id !== undefined)
-    console.assert(message !== undefined)
-    const keys = Object.keys(message);
-    console.assert(keys.length === 1)
-    const key = keys[0];
-    const value = Object.values(message)[0];
-
-    // Process this message.
-    switch (key) {
-        case "Opened":
-            const ideType = value as IdeType;
-            // There's no additional steps to take currently.
-            console.log(`Opened(${ideType})`);
-            send_result(id)
-            break;
-
-        case "Update":
-            // Load this data in.
-            current_update = value as UpdateMessageContents;
-            console.log(`Update(path: ${current_update.path}, cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
-            page_init(current_update.contents);
-            send_result(id)
-            break;
-
-        case "Result":
-            // Cancel the timer for this message and remove it from
-            // `pending_messages`.
-            const timer_id = pending_messages[id]
-            if (timer_id !== undefined) {
-                clearTimeout(timer_id)
-                delete pending_messages[id]
-            }
-
-            // Report if this was an error.
-            const err = value as string;
-            if (value !== "") {
-                console.log(`Error in message ${id}: ${err}.`)
-            }
-            break;
-
-        default:
-            console.log(`Unhandled message ${key}(${value})`);
-            break;
-    }
-};
 
 // ## Markdown to HTML conversion
 //
@@ -234,39 +260,6 @@ type CodeChatForWeb = {
 
 // ## Page initialization
 //
-// <a id="EditorMode"></a>Define all possible editor modes; these are passed as
-// a [query string](https://en.wikipedia.org/wiki/Query_string)
-// (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
-enum EditorMode {
-    // Display the source code using CodeChat, but disallow editing.
-    view,
-    // For this source, the same a view; the server uses this to avoid recursive
-    // iframes of the table of contents.
-    toc,
-    // The full CodeChat editor.
-    edit,
-    // Show only raw source code; ignore doc blocks, treating them also as code.
-    raw,
-}
-
-// Load code when the DOM is ready.
-export const page_init = (all_source: any) => {
-    // Use
-    // [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
-    // to parse out the search parameters of this window's URL.
-    const urlParams = new URLSearchParams(window.location.search);
-    // Get the mode from the page's query parameters. Default to edit using the
-    // [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
-    // This works, but TypeScript marks it as an error. Ignore this error by
-    // including the
-    // [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
-    /// @ts-ignore
-    const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
-    on_dom_content_loaded(async () => {
-        open_lp(all_source, editorMode);
-    });
-};
-
 // This is copied from
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
 const on_dom_content_loaded = (on_load_func: () => void) => {
@@ -278,6 +271,20 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
         on_load_func();
     }
 };
+
+export const page_init = (ws_url: string) => {
+    on_dom_content_loaded(async () => {
+        webSocketComm = new WebSocketComm(ws_url)
+        document.getElementById("CodeChat-save-button")!.addEventListener("click", on_save)
+        document.body.addEventListener("keydown", on_keydown)
+
+        // Intercept links in this document to save before following the link. For some reason, the semicolon here is required.
+        /// @ts-ignore
+        navigation.addEventListener("navigate", on_navigate);
+        /// @ts-ignore
+        (document.getElementById("CodeChat-sidebar") as (HTMLIFrameElement | undefined))?.contentWindow?.navigation.addEventListener("navigate", on_navigate)
+    });
+}
 
 // ## File handling
 //
@@ -296,6 +303,21 @@ const is_doc_only = () => {
     return current_metadata["mode"] === "markdown";
 };
 
+// <a id="EditorMode"></a>Define all possible editor modes; these are passed as
+// a [query string](https://en.wikipedia.org/wiki/Query_string)
+// (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
+enum EditorMode {
+    // Display the source code using CodeChat, but disallow editing.
+    view,
+    // For this source, the same a view; the server uses this to avoid recursive
+    // iframes of the table of contents.
+    toc,
+    // The full CodeChat editor.
+    edit,
+    // Show only raw source code; ignore doc blocks, treating them also as code.
+    raw,
+}
+
 // This function is called on page load to "load" a file. Before this point, the
 // server has already lexed the source file into code and doc blocks; this
 // function transforms the code and doc blocks into HTML and updates the current
@@ -304,9 +326,19 @@ const open_lp = (
     // A data structure provided by the server, containing the source and
     // associated metadata. See [`AllSource`](#AllSource).
     all_source: CodeChatForWeb,
-    // See <code><a href="#EditorMode">EditorMode</a></code>.
-    editorMode: EditorMode,
 ) => {
+    // Use
+    // [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
+    // to parse out the search parameters of this window's URL.
+    const urlParams = new URLSearchParams(window.location.search);
+    // Get the mode from the page's query parameters. Default to edit using the
+    // [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
+    // This works, but TypeScript marks it as an error. Ignore this error by
+    // including the
+    // [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
+    /// @ts-ignore
+    const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
+
     // Get the <code><a href="#current_metadata">current_metadata</a></code>
     // from the provided `all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
@@ -369,7 +401,7 @@ const os_is_osx =
         : false;
 
 // Provide a shortcut of ctrl-s (or command-s) to save the current file.
-export const on_keydown = (event: KeyboardEvent) => {
+const on_keydown = (event: KeyboardEvent) => {
     if (
         event.key === "s" &&
         ((event.ctrlKey && !os_is_osx) || (event.metaKey && os_is_osx)) &&
@@ -381,7 +413,7 @@ export const on_keydown = (event: KeyboardEvent) => {
 };
 
 // Save CodeChat Editor contents.
-export const on_save = async () => {
+const on_save = async () => {
     /// @ts-expect-error
     let source: CodeChatForWeb["source"] = {};
     if (is_doc_only()) {
@@ -429,7 +461,7 @@ export const on_save = async () => {
         metadata: current_metadata,
         source,
     };
-    ws.send(JSON.stringify({ id: ws_id++, message: { Update: current_update } }))
+    webSocketComm.send(JSON.stringify({ id: webSocketComm.ws_id++, message: { Update: current_update } }))
 };
 
 // ### Autosave feature
@@ -541,7 +573,7 @@ interface NavigateEvent extends Event {
 
 // The TOC and this page calls this when a hyperlink is clicked. This saves the
 // current document before navigating.
-export const on_navigate = (navigateEvent: NavigateEvent) => {
+const on_navigate = (navigateEvent: NavigateEvent) => {
     if (
         // Some of this was copied from
         // [Modern client-side routing: the Navigation API](https://developer.chrome.com/docs/web-platform/navigation-api/#deciding_how_to_handle_a_navigation).
@@ -567,21 +599,20 @@ export const on_navigate = (navigateEvent: NavigateEvent) => {
     on_save().then((_value) => {
         // Avoid recursion!
         /// @ts-ignore
-        removeEventListener("navigate", on_navigate)
+        navigation.removeEventListener("navigate", on_navigate)
         window.location.href = navigateEvent.destination.url;
     })
 }
-
-// Intercept links in this document to save before following the link.
-/// @ts-ignore
-addEventListener("navigate", on_navigate)
 
 // ## Testing
 //
 // Tell TypeScript about the global namespace this program defines.
 declare global {
     interface Window {
-        CodeChatEditor_test: any;
+        CodeChatEditor: {
+            connection_id: string
+        }
+        CodeChatEditor_test: any
     }
 }
 

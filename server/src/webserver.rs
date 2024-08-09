@@ -89,11 +89,22 @@ macro_rules! queue_send {
 /// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
 ///
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
+#[derive(Debug)]
 struct ClientQueues {
     /// Data from the CodeChat Editor Client.
     from_client_tx: Sender<JointMessage>,
     /// Data to the CodeChat Editor Client.
     to_client_rx: Receiver<JointMessage>,
+}
+
+struct IdeQueues {
+    from_ide_tx: Sender<JointMessage>,
+    to_ide_rx: Receiver<JointMessage>,
+}
+
+struct ProcessingQueues {
+    to_ide_tx: Sender<JointMessage>,
+    from_ide_rx: Receiver<JointMessage>,
 }
 
 /// Define the data structure used to pass data between the CodeChat Editor
@@ -135,7 +146,7 @@ enum IdeType {
     CodeChatEditorClient,
     // The IDE client sends one of these.
     FileWatcher,
-    VSCode,
+    VSCode(String),
 }
 
 /// Contents of the `Update` message.
@@ -160,7 +171,11 @@ struct UpdateMessageContents {
 /// all endpoints.
 struct AppState {
     lexers: LanguageLexersCompiled,
-    filewatcher_joint_editors: Mutex<Vec<ClientQueues>>,
+    connection_id: Mutex<u32>,
+    filewatcher_client_queues: Mutex<HashMap<String, ClientQueues>>,
+    vscode_ide_queues: Mutex<HashMap<u32, IdeQueues>>,
+    vscode_processing_queues: Mutex<HashMap<u32, ProcessingQueues>>,
+    vscode_client_queues: Mutex<HashMap<u32, ClientQueues>>,
     pending_messages: Mutex<HashMap<u32, JoinHandle<()>>>,
 }
 
@@ -484,6 +499,7 @@ async fn smart_read(file_path: &Path, req: &HttpRequest) -> Result<String, HttpR
 async fn serve_file(
     file_path: &Path,
     file_contents: &str,
+    ide_path: &str,
     req: &HttpRequest,
     app_state: web::Data<AppState>,
 ) -> HttpResponse {
@@ -532,12 +548,6 @@ async fn serve_file(
 
 <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
 <link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
-<script>
-    addEventListener("DOMContentLoaded", (event) => {{
-        navigation.addEventListener("navigate", (event) => {{
-            parent.CodeChatEditor.on_navigate(event)
-        }})
-    }})
 </script>
 </head>
 <body>
@@ -566,22 +576,25 @@ async fn serve_file(
     //
     // The path to the CodeChat Editor file to operate on.
     let file_pathbuf = Rc::new(file_path.to_path_buf());
+    // Access this way, to avoid borrow checker problems.
+    let connection_id = {
+        let mut connection_id = app_state.connection_id.lock().unwrap();
+        *connection_id += 1;
+        *connection_id
+    };
     // #### The filewatcher task.
     actix_rt::spawn(async move {
         // Handle `JointMessage` data from the CodeChat Editor Client for this
         // file.
         let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
         let (to_client_tx, to_client_rx) = mpsc::channel(10);
-        app_state
-            .filewatcher_joint_editors
-            .lock()
-            .unwrap()
-            .push(ClientQueues {
+        app_state.filewatcher_client_queues.lock().unwrap().insert(
+            connection_id.to_string(),
+            ClientQueues {
                 from_client_tx,
                 to_client_rx,
-            });
-
-        info!("Filewatcher starting.");
+            },
+        );
 
         // Provide a unique ID for each message sent to the CodeChat Editor
         // Client.
@@ -884,35 +897,40 @@ async fn serve_file(
     };
 
     // Build and return the webpage.
-    HttpResponse::Ok().content_type(ContentType::html()).body(format!(
-        r##"<!DOCTYPE html>
+    let js_test_suffix = if is_test_mode { "-test" } else { "" };
+    // Quote the string using JSON to handle any necessary escapes.
+    let ws_url = match serde_json::to_string(&format!("ws://localhost:8080/{ide_path}/ws/{connection_id}")) {
+        Ok(v) => v,
+        Err(err) => return html_not_found(&format!("Unable to encode websocket URL for {ide_path}, id {connection_id}: {err}"))
+    };
+    HttpResponse::Ok()
+        .content_type(ContentType::html())
+        .body(format!(
+            r##"<!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>{} - The CodeChat Editor</title>
+        <title>{name} - The CodeChat Editor</title>
 
         <link rel="stylesheet" href="/static/bundled/CodeChatEditor.css">
         <script type="module">
-            import {{ page_init, on_keydown, on_save, on_navigate }} from "/static/bundled/CodeChatEditor{}.js"
-            // <p>Make these accessible on the onxxx handlers below. See <a
-            //         href="https://stackoverflow.com/questions/44590393/es6-modules-undefined-onclick-function-after-import">SO</a>.
-            // </p>
-            window.CodeChatEditor = {{ on_keydown, on_save, on_navigate }};
+            import {{ page_init }} from "/static/bundled/CodeChatEditor{js_test_suffix}.js"
+            page_init({ws_url})
         </script>
-        {}
-        {}
+        {testing_src}
+        {sidebar_css}
     </head>
-    <body onkeydown="CodeChatEditor.on_keydown(event);">
-        {}
+    <body>
+        {sidebar_iframe}
         <div id="CodeChat-contents">
             <div id="CodeChat-top">
                 <div id="CodeChat-filename">
                     <p>
-                        <button onclick="CodeChatEditor.on_save();" id="CodeChat-save-button">
+                        <button id="CodeChat-save-button">
                             <span class="CodeChat-hotkey">S</span>ave
                         </button>
-                        - {} - {}
+                        - {name} - {dir}
                     </p>
                 </div>
                 <div id="CodeChat-menu"></div>
@@ -923,8 +941,8 @@ async fn serve_file(
         </div>
     </body>
 </html>
-"##, name, if is_test_mode { "-test" } else { "" }, testing_src, sidebar_css, sidebar_iframe, name, dir
-    ))
+"##
+        ))
 }
 
 // Provided info from the HTTP request, determine the following parameters.
@@ -1001,13 +1019,19 @@ async fn send_response(client_tx: &Sender<JointMessage>, id: u32, result: &str) 
 /// Client.
 ///
 /// Define a websocket handler for the CodeChat Editor Client.
+#[get("/fw/ws/{connection_id}")]
 async fn filewatcher_websocket(
+    connection_id: web::Path<String>,
     req: HttpRequest,
     body: web::Payload,
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
     // Find a `JointEditor` that needs a client and assign this one to it.
-    let joint_editor_wrapped = app_state.filewatcher_joint_editors.lock().unwrap().pop();
+    let joint_editor_wrapped = app_state
+        .filewatcher_client_queues
+        .lock()
+        .unwrap()
+        .remove(&connection_id.to_string());
     if joint_editor_wrapped.is_none() {
         error!("Error: no joint editor available.");
         return Err(ErrorMisdirectedRequest("No joint editor available."));
@@ -1015,6 +1039,7 @@ async fn filewatcher_websocket(
     let joint_editor = joint_editor_wrapped.unwrap();
 
     client_websocket(
+        connection_id,
         req,
         body,
         app_state,
@@ -1025,6 +1050,7 @@ async fn filewatcher_websocket(
 }
 
 async fn client_websocket(
+    connection_id: web::Path<String>,
     req: HttpRequest,
     body: web::Payload,
     app_state: web::Data<AppState>,
@@ -1166,14 +1192,13 @@ async fn client_websocket(
             }
         } else {
             info!("Websocket re-enqueued.");
-            app_state
-                .filewatcher_joint_editors
-                .lock()
-                .unwrap()
-                .push(ClientQueues {
+            app_state.filewatcher_client_queues.lock().unwrap().insert(
+                connection_id.to_string(),
+                ClientQueues {
                     from_client_tx: from_websocket_tx,
                     to_client_rx: to_websocket_rx,
-                });
+                },
+            );
         }
 
         info!("Websocket exiting.");
@@ -1205,7 +1230,11 @@ pub fn configure_logger() {
 fn make_app_data() -> web::Data<AppState> {
     web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
-        filewatcher_joint_editors: Mutex::new(Vec::new()),
+        connection_id: Mutex::new(0),
+        filewatcher_client_queues: Mutex::new(HashMap::new()),
+        vscode_ide_queues: Mutex::new(HashMap::new()),
+        vscode_processing_queues: Mutex::new(HashMap::new()),
+        vscode_client_queues: Mutex::new(HashMap::new()),
         pending_messages: Mutex::new(HashMap::new()),
     })
 }
@@ -1243,10 +1272,10 @@ where
         ))
         // These endpoints serve the files from the filesystem.
         .service(serve_fs)
+        .service(filewatcher_websocket)
         // Reroute to the filesystem for typical user-requested URLs.
         .route("/", web::get().to(_root_fs_redirect))
         .route("/fw/fs", web::get().to(_root_fs_redirect))
-        .route("/fw/ws", web::get().to(filewatcher_websocket))
 }
 
 // Given a `Path`, transform it into a displayable string.
@@ -1304,7 +1333,7 @@ mod tests {
 
     use actix_web::{test, web, App};
     use assertables::{assert_starts_with, assert_starts_with_as_result};
-    use log::Level;
+    use log::{info, Level};
     use tokio::select;
     use tokio::sync::mpsc::{Receiver, Sender};
     use tokio::time::sleep;
@@ -1341,9 +1370,10 @@ mod tests {
         // The web page has been served; fake the connected websocket by getting
         // the appropriate tx/rx queues.
         let app_state = resp.request().app_data::<web::Data<AppState>>().unwrap();
-        let mut joint_editors = app_state.filewatcher_joint_editors.lock().unwrap();
+        let mut joint_editors = app_state.filewatcher_client_queues.lock().unwrap();
+        let connection_id = *app_state.connection_id.lock().unwrap();
         assert_eq!(joint_editors.len(), 1);
-        return joint_editors.pop().unwrap();
+        return joint_editors.remove(&connection_id.to_string()).unwrap();
     }
 
     async fn send_response(ide_tx_queue: &Sender<JointMessage>, result: &str) {
