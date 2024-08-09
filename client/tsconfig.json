@@ -33,7 +33,9 @@
         "outDir": "out",
         "rootDir": "src",
         "strict": true,
-        "target": "ES2022"
     },
-    "exclude": ["node_modules", "static"]
+    "exclude": [
+        "node_modules",
+        "static"
+    ]
 }
