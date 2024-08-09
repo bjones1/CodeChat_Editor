@@ -102,16 +102,20 @@ On save:
 
 ### IDE/editor integration
 
-Client messages
+The IDE extension client (IDE for short) and the CodeChat Editor Client (or
+Editor for short) exchange messages with each other, mediated by the CodeChat
+Server. The Server forwards messages from one client to the other, translating
+as necessary (for example, between source code and the Editor format).
 
 - On startup, the IDE client requests an ID from the server via a websocket.
-  Next, it sends an Opened message to a websockeet URL based on the ID. The
-  server replies with either the text of a web page to display or a URL to the
-  web page, depending on the Opened message contents.
+  Next, it sends an Opened message to a websockeet URL based on the assigned ID,
+  specifying the location of the Client (in a web browser, or hosted within the
+  IDE). The server replies with the text of a web page to display (for the
+  hosted option) or launches a web browser with the appropriate URL.
 - When the CodeChat Editor Client starts, it also sends an Opened message; the
   ID for this client is part of its websocket URL.
 - After the IDE client sends the Opened message, it immediately follows with an
-  Update message with the contents of the file from the IDE.
+  Update message with the contents of the current file from the IDE.
 - The IDE client and the CodeChat Editor client send update messages, with a
   file path, the file contents, and the cursor/scroll position. If a field is
   omitted, it means there's no change to it since the last command. For example,
@@ -129,21 +133,21 @@ Client messages
   reconnect retries.
 
 Clients always come in pairs: one IDE client is always paired with one CodeChat
-Editor client. The server relays messages from one client to the other, using
-queues (see diagram). It translates file contents between source code and the
-CodeChat Editor format.
+Editor client. The server uses a set of queues to decouple websocket protocol
+activity from the core processing needed to translate source code between a
+CodeChat Editor Client and an IDE client. Specifically, one task handles the
+receive and transmit function for the websocket:
 
-The server uses a set of queues to decouple websocket protocol activity from the
-core processing needed to translate source code between a CodeChat Editor Client
-and an IDE client. Specifically, one task handles the receive and transmit
-function for the websocket:
-
-- The task sends a periodic ping to the CodeChat Editor Client, then waits for a
-  pong, closing the connection if the pong isn't received in a timely manner.
-  This helps detect a broken websocket connection produced when a computer is
-  put to sleep then wakes back up.
+- The task sends a periodic ping to the CodeChat Editor Client or the IDE
+  client, then waits for a pong, closing the connection if the pong isn't
+  received in a timely manner. This helps detect a broken websocket connection
+  produced when a computer is put to sleep then wakes back up.
 - Likewise, the task responds to a ping message from the CodeChat Editor Client
   by sending a pong in response.
+- It tracks messages sent and produces an error message if a sent message isn't
+  acknowledged within a timeout window.
+- If the websocket is closed without warning, the websocket stores the relevant
+  data so that it can resume when the client reconnects to it.
 - If the websocket is closed purposefully (for example, by closing a CodeChat
   Editor Client tab in a web browser), the receive task detects this and shuts
   down the websocket along with the associated IDE client tasks.

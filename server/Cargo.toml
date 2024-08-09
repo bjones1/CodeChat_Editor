@@ -71,6 +71,8 @@ urlencoding = "2"
 # binary.
 pulldown-cmark = { version = "0.11.0", default-features = false, features = ["html"] }
 futures-util = "0.3.29"
+async-trait = "0.1.81"
+open = "5.3.0"
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"

@@ -15,7 +15,9 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// # `webserver.rs` -- Serve CodeChat Editor Client webpages
-///
+mod filewatcher;
+mod vscode;
+
 /// ## Imports
 ///
 /// ### Standard library
@@ -23,19 +25,19 @@ use std::{
     collections::HashMap,
     env,
     path::{Path, PathBuf},
-    rc::Rc,
-    str::FromStr,
     sync::Mutex,
     time::Duration,
 };
+
+use async_trait::async_trait;
 
 // ### Third-party
 use actix_files;
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
-    error::{Error, ErrorMisdirectedRequest},
+    error::Error,
     get,
-    http::header::{self, ContentDisposition, ContentType},
+    http::header::{self, ContentType},
     web, App, HttpRequest, HttpResponse, HttpServer, Responder,
 };
 use actix_ws::AggregatedMessage;
@@ -44,20 +46,14 @@ use futures_util::StreamExt;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
 use log4rs;
-use notify_debouncer_full::{
-    new_debouncer,
-    notify::{EventKind, RecursiveMode, Watcher},
-    DebounceEventResult,
-};
 use path_slash::PathBufExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::{
-    fs::{self, DirEntry, File},
-    io::AsyncReadExt,
+    fs::{self, DirEntry},
     select,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
     time::sleep,
 };
@@ -69,12 +65,12 @@ use win_partitions::win_api::get_logical_drive;
 use crate::lexer::LanguageLexersCompiled;
 use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
 use crate::processing::TranslationResultsString;
-use crate::processing::{
-    codechat_for_web_to_source, source_to_codechat_for_web_string, CodeChatForWeb,
-};
+use crate::processing::{source_to_codechat_for_web_string, CodeChatForWeb};
+use filewatcher::{filewatcher_websocket, serve_filewatcher};
 
 // ## Macros
 /// Create a macro to report an error when enqueueing an item.
+#[macro_export]
 macro_rules! queue_send {
     ($tx: expr) => {{
         if let Err(err) = $tx.await {
@@ -131,13 +127,14 @@ enum EditorMessageContents {
     /// load the provided file. The IDE should respond by sending an `Update`
     /// with the requested file.
     LoadFile(PathBuf),
-    /// Only the server may send this to the IDE. It contains HTML to display in its built-in browser.
-    LoadHtml(String),
+    /// Only the server may send this to the IDE. It contains the HTML for the
+    /// CodeChat Editor Client to display in its built-in browser.
+    ClientHtml(String),
     /// Sent when the IDE or client are closing.
     Closing,
-    /// Sent as a response to any of the above messages,
-    /// reporting success/error. An empty string indicates success; otherwise,
-    /// the string contains the error message.
+    /// Sent as a response to any of the above messages, reporting
+    /// success/error. An empty string indicates success; otherwise, the string
+    /// contains the error message.
     Result(String),
 }
 
@@ -145,7 +142,8 @@ enum EditorMessageContents {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum IdeType {
     FileWatcher,
-    /// True if the CodeChat Editor will be hosted inside VSCode; false means it should be hosted in an external browser.
+    /// True if the CodeChat Editor will be hosted inside VSCode; false means it
+    /// should be hosted in an external browser.
     VSCode(bool),
 }
 
@@ -154,11 +152,13 @@ enum IdeType {
 struct UpdateMessageContents {
     /// An absolute path to the file currently in use.
     path: Option<PathBuf>,
-    /// The contents of this file.
+    /// The contents of this file. TODO: this should be just a string if sent by
+    /// the IDE.
     contents: Option<CodeChatForWeb>,
     /// The current cursor position in the file, where 0 = before the first
     /// character in the file and contents.length() = after the last character
-    /// in the file. TODO: Selections are not yet supported.
+    /// in the file. TODO: Selections are not yet supported. TODO: how to get a
+    /// cursor location from within a doc block in the Client?
     cursor_position: Option<u32>,
     /// The normalized vertical scroll position in the file, where 0 = top and 1
     /// = bottom.
@@ -169,13 +169,13 @@ struct UpdateMessageContents {
 ///
 /// Define the [state](https://actix.rs/docs/application/#state) available to
 /// all endpoints.
-struct AppState {
+pub struct AppState {
     lexers: LanguageLexersCompiled,
     connection_id: Mutex<u32>,
     filewatcher_client_queues: Mutex<HashMap<String, ClientQueues>>,
-    vscode_ide_queues: Mutex<HashMap<u32, IdeQueues>>,
-    vscode_processing_queues: Mutex<HashMap<u32, ProcessingQueues>>,
-    vscode_client_queues: Mutex<HashMap<u32, ClientQueues>>,
+    vscode_ide_queues: Mutex<HashMap<String, IdeQueues>>,
+    vscode_processing_queues: Mutex<HashMap<String, ProcessingQueues>>,
+    vscode_client_queues: Mutex<HashMap<String, ClientQueues>>,
     pending_messages: Mutex<HashMap<u32, JoinHandle<()>>>,
 }
 
@@ -413,70 +413,14 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         .body(html_wrapper(&body))
 }
 
-// ### Serve file
-//
-// This could be a plain text file (for example, one not recognized as source
-// code that this program supports), a binary file (image/video/etc.), a
-// CodeChat Editor file, or a non-existent file. Determine which type this file
-// is then serve it. Serve a CodeChat Editor Client webpage using the
-// FileWatcher "IDE".
-async fn serve_filewatcher(
-    file_path: &Path,
-    req: &HttpRequest,
-    app_state: web::Data<AppState>,
-) -> HttpResponse {
-    let file_contents = match smart_read(file_path, req).await {
-        Ok(fc) => fc,
-        Err(err) => return err,
-    };
-    serve_file(file_path, &file_contents, "fw", req, app_state).await
-}
-
-// Smart file reader. This returns an HTTP response if the provided file should
-// be served directly (including an error if necessary), or a string containing
-// the text of the file when it's Unicode.
-async fn smart_read(file_path: &Path, req: &HttpRequest) -> Result<String, HttpResponse> {
-    let mut file_contents = String::new();
-    let read_ret = match File::open(file_path).await {
-        Ok(fc) => fc,
-        Err(err) => {
-            return Err(html_not_found(&format!(
-                "<p>Error opening file {}: {err}.",
-                path_display(file_path)
-            )))
-        }
-    }
-    .read_to_string(&mut file_contents)
-    .await;
-
-    // If this is a binary file (meaning we can't read the contents as UTF-8),
-    // just serve it raw; assume this is an image/video/etc.
-    if let Err(_err) = read_ret {
-        // TODO: make a better decision, don't duplicate code. The file type is
-        // unknown. Serve it raw, assuming it's an image/video/etc.
-        match actix_files::NamedFile::open_async(file_path).await {
-            Ok(v) => {
-                let res = v
-                    .set_content_disposition(ContentDisposition {
-                        disposition: header::DispositionType::Inline,
-                        parameters: vec![],
-                    })
-                    .into_response(req);
-                // This isn't an error per se, but it does indicate that the
-                // caller should return with this value immediately, rather than
-                // continue processing.
-                return Err(res);
-            }
-            Err(err) => {
-                return Err(html_not_found(&format!(
-                    "<p>Error opening file {}: {err}.",
-                    path_display(file_path)
-                )))
-            }
-        }
-    }
-
-    Ok(file_contents)
+#[async_trait]
+trait ProcessingTask {
+    async fn processing_task(
+        &self,
+        file_path: &Path,
+        app_state: web::Data<AppState>,
+        codechat_for_web: CodeChatForWeb,
+    ) -> u32;
 }
 
 async fn serve_file(
@@ -485,6 +429,9 @@ async fn serve_file(
     ide_path: &str,
     req: &HttpRequest,
     app_state: web::Data<AppState>,
+    // Rust doesn't allow async function pointers. This is a workaround from
+    // [SO](https://stackoverflow.com/a/76983770/16038919).
+    processing_task: impl ProcessingTask,
 ) -> HttpResponse {
     let (name, dir, _mode, is_test_mode, is_toc) = parse_web(file_path, req);
 
@@ -544,302 +491,9 @@ async fn serve_file(
         }
     };
 
-    // #### Filewatcher IDE
-    //
-    // This is a CodeChat Editor file. Start up the Filewatcher IDE tasks:
-    //
-    // 1.  A task to watch for changes to the file, notifying the CodeChat
-    //     Editor Client when the file should be reloaded.
-    // 2.  A task to receive and respond to messages from the CodeChat Editor
-    //     Client.
-    //
-    // First, allocate variables needed by these two tasks.
-    //
-    // The path to the CodeChat Editor file to operate on.
-    let file_pathbuf = Rc::new(file_path.to_path_buf());
-    // Access this way, to avoid borrow checker problems.
-    let connection_id = {
-        let mut connection_id = app_state.connection_id.lock().unwrap();
-        *connection_id += 1;
-        *connection_id
-    };
-    // #### The filewatcher task.
-    actix_rt::spawn(async move {
-        // Handle `JointMessage` data from the CodeChat Editor Client for this
-        // file.
-        let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
-        let (to_client_tx, to_client_rx) = mpsc::channel(10);
-        app_state.filewatcher_client_queues.lock().unwrap().insert(
-            connection_id.to_string(),
-            ClientQueues {
-                from_client_tx,
-                to_client_rx,
-            },
-        );
-
-        // Provide a unique ID for each message sent to the CodeChat Editor
-        // Client.
-        let mut id: u32 = 0;
-        // Use a channel to send from the watcher (which runs in another thread)
-        // into this async (task) context.
-        let (watcher_tx, mut watcher_rx) = mpsc::channel(10);
-        // Watch this file. Use the debouncer, to avoid multiple notifications
-        // for the same file. This approach returns a result of either a working
-        // debouncer or any errors that occurred. The debouncer's scope needs
-        // live as long as this connection does; dropping it early means losing
-        // file change notifications.
-        let debounced_watcher = match new_debouncer(
-            Duration::from_secs(2),
-            None,
-            // Note that this runs in a separate thread created by the watcher,
-            // not in an async context. Therefore, use a blocking send.
-            move |result: DebounceEventResult| {
-                if let Err(err) = watcher_tx.blocking_send(result) {
-                    error!("Unable to send: {err}");
-                }
-            },
-        ) {
-            Ok(mut debounced_watcher) => {
-                match debounced_watcher
-                    .watcher()
-                    .watch(&file_pathbuf, RecursiveMode::NonRecursive)
-                {
-                    Ok(()) => Ok(debounced_watcher),
-                    Err(err) => Err(err),
-                }
-            }
-            Err(err) => Err(err),
-        };
-
-        if let Err(err) = debounced_watcher {
-            error!("Debouncer error: {}", err);
-        }
-
-        // Process results produced by the file watcher.
-        let mut ignore_file_modify = false;
-        let mut just_opened = true;
-        loop {
-            // On first opening the websocket, send the Editor an `Opened` then an `Update` message.
-            if just_opened {
-                queue_send!(to_client_tx.send(EditorMessage {
-                    id,
-                    message: EditorMessageContents::Opened(IdeType::FileWatcher),
-                }));
-                create_timeout(&app_state, id);
-
-                // Provide it a file to open.
-                id += 1;
-                queue_send!(to_client_tx.send(EditorMessage {
-                        id,
-                        message: EditorMessageContents::Update(UpdateMessageContents {
-                            contents: Some(codechat_for_web.clone()),
-                            cursor_position: Some(0),
-                            path: Some(file_pathbuf.to_path_buf()),
-                            scroll_position: Some(0.0),
-                        }),
-                }));
-                create_timeout(&app_state, id);
-                id += 1;
-                just_opened = false;
-            }
-
-            select! {
-                Some(result) = watcher_rx.recv() => {
-                    match result {
-                        Err(err_vec) => {
-                            for err in err_vec {
-                                // Report errors locally and to the CodeChat
-                                // Editor.
-                                let msg = format!("Watcher error: {err}");
-                                error!("{}", msg);
-                                // Send using ID 0 to indicate this isn't a
-                                // response to a message received from the
-                                // client.
-                                send_response(&to_client_tx, 0, &msg).await;
-                            }
-                        }
-
-                        Ok(debounced_event_vec) => {
-                            for debounced_event in debounced_event_vec {
-                                match debounced_event.event.kind {
-                                    EventKind::Modify(_modify_kind) => {
-                                        if ignore_file_modify {
-                                            ignore_file_modify = false;
-                                        } else {
-                                            // On Windows, the `_modify_kind` is `Any`;
-                                            // therefore; ignore it rather than trying
-                                            // to look at only content modifications.
-                                            // As long as the parent of both files is
-                                            // identical, we can update the contents.
-                                            // Otherwise, we need to load in the new
-                                            // URL.
-                                            if debounced_event.event.paths.len() == 1 && debounced_event.event.paths[0].parent() == file_pathbuf.parent() {
-                                                // Since the parents are identical, send an
-                                                // update. First, read the modified file.
-                                                let mut file_contents = String::new();
-                                                let read_ret = match File::open(file_pathbuf.as_ref()).await {
-                                                    Ok(fc) => fc,
-                                                    Err(_err) => {
-                                                        id += 1;
-                                                        // We can't open the file -- it's been
-                                                        // moved or deleted. Close the file.
-                                                        queue_send!(to_client_tx.send(EditorMessage {
-                                                            id,
-                                                            message: EditorMessageContents::Closing
-                                                        }));
-                                                        continue;
-                                                    }
-                                                }
-                                                .read_to_string(&mut file_contents)
-                                                .await;
-
-                                                // Close the file if it can't be read as
-                                                // Unicode text.
-                                                if read_ret.is_err() {
-                                                    id +=1 ;
-                                                    queue_send!(to_client_tx.send(EditorMessage {
-                                                        id,
-                                                        message: EditorMessageContents::Closing
-                                                    }));
-                                                    create_timeout(&app_state, id);
-                                                }
-
-                                                // Translate the file.
-                                                let (translation_results_string, _path_to_toc) =
-                                                source_to_codechat_for_web_string(&file_contents, &file_pathbuf, false, &app_state.lexers);
-                                                if let TranslationResultsString::CodeChat(cc) = translation_results_string {
-                                                    // Send the new contents
-                                                    id += 1;
-                                                    queue_send!(to_client_tx.send(EditorMessage {
-                                                            id,
-                                                            message: EditorMessageContents::Update(UpdateMessageContents {
-                                                                contents: Some(cc),
-                                                                cursor_position: None,
-                                                                path: Some(debounced_event.event.paths[0].to_path_buf()),
-                                                                scroll_position: None,
-                                                            }),
-                                                        }));
-                                                    create_timeout(&app_state, id);
-
-                                                } else {
-                                                    // Close the file -- it's not CodeChat
-                                                    // anymore.
-                                                    id +=1 ;
-                                                    queue_send!(to_client_tx.send(EditorMessage {
-                                                        id,
-                                                        message: EditorMessageContents::Closing
-                                                    }));
-                                                    create_timeout(&app_state, id);
-                                                }
-
-                                            } else {
-                                                warn!("TODO: Modification to different parent.")
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        // TODO: handle delete.
-                                        info!("Watcher event: {debounced_event:?}.");
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Some(m) = from_client_rx.recv() => {
-                    match m.message {
-                        EditorMessageContents::Update(update_message_contents) => {
-                            let result = 'process: {
-                                // With code or a path, there's nothing to save.
-                                // TODO: this should store and remember the
-                                // path, instead of needing it repeated each
-                                // time.
-                                let codechat_for_web1 = match update_message_contents.contents {
-                                    None => break 'process "".to_string(),
-                                    Some(cwf) => cwf,
-                                };
-                                if update_message_contents.path.is_none() {
-                                    break 'process "".to_string();
-                                }
-
-                                // Translate from the CodeChatForWeb format to
-                                // the contents of a source file.
-                                let language_lexers_compiled = &app_state.lexers;
-                                let file_contents = match codechat_for_web_to_source(
-                                    codechat_for_web1,
-                                    language_lexers_compiled,
-                                ) {
-                                    Ok(r) => r,
-                                    Err(message) => {
-                                        break 'process format!(
-                                            "Unable to translate to source: {message}"
-                                        );
-                                    }
-                                };
-
-                                // Save this string to a file. Add a leading
-                                // slash for Linux/OS X: this changes from
-                                // `foo/bar.c` to `/foo/bar.c`. Windows paths
-                                // already start with a drive letter, such as
-                                // `C:\foo\bar.c`, so no changes are needed.
-                                let mut save_file_path = if cfg!(windows) {
-                                    PathBuf::from_str("")
-                                } else {
-                                    PathBuf::from_str("/")
-                                }
-                                .unwrap();
-                                save_file_path.push(update_message_contents.path.unwrap());
-                                if let Err(err) = fs::write(save_file_path.as_path(), file_contents).await {
-                                    let msg = format!(
-                                        "Unable to save file '{}': {err}.",
-                                        save_file_path.to_string_lossy()
-                                    );
-                                    break 'process msg;
-                                }
-                                ignore_file_modify = true;
-                                "".to_string()
-                            };
-                            send_response(&to_client_tx, m.id, &result).await;
-                        }
-
-                        // Process a result, the respond to a message we sent.
-                        EditorMessageContents::Result(err) => {
-                            // Cancel the timeout for this result.
-                            let mut pm = app_state.pending_messages.lock().unwrap();
-                            if let Some(task) = pm.remove(&m.id) {
-                                task.abort();
-                            }
-
-                            // Report errors to the log.
-                            if !err.is_empty() {
-                                error!("Error in message {}: {err}.", m.id);
-                            }
-                        }
-
-                        EditorMessageContents::Closing => {
-                            info!("Filewatcher closing");
-                            break;
-                        }
-
-                        other => {
-                            warn!("Unhandled message {:?}", other);
-                        }
-                    }
-                }
-
-                else => break
-            }
-        }
-
-        from_client_rx.close();
-        // Drain any remaining messages after closing the queue.
-        while let Some(m) = from_client_rx.recv().await {
-            warn!("Dropped queued message {:?}", &m);
-        }
-
-        info!("Watcher closed.");
-    });
+    let connection_id = processing_task
+        .processing_task(file_path, app_state, codechat_for_web)
+        .await;
 
     // For project files, add in the sidebar. Convert this from a Windows path
     // to a Posix path if necessary.
@@ -992,38 +646,6 @@ async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: &str)
 /// allowing the user to edit the plain text of the source code in the IDE, or
 /// make GUI-enhanced edits of the source code rendered by the CodeChat Editor
 /// Client.
-///
-/// Define a websocket handler for the CodeChat Editor Client.
-#[get("/fw/ws/{connection_id}")]
-async fn filewatcher_websocket(
-    connection_id: web::Path<String>,
-    req: HttpRequest,
-    body: web::Payload,
-    app_state: web::Data<AppState>,
-) -> Result<HttpResponse, Error> {
-    // Find a `JointEditor` that needs a client and assign this one to it.
-    let joint_editor_wrapped = app_state
-        .filewatcher_client_queues
-        .lock()
-        .unwrap()
-        .remove(&connection_id.to_string());
-    if joint_editor_wrapped.is_none() {
-        error!("Error: no joint editor available.");
-        return Err(ErrorMisdirectedRequest("No joint editor available."));
-    }
-    let joint_editor = joint_editor_wrapped.unwrap();
-
-    client_websocket(
-        connection_id,
-        req,
-        body,
-        app_state,
-        joint_editor.from_client_tx,
-        joint_editor.to_client_rx,
-    )
-    .await
-}
-
 async fn client_websocket(
     connection_id: web::Path<String>,
     req: HttpRequest,
@@ -1296,384 +918,4 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
-}
-
-// ## Tests
-#[cfg(test)]
-mod tests {
-    use std::fs;
-    use std::path::PathBuf;
-    use std::time::Duration;
-
-    use actix_web::{test, web, App};
-    use assertables::{assert_starts_with, assert_starts_with_as_result};
-    use log::Level;
-    use tokio::select;
-    use tokio::sync::mpsc::{Receiver, Sender};
-    use tokio::time::sleep;
-
-    use super::REPLY_TIMEOUT;
-    use super::{configure_app, make_app_data};
-    use super::{
-        AppState, ClientQueues, IdeType, EditorMessage, EditorMessageContents, UpdateMessageContents,
-    };
-    use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
-    use crate::processing::{
-        source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
-        TranslationResults,
-    };
-    use crate::testing_logger;
-    use crate::{cast, prep_test_dir};
-
-    async fn get_websocket_queues(
-        // A path to the temporary directory where the source file is located.
-        test_dir: &PathBuf,
-    ) -> ClientQueues {
-        let app_data = make_app_data();
-        let app = test::init_service(configure_app(App::new(), &app_data)).await;
-
-        // Load in a test source file to create a websocket.
-        let uri = format!("/fw/fs/{}/test.py", test_dir.to_string_lossy());
-        let req = test::TestRequest::get().uri(&uri).to_request();
-        let resp = test::call_service(&app, req).await;
-        assert!(resp.status().is_success());
-        // Even after the webpage is served, the websocket task hasn't started.
-        // Wait a bit for that.
-        sleep(Duration::from_millis(10)).await;
-
-        // The web page has been served; fake the connected websocket by getting
-        // the appropriate tx/rx queues.
-        let app_state = resp.request().app_data::<web::Data<AppState>>().unwrap();
-        let mut joint_editors = app_state.filewatcher_client_queues.lock().unwrap();
-        let connection_id = *app_state.connection_id.lock().unwrap();
-        assert_eq!(joint_editors.len(), 1);
-        return joint_editors.remove(&connection_id.to_string()).unwrap();
-    }
-
-    async fn send_response(id: u32, ide_tx_queue: &Sender<EditorMessage>, result: &str) {
-        ide_tx_queue
-            .send(EditorMessage {
-                id,
-                message: EditorMessageContents::Result(result.to_string()),
-            })
-            .await
-            .unwrap();
-    }
-
-    // Testing with logs is subtle. If logs won't be examined by unit tests,
-    // this is straightforward. However, to sometimes simply log data and at
-    // other times examine logs requires care:
-    //
-    // 1.  The global logger can only be configured once. Configuring it for one
-    //     test for the production logger and for another test using the testing
-    //     logger doesn't work.
-    // 2.  Since tests are run by default in multiple threads, the logger used
-    //     should keep each thread's logs separate.
-    // 3.  The logger needs to be initialized for all tests and for production,
-    //     preferably without adding code to each test.
-    //
-    // The modified `testing_logger` takes care of items 2 and 3. For item 3, I
-    // don't have a way to auto-initialize the logger for all tests easily;
-    // [test-log](https://crates.io/crates/test-log) seems like a possibility,
-    // but it works only for `env_logger`. While `rstest` offers fixtures, this
-    // seems like a bit of overkill to call one function for each test.
-    fn configure_logger() {
-        testing_logger::setup();
-    }
-
-    async fn get_message(client_rx: &mut Receiver<EditorMessage>) -> EditorMessageContents {
-        select! {
-            data = client_rx.recv() => {
-                let m = data.unwrap().message;
-                // For debugging, print out each message.
-                println!("{:?}", m);
-                m
-            }
-            _ = sleep(Duration::from_secs(3)) => panic!("Timeout waiting for message")
-        }
-    }
-
-    macro_rules! get_message {
-        ($client_rx: expr, $cast_type: ty) => {
-            cast!(get_message(&mut $client_rx).await, $cast_type)
-        };
-    }
-
-    #[actix_web::test]
-    async fn test_websocket_opened_1() {
-        let (temp_dir, test_dir) = prep_test_dir!();
-        let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.from_client_tx;
-        let mut client_rx = je.to_client_rx;
-        configure_logger();
-
-        // 1.  We should get a message specifying the IDE client type.
-        assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Opened),
-            IdeType::FileWatcher
-        );
-        send_response(0, &ide_tx_queue, "").await;
-
-        // 2.  We should get the initial contents.
-        let umc = get_message!(client_rx, EditorMessageContents::Update);
-        assert_eq!(umc.cursor_position, Some(0));
-        assert_eq!(umc.scroll_position, Some(0.0));
-
-        // Check the path.
-        let mut test_path = test_dir.clone();
-        test_path.push("test.py");
-        // The comparison below fails without this.
-        let test_path = test_path.canonicalize().unwrap();
-        assert_eq!(umc.path, Some(test_path));
-
-        // Check the contents.
-        let llc = compile_lexers(get_language_lexer_vec());
-        let translation_results =
-            source_to_codechat_for_web(&"".to_string(), "py", false, false, &llc);
-        let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
-        assert_eq!(umc.contents, Some(codechat_for_web));
-        send_response(1, &ide_tx_queue, "").await;
-
-        // Report any errors produced when removing the temporary directory.
-        temp_dir.close().unwrap();
-    }
-
-    #[actix_web::test]
-    async fn test_websocket_timeout() {
-        let (temp_dir, test_dir) = prep_test_dir!();
-        let je = get_websocket_queues(&test_dir).await;
-        let mut client_rx = je.to_client_rx;
-        // Configure the logger here; otherwise, the glob used to copy files
-        // outputs some debug-level logs.
-        configure_logger();
-
-        // We should get a message specifying the IDE client type.
-        assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Opened),
-            IdeType::FileWatcher
-        );
-
-        // We should get the initial contents.
-        get_message!(client_rx, EditorMessageContents::Update);
-
-        // Don't send any acknowledgements to these message and see if we get
-        // errors. The stderr redirection covers only this block.
-        sleep(REPLY_TIMEOUT).await;
-        sleep(REPLY_TIMEOUT).await;
-
-        // We should get two errors.
-        testing_logger::validate(|captured_logs| {
-            assert_eq!(captured_logs.len(), 2);
-            assert_eq!(captured_logs[0].target, "code_chat_editor::webserver");
-            assert_eq!(
-                captured_logs[0].body,
-                "Timeout: message id 0 unacknowledged."
-            );
-            assert_eq!(captured_logs[0].level, Level::Error);
-
-            assert_eq!(captured_logs[0].target, "code_chat_editor::webserver");
-            assert_eq!(
-                captured_logs[1].body,
-                "Timeout: message id 1 unacknowledged."
-            );
-            assert_eq!(captured_logs[1].level, Level::Error);
-        });
-
-        // Report any errors produced when removing the temporary directory.
-        temp_dir.close().unwrap();
-    }
-
-    #[actix_web::test]
-    async fn test_websocket_update_1() {
-        let (temp_dir, test_dir) = prep_test_dir!();
-        let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.from_client_tx;
-        let mut client_rx = je.to_client_rx;
-        // Configure the logger here; otherwise, the glob used to copy files
-        // outputs some debug-level logs.
-        configure_logger();
-
-        // We should get a message specifying the IDE client type.
-        assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Opened),
-            IdeType::FileWatcher
-        );
-
-        // We should get the initial contents.
-        get_message!(client_rx, EditorMessageContents::Update);
-
-        // 1.  Send an update message with no contents.
-        ide_tx_queue
-            .send(EditorMessage {
-                id: 1,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    contents: None,
-                    path: Some(PathBuf::new()),
-                    cursor_position: None,
-                    scroll_position: None,
-                }),
-            })
-            .await
-            .unwrap();
-
-        // Check that it produces no error.
-        assert_eq!(get_message!(client_rx, EditorMessageContents::Result), "");
-
-        // 2.  Send an update message with no path.
-        ide_tx_queue
-            .send(EditorMessage {
-                id: 2,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "".to_string(),
-                        },
-                        source: CodeMirror {
-                            doc: "".to_string(),
-                            doc_blocks: vec![(
-                                0,
-                                0,
-                                "".to_string(),
-                                "".to_string(),
-                                "".to_string(),
-                            )],
-                        },
-                    }),
-                    path: None,
-                    cursor_position: None,
-                    scroll_position: None,
-                }),
-            })
-            .await
-            .unwrap();
-
-        // Check that it produces no error.
-        assert_eq!(get_message!(client_rx, EditorMessageContents::Result), "");
-
-        // 3.  Send an update message with unknown source language.
-        ide_tx_queue
-            .send(EditorMessage {
-                id: 3,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "nope".to_string(),
-                        },
-                        source: CodeMirror {
-                            doc: "testing".to_string(),
-                            doc_blocks: vec![],
-                        },
-                    }),
-                    path: Some(PathBuf::new()),
-                    cursor_position: None,
-                    scroll_position: None,
-                }),
-            })
-            .await
-            .unwrap();
-
-        // Check that it produces an error.
-        assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Result),
-            "Unable to translate to source: Invalid mode"
-        );
-
-        // 4.  Send an update message with an invalid path.
-        ide_tx_queue
-            .send(EditorMessage {
-                id: 3,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "python".to_string(),
-                        },
-                        source: CodeMirror {
-                            doc: "".to_string(),
-                            doc_blocks: vec![],
-                        },
-                    }),
-                    path: Some(PathBuf::new()),
-                    cursor_position: None,
-                    scroll_position: None,
-                }),
-            })
-            .await
-            .unwrap();
-
-        // Check that it produces an error.
-        assert_starts_with!(
-            get_message!(client_rx, EditorMessageContents::Result),
-            "Unable to save file '':"
-        );
-
-        // 5.  Send a valid message.
-        let mut file_path = test_dir.clone();
-        file_path.push("test.py");
-        ide_tx_queue
-            .send(EditorMessage {
-                id: 3,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "python".to_string(),
-                        },
-                        source: CodeMirror {
-                            doc: "testing()".to_string(),
-                            doc_blocks: vec![],
-                        },
-                    }),
-                    path: Some(file_path.clone()),
-                    cursor_position: None,
-                    scroll_position: None,
-                }),
-            })
-            .await
-            .unwrap();
-        assert_eq!(get_message!(client_rx, EditorMessageContents::Result), "");
-
-        // Check that the requested file is written.
-        let mut s = fs::read_to_string(&file_path).unwrap();
-        assert_eq!(s, "testing()");
-        // Wait for the filewatcher to debounce this file write.
-        sleep(Duration::from_secs(1)).await;
-
-        // Change this file and verify that this produces an update.
-        s.push_str("123");
-        fs::write(&file_path, s).unwrap();
-        assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Update),
-            UpdateMessageContents {
-                contents: Some(CodeChatForWeb {
-                    metadata: SourceFileMetadata {
-                        mode: "python".to_string(),
-                    },
-                    source: CodeMirror {
-                        doc: "testing()123".to_string(),
-                        doc_blocks: vec![],
-                    },
-                }),
-                path: Some(file_path.clone().canonicalize().unwrap()),
-                cursor_position: None,
-                scroll_position: None,
-            }
-        );
-        // Acknowledge this message.
-        send_response(1, &ide_tx_queue, "");
-
-        // Rename it and check for an close (the file watcher can't detect the
-        // destination file, so it's treated as the file is deleted).
-        let mut dest = file_path.clone().parent().unwrap().to_path_buf();
-        dest.push("test2.py");
-        fs::rename(file_path, dest.as_path()).unwrap();
-        assert_eq!(
-            client_rx.recv().await.unwrap(),
-            EditorMessage {
-                id: 4,
-                message: EditorMessageContents::Closing
-            }
-        );
-
-        // Report any errors produced when removing the temporary directory.
-        temp_dir.close().unwrap();
-    }
 }

@@ -15,6 +15,8 @@
         2.  [supported_languages.rs](server/src/lexer/supported_languages.rs)
         3.  [tests.rs](server/src/lexer/tests.rs)
     4.  [webserver.rs](server/src/webserver.rs)
+        1.  [filewatcher.rs](server/src/webserver/filewatcher.rs)
+        2.  [vscode.rs](server/src/webserver/vscode.rs)
     5.  [processing.rs](server/src/processing.rs)
     6.  [Cargo.toml](server/Cargo.toml)
 2.  Client
