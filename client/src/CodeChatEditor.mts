@@ -411,34 +411,7 @@ const on_save = async () => {
         source.doc_blocks = [];
     } else {
         source = CodeMirror_save();
-        // Join all the doc blocks, then convert them to Markdown, then split
-        // them back.
-        //
-        // Turndown currently removes HTML blocks with no content; add random
-        // content to avoid this.
-        const separator =
-            "<codechateditor-separator>a</codechateditor-separator>";
-        const combined_doc_blocks_html = source.doc_blocks
-            .map((doc_block_JSON) => doc_block_JSON[4])
-            .join(separator);
-        const combined_doc_blocks_markdown = turndownService.turndown(
-            combined_doc_blocks_html,
-        );
-        const doc_blocks_markdown = combined_doc_blocks_markdown.split(
-            `\n${separator}\n\n`,
-        );
-        // Wrap each doc block based on the available width on this line: 80 -
-        // indent - delimiter length - 1 space that always follows the
-        // delimiter. Use a minimum width of 40 characters.
-        for (const [index, doc_block] of source.doc_blocks.entries()) {
-            doc_block[4] = await prettier_markdown(
-                doc_blocks_markdown[index],
-                Math.max(
-                    40,
-                    80 - doc_block[3].length - doc_block[2].length - 1,
-                ),
-            );
-        }
+        await codechat_html_to_markdown(source)
     }
 
     // <a id="save"></a>Save the provided contents back to the filesystem, by
@@ -449,6 +422,44 @@ const on_save = async () => {
     };
     webSocketComm.send(JSON.stringify({ id: webSocketComm.ws_id++, message: { Update: current_update } }))
 };
+
+const codechat_html_to_markdown = async (source: any) => {
+    // Join all the doc blocks, then convert them to Markdown, then split
+    // them back.
+    //
+    // Turndown currently removes HTML blocks with no content; add placeholder
+    // content to avoid this.
+    const separator =
+        "<codechateditor-separator>a</codechateditor-separator>";
+    const placeholder_html = "<p><empty-para>a</empty-para></p>"
+    const placeholder_markdown = "<empty-para>a</empty-para>\n"
+    // Replace empty doc blocks (which Turndown will remove) with a placeholder to prevent their removal; pass non-empty content for standard Turndown processing.
+    const combined_doc_blocks_html = source.doc_blocks
+        .map((doc_block_JSON: DocBlockJSON) => doc_block_JSON[4].trim() ? doc_block_JSON[4] : placeholder_html)
+        .join(separator);
+    const combined_doc_blocks_markdown = turndownService.turndown(
+        combined_doc_blocks_html,
+    );
+    const doc_blocks_markdown = combined_doc_blocks_markdown.split(
+        `\n${separator}\n\n`,
+    );
+    doc_blocks_markdown[doc_blocks_markdown.length - 1] += "\n"
+    // Wrap each doc block based on the available width on this line: 80 -
+    // indent - delimiter length - 1 space that always follows the
+    // delimiter. Use a minimum width of 40 characters.
+    for (const [index, doc_block] of source.doc_blocks.entries()) {
+        const dbm = doc_blocks_markdown[index]
+        doc_block[4] = await prettier_markdown(
+            // Replace the placeholder here, so it won't be wrapped by Prettier.
+            dbm == placeholder_markdown ? "" : dbm,
+            Math.max(
+                40,
+                80 - doc_block[3].length - doc_block[2].length - 1,
+            ),
+        // Prettier trims whitespace; we can't include the newline in the replacement above. So, put it here.
+        ) || "\n";
+    }
+}
 
 // ### Autosave feature
 //
@@ -608,6 +619,6 @@ declare global {
 // exported, and it's clearly marked for testing only. Test code still gets
 // access to everything it needs.
 export const exportedForTesting = {
-    EditorMode,
     open_lp,
+    codechat_html_to_markdown
 };

@@ -22,22 +22,19 @@
 // ## Imports
 //
 // I can't get Mocha to work with ESBuild, so I import it using a script tag.
-import "chai";
+import { assert } from "chai";
 import {
     exportedForTesting,
-    code_or_doc_block,
     page_init,
-    on_keydown,
-    on_save,
 } from "./CodeChatEditor.mjs";
 
 // Re-export everything that [CodeChatEditor.mts](CodeChatEditor.mts) exports.
 // Otherwise, including [CodeChatEditor.mts](CodeChatEditor.mts) elsewhere would
 // double-define everything (producing complaints about two attempts to define
 // each web component).
-export { page_init, on_keydown, on_save };
+export { page_init };
 // Provide convenient access to all functions tested here.
-const { editor_to_code_doc_blocks, EditorMode, open_lp } = exportedForTesting;
+const { open_lp, codechat_html_to_markdown } = exportedForTesting;
 
 // ## Tests
 //
@@ -65,66 +62,44 @@ window.CodeChatEditor_test = () => {
     // Define some tests. See the [Mocha TDD docs](https://mochajs.org/#tdd) and
     // the [Chai assert API](https://www.chaijs.com/api/assert/).
     suite("CodeChatEditor.mts", function () {
-        suite("open_lp", function () {
-            test("Load an empty file", async function () {
-                await open_lp(
-                    {
-                        metadata: {
-                            mode: "javascript",
-                        },
-                        code_doc_block_arr: [],
-                    },
-                    EditorMode.edit
-                );
-                // In JavaScript, `[] != []` (???), so use a length comparison
-                // instead.
-                chai.assert.strictEqual(editor_to_code_doc_blocks().length, 0);
+        suite("codechat_html_to_markdown", function () {
+            test("Translate an empty comment", async function () {
+                const db: [DocBlockJSON] = [
+                    [0, 0, "", "//", ""],
+                ]
+                const source = {
+                    doc_blocks: db
+                }
+                await codechat_html_to_markdown(source);
+                assert.deepEqual(source, { doc_blocks: [[0, 0, "", "//", "\n"]] });
             });
-            test("Load a code block", async function () {
-                const cdb: code_or_doc_block[] = [["", "", "a = 1;\nb = 2;\n"]];
-                await open_lp(
-                    {
-                        metadata: {
-                            mode: "javascript",
-                        },
-                        code_doc_block_arr: cdb,
-                    },
-                    EditorMode.edit
-                );
-                chai.assert.deepEqual(editor_to_code_doc_blocks(), cdb);
+
+            test("Translate non-breaking space", async function () {
+                const db: [DocBlockJSON] = [
+                    [0, 0, "", "//", "&nbsp;"],
+                ]
+                const source = {
+                    doc_blocks: db
+                }
+                await codechat_html_to_markdown(source);
+                assert.deepEqual(source, { doc_blocks: [[0, 0, "", "//", "\n"]] });
             });
-            test("Load a doc block", async function () {
-                await open_lp(
-                    {
-                        metadata: {
-                            mode: "javascript",
-                        },
-                        code_doc_block_arr: [["", "//", "This is a doc block"]],
-                    },
-                    EditorMode.edit
-                );
-                const actual_cdb = editor_to_code_doc_blocks();
-                const expected_cdb: code_or_doc_block[] = [
-                    ["", "//", "<p>This is a doc block</p>\n"],
-                ];
-                chai.assert.deepEqual(actual_cdb, expected_cdb);
-            });
-            test("Load a mixed code and doc block", async function () {
-                const cdb: code_or_doc_block[] = [
-                    ["", "", "a = 1;\nb = 2;\n"],
-                    ["", "//", "This is a doc block"],
-                ];
-                await open_lp(
-                    {
-                        metadata: {
-                            mode: "javascript",
-                        },
-                        code_doc_block_arr: cdb,
-                    },
-                    EditorMode.edit
-                );
-                const actual_cdb = editor_to_code_doc_blocks();
-                chai.assert.deepEqual(actual_cdb, cdb);
+
+            test("Translate two empty comments", async function () {
+                const db: DocBlockJSON[] = [
+                    [0, 0, "", "//", ""],
+                    [2, 2, "", "//", ""],
+                ]
+                const source = {
+                    doc_blocks: db
+                }
+                await codechat_html_to_markdown(source);
+                assert.deepEqual(source, {
+                    doc_blocks: [
+                        [0, 0, "", "//", "\n"],
+                        [2, 2, "", "//", "\n"],
+                    ]
+                });
             });
         });
     });

@@ -260,7 +260,11 @@ fn code_doc_block_vec_to_source(
                     // To produce an inline comment, split the contents into a
                     // series of lines, adding the indent and inline comment
                     // delimiter to each line.
-                    for content_line in doc_block.contents.split_inclusive('\n') {
+                    //
+                    // A special case: an empty string processed by `split_inclusive` becomes an empty list, not `[""]`. Note that this mirrors what Python's [splitlines](https://docs.python.org/3/library/stdtypes.html#str.splitlines) does, and is also the subject of a [Rust bug report](https://github.com/rust-lang/rust/issues/111457).
+                    let lines: Vec<_> = doc_block.contents.split_inclusive('\n').collect();
+                    let lines_fixed = if lines.is_empty() { vec![""] } else { lines };
+                    for content_line in lines_fixed {
                         append_doc_block(&doc_block.indent, &doc_block.delimiter, content_line);
                     }
                 } else {
@@ -917,6 +921,23 @@ mod tests {
                 build_doc_block("", "#", "doc 2")
             ]
         );
+
+        // Empty doc blocks separated by an empty code block
+        assert_eq!(
+            run_test(
+                "python",
+                "\n\n\n",
+                vec![
+                    build_codemirror_doc_block(0, 0, "", "#", ""),
+                    build_codemirror_doc_block(2, 2, "", "#", "")
+                ],
+            ),
+            vec![
+                build_doc_block("", "#", ""),
+                build_code_block("\n"),
+                build_doc_block("", "#", "")
+            ]
+        );
     }
 
     #[test]
@@ -1020,6 +1041,17 @@ mod tests {
                 .unwrap_err(),
             "Unknown comment opening delimiter '?'."
         );
+
+        // Empty doc blocks separated by an empty code block.
+        assert_eq!(
+            code_doc_block_vec_to_source(vec![
+                build_doc_block("", "#", "\n"),
+                build_code_block("\n"),
+                build_doc_block("", "#", ""),
+            ], py_lexer).unwrap(),
+            "#\n\n#"
+        );
+
     }
 
     // A language with just one block comment delimiter and no inline comment
