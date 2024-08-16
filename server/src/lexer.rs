@@ -368,7 +368,7 @@ fn build_lexer_regex(
         // "regex" is an empty string.
         let string_partial_builder = |delimiter: &str| -> String {
             // If this is a single-character string delimiter, then we're done.
-            if delimiter.len() < 2 {
+            if delimiter.chars().count() < 2 {
                 return String::new();
             };
 
@@ -1196,11 +1196,11 @@ pub fn source_lexer(
                                 // newline.
                                 let last_char = comment_body.chars().last().unwrap();
                                 let ends_with_space = last_char == ' ' &&
-                                // Don't remove a space at the end of the
-                                // comment body when it's also the space at the
-                                // beginning of the comment body (meaning it's a
-                                // single-character comment body).
-                                comment_body.len() > 1;
+                                    // Don't remove a space at the end of the
+                                    // comment body when it's also the space at the
+                                    // beginning of the comment body (meaning it's a
+                                    // single-character comment body).
+                                    comment_body.len() > 1;
                                 let trimmed_comment_body = &comment_body
                                     [1..comment_body.len() - if ends_with_space { 1 } else { 0 }];
                                 // The contents of the doc block are the trimmed

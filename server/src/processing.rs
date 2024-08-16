@@ -137,9 +137,17 @@ pub enum TranslationResultsString {
 lazy_static! {
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
+    static ref DOC_BLOCK_SEPARATOR_STRING_SHORT: String = remove_first_last_chars(DOC_BLOCK_SEPARATOR_STRING);
 }
 
 const DOC_BLOCK_SEPARATOR_STRING: &str = "\n<CodeChatEditor-separator/>\n\n";
+
+fn remove_first_last_chars(str: &str) -> String {
+    let mut chars = str.chars();
+    chars.next();
+    chars.next_back();
+    chars.as_str().to_string()
+}
 
 // ## Determine if the provided file is part of a project.
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
@@ -292,6 +300,7 @@ fn code_doc_block_vec_to_source(
                     let content_lines: Vec<&str> =
                         doc_block.contents.split_inclusive('\n').collect();
                     for (index, content_line) in content_lines.iter().enumerate() {
+                        // Note: using `.len()` here is correct -- it refers to an index into `content_lines`, not an index into a string.
                         let is_last = index == content_lines.len() - 1;
                         // Process each line, based on its location (first/not
                         // first/last). Note that the first line can also be the
@@ -343,7 +352,7 @@ fn code_doc_block_vec_to_source(
                             } else {
                                 append_doc_block(
                                     &doc_block.indent,
-                                    &" ".repeat(doc_block.delimiter.len()),
+                                    &" ".repeat(doc_block.delimiter.chars().count()),
                                     &content_line_updated,
                                 );
                             }
@@ -453,9 +462,7 @@ pub fn source_to_codechat_for_web(
             // After processing by Markdown, the double newline at the of the
             // doc block separator string becomes a single newline; split using
             // this slightly shorter string.
-            doc_block_contents_vec = html
-                .split(&DOC_BLOCK_SEPARATOR_STRING[1..DOC_BLOCK_SEPARATOR_STRING.len() - 1])
-                .collect();
+            doc_block_contents_vec = html.split(&*DOC_BLOCK_SEPARATOR_STRING_SHORT).collect();
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             let mut index = 0;
@@ -464,7 +471,9 @@ pub fn source_to_codechat_for_web(
                     CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(&code_string),
                     CodeDocBlock::DocBlock(doc_block) => {
                         // Create the doc block.
-                        let len = code_mirror.doc.len();
+                        //
+                        // Get the length of the string in characters (not bytes, which is what `len()` returns).
+                        let len = code_mirror.doc.chars().count();
                         code_mirror.doc_blocks.push((
                             // From
                             len,
@@ -1044,14 +1053,17 @@ mod tests {
 
         // Empty doc blocks separated by an empty code block.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![
-                build_doc_block("", "#", "\n"),
-                build_code_block("\n"),
-                build_doc_block("", "#", ""),
-            ], py_lexer).unwrap(),
+            code_doc_block_vec_to_source(
+                vec![
+                    build_doc_block("", "#", "\n"),
+                    build_code_block("\n"),
+                    build_doc_block("", "#", ""),
+                ],
+                py_lexer
+            )
+            .unwrap(),
             "#\n\n#"
         );
-
     }
 
     // A language with just one block comment delimiter and no inline comment
@@ -1319,6 +1331,16 @@ mod tests {
                     build_codemirror_doc_block(2, 2, "", "//", ""),
                     build_codemirror_doc_block(4, 4, "", "//", "")
                 ]
+            ))
+        );
+
+        // Test Unicode characters in code.
+        assert_eq!(
+            source_to_codechat_for_web(&"; // σ\n//".to_string(), "cpp", false, false, &llc),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "c_cpp",
+                "; // σ\n",
+                vec![build_codemirror_doc_block(7, 7, "", "//", ""),]
             ))
         );
     }
