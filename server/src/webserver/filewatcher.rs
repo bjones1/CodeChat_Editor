@@ -492,7 +492,7 @@ mod tests {
 
     use actix_web::{test, web, App};
     use assertables::{assert_starts_with, assert_starts_with_as_result};
-    use log::Level;
+    use log::{info, Level};
     use tokio::select;
     use tokio::sync::mpsc::{Receiver, Sender};
     use tokio::time::sleep;
@@ -508,6 +508,7 @@ mod tests {
         source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
         TranslationResults,
     };
+    use crate::test_utils::configure_testing_logger;
     use crate::testing_logger;
     use crate::{cast, prep_test_dir};
 
@@ -546,27 +547,6 @@ mod tests {
             .unwrap();
     }
 
-    // Testing with logs is subtle. If logs won't be examined by unit tests,
-    // this is straightforward. However, to sometimes simply log data and at
-    // other times examine logs requires care:
-    //
-    // 1.  The global logger can only be configured once. Configuring it for one
-    //     test for the production logger and for another test using the testing
-    //     logger doesn't work.
-    // 2.  Since tests are run by default in multiple threads, the logger used
-    //     should keep each thread's logs separate.
-    // 3.  The logger needs to be initialized for all tests and for production,
-    //     preferably without adding code to each test.
-    //
-    // The modified `testing_logger` takes care of items 2 and 3. For item 3, I
-    // don't have a way to auto-initialize the logger for all tests easily;
-    // [test-log](https://crates.io/crates/test-log) seems like a possibility,
-    // but it works only for `env_logger`. While `rstest` offers fixtures, this
-    // seems like a bit of overkill to call one function for each test.
-    fn configure_logger() {
-        testing_logger::setup();
-    }
-
     async fn get_message(client_rx: &mut Receiver<EditorMessage>) -> EditorMessageContents {
         select! {
             data = client_rx.recv() => {
@@ -591,7 +571,7 @@ mod tests {
         let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.from_client_tx;
         let mut client_rx = je.to_client_rx;
-        configure_logger();
+        configure_testing_logger();
 
         // 1.  We should get a message specifying the IDE client type.
         assert_eq!(
@@ -631,7 +611,7 @@ mod tests {
         let mut client_rx = je.to_client_rx;
         // Configure the logger here; otherwise, the glob used to copy files
         // outputs some debug-level logs.
-        configure_logger();
+        configure_testing_logger();
 
         // We should get a message specifying the IDE client type.
         assert_eq!(
@@ -671,13 +651,13 @@ mod tests {
 
     #[actix_web::test]
     async fn test_websocket_update_1() {
+        configure_testing_logger();
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.from_client_tx;
         let mut client_rx = je.to_client_rx;
         // Configure the logger here; otherwise, the glob used to copy files
         // outputs some debug-level logs.
-        configure_logger();
 
         // We should get a message specifying the IDE client type.
         assert_eq!(

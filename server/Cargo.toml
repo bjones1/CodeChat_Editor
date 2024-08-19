@@ -69,7 +69,7 @@ tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
 # Per the [docs](https://docs.rs/crate/pulldown-cmark/latest), skip building the
 # binary.
-pulldown-cmark = { version = "0.11.0", default-features = false, features = ["html"] }
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
 futures-util = "0.3.29"
 async-trait = "0.1.81"
 open = "5.3.0"
@@ -81,6 +81,7 @@ win_partitions = "0.3.0"
 [dev-dependencies]
 assertables = "7.0.1"
 assert_fs = "1"
+tokio-tungstenite = "0.23.1"
 # See the [docs](https://github.com/rust-lang/rust-clippy#usage) to install
 # clippy; it can't be installed as a dev-dependency. See the
 # [fmt docs](https://github.com/rust-lang/rustfmt#quick-start) to install fmt.

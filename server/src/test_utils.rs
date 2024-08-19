@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use std::path::MAIN_SEPARATOR_STR;
 
 // ### Third-party
+use crate::testing_logger;
 use assert_fs::fixture::PathCopy;
 use assert_fs::TempDir;
 
@@ -124,4 +125,25 @@ pub fn _prep_test_dir(
     let test_dir = temp_dir.path().join(test_name);
 
     (temp_dir, test_dir)
+}
+
+// Testing with logs is subtle. If logs won't be examined by unit tests,
+// this is straightforward. However, to sometimes simply log data and at
+// other times examine logs requires care:
+//
+// 1.  The global logger can only be configured once. Configuring it for one
+//     test for the production logger and for another test using the testing
+//     logger doesn't work.
+// 2.  Since tests are run by default in multiple threads, the logger used
+//     should keep each thread's logs separate.
+// 3.  The logger needs to be initialized for all tests and for production,
+//     preferably without adding code to each test.
+//
+// The modified `testing_logger` takes care of items 2 and 3. For item 3, I
+// don't have a way to auto-initialize the logger for all tests easily;
+// [test-log](https://crates.io/crates/test-log) seems like a possibility,
+// but it works only for `env_logger`. While `rstest` offers fixtures, this
+// seems like a bit of overkill to call one function for each test.
+pub fn configure_testing_logger() {
+    testing_logger::setup();
 }

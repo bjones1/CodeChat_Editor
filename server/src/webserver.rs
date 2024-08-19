@@ -58,6 +58,7 @@ use tokio::{
     time::sleep,
 };
 use urlencoding::{self, encode};
+use vscode::vscode_ide_websocket;
 #[cfg(target_os = "windows")]
 use win_partitions::win_api::get_logical_drive;
 
@@ -72,12 +73,19 @@ use filewatcher::{filewatcher_websocket, serve_filewatcher};
 /// Create a macro to report an error when enqueueing an item.
 #[macro_export]
 macro_rules! queue_send {
-    ($tx: expr) => {{
+    // Provide two options: `break` or `break 'label`.
+    ($tx: expr) => {
         if let Err(err) = $tx.await {
             error!("Unable to enqueue: {}", err);
             break;
         }
-    }};
+    };
+    ($tx: expr, $label: tt) => {
+        if let Err(err) = $tx.await {
+            error!("Unable to enqueue: {}", err);
+            break $label;
+        }
+    };
 }
 
 /// ## Data structures
@@ -870,6 +878,7 @@ where
         // These endpoints serve the files from the filesystem.
         .service(serve_fs)
         .service(filewatcher_websocket)
+        .service(vscode_ide_websocket)
         // Reroute to the filesystem for typical user-requested URLs.
         .route("/", web::get().to(_root_fs_redirect))
         .route("/fw/fs", web::get().to(_root_fs_redirect))
