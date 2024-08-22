@@ -3,12 +3,13 @@
 The CodeChat Editor is a GUI-based programmer's word processor / Jupyter for
 software developers. This document records its overall design.
 
-These headings are manually numbered; they will be automatically numbered.
-
 ## <a id="how-to-run"></a>How to run
 
 The [CodeChat Editor repository](https://github.com/bjones1/CodeChat_Editor)
-contains the code for this application. To try it out:
+contains the code for this application. Either download the last release or
+(better) build from source.
+
+### To build from source
 
 1.  Clone or download the repository.
 2.  [Install the Rust language](https://www.rust-lang.org/tools/install). I
