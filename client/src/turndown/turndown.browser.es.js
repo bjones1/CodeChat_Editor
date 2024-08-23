@@ -254,16 +254,24 @@ rules.listItem = {
   filter: 'li',
 
   replacement: function (content, node, options) {
+    const spaces = 2;
+    let prefix = '';
     content = content
       .replace(/^\n+/, '') // remove leading newlines
-      .replace(/\n+$/, '\n') // replace trailing newlines with just a single one
-      .replace(/\n/gm, '\n    '); // indent
-    var prefix = options.bulletListMarker + '   ';
-    var parent = node.parentNode;
+      .replace(/\n+$/, '\n'); // replace trailing newlines with just a single one
+    const parent = node.parentNode;
     if (parent.nodeName === 'OL') {
-      var start = parent.getAttribute('start');
-      var index = Array.prototype.indexOf.call(parent.children, node);
-      prefix = (start ? Number(start) + index : index + 1) + '.  ';
+      const start = parseInt(parent.getAttribute('start')) || 0;
+      const digits = Math.log(parent.children.length + start) * Math.LOG10E + 1 | 0;
+      const index = Array.prototype.indexOf.call(parent.children, node);
+      const itemNumber = (start ? Number(start) + index : index + 1);
+      const suffix = '.';
+      const padding = (digits > spaces ? digits + 1 : spaces + 1) + suffix.length; // increase padding if beyond 99
+      prefix = (itemNumber + suffix).padEnd(padding);
+      content = content.replace(/\n/gm, '\n  '.padEnd(1 + padding));
+    } else {
+      prefix = options.bulletListMarker + ' '.padEnd(1 + spaces);
+      content = content.replace(/\n/gm, '\n  '.padEnd(3 + spaces)); // indent
     }
     return (
       prefix + content + (node.nextSibling && !/\n$/.test(content) ? '\n' : '')
@@ -372,8 +380,9 @@ rules.inlineLink = {
 
   replacement: function (content, node) {
     var href = node.getAttribute('href');
+    if (href) href = href.replace(/([()])/g, '\\$1');
     var title = cleanAttribute(node.getAttribute('title'));
-    if (title) title = ' "' + title + '"';
+    if (title) title = ' "' + title.replace(/"/g, '\\"') + '"';
     return '[' + content + '](' + href + title + ')'
   }
 };
@@ -427,12 +436,26 @@ rules.referenceLink = {
   }
 };
 
+const WHITESPACE_START = /^(\\?\n| )+/;
+const WHITESPACE_END = /(\\?\n| )+$/;
 rules.emphasis = {
   filter: ['em', 'i'],
 
   replacement: function (content, node, options) {
     if (!content.trim()) return ''
-    return options.emDelimiter + content + options.emDelimiter
+    var startWhitespace = '';
+    var endWhitespace = '';
+    var m = WHITESPACE_START.exec(content);
+    if (m) {
+      startWhitespace = m[0];
+      content = content.slice(startWhitespace.length);
+    }
+    m = WHITESPACE_END.exec(content);
+    if (m) {
+      endWhitespace = m[0];
+      content = content.slice(0, -endWhitespace.length);
+    }
+    return startWhitespace + options.emDelimiter + content + options.emDelimiter + endWhitespace
   }
 };
 
@@ -441,7 +464,19 @@ rules.strong = {
 
   replacement: function (content, node, options) {
     if (!content.trim()) return ''
-    return options.strongDelimiter + content + options.strongDelimiter
+    var startWhitespace = '';
+    var endWhitespace = '';
+    var m = WHITESPACE_START.exec(content);
+    if (m) {
+      startWhitespace = m[0];
+      content = content.slice(startWhitespace.length);
+    }
+    m = WHITESPACE_END.exec(content);
+    if (m) {
+      endWhitespace = m[0];
+      content = content.slice(0, -endWhitespace.length);
+    }
+    return startWhitespace + options.strongDelimiter + content + options.strongDelimiter + endWhitespace
   }
 };
 
@@ -759,7 +794,7 @@ function shouldUseActiveX () {
   try {
     document.implementation.createHTMLDocument('').open();
   } catch (e) {
-    if (window.ActiveXObject) useActiveX = true;
+    if (root.ActiveXObject) useActiveX = true;
   }
   return useActiveX
 }
@@ -888,7 +923,7 @@ function TurndownService (options) {
     bulletListMarker: '*',
     codeBlockStyle: 'indented',
     fence: '```',
-    emDelimiter: '_',
+    emDelimiter: '*',
     strongDelimiter: '**',
     linkStyle: 'inlined',
     linkReferenceStyle: 'full',
