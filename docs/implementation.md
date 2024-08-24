@@ -100,6 +100,23 @@ On save:
 - Save the file to disk.
 - If dirty, re-load the file.
 
+#### HTML to Markdown transformation
+
+Currently, Turndown translates HTML to Markdown, then Prettier word-wraps the
+result. This has several problems:
+
+- There are several bugs/open issues in Turndown; however, this package is no
+  longer maintained.
+- Turndown doesn't have a good way to deal with raw HTML intermingled with
+  Markdown; since raw HTML can change the meaning of HTML through styles, this
+  is hard to avoid. But it still produces ugly results.
+- Prettier translates setext-style headings to ATX headings, which I don't like.
+- Because both packages are written in Javascript, they run in the browser.
+  However, we need to run processing at the HTML level on the server first,
+  requiring some round trips between client and sever in the future.
+
+To build Turndown, simply execute `npm run build` or `npm run test`.
+
 ### IDE/editor integration
 
 The IDE extension client (IDE for short) and the CodeChat Editor Client (or

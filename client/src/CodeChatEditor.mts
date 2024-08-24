@@ -105,13 +105,16 @@ let webSocketComm: WebSocketComm
 class WebSocketComm {
     // Use a unique ID for each websocket message sent.
     ws_id = 0;
-    // The websocket used by this class. Really a `ReconnectingWebSocket`, but that's not a type.
+    // The websocket used by this class. Really a `ReconnectingWebSocket`, but
+    // that's not a type.
     ws: WebSocket
     // A map of message id to timer id for all pending messages.
     pending_messages: Record<number, number> = {}
 
     constructor(ws_url: string) {
-        // The `ReconnectingWebSocket` doesn't provide ALL the `WebSocket` methods. Ignore this, since we can't use `ReconnectingWebSocket` as a type.
+        // The `ReconnectingWebSocket` doesn't provide ALL the `WebSocket`
+        // methods. Ignore this, since we can't use `ReconnectingWebSocket` as a
+        // type.
         /// @ts-ignore
         this.ws = new ReconnectingWebSocket!(ws_url);
         // Identify this client on connection.
@@ -204,7 +207,8 @@ class WebSocketComm {
         this.pending_messages[id] = setTimeout(this.report_server_timeout, 2000, id)
     }
 
-    // Send a result (a response to a message from the server) back to the server.
+    // Send a result (a response to a message from the server) back to the
+    // server.
     send_result = (id: number, result: string = "") => {
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
@@ -264,7 +268,8 @@ export const page_init = (ws_url: string) => {
         document.getElementById("CodeChat-save-button")!.addEventListener("click", on_save)
         document.body.addEventListener("keydown", on_keydown)
 
-        // Intercept links in this document to save before following the link. For some reason, the semicolon here is required.
+        // Intercept links in this document to save before following the link.
+        // For some reason, the semicolon here is required.
         /// @ts-ignore
         navigation.addEventListener("navigate", on_navigate);
         /// @ts-ignore
@@ -424,8 +429,8 @@ const on_save = async () => {
 };
 
 const codechat_html_to_markdown = async (source: any) => {
-    // Join all the doc blocks, then convert them to Markdown, then split
-    // them back.
+    // Join all the doc blocks, then convert them to Markdown, then split them
+    // back.
     //
     // Turndown currently removes HTML blocks with no content; add placeholder
     // content to avoid this.
@@ -433,7 +438,9 @@ const codechat_html_to_markdown = async (source: any) => {
         "<codechateditor-separator>a</codechateditor-separator>";
     const placeholder_html = "<p><empty-para>a</empty-para></p>"
     const placeholder_markdown = "<empty-para>a</empty-para>\n"
-    // Replace empty doc blocks (which Turndown will remove) with a placeholder to prevent their removal; pass non-empty content for standard Turndown processing.
+    // Replace empty doc blocks (which Turndown will remove) with a placeholder
+    // to prevent their removal; pass non-empty content for standard Turndown
+    // processing.
     const combined_doc_blocks_html = source.doc_blocks
         .map((doc_block_JSON: DocBlockJSON) => doc_block_JSON[4].trim() ? doc_block_JSON[4] : placeholder_html)
         .join(separator);
@@ -445,8 +452,8 @@ const codechat_html_to_markdown = async (source: any) => {
     );
     doc_blocks_markdown[doc_blocks_markdown.length - 1] += "\n"
     // Wrap each doc block based on the available width on this line: 80 -
-    // indent - delimiter length - 1 space that always follows the
-    // delimiter. Use a minimum width of 40 characters.
+    // indent - delimiter length - 1 space that always follows the delimiter.
+    // Use a minimum width of 40 characters.
     for (const [index, doc_block] of source.doc_blocks.entries()) {
         const dbm = doc_blocks_markdown[index]
         doc_block[4] = await prettier_markdown(
@@ -456,7 +463,8 @@ const codechat_html_to_markdown = async (source: any) => {
                 40,
                 80 - doc_block[3].length - doc_block[2].length - 1,
             ),
-        // Prettier trims whitespace; we can't include the newline in the replacement above. So, put it here.
+        // Prettier trims whitespace; we can't include the newline in the
+        // replacement above. So, put it here.
         ) || "\n";
     }
 }

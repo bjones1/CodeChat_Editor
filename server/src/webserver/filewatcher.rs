@@ -14,7 +14,7 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// # `webserver.rs` -- Serve CodeChat Editor Client webpages
+/// # `filewatcher.rs` -- Implement the File Watcher "IDE"
 ///
 /// ## Imports
 ///

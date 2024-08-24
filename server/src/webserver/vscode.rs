@@ -14,7 +14,7 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// # `webserver.rs` -- Serve CodeChat Editor Client webpages
+/// # `vscode.rs` -- Implement server-side functionality for the Visual Studio Code IDE
 // ## Imports
 //
 // ### Standard library
@@ -52,7 +52,9 @@ pub async fn vscode_ide_websocket(
     let app_state_recv = app_state.clone();
     let connection_id_str = connection_id.to_string();
     actix_rt::spawn(async move {
-        // Use a [labeled block expression](https://doc.rust-lang.org/reference/expressions/loop-expr.html#labelled-block-expressions) to provide a way to exit the current task.
+        // Use a
+        // [labeled block expression](https://doc.rust-lang.org/reference/expressions/loop-expr.html#labelled-block-expressions)
+        // to provide a way to exit the current task.
         'task: {
             // Get the first message sent by the IDE.
             let Some(message): std::option::Option<EditorMessage> = from_ide_rx.recv().await else {
@@ -108,10 +110,10 @@ pub async fn vscode_ide_websocket(
                 }
             }
 
-            // The web page containing the Client will soon be opened. Provide the
-            // info for a processing task which connects the IDE to the Client.
-            // TODO: a bit of a race condition -- what is the client webpage is
-            // opened before this code run? (Not likely, though.)
+            // The web page containing the Client will soon be opened. Provide
+            // the info for a processing task which connects the IDE to the
+            // Client. TODO: a bit of a race condition -- what is the client
+            // webpage is opened before this code run? (Not likely, though.)
             app_state_recv
                 .vscode_processing_queues
                 .lock()
@@ -154,8 +156,10 @@ mod test {
     async fn test_vscode_ide_websocket() {
         configure_testing_logger();
 
-        // Start the full webserver, so we can send non-test requests to it. (The test library doesn't provide a way to send websocket requests that I know of.)
-        // One problem: since the server gets run in a separate thread, we can't examine the logs.
+        // Start the full webserver, so we can send non-test requests to it.
+        // (The test library doesn't provide a way to send websocket requests
+        // that I know of.) One problem: since the server gets run in a separate
+        // thread, we can't examine the logs.
         let app_data = make_app_data();
         let webserver_handle = actix_rt::spawn(async move {
             HttpServer::new(move || configure_app(App::new(), &app_data))
@@ -171,7 +175,10 @@ mod test {
             .await
             .expect("Failed to connect");
 
-        // Note: we can't check the logs, since the server runs in a separate thread. Changing the logger to log across threads means we get logs from other tests (which run in parallel by default). The benefit of running all tests single-threaded plus fixing the logger is low.
+        // Note: we can't check the logs, since the server runs in a separate
+        // thread. Changing the logger to log across threads means we get logs
+        // from other tests (which run in parallel by default). The benefit of
+        // running all tests single-threaded plus fixing the logger is low.
         //
         // Send a message that's not an `Opened` message.
         ws_stream
