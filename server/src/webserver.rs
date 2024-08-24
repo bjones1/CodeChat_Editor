@@ -138,8 +138,12 @@ enum EditorMessageContents {
     /// Only the server may send this to the IDE. It contains the HTML for the
     /// CodeChat Editor Client to display in its built-in browser.
     ClientHtml(String),
-    /// Sent when the IDE or client are closing.
-    Closing,
+    /// Sent when the IDE or client websocket was closed, indicating that the
+    /// unclosed websocket should be closed as well.
+    Closed,
+    /// Send by the IDE to request the client to save any unsaved data then
+    /// close.
+    RequestClose,
     /// Sent as a response to any of the above messages, reporting
     /// success/error. An empty string indicates success; otherwise, the string
     /// contains the error message.
@@ -673,9 +677,33 @@ async fn client_websocket(
         let mut aggregated_msg_stream = msg_stream.aggregate_continuations();
         aggregated_msg_stream = aggregated_msg_stream.max_continuation_size(10_000_000);
 
-        // True when the client requests the websocket to close; otherwise,
-        // closing represents an interruption (such as the computer going to
-        // sleep).
+        // Shutdown may occur in a controlled process or an immediate websocket
+        // close. If the Client needs to close, it can simply close its
+        // websocket, since the IDE maintains all state (case 2). However, if
+        // the IDE plugin needs to close, it should inform the Client first, so
+        // the Client can send the IDE any unsaved data (case 1). However, bad
+        // things can also happen; if either websocket connection is closed,
+        // then the other websocket should also be immediately closed (also case
+        // 2).
+        //
+        // 1.  The IDE plugin needs to close.
+        //     1.  The IDE plugin sends a `Closed` message.
+        //     2.  The Client replies with a `Result` message, acknowledging the
+        //         close. It sends an `Update` message if necessary to save the
+        //         current file.
+        //     3.  After receiving the acknowledge from the Update message (if
+        //         sent), the Client closes the websocket. The rest of this
+        //         sequence is covered in the next case.
+        // 2.  Either websocket is closed. In this case, the other websocket
+        //     should be immediately closed; there's no longer the opportunity
+        //     to perform a more controlled shutdown (see the first case).
+        //     1.  The websocket which closed enqueues a `Closed` message for
+        //         the other websocket.
+        //     2.  When the other websocket receives this message, it closes.
+        //
+        // True when the websocket's client deliberately closes the websocket;
+        // otherwise, closing represents a network interruption (such as the
+        // computer going to sleep).
         let mut is_closing = false;
         // True if a ping was sent, but a matching pong wasn't yet received.
         let mut sent_ping = false;
@@ -747,7 +775,7 @@ async fn client_websocket(
                                 AggregatedMessage::Close(reason) => {
                                     info!("Closing per client request: {:?}", reason);
                                     is_closing = true;
-                                    queue_send!(from_websocket_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closing }));
+                                    queue_send!(from_websocket_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed }));
                                     break;
                                 }
 

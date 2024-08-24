@@ -21,7 +21,6 @@
 /// ### Standard library
 use std::{
     path::{Path, PathBuf},
-    rc::Rc,
     str::FromStr,
     time::Duration,
 };
@@ -158,8 +157,8 @@ impl ProcessingTask for FilewatcherTask {
         //
         // First, allocate variables needed by these two tasks.
         //
-        // The path to the CodeChat Editor file to operate on.
-        let file_pathbuf = Rc::new(file_path.to_path_buf());
+        // The path to the currently open CodeChat Editor file.
+        let mut current_filepath = file_path.to_path_buf();
         // Access this way, to avoid borrow checker problems.
         let connection_id = {
             let mut connection_id = app_state.connection_id.lock().unwrap();
@@ -198,7 +197,7 @@ impl ProcessingTask for FilewatcherTask {
                 };
                 if let Err(err) = debounced_watcher
                     .watcher()
-                    .watch(&file_pathbuf, RecursiveMode::NonRecursive)
+                    .watch(&current_filepath, RecursiveMode::NonRecursive)
                 {
                     error!("Unable to watch file: {err}");
                     break 'task;
@@ -232,7 +231,7 @@ impl ProcessingTask for FilewatcherTask {
                     message: EditorMessageContents::Update(UpdateMessageContents {
                         contents: Some(codechat_for_web.clone()),
                         cursor_position: Some(0),
-                        path: Some(file_pathbuf.to_path_buf()),
+                        path: Some(current_filepath.to_path_buf()),
                         scroll_position: Some(0.0),
                     }),
                 }), 'task);
@@ -261,76 +260,75 @@ impl ProcessingTask for FilewatcherTask {
                                     for debounced_event in debounced_event_vec {
                                         match debounced_event.event.kind {
                                             EventKind::Modify(_modify_kind) => {
-                                                    // On Windows, the `_modify_kind` is `Any`;
-                                                    // therefore; ignore it rather than trying
-                                                    // to look at only content modifications.
-                                                    // As long as the parent of both files is
-                                                    // identical, we can update the contents.
-                                                    // Otherwise, we need to load in the new
-                                                    // URL.
-                                                    if debounced_event.event.paths.len() == 1 && debounced_event.event.paths[0].parent() == file_pathbuf.parent() {
-                                                        // Since the parents are identical, send an
-                                                        // update. First, read the modified file.
-                                                        let mut file_contents = String::new();
-                                                        let read_ret = match File::open(file_pathbuf.as_ref()).await {
-                                                            Ok(fc) => fc,
-                                                            Err(_err) => {
-                                                                id += 1;
-                                                                // We can't open the file -- it's been
-                                                                // moved or deleted. Close the file.
-                                                                queue_send!(to_client_tx.send(EditorMessage {
-                                                                    id,
-                                                                    message: EditorMessageContents::Closing
-                                                                }));
-                                                                continue;
-                                                            }
-                                                        }
-                                                        .read_to_string(&mut file_contents)
-                                                        .await;
-
-                                                        // Close the file if it can't be read as
-                                                        // Unicode text.
-                                                        if read_ret.is_err() {
-                                                            id +=1 ;
-                                                            queue_send!(to_client_tx.send(EditorMessage {
-                                                                id,
-                                                                message: EditorMessageContents::Closing
-                                                            }));
-                                                            create_timeout(&app_state, id);
-                                                        }
-
-                                                        // Translate the file.
-                                                        let (translation_results_string, _path_to_toc) =
-                                                        source_to_codechat_for_web_string(&file_contents, &file_pathbuf, false, &app_state.lexers);
-                                                        if let TranslationResultsString::CodeChat(cc) = translation_results_string {
-                                                            // Send the new contents
+                                                // On Windows, the `_modify_kind` is `Any`;
+                                                // therefore; ignore it rather than trying
+                                                // to look at only content modifications.
+                                                // As long as the parent of both files is
+                                                // identical, we can update the contents.
+                                                // Otherwise, we need to load in the new
+                                                // URL.
+                                                if debounced_event.event.paths.len() == 1 && debounced_event.event.paths[0].parent() == current_filepath.parent() {
+                                                    // Since the parents are identical, send an
+                                                    // update. First, read the modified file.
+                                                    let mut file_contents = String::new();
+                                                    let read_ret = match File::open(&current_filepath).await {
+                                                        Ok(fc) => fc,
+                                                        Err(_err) => {
                                                             id += 1;
-                                                            queue_send!(to_client_tx.send(EditorMessage {
-                                                                    id,
-                                                                    message: EditorMessageContents::Update(UpdateMessageContents {
-                                                                        contents: Some(cc),
-                                                                        cursor_position: None,
-                                                                        path: Some(debounced_event.event.paths[0].to_path_buf()),
-                                                                        scroll_position: None,
-                                                                    }),
-                                                                }));
-                                                            create_timeout(&app_state, id);
-
-                                                        } else {
-                                                            // Close the file -- it's not CodeChat
-                                                            // anymore.
-                                                            id +=1 ;
+                                                            // We can't open the file -- it's been
+                                                            // moved or deleted. Close the file.
                                                             queue_send!(to_client_tx.send(EditorMessage {
                                                                 id,
-                                                                message: EditorMessageContents::Closing
+                                                                message: EditorMessageContents::Closed
                                                             }));
-                                                            create_timeout(&app_state, id);
+                                                            continue;
                                                         }
+                                                    }
+                                                    .read_to_string(&mut file_contents)
+                                                    .await;
 
-                                                    } else {
-                                                        warn!("TODO: Modification to different parent.")
+                                                    // Close the file if it can't be read as
+                                                    // Unicode text.
+                                                    if read_ret.is_err() {
+                                                        id +=1 ;
+                                                        queue_send!(to_client_tx.send(EditorMessage {
+                                                            id,
+                                                            message: EditorMessageContents::Closed
+                                                        }));
+                                                        create_timeout(&app_state, id);
                                                     }
 
+                                                    // Translate the file.
+                                                    let (translation_results_string, _path_to_toc) =
+                                                    source_to_codechat_for_web_string(&file_contents, &current_filepath, false, &app_state.lexers);
+                                                    if let TranslationResultsString::CodeChat(cc) = translation_results_string {
+                                                        // Send the new contents
+                                                        id += 1;
+                                                        queue_send!(to_client_tx.send(EditorMessage {
+                                                                id,
+                                                                message: EditorMessageContents::Update(UpdateMessageContents {
+                                                                    contents: Some(cc),
+                                                                    cursor_position: None,
+                                                                    path: Some(debounced_event.event.paths[0].to_path_buf()),
+                                                                    scroll_position: None,
+                                                                }),
+                                                            }));
+                                                        create_timeout(&app_state, id);
+
+                                                    } else {
+                                                        // Close the file -- it's not CodeChat
+                                                        // anymore.
+                                                        id +=1 ;
+                                                        queue_send!(to_client_tx.send(EditorMessage {
+                                                            id,
+                                                            message: EditorMessageContents::Closed
+                                                        }));
+                                                        create_timeout(&app_state, id);
+                                                    }
+
+                                                } else {
+                                                    warn!("TODO: Modification to different parent.")
+                                                }
                                             }
                                             _ => {
                                                 // TODO: handle delete.
@@ -373,6 +371,13 @@ impl ProcessingTask for FilewatcherTask {
                                             }
                                         };
 
+                                        if let Err(err) = debounced_watcher.watcher().unwatch(&current_filepath) {
+                                            let msg = format!(
+                                                "Unable to unwatch file '{}': {err}.",
+                                                current_filepath.to_string_lossy()
+                                            );
+                                            break 'process msg;
+                                        }
                                         // Save this string to a file. Add a
                                         // leading slash for Linux/OS X: this
                                         // changes from `foo/bar.c` to
@@ -380,34 +385,28 @@ impl ProcessingTask for FilewatcherTask {
                                         // start with a drive letter, such as
                                         // `C:\foo\bar.c`, so no changes are
                                         // needed.
-                                        let mut save_file_path = if cfg!(windows) {
+                                        current_filepath = if cfg!(windows) {
                                             PathBuf::from_str("")
                                         } else {
                                             PathBuf::from_str("/")
                                         }
                                         .unwrap();
-                                        save_file_path.push(update_message_contents.path.unwrap());
-                                        if let Err(err) = debounced_watcher.watcher().unwatch(&file_pathbuf) {
-                                            let msg = format!(
-                                                "Unable to unwatch file '{}': {err}.",
-                                                save_file_path.to_string_lossy()
-                                            );
-                                            break 'process msg;
-                                        }
-                                        if let Err(err) = fs::write(save_file_path.as_path(), file_contents).await {
+                                        current_filepath.push(update_message_contents.path.unwrap());
+                                        if let Err(err) = fs::write(current_filepath.as_path(), file_contents).await {
                                             let msg = format!(
                                                 "Unable to save file '{}': {err}.",
-                                                save_file_path.to_string_lossy()
+                                                current_filepath.to_string_lossy()
                                             );
                                             break 'process msg;
                                         }
-                                        if let Err(err) = debounced_watcher.watcher().watch(&file_pathbuf, RecursiveMode::NonRecursive) {
+                                        if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
                                             let msg = format!(
-                                                "Unable to rewatch file '{}': {err}.",
-                                                save_file_path.to_string_lossy()
+                                                "Unable to watch file '{}': {err}.",
+                                                current_filepath.to_string_lossy()
                                             );
                                             break 'process msg;
                                         }
+                                        current_filepath = current_filepath.into();
                                         "".to_string()
                                     };
                                     send_response(&to_client_tx, m.id, &result).await;
@@ -428,7 +427,7 @@ impl ProcessingTask for FilewatcherTask {
                                     }
                                 }
 
-                                EditorMessageContents::Closing => {
+                                EditorMessageContents::Closed => {
                                     info!("Filewatcher closing");
                                     break;
                                 }
@@ -823,7 +822,7 @@ mod tests {
                         doc_blocks: vec![],
                     },
                 }),
-                path: Some(file_path.clone().canonicalize().unwrap()),
+                path: Some(file_path.clone()),
                 cursor_position: None,
                 scroll_position: None,
             }
@@ -840,7 +839,7 @@ mod tests {
             client_rx.recv().await.unwrap(),
             EditorMessage {
                 id: 4,
-                message: EditorMessageContents::Closing
+                message: EditorMessageContents::Closed
             }
         );
 

@@ -84,7 +84,7 @@ interface EditorMessageContents {
     Opened?: IdeType,
     Update?: UpdateMessageContents,
     Load?: String,
-    Closing?: undefined,
+    Closed?: undefined,
     Result?: string
 }
 

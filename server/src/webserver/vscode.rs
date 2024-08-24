@@ -66,8 +66,8 @@ pub async fn vscode_ide_websocket(
                 error!("{msg}");
                 send_response(&to_ide_tx, message.id, &msg).await;
 
-                // Send a `Closing` message.
-                queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closing}), 'task);
+                // Send a `Closed` message to shut down the websocket.
+                queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
                 create_timeout(&app_state_recv, 0);
                 break 'task;
             };
@@ -87,8 +87,8 @@ pub async fn vscode_ide_websocket(
                             error!("{msg}");
                             send_response(&to_ide_tx, message.id, &msg).await;
 
-                            // Send a `Closing` message.
-                            queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closing}), 'task);
+                            // Send a `Closed` message.
+                            queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
                             create_timeout(&app_state_recv, 0);
 
                             break 'task;
@@ -103,7 +103,7 @@ pub async fn vscode_ide_websocket(
                     send_response(&to_ide_tx, message.id, &msg).await;
 
                     // Close the connection.
-                    queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closing}), 'task);
+                    queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
                     create_timeout(&app_state_recv, 0);
                 }
             }
@@ -144,7 +144,6 @@ mod test {
     use actix_web::{App, HttpServer};
     use assertables::assert_starts_with;
     use assertables::assert_starts_with_as_result;
-    use futures_util::stream::FusedStream;
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
@@ -207,7 +206,7 @@ mod test {
         };
         assert_starts_with!(result, "Unexpected message");
 
-        // Next, expect a closing message.
+        // Next, expect a closed message.
         let em: EditorMessage = serde_json::from_str(
             &ws_stream
                 .next()
@@ -218,9 +217,9 @@ mod test {
                 .unwrap(),
         )
         .unwrap();
-        assert_eq!(em.message, EditorMessageContents::Closing);
+        assert_eq!(em.message, EditorMessageContents::Closed);
 
-        // Send a response to the closing message.
+        // Send a response to the closed message.
         ws_stream
             .send(Message::Text(
                 serde_json::to_string(&EditorMessage {
