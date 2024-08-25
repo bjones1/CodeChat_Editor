@@ -563,29 +563,39 @@ mod tests {
         }
     }
 
-    macro_rules! get_message {
+    macro_rules! get_message_as {
         ($client_rx: expr, $cast_type: ty) => {
             cast!(get_message(&mut $client_rx).await, $cast_type)
         };
     }
 
+    fn check_logger_errors() {
+        testing_logger::validate(|captured_logs| {
+            let error_logs: Vec<_> = captured_logs.iter().filter(|log_entry| log_entry.level == Level::Error).collect();
+            if error_logs.len() > 0 {
+                println!("Error(s) in logs.");
+                assert!(false);
+            }
+        });
+    }
+
     #[actix_web::test]
     async fn test_websocket_opened_1() {
+        configure_testing_logger();
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.from_client_tx;
         let mut client_rx = je.to_client_rx;
-        configure_testing_logger();
 
         // 1.  We should get a message specifying the IDE client type.
         assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Opened),
+            get_message_as!(client_rx, EditorMessageContents::Opened),
             IdeType::FileWatcher
         );
         send_response(0, &ide_tx_queue, "").await;
 
         // 2.  We should get the initial contents.
-        let umc = get_message!(client_rx, EditorMessageContents::Update);
+        let umc = get_message_as!(client_rx, EditorMessageContents::Update);
         assert_eq!(umc.cursor_position, Some(0));
         assert_eq!(umc.scroll_position, Some(0.0));
 
@@ -605,6 +615,7 @@ mod tests {
         send_response(1, &ide_tx_queue, "").await;
 
         // Report any errors produced when removing the temporary directory.
+        check_logger_errors();
         temp_dir.close().unwrap();
     }
 
@@ -619,12 +630,12 @@ mod tests {
 
         // We should get a message specifying the IDE client type.
         assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Opened),
+            get_message_as!(client_rx, EditorMessageContents::Opened),
             IdeType::FileWatcher
         );
 
         // We should get the initial contents.
-        get_message!(client_rx, EditorMessageContents::Update);
+        get_message_as!(client_rx, EditorMessageContents::Update);
 
         // Don't send any acknowledgements to these message and see if we get
         // errors. The stderr redirection covers only this block.
@@ -665,12 +676,14 @@ mod tests {
 
         // We should get a message specifying the IDE client type.
         assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Opened),
+            get_message_as!(client_rx, EditorMessageContents::Opened),
             IdeType::FileWatcher
         );
+        send_response(0, &ide_tx_queue, "").await;
 
         // We should get the initial contents.
-        get_message!(client_rx, EditorMessageContents::Update);
+        get_message_as!(client_rx, EditorMessageContents::Update);
+        send_response(1, &ide_tx_queue, "").await;
 
         // 1.  Send an update message with no contents.
         ide_tx_queue
@@ -687,7 +700,7 @@ mod tests {
             .unwrap();
 
         // Check that it produces no error.
-        assert_eq!(get_message!(client_rx, EditorMessageContents::Result), "");
+        assert_eq!(get_message_as!(client_rx, EditorMessageContents::Result), "");
 
         // 2.  Send an update message with no path.
         ide_tx_queue
@@ -718,7 +731,7 @@ mod tests {
             .unwrap();
 
         // Check that it produces no error.
-        assert_eq!(get_message!(client_rx, EditorMessageContents::Result), "");
+        assert_eq!(get_message_as!(client_rx, EditorMessageContents::Result), "");
 
         // 3.  Send an update message with unknown source language.
         ide_tx_queue
@@ -744,7 +757,7 @@ mod tests {
 
         // Check that it produces an error.
         assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Result),
+            get_message_as!(client_rx, EditorMessageContents::Result),
             "Unable to translate to source: Invalid mode"
         );
 
@@ -772,7 +785,7 @@ mod tests {
 
         // Check that it produces an error.
         assert_starts_with!(
-            get_message!(client_rx, EditorMessageContents::Result),
+            get_message_as!(client_rx, EditorMessageContents::Result),
             "Unable to save file '':"
         );
 
@@ -799,7 +812,7 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(get_message!(client_rx, EditorMessageContents::Result), "");
+        assert_eq!(get_message_as!(client_rx, EditorMessageContents::Result), "");
 
         // Check that the requested file is written.
         let mut s = fs::read_to_string(&file_path).unwrap();
@@ -811,7 +824,7 @@ mod tests {
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         assert_eq!(
-            get_message!(client_rx, EditorMessageContents::Update),
+            get_message_as!(client_rx, EditorMessageContents::Update),
             UpdateMessageContents {
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
@@ -828,7 +841,7 @@ mod tests {
             }
         );
         // Acknowledge this message.
-        send_response(1, &ide_tx_queue, "").await;
+        send_response(3, &ide_tx_queue, "").await;
 
         // Rename it and check for an close (the file watcher can't detect the
         // destination file, so it's treated as the file is deleted).
@@ -844,6 +857,7 @@ mod tests {
         );
 
         // Report any errors produced when removing the temporary directory.
+        check_logger_errors();
         temp_dir.close().unwrap();
     }
 }
