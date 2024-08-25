@@ -6,8 +6,9 @@ software developers. This document records its overall design.
 ## <a id="how-to-run"></a>How to run
 
 The [CodeChat Editor repository](https://github.com/bjones1/CodeChat_Editor)
-contains the code for this application. Either download the last release or
-(better) build from source.
+contains the code for this application. Either
+[download the latest release](https://github.com/bjones1/CodeChat_Editor/releases)
+or (better) build from source.
 
 ### To build from source
 
