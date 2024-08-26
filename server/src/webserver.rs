@@ -25,7 +25,7 @@ use std::{
     collections::HashMap,
     env,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -94,16 +94,9 @@ macro_rules! queue_send {
 ///
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
 #[derive(Debug)]
-struct ClientQueues {
-    /// Data from the CodeChat Editor Client.
-    from_client_tx: Sender<EditorMessage>,
-    /// Data to the CodeChat Editor Client.
-    to_client_rx: Receiver<EditorMessage>,
-}
-
-struct IdeQueues {
-    from_ide_tx: Sender<EditorMessage>,
-    to_ide_rx: Receiver<EditorMessage>,
+struct WebsocketQueues {
+    from_websocket_tx: Sender<EditorMessage>,
+    to_websocket_rx: Receiver<EditorMessage>,
 }
 
 struct ProcessingQueues {
@@ -184,11 +177,10 @@ struct UpdateMessageContents {
 pub struct AppState {
     lexers: LanguageLexersCompiled,
     connection_id: Mutex<u32>,
-    filewatcher_client_queues: Mutex<HashMap<String, ClientQueues>>,
-    vscode_ide_queues: Mutex<HashMap<String, IdeQueues>>,
+    filewatcher_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    vscode_ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
     vscode_processing_queues: Mutex<HashMap<String, ProcessingQueues>>,
-    vscode_client_queues: Mutex<HashMap<String, ClientQueues>>,
-    pending_messages: Mutex<HashMap<u32, JoinHandle<()>>>,
+    vscode_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
 }
 
 // ## Globals
@@ -622,22 +614,6 @@ fn parse_web(
     (name, dir, mode, is_test_mode, is_toc)
 }
 
-// Start a timeout task in case a message isn't delivered.
-fn create_timeout(
-    // The global state, which contains the hashmap of pending messages to
-    // modify.
-    app_state: &AppState,
-    // The id of the message just sent.
-    id: u32,
-) {
-    let mut pm = app_state.pending_messages.lock().unwrap();
-    let waiting_task = actix_rt::spawn(async move {
-        sleep(REPLY_TIMEOUT).await;
-        error!("Timeout: message id {id} unacknowledged.");
-    });
-    pm.insert(id, waiting_task);
-}
-
 // Send a response to the client after processing a message from the client.
 async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: &str) {
     if let Err(err) = client_tx
@@ -662,9 +638,7 @@ async fn client_websocket(
     connection_id: web::Path<String>,
     req: HttpRequest,
     body: web::Payload,
-    app_state: web::Data<AppState>,
-    from_websocket_tx: Sender<EditorMessage>,
-    mut to_websocket_rx: Receiver<EditorMessage>,
+    websocket_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
 ) -> Result<HttpResponse, Error> {
     let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
 
@@ -676,6 +650,24 @@ async fn client_websocket(
         msg_stream = msg_stream.max_frame_size(1_000_000);
         let mut aggregated_msg_stream = msg_stream.aggregate_continuations();
         aggregated_msg_stream = aggregated_msg_stream.max_continuation_size(10_000_000);
+
+        // Transfer the queues from the global state to this task.
+        let (from_websocket_tx, mut to_websocket_rx) = match websocket_queues
+            .lock()
+            .unwrap()
+            .remove(&connection_id.to_string())
+        {
+            Some(queues) => (queues.from_websocket_tx.clone(), queues.to_websocket_rx),
+            None => {
+                error!("No websocket queues for connection id {connection_id}.");
+                return;
+            }
+        };
+
+        // Assign each message unique id.
+        let mut id: u32 = 0;
+        // Keep track of pending messages.
+        let mut pending_messages: HashMap<u32, JoinHandle<()>> = HashMap::new();
 
         // Shutdown may occur in a controlled process or an immediate websocket
         // close. If the Client needs to close, it can simply close its
@@ -752,17 +744,25 @@ async fn client_websocket(
                                 AggregatedMessage::Text(b) => {
                                     // The CodeChat Editor Client should always
                                     // send valid JSON.
-                                    match serde_json::from_str(&b) {
+                                    match serde_json::from_str::<EditorMessage>(&b) {
                                         Err(err) => {
                                             error!(
-                                        "Unable to decode JSON message from the CodeChat Editor client: {}",
-                                        err
-                                    );
+                                                "Unable to decode JSON message from the CodeChat Editor client: {}",
+                                                err
+                                            );
                                             break;
                                         }
-                                        // Send the `JointMessage` to the IDE for
-                                        // processing.
                                         Ok(joint_message) => {
+                                            // If this was a `Result`, remove it from
+                                            // the pending queue.
+                                            if let EditorMessageContents::Result(_) = joint_message.message {
+                                                // Cancel the timeout for this result.
+                                                if let Some(task) = pending_messages.remove(&joint_message.id) {
+                                                    task.abort();
+                                                }
+                                            }
+                                            // Send the `JointMessage` to the
+                                            // processing task.
                                             queue_send!(from_websocket_tx.send(joint_message));
                                         }
                                     }
@@ -770,7 +770,7 @@ async fn client_websocket(
 
                                 // Forward a close message from the client to
                                 // the IDE, so that both this websocket
-                                // connection and the IDE connection will both
+                                // connection and the other connection will both
                                 // be closed.
                                 AggregatedMessage::Close(reason) => {
                                     info!("Closing per client request: {:?}", reason);
@@ -791,8 +791,22 @@ async fn client_websocket(
                     }
                 }
 
-                // Forward a message from the IDE to the client.
-                Some(m) = to_websocket_rx.recv() => {
+                // Forward a message from the processing task to the websocket.
+                Some(mut m) = to_websocket_rx.recv() => {
+                    // Assign the id for the message.
+                    m.id = id;
+                    id += 1;
+                    // Add this message to the pending requests unless it's a
+                    // `Result`.
+                    if let EditorMessageContents::Result(_) = m.message {
+                    } else {
+                        let waiting_task = actix_rt::spawn(async move {
+                            sleep(REPLY_TIMEOUT).await;
+                            error!("Timeout: message id {} unacknowledged.", m.id);
+                        });
+                        pending_messages.insert(m.id, waiting_task);
+                        info!("ID is {id}.");
+                    }
                     match serde_json::to_string(&m) {
                         Ok(s) => {
                             if let Err(err) = session.text(&*s).await {
@@ -825,11 +839,11 @@ async fn client_websocket(
             }
         } else {
             info!("Websocket re-enqueued.");
-            app_state.filewatcher_client_queues.lock().unwrap().insert(
+            websocket_queues.lock().unwrap().insert(
                 connection_id.to_string(),
-                ClientQueues {
-                    from_client_tx: from_websocket_tx,
-                    to_client_rx: to_websocket_rx,
+                WebsocketQueues {
+                    from_websocket_tx,
+                    to_websocket_rx,
                 },
             );
         }
@@ -864,11 +878,10 @@ fn make_app_data() -> web::Data<AppState> {
     web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
         connection_id: Mutex::new(0),
-        filewatcher_client_queues: Mutex::new(HashMap::new()),
-        vscode_ide_queues: Mutex::new(HashMap::new()),
+        filewatcher_client_queues: Arc::new(Mutex::new(HashMap::new())),
+        vscode_ide_queues: Arc::new(Mutex::new(HashMap::new())),
         vscode_processing_queues: Mutex::new(HashMap::new()),
-        vscode_client_queues: Mutex::new(HashMap::new()),
-        pending_messages: Mutex::new(HashMap::new()),
+        vscode_client_queues: Arc::new(Mutex::new(HashMap::new())),
     })
 }
 

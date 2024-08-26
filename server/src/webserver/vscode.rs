@@ -29,8 +29,8 @@ use tokio::sync::mpsc;
 
 // ### Local
 use super::{
-    client_websocket, create_timeout, send_response, AppState, EditorMessage,
-    EditorMessageContents, IdeType, ProcessingQueues,
+    client_websocket, send_response, AppState, EditorMessage, EditorMessageContents, IdeType,
+    ProcessingQueues,
 };
 
 use crate::queue_send;
@@ -70,7 +70,6 @@ pub async fn vscode_ide_websocket(
 
                 // Send a `Closed` message to shut down the websocket.
                 queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
-                create_timeout(&app_state_recv, 0);
                 break 'task;
             };
 
@@ -81,7 +80,6 @@ pub async fn vscode_ide_websocket(
                         // Send a response (successful) to the `Opened` message.
                         send_response(&to_ide_tx, message.id, "").await;
                         queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::ClientHtml("testing".to_string())}), 'task);
-                        create_timeout(&app_state_recv, 0);
                     } else {
                         // Open the Client in an external browser.
                         if let Err(err) = open::that_detached("https://example.com") {
@@ -91,7 +89,6 @@ pub async fn vscode_ide_websocket(
 
                             // Send a `Closed` message.
                             queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
-                            create_timeout(&app_state_recv, 0);
 
                             break 'task;
                         }
@@ -106,7 +103,6 @@ pub async fn vscode_ide_websocket(
 
                     // Close the connection.
                     queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
-                    create_timeout(&app_state_recv, 0);
                 }
             }
 
@@ -133,9 +129,7 @@ pub async fn vscode_ide_websocket(
         connection_id,
         req,
         body,
-        app_state.clone(),
-        from_ide_tx,
-        to_ide_rx,
+        app_state.vscode_ide_queues.clone(),
     )
     .await
 }
@@ -150,7 +144,7 @@ mod test {
     use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
     use super::super::{configure_app, make_app_data, EditorMessage, EditorMessageContents};
-    use crate::{cast, test_utils::configure_testing_logger, webserver::UpdateMessageContents};
+    use crate::{test_utils::configure_testing_logger, webserver::UpdateMessageContents};
 
     #[actix_web::test]
     async fn test_vscode_ide_websocket() {

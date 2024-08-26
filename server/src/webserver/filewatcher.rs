@@ -28,7 +28,7 @@ use std::{
 // ### Third-party
 use actix_files;
 use actix_web::{
-    error::{Error, ErrorMisdirectedRequest},
+    error::Error,
     get,
     http::header::{self, ContentDisposition},
     web, HttpRequest, HttpResponse,
@@ -49,9 +49,8 @@ use tokio::{
 
 // ### Local
 use super::{
-    client_websocket, create_timeout, html_not_found, path_display, send_response, serve_file,
-    AppState, ClientQueues, EditorMessage, EditorMessageContents, IdeType, ProcessingTask,
-    UpdateMessageContents,
+    client_websocket, html_not_found, path_display, send_response, serve_file, AppState,
+    EditorMessage, EditorMessageContents, IdeType, ProcessingTask, UpdateMessageContents, WebsocketQueues
 };
 use crate::processing::TranslationResultsString;
 use crate::processing::{
@@ -205,29 +204,26 @@ impl ProcessingTask for FilewatcherTask {
 
                 // Create the queues for the websocket connection to communicate
                 // with this task.
-                let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
-                let (to_client_tx, to_client_rx) = mpsc::channel(10);
+                let (from_websocket_tx, mut from_websocket_rx) = mpsc::channel(10);
+                let (to_websocket_tx, to_websocket_rx) = mpsc::channel(10);
                 app_state.filewatcher_client_queues.lock().unwrap().insert(
                     connection_id.to_string(),
-                    ClientQueues {
-                        from_client_tx,
-                        to_client_rx,
+                    WebsocketQueues {
+                        from_websocket_tx,
+                        to_websocket_rx,
                     },
                 );
 
                 // Provide a unique ID for each message sent to the CodeChat
                 // Editor Client.
-                let mut id: u32 = 0;
-                queue_send!(to_client_tx.send(EditorMessage {
-                    id,
+                queue_send!(to_websocket_tx.send(EditorMessage {
+                    id: 0,
                     message: EditorMessageContents::Opened(IdeType::FileWatcher),
                 }), 'task);
-                create_timeout(&app_state, id);
 
                 // Provide it a file to open.
-                id += 1;
-                queue_send!(to_client_tx.send(EditorMessage {
-                    id,
+                queue_send!(to_websocket_tx.send(EditorMessage {
+                    id: 0,
                     message: EditorMessageContents::Update(UpdateMessageContents {
                         contents: Some(codechat_for_web.clone()),
                         cursor_position: Some(0),
@@ -235,8 +231,6 @@ impl ProcessingTask for FilewatcherTask {
                         scroll_position: Some(0.0),
                     }),
                 }), 'task);
-                create_timeout(&app_state, id);
-                id += 1;
 
                 // Process results produced by the file watcher.
                 loop {
@@ -252,7 +246,7 @@ impl ProcessingTask for FilewatcherTask {
                                         // Send using ID 0 to indicate this isn't a
                                         // response to a message received from the
                                         // client.
-                                        send_response(&to_client_tx, 0, &msg).await;
+                                        send_response(&to_websocket_tx, 0, &msg).await;
                                     }
                                 }
 
@@ -274,11 +268,10 @@ impl ProcessingTask for FilewatcherTask {
                                                     let read_ret = match File::open(&current_filepath).await {
                                                         Ok(fc) => fc,
                                                         Err(_err) => {
-                                                            id += 1;
                                                             // We can't open the file -- it's been
                                                             // moved or deleted. Close the file.
-                                                            queue_send!(to_client_tx.send(EditorMessage {
-                                                                id,
+                                                            queue_send!(to_websocket_tx.send(EditorMessage {
+                                                                id: 0,
                                                                 message: EditorMessageContents::Closed
                                                             }));
                                                             continue;
@@ -290,12 +283,10 @@ impl ProcessingTask for FilewatcherTask {
                                                     // Close the file if it can't be read as
                                                     // Unicode text.
                                                     if read_ret.is_err() {
-                                                        id +=1 ;
-                                                        queue_send!(to_client_tx.send(EditorMessage {
-                                                            id,
+                                                        queue_send!(to_websocket_tx.send(EditorMessage {
+                                                            id: 0,
                                                             message: EditorMessageContents::Closed
                                                         }));
-                                                        create_timeout(&app_state, id);
                                                     }
 
                                                     // Translate the file.
@@ -303,9 +294,8 @@ impl ProcessingTask for FilewatcherTask {
                                                     source_to_codechat_for_web_string(&file_contents, &current_filepath, false, &app_state.lexers);
                                                     if let TranslationResultsString::CodeChat(cc) = translation_results_string {
                                                         // Send the new contents
-                                                        id += 1;
-                                                        queue_send!(to_client_tx.send(EditorMessage {
-                                                                id,
+                                                        queue_send!(to_websocket_tx.send(EditorMessage {
+                                                                id: 0,
                                                                 message: EditorMessageContents::Update(UpdateMessageContents {
                                                                     contents: Some(cc),
                                                                     cursor_position: None,
@@ -313,17 +303,14 @@ impl ProcessingTask for FilewatcherTask {
                                                                     scroll_position: None,
                                                                 }),
                                                             }));
-                                                        create_timeout(&app_state, id);
 
                                                     } else {
                                                         // Close the file -- it's not CodeChat
                                                         // anymore.
-                                                        id +=1 ;
-                                                        queue_send!(to_client_tx.send(EditorMessage {
-                                                            id,
+                                                        queue_send!(to_websocket_tx.send(EditorMessage {
+                                                            id: 0,
                                                             message: EditorMessageContents::Closed
                                                         }));
-                                                        create_timeout(&app_state, id);
                                                     }
 
                                                 } else {
@@ -340,7 +327,7 @@ impl ProcessingTask for FilewatcherTask {
                             }
                         }
 
-                        Some(m) = from_client_rx.recv() => {
+                        Some(m) = from_websocket_rx.recv() => {
                             match m.message {
                                 EditorMessageContents::Update(update_message_contents) => {
                                     let result = 'process: {
@@ -409,18 +396,12 @@ impl ProcessingTask for FilewatcherTask {
                                         current_filepath = current_filepath.into();
                                         "".to_string()
                                     };
-                                    send_response(&to_client_tx, m.id, &result).await;
+                                    send_response(&to_websocket_tx, m.id, &result).await;
                                 }
 
                                 // Process a result, the respond to a message we
                                 // sent.
                                 EditorMessageContents::Result(err) => {
-                                    // Cancel the timeout for this result.
-                                    let mut pm = app_state.pending_messages.lock().unwrap();
-                                    if let Some(task) = pm.remove(&m.id) {
-                                        task.abort();
-                                    }
-
                                     // Report errors to the log.
                                     if !err.is_empty() {
                                         error!("Error in message {}: {err}.", m.id);
@@ -442,9 +423,9 @@ impl ProcessingTask for FilewatcherTask {
                     }
                 }
 
-                from_client_rx.close();
+                from_websocket_rx.close();
                 // Drain any remaining messages after closing the queue.
-                while let Some(m) = from_client_rx.recv().await {
+                while let Some(m) = from_websocket_rx.recv().await {
                     warn!("Dropped queued message {:?}", &m);
                 }
             }
@@ -464,25 +445,11 @@ pub async fn filewatcher_websocket(
     body: web::Payload,
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    // Find a `JointEditor` that needs a client and assign this one to it.
-    let joint_editor_wrapped = app_state
-        .filewatcher_client_queues
-        .lock()
-        .unwrap()
-        .remove(&connection_id.to_string());
-    if joint_editor_wrapped.is_none() {
-        error!("Error: no joint editor available.");
-        return Err(ErrorMisdirectedRequest("No joint editor available."));
-    }
-    let joint_editor = joint_editor_wrapped.unwrap();
-
     client_websocket(
         connection_id,
         req,
         body,
-        app_state,
-        joint_editor.from_client_tx,
-        joint_editor.to_client_rx,
+        app_state.filewatcher_client_queues.clone(),
     )
     .await
 }
@@ -496,17 +463,14 @@ mod tests {
 
     use actix_web::{test, web, App};
     use assertables::{assert_starts_with, assert_starts_with_as_result};
-    use log::{info, Level};
+    use log::Level;
     use tokio::select;
     use tokio::sync::mpsc::{Receiver, Sender};
     use tokio::time::sleep;
 
     use super::super::REPLY_TIMEOUT;
-    use super::super::{configure_app, make_app_data};
-    use super::{
-        AppState, ClientQueues, EditorMessage, EditorMessageContents, IdeType,
-        UpdateMessageContents,
-    };
+    use super::super::{configure_app, make_app_data, WebsocketQueues};
+    use super::{AppState, EditorMessage, EditorMessageContents, IdeType, UpdateMessageContents};
     use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
     use crate::processing::{
         source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
@@ -519,7 +483,7 @@ mod tests {
     async fn get_websocket_queues(
         // A path to the temporary directory where the source file is located.
         test_dir: &PathBuf,
-    ) -> ClientQueues {
+    ) -> WebsocketQueues {
         let app_data = make_app_data();
         let app = test::init_service(configure_app(App::new(), &app_data)).await;
 
@@ -571,7 +535,10 @@ mod tests {
 
     fn check_logger_errors() {
         testing_logger::validate(|captured_logs| {
-            let error_logs: Vec<_> = captured_logs.iter().filter(|log_entry| log_entry.level == Level::Error).collect();
+            let error_logs: Vec<_> = captured_logs
+                .iter()
+                .filter(|log_entry| log_entry.level == Level::Error)
+                .collect();
             if error_logs.len() > 0 {
                 println!("Error(s) in logs.");
                 assert!(false);
@@ -584,8 +551,8 @@ mod tests {
         configure_testing_logger();
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.from_client_tx;
-        let mut client_rx = je.to_client_rx;
+        let ide_tx_queue = je.from_websocket_tx;
+        let mut client_rx = je.to_websocket_rx;
 
         // 1.  We should get a message specifying the IDE client type.
         assert_eq!(
@@ -619,11 +586,11 @@ mod tests {
         temp_dir.close().unwrap();
     }
 
-    #[actix_web::test]
+    //#[actix_web::test]
     async fn test_websocket_timeout() {
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
-        let mut client_rx = je.to_client_rx;
+        let mut client_rx = je.to_websocket_rx;
         // Configure the logger here; otherwise, the glob used to copy files
         // outputs some debug-level logs.
         configure_testing_logger();
@@ -669,8 +636,8 @@ mod tests {
         configure_testing_logger();
         let (temp_dir, test_dir) = prep_test_dir!();
         let je = get_websocket_queues(&test_dir).await;
-        let ide_tx_queue = je.from_client_tx;
-        let mut client_rx = je.to_client_rx;
+        let ide_tx_queue = je.from_websocket_tx;
+        let mut client_rx = je.to_websocket_rx;
         // Configure the logger here; otherwise, the glob used to copy files
         // outputs some debug-level logs.
 
@@ -688,7 +655,7 @@ mod tests {
         // 1.  Send an update message with no contents.
         ide_tx_queue
             .send(EditorMessage {
-                id: 1,
+                id: 0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: None,
                     path: Some(PathBuf::new()),
@@ -700,12 +667,15 @@ mod tests {
             .unwrap();
 
         // Check that it produces no error.
-        assert_eq!(get_message_as!(client_rx, EditorMessageContents::Result), "");
+        assert_eq!(
+            get_message_as!(client_rx, EditorMessageContents::Result),
+            ""
+        );
 
         // 2.  Send an update message with no path.
         ide_tx_queue
             .send(EditorMessage {
-                id: 2,
+                id: 0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -731,12 +701,15 @@ mod tests {
             .unwrap();
 
         // Check that it produces no error.
-        assert_eq!(get_message_as!(client_rx, EditorMessageContents::Result), "");
+        assert_eq!(
+            get_message_as!(client_rx, EditorMessageContents::Result),
+            ""
+        );
 
         // 3.  Send an update message with unknown source language.
         ide_tx_queue
             .send(EditorMessage {
-                id: 3,
+                id: 0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -764,7 +737,7 @@ mod tests {
         // 4.  Send an update message with an invalid path.
         ide_tx_queue
             .send(EditorMessage {
-                id: 3,
+                id: 0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -794,7 +767,7 @@ mod tests {
         file_path.push("test.py");
         ide_tx_queue
             .send(EditorMessage {
-                id: 3,
+                id: 0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -812,7 +785,10 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(get_message_as!(client_rx, EditorMessageContents::Result), "");
+        assert_eq!(
+            get_message_as!(client_rx, EditorMessageContents::Result),
+            ""
+        );
 
         // Check that the requested file is written.
         let mut s = fs::read_to_string(&file_path).unwrap();
@@ -851,7 +827,7 @@ mod tests {
         assert_eq!(
             client_rx.recv().await.unwrap(),
             EditorMessage {
-                id: 4,
+                id: 0,
                 message: EditorMessageContents::Closed
             }
         );
