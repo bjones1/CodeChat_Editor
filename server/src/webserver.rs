@@ -76,13 +76,13 @@ macro_rules! queue_send {
     // Provide two options: `break` or `break 'label`.
     ($tx: expr) => {
         if let Err(err) = $tx.await {
-            error!("Unable to enqueue: {}", err);
+            error!("Unable to enqueue: {err}");
             break;
         }
     };
     ($tx: expr, $label: tt) => {
         if let Err(err) = $tx.await {
-            error!("Unable to enqueue: {}", err);
+            error!("Unable to enqueue: {err}");
             break $label;
         }
     };
@@ -622,7 +622,7 @@ async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: &str)
         })
         .await
     {
-        error!("Unable to enqueue: {}", err);
+        error!("Unable to enqueue: {err}");
     }
 }
 
@@ -713,7 +713,7 @@ async fn client_websocket(
                     // the websocket, but the server doesn't detect this without
                     // sending a ping (which then fails).
                     if let Err(err) = session.ping(&Bytes::new()).await {
-                        error!("Unable to send ping: {}", err);
+                        error!("Unable to send ping: {err}");
                         break;
                     }
                     sent_ping = true;
@@ -727,7 +727,7 @@ async fn client_websocket(
                                 // Send a pong in response to a ping.
                                 AggregatedMessage::Ping(bytes) => {
                                     if let Err(err) = session.pong(&bytes).await {
-                                        error!("Unable to send pong: {}", err);
+                                        error!("Unable to send pong: {err}");
                                         break;
                                     }
                                 }
@@ -746,8 +746,7 @@ async fn client_websocket(
                                     match serde_json::from_str::<EditorMessage>(&b) {
                                         Err(err) => {
                                             error!(
-                                                "Unable to decode JSON message from the CodeChat Editor client: {}",
-                                                err
+                                                "Unable to decode JSON message from the CodeChat Editor client: {err}"
                                             );
                                             break;
                                         }
@@ -772,20 +771,20 @@ async fn client_websocket(
                                 // connection and the other connection will both
                                 // be closed.
                                 AggregatedMessage::Close(reason) => {
-                                    info!("Closing per client request: {:?}", reason);
+                                    info!("Closing per client request: {reason:?}");
                                     is_closing = true;
                                     queue_send!(from_websocket_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed }));
                                     break;
                                 }
 
                                 other => {
-                                    warn!("Unexpected message {:?}", &other);
+                                    warn!("Unexpected message {other:?}");
                                     break;
                                 }
                             }
                         }
                         Err(err) => {
-                            error!("websocket receive error {:?}", err);
+                            error!("websocket receive error {err:?}");
                         }
                     }
                 }
@@ -795,26 +794,38 @@ async fn client_websocket(
                     // Assign the id for the message.
                     m.id = id;
                     id += 1;
-                    // Add this message to the pending requests unless it's a
-                    // `Result`.
-                    if let EditorMessageContents::Result(_) = m.message {
-                    } else {
-                        let waiting_task = actix_rt::spawn(async move {
-                            sleep(REPLY_TIMEOUT).await;
-                            error!("Timeout: message id {} unacknowledged.", m.id);
-                        });
-                        pending_messages.insert(m.id, waiting_task);
-                        info!("ID is {id}.");
+
+                    // Process this message.
+                    match m.message {
+                        // If it's a `Result`, no additional processing is needed.
+                        EditorMessageContents::Result(_) => {},
+                        // A `Closed` message causes the websocket to close.
+                        EditorMessageContents::Closed => {
+                            info!("Closing per request.");
+                            is_closing = true;
+                            break;
+                        },
+                        // All other messages are added to the pending queue.
+                        _ => {
+                            let waiting_task = actix_rt::spawn(async move {
+                                sleep(REPLY_TIMEOUT).await;
+                                error!("Timeout: message id {} unacknowledged.", m.id);
+                            });
+                            pending_messages.insert(m.id, waiting_task);
+                            info!("ID is {id}.");
+                        }
                     }
+
+                    // Send the message to the websocket.
                     match serde_json::to_string(&m) {
                         Ok(s) => {
                             if let Err(err) = session.text(&*s).await {
-                                error!("Unable to send: {}", err);
+                                error!("Unable to send: {err}");
                                 break;
                             }
                         }
                         Err(err) => {
-                            error!("Encoding failure {}", err);
+                            error!("Encoding failure {err}");
                         }
                     }
                 }
@@ -825,7 +836,7 @@ async fn client_websocket(
 
         // Shut down the session, to stop any incoming messages.
         if let Err(err) = session.close(None).await {
-            error!("Unable to close session: {}", err);
+            error!("Unable to close session: {err}");
         }
 
         // Re-enqueue this unless the client requested the websocket to close.
@@ -834,7 +845,7 @@ async fn client_websocket(
             to_websocket_rx.close();
             // Drain any remaining messages after closing the queue.
             while let Some(m) = to_websocket_rx.recv().await {
-                warn!("Dropped queued message {:?}", &m);
+                warn!("Dropped queued message {m:?}");
             }
         } else {
             info!("Websocket re-enqueued.");

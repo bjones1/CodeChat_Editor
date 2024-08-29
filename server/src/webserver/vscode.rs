@@ -186,28 +186,34 @@ mod test {
     use assertables::assert_starts_with;
     use assertables::assert_starts_with_as_result;
     use futures_util::{SinkExt, StreamExt};
+    use lazy_static::lazy_static;
+    use std::io::Error;
+    use tokio::task::JoinHandle;
     use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
     use super::super::{configure_app, make_app_data, EditorMessage, EditorMessageContents};
-    use crate::{test_utils::configure_testing_logger, webserver::UpdateMessageContents};
+    use crate::test_utils::{check_logger_errors, configure_testing_logger};
+    use crate::webserver::UpdateMessageContents;
+
+    lazy_static! {
+        static ref webserver_handle: JoinHandle<Result<(), Error>> = {
+            let app_data = make_app_data();
+            actix_rt::spawn(async move {
+                HttpServer::new(move || configure_app(App::new(), &app_data))
+                    .bind(("127.0.0.1", 8080))?
+                    // No need to create a bunch of threads for testing.
+                    .workers(1)
+                    .run()
+                    .await
+            })
+        };
+    }
 
     #[actix_web::test]
     async fn test_vscode_ide_websocket() {
         configure_testing_logger();
-
-        // Start the full webserver, so we can send non-test requests to it.
-        // (The test library doesn't provide a way to send websocket requests
-        // that I know of.) One problem: since the server gets run in a separate
-        // thread, we can't examine the logs.
-        let app_data = make_app_data();
-        let webserver_handle = actix_rt::spawn(async move {
-            HttpServer::new(move || configure_app(App::new(), &app_data))
-                .bind(("127.0.0.1", 8080))?
-                // No need to create a bunch of threads for testing.
-                .workers(1)
-                .run()
-                .await
-        });
+        // Ensure the webserver is running.
+        let _ = &*webserver_handle;
 
         // Connect to the VSCode IDE websocket.
         let (mut ws_stream, _) = connect_async("ws://127.0.0.1:8080/vsc/ws-ide/test-connection-id")
@@ -252,35 +258,10 @@ mod test {
         };
         assert_starts_with!(result, "Unexpected message");
 
-        // Next, expect a closed message.
-        let em: EditorMessage = serde_json::from_str(
-            &ws_stream
-                .next()
-                .await
-                .unwrap()
-                .unwrap()
-                .into_text()
-                .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(em.message, EditorMessageContents::Closed);
+        // Next, expect the websocket to be closed.
+        let err = &ws_stream.next().await.unwrap().unwrap();
+        assert_eq!(*err, Message::Close(None));
 
-        // Send a response to the closed message.
-        ws_stream
-            .send(Message::Text(
-                serde_json::to_string(&EditorMessage {
-                    id: 0,
-                    message: EditorMessageContents::Result("".to_string()),
-                })
-                .unwrap(),
-            ))
-            .await
-            .unwrap();
-
-        // Close the connection. TODO: check that the webserver closes it.
-        ws_stream.close(None).await.unwrap();
-
-        // Shut down the webserver.
-        webserver_handle.abort();
+        check_logger_errors();
     }
 }

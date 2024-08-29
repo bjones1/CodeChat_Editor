@@ -25,11 +25,14 @@ use std::path::PathBuf;
 use std::path::MAIN_SEPARATOR_STR;
 
 // ### Third-party
-use crate::testing_logger;
 use assert_fs::fixture::PathCopy;
 use assert_fs::TempDir;
+use log::Level;
 
-// # macros
+// ### Local
+use crate::testing_logger;
+
+// ## Macros
 // Extract a known enum variant or fail. More concise than the alternative (`if let``, or `let else`). From [SO](https://stackoverflow.com/a/69324393). The macro does not handle nested pattern like `Some(Animal(cat))`.
 #[macro_export]
 macro_rules! cast {
@@ -146,4 +149,17 @@ pub fn _prep_test_dir(
 // seems like a bit of overkill to call one function for each test.
 pub fn configure_testing_logger() {
     testing_logger::setup();
+}
+
+pub fn check_logger_errors() {
+    testing_logger::validate(|captured_logs| {
+        let error_logs: Vec<_> = captured_logs
+            .iter()
+            .filter(|log_entry| log_entry.level == Level::Error)
+            .collect();
+        if error_logs.len() > 0 {
+            println!("Error(s) in logs.");
+            assert!(false);
+        }
+    });
 }

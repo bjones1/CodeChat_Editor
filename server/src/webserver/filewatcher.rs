@@ -243,7 +243,7 @@ impl ProcessingTask for FilewatcherTask {
                                         // Report errors locally and to the
                                         // CodeChat Editor.
                                         let msg = format!("Watcher error: {err}");
-                                        error!("{}", msg);
+                                        error!("{msg}");
                                         // Send using ID 0 to indicate this isn't a
                                         // response to a message received from the
                                         // client.
@@ -415,7 +415,7 @@ impl ProcessingTask for FilewatcherTask {
                                 }
 
                                 other => {
-                                    warn!("Unhandled message {:?}", other);
+                                    warn!("Unhandled message {other:?}");
                                 }
                             }
                         }
@@ -427,7 +427,7 @@ impl ProcessingTask for FilewatcherTask {
                 from_websocket_rx.close();
                 // Drain any remaining messages after closing the queue.
                 while let Some(m) = from_websocket_rx.recv().await {
-                    warn!("Dropped queued message {:?}", &m);
+                    warn!("Dropped queued message {m:?}");
                 }
             }
 
@@ -464,12 +464,10 @@ mod tests {
 
     use actix_web::{test, web, App};
     use assertables::{assert_starts_with, assert_starts_with_as_result};
-    use log::Level;
     use tokio::select;
     use tokio::sync::mpsc::{Receiver, Sender};
     use tokio::time::sleep;
 
-    use super::super::REPLY_TIMEOUT;
     use super::super::{configure_app, make_app_data, WebsocketQueues};
     use super::{AppState, EditorMessage, EditorMessageContents, IdeType, UpdateMessageContents};
     use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
@@ -477,8 +475,7 @@ mod tests {
         source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
         TranslationResults,
     };
-    use crate::test_utils::configure_testing_logger;
-    use crate::testing_logger;
+    use crate::test_utils::{check_logger_errors, configure_testing_logger};
     use crate::{cast, prep_test_dir};
 
     async fn get_websocket_queues(
@@ -532,19 +529,6 @@ mod tests {
         ($client_rx: expr, $cast_type: ty) => {
             cast!(get_message(&mut $client_rx).await, $cast_type)
         };
-    }
-
-    fn check_logger_errors() {
-        testing_logger::validate(|captured_logs| {
-            let error_logs: Vec<_> = captured_logs
-                .iter()
-                .filter(|log_entry| log_entry.level == Level::Error)
-                .collect();
-            if error_logs.len() > 0 {
-                println!("Error(s) in logs.");
-                assert!(false);
-            }
-        });
     }
 
     #[actix_web::test]
