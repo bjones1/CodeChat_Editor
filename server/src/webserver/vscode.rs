@@ -22,7 +22,10 @@
 // None.
 //
 // ### Third-party
-use actix_web::{error::Error, get, web, HttpRequest, HttpResponse};
+use actix_web::{
+    error::{Error, ErrorBadRequest},
+    get, web, HttpRequest, HttpResponse,
+};
 use log::error;
 use open;
 use tokio::sync::mpsc;
@@ -30,7 +33,7 @@ use tokio::sync::mpsc;
 // ### Local
 use super::{
     client_websocket, send_response, AppState, EditorMessage, EditorMessageContents, IdeType,
-    ProcessingQueues,
+    WebsocketQueues,
 };
 
 use crate::queue_send;
@@ -43,14 +46,72 @@ pub async fn vscode_ide_websocket(
     body: web::Payload,
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
+    let connection_id_str = connection_id.to_string();
+
+    // There are three cases for this `connection_id`:
+    //
+    // 1. It hasn't been used before. In this case, create the appropriate queues and start websocket and processing tasks.
+    // 2. It's in use, but was disconnected. In this case, re-use the queues and start the websocket task; the processing task is still running.
+    // 3. It's in use by another IDE. This is an error, but I don't have a way to detect it yet.
+    //
+    // Check case 3.
+    if app_state
+        .vscode_connection_id
+        .lock()
+        .unwrap()
+        .contains(&connection_id_str)
+    {
+        let msg = format!("Connection ID {connection_id_str} already in use.");
+        error!("{msg}");
+        return Err(ErrorBadRequest(msg));
+    }
+
+    // Now case 2.
+    if app_state
+        .vscode_ide_queues
+        .lock()
+        .unwrap()
+        .contains_key(&connection_id_str)
+    {
+        return client_websocket(
+            connection_id,
+            req,
+            body,
+            app_state.vscode_ide_queues.clone(),
+        )
+        .await;
+    }
+
+    // Then this is case 1. Add the connection ID to the list of active connections.
     let (from_ide_tx, mut from_ide_rx) = mpsc::channel(10);
     let (to_ide_tx, to_ide_rx) = mpsc::channel(10);
+    assert!(app_state
+        .vscode_ide_queues
+        .lock()
+        .unwrap()
+        .insert(
+            connection_id_str.clone(),
+            WebsocketQueues {
+                from_websocket_tx: from_ide_tx,
+                to_websocket_rx: to_ide_rx,
+            },
+        )
+        .is_none());
+    let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
+    let (to_client_tx, to_client_rx) = mpsc::channel(10);
+    assert!(app_state
+        .vscode_client_queues
+        .lock()
+        .unwrap()
+        .insert(
+            connection_id_str,
+            WebsocketQueues {
+                from_websocket_tx: from_client_tx,
+                to_websocket_rx: to_client_rx,
+            },
+        )
+        .is_none());
 
-    // Wait for the open message and respond, then end the task. Effectively,
-    // this is a (pre-)processing task that exits as soon as the IDE has enough
-    // information to launch the full processing task.
-    let app_state_recv = app_state.clone();
-    let connection_id_str = connection_id.to_string();
     actix_rt::spawn(async move {
         // Use a
         // [labeled block expression](https://doc.rust-lang.org/reference/expressions/loop-expr.html#labelled-block-expressions)
@@ -105,22 +166,6 @@ pub async fn vscode_ide_websocket(
                     queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
                 }
             }
-
-            // The web page containing the Client will soon be opened. Provide
-            // the info for a processing task which connects the IDE to the
-            // Client. TODO: a bit of a race condition -- what is the client
-            // webpage is opened before this code run? (Not likely, though.)
-            app_state_recv
-                .vscode_processing_queues
-                .lock()
-                .unwrap()
-                .insert(
-                    connection_id_str,
-                    ProcessingQueues {
-                        from_ide_rx,
-                        to_ide_tx,
-                    },
-                );
         }
     });
 

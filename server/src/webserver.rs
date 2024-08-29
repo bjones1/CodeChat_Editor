@@ -22,7 +22,7 @@ mod vscode;
 ///
 /// ### Standard library
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -99,11 +99,6 @@ struct WebsocketQueues {
     to_websocket_rx: Receiver<EditorMessage>,
 }
 
-struct ProcessingQueues {
-    to_ide_tx: Sender<EditorMessage>,
-    from_ide_rx: Receiver<EditorMessage>,
-}
-
 /// Define the data structure used to pass data between the CodeChat Editor
 /// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -176,11 +171,15 @@ struct UpdateMessageContents {
 /// all endpoints.
 pub struct AppState {
     lexers: LanguageLexersCompiled,
+    // The number of the next connection ID to assign.
     connection_id: Mutex<u32>,
+    // For each connection ID, store the queues for the FileWatcher IDE.
     filewatcher_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    // For each connection ID, store the queues for the VSCode IDE.
     vscode_ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
-    vscode_processing_queues: Mutex<HashMap<String, ProcessingQueues>>,
     vscode_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    // Connection IDs that are currently in use.
+    vscode_connection_id: Arc<Mutex<HashSet<String>>>,
 }
 
 // ## Globals
@@ -880,8 +879,8 @@ fn make_app_data() -> web::Data<AppState> {
         connection_id: Mutex::new(0),
         filewatcher_client_queues: Arc::new(Mutex::new(HashMap::new())),
         vscode_ide_queues: Arc::new(Mutex::new(HashMap::new())),
-        vscode_processing_queues: Mutex::new(HashMap::new()),
         vscode_client_queues: Arc::new(Mutex::new(HashMap::new())),
+        vscode_connection_id: Arc::new(Mutex::new(HashSet::new())),
     })
 }
 

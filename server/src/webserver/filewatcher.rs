@@ -50,7 +50,8 @@ use tokio::{
 // ### Local
 use super::{
     client_websocket, html_not_found, path_display, send_response, serve_file, AppState,
-    EditorMessage, EditorMessageContents, IdeType, ProcessingTask, UpdateMessageContents, WebsocketQueues
+    EditorMessage, EditorMessageContents, IdeType, ProcessingTask, UpdateMessageContents,
+    WebsocketQueues,
 };
 use crate::processing::TranslationResultsString;
 use crate::processing::{
@@ -583,51 +584,6 @@ mod tests {
 
         // Report any errors produced when removing the temporary directory.
         check_logger_errors();
-        temp_dir.close().unwrap();
-    }
-
-    //#[actix_web::test]
-    async fn test_websocket_timeout() {
-        let (temp_dir, test_dir) = prep_test_dir!();
-        let je = get_websocket_queues(&test_dir).await;
-        let mut client_rx = je.to_websocket_rx;
-        // Configure the logger here; otherwise, the glob used to copy files
-        // outputs some debug-level logs.
-        configure_testing_logger();
-
-        // We should get a message specifying the IDE client type.
-        assert_eq!(
-            get_message_as!(client_rx, EditorMessageContents::Opened),
-            IdeType::FileWatcher
-        );
-
-        // We should get the initial contents.
-        get_message_as!(client_rx, EditorMessageContents::Update);
-
-        // Don't send any acknowledgements to these message and see if we get
-        // errors. The stderr redirection covers only this block.
-        sleep(REPLY_TIMEOUT).await;
-        sleep(REPLY_TIMEOUT).await;
-
-        // We should get two errors.
-        testing_logger::validate(|captured_logs| {
-            assert_eq!(captured_logs.len(), 2);
-            assert_eq!(captured_logs[0].target, "code_chat_editor::webserver");
-            assert_eq!(
-                captured_logs[0].body,
-                "Timeout: message id 0 unacknowledged."
-            );
-            assert_eq!(captured_logs[0].level, Level::Error);
-
-            assert_eq!(captured_logs[0].target, "code_chat_editor::webserver");
-            assert_eq!(
-                captured_logs[1].body,
-                "Timeout: message id 1 unacknowledged."
-            );
-            assert_eq!(captured_logs[1].level, Level::Error);
-        });
-
-        // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
     }
 
