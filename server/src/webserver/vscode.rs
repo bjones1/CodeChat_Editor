@@ -39,7 +39,7 @@ use super::{
 use crate::queue_send;
 
 // ## Code
-#[get("/vsc/ws-ide/{connection_id}")]
+#[get("/vsc/ws-ext/{connection_id}")]
 pub async fn vscode_ide_websocket(
     connection_id: web::Path<String>,
     req: HttpRequest,
@@ -182,31 +182,22 @@ pub async fn vscode_ide_websocket(
 // ## Tests
 #[cfg(test)]
 mod test {
-    use actix_web::{App, HttpServer};
+    use std::io::Error;
+
+    use actix_rt::task::JoinHandle;
     use assertables::assert_starts_with;
     use assertables::assert_starts_with_as_result;
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
-    use std::io::Error;
-    use tokio::task::JoinHandle;
     use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-    use super::super::{configure_app, make_app_data, EditorMessage, EditorMessageContents};
+    use super::super::{run_server, EditorMessage, EditorMessageContents, IP_ADDRESS, IP_PORT};
     use crate::test_utils::{check_logger_errors, configure_testing_logger};
     use crate::webserver::UpdateMessageContents;
 
     lazy_static! {
-        static ref webserver_handle: JoinHandle<Result<(), Error>> = {
-            let app_data = make_app_data();
-            actix_rt::spawn(async move {
-                HttpServer::new(move || configure_app(App::new(), &app_data))
-                    .bind(("127.0.0.1", 8080))?
-                    // No need to create a bunch of threads for testing.
-                    .workers(1)
-                    .run()
-                    .await
-            })
-        };
+        static ref webserver_handle: JoinHandle<Result<(), Error>> =
+            { actix_rt::spawn(async move { run_server().await }) };
     }
 
     #[actix_web::test]
@@ -216,9 +207,11 @@ mod test {
         let _ = &*webserver_handle;
 
         // Connect to the VSCode IDE websocket.
-        let (mut ws_stream, _) = connect_async("ws://127.0.0.1:8080/vsc/ws-ide/test-connection-id")
-            .await
-            .expect("Failed to connect");
+        let (mut ws_stream, _) = connect_async(format!(
+            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ext/test-connection-id"
+        ))
+        .await
+        .expect("Failed to connect");
 
         // Note: we can't check the logs, since the server runs in a separate
         // thread. Changing the logger to log across threads means we get logs

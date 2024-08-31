@@ -187,6 +187,10 @@ lazy_static! {
     /// Matches a bare drive letter. Only needed on Windows.
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
 }
+/// The IP address on which the server listens for incoming connections.
+const IP_ADDRESS: &str = "127.0.0.1";
+/// The port on which the server listens for incoming connections.
+const IP_PORT: u16 = 8080;
 
 // The timeout for a reply from a websocket. Use a short timeout to speed up
 // unit tests.
@@ -524,10 +528,8 @@ async fn serve_file(
 
     // Build and return the webpage.
     let js_test_suffix = if is_test_mode { "-test" } else { "" };
-    // Quote the string using JSON to handle any necessary escapes.
-    let ws_url = match serde_json::to_string(&format!(
-        "ws://localhost:8080/{ide_path}/ws/{connection_id}"
-    )) {
+    // Provide the pathname to the websocket connection. Quote the string using JSON to handle any necessary escapes.
+    let ws_url = match serde_json::to_string(&format!("{ide_path}/{connection_id}")) {
         Ok(v) => v,
         Err(err) => {
             return html_not_found(&format!(
@@ -867,11 +869,21 @@ async fn client_websocket(
 // ## Webserver startup
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
+    run_server().await
+}
+
+pub async fn run_server() -> std::io::Result<()> {
     let app_data = make_app_data();
-    HttpServer::new(move || configure_app(App::new(), &app_data))
-        .bind(("127.0.0.1", 8080))?
-        .run()
-        .await
+    let server = match HttpServer::new(move || configure_app(App::new(), &app_data))
+        .bind((IP_ADDRESS, IP_PORT))
+    {
+        Ok(server) => server,
+        Err(err) => {
+            error!("Unable to bind to {IP_ADDRESS}:{IP_PORT} - {err}");
+            return Err(err);
+        }
+    };
+    server.run().await
 }
 
 // ## Utilities

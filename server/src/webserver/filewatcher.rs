@@ -79,7 +79,7 @@ pub async fn serve_filewatcher(
     serve_file(
         file_path,
         &file_contents,
-        "fw",
+        "fw/ws",
         req,
         app_state,
         FilewatcherTask,

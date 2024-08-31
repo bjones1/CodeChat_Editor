@@ -262,9 +262,12 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
     }
 };
 
-export const page_init = (ws_url: string) => {
+export const page_init = (ws_pathname: string) => {
     on_dom_content_loaded(async () => {
-        webSocketComm = new WebSocketComm(ws_url)
+        // If the hosting page uses HTTPS, then use a secure websocket (WSS protocol); otherwise, use an insecure websocket (WS).
+        const protocol = window.location.protocol === "http:" ? "ws:" : "wss:";
+        // Build a websocket address based on the URL of the current page.
+        webSocketComm = new WebSocketComm(`${protocol}//${window.location.host}/${ws_pathname}`)
         document.getElementById("CodeChat-save-button")!.addEventListener("click", on_save)
         document.body.addEventListener("keydown", on_keydown)
 
@@ -463,8 +466,8 @@ const codechat_html_to_markdown = async (source: any) => {
                 40,
                 80 - doc_block[3].length - doc_block[2].length - 1,
             ),
-        // Prettier trims whitespace; we can't include the newline in the
-        // replacement above. So, put it here.
+            // Prettier trims whitespace; we can't include the newline in the
+            // replacement above. So, put it here.
         ) || "\n";
     }
 }
