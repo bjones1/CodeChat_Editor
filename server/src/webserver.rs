@@ -114,9 +114,6 @@ struct EditorMessage {
 /// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum EditorMessageContents {
-    /// This is the first message sent when the IDE or client starts up or
-    /// reconnects.
-    Opened(IdeType),
     /// This sends an update; any missing fields are unchanged.
     Update(UpdateMessageContents),
     /// Only the CodeChat Client editor may send this; it requests the IDE to
@@ -136,15 +133,6 @@ enum EditorMessageContents {
     /// success/error. An empty string indicates success; otherwise, the string
     /// contains the error message.
     Result(String),
-}
-
-/// Specify the type of IDE that this client represents.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
-enum IdeType {
-    FileWatcher,
-    /// True if the CodeChat Editor will be hosted inside VSCode; false means it
-    /// should be hosted in an external browser.
-    VSCode(bool),
 }
 
 /// Contents of the `Update` message.

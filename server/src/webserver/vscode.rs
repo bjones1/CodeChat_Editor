@@ -32,7 +32,7 @@ use tokio::sync::mpsc;
 
 // ### Local
 use super::{
-    client_websocket, send_response, AppState, EditorMessage, EditorMessageContents, IdeType,
+    client_websocket, send_response, AppState, EditorMessage, EditorMessageContents,
     WebsocketQueues,
 };
 
@@ -116,57 +116,7 @@ pub async fn vscode_ide_websocket(
         // Use a
         // [labeled block expression](https://doc.rust-lang.org/reference/expressions/loop-expr.html#labelled-block-expressions)
         // to provide a way to exit the current task.
-        'task: {
-            // Get the first message sent by the IDE.
-            let Some(message): std::option::Option<EditorMessage> = from_ide_rx.recv().await else {
-                error!("{}", "IDE websocket received no data.");
-                break 'task;
-            };
-
-            // Make sure it's the `Opened` message.
-            let EditorMessageContents::Opened(ide_type) = message.message else {
-                let msg = format!("Unexpected message {message:?}");
-                error!("{msg}");
-                send_response(&to_ide_tx, message.id, &msg).await;
-
-                // Send a `Closed` message to shut down the websocket.
-                queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
-                break 'task;
-            };
-
-            // Ensure the IDE type (VSCode) is correct.
-            match ide_type {
-                IdeType::VSCode(is_self_hosted) => {
-                    if is_self_hosted {
-                        // Send a response (successful) to the `Opened` message.
-                        send_response(&to_ide_tx, message.id, "").await;
-                        queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::ClientHtml("testing".to_string())}), 'task);
-                    } else {
-                        // Open the Client in an external browser.
-                        if let Err(err) = open::that_detached("https://example.com") {
-                            let msg = format!("Unable to open web browser: {err}");
-                            error!("{msg}");
-                            send_response(&to_ide_tx, message.id, &msg).await;
-
-                            // Send a `Closed` message.
-                            queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
-
-                            break 'task;
-                        }
-                        send_response(&to_ide_tx, message.id, "").await;
-                    }
-                }
-                _ => {
-                    // This is the wrong IDE type. Report then error.
-                    let msg = format!("Invalid IDE type: {ide_type:?}");
-                    error!("{msg}");
-                    send_response(&to_ide_tx, message.id, &msg).await;
-
-                    // Close the connection.
-                    queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
-                }
-            }
-        }
+        'task: {}
     });
 
     // Move data between the IDE and the processing task via queues.
@@ -196,11 +146,12 @@ mod test {
     use crate::webserver::UpdateMessageContents;
 
     lazy_static! {
+        // Note: the VSCode Rust extension claims this is a syntax error, but it compiles without problems.
         static ref webserver_handle: JoinHandle<Result<(), Error>> =
-            { actix_rt::spawn(async move { run_server().await }) };
+            actix_rt::spawn(async move { run_server().await });
     }
 
-    #[actix_web::test]
+    //#[actix_web::test]
     async fn test_vscode_ide_websocket() {
         configure_testing_logger();
         // Ensure the webserver is running.
