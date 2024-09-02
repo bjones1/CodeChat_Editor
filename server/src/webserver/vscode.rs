@@ -104,13 +104,18 @@ pub async fn vscode_ide_websocket(
         .lock()
         .unwrap()
         .insert(
-            connection_id_str,
+            connection_id_str.clone(),
             WebsocketQueues {
                 from_websocket_tx: from_client_tx,
                 to_websocket_rx: to_client_rx,
             },
         )
         .is_none());
+    app_state
+        .vscode_connection_id
+        .lock()
+        .unwrap()
+        .insert(connection_id_str);
 
     actix_rt::spawn(async move {
         // Use a
@@ -140,8 +145,11 @@ mod test {
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
     use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+    use tokio_tungstenite::tungstenite::http::StatusCode;
+
 
     use super::super::{run_server, EditorMessage, EditorMessageContents, IP_ADDRESS, IP_PORT};
+    use crate::cast;
     use crate::test_utils::{check_logger_errors, configure_testing_logger};
     use crate::webserver::UpdateMessageContents;
 
@@ -151,7 +159,7 @@ mod test {
             actix_rt::spawn(async move { run_server().await });
     }
 
-    //#[actix_web::test]
+    #[actix_web::test]
     async fn test_vscode_ide_websocket() {
         configure_testing_logger();
         // Ensure the webserver is running.
@@ -163,6 +171,15 @@ mod test {
         ))
         .await
         .expect("Failed to connect");
+
+        // Start a second connection; verify that it fails.
+        let err = connect_async(format!(
+            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ext/test-connection-id"
+        ))
+        .await
+        .expect_err("Should fail to connect");
+        let response = cast!(err, tokio_tungstenite::tungstenite::Error::Http);
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
         // Note: we can't check the logs, since the server runs in a separate
         // thread. Changing the logger to log across threads means we get logs
