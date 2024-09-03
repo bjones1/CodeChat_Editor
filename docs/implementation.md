@@ -125,29 +125,57 @@ Server. The Server forwards messages from one client to the other, translating
 as necessary (for example, between source code and the Editor format).
 
 - On startup, the IDE client requests an ID from the server via a websocket.
-  Next, it sends an Opened message to a websockeet URL based on the assigned ID,
-  specifying the location of the Client (in a web browser, or hosted within the
-  IDE). The server replies with the text of a web page to display (for the
-  hosted option) or launches a web browser with the appropriate URL.
-- When the CodeChat Editor Client starts, it also sends an Opened message; the
-  ID for this client is part of its websocket URL.
-- After the IDE client sends the Opened message, it immediately follows with an
-  Update message with the contents of the current file from the IDE.
-- The IDE client and the CodeChat Editor client send update messages, with a
+  Next, it sends an `Opened` message to a websockeet URL based on the assigned
+  ID, specifying the location of the Client (in a web browser, or hosted within
+  the IDE). The server replies with the text of a web page to display (for the
+  hosted option) or launches a web browser with the appropriate URL; this URL
+  also contains the ID, so that all HTTP requests will be associated with this
+  IDE/Client session.
+- The HTTP request produced by opening the Client on a web page causes the
+  server to send the IDE a `Load` message with the desired file. (Requests for
+  files that aren't either already loaded by the IDE or aren't a CodeChat Editor
+  file result in the server simply sending the file, but not a Load message.)
+  The web page returned simply loads the Client, but not the requested file.
+- In response to the `Load` message, the IDE sends an `Update` message with the
+  file's content.
+- The IDE client and the CodeChat Editor client send `Update` messages, with a
   file path, the file contents, and the cursor/scroll position. If a field is
   omitted, it means there's no change to it since the last command. For example,
   sending just a cursor/scroll position is used when the user scrolls but
   doesn't edit.
-- When the active file in the IDE changes, the IDE sends an Update message. When
-  following a hyperlink changes the active file, the CodeChat Editor Client
-  sends a Load message, which requests the IDE to send an update with the
-  contents of the hyperlinked file.
+- When the active file in the IDE changes, the IDE sends an `Update` message.
+  When following a hyperlink changes the active file, the Editor first sends an
+  `Update` if the current file was not saved. Next:
+  - If the link refers to a file outside the local filesystem, the link is
+    followed, replacing the Client with some other content. Using the overlaid
+    back or home button reloads the Client.
+  - Likewise, if the link refers to a local file that's not loaded in the IDE
+    and also isn't editable by the CodeChat Editor, the link is followed,
+    replacing the Client. For example, opening a PDF document, an image/video,
+    etc. simply displays this file, but doesn't allow editing it using the
+    CodeChat Editor.
+  - Otherwise, the HTTP request produced by opening this link causes (as before)
+    the server to send a Load message, which requests the IDE to send an update
+    with the contents of the hyperlinked file.
 - When the PC goes to sleep then wakes up, the IDE client and the Editor client
   both reconnect to the websocket URL containing their assigned ID.
-- If the Editor client or the IDE client are closed, they send a Close messages
-  which ends the session.
+- If the Editor client or the IDE client are closed, they close their websocket,
+  which send a Close messages to the other websocket, causes it to also close
+  and ending the session.
 - If the server is stopped (or crashes), both clients shut down after several
   reconnect retries.
+
+Questions/problems
+
+- Could we replace the Load message with and Update message?
+  - But the meaning of an Update with no content disagrees with the meaning of
+    other Update messages (it's not just the file name that's changing, but also
+    the file contents.)
+  - When the IDE switches to a new file, sometimes this is an Update -- the file
+    is in the same directory, so an Update message is appropriate. Sometimes
+    (the file is in a different directory), this would be better as a Load
+    message to cause the server to send another Load back to request the
+    content. This is something the server can handle.
 
 Clients always come in pairs: one IDE client is always paired with one CodeChat
 Editor client. The server uses a set of queues to decouple websocket protocol

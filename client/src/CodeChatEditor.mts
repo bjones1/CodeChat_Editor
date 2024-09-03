@@ -249,7 +249,11 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
     }
 };
 
-export const page_init = (ws_pathname: string) => {
+// Load the dynamic content into the static page.
+export const page_init = (
+    // The pathname for the websocket to use. The remainder of the URL is derived from the hosting page's URL. See the [Location docs](https://developer.mozilla.org/en-US/docs/Web/API/Location) for a nice, interactive definition of the components of a URL.
+    ws_pathname: string
+) => {
     on_dom_content_loaded(async () => {
         // If the hosting page uses HTTPS, then use a secure websocket (WSS protocol); otherwise, use an insecure websocket (WS).
         const protocol = window.location.protocol === "http:" ? "ws:" : "wss:";
