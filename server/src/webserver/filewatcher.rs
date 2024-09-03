@@ -50,7 +50,8 @@ use tokio::{
 // ### Local
 use super::{
     client_websocket, html_not_found, path_display, send_response, serve_file, AppState,
-    EditorMessage, EditorMessageContents, ProcessingTask, UpdateMessageContents, WebsocketQueues,
+    EditorMessage, EditorMessageContents, IdeType, ProcessingTask, UpdateMessageContents,
+    WebsocketQueues,
 };
 use crate::processing::TranslationResultsString;
 use crate::processing::{
@@ -213,6 +214,13 @@ impl ProcessingTask for FilewatcherTask {
                         to_websocket_rx,
                     },
                 );
+
+                // Provide a unique ID for each message sent to the CodeChat
+                // Editor Client.
+                queue_send!(to_websocket_tx.send(EditorMessage {
+                    id: 0,
+                    message: EditorMessageContents::Opened(IdeType::FileWatcher),
+                }), 'task);
 
                 // Provide it a file to open.
                 queue_send!(to_websocket_tx.send(EditorMessage {
@@ -461,7 +469,7 @@ mod tests {
     use tokio::time::sleep;
 
     use super::super::{configure_app, make_app_data, WebsocketQueues};
-    use super::{AppState, EditorMessage, EditorMessageContents, UpdateMessageContents};
+    use super::{AppState, EditorMessage, EditorMessageContents, IdeType, UpdateMessageContents};
     use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
     use crate::processing::{
         source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
@@ -531,6 +539,13 @@ mod tests {
         let ide_tx_queue = je.from_websocket_tx;
         let mut client_rx = je.to_websocket_rx;
 
+        // 1.  We should get a message specifying the IDE client type.
+        assert_eq!(
+            get_message_as!(client_rx, EditorMessageContents::Opened),
+            IdeType::FileWatcher
+        );
+        send_response(0, &ide_tx_queue, "").await;
+
         // 2.  We should get the initial contents.
         let umc = get_message_as!(client_rx, EditorMessageContents::Update);
         assert_eq!(umc.cursor_position, Some(0));
@@ -565,6 +580,13 @@ mod tests {
         let mut client_rx = je.to_websocket_rx;
         // Configure the logger here; otherwise, the glob used to copy files
         // outputs some debug-level logs.
+
+        // We should get a message specifying the IDE client type.
+        assert_eq!(
+            get_message_as!(client_rx, EditorMessageContents::Opened),
+            IdeType::FileWatcher
+        );
+        send_response(0, &ide_tx_queue, "").await;
 
         // We should get the initial contents.
         get_message_as!(client_rx, EditorMessageContents::Update);

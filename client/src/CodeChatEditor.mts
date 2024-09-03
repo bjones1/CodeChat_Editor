@@ -81,10 +81,16 @@ interface EditorMessage {
 }
 
 interface EditorMessageContents {
+    Opened?: IdeType,
     Update?: UpdateMessageContents,
     Load?: String,
     Closed?: undefined,
     Result?: string
+}
+
+enum IdeType {
+    FileWatcher,
+    VSCode,
 }
 
 interface UpdateMessageContents {
@@ -142,6 +148,13 @@ class WebSocketComm {
 
             // Process this message.
             switch (key) {
+                case "Opened":
+                    const ideType = value as IdeType;
+                    // There's no additional steps to take currently.
+                    console.log(`Opened(${ideType})`);
+                    this.send_result(id)
+                    break;
+
                 case "Update":
                     // Load this data in.
                     current_update = value as UpdateMessageContents;
