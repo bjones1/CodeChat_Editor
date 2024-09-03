@@ -194,9 +194,8 @@ mod test {
     use assertables::assert_starts_with_as_result;
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
-    use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
     use tokio_tungstenite::tungstenite::http::StatusCode;
-
+    use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
     use super::super::{run_server, EditorMessage, EditorMessageContents, IP_ADDRESS, IP_PORT};
     use crate::cast;
@@ -205,7 +204,7 @@ mod test {
 
     lazy_static! {
         static ref webserver_handle: JoinHandle<Result<(), Error>> =
-            { actix_rt::spawn(async move { run_server().await }) };
+            actix_rt::spawn(async move { run_server().await });
     }
 
     #[actix_web::test]
