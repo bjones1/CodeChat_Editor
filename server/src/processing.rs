@@ -198,8 +198,9 @@ pub fn codechat_for_web_to_source(
 /// Translate from CodeMirror to CodeDocBlocks.
 fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock> {
     let doc_blocks = &code_mirror.doc_blocks;
-    // A CodeMirror "document" is really source code.
-    let code = &code_mirror.doc;
+    // A CodeMirror "document" is really source code. Convert it from UTF-8
+    // bytes to an array of characters, which is indexable by character.
+    let code: Vec<char> = code_mirror.doc.chars().collect();
     let mut code_doc_block_arr: Vec<CodeDocBlock> = Vec::new();
     // Keep track of the to index of the previous doc block. Since we haven't
     // processed any doc blocks, start at 0.
@@ -211,7 +212,9 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
         // Append the code block, unless it's empty.
         let code_contents = &code[code_index..codemirror_doc_block.0];
         if !code_contents.is_empty() {
-            code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()))
+            // Convert back from a character array to a string.
+            let s: String = code_contents.iter().collect();
+            code_doc_block_arr.push(CodeDocBlock::CodeBlock(s.to_string()))
         }
         // Append the doc block.
         code_doc_block_arr.push(CodeDocBlock::DocBlock(DocBlock {
@@ -226,7 +229,9 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     // See if there's a code block after the last doc block.
     let code_contents = &code[code_index..];
     if !code_contents.is_empty() {
-        code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()));
+        // Convert back from a character array to a string.
+        let s: String = code_contents.iter().collect();
+        code_doc_block_arr.push(CodeDocBlock::CodeBlock(s.to_string()));
     }
 
     code_doc_block_arr
@@ -902,6 +907,16 @@ mod tests {
             vec![build_doc_block("", "#", "Test")]
         );
 
+        // Pass one doc block containing Unicode.
+        assert_eq!(
+            run_test(
+                "python",
+                "σ\n",
+                vec![build_codemirror_doc_block(1, 1, "", "#", "Test")],
+            ),
+            vec![build_code_block("σ"), build_doc_block("", "#", "Test")]
+        );
+
         // A code block then a doc block
         assert_eq!(
             run_test(
@@ -1071,6 +1086,19 @@ mod tests {
             )
             .unwrap(),
             "#\n\n#"
+        );
+
+        assert_eq!(
+            code_doc_block_vec_to_source(
+                vec![
+                    build_doc_block("", "#", "σ\n"),
+                    build_code_block("σ\n"),
+                    build_doc_block("", "#", "σ"),
+                ],
+                py_lexer
+            )
+            .unwrap(),
+            "# σ\nσ\n# σ"
         );
     }
 
@@ -1351,26 +1379,36 @@ mod tests {
                 vec![build_codemirror_doc_block(7, 7, "", "//", ""),]
             ))
         );
+
+        // Test Unicode characters in strings.
+        assert_eq!(
+            source_to_codechat_for_web(&"\"σ\";\n//".to_string(), "cpp", false, false, &llc),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "c_cpp",
+                "\"σ\";\n",
+                vec![build_codemirror_doc_block(5, 5, "", "//", ""),]
+            ))
+        );
     }
 
     #[test]
     fn test_find_path_to_toc_1() {
-        let (temp_dir, test_dir) = prep_test_dir!();        // Test 1: the TOC is in the same directory as the file.
+        let (temp_dir, test_dir) = prep_test_dir!();
 
-
+        // Test 1: the TOC is in the same directory as the file.
         let fp = find_path_to_toc(&test_dir.join("1/foo.py"));
-        assert_eq!(fp, Some(PathBuf::from_str("toc.md").unwrap()));        // Test 2: no TOC. (We assume all temp directory parents lack a TOC as
+        assert_eq!(fp, Some(PathBuf::from_str("toc.md").unwrap()));
+
+        // Test 2: no TOC. (We assume all temp directory parents lack a TOC as
         // well.)
-
-
         let fp = find_path_to_toc(&test_dir.join("2/foo.py"));
-        assert_eq!(fp, None);        // Test 3: the TOC is a few levels above the file.
+        assert_eq!(fp, None);
 
-
+        // Test 3: the TOC is a few levels above the file.
         let fp = find_path_to_toc(&test_dir.join("3/bar/baz/foo.py"));
-        assert_eq!(fp, Some(PathBuf::from_str("../../toc.md").unwrap()));        // Report any errors produced when removing the temporary directory.
+        assert_eq!(fp, Some(PathBuf::from_str("../../toc.md").unwrap()));
 
-
+        // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
     }
 }
