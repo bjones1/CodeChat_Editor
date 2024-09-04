@@ -108,8 +108,8 @@ pub async fn vscode_ide_websocket(
             },
         )
         .is_none());
-    let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
-    let (to_client_tx, to_client_rx) = mpsc::channel(10);
+    let (from_client_tx, _from_client_rx) = mpsc::channel(10);
+    let (_to_client_tx, to_client_rx) = mpsc::channel(10);
     assert!(app_state
         .vscode_client_queues
         .lock()
@@ -173,6 +173,8 @@ pub async fn vscode_ide_websocket(
                         send_response(&to_ide_tx, message.id, "").await;
                     }
                 }
+                // Note: Currently, this code will never run because there's only one supported IDE type (VSCode). Keep it for future expansion.
+                #[allow(unreachable_patterns)]
                 _ => {
                     // This is the wrong IDE type. Report then error.
                     let msg = format!("Invalid IDE type: {ide_type:?}");
@@ -251,9 +253,9 @@ struct VSCodeTask;
 impl ProcessingTask for VSCodeTask {
     async fn processing_task(
         &self,
-        file_path: &Path,
-        app_state: web::Data<AppState>,
-        codechat_for_web: CodeChatForWeb,
+        _file_path: &Path,
+        _app_state: web::Data<AppState>,
+        _codechat_for_web: CodeChatForWeb,
     ) -> u32 {
         0
     }

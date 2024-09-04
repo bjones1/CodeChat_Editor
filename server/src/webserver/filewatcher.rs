@@ -385,7 +385,6 @@ impl ProcessingTask for FilewatcherTask {
                                             );
                                             break 'process msg;
                                         }
-                                        current_filepath = current_filepath.into();
                                         "".to_string()
                                     };
                                     send_response(&to_websocket_tx, m.id, &result).await;
