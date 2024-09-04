@@ -39,7 +39,7 @@ use super::{
 use crate::queue_send;
 
 // ## Code
-#[get("/vsc/ws-ext/{connection_id}")]
+#[get("/vsc/ws-ide/{connection_id}")]
 pub async fn vscode_ide_websocket(
     connection_id: web::Path<String>,
     req: HttpRequest,
@@ -158,6 +158,7 @@ pub async fn vscode_ide_websocket(
 
                             break 'task;
                         }
+                        // Send a response (successful) to the `Opened` message.
                         send_response(&to_ide_tx, message.id, "").await;
                     }
                 }
@@ -194,35 +195,60 @@ mod test {
     use assertables::assert_starts_with_as_result;
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
+    use tokio::io::{AsyncRead, AsyncWrite};
     use tokio_tungstenite::tungstenite::http::StatusCode;
+    use tokio_tungstenite::WebSocketStream;
     use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-    use super::super::{run_server, EditorMessage, EditorMessageContents, IP_ADDRESS, IP_PORT};
+    use super::super::{
+        run_server, EditorMessage, EditorMessageContents, IdeType, IP_ADDRESS, IP_PORT,
+    };
     use crate::cast;
     use crate::test_utils::{check_logger_errors, configure_testing_logger};
     use crate::webserver::UpdateMessageContents;
 
     lazy_static! {
+        // Run a single webserver for all tests.
         static ref webserver_handle: JoinHandle<Result<(), Error>> =
             actix_rt::spawn(async move { run_server().await });
     }
 
+    // Send a message via a websocket.
+    async fn send_message<S: AsyncRead + AsyncWrite + Unpin>(
+        ws_stream: &mut WebSocketStream<S>,
+        message: &EditorMessage,
+    ) {
+        ws_stream
+            .send(Message::Text(serde_json::to_string(message).unwrap()))
+            .await
+            .unwrap();
+    }
+
+    // Read a message from a websocket.
+    async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
+        ws_stream: &mut WebSocketStream<S>,
+    ) -> EditorMessage {
+        let msg = ws_stream.next().await.unwrap().unwrap();
+        serde_json::from_str(&msg.into_text().unwrap()).unwrap()
+    }
+
+    // Test incorrect inputs: two connections with the same ID, sending the wrong first message.
     #[actix_web::test]
-    async fn test_vscode_ide_websocket() {
+    async fn test_vscode_ide_websocket1() {
         configure_testing_logger();
         // Ensure the webserver is running.
         let _ = &*webserver_handle;
 
         // Connect to the VSCode IDE websocket.
         let (mut ws_stream, _) = connect_async(format!(
-            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ext/test-connection-id"
+            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/test-connection-id1"
         ))
         .await
         .expect("Failed to connect");
 
         // Start a second connection; verify that it fails.
         let err = connect_async(format!(
-            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ext/test-connection-id"
+            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/test-connection-id1"
         ))
         .await
         .expect_err("Should fail to connect");
@@ -235,41 +261,111 @@ mod test {
         // running all tests single-threaded plus fixing the logger is low.
         //
         // Send a message that's not an `Opened` message.
-        ws_stream
-            .send(Message::Text(
-                serde_json::to_string(&EditorMessage {
-                    id: 0,
-                    message: EditorMessageContents::Update(UpdateMessageContents {
-                        path: None,
-                        contents: None,
-                        cursor_position: None,
-                        scroll_position: None,
-                    }),
-                })
-                .unwrap(),
-            ))
-            .await
-            .unwrap();
+        send_message(
+            &mut ws_stream,
+            &EditorMessage {
+                id: 0,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    path: None,
+                    contents: None,
+                    cursor_position: None,
+                    scroll_position: None,
+                }),
+            },
+        )
+        .await;
 
         // Get the response. It should be an error.
-        let em: EditorMessage = serde_json::from_str(
-            &ws_stream
-                .next()
-                .await
-                .unwrap()
-                .unwrap()
-                .into_text()
-                .unwrap(),
-        )
-        .unwrap();
-        let EditorMessageContents::Result(result) = em.message else {
-            panic!();
-        };
+        let em = read_message(&mut ws_stream).await;
+        let result = cast!(em.message, EditorMessageContents::Result);
         assert_starts_with!(result, "Unexpected message");
 
         // Next, expect the websocket to be closed.
         let err = &ws_stream.next().await.unwrap().unwrap();
         assert_eq!(*err, Message::Close(None));
+
+        check_logger_errors();
+    }
+
+    // Test opening the Client in a browser.
+    #[actix_web::test]
+    async fn test_vscode_ide_websocket2() {
+        configure_testing_logger();
+        // Ensure the webserver is running.
+        let _ = &*webserver_handle;
+
+        // Connect to the VSCode IDE websocket.
+        let (mut ws_stream, _) = connect_async(format!(
+            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/test-connection-id2"
+        ))
+        .await
+        .expect("Failed to connect");
+
+        // Send the `Opened` message.
+        send_message(
+            &mut ws_stream,
+            &EditorMessage {
+                id: 0,
+                message: EditorMessageContents::Opened(IdeType::VSCode(false)),
+            },
+        )
+        .await;
+
+        // Get the response. It should be success.
+        let em = read_message(&mut ws_stream).await;
+        assert_eq!(cast!(em.message, EditorMessageContents::Result), "");
+
+        // Next, wait for the next message -- the HTML.
+        //let err = &ws_stream.next().await.unwrap().unwrap();
+        //assert_eq!(*err, Message::Close(None));
+
+        check_logger_errors();
+    }
+
+    // Test opening the Client in the VSCode browser.
+    #[actix_web::test]
+    async fn test_vscode_ide_websocket3() {
+        configure_testing_logger();
+        // Ensure the webserver is running.
+        let _ = &*webserver_handle;
+
+        // Connect to the VSCode IDE websocket.
+        let (mut ws_stream, _) = connect_async(format!(
+            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/test-connection-id3"
+        ))
+        .await
+        .expect("Failed to connect");
+
+        // Send the `Opened` message.
+        send_message(
+            &mut ws_stream,
+            &EditorMessage {
+                id: 0,
+                message: EditorMessageContents::Opened(IdeType::VSCode(true)),
+            },
+        )
+        .await;
+
+        // Get the response. It should be success.
+        let em = read_message(&mut ws_stream).await;
+        assert_eq!(cast!(em.message, EditorMessageContents::Result), "");
+
+        // Next, wait for the next message -- the HTML.
+        let em = read_message(&mut ws_stream).await;
+        assert_eq!(
+            cast!(em.message, EditorMessageContents::ClientHtml),
+            "testing"
+        );
+
+        // Send a response to this message.
+        send_message(
+            &mut ws_stream,
+            &EditorMessage {
+                id: 1,
+                message: EditorMessageContents::Result("".to_string()),
+            },
+        )
+        .await;
 
         check_logger_errors();
     }
