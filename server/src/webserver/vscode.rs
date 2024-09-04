@@ -50,9 +50,12 @@ pub async fn vscode_ide_websocket(
 
     // There are three cases for this `connection_id`:
     //
-    // 1. It hasn't been used before. In this case, create the appropriate queues and start websocket and processing tasks.
-    // 2. It's in use, but was disconnected. In this case, re-use the queues and start the websocket task; the processing task is still running.
-    // 3. It's in use by another IDE. This is an error, but I don't have a way to detect it yet.
+    // 1.  It hasn't been used before. In this case, create the appropriate
+    //     queues and start websocket and processing tasks.
+    // 2.  It's in use, but was disconnected. In this case, re-use the queues
+    //     and start the websocket task; the processing task is still running.
+    // 3.  It's in use by another IDE. This is an error, but I don't have a way
+    //     to detect it yet.
     //
     // Check case 3.
     if app_state
@@ -82,7 +85,8 @@ pub async fn vscode_ide_websocket(
         .await;
     }
 
-    // Then this is case 1. Add the connection ID to the list of active connections.
+    // Then this is case 1. Add the connection ID to the list of active
+    // connections.
     let (from_ide_tx, mut from_ide_rx) = mpsc::channel(10);
     let (to_ide_tx, to_ide_rx) = mpsc::channel(10);
     assert!(app_state
@@ -249,7 +253,8 @@ mod test {
         serde_json::from_str(&msg.into_text().unwrap()).unwrap()
     }
 
-    // Test incorrect inputs: two connections with the same ID, sending the wrong first message.
+    // Test incorrect inputs: two connections with the same ID, sending the
+    // wrong first message.
     #[actix_web::test]
     async fn test_vscode_ide_websocket1() {
         configure_testing_logger();

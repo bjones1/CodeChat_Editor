@@ -114,7 +114,8 @@ struct EditorMessage {
 /// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum EditorMessageContents {
-    /// This is the first message sent when the IDE starts up. The client should not send this message.
+    /// This is the first message sent when the IDE starts up. The client should
+    /// not send this message.
     Opened(IdeType),
     /// This sends an update; any missing fields are unchanged.
     Update(UpdateMessageContents),
@@ -526,7 +527,8 @@ async fn serve_file(
 
     // Build and return the webpage.
     let js_test_suffix = if is_test_mode { "-test" } else { "" };
-    // Provide the pathname to the websocket connection. Quote the string using JSON to handle any necessary escapes.
+    // Provide the pathname to the websocket connection. Quote the string using
+    // JSON to handle any necessary escapes.
     let ws_url = match serde_json::to_string(&format!("{ide_path}/{connection_id}")) {
         Ok(v) => v,
         Err(err) => {
@@ -797,7 +799,8 @@ async fn client_websocket(
 
                     // Process this message.
                     match m.message {
-                        // If it's a `Result`, no additional processing is needed.
+                        // If it's a `Result`, no additional processing is
+                        // needed.
                         EditorMessageContents::Result(_) => {},
                         // A `Closed` message causes the websocket to close.
                         EditorMessageContents::Closed => {

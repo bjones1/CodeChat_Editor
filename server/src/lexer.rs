@@ -1197,9 +1197,10 @@ pub fn source_lexer(
                                 let last_char = comment_body.chars().last().unwrap();
                                 let ends_with_space = last_char == ' ' &&
                                     // Don't remove a space at the end of the
-                                    // comment body when it's also the space at the
-                                    // beginning of the comment body (meaning it's a
-                                    // single-character comment body).
+                                    // comment body when it's also the space at
+                                    // the beginning of the comment body
+                                    // (meaning it's a single-character comment
+                                    // body).
                                     comment_body.len() > 1;
                                 let trimmed_comment_body = &comment_body
                                     [1..comment_body.len() - if ends_with_space { 1 } else { 0 }];

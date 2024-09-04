@@ -610,7 +610,8 @@ export const CodeMirror_load = async (
     // Additional extensions.
     extensions: [Extension],
 ) => {
-    // Save the current scroll position, to prevent the view from scrolling back to the top after an update/reload.
+    // Save the current scroll position, to prevent the view from scrolling back
+    // to the top after an update/reload.
     let scrollSnapshot;
     if (current_view !== undefined) {
         scrollSnapshot = current_view.scrollSnapshot()
@@ -665,7 +666,8 @@ export const CodeMirror_load = async (
         state,
         scrollTo: scrollSnapshot
     });
-    // For reloads, we need to remove previous instances; otherwise, Bad Things happen.
+    // For reloads, we need to remove previous instances; otherwise, Bad Things
+    // happen.
     tinymce.remove()
     tinymce_singleton = (await init({ selector: "#TinyMCE-inst" }))[0];
 };

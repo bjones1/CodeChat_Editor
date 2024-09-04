@@ -59,7 +59,6 @@ use crate::processing::{
 use crate::queue_send;
 
 // ### Serve file
-//
 /// This could be a plain text file (for example, one not recognized as source
 /// code that this program supports), a binary file (image/video/etc.), a
 /// CodeChat Editor file, or a non-existent file. Determine which type this file

@@ -269,7 +269,12 @@ fn code_doc_block_vec_to_source(
                     // series of lines, adding the indent and inline comment
                     // delimiter to each line.
                     //
-                    // A special case: an empty string processed by `split_inclusive` becomes an empty list, not `[""]`. Note that this mirrors what Python's [splitlines](https://docs.python.org/3/library/stdtypes.html#str.splitlines) does, and is also the subject of a [Rust bug report](https://github.com/rust-lang/rust/issues/111457).
+                    // A special case: an empty string processed by
+                    // `split_inclusive` becomes an empty list, not `[""]`. Note
+                    // that this mirrors what Python's
+                    // [splitlines](https://docs.python.org/3/library/stdtypes.html#str.splitlines)
+                    // does, and is also the subject of a
+                    // [Rust bug report](https://github.com/rust-lang/rust/issues/111457).
                     let lines: Vec<_> = doc_block.contents.split_inclusive('\n').collect();
                     let lines_fixed = if lines.is_empty() { vec![""] } else { lines };
                     for content_line in lines_fixed {
@@ -300,7 +305,9 @@ fn code_doc_block_vec_to_source(
                     let content_lines: Vec<&str> =
                         doc_block.contents.split_inclusive('\n').collect();
                     for (index, content_line) in content_lines.iter().enumerate() {
-                        // Note: using `.len()` here is correct -- it refers to an index into `content_lines`, not an index into a string.
+                        // Note: using `.len()` here is correct -- it refers to
+                        // an index into `content_lines`, not an index into a
+                        // string.
                         let is_last = index == content_lines.len() - 1;
                         // Process each line, based on its location (first/not
                         // first/last). Note that the first line can also be the
@@ -472,7 +479,8 @@ pub fn source_to_codechat_for_web(
                     CodeDocBlock::DocBlock(doc_block) => {
                         // Create the doc block.
                         //
-                        // Get the length of the string in characters (not bytes, which is what `len()` returns).
+                        // Get the length of the string in characters (not
+                        // bytes, which is what `len()` returns).
                         let len = code_mirror.doc.chars().count();
                         code_mirror.doc_blocks.push((
                             // From
@@ -1347,22 +1355,22 @@ mod tests {
 
     #[test]
     fn test_find_path_to_toc_1() {
-        let (temp_dir, test_dir) = prep_test_dir!();
+        let (temp_dir, test_dir) = prep_test_dir!();        // Test 1: the TOC is in the same directory as the file.
 
-        // Test 1: the TOC is in the same directory as the file.
+
         let fp = find_path_to_toc(&test_dir.join("1/foo.py"));
-        assert_eq!(fp, Some(PathBuf::from_str("toc.md").unwrap()));
-
-        // Test 2: no TOC. (We assume all temp directory parents lack a TOC as
+        assert_eq!(fp, Some(PathBuf::from_str("toc.md").unwrap()));        // Test 2: no TOC. (We assume all temp directory parents lack a TOC as
         // well.)
+
+
         let fp = find_path_to_toc(&test_dir.join("2/foo.py"));
-        assert_eq!(fp, None);
+        assert_eq!(fp, None);        // Test 3: the TOC is a few levels above the file.
 
-        // Test 3: the TOC is a few levels above the file.
+
         let fp = find_path_to_toc(&test_dir.join("3/bar/baz/foo.py"));
-        assert_eq!(fp, Some(PathBuf::from_str("../../toc.md").unwrap()));
+        assert_eq!(fp, Some(PathBuf::from_str("../../toc.md").unwrap()));        // Report any errors produced when removing the temporary directory.
 
-        // Report any errors produced when removing the temporary directory.
+
         temp_dir.close().unwrap();
     }
 }
