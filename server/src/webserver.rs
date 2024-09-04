@@ -58,7 +58,7 @@ use tokio::{
     time::sleep,
 };
 use urlencoding::{self, encode};
-use vscode::vscode_ide_websocket;
+use vscode::{vscode_client_websocket, vscode_ide_websocket};
 #[cfg(target_os = "windows")]
 use win_partitions::win_api::get_logical_drive;
 
@@ -940,6 +940,7 @@ where
         .service(serve_fs)
         .service(filewatcher_websocket)
         .service(vscode_ide_websocket)
+        .service(vscode_client_websocket)
         // Reroute to the filesystem for typical user-requested URLs.
         .route("/", web::get().to(_root_fs_redirect))
         .route("/fw/fs", web::get().to(_root_fs_redirect))

@@ -185,6 +185,23 @@ pub async fn vscode_ide_websocket(
     .await
 }
 
+/// Define a websocket handler for the CodeChat Editor Client.
+#[get("/vsc/ws-client/{connection_id}")]
+pub async fn vscode_client_websocket(
+    connection_id: web::Path<String>,
+    req: HttpRequest,
+    body: web::Payload,
+    app_state: web::Data<AppState>,
+) -> Result<HttpResponse, Error> {
+    client_websocket(
+        connection_id,
+        req,
+        body,
+        app_state.vscode_client_queues.clone(),
+    )
+    .await
+}
+
 // ## Tests
 #[cfg(test)]
 mod test {

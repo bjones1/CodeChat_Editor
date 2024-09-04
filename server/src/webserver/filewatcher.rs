@@ -60,11 +60,11 @@ use crate::queue_send;
 
 // ### Serve file
 //
-// This could be a plain text file (for example, one not recognized as source
-// code that this program supports), a binary file (image/video/etc.), a
-// CodeChat Editor file, or a non-existent file. Determine which type this file
-// is then serve it. Serve a CodeChat Editor Client webpage using the
-// FileWatcher "IDE".
+/// This could be a plain text file (for example, one not recognized as source
+/// code that this program supports), a binary file (image/video/etc.), a
+/// CodeChat Editor file, or a non-existent file. Determine which type this file
+/// is then serve it. Serve a CodeChat Editor Client webpage using the
+/// FileWatcher "IDE".
 pub async fn serve_filewatcher(
     file_path: &Path,
     req: &HttpRequest,
@@ -86,9 +86,9 @@ pub async fn serve_filewatcher(
     .await
 }
 
-// Smart file reader. This returns an HTTP response if the provided file should
-// be served directly (including an error if necessary), or a string containing
-// the text of the file when it's Unicode.
+/// Smart file reader. This returns an HTTP response if the provided file should
+/// be served directly (including an error if necessary), or a string containing
+/// the text of the file when it's Unicode.
 async fn smart_read(file_path: &Path, req: &HttpRequest) -> Result<String, HttpResponse> {
     let mut file_contents = String::new();
     let read_ret = match File::open(file_path).await {
@@ -133,8 +133,8 @@ async fn smart_read(file_path: &Path, req: &HttpRequest) -> Result<String, HttpR
     Ok(file_contents)
 }
 
-// This is an awkward workaround to create an async function pointer. See
-// `serve_file`.
+/// This is an awkward workaround to create an async function pointer. See
+/// `serve_file`.
 struct FilewatcherTask;
 
 #[async_trait]
