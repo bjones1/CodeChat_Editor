@@ -88,7 +88,7 @@ pub async fn serve_filewatcher(
 /// Smart file reader. This returns an HTTP response if the provided file should
 /// be served directly (including an error if necessary), or a string containing
 /// the text of the file when it's Unicode.
-async fn smart_read(file_path: &Path, req: &HttpRequest) -> Result<String, HttpResponse> {
+pub async fn smart_read(file_path: &Path, req: &HttpRequest) -> Result<String, HttpResponse> {
     let mut file_contents = String::new();
     let read_ret = match File::open(file_path).await {
         Ok(fc) => fc,

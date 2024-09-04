@@ -58,7 +58,7 @@ use tokio::{
     time::sleep,
 };
 use urlencoding::{self, encode};
-use vscode::{vscode_client_websocket, vscode_ide_websocket};
+use vscode::{serve_vscode_fs, vscode_client_websocket, vscode_ide_websocket};
 #[cfg(target_os = "windows")]
 use win_partitions::win_api::get_logical_drive;
 
@@ -223,7 +223,7 @@ async fn _root_fs_redirect() -> impl Responder {
 /// replaces this.
 #[cfg(not(tarpaulin_include))]
 #[get("/fw/fs/{path:.*}")]
-async fn serve_fs(
+async fn serve_filewatcher_fs(
     req: HttpRequest,
     app_state: web::Data<AppState>,
     orig_path: web::Path<String>,
@@ -939,9 +939,10 @@ where
             "/static",
             client_static_path.as_os_str(),
         ))
-        // These endpoints serve the files from the filesystem.
-        .service(serve_fs)
+        // These endpoints serve the files from the filesystem and the websockets.
+        .service(serve_filewatcher_fs)
         .service(filewatcher_websocket)
+        .service(serve_vscode_fs)
         .service(vscode_ide_websocket)
         .service(vscode_client_websocket)
         // Reroute to the filesystem for typical user-requested URLs.

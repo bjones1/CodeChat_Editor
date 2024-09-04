@@ -1,3 +1,5 @@
+use std::path::Path;
+
 /// Copyright (C) 2023 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -24,8 +26,9 @@
 // ### Third-party
 use actix_web::{
     error::{Error, ErrorBadRequest},
-    get, web, HttpRequest, HttpResponse,
+    get, web, HttpRequest, HttpResponse, Responder,
 };
+use async_trait::async_trait;
 use log::error;
 use open;
 use tokio::sync::mpsc;
@@ -33,10 +36,14 @@ use tokio::sync::mpsc;
 // ### Local
 use super::{
     client_websocket, send_response, AppState, EditorMessage, EditorMessageContents, IdeType,
-    WebsocketQueues,
+    ProcessingTask, WebsocketQueues,
 };
 
-use crate::queue_send;
+use crate::{
+    processing::CodeChatForWeb,
+    queue_send,
+    webserver::{filewatcher::smart_read, html_not_found, serve_file},
+};
 
 // ## Code
 #[get("/vsc/ws-ide/{connection_id}")]
@@ -204,6 +211,52 @@ pub async fn vscode_client_websocket(
         app_state.vscode_client_queues.clone(),
     )
     .await
+}
+
+// Respond to requests for the filesystem.
+#[get("/vsc/fs/{connection_id}/{path:.*}")]
+async fn serve_vscode_fs(
+    req: HttpRequest,
+    app_state: web::Data<AppState>,
+    connection_id: web::Path<String>,
+    orig_path: web::Path<String>,
+) -> impl Responder {
+    let file_path = match Path::new(&orig_path.to_string()).canonicalize() {
+        Ok(p) => p,
+        Err(err) => {
+            return html_not_found(&format!(
+                "<p>The requested path <code>{orig_path}</code> is not valid: {err}.</p>"
+            ))
+        }
+    };
+    let file_contents = match smart_read(&file_path, &req).await {
+        Ok(fc) => fc,
+        Err(err) => return err,
+    };
+
+    serve_file(
+        &file_path,
+        &file_contents,
+        &format!("/vsc/fs/{connection_id}"),
+        &req,
+        app_state,
+        VSCodeTask,
+    )
+    .await
+}
+
+struct VSCodeTask;
+
+#[async_trait]
+impl ProcessingTask for VSCodeTask {
+    async fn processing_task(
+        &self,
+        file_path: &Path,
+        app_state: web::Data<AppState>,
+        codechat_for_web: CodeChatForWeb,
+    ) -> u32 {
+        0
+    }
 }
 
 // ## Tests
