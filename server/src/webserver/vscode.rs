@@ -31,7 +31,7 @@ use actix_web::{
 use async_trait::async_trait;
 use log::error;
 use open;
-use tokio::sync::mpsc;
+use tokio::{select, sync::mpsc};
 
 // ### Local
 use super::{
@@ -109,7 +109,7 @@ pub async fn vscode_ide_websocket(
         )
         .is_none());
     let (from_client_tx, _from_client_rx) = mpsc::channel(10);
-    let (_to_client_tx, to_client_rx) = mpsc::channel(10);
+    let (to_client_tx, to_client_rx) = mpsc::channel(10);
     assert!(app_state
         .vscode_client_queues
         .lock()
@@ -156,7 +156,45 @@ pub async fn vscode_ide_websocket(
                     if is_self_hosted {
                         // Send a response (successful) to the `Opened` message.
                         send_response(&to_ide_tx, message.id, "").await;
-                        queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::ClientHtml("testing".to_string())}), 'task);
+
+                        // Send the HTML for the internal browser.
+                        queue_send!(to_ide_tx.send(EditorMessage {
+                            id: 0,
+                            message: EditorMessageContents::ClientHtml("testing".to_string())
+                        }), 'task);
+
+                        // Wait for the response.
+                        let Some(message): std::option::Option<EditorMessage> =
+                            from_ide_rx.recv().await
+                        else {
+                            error!("{}", "IDE websocket received no data.");
+                            break 'task;
+                        };
+
+                        // Make sure it's the `Result` message.
+                        let EditorMessageContents::Result(result) = message.message else {
+                            let msg = format!("Unexpected message {message:?}");
+                            error!("{msg}");
+                            // Send a `Closed` message.
+                            queue_send!(to_ide_tx.send(EditorMessage {
+                                id: 1,
+                                message: EditorMessageContents::Closed
+                            }), 'task);
+                            break 'task;
+                        };
+
+                        // Handle any errors reported.
+                        if !result.is_empty() {
+                            let msg = format!("Error in ClientHtml: {result}");
+                            error!("{msg}");
+
+                            // Send a `Closed` message.
+                            queue_send!(to_ide_tx.send(EditorMessage {
+                                id: 1,
+                                message: EditorMessageContents::Closed
+                            }), 'task);
+                            break 'task;
+                        }
                     } else {
                         // Open the Client in an external browser.
                         if let Err(err) = open::that_detached("https://example.com") {
@@ -165,8 +203,10 @@ pub async fn vscode_ide_websocket(
                             send_response(&to_ide_tx, message.id, &msg).await;
 
                             // Send a `Closed` message.
-                            queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
-
+                            queue_send!(to_ide_tx.send(EditorMessage{
+                                id: 0,
+                                message: EditorMessageContents::Closed
+                            }), 'task);
                             break 'task;
                         }
                         // Send a response (successful) to the `Opened` message.
@@ -183,6 +223,34 @@ pub async fn vscode_ide_websocket(
 
                     // Close the connection.
                     queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
+                }
+            }
+
+            // All further messages are handled in the main loop.
+            loop {
+                select! {
+                    // Look for messages from the IDE.
+                    Some(result) = from_ide_rx.recv() => {
+                        match result.message {
+                            // Handle messages that the IDE must not send.
+                            EditorMessageContents::Opened(_) | EditorMessageContents::LoadFile(_) | EditorMessageContents::ClientHtml(_) => {
+                                let msg = "IDE must not send this message.";
+                                error!("{msg}");
+                                send_response(&to_ide_tx, result.id, msg).await;
+                            },
+
+                            // Handle messages that are simply passed through.
+                            EditorMessageContents::Closed | EditorMessageContents::RequestClose | EditorMessageContents::Result(_) => {
+                                // Send the message to the client.
+                                queue_send!(to_client_tx.send(result));
+                            },
+
+                            // Handle the `Update` message.
+                            EditorMessageContents::Update(_update) => {
+                                // First, see if this update requires a different working directory. If so, split it into two parts.
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -265,12 +333,14 @@ impl ProcessingTask for VSCodeTask {
 #[cfg(test)]
 mod test {
     use std::io::Error;
+    use std::path::Path;
 
     use actix_rt::task::JoinHandle;
     use assertables::assert_starts_with;
     use assertables::assert_starts_with_as_result;
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
+    use minreq;
     use tokio::io::{AsyncRead, AsyncWrite};
     use tokio_tungstenite::tungstenite::http::StatusCode;
     use tokio_tungstenite::WebSocketStream;
@@ -279,9 +349,12 @@ mod test {
     use super::super::{
         run_server, EditorMessage, EditorMessageContents, IdeType, IP_ADDRESS, IP_PORT,
     };
-    use crate::cast;
+    use crate::processing::CodeChatForWeb;
+    use crate::processing::CodeMirror;
+    use crate::processing::SourceFileMetadata;
     use crate::test_utils::{check_logger_errors, configure_testing_logger};
     use crate::webserver::UpdateMessageContents;
+    use crate::{cast, prep_test_dir};
 
     lazy_static! {
         // Run a single webserver for all tests.
@@ -361,10 +434,10 @@ mod test {
         let err = &ws_stream.next().await.unwrap().unwrap();
         assert_eq!(*err, Message::Close(None));
 
-        check_logger_errors();
+        check_logger_errors(0);
     }
 
-    // Test opening the Client in a browser.
+    // Test opening the Client in an external browser.
     #[actix_web::test]
     async fn test_vscode_ide_websocket2() {
         configure_testing_logger();
@@ -396,18 +469,19 @@ mod test {
         //let err = &ws_stream.next().await.unwrap().unwrap();
         //assert_eq!(*err, Message::Close(None));
 
-        check_logger_errors();
+        check_logger_errors(0);
     }
 
     // Test opening the Client in the VSCode browser.
     #[actix_web::test]
     async fn test_vscode_ide_websocket3() {
         configure_testing_logger();
+        let (temp_dir, test_dir) = prep_test_dir!();
         // Ensure the webserver is running.
         let _ = &*webserver_handle;
 
         // Connect to the VSCode IDE websocket.
-        let (mut ws_stream, _) = connect_async(format!(
+        let (mut ws_stream_ide, _) = connect_async(format!(
             "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/test-connection-id3"
         ))
         .await
@@ -415,7 +489,7 @@ mod test {
 
         // Send the `Opened` message.
         send_message(
-            &mut ws_stream,
+            &mut ws_stream_ide,
             &EditorMessage {
                 id: 0,
                 message: EditorMessageContents::Opened(IdeType::VSCode(true)),
@@ -424,19 +498,19 @@ mod test {
         .await;
 
         // Get the response. It should be success.
-        let em = read_message(&mut ws_stream).await;
+        let em = read_message(&mut ws_stream_ide).await;
         assert_eq!(cast!(em.message, EditorMessageContents::Result), "");
 
         // Next, wait for the next message -- the HTML.
-        let em = read_message(&mut ws_stream).await;
+        let em = read_message(&mut ws_stream_ide).await;
         assert_eq!(
             cast!(em.message, EditorMessageContents::ClientHtml),
             "testing"
         );
 
-        // Send a response to this message.
+        // Send a success response to this message.
         send_message(
-            &mut ws_stream,
+            &mut ws_stream_ide,
             &EditorMessage {
                 id: 1,
                 message: EditorMessageContents::Result("".to_string()),
@@ -444,6 +518,65 @@ mod test {
         )
         .await;
 
-        check_logger_errors();
+        // Fetch a non-existent file and verify the response returns an error.
+        assert_eq!(
+            minreq::get(format!(
+                "http://localhost:8080/vsc/fs/test-connection-id3/{}/none.py",
+                test_dir.to_str().unwrap()
+            ))
+            .send()
+            .unwrap()
+            .status_code,
+            404
+        );
+
+        // Create a websocket to emulate the client.
+        let (mut ws_stream_client, _) = connect_async(format!(
+            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-client/test-connection-id3"
+        ))
+        .await
+        .expect("Failed to connect");
+
+        // Send an `Update` message with a file to edit.
+        let temp_py = Path::new(&test_dir).join("temp.py");
+        send_message(
+            &mut ws_stream_ide,
+            &EditorMessage {
+                id: 1,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    path: Some(temp_py.clone()),
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "python".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "print('Hello, world!')".to_string(),
+                            doc_blocks: vec![],
+                        },
+                    }),
+                    cursor_position: None,
+                    scroll_position: None,
+                }),
+            },
+        )
+        .await;
+
+        /*
+        // This should become one update to load the correct URL/directory, then another with the actual file contents.
+        let em = read_message(&mut ws_stream_client).await;
+        assert_eq!(
+            cast!(em.message, EditorMessageContents::Update),
+            UpdateMessageContents {
+                path: Some(temp_py.clone()),
+                contents: None,
+                cursor_position: None,
+                scroll_position: None,
+            }
+        );
+         */
+
+        check_logger_errors(0);
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
     }
 }

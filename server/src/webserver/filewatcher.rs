@@ -404,6 +404,12 @@ impl ProcessingTask for FilewatcherTask {
                                     break;
                                 }
 
+                                EditorMessageContents::Opened(_) | EditorMessageContents::ClientHtml(_) | EditorMessageContents::RequestClose => {
+                                    let msg = format!("Client sent unsupported message type {m:?}");
+                                    error!("{msg}");
+                                    send_response(&to_websocket_tx, m.id, &msg).await;
+                                }
+
                                 other => {
                                     warn!("Unhandled message {other:?}");
                                 }
@@ -466,6 +472,7 @@ mod tests {
         TranslationResults,
     };
     use crate::test_utils::{check_logger_errors, configure_testing_logger};
+    use crate::webserver::IdeType;
     use crate::{cast, prep_test_dir};
 
     async fn get_websocket_queues(
@@ -550,7 +557,7 @@ mod tests {
         send_response(1, &ide_tx_queue, "").await;
 
         // Report any errors produced when removing the temporary directory.
-        check_logger_errors();
+        check_logger_errors(0);
         temp_dir.close().unwrap();
     }
 
@@ -568,7 +575,7 @@ mod tests {
         get_message_as!(client_rx, EditorMessageContents::Update);
         send_response(1, &ide_tx_queue, "").await;
 
-        // 1.  Send an update message with no contents.
+        // 1. Send an update message with no contents.
         ide_tx_queue
             .send(EditorMessage {
                 id: 0,
@@ -588,7 +595,26 @@ mod tests {
             ""
         );
 
-        // 2.  Send an update message with no path.
+        // 2. Send invalid messages.
+        for msg in [
+            EditorMessageContents::Opened(IdeType::VSCode(true)),
+            EditorMessageContents::ClientHtml("".to_string()),
+            EditorMessageContents::RequestClose,
+        ] {
+            ide_tx_queue
+                .send(EditorMessage {
+                    id: 0,
+                    message: msg,
+                })
+                .await
+                .unwrap();
+            assert_starts_with!(
+                get_message_as!(client_rx, EditorMessageContents::Result),
+                "Client sent unsupported message type"
+            );
+        }
+
+        // 3. Send an update message with no path.
         ide_tx_queue
             .send(EditorMessage {
                 id: 0,
@@ -622,7 +648,7 @@ mod tests {
             ""
         );
 
-        // 3.  Send an update message with unknown source language.
+        // 4. Send an update message with unknown source language.
         ide_tx_queue
             .send(EditorMessage {
                 id: 0,
@@ -650,7 +676,7 @@ mod tests {
             "Unable to translate to source: Invalid mode"
         );
 
-        // 4.  Send an update message with an invalid path.
+        // 5. Send an update message with an invalid path.
         ide_tx_queue
             .send(EditorMessage {
                 id: 0,
@@ -678,7 +704,7 @@ mod tests {
             "Unable to save file '':"
         );
 
-        // 5.  Send a valid message.
+        // 6. Send a valid message.
         let mut file_path = test_dir.clone();
         file_path.push("test.py");
         ide_tx_queue
@@ -712,7 +738,7 @@ mod tests {
         // Wait for the filewatcher to debounce this file write.
         sleep(Duration::from_secs(1)).await;
 
-        // Change this file and verify that this produces an update.
+        // 7. Change this file and verify that this produces an update.
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         assert_eq!(
@@ -735,8 +761,8 @@ mod tests {
         // Acknowledge this message.
         send_response(3, &ide_tx_queue, "").await;
 
-        // Rename it and check for an close (the file watcher can't detect the
-        // destination file, so it's treated as the file is deleted).
+        // 8. Rename it and check for an close (the file watcher can't detect the
+        //    destination file, so it's treated as the file is deleted).
         let mut dest = file_path.clone().parent().unwrap().to_path_buf();
         dest.push("test2.py");
         fs::rename(file_path, dest.as_path()).unwrap();
@@ -748,8 +774,9 @@ mod tests {
             }
         );
 
+        // Each of the three invalid message types produces one error.
+        check_logger_errors(3);
         // Report any errors produced when removing the temporary directory.
-        check_logger_errors();
         temp_dir.close().unwrap();
     }
 }

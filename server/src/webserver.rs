@@ -111,27 +111,38 @@ struct EditorMessage {
 }
 
 /// Define the data structure used to pass data between the CodeChat Editor
-/// Client, the IDE, and the CodeChat Editor Server.
+/// Client, the CodeChat Editor IDE extension, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum EditorMessageContents {
-    /// This is the first message sent when the IDE starts up. The client should
-    /// not send this message.
-    Opened(IdeType),
-    /// This sends an update; any missing fields are unchanged.
+    // #### These messages may be sent by either the IDE or the Client.
+    /// This sends an update; any missing fields are unchanged. Valid
+    /// destinations: IDE, Client.
     Update(UpdateMessageContents),
-    /// Only the CodeChat Client editor may send this; it requests the IDE to
-    /// load the provided file. The IDE should respond by sending an `Update`
-    /// with the requested file.
-    LoadFile(PathBuf),
-    /// Only the server may send this to the IDE. It contains the HTML for the
-    /// CodeChat Editor Client to display in its built-in browser.
-    ClientHtml(String),
-    /// Sent when the IDE or client websocket was closed, indicating that the
-    /// unclosed websocket should be closed as well.
-    Closed,
-    /// Send by the IDE to request the client to save any unsaved data then
-    /// close.
+
+    // #### These messages may only be sent by the IDE.
+    /// This is the first message sent when the IDE starts up. It may only be
+    /// sent at startup. Valid destinations: Server.
+    Opened(IdeType),
+    /// Request the Client to save any unsaved data then close. Valid
+    /// destinations: Client.
     RequestClose,
+
+    // #### These messages may only be sent by the Server.
+    /// Ask the IDE if the provided file is loaded. If so, the IDE should
+    /// respond by sending an `Update` with the requested file. If not, the
+    /// returned `Result` should indicate the error "not loaded". Valid
+    /// destinations: IDE.
+    LoadFile(PathBuf),
+    /// This may only be used to respond to an `Opened` message; it contains the
+    /// HTML for the CodeChat Editor Client to display in its built-in browser.
+    /// Valid destinations: IDE.
+    ClientHtml(String),
+    /// Sent when the IDE or Client websocket was closed, indicating that the
+    /// unclosed websocket should be closed as well. Therefore, this message
+    /// will never be received by the IDE or Client. Valid destinations: Server.
+    Closed,
+
+    // #### This message may be sent by anyone.
     /// Sent as a response to any of the above messages, reporting
     /// success/error. An empty string indicates success; otherwise, the string
     /// contains the error message.
@@ -486,13 +497,10 @@ async fn serve_file(
 </script>
 </head>
 <body>
-{}
+{html}
 </body>
 </html>
-"#,
-                    // Look for any script tags and prevent these from causing
-                    // problems.
-                    html.replace("</script>", "<\\/script>")
+"#
                 ));
         }
     };
@@ -761,9 +769,28 @@ async fn client_websocket(
                                                     task.abort();
                                                 }
                                             }
-                                            // Send the `JointMessage` to the
-                                            // processing task.
-                                            queue_send!(from_websocket_tx.send(joint_message));
+                                            // Check for messages that only the server
+                                            // can send.
+                                            match &joint_message.message {
+                                                // Check for an invalid message.
+                                                EditorMessageContents::LoadFile(_) |
+                                                EditorMessageContents::ClientHtml(_) |
+                                                EditorMessageContents::Closed => {
+                                                    let msg = format!("Invalid message {joint_message:?}");
+                                                    error!("{msg}");
+                                                    queue_send!(from_websocket_tx.send(EditorMessage {
+                                                        id: joint_message.id,
+                                                        message: EditorMessageContents::Result(msg)
+                                                    }));
+                                                },
+
+                                                // Send everything else.
+                                                _ => {
+                                                    // Send the `JointMessage` to the
+                                                    // processing task.
+                                                    queue_send!(from_websocket_tx.send(joint_message));
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -939,7 +966,8 @@ where
             "/static",
             client_static_path.as_os_str(),
         ))
-        // These endpoints serve the files from the filesystem and the websockets.
+        // These endpoints serve the files from the filesystem and the
+        // websockets.
         .service(serve_filewatcher_fs)
         .service(filewatcher_websocket)
         .service(serve_vscode_fs)

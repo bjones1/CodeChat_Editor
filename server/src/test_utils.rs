@@ -151,14 +151,17 @@ pub fn configure_testing_logger() {
     testing_logger::setup();
 }
 
-pub fn check_logger_errors() {
+pub fn check_logger_errors(num_errors: usize) {
     testing_logger::validate(|captured_logs| {
         let error_logs: Vec<_> = captured_logs
             .iter()
             .filter(|log_entry| log_entry.level == Level::Error)
             .collect();
-        if error_logs.len() > 0 {
-            println!("Error(s) in logs.");
+        if error_logs.len() > num_errors {
+            println!(
+                "Error(s) in logs: saw {}, expected {num_errors}.",
+                error_logs.len()
+            );
             assert!(false);
         }
     });
