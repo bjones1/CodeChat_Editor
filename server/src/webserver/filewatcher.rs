@@ -33,30 +33,247 @@ use actix_web::{
     http::header::{self, ContentDisposition},
     web, HttpRequest, HttpResponse,
 };
+use actix_web::{http::header::ContentType, Responder};
 use async_trait::async_trait;
+use lazy_static::lazy_static;
 use log::{error, info, warn};
 use notify_debouncer_full::{
     new_debouncer,
     notify::{EventKind, RecursiveMode, Watcher},
     DebounceEventResult,
 };
+use regex::Regex;
+use tokio::fs::DirEntry;
 use tokio::{
     fs::{self, File},
     io::AsyncReadExt,
     select,
     sync::mpsc,
 };
+use urlencoding::{self, encode};
+#[cfg(target_os = "windows")]
+use win_partitions::win_api::get_logical_drive;
 
 // ### Local
 use super::{
-    client_websocket, html_not_found, path_display, send_response, serve_file, AppState,
-    EditorMessage, EditorMessageContents, ProcessingTask, UpdateMessageContents, WebsocketQueues,
+    client_websocket, html_not_found, html_wrapper, path_display, send_response, serve_file,
+    AppState, EditorMessage, EditorMessageContents, ProcessingTask, UpdateMessageContents,
+    WebsocketQueues,
 };
 use crate::processing::TranslationResultsString;
 use crate::processing::{
     codechat_for_web_to_source, source_to_codechat_for_web_string, CodeChatForWeb,
 };
 use crate::queue_send;
+
+// ## Globals
+lazy_static! {
+    /// Matches a bare drive letter. Only needed on Windows.
+    static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
+}
+
+/// Dispatch to support functions which serve either a directory listing, a
+/// CodeChat Editor file, or a normal file.
+///
+/// Omit code coverage -- this is a temporary interface, until IDE integration
+/// replaces this.
+#[cfg(not(tarpaulin_include))]
+#[get("/fw/fs/{path:.*}")]
+async fn serve_filewatcher_fs(
+    req: HttpRequest,
+    app_state: web::Data<AppState>,
+    orig_path: web::Path<String>,
+) -> impl Responder {
+    let mut fixed_path = orig_path.to_string();
+    #[cfg(target_os = "windows")]
+    // On Windows, a path of `drive_letter:` needs a `/` appended.
+    if DRIVE_LETTER_REGEX.is_match(&fixed_path) {
+        fixed_path += "/";
+    } else if fixed_path.is_empty() {
+        // If there's no drive letter yet, we will always use `dir_listing` to
+        // select a drive.
+        return dir_listing("", Path::new("")).await;
+    }
+    // All other cases (for example, `C:\a\path\to\file.txt`) are OK.
+
+    // For Linux/OS X, prepend a slash, so that `a/path/to/file.txt` becomes
+    // `/a/path/to/file.txt`.
+    #[cfg(not(target_os = "windows"))]
+    let fixed_path = "/".to_string() + &fixed_path;
+
+    // Handle any
+    // [errors](https://doc.rust-lang.org/std/fs/fn.canonicalize.html#errors).
+    let canon_path = match Path::new(&fixed_path).canonicalize() {
+        Ok(p) => p,
+        Err(err) => {
+            return html_not_found(&format!(
+                "<p>The requested path <code>{fixed_path}</code> is not valid: {err}.</p>"
+            ))
+        }
+    };
+    if canon_path.is_dir() {
+        return dir_listing(orig_path.as_str(), &canon_path).await;
+    } else if canon_path.is_file() {
+        return serve_filewatcher(&canon_path, &req, app_state).await;
+    }
+
+    // It's not a directory or a file...we give up. For simplicity, don't handle
+    // symbolic links.
+    html_not_found(&format!(
+        "<p>The requested path <code>{}</code> is not a directory or a file.</p>",
+        path_display(&canon_path)
+    ))
+}
+
+/// ### Directory browser
+///
+/// Create a web page listing all files and subdirectories of the provided
+/// directory.
+///
+/// Omit code coverage -- this is a temporary interface, until IDE integration
+/// replaces this.
+#[cfg(not(tarpaulin_include))]
+async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
+    // Special case on Windows: list drive letters.
+    #[cfg(target_os = "windows")]
+    if dir_path == Path::new("") {
+        // List drive letters in Windows
+        let mut drive_html = String::new();
+        let logical_drives = match get_logical_drive() {
+            Ok(v) => v,
+            Err(err) => return html_not_found(&format!("Unable to list drive letters: {}.", err)),
+        };
+        for drive_letter in logical_drives {
+            drive_html.push_str(&format!(
+                "<li><a href='/fw/fs/{drive_letter}:/'>{drive_letter}:</a></li>\n"
+            ));
+        }
+
+        return HttpResponse::Ok()
+            .content_type(ContentType::html())
+            .body(html_wrapper(&format!(
+                "<h1>Drives</h1>
+<ul>
+{drive_html}
+</ul>
+"
+            )));
+    }
+
+    // List each file/directory with appropriate links.
+    let mut unwrapped_read_dir = match fs::read_dir(dir_path).await {
+        Ok(p) => p,
+        Err(err) => {
+            return html_not_found(&format!(
+                "<p>Unable to list the directory {}: {err}/</p>",
+                path_display(dir_path)
+            ))
+        }
+    };
+
+    // Get a listing of all files and directories
+    let mut files: Vec<DirEntry> = Vec::new();
+    let mut dirs: Vec<DirEntry> = Vec::new();
+    loop {
+        match unwrapped_read_dir.next_entry().await {
+            Ok(v) => {
+                if let Some(dir_entry) = v {
+                    let file_type = match dir_entry.file_type().await {
+                        Ok(x) => x,
+                        Err(err) => {
+                            return html_not_found(&format!(
+                                "<p>Unable to determine the type of {}: {err}.",
+                                path_display(&dir_entry.path()),
+                            ))
+                        }
+                    };
+                    if file_type.is_file() {
+                        files.push(dir_entry);
+                    } else {
+                        // Group symlinks with dirs.
+                        dirs.push(dir_entry);
+                    }
+                } else {
+                    break;
+                }
+            }
+            Err(err) => {
+                return html_not_found(&format!("<p>Unable to read file in directory: {err}."))
+            }
+        };
+    }
+    // Sort them -- case-insensitive on Windows, normally on Linux/OS X.
+    #[cfg(target_os = "windows")]
+    let file_name_key = |a: &DirEntry| {
+        Ok::<String, std::ffi::OsString>(a.file_name().into_string()?.to_lowercase())
+    };
+    #[cfg(not(target_os = "windows"))]
+    let file_name_key =
+        |a: &DirEntry| Ok::<String, std::ffi::OsString>(a.file_name().into_string()?);
+    files.sort_unstable_by_key(file_name_key);
+    dirs.sort_unstable_by_key(file_name_key);
+
+    // Put this on the resulting webpage. List directories first.
+    let mut dir_html = String::new();
+    for dir in dirs {
+        let dir_name = match dir.file_name().into_string() {
+            Ok(v) => v,
+            Err(err) => {
+                return html_not_found(&format!(
+                    "<p>Unable to decode directory name '{err:?}' as UTF-8."
+                ))
+            }
+        };
+        let encoded_dir = encode(&dir_name);
+        dir_html += &format!(
+            "<li><a href='/fw/fs/{web_path}{}{encoded_dir}'>{dir_name}</a></li>\n",
+            // If this is a raw drive letter, then the path already ends with a
+            // slash, such as `C:/`. Don't add a second slash in this case.
+            // Otherwise, add a slash to make `C:/foo` into `C:/foo/`.
+            //
+            // Likewise, the Linux root path of `/` already ends with a slash,
+            // while all other paths such a `/foo` don't. To detect this, look
+            // for an empty `web_path`.
+            if web_path.ends_with('/') || web_path.is_empty() {
+                ""
+            } else {
+                "/"
+            }
+        );
+    }
+
+    // List files second.
+    let mut file_html = String::new();
+    for file in files {
+        let file_name = match file.file_name().into_string() {
+            Ok(v) => v,
+            Err(err) => {
+                return html_not_found(&format!("<p>Unable to decode file name {err:?} as UTF-8.",))
+            }
+        };
+        let encoded_file = encode(&file_name);
+        file_html += &format!(
+            "<li><a href=\"/fw/fs/{web_path}/{encoded_file}\" target=\"_blank\">{file_name}</a></li>\n"
+        );
+    }
+    let body = format!(
+        "<h1>Directory {}</h1>
+<h2>Subdirectories</h2>
+<ul>
+{dir_html}
+</ul>
+<h2>Files</h2>
+<ul>
+{file_html}
+</ul>
+",
+        path_display(dir_path)
+    );
+
+    HttpResponse::Ok()
+        .content_type(ContentType::html())
+        .body(html_wrapper(&body))
+}
 
 // ### Serve file
 /// This could be a plain text file (for example, one not recognized as source
