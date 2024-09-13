@@ -146,10 +146,25 @@ class WebSocketComm {
                     // Load this data in.
                     current_update = value as UpdateMessageContents;
                     console.log(`Update(path: ${current_update.path}, cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
-                    if (current_update.contents !== undefined) {
-                        open_lp(current_update.contents);
-                    }
-                    this.send_result(id)
+
+                    // An `Update` with a path means we're loading a new file. In this case, the `contents` should be empty.
+                    let result = ""
+                    if (typeof (current_update.path) === "string" && current_update.contents === null) {
+                        const root_iframe = get_root_iframe();
+                        // Set the new src to (re)load content. At startup, the ``srcdoc`` attribute shows some welcome text. Remove it so that we can now assign the ``src`` attribute.
+                        root_iframe.removeAttribute("srcdoc");
+                        root_iframe.src = current_update.path;
+                    } else
+
+                        // An `Update` with contents but no path means we're updating the current file.
+                        if (typeof (current_update.contents) === "string" && current_update.path === null) {
+                            open_lp(current_update.contents);
+                        } else {
+                            result = `Unhandled Update message: ${current_update}`;
+                            console.log(result);
+                        }
+
+                    this.send_result(id, result)
                     break;
 
                 case "Result":
@@ -249,6 +264,8 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
     }
 };
 
+const get_root_iframe = () => document.getElementById("CodeChat-iframe")! as HTMLIFrameElement
+
 // Load the dynamic content into the static page.
 export const page_init = (
     // The pathname for the websocket to use. The remainder of the URL is
@@ -263,16 +280,25 @@ export const page_init = (
         const protocol = window.location.protocol === "http:" ? "ws:" : "wss:";
         // Build a websocket address based on the URL of the current page.
         webSocketComm = new WebSocketComm(`${protocol}//${window.location.host}/${ws_pathname}`)
-        document.getElementById("CodeChat-save-button")!.addEventListener("click", on_save)
-        document.body.addEventListener("keydown", on_keydown)
 
-        // Intercept links in this document to save before following the link.
-        // For some reason, the semicolon here is required.
-        /// @ts-ignore
-        navigation.addEventListener("navigate", on_navigate);
-        /// @ts-ignore
-        (document.getElementById("CodeChat-sidebar") as (HTMLIFrameElement | undefined))?.contentWindow?.navigation.addEventListener("navigate", on_navigate)
+        get_root_iframe().onload = () => {
+            // TODO: should only do this when the iframe content is editable.
+            add_page_listeners()
+        }
     });
+}
+
+const add_page_listeners = () => {
+    const root_iframe = document.getElementById("CodeChat-iframe")! as HTMLIFrameElement
+    root_iframe.contentDocument!.getElementById("CodeChat-save-button")!.addEventListener("click", on_save)
+    root_iframe.contentDocument!.body.addEventListener("keydown", on_keydown)
+
+    // Intercept links in this document to save before following the link.
+    // For some reason, the semicolon here is required.
+    /// @ts-ignore
+    root_iframe.contentWindow?.navigation.addEventListener("navigate", on_navigate);
+    /// @ts-ignore
+    (document.getElementById("CodeChat-sidebar") as (HTMLIFrameElement | undefined))?.contentWindow?.navigation.addEventListener("navigate", on_navigate)
 }
 
 // ## File handling

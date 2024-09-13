@@ -29,15 +29,13 @@ use std::{
     time::Duration,
 };
 
-use async_trait::async_trait;
-
 // ### Third-party
 use actix_files;
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
     error::Error,
-    http::header::{self, ContentType},
-    web, App, HttpRequest, HttpResponse, HttpServer, Responder,
+    http::header::ContentType,
+    web, App, HttpRequest, HttpResponse, HttpServer,
 };
 use actix_ws::AggregatedMessage;
 use bytes::Bytes;
@@ -60,7 +58,9 @@ use crate::lexer::LanguageLexersCompiled;
 use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
 use crate::processing::TranslationResultsString;
 use crate::processing::{source_to_codechat_for_web_string, CodeChatForWeb};
-use filewatcher::{filewatcher_websocket, serve_filewatcher_fs};
+use filewatcher::{
+    filewatcher_root_fs_redirect, filewatcher_websocket, serve_filewatcher, serve_filewatcher_fs,
+};
 
 // ## Macros
 /// Create a macro to report an error when enqueueing an item.
@@ -153,8 +153,8 @@ enum IdeType {
 /// Contents of the `Update` message.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct UpdateMessageContents {
-    /// An absolute path to the file currently in use.
-    path: Option<PathBuf>,
+    /// An absolute path/URL to the file currently in use.
+    path: Option<String>,
     /// The contents of this file. TODO: this should be just a string if sent by
     /// the IDE.
     contents: Option<CodeChatForWeb>,
@@ -202,46 +202,117 @@ const REPLY_TIMEOUT: Duration = if cfg!(test) {
 /// this server.
 const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 
-/// ## File browser endpoints
-///
-/// The file browser provides a very crude interface, allowing a user to select
-/// a file from the local filesystem for editing. Long term, this should be
-/// replaced by something better.
-///
-/// Redirect from the root of the filesystem to the actual root path on this OS.
-async fn _root_fs_redirect() -> impl Responder {
-    HttpResponse::TemporaryRedirect()
-        .insert_header((header::LOCATION, "/fw/fs/"))
-        .finish()
+// Return a unique ID for an IDE websocket connection.
+fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
+    let mut connection_id = app_state.connection_id.lock().unwrap();
+    *connection_id += 1;
+    *connection_id
 }
 
-#[async_trait]
-trait ProcessingTask {
-    async fn processing_task(
-        &self,
-        file_path: &Path,
-        app_state: web::Data<AppState>,
-        codechat_for_web: CodeChatForWeb,
-    ) -> u32;
+// Return an instance of the Client.
+fn get_client(
+    // The HTTP request. Used to extract query parameters to determine if the page is in test mode.
+    req: &HttpRequest,
+    // The URL prefix for a websocket connection to the Server.
+    ide_path: &str,
+    // The ID of the websocket connection.
+    connection_id: u32, // This returns a response (the Client, or an error).
+) -> HttpResponse {
+    // Get the `mode` query parameter to determine `is_toc`; default to `false`.
+    let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
+    let is_test_mode = if let Ok(query) = query_params {
+        query.get("test").is_some()
+    } else {
+        false
+    };
+
+    // Add in content when testing.
+    let testing_src = if is_test_mode {
+        r#"
+        <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
+        <script src="https://unpkg.com/mocha/mocha.js"></script>
+        "#
+    } else {
+        ""
+    };
+
+    // Build and return the webpage.
+    let js_test_suffix = if is_test_mode { "-test" } else { "" };
+    // Provide the pathname to the websocket connection. Quote the string using
+    // JSON to handle any necessary escapes.
+    let ws_url = match serde_json::to_string(&format!("{ide_path}/{connection_id}")) {
+        Ok(v) => v,
+        Err(err) => {
+            return html_not_found(&format!(
+                "Unable to encode websocket URL for {ide_path}, id {connection_id}: {err}"
+            ))
+        }
+    };
+    HttpResponse::Ok()
+        .content_type(ContentType::html())
+        .body(format!(
+            r#"<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>The CodeChat Editor</title>
+
+        <link rel="stylesheet" href="/static/bundled/CodeChatEditor.css">
+        <script type="module">
+            import {{ page_init }} from "/static/bundled/CodeChatEditor{js_test_suffix}.js"
+            page_init({ws_url})
+        </script>
+        {testing_src}
+    </head>
+    <body>
+        <iframe id="CodeChat-iframe"
+            style="width:100%; height:100vh; border:none;"
+            srcdoc="<!DOCTYPE html>
+            <html lang='en'>
+                <body style='background-color:#f0f0ff'>
+                    <div style='display:flex;justify-content:center;align-items:center;height:95vh;'>
+                        <div style='text-align:center;font-family:Trebuchet MS;'>
+                            <h1>The CodeChat Editor</h1>
+                            <p>Waiting for initial render. Switch the active source code window to begin.</p>
+                        </div>
+                    </div>
+                </body>
+            </html>"
+        >
+        </iframe>
+    </body>
+</html>
+"#
+        ))
 }
 
 async fn serve_file(
     file_path: &Path,
     file_contents: &str,
-    ide_path: &str,
     req: &HttpRequest,
     app_state: web::Data<AppState>,
-    // Rust doesn't allow async function pointers. This is a workaround from
-    // [SO](https://stackoverflow.com/a/76983770/16038919).
-    processing_task: impl ProcessingTask,
 ) -> HttpResponse {
-    let (name, dir, _mode, is_test_mode, is_toc) = parse_web(file_path, req);
+    // Provided info from the HTTP request, determine the following parameters.
+    let raw_dir = file_path.parent().unwrap();
+    // Use a lossy conversion, since this is UI display, not filesystem access.
+    let dir = path_display(raw_dir);
+    let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
+
+    // Get the `mode` query parameter to determine `is_toc`; default to `false`.
+    let query_params: Result<
+        web::Query<HashMap<String, String>>,
+        actix_web::error::QueryPayloadError,
+    > = web::Query::<HashMap<String, String>>::from_query(req.query_string());
+    let is_toc = query_params.map_or(false, |query| {
+        query.get("mode").map_or(false, |mode| mode == "toc")
+    });
 
     // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) =
         source_to_codechat_for_web_string(file_contents, file_path, is_toc, &app_state.lexers);
     let is_project = path_to_toc.is_some();
-    let codechat_for_web = match translation_results_string {
+    match translation_results_string {
         // The file type is unknown. Serve it raw.
         TranslationResultsString::Unknown => {
             match actix_files::NamedFile::open_async(file_path).await {
@@ -272,27 +343,22 @@ async fn serve_file(
                 .body(format!(
                     r#"<!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{name} - The CodeChat Editor</title>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>{name} - The CodeChat Editor</title>
 
-<link rel="stylesheet" href="/static/css/CodeChatEditor.css">
-<link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
-</script>
-</head>
-<body>
-{html}
-</body>
-</html>
-"#
+        <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
+        <link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
+        </script>
+    </head>
+    <body>
+        {html}
+    </body>
+</html>"#
                 ));
         }
     };
-
-    let connection_id = processing_task
-        .processing_task(file_path, app_state, codechat_for_web)
-        .await;
 
     // For project files, add in the sidebar. Convert this from a Windows path
     // to a Posix path if necessary.
@@ -308,28 +374,7 @@ async fn serve_file(
         ("".to_string(), "")
     };
 
-    // Add in content when testing.
-    let testing_src = if is_test_mode {
-        r#"
-        <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
-        <script src="https://unpkg.com/mocha/mocha.js"></script>
-        "#
-    } else {
-        ""
-    };
-
     // Build and return the webpage.
-    let js_test_suffix = if is_test_mode { "-test" } else { "" };
-    // Provide the pathname to the websocket connection. Quote the string using
-    // JSON to handle any necessary escapes.
-    let ws_url = match serde_json::to_string(&format!("{ide_path}/{connection_id}")) {
-        Ok(v) => v,
-        Err(err) => {
-            return html_not_found(&format!(
-                "Unable to encode websocket URL for {ide_path}, id {connection_id}: {err}"
-            ))
-        }
-    };
     HttpResponse::Ok()
         .content_type(ContentType::html())
         .body(format!(
@@ -339,13 +384,7 @@ async fn serve_file(
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{name} - The CodeChat Editor</title>
-
         <link rel="stylesheet" href="/static/bundled/CodeChatEditor.css">
-        <script type="module">
-            import {{ page_init }} from "/static/bundled/CodeChatEditor{js_test_suffix}.js"
-            page_init({ws_url})
-        </script>
-        {testing_src}
         {sidebar_css}
     </head>
     <body>
@@ -370,42 +409,6 @@ async fn serve_file(
 </html>
 "##
         ))
-}
-
-// Provided info from the HTTP request, determine the following parameters.
-fn parse_web(
-    file_path: &Path,
-    req: &HttpRequest,
-) -> (
-    // The name of the file, as a string.
-    String,
-    // THe path to the file, as a string.
-    String,
-    // The rendering mode for this file (view, test, etc.)
-    String,
-    // True if this web page wants to run unit tests.
-    bool,
-    // True if this file should be rendered as a table of contents.
-    bool,
-) {
-    let raw_dir = file_path.parent().unwrap();
-    // Use a lossy conversion, since this is UI display, not filesystem access.
-    let dir = escape_html(path_display(raw_dir).as_str());
-    let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
-
-    // Get the `mode` and `test` query parameters.
-    let empty_string = "".to_string();
-    let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
-    let (mode, is_test_mode) = match query_params {
-        Ok(query) => (
-            query.get("mode").unwrap_or(&empty_string).clone(),
-            query.get("test").is_some(),
-        ),
-        Err(_err) => (empty_string, false),
-    };
-    let is_toc = mode == "toc";
-
-    (name, dir, mode, is_test_mode, is_toc)
 }
 
 // Send a response to the client after processing a message from the client.
@@ -754,25 +757,28 @@ where
         // These endpoints serve the files from the filesystem and the
         // websockets.
         .service(serve_filewatcher_fs)
+        .service(serve_filewatcher)
         .service(filewatcher_websocket)
         .service(serve_vscode_fs)
         .service(vscode_ide_websocket)
         .service(vscode_client_websocket)
         // Reroute to the filesystem for typical user-requested URLs.
-        .route("/", web::get().to(_root_fs_redirect))
-        .route("/fw/fs", web::get().to(_root_fs_redirect))
+        .route("/", web::get().to(filewatcher_root_fs_redirect))
+        .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
 }
 
-// Given a `Path`, transform it into a displayable string.
+// Given a `Path`, transform it into a displayable HTML string (with any necessary escaping).
 fn path_display(p: &Path) -> String {
     let path_orig = p.to_string_lossy();
-    if cfg!(windows) {
+    let path_as_str = if cfg!(windows) {
         // On Windows, the returned path starts with `\\?\` per the
-        // [docs](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces).
-        path_orig[4..].to_string()
+        // [docs](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces). Perhaps better: use [dunce](https://lib.rs/crates/dunce) to ensure the path is correct (although this is just for display purposes, so correctness is less important).
+        &path_orig[4..].to_string()
     } else {
-        path_orig.to_string()
-    }
+        &path_orig.to_string()
+    };
+
+    escape_html(path_as_str)
 }
 
 // Return a Not Found (404) error with the provided HTML body.

@@ -28,7 +28,6 @@ use actix_web::{
     error::{Error, ErrorBadRequest},
     get, web, HttpRequest, HttpResponse, Responder,
 };
-use async_trait::async_trait;
 use log::error;
 use open;
 use tokio::{select, sync::mpsc};
@@ -36,11 +35,10 @@ use tokio::{select, sync::mpsc};
 // ### Local
 use super::{
     client_websocket, send_response, AppState, EditorMessage, EditorMessageContents, IdeType,
-    ProcessingTask, WebsocketQueues,
+    WebsocketQueues,
 };
 
 use crate::{
-    processing::CodeChatForWeb,
     queue_send,
     webserver::{filewatcher::smart_read, html_not_found, serve_file},
 };
@@ -304,29 +302,7 @@ async fn serve_vscode_fs(
         Err(err) => return err,
     };
 
-    serve_file(
-        &file_path,
-        &file_contents,
-        &format!("/vsc/fs/{connection_id}"),
-        &req,
-        app_state,
-        VSCodeTask,
-    )
-    .await
-}
-
-struct VSCodeTask;
-
-#[async_trait]
-impl ProcessingTask for VSCodeTask {
-    async fn processing_task(
-        &self,
-        _file_path: &Path,
-        _app_state: web::Data<AppState>,
-        _codechat_for_web: CodeChatForWeb,
-    ) -> u32 {
-        0
-    }
+    serve_file(&file_path, &file_contents, &req, app_state).await
 }
 
 // ## Tests

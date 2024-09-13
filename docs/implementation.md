@@ -133,8 +133,11 @@ server. Then:
 - If the current file in the IDE changes (including the initial startup, when
   the change is from no file to the current file):
   - The IDE sends the Client an `Update` with a path to the desired file.
-  - The rest of the steps follow the next case.
-- If a link in followed in the Client's iframe:
+  - The Client changes the
+    `src` attribute of the `iframe` to be this path, which makes an HTTP request
+    for this file.
+  - The server responds to HTTP requests.
+- If a link is followed in the Client's iframe:
   - The Client sends an `Update` message to the IDE with this path; this defines
     the top/root file.
   - After receiving a response from the `Update` message, the Client changes the
