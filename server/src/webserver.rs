@@ -39,15 +39,19 @@ use actix_web::{
 };
 use actix_ws::AggregatedMessage;
 use bytes::Bytes;
+use dunce::simplified;
 use futures_util::StreamExt;
 use log::{error, info, warn};
 use log4rs;
+use mime::Mime;
+use mime_guess;
 use path_slash::PathBufExt;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::{
     select,
     sync::mpsc::{Receiver, Sender},
+    sync::oneshot,
     task::JoinHandle,
     time::sleep,
 };
@@ -92,6 +96,30 @@ struct WebsocketQueues {
     to_websocket_rx: Receiver<EditorMessage>,
 }
 
+#[derive(Debug)]
+/// Since an `HttpResponse` doesn't implement `Send`, use this as a simply proxy for it. This is used to send a response to the HTTP task to an HTTP request made to that task. Send: String, response
+struct ProcessingTaskHttpRequest {
+    /// The URL of the request.
+    reqeust_url: String,
+    /// True if this file is a TOC.
+    is_toc: bool,
+    /// A queue to send the response back to the HTTP task.
+    response_queue: oneshot::Sender<SimpleHttpResponse>,
+}
+
+/// Since an `HttpResponse` doesn't implement `Send`, use this as a proxy to cover all responses to serving a file.
+#[derive(Debug)]
+enum SimpleHttpResponse {
+    /// Return a 200 with the provided string as the HTML body.
+    Ok(String),
+    /// Return an error (400 status ode) with the provided string as the HTML body.
+    Err(String),
+    /// Serve the raw file content, using the provided content type.
+    Raw(String, Mime),
+    /// The file contents are not UTF-8; serve it from the filesystem path provided.
+    Bin(String),
+}
+
 /// Define the data structure used to pass data between the CodeChat Editor
 /// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -111,6 +139,8 @@ enum EditorMessageContents {
     /// This sends an update; any missing fields are unchanged. Valid
     /// destinations: IDE, Client.
     Update(UpdateMessageContents),
+    /// Specify the current file to edit. Valid destinations: IDE, Client.
+    CurrentFile(String),
 
     // #### These messages may only be sent by the IDE.
     /// This is the first message sent when the IDE starts up. It may only be
@@ -120,12 +150,14 @@ enum EditorMessageContents {
     /// destinations: Client.
     RequestClose,
 
-    // #### These messages may only be sent by the Server.
+    // #### These messages may only be sent by the Server or the IDE
     /// Ask the IDE if the provided file is loaded. If so, the IDE should
-    /// respond by sending an `Update` with the requested file. If not, the
+    /// respond by sending a `LoadFile` with the requested file. If not, the
     /// returned `Result` should indicate the error "not loaded". Valid
     /// destinations: IDE.
-    LoadFile(PathBuf),
+    LoadFile(String),
+
+    // #### These messages may only be sent by the Server.
     /// This may only be used to respond to an `Opened` message; it contains the
     /// HTML for the CodeChat Editor Client to display in its built-in browser.
     /// Valid destinations: IDE.
@@ -153,8 +185,6 @@ enum IdeType {
 /// Contents of the `Update` message.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct UpdateMessageContents {
-    /// An absolute path/URL to the file currently in use.
-    path: Option<String>,
     /// The contents of this file. TODO: this should be just a string if sent by
     /// the IDE.
     contents: Option<CodeChatForWeb>,
@@ -176,7 +206,9 @@ pub struct AppState {
     lexers: LanguageLexersCompiled,
     // The number of the next connection ID to assign.
     connection_id: Mutex<u32>,
-    // For each connection ID, store the queues for the FileWatcher IDE.
+    // For each connection ID, store a queue tx for the HTTP server to send requests to the processing task for that ID.
+    processing_task_queue_tx: Arc<Mutex<HashMap<String, Sender<ProcessingTaskHttpRequest>>>>,
+    // For each (connection ID, requested URL) store channel to send the matching response to the HTTP task.
     filewatcher_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
     // For each connection ID, store the queues for the VSCode IDE.
     vscode_ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
@@ -290,57 +322,42 @@ fn get_client(
 async fn serve_file(
     file_path: &Path,
     file_contents: &str,
-    req: &HttpRequest,
+    is_toc: bool,
     app_state: web::Data<AppState>,
-) -> HttpResponse {
+) -> (SimpleHttpResponse, Option<CodeChatForWeb>) {
     // Provided info from the HTTP request, determine the following parameters.
     let raw_dir = file_path.parent().unwrap();
     // Use a lossy conversion, since this is UI display, not filesystem access.
     let dir = path_display(raw_dir);
     let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
 
-    // Get the `mode` query parameter to determine `is_toc`; default to `false`.
-    let query_params: Result<
-        web::Query<HashMap<String, String>>,
-        actix_web::error::QueryPayloadError,
-    > = web::Query::<HashMap<String, String>>::from_query(req.query_string());
-    let is_toc = query_params.map_or(false, |query| {
-        query.get("mode").map_or(false, |mode| mode == "toc")
-    });
-
     // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) =
         source_to_codechat_for_web_string(file_contents, file_path, is_toc, &app_state.lexers);
     let is_project = path_to_toc.is_some();
-    match translation_results_string {
+    let codechat_for_web = match translation_results_string {
         // The file type is unknown. Serve it raw.
         TranslationResultsString::Unknown => {
-            match actix_files::NamedFile::open_async(file_path).await {
-                Ok(v) => {
-                    let res = v.into_response(req);
-                    return res;
-                }
-                Err(err) => {
-                    return html_not_found(&format!(
-                        "<p>Error opening file {}: {err}.",
-                        path_display(file_path),
-                    ))
-                }
-            }
+            return (
+                SimpleHttpResponse::Raw(
+                    file_contents.to_string(),
+                    mime_guess::from_path(file_path).first_or_text_plain(),
+                ),
+                None,
+            );
         }
         // Report a lexer error.
-        TranslationResultsString::Err(err_string) => return html_not_found(&err_string),
+        TranslationResultsString::Err(err_string) => {
+            return (SimpleHttpResponse::Err(err_string), None)
+        }
         // This is a CodeChat file. The following code wraps the CodeChat for
         // web results in a CodeChat Editor Client webpage.
         TranslationResultsString::CodeChat(codechat_for_web) => codechat_for_web,
         TranslationResultsString::Toc(html) => {
             // The TOC is a simplified web page which requires no additional
-            // processing. The script ensures that all hyperlinks notify the
-            // encoding page (the CodeChat Editor Client), allowing it to save
-            // before navigating.
-            return HttpResponse::Ok()
-                .content_type(ContentType::html())
-                .body(format!(
+            // processing.
+            return (
+                SimpleHttpResponse::Ok(format!(
                     r#"<!DOCTYPE html>
 <html lang="en">
     <head>
@@ -356,7 +373,9 @@ async fn serve_file(
         {html}
     </body>
 </html>"#
-                ));
+                )),
+                None,
+            );
         }
     };
 
@@ -375,9 +394,8 @@ async fn serve_file(
     };
 
     // Build and return the webpage.
-    HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(format!(
+    (
+        SimpleHttpResponse::Ok(format!(
             r##"<!DOCTYPE html>
 <html lang="en">
     <head>
@@ -408,7 +426,9 @@ async fn serve_file(
     </body>
 </html>
 "##
-        ))
+        )),
+        Some(codechat_for_web),
+    )
 }
 
 // Send a response to the client after processing a message from the client.
@@ -716,6 +736,7 @@ fn make_app_data() -> web::Data<AppState> {
     web::Data::new(AppState {
         lexers: compile_lexers(get_language_lexer_vec()),
         connection_id: Mutex::new(0),
+        processing_task_queue_tx: Arc::new(Mutex::new(HashMap::new())),
         filewatcher_client_queues: Arc::new(Mutex::new(HashMap::new())),
         vscode_ide_queues: Arc::new(Mutex::new(HashMap::new())),
         vscode_client_queues: Arc::new(Mutex::new(HashMap::new())),
@@ -769,16 +790,7 @@ where
 
 // Given a `Path`, transform it into a displayable HTML string (with any necessary escaping).
 fn path_display(p: &Path) -> String {
-    let path_orig = p.to_string_lossy();
-    let path_as_str = if cfg!(windows) {
-        // On Windows, the returned path starts with `\\?\` per the
-        // [docs](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file#win32-file-namespaces). Perhaps better: use [dunce](https://lib.rs/crates/dunce) to ensure the path is correct (although this is just for display purposes, so correctness is less important).
-        &path_orig[4..].to_string()
-    } else {
-        &path_orig.to_string()
-    };
-
-    escape_html(path_as_str)
+    escape_html(&simplified(p).to_string_lossy())
 }
 
 // Return a Not Found (404) error with the provided HTML body.

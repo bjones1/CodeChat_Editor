@@ -1,3 +1,10 @@
+MMCs (module multilevel converters)
+Different topolgies
+Increase voltage and current
+IGBTs, wide-bandgap (GaN), (SiC) faster switching, higher voltage, better heat tolerance. GaN MOSFETs
+
+High-frequency transformer
+
 Copyright (C) 2023 Bryan A. Jones.
 
 This file is part of the CodeChat Editor.
@@ -124,35 +131,84 @@ Editor for short) exchange messages with each other, mediated by the CodeChat
 Server. The Server forwards messages from one client to the other, translating
 as necessary (for example, between source code and the Editor format).
 
-#### Websocket interface between the Client, Server, and IDE
+#### Network interfaces between the Client, Server, and IDE
 
-First load the Client over the HTTP connection; the Client contains a
-full-screen embedded `iframe` and establishes a websocket connection with the
-server. Then:
+The Server performs translation between the IDE and the Client:
+-
 
+- The startup phase loads the Client framework into a browser:
+  ![Startup diagram](https://www.plantuml.com/plantuml/dsvg/PO_BIiKm443t-OfPfWjnVo5oGOLUh2Xj_81eHYdc4ISJYtzlOwG-kWaXd9mvSyniY8jtGYcOlku9b1Adgsiuku09wHtf07S90rfvigW_4dQYlLTY1GymOYwEvSGqXvULljaHbsx6m3rxjr6zlXqW4ZoCG_T_tbvO-se5F59SCXB8feHdCXwNIAz_X7K75sCIy3twjxtN-Xu8tmfcbkUP3SzFBGFWfxlzs-YSOiYuuTQmwGG6AuxhKRpx1000)
+<!--
+@startuml
+== Startup ==
+IDE -> Server: Opened(IdeType)
+Server -> IDE: Result(String: OK)
+Server -> IDE: ClientHtml(String: HTML or URL)
+IDE -> Server: Result(String: OK)
+== Open browser (Client framework HTML or URL) ==
+loop
+  Client -> Server: HTTP request(/static URL)
+  Server -> Client: HTTP response(/static data)
+end
+@enduml
+-->
 - If the current file in the IDE changes (including the initial startup, when
-  the change is from no file to the current file):
-  - The IDE sends the Client an `Update` with a path to the desired file.
-  - The Client changes the
-    `src` attribute of the `iframe` to be this path, which makes an HTTP request
-    for this file.
-  - The server responds to HTTP requests.
-- If a link is followed in the Client's iframe:
-  - The Client sends an `Update` message to the IDE with this path; this defines
-    the top/root file.
-  - After receiving a response from the `Update` message, the Client changes the
-    `src` attribute of the `iframe` to be this path, which makes an HTTP request
-    for this file.
-  - The server responds to HTTP requests.
+  the change is from no file to the current file), or a link is followed in the Client's iframe:
+  ![Load diagram](https://www.plantuml.com/plantuml/dsvg/hLHBJiCm4Dtx5AEksWMmpm9LAY0GbK3z7C0q3bXoR6DFa7fxF4cCMnoYWF0YJTFtUNepwT8ZTzZKYjdmAG_ISetmS7Dxzdqht8TmPuzMIWgDZAiM3ShmqaCbbM3GFhYuxY45h1hdmirT-76-HIVrQm7xpHfC1JMN-j8U5mnwTE0HlO2DyDPednXFZmicb1SHc1mpyYJ7BEQmeovP4kzwAE1-jti69zuRuN7-NRW3VMLPXvndGIp7Dq2J206Mn0TpN5McqMM6pAIf3JWOZKAZ7mWrtYvN60aWFOXI8d-XUdl3L5Pi8AgSMdQ8nI1hRqkEoJJHXZPXl182AcCiW_PCcv5lh3KEWqHNbTIdldGc3IzNYdIgS9kPa1Q3_aoUzZ0ZovHg7Ca5yDC2T4tIcJZcSIDwGxC6jC7VjZ0ZJjl3x5_oGULCtTxveqTHHr5wlxih9O_RG8d_kFzfeKXq6Ixqv_e9)
+<!--
+@startuml
+participant IDE
+participant Server
+participant Client
+alt IDE loads file
+  IDE -> Client: CurrentFile(String: URL of main.py)
+  Client -> IDE: Response(String: OK)
+else Client loads file
+  Client -> IDE: CurrentFile(String: URL of main.py)
+  IDE -> Client: Response(String: OK)
+end
+Client -> Server: HTTP request(URL of main.py)
+Server -> IDE: LoadFile(String: path to main.py)
+IDE -> Server: Response(String: OK/found)
+IDE -> Server: LoadFile(String: file contents of main.py)
+Server -> IDE: Response(String: OK)
+alt main.py is editable
+  Server -> Client: HTTP response(contents of Client)
+  Server -> Client: Update(String: contents of main.py)
+  Client -> Server: Response(String: OK)
+  loop
+      Client -> Server: HTTP request(URL of supporting file in main.py)
+      Server -> IDE: LoadFile(String: path of supporting file)
+      alt Supporting file in IDE
+        IDE -> Server: Response(String: OK/found)
+        IDE -> Server: LoadFile(String: contents of supporting file)
+        Server -> IDE: Response(OK)
+        Server -> Client: HTTP response(contents of supporting file)
+      else Supporting file not in IDE
+        IDE -> Server: Response(String: "not found")
+        Server -> Client: HTTP response(contents of supporting file from filesystem)
+      end
+  end
+else main.py not editable
+  Server -> Client: HTTP response(contents of main.py)
+end
+@enduml
+-->
 - If the current file's contents in the IDE are edited:
-  - The IDE sends an `Update` with the revised contents.
-  - The server checks to see if the currently displayed file is editable.
-    - If so, it sends an `Update` to the Client; the Client then performs the
-      update.
-    - If not, it stores the file's contents in a for next request bucket then
-      sends an Update with the file's URL, which causes the Client to reload the
-      page. The server then responds to the HTTP request with the file's
-      contents from the next request bucket.
+  ![Edit diagram](https://www.plantuml.com/plantuml/dsvg/XT1DQiCm40NWlKunItlH2tXH36vBInCI_7C09NeE0cNaIEFa-ed1OCVaPp_l6zxBe-WW_T6flwzl-lYa2k6Ca57J6Ir8AWcM3nanBhJtB629gT9EQAqjKsiTo4Q2iQ9t3ef6OA0APy7oXeABkBVOosklw4C0ouzr4zgKA_BjpANnVDxfjwwt573g4ILP9Xw-6XEnynoVDc2Zfb-t6JCgbudDVwfoi1c6lW80)
+<!--
+@startuml
+IDE -> Server: Update(String: new contents)
+alt Main file is editable
+  Server -> Client: Update(String: new contents)
+else Main file is not editable
+  Server -> Client: CurrentFile(String: URL of contents)
+  Client -> Server: HTTP request(URL of contents)
+  Server -> Client: HTTP response(String: new contents)
+end
+Client -> IDE: Response(String: OK)
+@enduml
+-->
 - If the current file's contents in the Client are edited, the Client sends the
   IDE an `Update` with the revised contents.
 - When the PC goes to sleep then wakes up, the IDE client and the Editor client
@@ -163,22 +219,11 @@ server. Then:
 - If the server is stopped (or crashes), both clients shut down after several
   reconnect retries.
 
-#### HTTP interface between the Client and the Server
-
-- If the file is not from the local filesystem (Client support files), the
-  server responds with the file.
-- If the file matches with an existing next request bucket, the file is already
-  loaded; no further action is necessary.
-- Otherwise, the server sends a `LoadFile` to the IDE.
-- If the IDE has the file, it sends an `Update` with the file's contents.
-  Otherwise, the server loads the file's contents from the local filesystem.
-- If the requested file is the top file, and the file is supported by the
-  Client:
-  - The server responds with a skeleton (TOC, div for contents, etc.)
-  - The server then sends an Update with the contents of the file, which the
-    Client places into the skeleton.
-- If not:
-  - The server responds with the file's contents.
+Possible return values: 200 HTML, 404 HTML, raw contents as UTF-8, the path only. If it's raw contents, we still need the path to the file.
+contents: String
+path: Option<String>
+enum Ok, Err, Raw
+We have to process in the processing task until we know it's not editable.
 
 #### Architecture
 

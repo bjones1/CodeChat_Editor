@@ -247,6 +247,10 @@ pub async fn vscode_ide_websocket(
                             EditorMessageContents::Update(_update) => {
                                 // First, see if this update requires a different working directory. If so, split it into two parts.
                             }
+
+                            EditorMessageContents::CurrentFile(_file_path) => {
+                                // TODO: translate the path to a URL.
+                            }
                         }
                     }
                 }
@@ -392,7 +396,6 @@ mod test {
             &EditorMessage {
                 id: 0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
-                    path: None,
                     contents: None,
                     cursor_position: None,
                     scroll_position: None,
@@ -520,7 +523,6 @@ mod test {
             &EditorMessage {
                 id: 1,
                 message: EditorMessageContents::Update(UpdateMessageContents {
-                    path: Some(temp_py.clone()),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),

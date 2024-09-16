@@ -74,6 +74,8 @@ futures-util = "0.3.29"
 async-trait = "0.1.81"
 open = "5.3.0"
 dunce = "1.0.5"
+mime = "0.3.17"
+mime_guess = "2.0.5"
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"

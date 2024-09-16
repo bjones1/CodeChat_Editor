@@ -82,13 +82,13 @@ interface EditorMessage {
 
 interface EditorMessageContents {
     Update?: UpdateMessageContents,
-    Load?: String,
-    Closed?: undefined,
+    CurrentFile?: string,
+    Load?: string,
     Result?: string
+    RequestClose?: null
 }
 
 interface UpdateMessageContents {
-    path: string | undefined,
     contents: CodeChatForWeb | undefined,
     cursor_position: number | undefined,
     scroll_position: number | undefined
@@ -145,27 +145,29 @@ class WebSocketComm {
                 case "Update":
                     // Load this data in.
                     current_update = value as UpdateMessageContents;
-                    console.log(`Update(path: ${current_update.path}, cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
+                    console.log(`Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
 
-                    // An `Update` with a path means we're loading a new file. In this case, the `contents` should be empty.
                     let result = ""
-                    if (typeof (current_update.path) === "string" && current_update.contents === null) {
-                        const root_iframe = get_root_iframe();
-                        // Set the new src to (re)load content. At startup, the ``srcdoc`` attribute shows some welcome text. Remove it so that we can now assign the ``src`` attribute.
-                        root_iframe.removeAttribute("srcdoc");
-                        root_iframe.src = current_update.path;
-                    } else
-
-                        // An `Update` with contents but no path means we're updating the current file.
-                        if (typeof (current_update.contents) === "string" && current_update.path === null) {
-                            open_lp(current_update.contents);
-                        } else {
-                            result = `Unhandled Update message: ${current_update}`;
-                            console.log(result);
-                        }
+                    if (typeof (current_update.contents) === "string") {
+                        open_lp(current_update.contents);
+                    } else {
+                        // TODO: handle scroll/cursor updates.
+                        result = `Unhandled Update message: ${current_update}`;
+                        console.log(result);
+                    }
 
                     this.send_result(id, result)
                     break;
+
+                case "CurrentFile":
+                    const current_file = value as string;
+                    console.log(`CurrentFile(${current_file})`)
+                    const root_iframe = get_root_iframe();
+                    // Set the new src to (re)load content. At startup, the ``srcdoc`` attribute shows some welcome text. Remove it so that we can now assign the ``src`` attribute.
+                    root_iframe.removeAttribute("srcdoc");
+                    root_iframe.src = current_file;
+                    this.send_result(id, "")
+                break;
 
                 case "Result":
                     // Cancel the timer for this message and remove it from
@@ -289,7 +291,7 @@ export const page_init = (
 }
 
 const add_page_listeners = () => {
-    const root_iframe = document.getElementById("CodeChat-iframe")! as HTMLIFrameElement
+    const root_iframe = get_root_iframe()
     root_iframe.contentDocument!.getElementById("CodeChat-save-button")!.addEventListener("click", on_save)
     root_iframe.contentDocument!.body.addEventListener("keydown", on_keydown)
 
@@ -358,7 +360,7 @@ const open_lp = (
     // from the provided `all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
-    const codechat_body = document.getElementById(
+    const codechat_body = get_root_iframe().contentDocument!.getElementById(
         "CodeChat-body",
     ) as HTMLDivElement;
     if (is_doc_only()) {
