@@ -76,6 +76,7 @@ open = "5.3.0"
 dunce = "1.0.5"
 mime = "0.3.17"
 mime_guess = "2.0.5"
+url = "2.5.2"
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"

@@ -288,12 +288,12 @@ pub async fn vscode_client_websocket(
 // Respond to requests for the filesystem.
 #[get("/vsc/fs/{connection_id}/{path:.*}")]
 async fn serve_vscode_fs(
-    req: HttpRequest,
-    app_state: web::Data<AppState>,
-    connection_id: web::Path<String>,
+    _req: HttpRequest,
+    _app_state: web::Data<AppState>,
+    _connection_id: web::Path<String>,
     orig_path: web::Path<String>,
 ) -> impl Responder {
-    let file_path = match Path::new(&orig_path.to_string()).canonicalize() {
+    let _file_path = match Path::new(&orig_path.to_string()).canonicalize() {
         Ok(p) => p,
         Err(err) => {
             return html_not_found(&format!(
@@ -301,12 +301,16 @@ async fn serve_vscode_fs(
             ))
         }
     };
+
+    html_not_found("TODO")
+    /*
     let file_contents = match smart_read(&file_path, &req).await {
         Ok(fc) => fc,
         Err(err) => return err,
     };
 
     serve_file(&file_path, &file_contents, &req, app_state).await
+     */
 }
 
 // ## Tests

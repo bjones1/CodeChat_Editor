@@ -148,7 +148,7 @@ class WebSocketComm {
                     console.log(`Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
 
                     let result = ""
-                    if (typeof (current_update.contents) === "string") {
+                    if (current_update.contents !== null && current_update.contents !== undefined) {
                         open_lp(current_update.contents);
                     } else {
                         // TODO: handle scroll/cursor updates.
@@ -167,7 +167,7 @@ class WebSocketComm {
                     root_iframe.removeAttribute("srcdoc");
                     root_iframe.src = current_file;
                     this.send_result(id, "")
-                break;
+                    break;
 
                 case "Result":
                     // Cancel the timer for this message and remove it from

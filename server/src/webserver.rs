@@ -69,19 +69,29 @@ use filewatcher::{
 // ## Macros
 /// Create a macro to report an error when enqueueing an item.
 #[macro_export]
-macro_rules! queue_send {
+macro_rules! oneshot_send {
     // Provide two options: `break` or `break 'label`.
     ($tx: expr) => {
-        if let Err(err) = $tx.await {
-            error!("Unable to enqueue: {err}");
+        if let Err(err) = $tx {
+            error!("Unable to enqueue: {err:?}");
             break;
         }
     };
     ($tx: expr, $label: tt) => {
-        if let Err(err) = $tx.await {
-            error!("Unable to enqueue: {err}");
+        if let Err(err) = $tx {
+            error!("Unable to enqueue: {err:?}");
             break $label;
         }
+    };
+}
+
+#[macro_export]
+macro_rules! queue_send {
+    ($tx: expr) => {
+        $crate::oneshot_send!($tx.await);
+    };
+    ($tx: expr, $label: tt) => {
+        $crate::oneshot_send!($tx.await, $label);
     };
 }
 
@@ -100,7 +110,7 @@ struct WebsocketQueues {
 /// Since an `HttpResponse` doesn't implement `Send`, use this as a simply proxy for it. This is used to send a response to the HTTP task to an HTTP request made to that task. Send: String, response
 struct ProcessingTaskHttpRequest {
     /// The URL of the request.
-    reqeust_url: String,
+    request_url: String,
     /// True if this file is a TOC.
     is_toc: bool,
     /// A queue to send the response back to the HTTP task.
@@ -323,7 +333,8 @@ async fn serve_file(
     file_path: &Path,
     file_contents: &str,
     is_toc: bool,
-    app_state: web::Data<AppState>,
+    is_current_file: bool,
+    app_state: &web::Data<AppState>,
 ) -> (SimpleHttpResponse, Option<CodeChatForWeb>) {
     // Provided info from the HTTP request, determine the following parameters.
     let raw_dir = file_path.parent().unwrap();
@@ -332,8 +343,12 @@ async fn serve_file(
     let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
 
     // See if this is a CodeChat Editor file.
-    let (translation_results_string, path_to_toc) =
-        source_to_codechat_for_web_string(file_contents, file_path, is_toc, &app_state.lexers);
+    let (translation_results_string, path_to_toc) = if is_current_file {
+        source_to_codechat_for_web_string(file_contents, file_path, is_toc, &app_state.lexers)
+    } else {
+        // If this isn't the current file, then don't parse it.
+        (TranslationResultsString::Unknown, None)
+    };
     let is_project = path_to_toc.is_some();
     let codechat_for_web = match translation_results_string {
         // The file type is unknown. Serve it raw.
