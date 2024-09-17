@@ -3,7 +3,8 @@
 ## Design
 
 1.  [CodeChat Editor Overview](README.md)
-2.  [Implementation](docs/implementation.md)
+2.  [Literate programming using the CodeChat Editor](docs/style_guide.cpp)
+3.  [Implementation](docs/implementation.md)
 
 ## Implementation
 
