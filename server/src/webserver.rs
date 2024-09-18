@@ -647,11 +647,7 @@ async fn client_websocket(
 
                 // Forward a message from the processing task to the websocket.
                 Some(mut m) = to_websocket_rx.recv() => {
-                    // Assign the id for the message.
-                    m.id = id;
-                    id += 1;
-
-                    // Process this message.
+                    // Pre-process this message.
                     match m.message {
                         // If it's a `Result`, no additional processing is
                         // needed.
@@ -662,8 +658,11 @@ async fn client_websocket(
                             is_closing = true;
                             break;
                         },
-                        // All other messages are added to the pending queue.
+                        // All other messages are added to the pending queue and assigned a unique id.
                         _ => {
+                            // Assign the id for the message.
+                            m.id = id;
+                            id += 1;
                             let waiting_task = actix_rt::spawn(async move {
                                 sleep(REPLY_TIMEOUT).await;
                                 error!("Timeout: message id {} unacknowledged.", m.id);
