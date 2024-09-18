@@ -1,10 +1,3 @@
-MMCs (module multilevel converters)
-Different topolgies
-Increase voltage and current
-IGBTs, wide-bandgap (GaN), (SiC) faster switching, higher voltage, better heat tolerance. GaN MOSFETs
-
-High-frequency transformer
-
 Copyright (C) 2023 Bryan A. Jones.
 
 This file is part of the CodeChat Editor.
@@ -133,15 +126,24 @@ as necessary (for example, between source code and the Editor format).
 
 ### Editor-overlay filesystem
 
-When the Client displays a file provided by the IDE, that file may not exist in the filesystem (a newly-created document), the IDE's content may be newer than the filesystem content (an unsaved file), or the file may exist only in the filesystem (for examples, images referenced by a file). The Client loads files by sending HTTP requests to the Server with a URL which includes the path to the desired file. Therefore, the Server must first ask the IDE if it has the requested file; if so, it must deliver the IDE's file contents; if not, it must load thee requested file from the filesystem. This process -- fetching from the IDE if possible, then falling back to the filesystem -- defines the editor-overlay filesystem.
+When the Client displays a file provided by the IDE, that file may not exist in
+the filesystem (a newly-created document), the IDE's content may be newer than
+the filesystem content (an unsaved file), or the file may exist only in the
+filesystem (for examples, images referenced by a file). The Client loads files
+by sending HTTP requests to the Server with a URL which includes the path to the
+desired file. Therefore, the Server must first ask the IDE if it has the
+requested file; if so, it must deliver the IDE's file contents; if not, it must
+load thee requested file from the filesystem. This process -- fetching from the
+IDE if possible, then falling back to the filesystem -- defines the
+editor-overlay filesystem.
 
 #### Network interfaces between the Client, Server, and IDE
 
-The Server performs translation between the IDE and the Client:
--
+## The Server performs translation between the IDE and the Client:
 
 - The startup phase loads the Client framework into a browser:
   ![Startup diagram](https://www.plantuml.com/plantuml/dsvg/PO_BIiKm443t-OfPfWjnVo5oGOLUh2Xj_81eHYdc4ISJYtzlOwG-kWaXd9mvSyniY8jtGYcOlku9b1Adgsiuku09wHtf07S90rfvigW_4dQYlLTY1GymOYwEvSGqXvULljaHbsx6m3rxjr6zlXqW4ZoCG_T_tbvO-se5F59SCXB8feHdCXwNIAz_X7K75sCIy3twjxtN-Xu8tmfcbkUP3SzFBGFWfxlzs-YSOiYuuTQmwGG6AuxhKRpx1000)
+
 <!--
 @startuml
 == Startup ==
@@ -156,9 +158,12 @@ loop
 end
 @enduml
 -->
+
 - If the current file in the IDE changes (including the initial startup, when
-  the change is from no file to the current file), or a link is followed in the Client's iframe:
+  the change is from no file to the current file), or a link is followed in the
+  Client's iframe:
   ![Load diagram](https://www.plantuml.com/plantuml/dsvg/hLHBJiCm4Dtx5AEksWMmpm9LAY0GbK3z7C0q3bXoR6DFa7fxF4cCMnoYWF0YJTFtUNepwT8ZTzZKYjdmAG_ISetmS7Dxzdqht8TmPuzMIWgDZAiM3ShmqaCbbM3GFhYuxY45h1hdmirT-76-HIVrQm7xpHfC1JMN-j8U5mnwTE0HlO2DyDPednXFZmicb1SHc1mpyYJ7BEQmeovP4kzwAE1-jti69zuRuN7-NRW3VMLPXvndGIp7Dq2J206Mn0TpN5McqMM6pAIf3JWOZKAZ7mWrtYvN60aWFOXI8d-XUdl3L5Pi8AgSMdQ8nI1hRqkEoJJHXZPXl182AcCiW_PCcv5lh3KEWqHNbTIdldGc3IzNYdIgS9kPa1Q3_aoUzZ0ZovHg7Ca5yDC2T4tIcJZcSIDwGxC6jC7VjZ0ZJjl3x5_oGULCtTxveqTHHr5wlxih9O_RG8d_kFzfeKXq6Ixqv_e9)
+
 <!--
 @startuml
 participant IDE
@@ -198,8 +203,10 @@ else main.py not editable
 end
 @enduml
 -->
+
 - If the current file's contents in the IDE are edited:
   ![Edit diagram](https://www.plantuml.com/plantuml/dsvg/XT1DQiCm40NWlKunItlH2tXH36vBInCI_7C09NeE0cNaIEFa-ed1OCVaPp_l6zxBe-WW_T6flwzl-lYa2k6Ca57J6Ir8AWcM3nanBhJtB629gT9EQAqjKsiTo4Q2iQ9t3ef6OA0APy7oXeABkBVOosklw4C0ouzr4zgKA_BjpANnVDxfjwwt573g4ILP9Xw-6XEnynoVDc2Zfb-t6JCgbudDVwfoi1c6lW80)
+
 <!--
 @startuml
 IDE -> Server: Update(String: new contents)
@@ -213,6 +220,7 @@ end
 Client -> IDE: Response(String: OK)
 @enduml
 -->
+
 - If the current file's contents in the Client are edited, the Client sends the
   IDE an `Update` with the revised contents.
 - When the PC goes to sleep then wakes up, the IDE client and the Editor client
@@ -223,11 +231,10 @@ Client -> IDE: Response(String: OK)
 - If the server is stopped (or crashes), both clients shut down after several
   reconnect retries.
 
-Possible return values: 200 HTML, 404 HTML, raw contents as UTF-8, the path only. If it's raw contents, we still need the path to the file.
-contents: String
-path: Option<String>
-enum Ok, Err, Raw
-We have to process in the processing task until we know it's not editable.
+Possible return values: 200 HTML, 404 HTML, raw contents as UTF-8, the path
+only. If it's raw contents, we still need the path to the file. contents: String
+path: Option enum Ok, Err, Raw We have to process in the processing task until
+we know it's not editable.
 
 #### Architecture
 
@@ -257,39 +264,7 @@ enqueue all high-level messages to the processing task; they listen to any
 enqueued messages in the client or ide queue, passing these on via the websocket
 connection. The following diagram illustrates this approach:
 
-<graphviz-graph graph="digraph {
-    ccc -&gt; client_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]
-    ccc -&gt; http_task [ label = &quot;HTTP\nrequest/response&quot; dir = &quot;both&quot;]
-    client_task -&gt; from_client
-    http_task -&gt; http_to_client
-    http_to_client -&gt; processing
-    processing -&gt; http_from_client
-    http_from_client -&gt; http_task
-    from_client -&gt; processing
-    processing -&gt; to_client
-    to_client -&gt; client_task
-    ide -&gt; ide_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]
-    ide_task -&gt; from_ide
-    from_ide -&gt; processing
-    processing -&gt; to_ide
-    to_ide -&gt; ide_task
-    { rank = same; client_task; http_task }
-    { rank = same; to_client; from_client; http_from_client; http_to_client }
-    { rank = same; to_ide; from_ide }
-    { rank = max; ide }
-    ccc [ label = &quot;CodeChat Editor\nClient&quot;]
-    client_task [ label = &quot;Client websocket\ntask&quot;]
-    http_task [ label = &quot;HTTP endpoint&quot;]
-    from_client [ label = &quot;queue from client&quot; shape=&quot;rectangle&quot;]
-    processing [ label = &quot;Processing task&quot; ]
-    to_client [ label = &quot;queue to client&quot; shape=&quot;rectangle&quot;]
-    http_to_client [ label = &quot;http queue to client&quot; shape = &quot;rectangle&quot;]
-    http_from_client [ label = &quot;oneshot from client&quot; shape = &quot;box&quot;]
-    ide [ label = &quot;CodeChat Editor\nIDE plugin&quot;]
-    ide_task [ label = &quot;IDE websocket\ntask&quot; ]
-    from_ide [ label = &quot;queue from IDE&quot; shape=&quot;rectangle&quot; ]
-    to_ide [ label = &quot;queue to IDE&quot; shape=&quot;rectangle&quot; ]
-    }"></graphviz-graph>
+<graphviz-graph graph="digraph {&#10;    ccc -> client_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]&#10;    ccc -> http_task [ label = &quot;HTTP\nrequest/response&quot; dir = &quot;both&quot;]&#10;    client_task -> from_client&#10;    http_task -> http_to_client&#10;    http_to_client -> processing&#10;    processing -> http_from_client&#10;    http_from_client -> http_task&#10;    from_client -> processing&#10;    processing -> to_client&#10;    to_client -> client_task&#10;    ide -> ide_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]&#10;    ide_task -> from_ide&#10;    from_ide -> processing&#10;    processing -> to_ide&#10;    to_ide -> ide_task&#10;    { rank = same; client_task; http_task }&#10;    { rank = same; to_client; from_client; http_from_client; http_to_client }&#10;    { rank = same; to_ide; from_ide }&#10;    { rank = max; ide }&#10;    ccc [ label = &quot;CodeChat Editor\nClient&quot;]&#10;    client_task [ label = &quot;Client websocket\ntask&quot;]&#10;    http_task [ label = &quot;HTTP endpoint&quot;]&#10;    from_client [ label = &quot;queue from client&quot; shape=&quot;rectangle&quot;]&#10;    processing [ label = &quot;Processing task&quot; ]&#10;    to_client [ label = &quot;queue to client&quot; shape=&quot;rectangle&quot;]&#10;    http_to_client [ label = &quot;http queue to client&quot; shape = &quot;rectangle&quot;]&#10;    http_from_client [ label = &quot;oneshot from client&quot; shape = &quot;box&quot;]&#10;    ide [ label = &quot;CodeChat Editor\nIDE plugin&quot;]&#10;    ide_task [ label = &quot;IDE websocket\ntask&quot; ]&#10;    from_ide [ label = &quot;queue from IDE&quot; shape=&quot;rectangle&quot; ]&#10;    to_ide [ label = &quot;queue to IDE&quot; shape=&quot;rectangle&quot; ]&#10;    }"></graphviz-graph>
 
 The queues use multiple-sender, single receiver (mpsc) types; hence, a single
 task in the diagram receives data from a queue, while multiple tasks send data
@@ -297,7 +272,11 @@ to a queue. When the IDE processing task writes updated content to the file
 being edited, it notifies the file watcher to ignore the next file update (hence
 the dotted arrow).
 
-The exception to this pattern is the HTTP endpoint. This endpoint is invoked with each HTTP request, rather than operating as a single, long-running task. It sends the request to the processing task using an mpsc queue; this request includes a one-shot channel which enables the request to return a response to this specific request instance. The endpoint then returns the provided response.
+The exception to this pattern is the HTTP endpoint. This endpoint is invoked
+with each HTTP request, rather than operating as a single, long-running task. It
+sends the request to the processing task using an mpsc queue; this request
+includes a one-shot channel which enables the request to return a response to
+this specific request instance. The endpoint then returns the provided response.
 
 Simplest non-IDE integration: the file watcher.
 
@@ -379,7 +358,7 @@ Therefore, the cache must contain a `FileAnchor`, an enum of:
   numbering, a vector of `HeadingAnchor`s, a vector of `NonHeadingAnchor`s:
   - A `HeadingAnchor` in an HTML file: |weak ref to the containing
     `HtmlFileAnchor`, ID, anchor's inner HTML, optional hyperlink|, numbering on
-    this page, a vector of `NonHeadingAanchors` contained in this heading.
+    this page, a vector of `NonHeadingAnchors` contained in this heading.
   - A `NonHeadingAnchor` in an HTML file: |weak ref to the containing
     `HtmlFileAnchor`, ID, anchor's inner HTML, optional hyperlink|, optional
     parent heading, snippet of surrounding text, numbering group, number.
@@ -536,31 +515,7 @@ TODO: GUIs using TinyMCE. See the
 
 ### System architecture
 
-<graphviz-graph graph="digraph {
-    bgcolor = transparent;
-    compound = true;
-    node [shape = box];
-    subgraph cluster_text_editor {
-        label = &quot;Text editor/IDE&quot;;
-        source_code [label = &quot;Source\ncode&quot;, style = dashed];
-        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];
-    }
-    subgraph cluster_server {
-        label = &lt;CodeChat Editor Server&gt;;
-        websocket_server [label = &quot;Websocket\nserver&quot;];
-        web_server [label = &quot;Web\nserver&quot;];
-    }
-    subgraph cluster_client_framework {
-        label = &quot;CodeChat Editor Client framework&quot;;
-        subgraph cluster_client {
-            label = &quot;CodeChat Editor Client&quot;
-            rendered_code [label = &quot;Rendered code&quot;, style = dashed];
-        }
-    }
-    CodeChat_plugin -&gt; websocket_server [label = &quot;websocket&quot;, dir = both];
-    websocket_server -&gt; rendered_code [label = &quot;websocket&quot;, dir = both, lhead = cluster_client_framework];
-    web_server -&gt; rendered_code [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client ];
-    }"></graphviz-graph>
+<graphviz-graph graph="digraph {&#10;    bgcolor = transparent;&#10;    compound = true;&#10;    node [shape = box];&#10;    subgraph cluster_text_editor {&#10;        label = &quot;Text editor/IDE&quot;;&#10;        source_code [label = &quot;Source\ncode&quot;, style = dashed];&#10;        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];&#10;    }&#10;    subgraph cluster_server {&#10;        label = <CodeChat Editor Server>;&#10;        websocket_server [label = &quot;Websocket\nserver&quot;];&#10;        web_server [label = &quot;Web\nserver&quot;];&#10;    }&#10;    subgraph cluster_client_framework {&#10;        label = &quot;CodeChat Editor Client framework&quot;;&#10;        subgraph cluster_client {&#10;            label = &quot;CodeChat Editor Client&quot;&#10;            rendered_code [label = &quot;Rendered code&quot;, style = dashed];&#10;        }&#10;    }&#10;    CodeChat_plugin -> websocket_server [label = &quot;websocket&quot;, dir = both];&#10;    websocket_server -> rendered_code [label = &quot;websocket&quot;, dir = both, lhead = cluster_client_framework];&#10;    web_server -> rendered_code [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client ];&#10;    }"></graphviz-graph>
 
 ## Code style
 

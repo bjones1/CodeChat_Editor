@@ -84,7 +84,8 @@ pub async fn filewatcher_root_fs_redirect() -> impl Responder {
 /// Dispatch to support functions which serve either a directory listing, a
 /// CodeChat Editor file, or a normal file.
 ///
-/// `fsb` stands for "FileSystem Browser" -- directories provide a simple navigation GUI; files load the Client framework.
+/// `fsb` stands for "FileSystem Browser" -- directories provide a simple
+/// navigation GUI; files load the Client framework.
 ///
 /// Omit code coverage -- this is a temporary interface, until IDE integration
 /// replaces this.
@@ -299,7 +300,8 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
 /// is then serve it. Serve a CodeChat Editor Client webpage using the
 /// FileWatcher "IDE".
 ///
-/// `fsc` stands for "FileSystem Client", and provides the Client contents from the filesystem.
+/// `fsc` stands for "FileSystem Client", and provides the Client contents from
+/// the filesystem.
 #[get("/fw/fsc/{connection_id}/{path:.*}")]
 pub async fn serve_filewatcher(
     path: web::Path<(String, String)>,
@@ -315,7 +317,8 @@ pub async fn serve_filewatcher(
         query.get("mode").map_or(false, |mode| mode == "toc")
     });
 
-    // Create a one-shot channel used by the processing task to provide a response to this request.
+    // Create a one-shot channel used by the processing task to provide a
+    // response to this request.
     let (tx, rx) = oneshot::channel();
 
     {
@@ -403,8 +406,8 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
     //
     // 1.  A task to watch for changes to the file, notifying the CodeChat
     //     Editor Client when the file should be reloaded.
-    // 2.  A task to receive and respond to messages from the CodeChat
-    //     Editor Client.
+    // 2.  A task to receive and respond to messages from the CodeChat Editor
+    //     Client.
     //
     // First, allocate variables needed by these two tasks.
     //
@@ -417,22 +420,21 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
             // thread) into this async (task) context.
             let (watcher_tx, mut watcher_rx) = mpsc::channel(10);
             // Watch this file. Use the debouncer, to avoid multiple
-            // notifications for the same file. This approach returns a
-            // result of either a working debouncer or any errors that
-            // occurred. The debouncer's scope needs live as long as this
-            // connection does; dropping it early means losing file change
-            // notifications.
+            // notifications for the same file. This approach returns a result
+            // of either a working debouncer or any errors that occurred. The
+            // debouncer's scope needs live as long as this connection does;
+            // dropping it early means losing file change notifications.
             let Ok(mut debounced_watcher) = new_debouncer(
                 Duration::from_secs(2),
                 None,
                 // Note that this runs in a separate thread created by the
-                // watcher, not in an async context. Therefore, use a
-                // blocking send.
+                // watcher, not in an async context. Therefore, use a blocking
+                // send.
                 move |result: DebounceEventResult| {
                     if let Err(err) = watcher_tx.blocking_send(result) {
                         // Note: we can't break here, since this runs in a
-                        // separate thread. We have no way to shut down the
-                        // task (which would be the best action to take.)
+                        // separate thread. We have no way to shut down the task
+                        // (which would be the best action to take.)
                         error!("Unable to send: {err}");
                     }
                 },
@@ -464,7 +466,8 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
             let encoded_path =
                 // First, convert the path to use forward slashes.
                 &simplified(&current_filepath).to_slash().unwrap()
-                // The convert each part of the path to a URL-encoded string. (This avoids encoding the slashes.)
+                // The convert each part of the path to a URL-encoded string.
+                // (This avoids encoding the slashes.)
                 .split("/").map(|s| urlencoding::encode(s))
                 // Then put it all back together.
                 .collect::<Vec<_>>().join("/");
@@ -489,8 +492,8 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         match result {
                             Err(err_vec) => {
                                 for err in err_vec {
-                                    // Report errors locally and to the
-                                    // CodeChat Editor.
+                                    // Report errors locally and to the CodeChat
+                                    // Editor.
                                     let msg = format!("Watcher error: {err}");
                                     error!("{msg}");
                                     // Send using ID 0 to indicate this isn't a
@@ -576,12 +579,15 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         // Convert the provided URL back into a file name.
                         let file_path = Path::new(&http_request.request_url);
 
-                        // Determine the file's type, then pass it back to the HTTP task.
+                        // Determine the file's type, then pass it back to the
+                        // HTTP task.
                         let simple_http_response = match smart_read(&file_path).await {
                             Ok(file_contents) => {
                                 let is_current = file_path.canonicalize().unwrap() == current_filepath;
                                 let (simple_http_response, option_codechat_for_web) = serve_file(file_path, &file_contents, http_request.is_toc, is_current, &app_state).await;
-                                // If this file is editable and is the main file, send an `Update`. The `simple_http_response` contains the Client.
+                                // If this file is editable and is the main
+                                // file, send an `Update`. The
+                                // `simple_http_response` contains the Client.
                                 if let Some(codechat_for_web) = option_codechat_for_web {
                                     queue_send!(to_websocket_tx.send(EditorMessage {
                                         id: 0,
@@ -664,12 +670,14 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                             match url.path_segments() {
                                                 None => format!("Error: URL {url} cannot be a base."),
                                                 Some(path_segments) => {
-                                                    // Make sure the path segments start with `/fw/fsc/{connection_id}`.
+                                                    // Make sure the path segments start with
+                                                    // `/fw/fsc/{connection_id}`.
                                                     let ps: Vec<_> = path_segments.collect();
                                                     if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
                                                         format!("Error: URL {url} has incorrect prefix.")
                                                     } else {
-                                                        // Strip these first three segments; the remainder is a file path.
+                                                        // Strip these first three segments; the
+                                                        // remainder is a file path.
                                                         let path_str = ps[3..].join("/");
                                                         match PathBuf::from_str(&path_str) {
                                                             Err(err) => {
@@ -679,10 +687,12 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                                                 match path_buf.canonicalize() {
                                                                     Err(err) => format!("Unable to canonicalize {path_buf:?}: {err}."),
                                                                     Ok(p) => {
-                                                                        // We finally have the desired path. Assign it!
+                                                                        // We finally have the desired path. Assign
+                                                                        // it!
                                                                         current_filepath = p;
                                                                         info!("Current filepath: {current_filepath:?}");
-                                                                        // Indicate there was no error in the `Result` message.
+                                                                        // Indicate there was no error in the
+                                                                        // `Result` message.
                                                                         "".to_string()
                                                                     }
                                                                 }
@@ -877,7 +887,7 @@ mod tests {
         get_message_as!(client_rx, EditorMessageContents::Update);
         send_response(1, &ide_tx_queue, "").await;
 
-        // 1. Send an update message with no contents.
+        // 1.  Send an update message with no contents.
         ide_tx_queue
             .send(EditorMessage {
                 id: 0,
@@ -896,7 +906,7 @@ mod tests {
             ""
         );
 
-        // 2. Send invalid messages.
+        // 2.  Send invalid messages.
         for msg in [
             EditorMessageContents::Opened(IdeType::VSCode(true)),
             EditorMessageContents::ClientHtml("".to_string()),
@@ -915,7 +925,7 @@ mod tests {
             );
         }
 
-        // 3. Send an update message with no path.
+        // 3.  Send an update message with no path.
         ide_tx_queue
             .send(EditorMessage {
                 id: 0,
@@ -948,7 +958,7 @@ mod tests {
             ""
         );
 
-        // 4. Send an update message with unknown source language.
+        // 4.  Send an update message with unknown source language.
         ide_tx_queue
             .send(EditorMessage {
                 id: 0,
@@ -975,7 +985,7 @@ mod tests {
             "Unable to translate to source: Invalid mode"
         );
 
-        // 5. Send an update message with an invalid path.
+        // 5.  Send an update message with an invalid path.
         ide_tx_queue
             .send(EditorMessage {
                 id: 0,
@@ -1002,7 +1012,7 @@ mod tests {
             "Unable to save file '':"
         );
 
-        // 6. Send a valid message.
+        // 6.  Send a valid message.
         let mut file_path = test_dir.clone();
         file_path.push("test.py");
         ide_tx_queue
@@ -1035,7 +1045,7 @@ mod tests {
         // Wait for the filewatcher to debounce this file write.
         sleep(Duration::from_secs(1)).await;
 
-        // 7. Change this file and verify that this produces an update.
+        // 7.  Change this file and verify that this produces an update.
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         assert_eq!(
@@ -1057,8 +1067,8 @@ mod tests {
         // Acknowledge this message.
         send_response(3, &ide_tx_queue, "").await;
 
-        // 8. Rename it and check for an close (the file watcher can't detect the
-        //    destination file, so it's treated as the file is deleted).
+        // 8.  Rename it and check for an close (the file watcher can't detect
+        //     the destination file, so it's treated as the file is deleted).
         let mut dest = file_path.clone().parent().unwrap().to_path_buf();
         dest.push("test2.py");
         fs::rename(file_path, dest.as_path()).unwrap();

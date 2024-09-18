@@ -17,6 +17,7 @@ use std::path::Path;
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// # `vscode.rs` -- Implement server-side functionality for the Visual Studio Code IDE
+
 // ## Imports
 //
 // ### Standard library
@@ -211,7 +212,9 @@ pub async fn vscode_ide_websocket(
                         send_response(&to_ide_tx, message.id, "").await;
                     }
                 }
-                // Note: Currently, this code will never run because there's only one supported IDE type (VSCode). Keep it for future expansion.
+                // Note: Currently, this code will never run because there's
+                // only one supported IDE type (VSCode). Keep it for future
+                // expansion.
                 #[allow(unreachable_patterns)]
                 _ => {
                     // This is the wrong IDE type. Report then error.
@@ -245,7 +248,9 @@ pub async fn vscode_ide_websocket(
 
                             // Handle the `Update` message.
                             EditorMessageContents::Update(_update) => {
-                                // First, see if this update requires a different working directory. If so, split it into two parts.
+                                // First, see if this update requires a
+                                // different working directory. If so, split it
+                                // into two parts.
                             }
 
                             EditorMessageContents::CurrentFile(_file_path) => {
@@ -303,14 +308,14 @@ async fn serve_vscode_fs(
     };
 
     html_not_found("TODO")
-    /*
-    let file_contents = match smart_read(&file_path, &req).await {
-        Ok(fc) => fc,
-        Err(err) => return err,
-    };
+    /* ```
+       let file_contents = match smart_read(&file_path, &req).await {
+           Ok(fc) => fc,
+           Err(err) => return err,
+       };
 
-    serve_file(&file_path, &file_contents, &req, app_state).await
-     */
+       serve_file(&file_path, &file_contents, &req, app_state).await
+       ``` */
 }
 
 // ## Tests
@@ -543,19 +548,19 @@ mod test {
         )
         .await;
 
-        /*
-        // This should become one update to load the correct URL/directory, then another with the actual file contents.
-        let em = read_message(&mut ws_stream_client).await;
-        assert_eq!(
-            cast!(em.message, EditorMessageContents::Update),
-            UpdateMessageContents {
-                path: Some(temp_py.clone()),
-                contents: None,
-                cursor_position: None,
-                scroll_position: None,
-            }
-        );
-         */
+        /* ```
+               // This should become one update to load the correct URL/directory, then another with the actual file contents.
+               let em = read_message(&mut ws_stream_client).await;
+               assert_eq!(
+                   cast!(em.message, EditorMessageContents::Update),
+                   UpdateMessageContents {
+                       path: Some(temp_py.clone()),
+                       contents: None,
+                       cursor_position: None,
+                       scroll_position: None,
+                   }
+               );
+           ``` */
 
         check_logger_errors(0);
         // Report any errors produced when removing the temporary directory.

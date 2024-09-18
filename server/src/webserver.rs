@@ -107,7 +107,9 @@ struct WebsocketQueues {
 }
 
 #[derive(Debug)]
-/// Since an `HttpResponse` doesn't implement `Send`, use this as a simply proxy for it. This is used to send a response to the HTTP task to an HTTP request made to that task. Send: String, response
+/// Since an `HttpResponse` doesn't implement `Send`, use this as a simply proxy
+/// for it. This is used to send a response to the HTTP task to an HTTP request
+/// made to that task. Send: String, response
 struct ProcessingTaskHttpRequest {
     /// The URL of the request.
     request_url: String,
@@ -117,16 +119,19 @@ struct ProcessingTaskHttpRequest {
     response_queue: oneshot::Sender<SimpleHttpResponse>,
 }
 
-/// Since an `HttpResponse` doesn't implement `Send`, use this as a proxy to cover all responses to serving a file.
+/// Since an `HttpResponse` doesn't implement `Send`, use this as a proxy to
+/// cover all responses to serving a file.
 #[derive(Debug)]
 enum SimpleHttpResponse {
     /// Return a 200 with the provided string as the HTML body.
     Ok(String),
-    /// Return an error (400 status ode) with the provided string as the HTML body.
+    /// Return an error (400 status ode) with the provided string as the HTML
+    /// body.
     Err(String),
     /// Serve the raw file content, using the provided content type.
     Raw(String, Mime),
-    /// The file contents are not UTF-8; serve it from the filesystem path provided.
+    /// The file contents are not UTF-8; serve it from the filesystem path
+    /// provided.
     Bin(String),
 }
 
@@ -216,9 +221,11 @@ pub struct AppState {
     lexers: LanguageLexersCompiled,
     // The number of the next connection ID to assign.
     connection_id: Mutex<u32>,
-    // For each connection ID, store a queue tx for the HTTP server to send requests to the processing task for that ID.
+    // For each connection ID, store a queue tx for the HTTP server to send
+    // requests to the processing task for that ID.
     processing_task_queue_tx: Arc<Mutex<HashMap<String, Sender<ProcessingTaskHttpRequest>>>>,
-    // For each (connection ID, requested URL) store channel to send the matching response to the HTTP task.
+    // For each (connection ID, requested URL) store channel to send the
+    // matching response to the HTTP task.
     filewatcher_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
     // For each connection ID, store the queues for the VSCode IDE.
     vscode_ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
@@ -253,7 +260,8 @@ fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
 
 // Return an instance of the Client.
 fn get_client_framework(
-    // The HTTP request. Used to extract query parameters to determine if the page is in test mode.
+    // The HTTP request. Used to extract query parameters to determine if the
+    // page is in test mode.
     req: &HttpRequest,
     // The URL prefix for a websocket connection to the Server.
     ide_path: &str,
@@ -658,7 +666,8 @@ async fn client_websocket(
                             is_closing = true;
                             break;
                         },
-                        // All other messages are added to the pending queue and assigned a unique id.
+                        // All other messages are added to the pending queue and
+                        // assigned a unique id.
                         _ => {
                             // Assign the id for the message.
                             m.id = id;
@@ -806,7 +815,8 @@ where
         .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
 }
 
-// Given a `Path`, transform it into a displayable HTML string (with any necessary escaping).
+// Given a `Path`, transform it into a displayable HTML string (with any
+// necessary escaping).
 fn path_display(p: &Path) -> String {
     escape_html(&simplified(p).to_string_lossy())
 }
