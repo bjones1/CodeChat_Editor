@@ -53,7 +53,7 @@ use win_partitions::win_api::get_logical_drive;
 
 // ### Local
 use super::{
-    client_websocket, get_client, get_connection_id, html_not_found, html_wrapper, path_display,
+    client_websocket, get_client_framework, get_connection_id, html_not_found, html_wrapper, path_display,
     send_response, serve_file, AppState, EditorMessage, EditorMessageContents,
     ProcessingTaskHttpRequest, SimpleHttpResponse, UpdateMessageContents, WebsocketQueues,
 };
@@ -129,7 +129,7 @@ async fn serve_filewatcher_fs(
         actix_rt::spawn(async move {
             processing_task(&canon_path, app_state, connection_id).await;
         });
-        return get_client(&req, "fw/ws", connection_id);
+        return get_client_framework(&req, "fw/ws", connection_id);
     }
 
     // It's not a directory or a file...we give up. For simplicity, don't handle

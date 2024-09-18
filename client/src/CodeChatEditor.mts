@@ -104,6 +104,8 @@ class WebSocketComm {
     ws: WebSocket
     // A map of message id to timer id for all pending messages.
     pending_messages: Record<number, number> = {}
+    // True when the iframe is loading, so that an `Update` should be postponed until the page load is finished. Otherwise, the page is fully loaded, so the `Update` may be applied immediately.
+    onloading = false
 
     constructor(ws_url: string) {
         // The `ReconnectingWebSocket` doesn't provide ALL the `WebSocket`
@@ -131,29 +133,39 @@ class WebSocketComm {
         this.ws.onmessage = (event: any) => {
             // Parse the received message, which must be a single element of a
             // dictionary representing a `JointMessage`.
-            const joint_message = JSON.parse(event.data) as EditorMessage;
-            const { id: id, message: message } = joint_message;
+            const joint_message = JSON.parse(event.data) as EditorMessage
+            const { id: id, message: message } = joint_message
             console.assert(id !== undefined)
             console.assert(message !== undefined)
-            const keys = Object.keys(message);
+            const keys = Object.keys(message)
             console.assert(keys.length === 1)
             const key = keys[0];
-            const value = Object.values(message)[0];
+            const value = Object.values(message)[0]
+            const root_iframe = get_root_iframe()
 
             // Process this message.
             switch (key) {
                 case "Update":
                     // Load this data in.
                     current_update = value as UpdateMessageContents;
-                    console.log(`Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`);
+                    console.log(`Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`)
 
                     let result = ""
-                    if (current_update.contents !== null && current_update.contents !== undefined) {
-                        open_lp(current_update.contents);
+                    const contents = current_update.contents
+                    if (contents !== null && contents !== undefined) {
+                        // If the page is still loading, wait until the load completed before updating the editable contents.
+                        if (this.onloading) {
+                            root_iframe.onload = () => {
+                                open_lp(contents)
+                                this.onloading = false
+                            }
+                        } else {
+                            open_lp(contents)
+                        }
                     } else {
                         // TODO: handle scroll/cursor updates.
-                        result = `Unhandled Update message: ${current_update}`;
-                        console.log(result);
+                        result = `Unhandled Update message: ${current_update}`
+                        console.log(result)
                     }
 
                     this.send_result(id, result)
@@ -162,10 +174,12 @@ class WebSocketComm {
                 case "CurrentFile":
                     const current_file = value as string;
                     console.log(`CurrentFile(${current_file})`)
-                    const root_iframe = get_root_iframe();
                     // Set the new src to (re)load content. At startup, the ``srcdoc`` attribute shows some welcome text. Remove it so that we can now assign the ``src`` attribute.
-                    root_iframe.removeAttribute("srcdoc");
-                    root_iframe.src = current_file;
+                    root_iframe.removeAttribute("srcdoc")
+                    root_iframe.src = current_file
+                    // There's no easy way to determine when the iframe's DOM is ready. This is a kludgy workaround -- set a flag.
+                    this.onloading = true
+                    root_iframe.onload = () => this.onloading = false
                     this.send_result(id, "")
                     break;
 
@@ -266,7 +280,7 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
     }
 };
 
-const get_root_iframe = () => document.getElementById("CodeChat-iframe")! as HTMLIFrameElement
+export const get_root_iframe = () => document.getElementById("CodeChat-iframe")! as HTMLIFrameElement
 
 // Load the dynamic content into the static page.
 export const page_init = (
@@ -284,7 +298,6 @@ export const page_init = (
         webSocketComm = new WebSocketComm(`${protocol}//${window.location.host}/${ws_pathname}`)
 
         get_root_iframe().onload = () => {
-            // TODO: should only do this when the iframe content is editable.
             add_page_listeners()
         }
     });
@@ -292,7 +305,7 @@ export const page_init = (
 
 const add_page_listeners = () => {
     const root_iframe = get_root_iframe()
-    root_iframe.contentDocument!.getElementById("CodeChat-save-button")!.addEventListener("click", on_save)
+    root_iframe.contentDocument!.getElementById("CodeChat-save-button")?.addEventListener("click", on_save)
     root_iframe.contentDocument!.body.addEventListener("keydown", on_keydown)
 
     // Intercept links in this document to save before following the link.

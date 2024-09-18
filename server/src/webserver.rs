@@ -252,7 +252,7 @@ fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
 }
 
 // Return an instance of the Client.
-fn get_client(
+fn get_client_framework(
     // The HTTP request. Used to extract query parameters to determine if the page is in test mode.
     req: &HttpRequest,
     // The URL prefix for a websocket connection to the Server.
@@ -307,7 +307,7 @@ fn get_client(
         </script>
         {testing_src}
     </head>
-    <body>
+    <body style="margin: 0px; padding: 0px; overflow: hidden">
         <iframe id="CodeChat-iframe"
             style="width:100%; height:100vh; border:none;"
             srcdoc="<!DOCTYPE html>
@@ -343,7 +343,7 @@ async fn serve_file(
     let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
 
     // See if this is a CodeChat Editor file.
-    let (translation_results_string, path_to_toc) = if is_current_file {
+    let (translation_results_string, path_to_toc) = if is_current_file || is_toc {
         source_to_codechat_for_web_string(file_contents, file_path, is_toc, &app_state.lexers)
     } else {
         // If this isn't the current file, then don't parse it.

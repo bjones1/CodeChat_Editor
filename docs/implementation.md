@@ -131,6 +131,10 @@ Editor for short) exchange messages with each other, mediated by the CodeChat
 Server. The Server forwards messages from one client to the other, translating
 as necessary (for example, between source code and the Editor format).
 
+### Editor-overlay filesystem
+
+When the Client displays a file provided by the IDE, that file may not exist in the filesystem (a newly-created document), the IDE's content may be newer than the filesystem content (an unsaved file), or the file may exist only in the filesystem (for examples, images referenced by a file). The Client loads files by sending HTTP requests to the Server with a URL which includes the path to the desired file. Therefore, the Server must first ask the IDE if it has the requested file; if so, it must deliver the IDE's file contents; if not, it must load thee requested file from the filesystem. This process -- fetching from the IDE if possible, then falling back to the filesystem -- defines the editor-overlay filesystem.
+
 #### Network interfaces between the Client, Server, and IDE
 
 The Server performs translation between the IDE and the Client:
@@ -253,13 +257,47 @@ enqueue all high-level messages to the processing task; they listen to any
 enqueued messages in the client or ide queue, passing these on via the websocket
 connection. The following diagram illustrates this approach:
 
-<graphviz-graph graph="digraph {&#10;    ccc -> client_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]&#10;    client_task -> from_client&#10;    from_client -> processing&#10;    processing -> to_client&#10;    to_client -> client_task&#10;    ide -> ide_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]&#10;    ide_task -> from_ide&#10;    from_ide -> processing&#10;    processing -> to_ide&#10;    to_ide -> ide_task&#10;    { rank = same; to_client; from_client }&#10;    { rank = same; to_ide; from_ide }&#10;    { rank = max; ide }&#10;    ccc [ label = &quot;CodeChat Editor\nClient&quot;]&#10;    client_task [ label = &quot;Client websocket\ntask&quot;]&#10;    from_client [ label = &quot;queue from client&quot; shape=&quot;rectangle&quot;]&#10;    processing [ label = &quot;Processing task&quot; ]&#10;    to_client [ label = &quot;queue to client&quot; shape=&quot;rectangle&quot;]&#10;    ide [ label = &quot;CodeChat Editor\nIDE plugin&quot;]&#10;    ide_task [ label = &quot;IDE websocket\ntask&quot; ]&#10;    from_ide [ label = &quot;queue from IDE&quot; shape=&quot;rectangle&quot; ]&#10;    to_ide [ label = &quot;queue to IDE&quot; shape=&quot;rectangle&quot; ]&#10;}"></graphviz-graph>
+<graphviz-graph graph="digraph {
+    ccc -&gt; client_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]
+    ccc -&gt; http_task [ label = &quot;HTTP\nrequest/response&quot; dir = &quot;both&quot;]
+    client_task -&gt; from_client
+    http_task -&gt; http_to_client
+    http_to_client -&gt; processing
+    processing -&gt; http_from_client
+    http_from_client -&gt; http_task
+    from_client -&gt; processing
+    processing -&gt; to_client
+    to_client -&gt; client_task
+    ide -&gt; ide_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]
+    ide_task -&gt; from_ide
+    from_ide -&gt; processing
+    processing -&gt; to_ide
+    to_ide -&gt; ide_task
+    { rank = same; client_task; http_task }
+    { rank = same; to_client; from_client; http_from_client; http_to_client }
+    { rank = same; to_ide; from_ide }
+    { rank = max; ide }
+    ccc [ label = &quot;CodeChat Editor\nClient&quot;]
+    client_task [ label = &quot;Client websocket\ntask&quot;]
+    http_task [ label = &quot;HTTP endpoint&quot;]
+    from_client [ label = &quot;queue from client&quot; shape=&quot;rectangle&quot;]
+    processing [ label = &quot;Processing task&quot; ]
+    to_client [ label = &quot;queue to client&quot; shape=&quot;rectangle&quot;]
+    http_to_client [ label = &quot;http queue to client&quot; shape = &quot;rectangle&quot;]
+    http_from_client [ label = &quot;oneshot from client&quot; shape = &quot;box&quot;]
+    ide [ label = &quot;CodeChat Editor\nIDE plugin&quot;]
+    ide_task [ label = &quot;IDE websocket\ntask&quot; ]
+    from_ide [ label = &quot;queue from IDE&quot; shape=&quot;rectangle&quot; ]
+    to_ide [ label = &quot;queue to IDE&quot; shape=&quot;rectangle&quot; ]
+    }"></graphviz-graph>
 
 The queues use multiple-sender, single receiver (mpsc) types; hence, a single
 task in the diagram receives data from a queue, while multiple tasks send data
 to a queue. When the IDE processing task writes updated content to the file
 being edited, it notifies the file watcher to ignore the next file update (hence
 the dotted arrow).
+
+The exception to this pattern is the HTTP endpoint. This endpoint is invoked with each HTTP request, rather than operating as a single, long-running task. It sends the request to the processing task using an mpsc queue; this request includes a one-shot channel which enables the request to return a response to this specific request instance. The endpoint then returns the provided response.
 
 Simplest non-IDE integration: the file watcher.
 
@@ -498,7 +536,31 @@ TODO: GUIs using TinyMCE. See the
 
 ### System architecture
 
-<graphviz-graph graph="digraph {&#10;    bgcolor = transparent;&#10;    compound = true;&#10;    node [shape = box];&#10;    subgraph cluster_text_editor {&#10;        label = &quot;Text editor/IDE&quot;;&#10;        source_code [label = &quot;Source\ncode&quot;, style = dashed];&#10;        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];&#10;    }&#10;    subgraph cluster_server {&#10;        label = <CodeChat Editor Server>;&#10;        websocket_server [label = &quot;Websocket\nserver&quot;];&#10;        web_server [label = &quot;Web\nserver&quot;];&#10;    }&#10;    subgraph cluster_client {&#10;        label = &quot;CodeChat Editor Client&quot;;&#10;        rendered_code [label = &quot;Rendered code&quot;, style = dashed];&#10;        JavaScript;&#10;    }&#10;    CodeChat_plugin -> websocket_server [dir = both];&#10;    websocket_server -> JavaScript [dir = both];&#10;    web_server -> JavaScript [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client];&#10;}"></graphviz-graph>
+<graphviz-graph graph="digraph {
+    bgcolor = transparent;
+    compound = true;
+    node [shape = box];
+    subgraph cluster_text_editor {
+        label = &quot;Text editor/IDE&quot;;
+        source_code [label = &quot;Source\ncode&quot;, style = dashed];
+        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];
+    }
+    subgraph cluster_server {
+        label = &lt;CodeChat Editor Server&gt;;
+        websocket_server [label = &quot;Websocket\nserver&quot;];
+        web_server [label = &quot;Web\nserver&quot;];
+    }
+    subgraph cluster_client_framework {
+        label = &quot;CodeChat Editor Client framework&quot;;
+        subgraph cluster_client {
+            label = &quot;CodeChat Editor Client&quot;
+            rendered_code [label = &quot;Rendered code&quot;, style = dashed];
+        }
+    }
+    CodeChat_plugin -&gt; websocket_server [label = &quot;websocket&quot;, dir = both];
+    websocket_server -&gt; rendered_code [label = &quot;websocket&quot;, dir = both, lhead = cluster_client_framework];
+    web_server -&gt; rendered_code [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client ];
+    }"></graphviz-graph>
 
 ## Code style
 

@@ -74,6 +74,7 @@ import { json } from "@codemirror/lang-json";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { Editor, init, tinymce } from "./tinymce-config.mjs";
+import { get_root_iframe } from "./CodeChatEditor.mjs"
 
 let tinymce_singleton: Editor | undefined;
 
@@ -474,7 +475,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                         // contenteditable div with the TinyMCE instance (which
                         // would otherwise wipe the selection).
                         const tinymce_div =
-                            document.getElementById("TinyMCE-inst")!;
+                            get_root_iframe().contentDocument!.getElementById("TinyMCE-inst")!;
                         // Copy the current TinyMCE instance contents into a
                         // contenteditable div.
                         const old_contents_div = document.createElement("div")!;
@@ -618,7 +619,7 @@ export const CodeMirror_load = async (
     }
 
     codechat_body.innerHTML =
-        '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents"></div>';
+        '<div class="CodeChat-CodeMirror"></div>';
     source.selection = EditorSelection.single(0).toJSON();
     let parser;
     // TODO: dynamically load the parser.
@@ -669,8 +670,11 @@ export const CodeMirror_load = async (
     // For reloads, we need to remove previous instances; otherwise, Bad Things
     // happen.
     tinymce.remove()
+    document.body.insertAdjacentHTML("beforeend", '<div id="TinyMCE-inst" class="CodeChat-doc-contents">')
     tinymce_singleton = (await init({ selector: "#TinyMCE-inst" }))[0];
-};
+    console.log(tinymce_singleton)
+    codechat_body.insertAdjacentElement("afterend", document.getElementById("TinyMCE-inst")!)
+}
 
 // Return the JSON data to save from the current CodeMirror-based document.
 export const CodeMirror_save = () => {
