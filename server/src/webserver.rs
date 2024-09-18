@@ -299,10 +299,9 @@ fn get_client_framework(
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>The CodeChat Editor</title>
-
         <link rel="stylesheet" href="/static/bundled/CodeChatEditor.css">
         <script type="module">
-            import {{ page_init }} from "/static/bundled/CodeChatEditor{js_test_suffix}.js"
+            import {{ page_init }} from "/static/bundled/CodeChatEditorFramework.js"
             page_init({ws_url})
         </script>
         {testing_src}
@@ -409,6 +408,7 @@ async fn serve_file(
     };
 
     // Build and return the webpage.
+    let js_test_suffix = "";
     (
         SimpleHttpResponse::Ok(format!(
             r##"<!DOCTYPE html>
@@ -417,7 +417,11 @@ async fn serve_file(
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{name} - The CodeChat Editor</title>
-        <link rel="stylesheet" href="/static/bundled/CodeChatEditor.css">
+        <script type="module">
+            import {{ page_init }} from "/static/bundled/CodeChatEditor{js_test_suffix}.js"
+            page_init()
+        </script>
+        <link rel="stylesheet" href="/static/bundled/CodeChatEditor{js_test_suffix}.css">
         {sidebar_css}
     </head>
     <body>

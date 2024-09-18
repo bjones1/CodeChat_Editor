@@ -16,6 +16,17 @@
 //
 // # `typing.d.ts` -- Global type definitions
 //
+// The server passes this to the client to load a file. See
+// [LexedSourceFile](../../server/src/webserver.rs#LexedSourceFile).
+type CodeChatForWeb = {
+    metadata: { mode: string };
+    source: {
+        doc: string;
+        doc_blocks: DocBlockJSON[];
+        selection: any;
+    };
+};
+
 // How a doc block is stored using CodeMirror.
 type DocBlockJSON = [
     // From
@@ -29,6 +40,12 @@ type DocBlockJSON = [
     // Contents
     string,
 ];
+
+interface UpdateMessageContents {
+    contents: CodeChatForWeb | undefined,
+    cursor_position: number | undefined,
+    scroll_position: number | undefined
+}
 
 // These modules keep TypeScript from complaining about missing type definitions
 // for Javascript libraries used in this project. See

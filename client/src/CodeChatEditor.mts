@@ -14,7 +14,7 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `CodeChat-editor.mts` -- TypeScript which implements part of the client-side portion of the CodeChat Editor
+// # `CodeChatEditor.mts` -- TypeScript which implements part of the client-side portion of the CodeChat Editor
 //
 // The overall process of load a file is:
 //
@@ -45,7 +45,6 @@
 import { EditorView, ViewUpdate } from "@codemirror/view";
 import prettier from "prettier/esm/standalone.mjs";
 import parserMarkdown from "prettier/esm/parser-markdown.mjs";
-import ReconnectingWebSocket from "./ReconnectingWebSocket.cjs";
 import TurndownService from "./turndown/turndown.browser.es.js";
 import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
 
@@ -66,181 +65,6 @@ import { tinymce, init, Editor } from "./tinymce-config.mjs";
 // ### CSS
 import "./../static/css/CodeChatEditor.css";
 
-// ## Websocket
-//
-// This code communicates with the CodeChat Editor Server via its websocket
-// interface.
-//
-// ### Message types
-//
-// These mirror the same definitions in the Rust webserver, so that the two can
-// exchange messages.
-interface EditorMessage {
-    id: number,
-    message: EditorMessageContents
-}
-
-interface EditorMessageContents {
-    Update?: UpdateMessageContents,
-    CurrentFile?: string,
-    Load?: string,
-    Result?: string
-    RequestClose?: null
-}
-
-interface UpdateMessageContents {
-    contents: CodeChatForWeb | undefined,
-    cursor_position: number | undefined,
-    scroll_position: number | undefined
-}
-
-let webSocketComm: WebSocketComm
-
-class WebSocketComm {
-    // Use a unique ID for each websocket message sent.
-    ws_id = 0;
-    // The websocket used by this class. Really a `ReconnectingWebSocket`, but
-    // that's not a type.
-    ws: WebSocket
-    // A map of message id to timer id for all pending messages.
-    pending_messages: Record<number, number> = {}
-    // True when the iframe is loading, so that an `Update` should be postponed until the page load is finished. Otherwise, the page is fully loaded, so the `Update` may be applied immediately.
-    onloading = false
-
-    constructor(ws_url: string) {
-        // The `ReconnectingWebSocket` doesn't provide ALL the `WebSocket`
-        // methods. Ignore this, since we can't use `ReconnectingWebSocket` as a
-        // type.
-        /// @ts-ignore
-        this.ws = new ReconnectingWebSocket!(ws_url);
-        // Identify this client on connection.
-        this.ws.onopen = () => {
-            console.log(`CodeChat Client: websocket to CodeChat Server open.`);
-        };
-
-        // Provide logging to help track down errors.
-        this.ws.onerror = (event: any) => {
-            console.error(`CodeChat Client: websocket error ${event}.`);
-        };
-
-        this.ws.onclose = (event: any) => {
-            console.log(
-                `CodeChat Client: websocket closed by event type ${event.type}: ${event.detail}. This should only happen on shutdown.`,
-            );
-        };
-
-        // Handle websocket messages.
-        this.ws.onmessage = (event: any) => {
-            // Parse the received message, which must be a single element of a
-            // dictionary representing a `JointMessage`.
-            const joint_message = JSON.parse(event.data) as EditorMessage
-            const { id: id, message: message } = joint_message
-            console.assert(id !== undefined)
-            console.assert(message !== undefined)
-            const keys = Object.keys(message)
-            console.assert(keys.length === 1)
-            const key = keys[0];
-            const value = Object.values(message)[0]
-            const root_iframe = get_root_iframe()
-
-            // Process this message.
-            switch (key) {
-                case "Update":
-                    // Load this data in.
-                    current_update = value as UpdateMessageContents;
-                    console.log(`Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`)
-
-                    let result = ""
-                    const contents = current_update.contents
-                    if (contents !== null && contents !== undefined) {
-                        // If the page is still loading, wait until the load completed before updating the editable contents.
-                        if (this.onloading) {
-                            root_iframe.onload = () => {
-                                open_lp(contents)
-                                this.onloading = false
-                            }
-                        } else {
-                            open_lp(contents)
-                        }
-                    } else {
-                        // TODO: handle scroll/cursor updates.
-                        result = `Unhandled Update message: ${current_update}`
-                        console.log(result)
-                    }
-
-                    this.send_result(id, result)
-                    break;
-
-                case "CurrentFile":
-                    const current_file = value as string;
-                    console.log(`CurrentFile(${current_file})`)
-                    // Set the new src to (re)load content. At startup, the ``srcdoc`` attribute shows some welcome text. Remove it so that we can now assign the ``src`` attribute.
-                    root_iframe.removeAttribute("srcdoc")
-                    root_iframe.src = current_file
-                    // There's no easy way to determine when the iframe's DOM is ready. This is a kludgy workaround -- set a flag.
-                    this.onloading = true
-                    root_iframe.onload = () => this.onloading = false
-                    this.send_result(id, "")
-                    break;
-
-                case "Result":
-                    // Cancel the timer for this message and remove it from
-                    // `pending_messages`.
-                    const timer_id = this.pending_messages[id]
-                    if (timer_id !== undefined) {
-                        clearTimeout(timer_id)
-                        delete this.pending_messages[id]
-                    }
-
-                    // Report if this was an error.
-                    const err = value as string;
-                    if (value !== "") {
-                        console.log(`Error in message ${id}: ${err}.`)
-                    }
-                    break;
-
-                default:
-                    console.log(`Unhandled message ${key}(${value})`);
-                    break;
-            }
-        };
-    }
-
-    send = (data: any) => this.ws.send(data)
-    close = (...args: any) => this.ws.close(...args)
-
-    // Report an error from the server.
-    report_server_timeout = (message_id: number) => {
-        delete this.pending_messages[message_id]
-        console.log(`Error: server timeout for message id ${message_id}`)
-    }
-
-    // Send a message expecting a result to the server.
-    send_message = (id: number, message: EditorMessageContents) => {
-        const jm: EditorMessage = {
-            id: id,
-            message: message
-        }
-        this.ws.send(JSON.stringify(jm))
-        this.pending_messages[id] = setTimeout(this.report_server_timeout, 2000, id)
-    }
-
-    // Send a result (a response to a message from the server) back to the
-    // server.
-    send_result = (id: number, result: string = "") => {
-        // We can't simply call `send_message` because that function expects a
-        // result message back from the server.
-        const jm: EditorMessage = {
-            id: id,
-            message: {
-                Result: result
-            }
-        }
-        this.ws.send(JSON.stringify(jm))
-    }
-
-}
-
 // ## Markdown to HTML conversion
 //
 // Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to
@@ -255,19 +79,27 @@ const turndownService = new TurndownService({
 // [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm)
 // to enable conversions for tables, task lists, and strikethroughs.
 turndownService.use(gfm);
-// The server passes this to the client to load a file. See
-// [LexedSourceFile](../../server/src/webserver.rs#LexedSourceFile).
-type CodeChatForWeb = {
-    metadata: { mode: string };
-    source: {
-        doc: string;
-        doc_blocks: DocBlockJSON[];
-        selection: any;
-    };
-};
-
 // ## Page initialization
 //
+// Load the dynamic content into the static page.
+export const page_init = () => {
+    on_dom_content_loaded(async () => {
+        document.getElementById("CodeChat-save-button")!.addEventListener("click", on_save)
+        document.body.addEventListener("keydown", on_keydown)
+
+        // Intercept links in this document to save before following the link.
+        // For some reason, the semicolon here is required.
+        /// @ts-ignore
+        navigation.addEventListener("navigate", on_navigate);
+        /// @ts-ignore
+        (document.getElementById("CodeChat-sidebar") as (HTMLIFrameElement | undefined))?.contentWindow?.navigation.addEventListener("navigate", on_navigate)
+
+        window.CodeChatEditor = {
+            open_lp
+        }
+    });
+}
+
 // This is copied from
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
 const on_dom_content_loaded = (on_load_func: () => void) => {
@@ -280,42 +112,6 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
     }
 };
 
-export const get_root_iframe = () => document.getElementById("CodeChat-iframe")! as HTMLIFrameElement
-
-// Load the dynamic content into the static page.
-export const page_init = (
-    // The pathname for the websocket to use. The remainder of the URL is
-    // derived from the hosting page's URL. See the
-    // [Location docs](https://developer.mozilla.org/en-US/docs/Web/API/Location)
-    // for a nice, interactive definition of the components of a URL.
-    ws_pathname: string
-) => {
-    on_dom_content_loaded(async () => {
-        // If the hosting page uses HTTPS, then use a secure websocket (WSS
-        // protocol); otherwise, use an insecure websocket (WS).
-        const protocol = window.location.protocol === "http:" ? "ws:" : "wss:";
-        // Build a websocket address based on the URL of the current page.
-        webSocketComm = new WebSocketComm(`${protocol}//${window.location.host}/${ws_pathname}`)
-
-        get_root_iframe().onload = () => {
-            add_page_listeners()
-        }
-    });
-}
-
-const add_page_listeners = () => {
-    const root_iframe = get_root_iframe()
-    root_iframe.contentDocument!.getElementById("CodeChat-save-button")?.addEventListener("click", on_save)
-    root_iframe.contentDocument!.body.addEventListener("keydown", on_keydown)
-
-    // Intercept links in this document to save before following the link.
-    // For some reason, the semicolon here is required.
-    /// @ts-ignore
-    root_iframe.contentWindow?.navigation.addEventListener("navigate", on_navigate);
-    /// @ts-ignore
-    (document.getElementById("CodeChat-sidebar") as (HTMLIFrameElement | undefined))?.contentWindow?.navigation.addEventListener("navigate", on_navigate)
-}
-
 // ## File handling
 //
 // Store the lexer info for the currently-loaded language.
@@ -325,8 +121,6 @@ const add_page_listeners = () => {
 let current_metadata: {
     mode: string;
 };
-
-let current_update: UpdateMessageContents;
 
 // True if this is a CodeChat Editor document (not a source file).
 const is_doc_only = () => {
@@ -352,7 +146,7 @@ enum EditorMode {
 // server has already lexed the source file into code and doc blocks; this
 // function transforms the code and doc blocks into HTML and updates the current
 // web page with the results.
-const open_lp = (
+export const open_lp = async (
     // A data structure provided by the server, containing the source and
     // associated metadata. See [`AllSource`](#AllSource).
     all_source: CodeChatForWeb,
@@ -373,16 +167,14 @@ const open_lp = (
     // from the provided `all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
-    const codechat_body = get_root_iframe().contentDocument!.getElementById(
-        "CodeChat-body",
-    ) as HTMLDivElement;
+    const codechat_body = document.getElementById("CodeChat-body") as HTMLDivElement;
     if (is_doc_only()) {
         if (tinymce.activeEditor === null) {
             // Special case: a CodeChat Editor document's HTML is stored in
             // `source.doc`. We don't need the CodeMirror editor at all;
             // instead, treat it like a single doc block contents div.
             codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
-            init({
+            await init({
                 selector: ".CodeChat-doc-contents",
                 // In the doc-only mode, add autosave functionality. While there
                 // is an
@@ -399,7 +191,8 @@ const open_lp = (
                         startAutosaveTimer();
                     });
                 },
-            }).then((editors) => editors[0].focus());
+            })
+            tinymce.activeEditor!.focus();
         } else {
             // Save and restore cursor/scroll location after an update per the
             // [docs](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.dom.bookmarkmanager).
@@ -410,7 +203,7 @@ const open_lp = (
             tinymce.activeEditor!.selection.moveToBookmark(bm)
         }
     } else {
-        CodeMirror_load(codechat_body, source, current_metadata.mode, [autosaveExtension]);
+        await CodeMirror_load(codechat_body, source, current_metadata.mode, [autosaveExtension]);
     }
 
     // <a id="CodeChatEditor_test"></a>If tests should be run, then the
@@ -420,6 +213,32 @@ const open_lp = (
         window.CodeChatEditor_test();
     }
 };
+
+const save_lp = async () => {
+    /// @ts-expect-error
+    let source: CodeChatForWeb["source"] = {};
+    if (is_doc_only()) {
+        // To save a document only, simply get the HTML from the only Tiny MCE
+        // div.
+        const html = tinymce.get(0)!.getContent();
+        const markdown = turndownService.turndown(html);
+        source.doc = await prettier_markdown(markdown, 80);
+        source.doc_blocks = [];
+    } else {
+        source = CodeMirror_save();
+        await codechat_html_to_markdown(source)
+    }
+
+    let update: UpdateMessageContents = {
+        contents: {
+            metadata: current_metadata,
+            source,
+        },
+        scroll_position: undefined,
+        cursor_position: undefined,
+    }
+    return update
+}
 
 // Per
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
@@ -444,27 +263,10 @@ const on_keydown = (event: KeyboardEvent) => {
 
 // Save CodeChat Editor contents.
 const on_save = async () => {
-    /// @ts-expect-error
-    let source: CodeChatForWeb["source"] = {};
-    if (is_doc_only()) {
-        // To save a document only, simply get the HTML from the only Tiny MCE
-        // div.
-        const html = tinymce.get(0)!.getContent();
-        const markdown = turndownService.turndown(html);
-        source.doc = await prettier_markdown(markdown, 80);
-        source.doc_blocks = [];
-    } else {
-        source = CodeMirror_save();
-        await codechat_html_to_markdown(source)
-    }
-
     // <a id="save"></a>Save the provided contents back to the filesystem, by
-    // send an update message over the websocket.
-    current_update.contents = {
-        metadata: current_metadata,
-        source,
-    };
-    webSocketComm.send(JSON.stringify({ id: webSocketComm.ws_id++, message: { Update: current_update } }))
+    // sending an update message over the websocket.
+    const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm
+    webSocketComm.send(JSON.stringify({ id: webSocketComm.ws_id++, message: { Update: await save_lp() } }))
 };
 
 const codechat_html_to_markdown = async (source: any) => {
@@ -654,7 +456,7 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
 declare global {
     interface Window {
         CodeChatEditor: {
-            connection_id: string
+            open_lp: (all_source: CodeChatForWeb) => Promise<void>
         }
         CodeChatEditor_test: any
     }

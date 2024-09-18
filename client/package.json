@@ -8,8 +8,8 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "check-env": "node -e 'console.log(process.env)' | grep npm",
         "build": "run-script-os",
-        "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
-        "build:default": "node_modules/.bin/esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
+        "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
+        "build:default": "node_modules/.bin/esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
         "dist": "run-script-os",
         "dist:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --minify --format=esm --splitting",
         "dist:default": "node_modules/.bin/esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --minify --format=esm --splitting"

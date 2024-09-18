@@ -1,6 +1,6 @@
 # # `log4rs.yml` - configure logging
-# This file configures log4rs for this application.
 #
+# This file configures log4rs for this application.
 appenders:
   # An appender named "stdout" that writes to stdout
   stdout:
@@ -8,7 +8,8 @@ appenders:
     encoder:
       pattern: "{d} {l} {t} {L} - {m}{n}"
 
-# Set the default logging level to "warn" and attach the "stdout" appender to the root
+# Set the default logging level to "warn" and attach the "stdout" appender to
+# the root
 root:
   level: info
   appenders:
