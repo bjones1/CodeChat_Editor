@@ -22,6 +22,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    str::FromStr,
     time::Duration,
 };
 
@@ -47,14 +48,14 @@ use tokio::{
     sync::mpsc,
 };
 use url::Url;
-use urlencoding::{self, encode};
+use urlencoding;
 #[cfg(target_os = "windows")]
 use win_partitions::win_api::get_logical_drive;
 
 // ### Local
 use super::{
-    client_websocket, get_client_framework, get_connection_id, html_not_found, html_wrapper, path_display,
-    send_response, serve_file, AppState, EditorMessage, EditorMessageContents,
+    client_websocket, get_client_framework, get_connection_id, html_not_found, html_wrapper,
+    path_display, send_response, serve_file, AppState, EditorMessage, EditorMessageContents,
     ProcessingTaskHttpRequest, SimpleHttpResponse, UpdateMessageContents, WebsocketQueues,
 };
 use crate::processing::{self, TranslationResultsString};
@@ -239,7 +240,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
                 ))
             }
         };
-        let encoded_dir = encode(&dir_name);
+        let encoded_dir = urlencoding::encode(&dir_name);
         dir_html += &format!(
             "<li><a href='/fw/fsb/{web_path}{}{encoded_dir}'>{dir_name}</a></li>\n",
             // If this is a raw drive letter, then the path already ends with a
@@ -266,7 +267,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
                 return html_not_found(&format!("<p>Unable to decode file name {err:?} as UTF-8.",))
             }
         };
-        let encoded_file = encode(&file_name);
+        let encoded_file = urlencoding::encode(&file_name);
         file_html += &format!(
             r#"<li><a href="/fw/fsb/{web_path}/{encoded_file}" target="_blank">{file_name}</a></li>
 "#
@@ -387,7 +388,9 @@ pub async fn smart_read(file_path: &Path) -> Result<String, SimpleHttpResponse> 
     // If this is a binary file (meaning we can't read the contents as UTF-8),
     // just serve it raw; assume this is an image/video/etc.
     if let Err(_err) = read_ret {
-        return Err(SimpleHttpResponse::Bin(file_path.to_string_lossy().to_string()));
+        return Err(SimpleHttpResponse::Bin(
+            file_path.to_string_lossy().to_string(),
+        ));
     }
 
     Ok(file_contents)
@@ -406,7 +409,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
     // First, allocate variables needed by these two tasks.
     //
     // The path to the currently open CodeChat Editor file.
-    let current_filepath = file_path.to_path_buf();
+    let mut current_filepath = file_path.to_path_buf().canonicalize().unwrap();
     // #### The filewatcher task.
     actix_rt::spawn(async move {
         'task: {
@@ -458,13 +461,11 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
             );
 
             // Provide it a file to open.
-            //
-            //
             let encoded_path =
                 // First, convert the path to use forward slashes.
                 &simplified(&current_filepath).to_slash().unwrap()
                 // The convert each part of the path to a URL-encoded string. (This avoids encoding the slashes.)
-                .split("/").map(|s| encode(s))
+                .split("/").map(|s| urlencoding::encode(s))
                 // Then put it all back together.
                 .collect::<Vec<_>>().join("/");
             let url_pathbuf = format!("/fw/fsc/{connection_id}/{encoded_path}");
@@ -652,6 +653,49 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                 };
                                 send_response(&to_websocket_tx, m.id, &result).await;
                             }
+
+                            EditorMessageContents::CurrentFile(url_string) => {
+                                // Convert this URL back to a file path.
+                                let result = match urlencoding::decode(&url_string) {
+                                    Err(err) => format!("Error: unable to decode URL {url_string}: {err}."),
+                                    Ok(url_string) => match Url::parse(&url_string) {
+                                        Err(err) => format!("Error: unable to parse URL {url_string}: {err}"),
+                                        Ok(url) => {
+                                            match url.path_segments() {
+                                                None => format!("Error: URL {url} cannot be a base."),
+                                                Some(path_segments) => {
+                                                    // Make sure the path segments start with `/fw/fsc/{connection_id}`.
+                                                    let ps: Vec<_> = path_segments.collect();
+                                                    if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
+                                                        format!("Error: URL {url} has incorrect prefix.")
+                                                    } else {
+                                                        // Strip these first three segments; the remainder is a file path.
+                                                        let path_str = ps[3..].join("/");
+                                                        match PathBuf::from_str(&path_str) {
+                                                            Err(err) => {
+                                                                format!("Error: unable to parse file path {path_str}: {err}.")
+                                                            },
+                                                            Ok(path_buf) => {
+                                                                match path_buf.canonicalize() {
+                                                                    Err(err) => format!("Unable to canonicalize {path_buf:?}: {err}."),
+                                                                    Ok(p) => {
+                                                                        // We finally have the desired path. Assign it!
+                                                                        current_filepath = p;
+                                                                        info!("Current filepath: {current_filepath:?}");
+                                                                        // Indicate there was no error in the `Result` message.
+                                                                        "".to_string()
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                };
+                                send_response(&to_websocket_tx, m.id, &result).await;
+                            },
 
                             // Process a result, the respond to a message we
                             // sent.

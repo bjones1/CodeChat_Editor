@@ -266,7 +266,7 @@ const on_save = async () => {
     // <a id="save"></a>Save the provided contents back to the filesystem, by
     // sending an update message over the websocket.
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm
-    webSocketComm.send(JSON.stringify({ id: webSocketComm.ws_id++, message: { Update: await save_lp() } }))
+    webSocketComm.send_message({ Update: await save_lp() })
 };
 
 const codechat_html_to_markdown = async (source: any) => {
@@ -446,7 +446,7 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
         // Avoid recursion!
         /// @ts-ignore
         navigation.removeEventListener("navigate", on_navigate)
-        window.location.href = navigateEvent.destination.url;
+        parent.window.CodeChatEditorFramework.webSocketComm.current_file(new URL(navigateEvent.destination.url))
     })
 }
 

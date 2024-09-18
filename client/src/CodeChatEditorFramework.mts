@@ -51,8 +51,11 @@ class WebSocketComm {
     // The websocket used by this class. Really a `ReconnectingWebSocket`, but
     // that's not a type.
     ws: WebSocket
-    // A map of message id to timer id for all pending messages.
-    pending_messages: Record<number, number> = {}
+    // A map of message id to (timer id, callback) for all pending messages.
+    pending_messages: Record<number, {
+        timer_id: number,
+        callback: () => void,
+    }> = {}
     // True when the iframe is loading, so that an `Update` should be postponed until the page load is finished. Otherwise, the page is fully loaded, so the `Update` may be applied immediately.
     onloading = false
 
@@ -90,7 +93,6 @@ class WebSocketComm {
             console.assert(keys.length === 1)
             const key = keys[0];
             const value = Object.values(message)[0]
-            const root_iframe = get_root_iframe()!
 
             // Process this message.
             switch (key) {
@@ -104,14 +106,12 @@ class WebSocketComm {
                     if (contents !== null && contents !== undefined) {
                         // If the page is still loading, wait until the load completed before updating the editable contents.
                         if (this.onloading) {
-                            root_iframe.onload = () => {
-                                /// @ts-ignore
-                                root_iframe.contentWindow.CodeChatEditor.open_lp(contents)
+                            root_iframe!.onload = () => {
+                                root_iframe!.contentWindow!.CodeChatEditor.open_lp(contents)
                                 this.onloading = false
                             }
                         } else {
-                            /// @ts-ignore
-                            root_iframe.contentWindow.CodeChatEditor.open_lp(contents)
+                            root_iframe!.contentWindow!.CodeChatEditor.open_lp(contents)
                         }
                     } else {
                         // TODO: handle scroll/cursor updates.
@@ -125,21 +125,18 @@ class WebSocketComm {
                 case "CurrentFile":
                     const current_file = value as string;
                     console.log(`CurrentFile(${current_file})`)
-                    // Set the new src to (re)load content. At startup, the ``srcdoc`` attribute shows some welcome text. Remove it so that we can now assign the ``src`` attribute.
-                    root_iframe.removeAttribute("srcdoc")
-                    root_iframe.src = current_file
-                    // There's no easy way to determine when the iframe's DOM is ready. This is a kludgy workaround -- set a flag.
-                    this.onloading = true
-                    root_iframe.onload = () => this.onloading = false
+                    this.set_root_iframe_src(current_file)
                     this.send_result(id, "")
                     break;
 
                 case "Result":
                     // Cancel the timer for this message and remove it from
                     // `pending_messages`.
-                    const timer_id = this.pending_messages[id]
-                    if (timer_id !== undefined) {
+                    const pending_message = this.pending_messages[id]
+                    if (pending_message !== undefined) {
+                        const {timer_id, callback} = this.pending_messages[id]
                         clearTimeout(timer_id)
+                        callback()
                         delete this.pending_messages[id]
                     }
 
@@ -157,6 +154,15 @@ class WebSocketComm {
         };
     }
 
+    set_root_iframe_src = (url: string) => {
+        // Set the new src to (re)load content. At startup, the ``srcdoc`` attribute shows some welcome text. Remove it so that we can now assign the ``src`` attribute.
+        root_iframe!.removeAttribute("srcdoc")
+        root_iframe!.src = url
+        // There's no easy way to determine when the iframe's DOM is ready. This is a kludgy workaround -- set a flag.
+        this.onloading = true
+        root_iframe!.onload = () => this.onloading = false
+    }
+
     send = (data: any) => this.ws.send(data)
     close = (...args: any) => this.ws.close(...args)
 
@@ -167,13 +173,28 @@ class WebSocketComm {
     }
 
     // Send a message expecting a result to the server.
-    send_message = (id: number, message: EditorMessageContents) => {
+    send_message = (message: EditorMessageContents, callback: () => void = () => 0) => {
+        const id = this.ws_id++
         const jm: EditorMessage = {
             id: id,
             message: message
         }
         this.ws.send(JSON.stringify(jm))
-        this.pending_messages[id] = setTimeout(this.report_server_timeout, 2000, id)
+        this.pending_messages[id] = {
+             timer_id: setTimeout(this.report_server_timeout, 2000, id),
+             callback
+        }
+    }
+
+    current_file = (url: URL) => {
+        // If this points to the Server, then tell the IDE to load a new file.
+        if (url.host === window.location.host) {
+            this.send_message({CurrentFile: url.toString()}, () => {
+                this.set_root_iframe_src(url.toString())
+            })
+        } else {
+            this.set_root_iframe_src(url.toString())
+        }
     }
 
     // Send a result (a response to a message from the server) back to the
@@ -192,7 +213,7 @@ class WebSocketComm {
 
 }
 
-const get_root_iframe = () => document.getElementById("CodeChat-iframe")! as HTMLIFrameElement
+let root_iframe: HTMLIFrameElement | undefined
 
 // Load the dynamic content into the static page.
 export const page_init = (
@@ -208,6 +229,7 @@ export const page_init = (
         const protocol = window.location.protocol === "http:" ? "ws:" : "wss:";
         // Build a websocket address based on the URL of the current page.
         webSocketComm = new WebSocketComm(`${protocol}//${window.location.host}/${ws_pathname}`)
+        root_iframe = document.getElementById("CodeChat-iframe")! as HTMLIFrameElement
         window.CodeChatEditorFramework = {
             webSocketComm
         }
