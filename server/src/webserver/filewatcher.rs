@@ -66,7 +66,8 @@ use crate::{
     processing::{
         codechat_for_web_to_source, source_to_codechat_for_web_string, TranslationResultsString,
     },
-    queue_send, webserver::get_test_mode,
+    queue_send,
+    webserver::get_test_mode,
 };
 
 // ## Globals
@@ -792,12 +793,9 @@ mod tests {
     use actix_web::{
         body::BoxBody,
         dev::{Service, ServiceResponse},
-        test, web,
-        web::Data,
-        App,
+        test, web, App,
     };
     use assertables::{assert_starts_with, assert_starts_with_as_result};
-    use log::info;
     use path_slash::PathExt;
     use tokio::{
         select,
@@ -827,7 +825,6 @@ mod tests {
     ) -> (
         WebsocketQueues,
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error>,
-        Data<AppState>,
     ) {
         let app_data = make_app_data();
         let app = test::init_service(configure_app(App::new(), &app_data)).await;
@@ -850,7 +847,6 @@ mod tests {
         return (
             joint_editors.remove(&connection_id.to_string()).unwrap(),
             app,
-            app_data,
         );
     }
 
@@ -886,7 +882,7 @@ mod tests {
     async fn test_websocket_opened_1() {
         configure_testing_logger();
         let (temp_dir, test_dir) = prep_test_dir!();
-        let (je, app, app_data) = get_websocket_queues(&test_dir).await;
+        let (je, app) = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.from_websocket_tx;
         let mut client_rx = je.to_websocket_rx;
 
@@ -935,7 +931,7 @@ mod tests {
     async fn test_websocket_update_1() {
         configure_testing_logger();
         let (temp_dir, test_dir) = prep_test_dir!();
-        let (je, app, _app_data) = get_websocket_queues(&test_dir).await;
+        let (je, app) = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.from_websocket_tx;
         let mut client_rx = je.to_websocket_rx;
 

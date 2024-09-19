@@ -318,28 +318,27 @@ async fn serve_vscode_fs(
 #[cfg(test)]
 mod test {
     use std::io::Error;
-    use std::path::Path;
 
     use actix_rt::task::JoinHandle;
-    use assertables::assert_starts_with;
-    use assertables::assert_starts_with_as_result;
+    use assertables::{assert_starts_with, assert_starts_with_as_result};
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
     use minreq;
     use tokio::io::{AsyncRead, AsyncWrite};
-    use tokio_tungstenite::tungstenite::http::StatusCode;
-    use tokio_tungstenite::WebSocketStream;
-    use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+    use tokio_tungstenite::{
+        connect_async, tungstenite::http::StatusCode, tungstenite::protocol::Message,
+        WebSocketStream,
+    };
 
     use super::super::{
         run_server, EditorMessage, EditorMessageContents, IdeType, IP_ADDRESS, IP_PORT,
     };
-    use crate::processing::CodeChatForWeb;
-    use crate::processing::CodeMirror;
-    use crate::processing::SourceFileMetadata;
-    use crate::test_utils::{check_logger_errors, configure_testing_logger};
-    use crate::webserver::UpdateMessageContents;
-    use crate::{cast, prep_test_dir};
+    use crate::{
+        cast, prep_test_dir,
+        processing::{CodeChatForWeb, CodeMirror, SourceFileMetadata},
+        test_utils::{check_logger_errors, configure_testing_logger},
+        webserver::UpdateMessageContents,
+    };
 
     lazy_static! {
         // Run a single webserver for all tests.
@@ -515,14 +514,13 @@ mod test {
         );
 
         // Create a websocket to emulate the client.
-        let (mut ws_stream_client, _) = connect_async(format!(
+        let (_ws_stream_client, _) = connect_async(format!(
             "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-client/test-connection-id3"
         ))
         .await
         .expect("Failed to connect");
 
         // Send an `Update` message with a file to edit.
-        let temp_py = Path::new(&test_dir).join("temp.py");
         send_message(
             &mut ws_stream_ide,
             &EditorMessage {
