@@ -14,8 +14,16 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
+// # `CodeChatEditorFramework.mts` -- the CodeChat Editor Client Framework
+//
+// This maintains a websocket connection between the CodeChat Editor Server. The
+// accompanying HTML is a full-screen iframe, allowing the Framework to change
+// or update the webpage in response to messages received from the websocket, or
+// to report navigation events to as a websocket message when the iframe's
+// location changes.
+//
 // ## Imports
-
+//
 // ### JavaScript/TypeScript
 //
 // #### Third-party
@@ -56,7 +64,9 @@ class WebSocketComm {
         timer_id: number,
         callback: () => void,
     }> = {}
-    // True when the iframe is loading, so that an `Update` should be postponed until the page load is finished. Otherwise, the page is fully loaded, so the `Update` may be applied immediately.
+    // True when the iframe is loading, so that an `Update` should be postponed
+    // until the page load is finished. Otherwise, the page is fully loaded, so
+    // the `Update` may be applied immediately.
     onloading = false
 
     constructor(ws_url: string) {
@@ -104,7 +114,8 @@ class WebSocketComm {
                     let result = ""
                     const contents = current_update.contents
                     if (contents !== null && contents !== undefined) {
-                        // If the page is still loading, wait until the load completed before updating the editable contents.
+                        // If the page is still loading, wait until the load
+                        // completed before updating the editable contents.
                         if (this.onloading) {
                             root_iframe!.onload = () => {
                                 root_iframe!.contentWindow!.CodeChatEditor.open_lp(contents)
@@ -126,7 +137,8 @@ class WebSocketComm {
                     const current_file = value as string;
                     console.log(`CurrentFile(${current_file})`)
                     const testSuffix = testMode
-                        // Append the test parameter correctly, depending if there are already parameters or not.
+                        // Append the test parameter correctly, depending if
+                        // there are already parameters or not.
                         ? (current_file.indexOf("?") === -1 ? "?test" : "&test")
                         : "";
                     this.set_root_iframe_src(current_file + testSuffix)
@@ -159,10 +171,13 @@ class WebSocketComm {
     }
 
     set_root_iframe_src = (url: string) => {
-        // Set the new src to (re)load content. At startup, the ``srcdoc`` attribute shows some welcome text. Remove it so that we can now assign the ``src`` attribute.
+        // Set the new src to (re)load content. At startup, the `srcdoc`
+        // attribute shows some welcome text. Remove it so that we can now
+        // assign the `src` attribute.
         root_iframe!.removeAttribute("srcdoc")
         root_iframe!.src = url
-        // There's no easy way to determine when the iframe's DOM is ready. This is a kludgy workaround -- set a flag.
+        // There's no easy way to determine when the iframe's DOM is ready. This
+        // is a kludgy workaround -- set a flag.
         this.onloading = true
         root_iframe!.onload = () => this.onloading = false
     }

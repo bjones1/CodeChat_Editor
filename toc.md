@@ -22,7 +22,8 @@
     6.  [Cargo.toml](server/Cargo.toml)
 2.  Client
     1.  Editor
-        1.  [CodeChatEditor.mts](client/src/CodeChatEditor.mts)
+        1.  [CodeChatEditorFramework.mts](client/src/CodeChatEditorFramework.mts)
+        2.  [CodeChatEditor.mts](client/src/CodeChatEditor.mts)
             1.  [CodeMirror-integration.mts](client/src/CodeMirror-integration.mts)
             2.  [tinymce-config.mts](client/src/tinymce-config.mts)
             3.  [EditorComponents.mts](client/src/EditorComponents.mts)
@@ -41,10 +42,11 @@
         2.  [client/static/.gitignore](client/static/.gitignore)
         3.  [client/.gitignore](client/.gitignore)
     2.  NPM/esbuild
-        1.  package.json
-        2.  [tsconfig.json](client/tsconfig.json)
-        3.  [.eslintrc.yml](client/.eslintrc.yml)
-        4.  [.prettierignore](.prettierignore)
+        1.  [HashReader.mts](client/src/HashReader.mts)
+        2.  package.json
+        3.  [tsconfig.json](client/tsconfig.json)
+        4.  [.eslintrc.yml](client/.eslintrc.yml)
+        5.  [.prettierignore](.prettierignore)
     3.  Misc
         1.  [config.toml](server/.cargo/config.toml) - for rust code coverage
 

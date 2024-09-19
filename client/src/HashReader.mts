@@ -1,6 +1,10 @@
-// # `HashReader.mts` -- Read the output produced by esbuild to determine the location of the output files, which have hashes in their file names.
+// # `HashReader.mts` -- post-process esbuild output
+//
+// This script reads the output produced by esbuild to determine the location of
+// the bundled files, which have hashes in their file names. It writes these
+// results to a simple JSON file, which the CodeChat Editor Server reads.
 
-import fs from 'node:fs/promises';
+import fs from "node:fs/promises"
 
 // Copied from the [esbuild docs](https://esbuild.github.io/api/#metafile).
 interface Metafile {
@@ -44,7 +48,8 @@ const data = await fs.readFile('meta.json', { encoding: 'utf8' });
 // Interpret it as JSON.
 const metafile: Metafile = JSON.parse(data)
 
-// Walk the file, looking for the output names of given entry points. Transform those into paths used to import these files.
+// Walk the file, looking for the names of specific entry points. Transform
+// those into paths used to import these files.
 let outputContents: Record<string, string> = {}
 for (const output in metafile.outputs) {
     const outputInfo = metafile.outputs[output]

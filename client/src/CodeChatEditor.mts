@@ -14,7 +14,7 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `CodeChatEditor.mts` -- TypeScript which implements part of the client-side portion of the CodeChat Editor
+// # `CodeChatEditor.mts` -- the CodeChat Editor Client
 //
 // The overall process of load a file is:
 //
