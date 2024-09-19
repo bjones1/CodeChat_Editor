@@ -670,7 +670,6 @@ export const CodeMirror_load = async (
     // happen.
     tinymce.remove()
     tinymce_singleton = (await init({ selector: "#TinyMCE-inst" }))[0];
-    console.log(tinymce_singleton)
 }
 
 // Return the JSON data to save from the current CodeMirror-based document.

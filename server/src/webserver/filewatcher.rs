@@ -613,7 +613,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     // save. TODO: this should store and
                                     // remember the path, instead of needing it
                                     // repeated each time.
-                                    let codechat_for_web1 = match update_message_contents.contents {
+                                    let codechat_for_web = match update_message_contents.contents {
                                         None => break 'process "".to_string(),
                                         Some(cwf) => cwf,
                                     };
@@ -622,7 +622,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     // to the contents of a source file.
                                     let language_lexers_compiled = &app_state.lexers;
                                     let file_contents = match codechat_for_web_to_source(
-                                        codechat_for_web1,
+                                        codechat_for_web,
                                         language_lexers_compiled,
                                     ) {
                                         Ok(r) => r,
@@ -686,10 +686,25 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                                             Ok(path_buf) => {
                                                                 match path_buf.canonicalize() {
                                                                     Err(err) => format!("Unable to canonicalize {path_buf:?}: {err}."),
-                                                                    Ok(p) => {
-                                                                        // We finally have the desired path. Assign
-                                                                        // it!
+                                                                    Ok(p) => 'err_exit: {
+                                                                        // We finally have the desired path! First,
+                                                                        // unwatch the old path.
+                                                                        if let Err(err) = debounced_watcher.watcher().unwatch(&current_filepath) {
+                                                                            break 'err_exit format!(
+                                                                                "Unable to unwatch file '{}': {err}.",
+                                                                                current_filepath.to_string_lossy()
+                                                                            );
+                                                                        }
+                                                                        // Update to the new path.
                                                                         current_filepath = p;
+                                                                        // Watch the new file.
+                                                                        if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
+                                                                            break 'err_exit format!(
+                                                                                "Unable to watch file '{}': {err}.",
+                                                                                current_filepath.to_string_lossy()
+                                                                            );
+                                                                        }
+
                                                                         info!("Current filepath: {current_filepath:?}");
                                                                         // Indicate there was no error in the
                                                                         // `Result` message.
