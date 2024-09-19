@@ -270,7 +270,8 @@ lazy_static! {
     };
 }
 
-// Get the `mode` query parameter to determine `is_test_mode`; default to `false`.
+// Get the `mode` query parameter to determine `is_test_mode`; default to
+// `false`.
 pub fn get_test_mode(req: &HttpRequest) -> bool {
     let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
     if let Ok(query) = query_params {

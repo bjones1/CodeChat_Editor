@@ -1,4 +1,4 @@
-// # `style_guide.cpp` - The theory and practice of literate programming using the CodeChat Editor
+// # `style_guide.cpp` - Literate programming using the CodeChat Editor
 //
 // This document, written as a C++ source file, primarily demonstrates the use
 // of the CodeChat Editor in literate programming.
@@ -22,7 +22,7 @@ const char* CODE_BLOCK =
 // Doc blocks are interpreted using Markdown
 // (specifically, [CommonMark](https://commonmark.org/)), enabling the use of
 // headings, _emphasis_, **strong emphasis**, `monospaced fonts`, and much more;
-// here's a [brief overview of Markdown](https://commonmark.org/help/).
+// see a [brief overview of Markdown](https://commonmark.org/help/).
 //
 // ## Approach
 //
