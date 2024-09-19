@@ -142,7 +142,8 @@ editor-overlay filesystem.
 ## The Server performs translation between the IDE and the Client:
 
 - The startup phase loads the Client framework into a browser:
-  ![Startup diagram](https://www.plantuml.com/plantuml/dsvg/PO_BIiKm443t-OfPfWjnVo5oGOLUh2Xj_81eHYdc4ISJYtzlOwG-kWaXd9mvSyniY8jtGYcOlku9b1Adgsiuku09wHtf07S90rfvigW_4dQYlLTY1GymOYwEvSGqXvULljaHbsx6m3rxjr6zlXqW4ZoCG_T_tbvO-se5F59SCXB8feHdCXwNIAz_X7K75sCIy3twjxtN-Xu8tmfcbkUP3SzFBGFWfxlzs-YSOiYuuTQmwGG6AuxhKRpx1000)
+
+  ![Startup diagram](https://www.plantuml.com/plantuml/svg/PP3HIiOW583lVOfpwIwY-u4ng62ZHR7P0rYUOkJKZcUDthwPiVh_tOZ8vtS-RH8RucLsGYaOV_OHb1BTpIrSNC68z8bKmqD4ZrPs5lLNn4gKyqniO0q3fiMn79ac_xRHTmVYsatekUNPxLIhxti814z3NvtFEmfpNww0PmfhGW9PbF1APiOrqFk9CB_1XH05_8x-Rs-rVWJ2ZmKJoyl4XgUNaW7mrrtkxNIAmIVSSMlOL0Az5Sssv0_y1W00)
 
 <!--
 @startuml
@@ -162,7 +163,8 @@ end
 - If the current file in the IDE changes (including the initial startup, when
   the change is from no file to the current file), or a link is followed in the
   Client's iframe:
-  ![Load diagram](https://www.plantuml.com/plantuml/dsvg/hLHBJiCm4Dtx5AEksWMmpm9LAY0GbK3z7C0q3bXoR6DFa7fxF4cCMnoYWF0YJTFtUNepwT8ZTzZKYjdmAG_ISetmS7Dxzdqht8TmPuzMIWgDZAiM3ShmqaCbbM3GFhYuxY45h1hdmirT-76-HIVrQm7xpHfC1JMN-j8U5mnwTE0HlO2DyDPednXFZmicb1SHc1mpyYJ7BEQmeovP4kzwAE1-jti69zuRuN7-NRW3VMLPXvndGIp7Dq2J206Mn0TpN5McqMM6pAIf3JWOZKAZ7mWrtYvN60aWFOXI8d-XUdl3L5Pi8AgSMdQ8nI1hRqkEoJJHXZPXl182AcCiW_PCcv5lh3KEWqHNbTIdldGc3IzNYdIgS9kPa1Q3_aoUzZ0ZovHg7Ca5yDC2T4tIcJZcSIDwGxC6jC7VjZ0ZJjl3x5_oGULCtTxveqTHHr5wlxih9O_RG8d_kFzfeKXq6Ixqv_e9)
+
+  ![Load diagram](https://www.plantuml.com/plantuml/svg/hLHBJiCm4Dtx5AEksWMmpm9LAY0GbK3z7C0q3bXoR6DFa7fxF4cCMnoYWF0YJTFtUNepwT8ZTzZKYjdmAG_ISetmS7Dxzdqht8TmPuzMIWgDZAiM3ShmqaCbbM3GFhYuxY45h1hdmirT-76-HIVrQm7xpHfC1JMN-j8U5mnwTE0HlO2DyDPednXFZmicb1SHc1mpyYJ7BEQmeovP4kzwAE1-jti69zuRuN7-NRW3VMLPXvndGIp7Dq2J206Mn0TpN5McqMM6pAIf3JWOZKAZ7mWrtYvN60aWFOXI8d-XUdl3L5Pi8AgSMdQ8nI1hRqkEoJJHXZPXl182AcCiW_PCcv5lh3KEWqHNbTIdldGc3IzNYdIgS9kPa1Q3_aoUzZ0ZovHg7Ca5yDC2T4tIcJZcSIDwGxC6jC7VjZ0ZJjl3x5_oGULCtTxveqTHHr5wlxih9O_RG8d_kFzfeKXq6Ixqv_e9)
 
 <!--
 @startuml
@@ -205,7 +207,8 @@ end
 -->
 
 - If the current file's contents in the IDE are edited:
-  ![Edit diagram](https://www.plantuml.com/plantuml/dsvg/XT1DQiCm40NWlKunItlH2tXH36vBInCI_7C09NeE0cNaIEFa-ed1OCVaPp_l6zxBe-WW_T6flwzl-lYa2k6Ca57J6Ir8AWcM3nanBhJtB629gT9EQAqjKsiTo4Q2iQ9t3ef6OA0APy7oXeABkBVOosklw4C0ouzr4zgKA_BjpANnVDxfjwwt573g4ILP9Xw-6XEnynoVDc2Zfb-t6JCgbudDVwfoi1c6lW80)
+
+  ![Edit diagram](https://www.plantuml.com/plantuml/svg/XT1DQiCm40NWlKunItlH2tXH36vBInCI_7C09NeE0cNaIEFa-ed1OCVaPp_l6zxBe-WW_T6flwzl-lYa2k6Ca57J6Ir8AWcM3nanBhJtB629gT9EQAqjKsiTo4Q2iQ9t3ef6OA0APy7oXeABkBVOosklw4C0ouzr4zgKA_BjpANnVDxfjwwt573g4ILP9Xw-6XEnynoVDc2Zfb-t6JCgbudDVwfoi1c6lW80)
 
 <!--
 @startuml
@@ -488,23 +491,37 @@ with descriptions of each setting.
 
 ### Client
 
-As shown in the figure below, the CodeChat Editor client starts with
-`client/webpack/package.json`, which tells
+As shown in the figure below, the CodeChat Editor Client starts with
+`client/package.json`, which tells
 [NPM](<https://en.wikipedia.org/wiki/Npm_(software)>) which JavaScript libraries
 are used in this project. Running `npm update` copies these libraries and all
-their dependencies to the `client/webpack/node_modules` directory. The CodeChat
-Editor client source code (see
-[CodeChat-editor.mts](../client/webpack/CodeChat-editor.mts)) imports these
-libraries.
+their dependencies to the `client/node_modules` directory. The CodeChat Editor
+Client source code (see [CodeChatEditor.mts](../client/src/CodeChatEditor.mts))
+imports these libraries.
 
 Next, [esbuild](https://esbuild.github.io/) analyzes the CodeChat Editor client
 based by transforming any [TypeScript](https://www.typescriptlang.org/) into
 JavaScript then packaging all dependencies (JavaScript, CSS, images, etc.) into
-a smaller set of files. At a user's request, the CodeChat Editor server
+a smaller set of files. At a user's request, the CodeChat Editor Server
 generates HTML which creates an editor around the user-requested file. This HTML
-loads the packaged dependencies to create the CodeChat Editor webpage.
+loads the packaged dependencies to create the CodeChat Editor Client webpage.
 
-<graphviz-graph graph="digraph {&#10;    JS_lib [label = &quot;JavaScript libraries&quot;];&#10;    &quot;package.json&quot; -> JS_lib [label = &quot;npm update&quot;];&#10;    JS_lib -> esbuild;&#10;    CCE_source [label = &quot;CodeChat Editor\nclient-side source&quot;];&#10;    JS_lib -> CCE_source [label = &quot;imports&quot;];&#10;    CCE_source -> esbuild;&#10;    esbuild -> &quot;Packaged JavaScript&quot;;&#10;    CCE_webpage [label = &quot;CodeChat Editor\nwebpage&quot;];&#10;    &quot;Packaged JavaScript&quot; -> CCE_webpage;&#10;    server_HTML [label = &quot;CodeChat Editor\nserver-generated\nHTML&quot;];&#10;    server_HTML -> CCE_webpage;&#10;}"></graphviz-graph>
+<graphviz-graph graph="digraph {
+    JS_lib [label = &quot;JavaScript libraries&quot;];
+    &quot;package.json&quot; -&gt; JS_lib [label = &quot;npm update&quot;];
+    JS_lib -&gt; esbuild;
+    CCE_source [label = &quot;CodeChat Editor\nClient source&quot;];
+    JS_lib -&gt; CCE_source [label = &quot;imports&quot;];
+    CCE_source -&gt; esbuild;
+    esbuild -&gt; &quot;Bundled JavaScript&quot;;
+    esbuild -&gt; &quot;Bundle metadata&quot;
+    &quot;Bundle metadata&quot; -&gt; &quot;HashReader.mts&quot;
+    &quot;HashReader.mts&quot; -&gt; server_HTML
+    CCE_webpage [label = &quot;CodeChat Editor\nClient webpage&quot;];
+    &quot;Bundled JavaScript&quot; -&gt; CCE_webpage;
+    server_HTML [label = &quot;CodeChat Editor\nServer-generated\nHTML&quot;];
+    server_HTML -&gt; CCE_webpage;
+    }"></graphviz-graph>
 
 However, esbuild's code splitting doesn't work with dynamic imports -- the
 splitter always picks Node-style default imports, while the Ace editor expects
