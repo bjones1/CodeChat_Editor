@@ -141,89 +141,14 @@ editor-overlay filesystem.
 
 ## The Server performs translation between the IDE and the Client:
 
-- The startup phase loads the Client framework into a browser:
-
+- The startup phase loads the Client framework into a browser:\
   ![Startup diagram](https://www.plantuml.com/plantuml/svg/PP3HIiOW583lVOfpwIwY-u4ng62ZHR7P0rYUOkJKZcUDthwPiVh_tOZ8vtS-RH8RucLsGYaOV_OHb1BTpIrSNC68z8bKmqD4ZrPs5lLNn4gKyqniO0q3fiMn79ac_xRHTmVYsatekUNPxLIhxti814z3NvtFEmfpNww0PmfhGW9PbF1APiOrqFk9CB_1XH05_8x-Rs-rVWJ2ZmKJoyl4XgUNaW7mrrtkxNIAmIVSSMlOL0Az5Sssv0_y1W00)
-
-<!--
-@startuml
-== Startup ==
-IDE -> Server: Opened(IdeType)
-Server -> IDE: Result(String: OK)
-Server -> IDE: ClientHtml(String: HTML or URL)
-IDE -> Server: Result(String: OK)
-== Open browser (Client framework HTML or URL) ==
-loop
-  Client -> Server: HTTP request(/static URL)
-  Server -> Client: HTTP response(/static data)
-end
-@enduml
--->
-
 - If the current file in the IDE changes (including the initial startup, when
   the change is from no file to the current file), or a link is followed in the
-  Client's iframe:
-
+  Client's iframe:\
   ![Load diagram](https://www.plantuml.com/plantuml/svg/hLHBJiCm4Dtx5AEksWMmpm9LAY0GbK3z7C0q3bXoR6DFa7fxF4cCMnoYWF0YJTFtUNepwT8ZTzZKYjdmAG_ISetmS7Dxzdqht8TmPuzMIWgDZAiM3ShmqaCbbM3GFhYuxY45h1hdmirT-76-HIVrQm7xpHfC1JMN-j8U5mnwTE0HlO2DyDPednXFZmicb1SHc1mpyYJ7BEQmeovP4kzwAE1-jti69zuRuN7-NRW3VMLPXvndGIp7Dq2J206Mn0TpN5McqMM6pAIf3JWOZKAZ7mWrtYvN60aWFOXI8d-XUdl3L5Pi8AgSMdQ8nI1hRqkEoJJHXZPXl182AcCiW_PCcv5lh3KEWqHNbTIdldGc3IzNYdIgS9kPa1Q3_aoUzZ0ZovHg7Ca5yDC2T4tIcJZcSIDwGxC6jC7VjZ0ZJjl3x5_oGULCtTxveqTHHr5wlxih9O_RG8d_kFzfeKXq6Ixqv_e9)
-
-<!--
-@startuml
-participant IDE
-participant Server
-participant Client
-alt IDE loads file
-  IDE -> Client: CurrentFile(String: URL of main.py)
-  Client -> IDE: Response(String: OK)
-else Client loads file
-  Client -> IDE: CurrentFile(String: URL of main.py)
-  IDE -> Client: Response(String: OK)
-end
-Client -> Server: HTTP request(URL of main.py)
-Server -> IDE: LoadFile(String: path to main.py)
-IDE -> Server: Response(String: OK/found)
-IDE -> Server: LoadFile(String: file contents of main.py)
-Server -> IDE: Response(String: OK)
-alt main.py is editable
-  Server -> Client: HTTP response(contents of Client)
-  Server -> Client: Update(String: contents of main.py)
-  Client -> Server: Response(String: OK)
-  loop
-      Client -> Server: HTTP request(URL of supporting file in main.py)
-      Server -> IDE: LoadFile(String: path of supporting file)
-      alt Supporting file in IDE
-        IDE -> Server: Response(String: OK/found)
-        IDE -> Server: LoadFile(String: contents of supporting file)
-        Server -> IDE: Response(OK)
-        Server -> Client: HTTP response(contents of supporting file)
-      else Supporting file not in IDE
-        IDE -> Server: Response(String: "not found")
-        Server -> Client: HTTP response(contents of supporting file from filesystem)
-      end
-  end
-else main.py not editable
-  Server -> Client: HTTP response(contents of main.py)
-end
-@enduml
--->
-
-- If the current file's contents in the IDE are edited:
-
+- If the current file's contents in the IDE are edited:\
   ![Edit diagram](https://www.plantuml.com/plantuml/svg/XT1DQiCm40NWlKunItlH2tXH36vBInCI_7C09NeE0cNaIEFa-ed1OCVaPp_l6zxBe-WW_T6flwzl-lYa2k6Ca57J6Ir8AWcM3nanBhJtB629gT9EQAqjKsiTo4Q2iQ9t3ef6OA0APy7oXeABkBVOosklw4C0ouzr4zgKA_BjpANnVDxfjwwt573g4ILP9Xw-6XEnynoVDc2Zfb-t6JCgbudDVwfoi1c6lW80)
-
-<!--
-@startuml
-IDE -> Server: Update(String: new contents)
-alt Main file is editable
-  Server -> Client: Update(String: new contents)
-else Main file is not editable
-  Server -> Client: CurrentFile(String: URL of contents)
-  Client -> Server: HTTP request(URL of contents)
-  Server -> Client: HTTP response(String: new contents)
-end
-Client -> IDE: Response(String: OK)
-@enduml
--->
-
 - If the current file's contents in the Client are edited, the Client sends the
   IDE an `Update` with the revised contents.
 - When the PC goes to sleep then wakes up, the IDE client and the Editor client
@@ -238,6 +163,10 @@ Possible return values: 200 HTML, 404 HTML, raw contents as UTF-8, the path
 only. If it's raw contents, we still need the path to the file. contents: String
 path: Option enum Ok, Err, Raw We have to process in the processing task until
 we know it's not editable.
+
+Note: to edit these diagrams, paste the URL into the
+[PlantUML web server](https://www.plantuml.com/plantuml/uml), click Decode URL,
+edit, then copy and paste the SVG URL back to this file.
 
 #### Architecture
 
@@ -506,22 +435,11 @@ a smaller set of files. At a user's request, the CodeChat Editor Server
 generates HTML which creates an editor around the user-requested file. This HTML
 loads the packaged dependencies to create the CodeChat Editor Client webpage.
 
-<graphviz-graph graph="digraph {
-    JS_lib [label = &quot;JavaScript libraries&quot;];
-    &quot;package.json&quot; -&gt; JS_lib [label = &quot;npm update&quot;];
-    JS_lib -&gt; esbuild;
-    CCE_source [label = &quot;CodeChat Editor\nClient source&quot;];
-    JS_lib -&gt; CCE_source [label = &quot;imports&quot;];
-    CCE_source -&gt; esbuild;
-    esbuild -&gt; &quot;Bundled JavaScript&quot;;
-    esbuild -&gt; &quot;Bundle metadata&quot;
-    &quot;Bundle metadata&quot; -&gt; &quot;HashReader.mts&quot;
-    &quot;HashReader.mts&quot; -&gt; server_HTML
-    CCE_webpage [label = &quot;CodeChat Editor\nClient webpage&quot;];
-    &quot;Bundled JavaScript&quot; -&gt; CCE_webpage;
-    server_HTML [label = &quot;CodeChat Editor\nServer-generated\nHTML&quot;];
-    server_HTML -&gt; CCE_webpage;
-    }"></graphviz-graph>
+<graphviz-graph graph="digraph {&#10;    JS_lib [label = &quot;JavaScript libraries&quot;]&#10;    &quot;package.json&quot; -> JS_lib [label = &quot;npm update&quot;]&#10;    JS_lib -> esbuild;&#10;    CCE_source [label = &quot;CodeChat Editor\nClient source&quot;]&#10;    JS_lib -> CCE_source [label = &quot;imports&quot;]&#10;    CCE_source -> esbuild&#10;    esbuild -> &quot;Bundled JavaScript&quot;&#10;    esbuild -> &quot;Bundle metadata&quot;&#10;    &quot;Bundle metadata&quot; -> &quot;HashReader.mts&quot;&#10;    &quot;HashReader.mts&quot; -> server_HTML&#10;    CCE_webpage [label = &quot;CodeChat Editor\nClient webpage&quot;]&#10;    &quot;Bundled JavaScript&quot; -> CCE_webpage&#10;    server_HTML [label = &quot;CodeChat Editor\nServer-generated\nHTML&quot;]&#10;    server_HTML -> CCE_webpage&#10;    }"></graphviz-graph>
+
+Note: to edit these diagrams, use an
+[HTML entity encoder/decoder](https://mothereff.in/html-entities) and a Graphviz
+editor such as [Edotor](https://edotor.net/).
 
 However, esbuild's code splitting doesn't work with dynamic imports -- the
 splitter always picks Node-style default imports, while the Ace editor expects
@@ -532,7 +450,7 @@ TODO: GUIs using TinyMCE. See the
 
 ### System architecture
 
-<graphviz-graph graph="digraph {&#10;    bgcolor = transparent;&#10;    compound = true;&#10;    node [shape = box];&#10;    subgraph cluster_text_editor {&#10;        label = &quot;Text editor/IDE&quot;;&#10;        source_code [label = &quot;Source\ncode&quot;, style = dashed];&#10;        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];&#10;    }&#10;    subgraph cluster_server {&#10;        label = <CodeChat Editor Server>;&#10;        websocket_server [label = &quot;Websocket\nserver&quot;];&#10;        web_server [label = &quot;Web\nserver&quot;];&#10;    }&#10;    subgraph cluster_client_framework {&#10;        label = &quot;CodeChat Editor Client framework&quot;;&#10;        subgraph cluster_client {&#10;            label = &quot;CodeChat Editor Client&quot;&#10;            rendered_code [label = &quot;Rendered code&quot;, style = dashed];&#10;        }&#10;    }&#10;    CodeChat_plugin -> websocket_server [label = &quot;websocket&quot;, dir = both];&#10;    websocket_server -> rendered_code [label = &quot;websocket&quot;, dir = both, lhead = cluster_client_framework];&#10;    web_server -> rendered_code [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client ];&#10;    }"></graphviz-graph>
+<graphviz-graph graph="digraph {&#10;    bgcolor = transparent;&#10;    compound = true;&#10;    node [shape = box];&#10;    subgraph cluster_text_editor {&#10;        label = &quot;Text editor/IDE&quot;&#10;        source_code [label = &quot;Source\ncode&quot;, style = dashed];&#10;        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];&#10;    }&#10;    subgraph cluster_server {&#10;        label = <CodeChat Editor Server>;&#10;        websocket_server [label = &quot;Websocket\nserver&quot;];&#10;        web_server [label = &quot;Web\nserver&quot;];&#10;    }&#10;    subgraph cluster_client_framework {&#10;        label = &quot;CodeChat Editor Client framework&quot;&#10;        subgraph cluster_client {&#10;            label = &quot;CodeChat Editor Client&quot;&#10;            rendered_code [label = &quot;Rendered code&quot;, style = dashed];&#10;        }&#10;    }&#10;    CodeChat_plugin -> websocket_server [label = &quot;websocket&quot;, dir = both];&#10;    websocket_server -> rendered_code [label = &quot;websocket&quot;, dir = both, lhead = cluster_client_framework];&#10;    web_server -> rendered_code [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client ];&#10;    }"></graphviz-graph>
 
 ## Code style
 
