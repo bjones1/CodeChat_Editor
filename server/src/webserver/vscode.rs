@@ -17,7 +17,6 @@ use std::path::Path;
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// # `vscode.rs` -- Implement server-side functionality for the Visual Studio Code IDE
-
 // ## Imports
 //
 // ### Standard library
@@ -39,10 +38,7 @@ use super::{
     WebsocketQueues,
 };
 
-use crate::{
-    queue_send,
-    webserver::{filewatcher::smart_read, html_not_found, serve_file},
-};
+use crate::{queue_send, webserver::html_not_found};
 
 // ## Code
 #[get("/vsc/ws-ide/{connection_id}")]
@@ -309,13 +305,13 @@ async fn serve_vscode_fs(
 
     html_not_found("TODO")
     /* ```
-       let file_contents = match smart_read(&file_path, &req).await {
-           Ok(fc) => fc,
-           Err(err) => return err,
-       };
+    let file_contents = match smart_read(&file_path, &req).await {
+        Ok(fc) => fc,
+        Err(err) => return err,
+    };
 
-       serve_file(&file_path, &file_contents, &req, app_state).await
-       ``` */
+    serve_file(&file_path, &file_contents, &req, app_state).await
+    ``` */
 }
 
 // ## Tests
@@ -549,18 +545,18 @@ mod test {
         .await;
 
         /* ```
-               // This should become one update to load the correct URL/directory, then another with the actual file contents.
-               let em = read_message(&mut ws_stream_client).await;
-               assert_eq!(
-                   cast!(em.message, EditorMessageContents::Update),
-                   UpdateMessageContents {
-                       path: Some(temp_py.clone()),
-                       contents: None,
-                       cursor_position: None,
-                       scroll_position: None,
-                   }
-               );
-           ``` */
+            // This should become one update to load the correct URL/directory, then another with the actual file contents.
+            let em = read_message(&mut ws_stream_client).await;
+            assert_eq!(
+                cast!(em.message, EditorMessageContents::Update),
+                UpdateMessageContents {
+                    path: Some(temp_py.clone()),
+                    contents: None,
+                    cursor_position: None,
+                    scroll_position: None,
+                }
+            );
+        ``` */
 
         check_logger_errors(0);
         // Report any errors produced when removing the temporary directory.

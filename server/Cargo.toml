@@ -87,6 +87,7 @@ assertables = "7.0.1"
 assert_fs = "1"
 tokio-tungstenite = "0.23.1"
 minreq = "2.12.0"
+actix-http = "3.9.0"
 # See the [docs](https://github.com/rust-lang/rust-clippy#usage) to install
 # clippy; it can't be installed as a dev-dependency. See the
 # [fmt docs](https://github.com/rust-lang/rustfmt#quick-start) to install fmt.

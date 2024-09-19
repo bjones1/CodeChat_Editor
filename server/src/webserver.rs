@@ -831,17 +831,17 @@ fn html_not_found(msg: &str) -> HttpResponse {
 // Wrap the provided HTML body in DOCTYPE/html/head tags.
 fn html_wrapper(body: &str) -> String {
     format!(
-        "<!DOCTYPE html>
-<html lang=\"en\">
+        r#"<!DOCTYPE html>
+<html lang="en">
     <head>
-        <meta charset=\"UTF-8\">
-        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>The CodeChat Editor</title>
     </head>
     <body>
         {body}
     </body>
-</html>"
+</html>"#
     )
 }
 

@@ -28,8 +28,10 @@ use std::{
 
 // ### Third-party
 use actix_files;
-use actix_web::{error::Error, get, http::header, web, HttpRequest, HttpResponse};
-use actix_web::{http::header::ContentType, Responder};
+use actix_web::{
+    error::Error, get, http::header, http::header::ContentType, web, HttpRequest, HttpResponse,
+    Responder,
+};
 use dunce::simplified;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
@@ -40,12 +42,13 @@ use notify_debouncer_full::{
 };
 use path_slash::PathExt;
 use regex::Regex;
-use tokio::{fs::DirEntry, sync::oneshot};
 use tokio::{
+    fs::DirEntry,
     fs::{self, File},
     io::AsyncReadExt,
     select,
     sync::mpsc,
+    sync::oneshot,
 };
 use url::Url;
 use urlencoding;
@@ -58,9 +61,13 @@ use super::{
     path_display, send_response, serve_file, AppState, EditorMessage, EditorMessageContents,
     ProcessingTaskHttpRequest, SimpleHttpResponse, UpdateMessageContents, WebsocketQueues,
 };
-use crate::processing::{self, TranslationResultsString};
-use crate::processing::{codechat_for_web_to_source, source_to_codechat_for_web_string};
-use crate::{oneshot_send, queue_send};
+use crate::{
+    oneshot_send,
+    processing::{
+        codechat_for_web_to_source, source_to_codechat_for_web_string, TranslationResultsString,
+    },
+    queue_send,
+};
 
 // ## Globals
 lazy_static! {
@@ -581,7 +588,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
 
                         // Determine the file's type, then pass it back to the
                         // HTTP task.
-                        let simple_http_response = match smart_read(&file_path).await {
+                        let simple_http_response = match smart_read(file_path).await {
                             Ok(file_contents) => {
                                 let is_current = file_path.canonicalize().unwrap() == current_filepath;
                                 let (simple_http_response, option_codechat_for_web) = serve_file(file_path, &file_contents, http_request.is_toc, is_current, &app_state).await;
@@ -666,51 +673,45 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     Err(err) => format!("Error: unable to decode URL {url_string}: {err}."),
                                     Ok(url_string) => match Url::parse(&url_string) {
                                         Err(err) => format!("Error: unable to parse URL {url_string}: {err}"),
-                                        Ok(url) => {
-                                            match url.path_segments() {
-                                                None => format!("Error: URL {url} cannot be a base."),
-                                                Some(path_segments) => {
-                                                    // Make sure the path segments start with
-                                                    // `/fw/fsc/{connection_id}`.
-                                                    let ps: Vec<_> = path_segments.collect();
-                                                    if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
-                                                        format!("Error: URL {url} has incorrect prefix.")
-                                                    } else {
-                                                        // Strip these first three segments; the
-                                                        // remainder is a file path.
-                                                        let path_str = ps[3..].join("/");
-                                                        match PathBuf::from_str(&path_str) {
-                                                            Err(err) => {
-                                                                format!("Error: unable to parse file path {path_str}: {err}.")
-                                                            },
-                                                            Ok(path_buf) => {
-                                                                match path_buf.canonicalize() {
-                                                                    Err(err) => format!("Unable to canonicalize {path_buf:?}: {err}."),
-                                                                    Ok(p) => 'err_exit: {
-                                                                        // We finally have the desired path! First,
-                                                                        // unwatch the old path.
-                                                                        if let Err(err) = debounced_watcher.watcher().unwatch(&current_filepath) {
-                                                                            break 'err_exit format!(
-                                                                                "Unable to unwatch file '{}': {err}.",
-                                                                                current_filepath.to_string_lossy()
-                                                                            );
-                                                                        }
-                                                                        // Update to the new path.
-                                                                        current_filepath = p;
-                                                                        // Watch the new file.
-                                                                        if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
-                                                                            break 'err_exit format!(
-                                                                                "Unable to watch file '{}': {err}.",
-                                                                                current_filepath.to_string_lossy()
-                                                                            );
-                                                                        }
-
-                                                                        info!("Current filepath: {current_filepath:?}");
-                                                                        // Indicate there was no error in the
-                                                                        // `Result` message.
-                                                                        "".to_string()
-                                                                    }
+                                        Ok(url) => match url.path_segments() {
+                                            None => format!("Error: URL {url} cannot be a base."),
+                                            Some(path_segments) => {
+                                                // Make sure the path segments start with
+                                                // `/fw/fsc/{connection_id}`.
+                                                let ps: Vec<_> = path_segments.collect();
+                                                if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
+                                                    format!("Error: URL {url} has incorrect prefix.")
+                                                } else {
+                                                    // Strip these first three segments; the
+                                                    // remainder is a file path.
+                                                    let path_str = ps[3..].join("/");
+                                                    match PathBuf::from_str(&path_str) {
+                                                        Err(err) => format!("Error: unable to parse file path {path_str}: {err}."),
+                                                        Ok(path_buf) => match path_buf.canonicalize() {
+                                                            Err(err) => format!("Unable to canonicalize {path_buf:?}: {err}."),
+                                                            Ok(p) => 'err_exit: {
+                                                                // We finally have the desired path! First,
+                                                                // unwatch the old path.
+                                                                if let Err(err) = debounced_watcher.watcher().unwatch(&current_filepath) {
+                                                                    break 'err_exit format!(
+                                                                        "Unable to unwatch file '{}': {err}.",
+                                                                        current_filepath.to_string_lossy()
+                                                                    );
                                                                 }
+                                                                // Update to the new path.
+                                                                current_filepath = p;
+                                                                // Watch the new file.
+                                                                if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
+                                                                    break 'err_exit format!(
+                                                                        "Unable to watch file '{}': {err}.",
+                                                                        current_filepath.to_string_lossy()
+                                                                    );
+                                                                }
+
+                                                                info!("Current filepath: {current_filepath:?}");
+                                                                // Indicate there was no error in the
+                                                                // `Result` message.
+                                                                "".to_string()
                                                             }
                                                         }
                                                     }
@@ -783,36 +784,54 @@ pub async fn filewatcher_websocket(
 // ## Tests
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::path::PathBuf;
-    use std::time::Duration;
+    use std::{fs, path::PathBuf, str::FromStr, time::Duration};
 
-    use actix_web::{test, web, App};
-    use assertables::{assert_starts_with, assert_starts_with_as_result};
-    use tokio::select;
-    use tokio::sync::mpsc::{Receiver, Sender};
-    use tokio::time::sleep;
-
-    use super::super::{configure_app, make_app_data, WebsocketQueues};
-    use super::{AppState, EditorMessage, EditorMessageContents, UpdateMessageContents};
-    use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
-    use crate::processing::{
-        source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
-        TranslationResults,
+    use actix_http::Request;
+    use actix_web::{
+        body::BoxBody,
+        dev::{Service, ServiceResponse},
+        test, web,
+        web::Data,
+        App,
     };
-    use crate::test_utils::{check_logger_errors, configure_testing_logger};
-    use crate::webserver::IdeType;
-    use crate::{cast, prep_test_dir};
+    use assertables::{assert_starts_with, assert_starts_with_as_result};
+    use log::info;
+    use path_slash::PathExt;
+    use tokio::{
+        select,
+        sync::mpsc::{Receiver, Sender},
+        time::sleep,
+    };
+    use url::Url;
+
+    use super::{
+        super::{configure_app, make_app_data, WebsocketQueues},
+        AppState, EditorMessage, EditorMessageContents, UpdateMessageContents,
+    };
+    use crate::{
+        lexer::{compile_lexers, supported_languages::get_language_lexer_vec},
+        processing::{
+            source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
+            TranslationResults,
+        },
+        test_utils::{check_logger_errors, configure_testing_logger},
+        webserver::IdeType,
+        {cast, prep_test_dir},
+    };
 
     async fn get_websocket_queues(
         // A path to the temporary directory where the source file is located.
         test_dir: &PathBuf,
-    ) -> WebsocketQueues {
+    ) -> (
+        WebsocketQueues,
+        impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error>,
+        Data<AppState>,
+    ) {
         let app_data = make_app_data();
         let app = test::init_service(configure_app(App::new(), &app_data)).await;
 
         // Load in a test source file to create a websocket.
-        let uri = format!("/fw/fsc/{}/test.py", test_dir.to_string_lossy());
+        let uri = format!("/fw/fsb/{}/test.py", test_dir.to_string_lossy());
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
@@ -826,7 +845,11 @@ mod tests {
         let mut joint_editors = app_state.filewatcher_client_queues.lock().unwrap();
         let connection_id = *app_state.connection_id.lock().unwrap();
         assert_eq!(joint_editors.len(), 1);
-        return joint_editors.remove(&connection_id.to_string()).unwrap();
+        return (
+            joint_editors.remove(&connection_id.to_string()).unwrap(),
+            app,
+            app_data,
+        );
     }
 
     async fn send_response(id: u32, ide_tx_queue: &Sender<EditorMessage>, result: &str) {
@@ -861,27 +884,45 @@ mod tests {
     async fn test_websocket_opened_1() {
         configure_testing_logger();
         let (temp_dir, test_dir) = prep_test_dir!();
-        let je = get_websocket_queues(&test_dir).await;
+        let (je, app, app_data) = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.from_websocket_tx;
         let mut client_rx = je.to_websocket_rx;
 
-        // 1.  We should get the initial file path.
-        let url = get_message_as!(client_rx, EditorMessageContents::LoadFile);
+        // The initial web request for the Client framework produces a `CurrentFile`.
+        let url_string = get_message_as!(client_rx, EditorMessageContents::CurrentFile);
+        send_response(1, &ide_tx_queue, "").await;
 
-        // Check the path.
+        // Check the path this message contains.
         let mut test_path = test_dir.clone();
         test_path.push("test.py");
         // The comparison below fails without this.
         let test_path = test_path.canonicalize().unwrap();
-        assert_eq!(url, test_path.to_string_lossy().to_string());
+        let url = Url::parse(&format!(
+            "http://localhost{}",
+            urlencoding::decode(&url_string).unwrap()
+        ))
+        .unwrap();
+        let url_segs: Vec<_> = url.path_segments().unwrap().collect();
+        let url_path = PathBuf::from_str(&url_segs[3..].join("/"))
+            .unwrap()
+            .canonicalize()
+            .unwrap();
+        assert_eq!(url_path, test_path);
+
+        // 2. After fetching the file, we should get an update.
+        let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_string_lossy());
+        let req = test::TestRequest::get().uri(&uri).to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+        let umc = get_message_as!(client_rx, EditorMessageContents::Update);
+        send_response(2, &ide_tx_queue, "").await;
 
         // Check the contents.
         let llc = compile_lexers(get_language_lexer_vec());
         let translation_results =
             source_to_codechat_for_web(&"".to_string(), "py", false, false, &llc);
         let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
-        //assert_eq!(umc.contents, Some(codechat_for_web));
-        send_response(1, &ide_tx_queue, "").await;
+        assert_eq!(umc.contents, Some(codechat_for_web));
 
         // Report any errors produced when removing the temporary directory.
         check_logger_errors(0);
@@ -892,15 +933,21 @@ mod tests {
     async fn test_websocket_update_1() {
         configure_testing_logger();
         let (temp_dir, test_dir) = prep_test_dir!();
-        let je = get_websocket_queues(&test_dir).await;
+        let (je, app, _app_data) = get_websocket_queues(&test_dir).await;
         let ide_tx_queue = je.from_websocket_tx;
         let mut client_rx = je.to_websocket_rx;
-        // Configure the logger here; otherwise, the glob used to copy files
-        // outputs some debug-level logs.
 
-        // We should get the initial contents.
-        get_message_as!(client_rx, EditorMessageContents::Update);
+        // The initial web request for the Client framework produces a `CurrentFile`.
+        get_message_as!(client_rx, EditorMessageContents::CurrentFile);
         send_response(1, &ide_tx_queue, "").await;
+
+        // The follow-up web request for the file produces an `Update`.
+        let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_string_lossy());
+        let req = test::TestRequest::get().uri(&uri).to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+        get_message_as!(client_rx, EditorMessageContents::Update);
+        send_response(2, &ide_tx_queue, "").await;
 
         // 1.  Send an update message with no contents.
         ide_tx_queue
@@ -951,13 +998,7 @@ mod tests {
                         },
                         source: CodeMirror {
                             doc: "".to_string(),
-                            doc_blocks: vec![(
-                                0,
-                                0,
-                                "".to_string(),
-                                "".to_string(),
-                                "".to_string(),
-                            )],
+                            doc_blocks: vec![],
                         },
                     }),
                     cursor_position: None,
@@ -1000,34 +1041,7 @@ mod tests {
             "Unable to translate to source: Invalid mode"
         );
 
-        // 5.  Send an update message with an invalid path.
-        ide_tx_queue
-            .send(EditorMessage {
-                id: 0,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "python".to_string(),
-                        },
-                        source: CodeMirror {
-                            doc: "".to_string(),
-                            doc_blocks: vec![],
-                        },
-                    }),
-                    cursor_position: None,
-                    scroll_position: None,
-                }),
-            })
-            .await
-            .unwrap();
-
-        // Check that it produces an error.
-        assert_starts_with!(
-            get_message_as!(client_rx, EditorMessageContents::Result),
-            "Unable to save file '':"
-        );
-
-        // 6.  Send a valid message.
+        // 5.  Send a valid message.
         let mut file_path = test_dir.clone();
         file_path.push("test.py");
         ide_tx_queue
@@ -1060,7 +1074,7 @@ mod tests {
         // Wait for the filewatcher to debounce this file write.
         sleep(Duration::from_secs(1)).await;
 
-        // 7.  Change this file and verify that this produces an update.
+        // 6.  Change this file and verify that this produces an update.
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         assert_eq!(
@@ -1082,7 +1096,7 @@ mod tests {
         // Acknowledge this message.
         send_response(3, &ide_tx_queue, "").await;
 
-        // 8.  Rename it and check for an close (the file watcher can't detect
+        // 7.  Rename it and check for an close (the file watcher can't detect
         //     the destination file, so it's treated as the file is deleted).
         let mut dest = file_path.clone().parent().unwrap().to_path_buf();
         dest.push("test2.py");
@@ -1094,6 +1108,36 @@ mod tests {
                 message: EditorMessageContents::Closed
             }
         );
+
+        // 8. Load another file from the Client.
+        let mut new_file_path = test_dir.clone();
+        new_file_path.push("test1.py");
+        let new_uri = format!(
+            "http://localhost/fw/fsc/1/{}",
+            urlencoding::encode(&new_file_path.to_slash().unwrap())
+        );
+        ide_tx_queue
+            .send(EditorMessage {
+                id: 4,
+                message: EditorMessageContents::CurrentFile(new_uri.clone()),
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            get_message_as!(client_rx, EditorMessageContents::Result),
+            ""
+        );
+
+        // The follow-up web request for the file produces an `Update`.
+        let new_req = test::TestRequest::get().uri(&new_uri).to_request();
+        let new_resp = test::call_service(&app, new_req).await;
+        assert!(new_resp.status().is_success());
+        get_message_as!(client_rx, EditorMessageContents::Update);
+        send_response(5, &ide_tx_queue, "").await;
+
+        // 9. Writes to this file should produce an update.
+        fs::write(&new_file_path, "testing 1").unwrap();
+        get_message_as!(client_rx, EditorMessageContents::Update);
 
         // Each of the three invalid message types produces one error.
         check_logger_errors(3);
