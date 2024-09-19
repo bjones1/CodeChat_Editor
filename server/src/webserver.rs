@@ -23,7 +23,7 @@ mod vscode;
 /// ### Standard library
 use std::{
     collections::{HashMap, HashSet},
-    env,
+    env, fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -41,6 +41,7 @@ use actix_ws::AggregatedMessage;
 use bytes::Bytes;
 use dunce::simplified;
 use futures_util::StreamExt;
+use lazy_static::lazy_static;
 use log::{error, info, warn};
 use log4rs;
 use mime::Mime;
@@ -260,6 +261,15 @@ fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
     *connection_id
 }
 
+lazy_static! {
+    // Read in the hashed names of files bundled by esbuild.
+    static ref BUNDLED_FILES_MAP: HashMap<String, String> = {
+        let json = fs::read_to_string("hashLocations.json").unwrap();
+        let hmm: HashMap<String, String> = serde_json::from_str(&json).unwrap();
+        hmm
+    };
+}
+
 // Get the `mode` query parameter to determine `is_test_mode`; default to `false`.
 pub fn get_test_mode(req: &HttpRequest) -> bool {
     let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
@@ -293,6 +303,7 @@ fn get_client_framework(
             ))
         }
     };
+    let codechat_editor_framework_js = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap();
 
     // Build and return the webpage.
     HttpResponse::Ok()
@@ -304,9 +315,8 @@ fn get_client_framework(
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>The CodeChat Editor</title>
-        <link rel="stylesheet" href="/static/bundled/CodeChatEditor.css">
         <script type="module">
-            import {{ page_init }} from "/static/bundled/CodeChatEditorFramework.js"
+            import {{ page_init }} from "/{codechat_editor_framework_js}"
             page_init({ws_url}, {is_test_mode})
         </script>
     </head>
@@ -423,6 +433,14 @@ async fn serve_file(
         ""
     };
 
+    // Get the locations for bundled files.
+    let codechat_editor_js = BUNDLED_FILES_MAP
+        .get(&format!("CodeChatEditor{js_test_suffix}.js"))
+        .unwrap();
+    let codehat_editor_css = BUNDLED_FILES_MAP
+        .get(&format!("CodeChatEditor{js_test_suffix}.css"))
+        .unwrap();
+
     // Build and return the webpage.
     (
         SimpleHttpResponse::Ok(format!(
@@ -433,10 +451,10 @@ async fn serve_file(
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>{name} - The CodeChat Editor</title>
         <script type="module">
-            import {{ page_init }} from "/static/bundled/CodeChatEditor{js_test_suffix}.js"
+            import {{ page_init }} from "/{codechat_editor_js}"
             page_init()
         </script>
-        <link rel="stylesheet" href="/static/bundled/CodeChatEditor{js_test_suffix}.css">
+        <link rel="stylesheet" href="/{codehat_editor_css}">
         {testing_src}
         {sidebar_css}
     </head>
@@ -744,6 +762,8 @@ pub async fn main() -> std::io::Result<()> {
 }
 
 pub async fn run_server() -> std::io::Result<()> {
+    // Pre-load the bundled files before starting the webserver.
+    let _ = &BUNDLED_FILES_MAP;
     let app_data = make_app_data();
     let server = match HttpServer::new(move || configure_app(App::new(), &app_data))
         .bind((IP_ADDRESS, IP_PORT))

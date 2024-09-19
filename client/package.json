@@ -8,11 +8,11 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "check-env": "node -e 'console.log(process.env)' | grep npm",
         "build": "run-script-os",
-        "build:win32": "node_modules\\.bin\\esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
-        "build:default": "node_modules/.bin/esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting && tsc -noEmit",
+        "build:win32": "node_modules\\.bin\\esbuild src/HashReader.mts --outdir=./static/bundled --platform=node --format=esm && node_modules\\.bin\\esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting --metafile=meta.json --entry-names=[dir]/[name]-[hash] && node static/bundled/HashReader.js && tsc -noEmit",
+        "build:default": "node_modules/.bin/esbuild src/HashReader.mts --outdir=./static/bundled --platform=node --format=esm && node_modules/.bin/esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting --metafile=meta.json --entry-names=[dir]/[name]-[hash] && node static/bundled/HashReader.js && tsc -noEmit",
         "dist": "run-script-os",
-        "dist:win32": "node_modules\\.bin\\esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --minify --format=esm --splitting",
-        "dist:default": "node_modules/.bin/esbuild src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --minify --format=esm --splitting"
+        "dist:win32": "node_modules\\.bin\\esbuild src/HashReader.mts --outdir=./static/bundled --platform=node --format=esm && node_modules\\.bin\\esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --minify --format=esm --splitting --metafile=meta.json --entry-names=[dir]/[name]-[hash] && node static/bundled/HashReader.js && tsc -noEmit",
+        "dist:default": "node_modules/.bin/esbuild src/HashReader.mts --outdir=./static/bundled --platform=node --format=esm && node_modules/.bin/esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts --bundle --outdir=./static/bundled --minify --format=esm --splitting --metafile=meta.json --entry-names=[dir]/[name]-[hash] && node static/bundled/HashReader.js && tsc -noEmit"
     },
     "keywords": [],
     "author": "Bryan A. Jones",
@@ -21,6 +21,7 @@
         "@types/chai": "^4",
         "@types/js-beautify": "^1",
         "@types/mocha": "^10",
+        "@types/node": "^22",
         "@typescript-eslint/eslint-plugin": "^7",
         "@typescript-eslint/parser": "^7",
         "chai": "^5",
