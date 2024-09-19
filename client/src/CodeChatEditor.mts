@@ -331,7 +331,7 @@ const startAutosaveTimer = () => {
         clearTimeout(autosaveTimeoutId);
     }
     // ...then start another timeout which saves the document when it expires.
-    autosaveTimeoutId = setTimeout(on_save, 1000);
+    autosaveTimeoutId = window.setTimeout(on_save, 1000);
 };
 
 // There doesn't seem to be any tracking of a dirty/clean flag built into

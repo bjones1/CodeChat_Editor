@@ -200,7 +200,7 @@ class WebSocketComm {
         }
         this.ws.send(JSON.stringify(jm))
         this.pending_messages[id] = {
-             timer_id: setTimeout(this.report_server_timeout, 2000, id),
+             timer_id: window.setTimeout(this.report_server_timeout, 2000, id),
              callback
         }
     }
