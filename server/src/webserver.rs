@@ -115,6 +115,8 @@ struct ProcessingTaskHttpRequest {
     request_url: String,
     /// True if this file is a TOC.
     is_toc: bool,
+    /// True if test mode is enabled.
+    is_test_mode: bool,
     /// A queue to send the response back to the HTTP task.
     response_queue: oneshot::Sender<SimpleHttpResponse>,
 }
@@ -258,6 +260,16 @@ fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
     *connection_id
 }
 
+// Get the `mode` query parameter to determine `is_test_mode`; default to `false`.
+pub fn get_test_mode(req: &HttpRequest) -> bool {
+    let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
+    if let Ok(query) = query_params {
+        query.get("test").is_some()
+    } else {
+        false
+    }
+}
+
 // Return an instance of the Client.
 fn get_client_framework(
     // The HTTP request. Used to extract query parameters to determine if the
@@ -268,26 +280,9 @@ fn get_client_framework(
     // The ID of the websocket connection.
     connection_id: u32, // This returns a response (the Client, or an error).
 ) -> HttpResponse {
-    // Get the `mode` query parameter to determine `is_toc`; default to `false`.
-    let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
-    let is_test_mode = if let Ok(query) = query_params {
-        query.get("test").is_some()
-    } else {
-        false
-    };
-
     // Add in content when testing.
-    let testing_src = if is_test_mode {
-        r#"
-        <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
-        <script src="https://unpkg.com/mocha/mocha.js"></script>
-        "#
-    } else {
-        ""
-    };
+    let is_test_mode = get_test_mode(req);
 
-    // Build and return the webpage.
-    let js_test_suffix = if is_test_mode { "-test" } else { "" };
     // Provide the pathname to the websocket connection. Quote the string using
     // JSON to handle any necessary escapes.
     let ws_url = match serde_json::to_string(&format!("{ide_path}/{connection_id}")) {
@@ -298,6 +293,8 @@ fn get_client_framework(
             ))
         }
     };
+
+    // Build and return the webpage.
     HttpResponse::Ok()
         .content_type(ContentType::html())
         .body(format!(
@@ -310,9 +307,8 @@ fn get_client_framework(
         <link rel="stylesheet" href="/static/bundled/CodeChatEditor.css">
         <script type="module">
             import {{ page_init }} from "/static/bundled/CodeChatEditorFramework.js"
-            page_init({ws_url})
+            page_init({ws_url}, {is_test_mode})
         </script>
-        {testing_src}
     </head>
     <body style="margin: 0px; padding: 0px; overflow: hidden">
         <iframe id="CodeChat-iframe"
@@ -341,6 +337,7 @@ async fn serve_file(
     file_contents: &str,
     is_toc: bool,
     is_current_file: bool,
+    is_test_mode: bool,
     app_state: &web::Data<AppState>,
 ) -> (SimpleHttpResponse, Option<CodeChatForWeb>) {
     // Provided info from the HTTP request, determine the following parameters.
@@ -415,8 +412,18 @@ async fn serve_file(
         ("".to_string(), "")
     };
 
+    // Add testing mode scripts if requested.
+    let js_test_suffix = if is_test_mode { "-test" } else { "" };
+    let testing_src = if is_test_mode {
+        r#"
+        <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
+        <script src="https://unpkg.com/mocha/mocha.js"></script>
+        "#
+    } else {
+        ""
+    };
+
     // Build and return the webpage.
-    let js_test_suffix = "";
     (
         SimpleHttpResponse::Ok(format!(
             r##"<!DOCTYPE html>
@@ -430,6 +437,7 @@ async fn serve_file(
             page_init()
         </script>
         <link rel="stylesheet" href="/static/bundled/CodeChatEditor{js_test_suffix}.css">
+        {testing_src}
         {sidebar_css}
     </head>
     <body>

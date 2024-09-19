@@ -125,7 +125,11 @@ class WebSocketComm {
                 case "CurrentFile":
                     const current_file = value as string;
                     console.log(`CurrentFile(${current_file})`)
-                    this.set_root_iframe_src(current_file)
+                    const testSuffix = testMode
+                        // Append the test parameter correctly, depending if there are already parameters or not.
+                        ? (current_file.indexOf("?") === -1 ? "?test" : "&test")
+                        : "";
+                    this.set_root_iframe_src(current_file + testSuffix)
                     this.send_result(id, "")
                     break;
 
@@ -213,7 +217,11 @@ class WebSocketComm {
 
 }
 
+// The iframe element which composes this page.
 let root_iframe: HTMLIFrameElement | undefined
+
+// True when in test mode.
+let testMode = false;
 
 // Load the dynamic content into the static page.
 export const page_init = (
@@ -221,8 +229,11 @@ export const page_init = (
     // derived from the hosting page's URL. See the
     // [Location docs](https://developer.mozilla.org/en-US/docs/Web/API/Location)
     // for a nice, interactive definition of the components of a URL.
-    ws_pathname: string
+    ws_pathname: string,
+    // Test mode flag
+    testMode_: boolean
 ) => {
+    testMode = testMode_
     on_dom_content_loaded(async () => {
         // If the hosting page uses HTTPS, then use a secure websocket (WSS
         // protocol); otherwise, use an insecure websocket (WS).

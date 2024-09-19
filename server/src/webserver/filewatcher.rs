@@ -66,7 +66,7 @@ use crate::{
     processing::{
         codechat_for_web_to_source, source_to_codechat_for_web_string, TranslationResultsString,
     },
-    queue_send,
+    queue_send, webserver::get_test_mode,
 };
 
 // ## Globals
@@ -323,6 +323,7 @@ pub async fn serve_filewatcher(
     let is_toc = query_params.map_or(false, |query| {
         query.get("mode").map_or(false, |mode| mode == "toc")
     });
+    let is_test_mode = get_test_mode(&req);
 
     // Create a one-shot channel used by the processing task to provide a
     // response to this request.
@@ -348,6 +349,7 @@ pub async fn serve_filewatcher(
             .send(ProcessingTaskHttpRequest {
                 request_url: path.1.to_string(),
                 is_toc,
+                is_test_mode,
                 response_queue: tx,
             })
             .await
@@ -591,7 +593,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         let simple_http_response = match smart_read(file_path).await {
                             Ok(file_contents) => {
                                 let is_current = file_path.canonicalize().unwrap() == current_filepath;
-                                let (simple_http_response, option_codechat_for_web) = serve_file(file_path, &file_contents, http_request.is_toc, is_current, &app_state).await;
+                                let (simple_http_response, option_codechat_for_web) = serve_file(file_path, &file_contents, http_request.is_toc, is_current, http_request.is_test_mode, &app_state).await;
                                 // If this file is editable and is the main
                                 // file, send an `Update`. The
                                 // `simple_http_response` contains the Client.
