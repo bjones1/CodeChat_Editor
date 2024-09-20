@@ -110,8 +110,8 @@ window.CodeChatEditor_test = () => {
                 await codechat_html_to_markdown(source);
                 assert.deepEqual(source, {
                     doc_blocks: [
-                        [0, 0, "", "//", "# <u>A<a></u></u>\n"],
-                        [2, 2, "", "//", "## Ax\n"],
+                        [0, 0, "", "//", "# <u>A<u></u></u>\n\n<u><u>\n"],
+                        [2, 2, "", "//", "<h2>Ax</h2></u></u>\n"],
                     ],
                 });
             });

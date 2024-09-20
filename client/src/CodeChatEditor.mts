@@ -288,7 +288,7 @@ const codechat_html_to_markdown = async (source: any) => {
     // content to avoid this.
     const separator = "<codechateditor-separator>a</codechateditor-separator>";
     const placeholder_html = "<p><empty-para>a</empty-para></p>";
-    const placeholder_markdown = "<empty-para>a</empty-para>\n";
+    const placeholder_markdown = "<empty-para>a</empty-para>";
     // Replace empty doc blocks (which Turndown will remove) with a placeholder
     // to prevent their removal; pass non-empty content for standard Turndown
     // processing.
@@ -300,10 +300,9 @@ const codechat_html_to_markdown = async (source: any) => {
     const combined_doc_blocks_markdown = turndownService.turndown(
         combined_doc_blocks_html,
     );
-    const doc_blocks_markdown = combined_doc_blocks_markdown.split(
-        `\n${separator}\n\n`,
-    );
-    doc_blocks_markdown[doc_blocks_markdown.length - 1] += "\n";
+    const doc_blocks_markdown = combined_doc_blocks_markdown
+        .split(separator)
+        .map((s: string) => s.trim());
     // Wrap each doc block based on the available width on this line: 80 -
     // indent - delimiter length - 1 space that always follows the delimiter.
     // Use a minimum width of 40 characters.
