@@ -36,6 +36,7 @@
     3.  Tests
         1.  [CodeChatEditor-test.mts](client/src/CodeChatEditor-test.mts)
             1.  [Run tests](server/src/lib.rs?test)
+        2.  [HTML to Markdown conversion test document](docs/Markdown_HTML.js)
 3.  Development tools
     1.  Git
         1.  [server/.gitignore](server/.gitignore)
