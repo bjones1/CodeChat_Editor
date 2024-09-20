@@ -20,17 +20,17 @@
 ///
 /// ### Standard library
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
     str::FromStr,
     time::Duration,
 };
 
 // ### Third-party
-use actix_files;
 use actix_web::{
-    error::Error, get, http::header, http::header::ContentType, web, HttpRequest, HttpResponse,
-    Responder,
+    error::Error,
+    get,
+    http::header::{self, ContentType},
+    web, HttpRequest, HttpResponse, Responder,
 };
 use dunce::simplified;
 use lazy_static::lazy_static;
@@ -48,7 +48,6 @@ use tokio::{
     io::AsyncReadExt,
     select,
     sync::mpsc,
-    sync::oneshot,
 };
 use url::Url;
 use urlencoding;
@@ -59,7 +58,7 @@ use win_partitions::win_api::get_logical_drive;
 use super::{
     client_websocket, get_client_framework, get_connection_id, html_not_found, html_wrapper,
     path_display, send_response, serve_file, AppState, EditorMessage, EditorMessageContents,
-    ProcessingTaskHttpRequest, SimpleHttpResponse, UpdateMessageContents, WebsocketQueues,
+    SimpleHttpResponse, UpdateMessageContents, WebsocketQueues,
 };
 use crate::{
     oneshot_send,
@@ -67,7 +66,7 @@ use crate::{
         codechat_for_web_to_source, source_to_codechat_for_web_string, TranslationResultsString,
     },
     queue_send,
-    webserver::get_test_mode,
+    webserver::filesystem_endpoint,
 };
 
 // ## Globals
@@ -99,7 +98,7 @@ pub async fn filewatcher_root_fs_redirect() -> impl Responder {
 /// replaces this.
 #[cfg(not(tarpaulin_include))]
 #[get("/fw/fsb/{path:.*}")]
-async fn serve_filewatcher_fs(
+async fn filewatcher_browser_endpoint(
     req: HttpRequest,
     app_state: web::Data<AppState>,
     orig_path: web::Path<String>,
@@ -301,112 +300,13 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         .body(html_wrapper(&body))
 }
 
-// ### Serve file
-/// This could be a plain text file (for example, one not recognized as source
-/// code that this program supports), a binary file (image/video/etc.), a
-/// CodeChat Editor file, or a non-existent file. Determine which type this file
-/// is then serve it. Serve a CodeChat Editor Client webpage using the
-/// FileWatcher "IDE".
-///
-/// `fsc` stands for "FileSystem Client", and provides the Client contents from
-/// the filesystem.
-#[get("/fw/fsc/{connection_id}/{path:.*}")]
-pub async fn serve_filewatcher(
+#[get("/fw/fsc/{connection_id}/{file_path:.*}")]
+async fn filewatcher_client_endpoint(
     path: web::Path<(String, String)>,
     req: HttpRequest,
     app_state: web::Data<AppState>,
 ) -> HttpResponse {
-    // Get the `mode` query parameter to determine `is_toc`; default to `false`.
-    let query_params: Result<
-        web::Query<HashMap<String, String>>,
-        actix_web::error::QueryPayloadError,
-    > = web::Query::<HashMap<String, String>>::from_query(req.query_string());
-    let is_toc = query_params.map_or(false, |query| {
-        query.get("mode").map_or(false, |mode| mode == "toc")
-    });
-    let is_test_mode = get_test_mode(&req);
-
-    // Create a one-shot channel used by the processing task to provide a
-    // response to this request.
-    let (tx, rx) = oneshot::channel();
-
-    {
-        // Get the processing queue; only keep the lock during this block.
-        let processing_tx = {
-            let processing_queue_tx = app_state.processing_task_queue_tx.lock().unwrap();
-            let Some(processing_tx) = processing_queue_tx.get(&path.0.to_string()) else {
-                let msg = format!(
-                    "Error: no processing task queue for connection id {}.",
-                    &path.0.to_string()
-                );
-                error!("{msg}");
-                return html_not_found(&msg);
-            };
-            processing_tx.clone()
-        };
-
-        // Send it the request.
-        if let Err(err) = processing_tx
-            .send(ProcessingTaskHttpRequest {
-                request_url: path.1.to_string(),
-                is_toc,
-                is_test_mode,
-                response_queue: tx,
-            })
-            .await
-        {
-            let msg = format!("Error: unable to enqueue: {err}.");
-            error!("{msg}");
-            return html_not_found(&msg);
-        }
-    }
-
-    // Return the response provided by the processing task.
-    match rx.await {
-        Ok(simple_http_response) => match simple_http_response {
-            SimpleHttpResponse::Ok(body) => HttpResponse::Ok()
-                .content_type(ContentType::html())
-                .body(body),
-            SimpleHttpResponse::Err(body) => html_not_found(&body),
-            SimpleHttpResponse::Raw(body, content_type) => {
-                HttpResponse::Ok().content_type(content_type).body(body)
-            }
-            SimpleHttpResponse::Bin(path) => {
-                match actix_files::NamedFile::open_async(&path).await {
-                    Ok(v) => v.into_response(&req),
-                    Err(err) => html_not_found(&format!("<p>Error opening file {path}: {err}.",)),
-                }
-            }
-        },
-        Err(err) => html_not_found(&format!("Error: {err}")),
-    }
-}
-
-/// Smart file reader. This returns an HTTP response if the provided file should
-/// be served directly (including an error if necessary), or a string containing
-/// the text of the file when it's Unicode.
-pub async fn smart_read(file_path: &Path) -> Result<String, SimpleHttpResponse> {
-    let mut file_contents = String::new();
-    let read_ret = match File::open(file_path).await {
-        Ok(fc) => fc,
-        Err(err) => {
-            return Err(SimpleHttpResponse::Err(format!(
-                "<p>Error opening file {file_path:?}: {err}."
-            )))
-        }
-    }
-    .read_to_string(&mut file_contents)
-    .await;
-
-    // If this is a binary file (meaning we can't read the contents as UTF-8),
-    // just serve it raw; assume this is an image/video/etc.
-    if let Err(_err) = read_ret {
-        return Err(SimpleHttpResponse::Bin(
-            file_path.to_string_lossy().to_string(),
-        ));
-    }
-
-    Ok(file_contents)
+    filesystem_endpoint(path, &req, &app_state).await
 }
 
 async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, connection_id: u32) {
@@ -587,31 +487,41 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
 
                     Some(http_request) = from_http_rx.recv() => {
                         // Convert the provided URL back into a file name.
-                        let file_path = Path::new(&http_request.request_url);
+                        let file_path = Path::new(&http_request.request_path);
 
-                        // Determine the file's type, then pass it back to the
-                        // HTTP task.
-                        let simple_http_response = match smart_read(file_path).await {
-                            Ok(file_contents) => {
-                                let is_current = file_path.canonicalize().unwrap() == current_filepath;
-                                let (simple_http_response, option_codechat_for_web) = serve_file(file_path, &file_contents, http_request.is_toc, is_current, http_request.is_test_mode, &app_state).await;
-                                // If this file is editable and is the main
-                                // file, send an `Update`. The
-                                // `simple_http_response` contains the Client.
-                                if let Some(codechat_for_web) = option_codechat_for_web {
-                                    queue_send!(to_websocket_tx.send(EditorMessage {
-                                        id: 0,
-                                        message: EditorMessageContents::Update(UpdateMessageContents {
-                                            contents: Some(codechat_for_web),
-                                            cursor_position: None,
-                                            scroll_position: None
-                                        })
-                                    }));
+                        // Read the file
+                        let simple_http_response = match File::open(file_path).await {
+                            Err(err) => SimpleHttpResponse::Err(format!(
+                                "<p>Error opening file {file_path:?}: {err}."
+                            )),
+                            Ok(mut fc) => {
+                                let mut file_contents = String::new();
+                                match fc.read_to_string(&mut file_contents).await {
+                                    // If this is a binary file (meaning we can't read the contents as UTF-8),
+                                    // just serve it raw; assume this is an image/video/etc.
+                                    Err(_) => SimpleHttpResponse::Bin(http_request.request_path),
+                                    Ok(_) => {
+                                        let is_current = file_path.canonicalize().unwrap() == current_filepath;
+                                        let (simple_http_response, option_codechat_for_web) = serve_file(file_path, &file_contents, http_request.is_toc, is_current, http_request.is_test_mode, &app_state).await;
+                                        // If this file is editable and is the main
+                                        // file, send an `Update`. The
+                                        // `simple_http_response` contains the Client.
+                                        if let Some(codechat_for_web) = option_codechat_for_web {
+                                            queue_send!(to_websocket_tx.send(EditorMessage {
+                                                id: 0,
+                                                message: EditorMessageContents::Update(UpdateMessageContents {
+                                                    contents: Some(codechat_for_web),
+                                                    cursor_position: None,
+                                                    scroll_position: None
+                                                })
+                                            }));
+                                        }
+                                        simple_http_response
+                                    },
                                 }
-                                simple_http_response
                             },
-                            Err(err) => err,
                         };
+
                         oneshot_send!(http_request.response_queue.send(simple_http_response));
                     }
 

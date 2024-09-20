@@ -25,6 +25,7 @@ use std::{
     collections::{HashMap, HashSet},
     env, fs,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -64,7 +65,8 @@ use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
 use crate::processing::TranslationResultsString;
 use crate::processing::{source_to_codechat_for_web_string, CodeChatForWeb};
 use filewatcher::{
-    filewatcher_root_fs_redirect, filewatcher_websocket, serve_filewatcher, serve_filewatcher_fs,
+    filewatcher_browser_endpoint, filewatcher_client_endpoint, filewatcher_root_fs_redirect,
+    filewatcher_websocket,
 };
 
 // ## Macros
@@ -112,8 +114,8 @@ struct WebsocketQueues {
 /// for it. This is used to send a response to the HTTP task to an HTTP request
 /// made to that task. Send: String, response
 struct ProcessingTaskHttpRequest {
-    /// The URL of the request.
-    request_url: String,
+    /// The path of the file requested.
+    request_path: PathBuf,
     /// True if this file is a TOC.
     is_toc: bool,
     /// True if test mode is enabled.
@@ -128,14 +130,14 @@ struct ProcessingTaskHttpRequest {
 enum SimpleHttpResponse {
     /// Return a 200 with the provided string as the HTML body.
     Ok(String),
-    /// Return an error (400 status ode) with the provided string as the HTML
+    /// Return an error (400 status code) with the provided string as the HTML
     /// body.
     Err(String),
     /// Serve the raw file content, using the provided content type.
     Raw(String, Mime),
     /// The file contents are not UTF-8; serve it from the filesystem path
     /// provided.
-    Bin(String),
+    Bin(PathBuf),
 }
 
 /// Define the data structure used to pass data between the CodeChat Editor
@@ -341,6 +343,94 @@ fn get_client_framework(
 </html>
 "#
         ))
+}
+
+// ### Serve file
+/// This could be a plain text file (for example, one not recognized as source
+/// code that this program supports), a binary file (image/video/etc.), a
+/// CodeChat Editor file, or a non-existent file. Determine which type this file
+/// is then serve it. Serve a CodeChat Editor Client webpage using the
+/// FileWatcher "IDE".
+///
+/// `fsc` stands for "FileSystem Client", and provides the Client contents from
+/// the filesystem.
+pub async fn filesystem_endpoint(
+    path: web::Path<(String, String)>,
+    req: &HttpRequest,
+    app_state: &web::Data<AppState>,
+) -> HttpResponse {
+    let (connection_id, file_path) = path.into_inner();
+    let request_path = match PathBuf::from_str(&file_path) {
+        Ok(v) => v,
+        Err(err) => {
+            let msg = format!("Error: unable to convert path {file_path}: {err}.");
+            error!("{msg}");
+            return html_not_found(&msg);
+        }
+    };
+
+    // Get the `mode` query parameter to determine `is_toc`; default to `false`.
+    let query_params: Result<
+        web::Query<HashMap<String, String>>,
+        actix_web::error::QueryPayloadError,
+    > = web::Query::<HashMap<String, String>>::from_query(req.query_string());
+    let is_toc = query_params.map_or(false, |query| {
+        query.get("mode").map_or(false, |mode| mode == "toc")
+    });
+    let is_test_mode = get_test_mode(req);
+
+    // Create a one-shot channel used by the processing task to provide a
+    // response to this request.
+    let (tx, rx) = oneshot::channel();
+
+    let processing_tx = {
+        // Get the processing queue; only keep the lock during this block.
+        let processing_queue_tx = app_state.processing_task_queue_tx.lock().unwrap();
+        let Some(processing_tx) = processing_queue_tx.get(&connection_id) else {
+            let msg = format!(
+                "Error: no processing task queue for connection id {}.",
+                &connection_id
+            );
+            error!("{msg}");
+            return html_not_found(&msg);
+        };
+        processing_tx.clone()
+    };
+
+    // Send it the request.
+    if let Err(err) = processing_tx
+        .send(ProcessingTaskHttpRequest {
+            request_path,
+            is_toc,
+            is_test_mode,
+            response_queue: tx,
+        })
+        .await
+    {
+        let msg = format!("Error: unable to enqueue: {err}.");
+        error!("{msg}");
+        return html_not_found(&msg);
+    }
+
+    // Return the response provided by the processing task.
+    match rx.await {
+        Ok(simple_http_response) => match simple_http_response {
+            SimpleHttpResponse::Ok(body) => HttpResponse::Ok()
+                .content_type(ContentType::html())
+                .body(body),
+            SimpleHttpResponse::Err(body) => html_not_found(&body),
+            SimpleHttpResponse::Raw(body, content_type) => {
+                HttpResponse::Ok().content_type(content_type).body(body)
+            }
+            SimpleHttpResponse::Bin(path) => {
+                match actix_files::NamedFile::open_async(&path).await {
+                    Ok(v) => v.into_response(req),
+                    Err(err) => html_not_found(&format!("<p>Error opening file {path:?}: {err}.",)),
+                }
+            }
+        },
+        Err(err) => html_not_found(&format!("Error: {err}")),
+    }
 }
 
 async fn serve_file(
@@ -833,8 +923,8 @@ where
         ))
         // These endpoints serve the files from the filesystem and the
         // websockets.
-        .service(serve_filewatcher_fs)
-        .service(serve_filewatcher)
+        .service(filewatcher_browser_endpoint)
+        .service(filewatcher_client_endpoint)
         .service(filewatcher_websocket)
         .service(serve_vscode_fs)
         .service(vscode_ide_websocket)
