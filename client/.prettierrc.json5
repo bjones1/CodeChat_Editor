@@ -1,0 +1,4 @@
+// `.prettierrc.json5` - Prettier configuration
+{
+    "tabWidth": 4
+}

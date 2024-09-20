@@ -1,0 +1,13 @@
+{
+    "editor.formatOnSave": true,
+    "prettier.ignorePath": ".prettierignore",
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+    },
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    }
+}
