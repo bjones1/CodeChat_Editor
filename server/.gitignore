@@ -27,5 +27,6 @@ tarpaulin-report.html
 
 # Copied files needed to `cargo publish`.
 static/
+hashLocations.json
 
 # CodeChat Editor lexer: python. See TODO.

@@ -21,6 +21,9 @@
 # NPM
 node_modules/
 
+# esbuild
+meta.json
+
 # The phrase "CodeChat Editor lexer: python" sets the lexer for this file, so
 # that the CodeChat Editor will render it correctly. While this isn't Python
 # (meaning syntax highlighting will be broken), it does at least use `#` for
