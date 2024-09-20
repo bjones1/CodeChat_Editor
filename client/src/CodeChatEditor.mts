@@ -90,15 +90,16 @@ export const page_init = () => {
         document.body.addEventListener("keydown", on_keydown);
 
         // Intercept links in this document to save before following the link.
-        // For some reason, the semicolon here is required.
         /// @ts-ignore
         navigation.addEventListener("navigate", on_navigate);
+        const ccb = document.getElementById("CodeChat-sidebar") as
+            | HTMLIFrameElement
+            | undefined;
         /// @ts-ignore
-        (
-            document.getElementById("CodeChat-sidebar") as
-                | HTMLIFrameElement
-                | undefined
-        )?.contentWindow?.navigation.addEventListener("navigate", on_navigate);
+        ccb?.contentWindow?.navigation.addEventListener(
+            "navigate",
+            on_navigate,
+        );
 
         window.CodeChatEditor = {
             open_lp,
