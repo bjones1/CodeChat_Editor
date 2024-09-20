@@ -74,3 +74,5 @@ await fs.writeFile(
     "../server/hashLocations.json",
     JSON.stringify(outputContents),
 );
+
+console.log("Wrote hashLocations.json");
