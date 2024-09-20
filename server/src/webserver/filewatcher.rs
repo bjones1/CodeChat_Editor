@@ -798,7 +798,7 @@ mod tests {
 
         // The initial web request for the Client framework produces a `CurrentFile`.
         let url_string = get_message_as!(client_rx, EditorMessageContents::CurrentFile);
-        send_response(1, &ide_tx_queue, "").await;
+        send_response(0, &ide_tx_queue, "").await;
 
         // Check the path this message contains.
         let mut test_path = test_dir.clone();
@@ -823,7 +823,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
         let umc = get_message_as!(client_rx, EditorMessageContents::Update);
-        send_response(2, &ide_tx_queue, "").await;
+        send_response(0, &ide_tx_queue, "").await;
 
         // Check the contents.
         let llc = compile_lexers(get_language_lexer_vec());
@@ -847,7 +847,7 @@ mod tests {
 
         // The initial web request for the Client framework produces a `CurrentFile`.
         get_message_as!(client_rx, EditorMessageContents::CurrentFile);
-        send_response(1, &ide_tx_queue, "").await;
+        send_response(0, &ide_tx_queue, "").await;
 
         // The follow-up web request for the file produces an `Update`.
         let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_string_lossy());
@@ -855,7 +855,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
         get_message_as!(client_rx, EditorMessageContents::Update);
-        send_response(2, &ide_tx_queue, "").await;
+        send_response(0, &ide_tx_queue, "").await;
 
         // 1.  Send an update message with no contents.
         ide_tx_queue
@@ -1002,7 +1002,7 @@ mod tests {
             }
         );
         // Acknowledge this message.
-        send_response(3, &ide_tx_queue, "").await;
+        send_response(0, &ide_tx_queue, "").await;
 
         // 7.  Rename it and check for an close (the file watcher can't detect
         //     the destination file, so it's treated as the file is deleted).
@@ -1026,7 +1026,7 @@ mod tests {
         );
         ide_tx_queue
             .send(EditorMessage {
-                id: 4,
+                id: 0,
                 message: EditorMessageContents::CurrentFile(new_uri.clone()),
             })
             .await
@@ -1041,7 +1041,7 @@ mod tests {
         let new_resp = test::call_service(&app, new_req).await;
         assert!(new_resp.status().is_success());
         get_message_as!(client_rx, EditorMessageContents::Update);
-        send_response(5, &ide_tx_queue, "").await;
+        send_response(0, &ide_tx_queue, "").await;
 
         // 9. Writes to this file should produce an update.
         fs::write(&new_file_path, "testing 1").unwrap();
