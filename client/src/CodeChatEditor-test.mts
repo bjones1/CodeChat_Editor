@@ -31,7 +31,7 @@ import { exportedForTesting, page_init } from "./CodeChatEditor.mjs";
 // each web component).
 export { page_init };
 // Provide convenient access to all functions tested here.
-const { open_lp, codechat_html_to_markdown } = exportedForTesting;
+const { codechat_html_to_markdown } = exportedForTesting;
 
 // ## Tests
 //
@@ -95,6 +95,23 @@ window.CodeChatEditor_test = () => {
                     doc_blocks: [
                         [0, 0, "", "//", "\n"],
                         [2, 2, "", "//", "\n"],
+                    ],
+                });
+            });
+
+            test("Translate unclosed HTML", async function () {
+                const db: DocBlockJSON[] = [
+                    [0, 0, "", "//", "<h1><u>A<u></h1>\n"],
+                    [2, 2, "", "//", "<h2>Ax</h2>"],
+                ];
+                const source = {
+                    doc_blocks: db,
+                };
+                await codechat_html_to_markdown(source);
+                assert.deepEqual(source, {
+                    doc_blocks: [
+                        [0, 0, "", "//", "# <u>A<a></u></u>\n"],
+                        [2, 2, "", "//", "## Ax\n"],
                     ],
                 });
             });
