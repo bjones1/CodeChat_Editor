@@ -42,9 +42,9 @@ type DocBlockJSON = [
 ];
 
 interface UpdateMessageContents {
-    contents: CodeChatForWeb | undefined,
-    cursor_position: number | undefined,
-    scroll_position: number | undefined
+    contents: CodeChatForWeb | undefined;
+    cursor_position: number | undefined;
+    scroll_position: number | undefined;
 }
 
 // These modules keep TypeScript from complaining about missing type definitions

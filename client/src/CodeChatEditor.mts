@@ -84,21 +84,27 @@ turndownService.use(gfm);
 // Load the dynamic content into the static page.
 export const page_init = () => {
     on_dom_content_loaded(async () => {
-        document.getElementById("CodeChat-save-button")!.addEventListener("click", on_save)
-        document.body.addEventListener("keydown", on_keydown)
+        document
+            .getElementById("CodeChat-save-button")!
+            .addEventListener("click", on_save);
+        document.body.addEventListener("keydown", on_keydown);
 
         // Intercept links in this document to save before following the link.
         // For some reason, the semicolon here is required.
         /// @ts-ignore
         navigation.addEventListener("navigate", on_navigate);
         /// @ts-ignore
-        (document.getElementById("CodeChat-sidebar") as (HTMLIFrameElement | undefined))?.contentWindow?.navigation.addEventListener("navigate", on_navigate)
+        (
+            document.getElementById("CodeChat-sidebar") as
+                | HTMLIFrameElement
+                | undefined
+        )?.contentWindow?.navigation.addEventListener("navigate", on_navigate);
 
         window.CodeChatEditor = {
-            open_lp
-        }
+            open_lp,
+        };
     });
-}
+};
 
 // This is copied from
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
@@ -167,7 +173,9 @@ export const open_lp = async (
     // from the provided `all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
-    const codechat_body = document.getElementById("CodeChat-body") as HTMLDivElement;
+    const codechat_body = document.getElementById(
+        "CodeChat-body",
+    ) as HTMLDivElement;
     if (is_doc_only()) {
         if (tinymce.activeEditor === null) {
             // Special case: a CodeChat Editor document's HTML is stored in
@@ -191,19 +199,21 @@ export const open_lp = async (
                         startAutosaveTimer();
                     });
                 },
-            })
+            });
             tinymce.activeEditor!.focus();
         } else {
             // Save and restore cursor/scroll location after an update per the
             // [docs](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.dom.bookmarkmanager).
             // However, this doesn't seem to work for the cursor location.
             // Perhaps when TinyMCE normalizes the document, this gets lost?
-            const bm = tinymce.activeEditor!.selection.getBookmark()
-            tinymce.activeEditor!.setContent(source.doc)
-            tinymce.activeEditor!.selection.moveToBookmark(bm)
+            const bm = tinymce.activeEditor!.selection.getBookmark();
+            tinymce.activeEditor!.setContent(source.doc);
+            tinymce.activeEditor!.selection.moveToBookmark(bm);
         }
     } else {
-        await CodeMirror_load(codechat_body, source, current_metadata.mode, [autosaveExtension]);
+        await CodeMirror_load(codechat_body, source, current_metadata.mode, [
+            autosaveExtension,
+        ]);
     }
 
     // <a id="CodeChatEditor_test"></a>If tests should be run, then the
@@ -226,7 +236,7 @@ const save_lp = async () => {
         source.doc_blocks = [];
     } else {
         source = CodeMirror_save();
-        await codechat_html_to_markdown(source)
+        await codechat_html_to_markdown(source);
     }
 
     let update: UpdateMessageContents = {
@@ -236,9 +246,9 @@ const save_lp = async () => {
         },
         scroll_position: undefined,
         cursor_position: undefined,
-    }
-    return update
-}
+    };
+    return update;
+};
 
 // Per
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
@@ -265,8 +275,8 @@ const on_keydown = (event: KeyboardEvent) => {
 const on_save = async () => {
     // <a id="save"></a>Save the provided contents back to the filesystem, by
     // sending an update message over the websocket.
-    const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm
-    webSocketComm.send_message({ Update: await save_lp() })
+    const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
+    webSocketComm.send_message({ Update: await save_lp() });
 };
 
 const codechat_html_to_markdown = async (source: any) => {
@@ -275,15 +285,16 @@ const codechat_html_to_markdown = async (source: any) => {
     //
     // Turndown currently removes HTML blocks with no content; add placeholder
     // content to avoid this.
-    const separator =
-        "<codechateditor-separator>a</codechateditor-separator>";
-    const placeholder_html = "<p><empty-para>a</empty-para></p>"
-    const placeholder_markdown = "<empty-para>a</empty-para>\n"
+    const separator = "<codechateditor-separator>a</codechateditor-separator>";
+    const placeholder_html = "<p><empty-para>a</empty-para></p>";
+    const placeholder_markdown = "<empty-para>a</empty-para>\n";
     // Replace empty doc blocks (which Turndown will remove) with a placeholder
     // to prevent their removal; pass non-empty content for standard Turndown
     // processing.
     const combined_doc_blocks_html = source.doc_blocks
-        .map((doc_block_JSON: DocBlockJSON) => doc_block_JSON[4].trim() ? doc_block_JSON[4] : placeholder_html)
+        .map((doc_block_JSON: DocBlockJSON) =>
+            doc_block_JSON[4].trim() ? doc_block_JSON[4] : placeholder_html,
+        )
         .join(separator);
     const combined_doc_blocks_markdown = turndownService.turndown(
         combined_doc_blocks_html,
@@ -291,24 +302,25 @@ const codechat_html_to_markdown = async (source: any) => {
     const doc_blocks_markdown = combined_doc_blocks_markdown.split(
         `\n${separator}\n\n`,
     );
-    doc_blocks_markdown[doc_blocks_markdown.length - 1] += "\n"
+    doc_blocks_markdown[doc_blocks_markdown.length - 1] += "\n";
     // Wrap each doc block based on the available width on this line: 80 -
     // indent - delimiter length - 1 space that always follows the delimiter.
     // Use a minimum width of 40 characters.
     for (const [index, doc_block] of source.doc_blocks.entries()) {
-        const dbm = doc_blocks_markdown[index]
-        doc_block[4] = await prettier_markdown(
-            // Replace the placeholder here, so it won't be wrapped by Prettier.
-            dbm == placeholder_markdown ? "" : dbm,
-            Math.max(
-                40,
-                80 - doc_block[3].length - doc_block[2].length - 1,
-            ),
-            // Prettier trims whitespace; we can't include the newline in the
-            // replacement above. So, put it here.
-        ) || "\n";
+        const dbm = doc_blocks_markdown[index];
+        doc_block[4] =
+            (await prettier_markdown(
+                // Replace the placeholder here, so it won't be wrapped by Prettier.
+                dbm == placeholder_markdown ? "" : dbm,
+                Math.max(
+                    40,
+                    80 - doc_block[3].length - doc_block[2].length - 1,
+                ),
+                // Prettier trims whitespace; we can't include the newline in the
+                // replacement above. So, put it here.
+            )) || "\n";
     }
-}
+};
 
 // ### Autosave feature
 //
@@ -404,17 +416,17 @@ const prettier_markdown = async (markdown: string, print_width: number) => {
 // Since this is experimental, TypeScript doesn't define it. See the
 // [docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
 interface NavigateEvent extends Event {
-    canIntercept: boolean
-    destination: any
-    downloadRequest: String | null
-    formData: any
-    hashChange: boolean
-    info: any
-    navigationType: String
-    signal: AbortSignal
-    userInitiated: boolean
-    intercept: any
-    scroll: any
+    canIntercept: boolean;
+    destination: any;
+    downloadRequest: String | null;
+    formData: any;
+    hashChange: boolean;
+    info: any;
+    navigationType: String;
+    signal: AbortSignal;
+    userInitiated: boolean;
+    intercept: any;
+    scroll: any;
 }
 
 // The TOC and this page calls this when a hyperlink is clicked. This saves the
@@ -430,25 +442,27 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
         // If this is a form submission, let that go to the server.
         navigateEvent.formData
     ) {
-        return
+        return;
     }
 
     // If we can't intercept this, we can't save the current content. TODO --
     // this is a problem is data wasn't saved! Need a sync way to do this. Store
     // it in local data or something.
     if (!navigateEvent.canIntercept) {
-        return
+        return;
     }
 
     // Intercept this navigation so we can save the document first.
-    navigateEvent.intercept()
+    navigateEvent.intercept();
     on_save().then((_value) => {
         // Avoid recursion!
         /// @ts-ignore
-        navigation.removeEventListener("navigate", on_navigate)
-        parent.window.CodeChatEditorFramework.webSocketComm.current_file(new URL(navigateEvent.destination.url))
-    })
-}
+        navigation.removeEventListener("navigate", on_navigate);
+        parent.window.CodeChatEditorFramework.webSocketComm.current_file(
+            new URL(navigateEvent.destination.url),
+        );
+    });
+};
 
 // ## Testing
 //
@@ -456,9 +470,9 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
 declare global {
     interface Window {
         CodeChatEditor: {
-            open_lp: (all_source: CodeChatForWeb) => Promise<void>
-        }
-        CodeChatEditor_test: any
+            open_lp: (all_source: CodeChatForWeb) => Promise<void>;
+        };
+        CodeChatEditor_test: any;
     }
 }
 
@@ -469,5 +483,5 @@ declare global {
 // access to everything it needs.
 export const exportedForTesting = {
     open_lp,
-    codechat_html_to_markdown
+    codechat_html_to_markdown,
 };

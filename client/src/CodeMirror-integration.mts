@@ -386,8 +386,8 @@ const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
 
 const DocBlockPlugin = ViewPlugin.fromClass(
     class {
-        constructor(view: EditorView) { }
-        update(update: ViewUpdate) { }
+        constructor(view: EditorView) {}
+        update(update: ViewUpdate) {}
     },
     {
         eventHandlers: {
@@ -438,7 +438,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                             // containing div.
                             for (
                                 let current_node = sel.anchorNode,
-                                is_first = true;
+                                    is_first = true;
                                 // Continue until we find the div which contains
                                 // the doc block contents: either it's not an
                                 // element (such as a div), ...
@@ -448,7 +448,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                                     "CodeChat-doc-contents",
                                 );
                                 current_node = current_node.parentNode!,
-                                is_first = false
+                                    is_first = false
                             ) {
                                 // Store the index of this node in its' parent
                                 // list of child nodes/children. Use
@@ -513,14 +513,14 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                                 ;
                                 selection_path.length;
                                 selection_node =
-                                // As before, use the more-consistent `children`
-                                // except for the last element, where we might
-                                // be selecting a `text` node.
-                                (
-                                    selection_path.length > 1
-                                        ? selection_node.children
-                                        : selection_node.childNodes
-                                )[selection_path.shift()!]! as HTMLElement
+                                    // As before, use the more-consistent `children`
+                                    // except for the last element, where we might
+                                    // be selecting a `text` node.
+                                    (
+                                        selection_path.length > 1
+                                            ? selection_node.children
+                                            : selection_node.childNodes
+                                    )[selection_path.shift()!]! as HTMLElement
                             );
                             // Use that to set the selection.
                             tinymce_singleton!.selection.setCursorLocation(
@@ -614,7 +614,7 @@ export const CodeMirror_load = async (
     // to the top after an update/reload.
     let scrollSnapshot;
     if (current_view !== undefined) {
-        scrollSnapshot = current_view.scrollSnapshot()
+        scrollSnapshot = current_view.scrollSnapshot();
     }
 
     codechat_body.innerHTML =
@@ -624,29 +624,70 @@ export const CodeMirror_load = async (
     // TODO: dynamically load the parser.
     switch (lexer_name) {
         // Languages with a parser
-        case "sh": parser = cpp(); break;
-        case "c_cpp": parser = cpp(); break;
-        case "csharp": parser = javascript(); break;
-        case "css": parser = css(); break;
-        case "golang": parser = go(); break;
-        case "html": parser = html(); break;
-        case "java": parser = java(); break;
-        case "javascript": parser = javascript(); break;
-        case "python": parser = python(); break;
-        case "rust": parser = rust(); break;
-        case "typescript": parser = javascript({ typescript: true }); break;
+        case "sh":
+            parser = cpp();
+            break;
+        case "c_cpp":
+            parser = cpp();
+            break;
+        case "csharp":
+            parser = javascript();
+            break;
+        case "css":
+            parser = css();
+            break;
+        case "golang":
+            parser = go();
+            break;
+        case "html":
+            parser = html();
+            break;
+        case "java":
+            parser = java();
+            break;
+        case "javascript":
+            parser = javascript();
+            break;
+        case "python":
+            parser = python();
+            break;
+        case "rust":
+            parser = rust();
+            break;
+        case "typescript":
+            parser = javascript({ typescript: true });
+            break;
 
         // Languages without a parser.
-        case "json5": parser = json(); break;
-        case "matlab": parser = python(); break;
-        case "sql": parser = python(); break;
-        case "swift": parser = python(); break;
-        case "toml": parser = json(); break;
-        case "vhdl": parser = cpp(); break;
-        case "verilog": parser = cpp(); break;
-        case "v": parser = javascript(); break;
+        case "json5":
+            parser = json();
+            break;
+        case "matlab":
+            parser = python();
+            break;
+        case "sql":
+            parser = python();
+            break;
+        case "swift":
+            parser = python();
+            break;
+        case "toml":
+            parser = json();
+            break;
+        case "vhdl":
+            parser = cpp();
+            break;
+        case "verilog":
+            parser = cpp();
+            break;
+        case "v":
+            parser = javascript();
+            break;
 
-        default: parser = javascript(); console.log(`Unknown lexer name ${lexer_name}`); break;
+        default:
+            parser = javascript();
+            console.log(`Unknown lexer name ${lexer_name}`);
+            break;
     }
     const state = EditorState.fromJSON(
         source,
@@ -664,13 +705,13 @@ export const CodeMirror_load = async (
     current_view = new EditorView({
         parent: codechat_body.childNodes[0] as HTMLDivElement,
         state,
-        scrollTo: scrollSnapshot
+        scrollTo: scrollSnapshot,
     });
     // For reloads, we need to remove previous instances; otherwise, Bad Things
     // happen.
-    tinymce.remove()
+    tinymce.remove();
     tinymce_singleton = (await init({ selector: "#TinyMCE-inst" }))[0];
-}
+};
 
 // Return the JSON data to save from the current CodeMirror-based document.
 export const CodeMirror_save = () => {

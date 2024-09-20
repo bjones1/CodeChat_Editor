@@ -4,70 +4,73 @@
 // the bundled files, which have hashes in their file names. It writes these
 // results to a simple JSON file, which the CodeChat Editor Server reads.
 
-import fs from "node:fs/promises"
+import fs from "node:fs/promises";
 
 // Copied from the [esbuild docs](https://esbuild.github.io/api/#metafile).
 interface Metafile {
     inputs: {
         [path: string]: {
-            bytes: number
+            bytes: number;
             imports: {
-                path: string
-                kind: string
-                external?: boolean
-                original?: string
-                with?: Record<string, string>
-            }[]
-            format?: string
-            with?: Record<string, string>
-        }
-    }
+                path: string;
+                kind: string;
+                external?: boolean;
+                original?: string;
+                with?: Record<string, string>;
+            }[];
+            format?: string;
+            with?: Record<string, string>;
+        };
+    };
     outputs: {
         [path: string]: {
-            bytes: number
+            bytes: number;
             inputs: {
                 [path: string]: {
-                    bytesInOutput: number
-                }
-            }
+                    bytesInOutput: number;
+                };
+            };
             imports: {
-                path: string
-                kind: string
-                external?: boolean
-            }[]
-            exports: string[]
-            entryPoint?: string
-            cssBundle?: string
-        }
-    }
+                path: string;
+                kind: string;
+                external?: boolean;
+            }[];
+            exports: string[];
+            entryPoint?: string;
+            cssBundle?: string;
+        };
+    };
 }
 
 // Load the esbuild metafile.
-const data = await fs.readFile('meta.json', { encoding: 'utf8' });
+const data = await fs.readFile("meta.json", { encoding: "utf8" });
 
 // Interpret it as JSON.
-const metafile: Metafile = JSON.parse(data)
+const metafile: Metafile = JSON.parse(data);
 
 // Walk the file, looking for the names of specific entry points. Transform
 // those into paths used to import these files.
-let outputContents: Record<string, string> = {}
+let outputContents: Record<string, string> = {};
 for (const output in metafile.outputs) {
-    const outputInfo = metafile.outputs[output]
+    const outputInfo = metafile.outputs[output];
     switch (outputInfo.entryPoint) {
         case "src/CodeChatEditorFramework.mts":
-            outputContents["CodeChatEditorFramework.js"] = output
-            break
+            outputContents["CodeChatEditorFramework.js"] = output;
+            break;
 
         case "src/CodeChatEditor.mts":
-            outputContents["CodeChatEditor.js"] = output
-            outputContents["CodeChatEditor.css"] = outputInfo.cssBundle!
-            break
+            outputContents["CodeChatEditor.js"] = output;
+            outputContents["CodeChatEditor.css"] = outputInfo.cssBundle!;
+            break;
 
         case "src/CodeChatEditor-test.mts":
-            outputContents["CodeChatEditor-test.js"] = output
-            outputContents["CodeChatEditor-test.css"] = outputInfo.cssBundle!
+            outputContents["CodeChatEditor-test.js"] = output;
+            outputContents["CodeChatEditor-test.css"] = outputInfo.cssBundle!;
     }
 }
 
 // Write this to disk.
-await fs.writeFile('../server/hashLocations.json', JSON.stringify(outputContents));
+await fs.writeFile(
+    "../server/hashLocations.json",
+    JSON.stringify(outputContents),
+);

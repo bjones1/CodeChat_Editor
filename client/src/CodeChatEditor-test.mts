@@ -23,10 +23,7 @@
 //
 // I can't get Mocha to work with ESBuild, so I import it using a script tag.
 import { assert } from "chai";
-import {
-    exportedForTesting,
-    page_init,
-} from "./CodeChatEditor.mjs";
+import { exportedForTesting, page_init } from "./CodeChatEditor.mjs";
 
 // Re-export everything that [CodeChatEditor.mts](CodeChatEditor.mts) exports.
 // Otherwise, including [CodeChatEditor.mts](CodeChatEditor.mts) elsewhere would
@@ -64,41 +61,41 @@ window.CodeChatEditor_test = () => {
     suite("CodeChatEditor.mts", function () {
         suite("codechat_html_to_markdown", function () {
             test("Translate an empty comment", async function () {
-                const db: [DocBlockJSON] = [
-                    [0, 0, "", "//", ""],
-                ]
+                const db: [DocBlockJSON] = [[0, 0, "", "//", ""]];
                 const source = {
-                    doc_blocks: db
-                }
+                    doc_blocks: db,
+                };
                 await codechat_html_to_markdown(source);
-                assert.deepEqual(source, { doc_blocks: [[0, 0, "", "//", "\n"]] });
+                assert.deepEqual(source, {
+                    doc_blocks: [[0, 0, "", "//", "\n"]],
+                });
             });
 
             test("Translate non-breaking space", async function () {
-                const db: [DocBlockJSON] = [
-                    [0, 0, "", "//", "&nbsp;"],
-                ]
+                const db: [DocBlockJSON] = [[0, 0, "", "//", "&nbsp;"]];
                 const source = {
-                    doc_blocks: db
-                }
+                    doc_blocks: db,
+                };
                 await codechat_html_to_markdown(source);
-                assert.deepEqual(source, { doc_blocks: [[0, 0, "", "//", "\n"]] });
+                assert.deepEqual(source, {
+                    doc_blocks: [[0, 0, "", "//", "\n"]],
+                });
             });
 
             test("Translate two empty comments", async function () {
                 const db: DocBlockJSON[] = [
                     [0, 0, "", "//", ""],
                     [2, 2, "", "//", ""],
-                ]
+                ];
                 const source = {
-                    doc_blocks: db
-                }
+                    doc_blocks: db,
+                };
                 await codechat_html_to_markdown(source);
                 assert.deepEqual(source, {
                     doc_blocks: [
                         [0, 0, "", "//", "\n"],
                         [2, 2, "", "//", "\n"],
-                    ]
+                    ],
                 });
             });
         });
