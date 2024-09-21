@@ -47,7 +47,7 @@ interface EditorMessageContents {
     Update?: UpdateMessageContents;
     CurrentFile?: string;
     Load?: string;
-    Result?: string;
+    Result?: [string | null, null];
     RequestClose?: null;
 }
 
@@ -116,7 +116,7 @@ class WebSocketComm {
                         `Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`,
                     );
 
-                    let result = "";
+                    let result = null;
                     const contents = current_update.contents;
                     if (contents !== null && contents !== undefined) {
                         // If the page is still loading, wait until the load
@@ -153,7 +153,7 @@ class WebSocketComm {
                             : "&test"
                         : "";
                     this.set_root_iframe_src(current_file + testSuffix);
-                    this.send_result(id, "");
+                    this.send_result(id, null);
                     break;
 
                 case "Result":
@@ -169,8 +169,8 @@ class WebSocketComm {
                     }
 
                     // Report if this was an error.
-                    const err = value as string;
-                    if (value !== "") {
+                    const [err, _loadFile] = value as [string | null, null];
+                    if (err !== null) {
                         console.log(`Error in message ${id}: ${err}.`);
                     }
                     break;
@@ -233,13 +233,13 @@ class WebSocketComm {
 
     // Send a result (a response to a message from the server) back to the
     // server.
-    send_result = (id: number, result: string = "") => {
+    send_result = (id: number, result: string | null = null) => {
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
         const jm: EditorMessage = {
             id: id,
             message: {
-                Result: result,
+                Result: [result, null],
             },
         };
         this.ws.send(JSON.stringify(jm));

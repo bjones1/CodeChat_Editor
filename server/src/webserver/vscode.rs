@@ -138,7 +138,7 @@ pub async fn vscode_ide_websocket(
             let EditorMessageContents::Opened(ide_type) = message.message else {
                 let msg = format!("Unexpected message {message:?}");
                 error!("{msg}");
-                send_response(&to_ide_tx, message.id, &msg).await;
+                send_response(&to_ide_tx, message.id, Some(msg)).await;
 
                 // Send a `Closed` message to shut down the websocket.
                 queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
@@ -150,7 +150,7 @@ pub async fn vscode_ide_websocket(
                 IdeType::VSCode(is_self_hosted) => {
                     if is_self_hosted {
                         // Send a response (successful) to the `Opened` message.
-                        send_response(&to_ide_tx, message.id, "").await;
+                        send_response(&to_ide_tx, message.id, None).await;
 
                         // Send the HTML for the internal browser.
                         queue_send!(to_ide_tx.send(EditorMessage {
@@ -167,9 +167,21 @@ pub async fn vscode_ide_websocket(
                         };
 
                         // Make sure it's the `Result` message.
-                        let EditorMessageContents::Result(result) = message.message else {
-                            let msg = format!("Unexpected message {message:?}");
-                            error!("{msg}");
+                        if let Some(err) = match message.message {
+                            EditorMessageContents::Result(err, load_file) => {
+                                if let Some(err_msg) = err {
+                                    Some(format!("Error in ClientHtml: {err_msg}"))
+                                } else {
+                                    load_file.map(|contents| {
+                                        format!(
+                                            "Unexpected message LoadFile contents {contents:?}."
+                                        )
+                                    })
+                                }
+                            }
+                            _ => Some(format!("Unexpected message {message:?}")),
+                        } {
+                            error!("{err}");
                             // Send a `Closed` message.
                             queue_send!(to_ide_tx.send(EditorMessage {
                                 id: 1,
@@ -177,25 +189,12 @@ pub async fn vscode_ide_websocket(
                             }), 'task);
                             break 'task;
                         };
-
-                        // Handle any errors reported.
-                        if !result.is_empty() {
-                            let msg = format!("Error in ClientHtml: {result}");
-                            error!("{msg}");
-
-                            // Send a `Closed` message.
-                            queue_send!(to_ide_tx.send(EditorMessage {
-                                id: 1,
-                                message: EditorMessageContents::Closed
-                            }), 'task);
-                            break 'task;
-                        }
                     } else {
                         // Open the Client in an external browser.
                         if let Err(err) = open::that_detached("https://example.com") {
                             let msg = format!("Unable to open web browser: {err}");
                             error!("{msg}");
-                            send_response(&to_ide_tx, message.id, &msg).await;
+                            send_response(&to_ide_tx, message.id, Some(msg)).await;
 
                             // Send a `Closed` message.
                             queue_send!(to_ide_tx.send(EditorMessage{
@@ -205,7 +204,7 @@ pub async fn vscode_ide_websocket(
                             break 'task;
                         }
                         // Send a response (successful) to the `Opened` message.
-                        send_response(&to_ide_tx, message.id, "").await;
+                        send_response(&to_ide_tx, message.id, None).await;
                     }
                 }
                 // Note: Currently, this code will never run because there's
@@ -216,7 +215,7 @@ pub async fn vscode_ide_websocket(
                     // This is the wrong IDE type. Report then error.
                     let msg = format!("Invalid IDE type: {ide_type:?}");
                     error!("{msg}");
-                    send_response(&to_ide_tx, message.id, &msg).await;
+                    send_response(&to_ide_tx, message.id, Some(msg)).await;
 
                     // Close the connection.
                     queue_send!(to_ide_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed}), 'task);
@@ -233,11 +232,11 @@ pub async fn vscode_ide_websocket(
                             EditorMessageContents::Opened(_) | EditorMessageContents::LoadFile(_) | EditorMessageContents::ClientHtml(_) => {
                                 let msg = "IDE must not send this message.";
                                 error!("{msg}");
-                                send_response(&to_ide_tx, result.id, msg).await;
+                                send_response(&to_ide_tx, result.id, Some(msg.to_string())).await;
                             },
 
                             // Handle messages that are simply passed through.
-                            EditorMessageContents::Closed | EditorMessageContents::RequestClose | EditorMessageContents::Result(_) => {
+                            EditorMessageContents::Closed | EditorMessageContents::RequestClose | EditorMessageContents::Result(_, _) => {
                                 // Send the message to the client.
                                 queue_send!(to_client_tx.send(result));
                             },
@@ -334,7 +333,7 @@ mod test {
         run_server, EditorMessage, EditorMessageContents, IdeType, IP_ADDRESS, IP_PORT,
     };
     use crate::{
-        cast, prep_test_dir,
+        cast, cast2, prep_test_dir,
         processing::{CodeChatForWeb, CodeMirror, SourceFileMetadata},
         test_utils::{check_logger_errors, configure_testing_logger},
         webserver::UpdateMessageContents,
@@ -410,8 +409,9 @@ mod test {
 
         // Get the response. It should be an error.
         let em = read_message(&mut ws_stream).await;
-        let result = cast!(em.message, EditorMessageContents::Result);
-        assert_starts_with!(result, "Unexpected message");
+        let result = cast2!(em.message, EditorMessageContents::Result);
+
+        assert_starts_with!(cast!(&result.0, Option::Some), "Unexpected message");
 
         // Next, expect the websocket to be closed.
         let err = &ws_stream.next().await.unwrap().unwrap();
@@ -446,7 +446,10 @@ mod test {
 
         // Get the response. It should be success.
         let em = read_message(&mut ws_stream).await;
-        assert_eq!(cast!(em.message, EditorMessageContents::Result), "");
+        assert_eq!(
+            cast2!(em.message, EditorMessageContents::Result),
+            (None, None)
+        );
 
         // Next, wait for the next message -- the HTML.
         //let err = &ws_stream.next().await.unwrap().unwrap();
@@ -482,7 +485,10 @@ mod test {
 
         // Get the response. It should be success.
         let em = read_message(&mut ws_stream_ide).await;
-        assert_eq!(cast!(em.message, EditorMessageContents::Result), "");
+        assert_eq!(
+            cast2!(em.message, EditorMessageContents::Result),
+            (None, None)
+        );
 
         // Next, wait for the next message -- the HTML.
         let em = read_message(&mut ws_stream_ide).await;
@@ -496,7 +502,7 @@ mod test {
             &mut ws_stream_ide,
             &EditorMessage {
                 id: 1,
-                message: EditorMessageContents::Result("".to_string()),
+                message: EditorMessageContents::Result(None, None),
             },
         )
         .await;

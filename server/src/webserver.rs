@@ -175,7 +175,7 @@ enum EditorMessageContents {
     /// respond by sending a `LoadFile` with the requested file. If not, the
     /// returned `Result` should indicate the error "not loaded". Valid
     /// destinations: IDE.
-    LoadFile(String),
+    LoadFile(PathBuf),
 
     // #### These messages may only be sent by the Server.
     /// This may only be used to respond to an `Opened` message; it contains the
@@ -189,9 +189,16 @@ enum EditorMessageContents {
 
     // #### This message may be sent by anyone.
     /// Sent as a response to any of the above messages, reporting
-    /// success/error. An empty string indicates success; otherwise, the string
-    /// contains the error message.
-    Result(String),
+    /// success/error. None indicates success, while Some contains an error.
+    Result(Option<String>, Option<LoadFileResultContents>),
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct LoadFileResultContents {
+    /// The path to the file that was queried.
+    file_path: PathBuf,
+    /// The contents of the file.
+    contents: String,
 }
 
 /// Specify the type of IDE that this client represents.
@@ -200,6 +207,8 @@ enum IdeType {
     /// True if the CodeChat Editor will be hosted inside VSCode; false means it
     /// should be hosted in an external browser.
     VSCode(bool),
+    /// Another option -- temporary -- to allow for future expansion.
+    DeleteMe,
 }
 
 /// Contents of the `Update` message.
@@ -576,11 +585,11 @@ async fn serve_file(
 }
 
 // Send a response to the client after processing a message from the client.
-async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: &str) {
+async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: Option<String>) {
     if let Err(err) = client_tx
         .send(EditorMessage {
             id,
-            message: EditorMessageContents::Result(result.to_string()),
+            message: EditorMessageContents::Result(result, None),
         })
         .await
     {
@@ -715,7 +724,7 @@ async fn client_websocket(
                                         Ok(joint_message) => {
                                             // If this was a `Result`, remove it from
                                             // the pending queue.
-                                            if let EditorMessageContents::Result(_) = joint_message.message {
+                                            if let EditorMessageContents::Result(_, _) = joint_message.message {
                                                 // Cancel the timeout for this result.
                                                 if let Some(task) = pending_messages.remove(&joint_message.id) {
                                                     task.abort();
@@ -732,7 +741,7 @@ async fn client_websocket(
                                                     error!("{msg}");
                                                     queue_send!(from_websocket_tx.send(EditorMessage {
                                                         id: joint_message.id,
-                                                        message: EditorMessageContents::Result(msg)
+                                                        message: EditorMessageContents::Result(Some(msg), None)
                                                     }));
                                                 },
 
@@ -776,7 +785,7 @@ async fn client_websocket(
                     match m.message {
                         // If it's a `Result`, no additional processing is
                         // needed.
-                        EditorMessageContents::Result(_) => {},
+                        EditorMessageContents::Result(_, _) => {},
                         // A `Closed` message causes the websocket to close.
                         EditorMessageContents::Closed => {
                             info!("Closing per request.");
