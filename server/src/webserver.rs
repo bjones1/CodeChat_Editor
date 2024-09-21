@@ -57,13 +57,14 @@ use tokio::{
     task::JoinHandle,
     time::sleep,
 };
+use url::Url;
 use vscode::{serve_vscode_fs, vscode_client_websocket, vscode_ide_websocket};
 
 // ### Local
-use crate::lexer::LanguageLexersCompiled;
-use crate::lexer::{compile_lexers, supported_languages::get_language_lexer_vec};
-use crate::processing::TranslationResultsString;
-use crate::processing::{source_to_codechat_for_web_string, CodeChatForWeb};
+use crate::{
+    lexer::{compile_lexers, supported_languages::get_language_lexer_vec, LanguageLexersCompiled},
+    processing::{source_to_codechat_for_web_string, CodeChatForWeb, TranslationResultsString},
+};
 use filewatcher::{
     filewatcher_browser_endpoint, filewatcher_client_endpoint, filewatcher_root_fs_redirect,
     filewatcher_websocket,
@@ -594,6 +595,42 @@ async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: Optio
         .await
     {
         error!("Unable to enqueue: {err}");
+    }
+}
+
+fn url_to_path(url_string: String) -> Result<PathBuf, String> {
+    // Convert this URL back to a file path.
+    match urlencoding::decode(&url_string) {
+        Err(err) => Err(format!("Error: unable to decode URL {url_string}: {err}.")),
+        Ok(url_string) => match Url::parse(&url_string) {
+            Err(err) => Err(format!("Error: unable to parse URL {url_string}: {err}")),
+            Ok(url) => match url.path_segments() {
+                None => Err(format!("Error: URL {url} cannot be a base.")),
+                Some(path_segments) => {
+                    // Make sure the path segments start with
+                    // `/fw/fsc/{connection_id}`.
+                    let ps: Vec<_> = path_segments.collect();
+                    if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
+                        Err(format!("Error: URL {url} has incorrect prefix."))
+                    } else {
+                        // Strip these first three segments; the
+                        // remainder is a file path.
+                        let path_str = ps[3..].join("/");
+                        match PathBuf::from_str(&path_str) {
+                            Err(err) => Err(format!(
+                                "Error: unable to parse file path {path_str}: {err}."
+                            )),
+                            Ok(path_buf) => match path_buf.canonicalize() {
+                                Err(err) => {
+                                    Err(format!("Unable to canonicalize {path_buf:?}: {err}."))
+                                }
+                                Ok(p) => Ok(p),
+                            },
+                        }
+                    }
+                }
+            },
+        },
     }
 }
 

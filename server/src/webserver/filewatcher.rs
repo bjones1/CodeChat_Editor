@@ -19,11 +19,7 @@
 /// ## Imports
 ///
 /// ### Standard library
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-    time::Duration,
-};
+use std::{path::Path, time::Duration};
 
 // ### Third-party
 use actix_web::{
@@ -49,7 +45,6 @@ use tokio::{
     select,
     sync::mpsc,
 };
-use url::Url;
 use urlencoding;
 #[cfg(target_os = "windows")]
 use win_partitions::win_api::get_logical_drive;
@@ -66,7 +61,7 @@ use crate::{
         codechat_for_web_to_source, source_to_codechat_for_web_string, TranslationResultsString,
     },
     queue_send,
-    webserver::filesystem_endpoint,
+    webserver::{filesystem_endpoint, url_to_path},
 };
 
 // ## Globals
@@ -581,56 +576,31 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             }
 
                             EditorMessageContents::CurrentFile(url_string) => {
-                                // Convert this URL back to a file path.
-                                let result = match urlencoding::decode(&url_string) {
-                                    Err(err) => Some(format!("Error: unable to decode URL {url_string}: {err}.")),
-                                    Ok(url_string) => match Url::parse(&url_string) {
-                                        Err(err) => Some(format!("Error: unable to parse URL {url_string}: {err}")),
-                                        Ok(url) => match url.path_segments() {
-                                            None => Some(format!("Error: URL {url} cannot be a base.")),
-                                            Some(path_segments) => {
-                                                // Make sure the path segments start with
-                                                // `/fw/fsc/{connection_id}`.
-                                                let ps: Vec<_> = path_segments.collect();
-                                                if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
-                                                    Some(format!("Error: URL {url} has incorrect prefix."))
-                                                } else {
-                                                    // Strip these first three segments; the
-                                                    // remainder is a file path.
-                                                    let path_str = ps[3..].join("/");
-                                                    match PathBuf::from_str(&path_str) {
-                                                        Err(err) => Some(format!("Error: unable to parse file path {path_str}: {err}.")),
-                                                        Ok(path_buf) => match path_buf.canonicalize() {
-                                                            Err(err) => Some(format!("Unable to canonicalize {path_buf:?}: {err}.")),
-                                                            Ok(p) => 'err_exit: {
-                                                                // We finally have the desired path! First,
-                                                                // unwatch the old path.
-                                                                if let Err(err) = debounced_watcher.watcher().unwatch(&current_filepath) {
-                                                                    break 'err_exit Some(format!(
-                                                                        "Unable to unwatch file '{}': {err}.",
-                                                                        current_filepath.to_string_lossy()
-                                                                    ));
-                                                                }
-                                                                // Update to the new path.
-                                                                current_filepath = p;
-                                                                // Watch the new file.
-                                                                if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
-                                                                    break 'err_exit Some(format!(
-                                                                        "Unable to watch file '{}': {err}.",
-                                                                        current_filepath.to_string_lossy()
-                                                                    ));
-                                                                }
-
-                                                                info!("Current filepath: {current_filepath:?}");
-                                                                // Indicate there was no error in the
-                                                                // `Result` message.
-                                                                None
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                let result = match url_to_path(url_string) {
+                                    Err(err) => Some(err),
+                                    Ok(file_path) => 'err_exit: {
+                                        // We finally have the desired path! First,
+                                        // unwatch the old path.
+                                        if let Err(err) = debounced_watcher.watcher().unwatch(&current_filepath) {
+                                            break 'err_exit Some(format!(
+                                                "Unable to unwatch file '{}': {err}.",
+                                                current_filepath.to_string_lossy()
+                                            ));
                                         }
+                                        // Update to the new path.
+                                        current_filepath = file_path;
+                                        // Watch the new file.
+                                        if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
+                                            break 'err_exit Some(format!(
+                                                "Unable to watch file '{}': {err}.",
+                                                current_filepath.to_string_lossy()
+                                            ));
+                                        }
+
+                                        info!("Current filepath: {current_filepath:?}");
+                                        // Indicate there was no error in the
+                                        // `Result` message.
+                                        None
                                     }
                                 };
                                 send_response(&to_websocket_tx, m.id, result).await;
