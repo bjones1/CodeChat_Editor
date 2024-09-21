@@ -798,9 +798,18 @@ async fn client_websocket(
                             // Assign the id for the message.
                             m.id = id;
                             id += 1;
+                            let timeout_tx = from_websocket_tx.clone();
                             let waiting_task = actix_rt::spawn(async move {
                                 sleep(REPLY_TIMEOUT).await;
-                                error!("Timeout: message id {} unacknowledged.", m.id);
+                                let msg = format!("Timeout: message id {} unacknowledged.", m.id);
+                                error!("{msg}");
+                                // Since the websocket failed to send a `Result`, produce a timeout `Result` for it.
+                                'timeout: {
+                                        queue_send!(timeout_tx.send(EditorMessage {
+                                        id: m.id,
+                                        message: EditorMessageContents::Result(Some(msg), None)
+                                    }), 'timeout);
+                                }
                             });
                             pending_messages.insert(m.id, waiting_task);
                             info!("ID is {id}.");
