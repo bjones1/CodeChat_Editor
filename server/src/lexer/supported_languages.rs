@@ -48,12 +48,10 @@
 use std::sync::Arc;
 
 // ### Local
-use super::BlockCommentDelim;
-use super::HeredocDelim;
-use super::LanguageLexer;
-use super::NewlineSupport;
-use super::SpecialCase;
-use super::StringDelimiterSpec;
+use super::{
+    BlockCommentDelim, HeredocDelim, LanguageLexer, NewlineSupport, SpecialCase,
+    StringDelimiterSpec,
+};
 
 // ## Helper functions
 //

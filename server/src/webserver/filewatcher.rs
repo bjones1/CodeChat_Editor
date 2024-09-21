@@ -445,7 +445,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
 
                                                 // Translate the file.
                                                 let (translation_results_string, _path_to_toc) =
-                                                source_to_codechat_for_web_string(&file_contents, &current_filepath, false, &app_state.lexers);
+                                                source_to_codechat_for_web_string(&file_contents, &current_filepath, false);
                                                 if let TranslationResultsString::CodeChat(cc) = translation_results_string {
                                                     // Send the new contents
                                                     queue_send!(to_websocket_tx.send(EditorMessage {
@@ -497,7 +497,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     Err(_) => SimpleHttpResponse::Bin(http_request.request_path),
                                     Ok(_) => {
                                         let is_current = file_path.canonicalize().unwrap() == current_filepath;
-                                        let (simple_http_response, option_codechat_for_web) = serve_file(file_path, &file_contents, http_request.is_toc, is_current, http_request.is_test_mode, &app_state).await;
+                                        let (simple_http_response, option_codechat_for_web) = serve_file(file_path, &file_contents, http_request.is_toc, is_current, http_request.is_test_mode).await;
                                         // If this file is editable and is the main
                                         // file, send an `Update`. The
                                         // `simple_http_response` contains the Client.
@@ -535,10 +535,8 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
 
                                     // Translate from the CodeChatForWeb format
                                     // to the contents of a source file.
-                                    let language_lexers_compiled = &app_state.lexers;
                                     let file_contents = match codechat_for_web_to_source(
                                         codechat_for_web,
-                                        language_lexers_compiled,
                                     ) {
                                         Ok(r) => r,
                                         Err(message) => {
@@ -685,7 +683,6 @@ mod tests {
         send_response, AppState, EditorMessage, EditorMessageContents, UpdateMessageContents,
     };
     use crate::{
-        lexer::{compile_lexers, supported_languages::get_language_lexer_vec},
         processing::{
             source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
             TranslationResults,
@@ -788,9 +785,7 @@ mod tests {
         send_response(&ide_tx_queue, 0, None).await;
 
         // Check the contents.
-        let llc = compile_lexers(get_language_lexer_vec());
-        let translation_results =
-            source_to_codechat_for_web(&"".to_string(), "py", false, false, &llc);
+        let translation_results = source_to_codechat_for_web(&"".to_string(), "py", false, false);
         let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
         assert_eq!(umc.contents, Some(codechat_for_web));
 

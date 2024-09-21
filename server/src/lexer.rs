@@ -23,13 +23,14 @@ pub mod supported_languages;
 // ### Standard library
 #[cfg(feature = "lexer_explain")]
 use std::cmp::min;
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 // ### Third-party
 use lazy_static::lazy_static;
-use regex;
 use regex::Regex;
+
+// ### Local
+use supported_languages::get_language_lexer_vec;
 
 /// ## Data structures
 ///
@@ -282,6 +283,9 @@ lazy_static! {
         // Now, find the end of the string: the string delimiter.
         "`"),
     ).unwrap();
+
+    /// A vector of all supported languages.
+    pub static ref LEXERS: LanguageLexersCompiled = compile_lexers(get_language_lexer_vec());
 }
 
 // Support C# verbatim string literals, which end with a `"`; a `""` inserts a

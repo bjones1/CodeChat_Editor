@@ -61,9 +61,8 @@ use url::Url;
 use vscode::{serve_vscode_fs, vscode_client_websocket, vscode_ide_websocket};
 
 // ### Local
-use crate::{
-    lexer::{compile_lexers, supported_languages::get_language_lexer_vec, LanguageLexersCompiled},
-    processing::{source_to_codechat_for_web_string, CodeChatForWeb, TranslationResultsString},
+use crate::processing::{
+    source_to_codechat_for_web_string, CodeChatForWeb, TranslationResultsString,
 };
 use filewatcher::{
     filewatcher_browser_endpoint, filewatcher_client_endpoint, filewatcher_root_fs_redirect,
@@ -233,7 +232,6 @@ struct UpdateMessageContents {
 /// Define the [state](https://actix.rs/docs/application/#state) available to
 /// all endpoints.
 pub struct AppState {
-    lexers: LanguageLexersCompiled,
     // The number of the next connection ID to assign.
     connection_id: Mutex<u32>,
     // For each connection ID, store a queue tx for the HTTP server to send
@@ -449,7 +447,6 @@ async fn serve_file(
     is_toc: bool,
     is_current_file: bool,
     is_test_mode: bool,
-    app_state: &web::Data<AppState>,
 ) -> (SimpleHttpResponse, Option<CodeChatForWeb>) {
     // Provided info from the HTTP request, determine the following parameters.
     let raw_dir = file_path.parent().unwrap();
@@ -459,7 +456,7 @@ async fn serve_file(
 
     // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) = if is_current_file || is_toc {
-        source_to_codechat_for_web_string(file_contents, file_path, is_toc, &app_state.lexers)
+        source_to_codechat_for_web_string(file_contents, file_path, is_toc)
     } else {
         // If this isn't the current file, then don't parse it.
         (TranslationResultsString::Unknown, None)
@@ -935,7 +932,6 @@ pub fn configure_logger() {
 // `configure_app`, preventing globally shared state.
 fn make_app_data() -> web::Data<AppState> {
     web::Data::new(AppState {
-        lexers: compile_lexers(get_language_lexer_vec()),
         connection_id: Mutex::new(0),
         processing_task_queue_tx: Arc::new(Mutex::new(HashMap::new())),
         filewatcher_client_queues: Arc::new(Mutex::new(HashMap::new())),
