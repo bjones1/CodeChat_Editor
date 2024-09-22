@@ -139,8 +139,6 @@ editor-overlay filesystem.
 
 #### Network interfaces between the Client, Server, and IDE
 
-## The Server performs translation between the IDE and the Client:
-
 - The startup phase loads the Client framework into a browser:\
   ![Startup diagram](https://www.plantuml.com/plantuml/svg/PP3HIiOW583lVOfpwIwY-u4ng62ZHR7P0rYUOkJKZcUDthwPiVh_tOZ8vtS-RH8RucLsGYaOV_OHb1BTpIrSNC68z8bKmqD4ZrPs5lLNn4gKyqniO0q3fiMn79ac_xRHTmVYsatekUNPxLIhxti814z3NvtFEmfpNww0PmfhGW9PbF1APiOrqFk9CB_1XH05_8x-Rs-rVWJ2ZmKJoyl4XgUNaW7mrrtkxNIAmIVSSMlOL0Az5Sssv0_y1W00)
 - If the current file in the IDE changes (including the initial startup, when
@@ -159,14 +157,38 @@ editor-overlay filesystem.
 - If the server is stopped (or crashes), both clients shut down after several
   reconnect retries.
 
-Possible return values: 200 HTML, 404 HTML, raw contents as UTF-8, the path
-only. If it's raw contents, we still need the path to the file. contents: String
-path: Option enum Ok, Err, Raw We have to process in the processing task until
-we know it's not editable.
-
 Note: to edit these diagrams, paste the URL into the
 [PlantUML web server](https://www.plantuml.com/plantuml/uml), click Decode URL,
 edit, then copy and paste the SVG URL back to this file.
+
+#### Message IDs
+
+The message system connects the IDE, Server, and Client; all three can serve as
+the source or destination for a message. Any message sent should produce a
+Response message in return. This produces a potential problem: because the IDs
+between all three may not be unique (the IDE, Server, and Client don't have any
+way to communicate outside the message system in order to guarantee unique IDs),
+the Response message destination cannot be determined by looking at the ID. This
+isn't a problem for the IDE and Client, since they should only receive a
+Response intended for them. In contrast, the Server passes messages through
+(including Responses). How can the Server know if a given Response was intended
+for it, or for the IDE/Client, since the ID of the message doesn't determine who
+sent it?
+
+The Server generates only three messages:
+
+- ClientHtml -- this is generated once, before the Client is connected.
+  Therefore, Responses generated before the Client is connected are always sent
+  only to the Server.
+- LoadFile -- this is sent only to the IDE; the response produced by the IDE is
+  the only Response which contains a Some(LoadFileResultContents).
+- Closed -- this is sent between the IDE websocket task and the Client websocket
+  task, but never generates a Response.
+
+Therefore, the Server can always determine if a Response is for itself, or
+should be routed to the Client/IDE; likewise, the IDs for messages need only to
+be unique by source (i.e., the IDs produced by the IDE should be unique and
+therefore distinguishable), not globally unique.
 
 #### Architecture
 

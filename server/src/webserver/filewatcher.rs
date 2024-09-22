@@ -28,7 +28,6 @@ use actix_web::{
     http::header::{self, ContentType},
     web, HttpRequest, HttpResponse, Responder,
 };
-use dunce::simplified;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
 use notify_debouncer_full::{
@@ -36,7 +35,6 @@ use notify_debouncer_full::{
     notify::{EventKind, RecursiveMode, Watcher},
     DebounceEventResult,
 };
-use path_slash::PathExt;
 use regex::Regex;
 use tokio::{
     fs::DirEntry,
@@ -51,9 +49,9 @@ use win_partitions::win_api::get_logical_drive;
 
 // ### Local
 use super::{
-    client_websocket, get_client_framework, get_connection_id, html_not_found, html_wrapper,
-    path_display, send_response, serve_file, AppState, EditorMessage, EditorMessageContents,
-    SimpleHttpResponse, UpdateMessageContents, WebsocketQueues,
+    client_websocket, escape_html, get_client_framework, get_connection_id, html_not_found,
+    html_wrapper, path_display, send_response, serve_file, AppState, EditorMessage,
+    EditorMessageContents, SimpleHttpResponse, UpdateMessageContents, WebsocketQueues,
 };
 use crate::{
     oneshot_send,
@@ -61,7 +59,7 @@ use crate::{
         codechat_for_web_to_source, source_to_codechat_for_web_string, TranslationResultsString,
     },
     queue_send,
-    webserver::{filesystem_endpoint, url_to_path},
+    webserver::{filesystem_endpoint, get_test_mode, path_to_url, url_to_path},
 };
 
 // ## Globals
@@ -133,7 +131,11 @@ async fn filewatcher_browser_endpoint(
         actix_rt::spawn(async move {
             processing_task(&canon_path, app_state, connection_id).await;
         });
-        return get_client_framework(&req, "fw/ws", connection_id);
+        return match get_client_framework(get_test_mode(&req), "fw/ws", &connection_id.to_string())
+        {
+            Ok(s) => HttpResponse::Ok().content_type(ContentType::html()).body(s),
+            Err(err) => html_not_found(&format!("<p>{}</p>", escape_html(&err))),
+        };
     }
 
     // It's not a directory or a file...we give up. For simplicity, don't handle
@@ -370,14 +372,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
             );
 
             // Provide it a file to open.
-            let encoded_path =
-                // First, convert the path to use forward slashes.
-                &simplified(&current_filepath).to_slash().unwrap()
-                // The convert each part of the path to a URL-encoded string.
-                // (This avoids encoding the slashes.)
-                .split("/").map(|s| urlencoding::encode(s))
-                // Then put it all back together.
-                .collect::<Vec<_>>().join("/");
+            let encoded_path = path_to_url(&current_filepath);
             let url_pathbuf = format!("/fw/fsc/{connection_id}/{encoded_path}");
             queue_send!(to_websocket_tx.send(EditorMessage {
                 id: 0,
@@ -494,15 +489,18 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             Ok(mut fc) => {
                                 let mut file_contents = String::new();
                                 match fc.read_to_string(&mut file_contents).await {
-                                    // If this is a binary file (meaning we can't read the contents as UTF-8),
-                                    // just serve it raw; assume this is an image/video/etc.
+                                    // If this is a binary file (meaning we
+                                    // can't read the contents as UTF-8), just
+                                    // serve it raw; assume this is an
+                                    // image/video/etc.
                                     Err(_) => SimpleHttpResponse::Bin(http_request.request_path),
                                     Ok(_) => {
                                         let is_current = file_path.canonicalize().unwrap() == current_filepath;
                                         let (simple_http_response, option_codechat_for_web) = serve_file(file_path, &file_contents, http_request.is_toc, is_current, http_request.is_test_mode).await;
                                         // If this file is editable and is the main
                                         // file, send an `Update`. The
-                                        // `simple_http_response` contains the Client.
+                                        // `simple_http_response` contains the
+                                        // Client.
                                         if let Some(codechat_for_web) = option_codechat_for_web {
                                             queue_send!(to_websocket_tx.send(EditorMessage {
                                                 id: 0,
@@ -756,7 +754,8 @@ mod tests {
         let ide_tx_queue = je.from_websocket_tx;
         let mut client_rx = je.to_websocket_rx;
 
-        // The initial web request for the Client framework produces a `CurrentFile`.
+        // The initial web request for the Client framework produces a
+        // `CurrentFile`.
         let url_string = get_message_as!(client_rx, EditorMessageContents::CurrentFile);
         send_response(&ide_tx_queue, 0, None).await;
 
@@ -777,7 +776,7 @@ mod tests {
             .unwrap();
         assert_eq!(url_path, test_path);
 
-        // 2. After fetching the file, we should get an update.
+        // 2.  After fetching the file, we should get an update.
         let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_string_lossy());
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
@@ -803,7 +802,8 @@ mod tests {
         let ide_tx_queue = je.from_websocket_tx;
         let mut client_rx = je.to_websocket_rx;
 
-        // The initial web request for the Client framework produces a `CurrentFile`.
+        // The initial web request for the Client framework produces a
+        // `CurrentFile`.
         get_message_as!(client_rx, EditorMessageContents::CurrentFile);
         send_response(&ide_tx_queue, 0, None).await;
 
@@ -981,7 +981,7 @@ mod tests {
             }
         );
 
-        // 8. Load another file from the Client.
+        // 8.  Load another file from the Client.
         let mut new_file_path = test_dir.clone();
         new_file_path.push("test1.py");
         let new_uri = format!(
@@ -1007,7 +1007,7 @@ mod tests {
         get_message_as!(client_rx, EditorMessageContents::Update);
         send_response(&ide_tx_queue, 0, None).await;
 
-        // 9. Writes to this file should produce an update.
+        // 9.  Writes to this file should produce an update.
         fs::write(&new_file_path, "testing 1").unwrap();
         get_message_as!(client_rx, EditorMessageContents::Update);
 

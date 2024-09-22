@@ -15,7 +15,11 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// # `webserver.rs` -- Serve CodeChat Editor Client webpages
+//
+// ## Submodules
 mod filewatcher;
+#[cfg(test)]
+mod tests;
 mod vscode;
 
 /// ## Imports
@@ -24,7 +28,7 @@ mod vscode;
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
-    path::{Path, PathBuf},
+    path::{self, Path, PathBuf},
     str::FromStr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -48,6 +52,7 @@ use log4rs;
 use mime::Mime;
 use mime_guess;
 use path_slash::PathBufExt;
+use path_slash::PathExt;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::{
@@ -141,14 +146,12 @@ enum EditorMessageContents {
     /// destinations: Client.
     RequestClose,
 
-    // #### These messages may only be sent by the Server or the IDE
+    // #### These messages may only be sent by the Server.
     /// Ask the IDE if the provided file is loaded. If so, the IDE should
     /// respond by sending a `LoadFile` with the requested file. If not, the
     /// returned `Result` should indicate the error "not loaded". Valid
     /// destinations: IDE.
     LoadFile(PathBuf),
-
-    // #### These messages may only be sent by the Server.
     /// This may only be used to respond to an `Opened` message; it contains the
     /// HTML for the CodeChat Editor Client to display in its built-in browser.
     /// Valid destinations: IDE.
@@ -324,33 +327,28 @@ pub fn get_test_mode(req: &HttpRequest) -> bool {
 
 // Return an instance of the Client.
 fn get_client_framework(
-    // The HTTP request. Used to extract query parameters to determine if the
-    // page is in test mode.
-    req: &HttpRequest,
+    // True if the page should enable test mode for Clients it loads.
+    is_test_mode: bool,
     // The URL prefix for a websocket connection to the Server.
     ide_path: &str,
     // The ID of the websocket connection.
-    connection_id: u32, // This returns a response (the Client, or an error).
-) -> HttpResponse {
-    // Add in content when testing.
-    let is_test_mode = get_test_mode(req);
-
+    connection_id: &str,
+    // This returns a response (the Client, or an error).
+) -> Result<String, String> {
     // Provide the pathname to the websocket connection. Quote the string using
     // JSON to handle any necessary escapes.
     let ws_url = match serde_json::to_string(&format!("{ide_path}/{connection_id}")) {
         Ok(v) => v,
         Err(err) => {
-            return html_not_found(&format!(
+            return Err(format!(
                 "Unable to encode websocket URL for {ide_path}, id {connection_id}: {err}"
             ))
         }
     };
 
     // Build and return the webpage.
-    HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(format!(
-            r#"<!DOCTYPE html>
+    Ok(format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="UTF-8">
@@ -379,8 +377,9 @@ fn get_client_framework(
         </iframe>
     </body>
 </html>
-"#, *CODECHAT_EDITOR_FRAMEWORK_JS
-        ))
+"#,
+        *CODECHAT_EDITOR_FRAMEWORK_JS
+    ))
 }
 
 // ### Serve file
@@ -963,38 +962,62 @@ async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: Optio
 
 fn url_to_path(url_string: String) -> Result<PathBuf, String> {
     // Convert this URL back to a file path.
-    match urlencoding::decode(&url_string) {
-        Err(err) => Err(format!("Error: unable to decode URL {url_string}: {err}.")),
-        Ok(url_string) => match Url::parse(&url_string) {
-            Err(err) => Err(format!("Error: unable to parse URL {url_string}: {err}")),
-            Ok(url) => match url.path_segments() {
-                None => Err(format!("Error: URL {url} cannot be a base.")),
-                Some(path_segments) => {
-                    // Make sure the path segments start with
-                    // `/fw/fsc/{connection_id}`.
-                    let ps: Vec<_> = path_segments.collect();
-                    if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
-                        Err(format!("Error: URL {url} has incorrect prefix."))
-                    } else {
-                        // Strip these first three segments; the
-                        // remainder is a file path.
-                        let path_str = ps[3..].join("/");
-                        match PathBuf::from_str(&path_str) {
+    match Url::parse(&url_string) {
+        Err(err) => Err(format!("Error: unable to parse URL {url_string}: {err}")),
+        Ok(url) => match url.path_segments() {
+            None => Err(format!("Error: URL {url} cannot be a base.")),
+            Some(path_segments) => {
+                // Make sure the path segments start with
+                // `/fw/fsc/{connection_id}`.
+                let ps: Vec<_> = path_segments.collect();
+                if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
+                    Err(format!("Error: URL {url} has incorrect prefix."))
+                } else {
+                    // Strip these first three segments; the
+                    // remainder is a file path.
+                    let path_str_encoded = ps[3..].join("/");
+                    // On non-Windows systems, the path should start with a `/`. Windows path already start with a drive letter.
+                    #[cfg(not(target_os = "windows"))]
+                    let path_str_encoded = "/".to_string() + &path_str_encoded;
+                    match urlencoding::decode(&path_str_encoded) {
+                        Err(err) => {
+                            Err(format!("Error: unable to decode URL {url_string}: {err}."))
+                        }
+                        Ok(path_str) => match PathBuf::from_str(&path_str) {
                             Err(err) => Err(format!(
-                                "Error: unable to parse file path {path_str}: {err}."
+                                "Error: unable to parse file path {path_str_encoded}: {err}."
                             )),
                             Ok(path_buf) => match path_buf.canonicalize() {
-                                Err(err) => {
-                                    Err(format!("Unable to canonicalize {path_buf:?}: {err}."))
-                                }
+                                // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors) fails if the path doesn't exist. For unsaved files, this is expected; therefore, use [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html) on error, since it doesn't require the path to exist.
+                                Err(_) => match path::absolute(&*path_buf) {
+                                    Err(err) => {
+                                        Err(format!("Unable to make {path_buf:?} absolute: {err}"))
+                                    }
+                                    Ok(p) => Ok(p),
+                                },
                                 Ok(p) => Ok(p),
                             },
-                        }
+                        },
                     }
                 }
-            },
+            }
         },
     }
+}
+
+// Given a file path, convert it to a URL, encoding as necessary.
+fn path_to_url(file_path: &Path) -> String {
+    // First, convert the path to use forward slashes.
+    simplified(file_path)
+        .to_slash()
+        .unwrap()
+        // The convert each part of the path to a URL-encoded string.
+        // (This avoids encoding the slashes.)
+        .split("/")
+        .map(|s| urlencoding::encode(s))
+        // Then put it all back together.
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 // Given a `Path`, transform it into a displayable HTML string (with any
