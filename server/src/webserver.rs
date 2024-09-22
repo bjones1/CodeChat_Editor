@@ -272,12 +272,41 @@ fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
 }
 
 lazy_static! {
+    // Define the location of static files.
+    static ref CLIENT_STATIC_PATH: PathBuf = {
+        let exe_path = env::current_exe().unwrap();
+        let exe_dir = exe_path.parent().unwrap();
+        let mut client_static_path = PathBuf::from(exe_dir);
+        // When in debug or running tests, use the layout of the Git repo to find
+        // client files. In release mode, we assume the static folder is a
+        // subdirectory of the directory containing the executable.
+        #[cfg(test)]
+        client_static_path.push("..");
+        // Note that `debug_assertions` is also enabled for testing, so this adds to
+        // the previous line when running tests.
+        #[cfg(debug_assertions)]
+        client_static_path.push("../../../client");
+
+        client_static_path.push("static");
+        client_static_path.canonicalize().unwrap()
+    };
+
     // Read in the hashed names of files bundled by esbuild.
     static ref BUNDLED_FILES_MAP: HashMap<String, String> = {
         let json = fs::read_to_string("hashLocations.json").unwrap();
         let hmm: HashMap<String, String> = serde_json::from_str(&json).unwrap();
         hmm
     };
+
+    // Read in the contents of the CodeChat Editor Framework.
+    static ref CODECHAT_EDITOR_FRAMEWORK_JS: String = {
+        let mut bfm = CLIENT_STATIC_PATH.clone();
+        // The bundled files map start with `static`, so pop that off the client static path to avoid duplication.
+        bfm.pop();
+        bfm.push(BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap());
+        fs::read_to_string(bfm).unwrap()
+    };
+
 }
 
 // Get the `mode` query parameter to determine `is_test_mode`; default to
@@ -314,7 +343,6 @@ fn get_client_framework(
             ))
         }
     };
-    let codechat_editor_framework_js = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap();
 
     // Build and return the webpage.
     HttpResponse::Ok()
@@ -327,7 +355,7 @@ fn get_client_framework(
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>The CodeChat Editor</title>
         <script type="module">
-            import {{ page_init }} from "/{codechat_editor_framework_js}"
+            {}
             page_init({ws_url}, {is_test_mode})
         </script>
     </head>
@@ -349,7 +377,7 @@ fn get_client_framework(
         </iframe>
     </body>
 </html>
-"#
+"#, *CODECHAT_EDITOR_FRAMEWORK_JS
         ))
 }
 
@@ -906,7 +934,8 @@ pub async fn main() -> std::io::Result<()> {
 
 pub async fn run_server() -> std::io::Result<()> {
     // Pre-load the bundled files before starting the webserver.
-    let _ = &BUNDLED_FILES_MAP;
+    let _ = &*BUNDLED_FILES_MAP;
+    let _ = &*CODECHAT_EDITOR_FRAMEWORK_JS;
     let app_data = make_app_data();
     let server = match HttpServer::new(move || configure_app(App::new(), &app_data))
         .bind((IP_ADDRESS, IP_PORT))
@@ -947,22 +976,6 @@ fn configure_app<T>(app: App<T>, app_data: &web::Data<AppState>) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
 {
-    let exe_path = env::current_exe().unwrap();
-    let exe_dir = exe_path.parent().unwrap();
-    let mut client_static_path = PathBuf::from(exe_dir);
-    // When in debug or running tests, use the layout of the Git repo to find
-    // client files. In release mode, we assume the static folder is a
-    // subdirectory of the directory containing the executable.
-    #[cfg(test)]
-    client_static_path.push("..");
-    // Note that `debug_assertions` is also enabled for testing, so this adds to
-    // the previous line when running tests.
-    #[cfg(debug_assertions)]
-    client_static_path.push("../../../client");
-
-    client_static_path.push("static");
-    client_static_path = client_static_path.canonicalize().unwrap();
-
     app
         // Provide data to all endpoints -- the compiler lexers.
         .app_data(app_data.clone())
@@ -970,7 +983,7 @@ where
         // [docs](https://actix.rs/docs/static-files).
         .service(actix_files::Files::new(
             "/static",
-            client_static_path.as_os_str(),
+            CLIENT_STATIC_PATH.as_os_str(),
         ))
         // These endpoints serve the files from the filesystem and the
         // websockets.
