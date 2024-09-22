@@ -136,17 +136,12 @@ pub enum TranslationResultsString {
 lazy_static! {
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
-    static ref DOC_BLOCK_SEPARATOR_STRING_SHORT: String = remove_first_last_chars(DOC_BLOCK_SEPARATOR_STRING);
+    /// Match the doc block separator string translated from Markdown to HTML as
+    /// itself, or when inside a fenced code block.
+    static ref DOC_BLOCK_SEPARATOR_STRING_REGEX: Regex = Regex::new("<CodeChatEditor-separator/>\n|&lt;CodeChatEditor-separator/&gt;\n").unwrap();
 }
 
 const DOC_BLOCK_SEPARATOR_STRING: &str = "\n<CodeChatEditor-separator/>\n\n";
-
-fn remove_first_last_chars(str: &str) -> String {
-    let mut chars = str.chars();
-    chars.next();
-    chars.next_back();
-    chars.as_str().to_string()
-}
 
 // ## Determine if the provided file is part of a project.
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
@@ -449,27 +444,37 @@ pub fn source_to_codechat_for_web(
             // Combine all the doc blocks into a single string, separated by a
             // delimiter. Transform this to markdown, then split the transformed
             // content back into the doc blocks they came from. This is
-            // necessary to allow references between doc blocks to work; for
-            // example, `[Link][1]` in one doc block, then `[1]: http:/foo.org`
-            // in another doc block requires both to be in the same Markdown
-            // document to translate correctly.
-            let mut doc_block_contents_vec: Vec<&str> = Vec::new();
-            for code_or_doc_block in &code_doc_block_arr {
-                if let CodeDocBlock::DocBlock(doc_block) = code_or_doc_block {
-                    doc_block_contents_vec.push(&doc_block.contents);
-                }
-            }
-            let combined_doc_blocks = &doc_block_contents_vec.join(DOC_BLOCK_SEPARATOR_STRING);
-            let html = markdown_to_html(combined_doc_blocks);
+            // necessary to allow
+            // [link reference definitions](https://spec.commonmark.org/0.31.2/#link-reference-definitions)
+            // between doc blocks to work; for example, `[Link][1]` in one doc
+            // block, then `[1]: http:/foo.org` in another doc block requires
+            // both to be in the same Markdown document to translate correctly.
+            //
+            // Walk through the code/doc blocks, ...
+            let doc_contents = code_doc_block_arr
+                .iter()
+                // ...selcting only the doc block contents...
+                .filter_map(|cdb| {
+                    if let CodeDocBlock::DocBlock(db) = cdb {
+                        Some(db.contents.as_str())
+                    } else {
+                        None
+                    }
+                })
+                // ...then collect them, separated by the doc block separator
+                // string.
+                .collect::<Vec<_>>()
+                .join(DOC_BLOCK_SEPARATOR_STRING);
+            let html = markdown_to_html(&doc_contents);
             // Now that we have HTML, process it. TODO.
             //
-            // After processing by Markdown, the double newline at the of the
-            // doc block separator string becomes a single newline; split using
-            // this slightly shorter string.
-            doc_block_contents_vec = html.split(&*DOC_BLOCK_SEPARATOR_STRING_SHORT).collect();
+            // After processing by Markdown, the doc block separator string may
+            // be (mostly) unchanged; however, if there's an unterminated fenced
+            // code block, then HTML entities replaces angle brackets. Match on
+            // either case.
+            let mut doc_block_contents_iter = DOC_BLOCK_SEPARATOR_STRING_REGEX.split(&html);
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
-            let mut index = 0;
             for code_or_doc_block in code_doc_block_arr {
                 match code_or_doc_block {
                     CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(&code_string),
@@ -492,9 +497,8 @@ pub fn source_to_codechat_for_web(
                             doc_block.delimiter.to_string(),
                             // Used the markdown-translated replacement for this
                             // doc block, rather than the original string.
-                            doc_block_contents_vec[index].to_string(),
+                            doc_block_contents_iter.next().unwrap().to_string(),
                         ));
-                        index += 1;
                         // Append newlines to the document; the doc block will
                         // replace these in the editor. This keeps the line
                         // numbering of non-doc blocks correct.
@@ -1283,7 +1287,8 @@ mod tests {
             ))
         );
 
-        // A two doc block source file.
+        // A two doc block source file. This also tests references in one block
+        // to a target in another block.
         assert_eq!(
             source_to_codechat_for_web(
                 &"// [Link][1]\nlet a = 1;\n/* [1]: http://b.org */".to_string(),
@@ -1342,6 +1347,19 @@ mod tests {
                 "c_cpp",
                 "\"σ\";\n",
                 vec![build_codemirror_doc_block(5, 5, "", "//", ""),]
+            ))
+        );
+
+        // Test a fenced code block that's unterminated.
+        assert_eq!(
+            source_to_codechat_for_web(&"/* ```\n*/\n//".to_string(), "cpp", false, false),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "c_cpp",
+                "\n\n",
+                vec![
+                    build_codemirror_doc_block(0, 1, "", "/*", "<pre><code>\n\n"),
+                    build_codemirror_doc_block(2, 2, "", "//", "\n</code></pre>\n"),
+                ]
             ))
         );
     }
