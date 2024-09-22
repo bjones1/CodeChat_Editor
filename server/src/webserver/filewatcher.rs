@@ -295,6 +295,8 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         .body(html_wrapper(&body))
 }
 
+/// `fsc` stands for "FileSystem Client", and provides the Client contents from
+/// the filesystem.
 #[get("/fw/fsc/{connection_id}/{file_path:.*}")]
 async fn filewatcher_client_endpoint(
     path: web::Path<(String, String)>,

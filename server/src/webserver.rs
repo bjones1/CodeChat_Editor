@@ -69,35 +69,6 @@ use filewatcher::{
     filewatcher_websocket,
 };
 
-// ## Macros
-/// Create a macro to report an error when enqueueing an item.
-#[macro_export]
-macro_rules! oneshot_send {
-    // Provide two options: `break` or `break 'label`.
-    ($tx: expr) => {
-        if let Err(err) = $tx {
-            error!("Unable to enqueue: {err:?}");
-            break;
-        }
-    };
-    ($tx: expr, $label: tt) => {
-        if let Err(err) = $tx {
-            error!("Unable to enqueue: {err:?}");
-            break $label;
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! queue_send {
-    ($tx: expr) => {
-        $crate::oneshot_send!($tx.await);
-    };
-    ($tx: expr, $label: tt) => {
-        $crate::oneshot_send!($tx.await, $label);
-    };
-}
-
 /// ## Data structures
 ///
 /// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
@@ -247,6 +218,36 @@ pub struct AppState {
     vscode_connection_id: Arc<Mutex<HashSet<String>>>,
 }
 
+// ## Macros
+/// Create a macro to report an error when enqueueing an item.
+#[macro_export]
+macro_rules! oneshot_send {
+    // Provide two options: `break` or `break 'label`.
+    ($tx: expr) => {
+        if let Err(err) = $tx {
+            error!("Unable to enqueue: {err:?}");
+            break;
+        }
+    };
+    ($tx: expr, $label: tt) => {
+        if let Err(err) = $tx {
+            error!("Unable to enqueue: {err:?}");
+            break $label;
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! queue_send {
+    ($tx: expr) => {
+        $crate::oneshot_send!($tx.await);
+    };
+    ($tx: expr, $label: tt) => {
+        $crate::oneshot_send!($tx.await, $label);
+    };
+}
+
+/// ## Globals
 /// The IP address on which the server listens for incoming connections.
 const IP_ADDRESS: &str = "127.0.0.1";
 /// The port on which the server listens for incoming connections.
@@ -263,13 +264,6 @@ const REPLY_TIMEOUT: Duration = if cfg!(test) {
 /// The time to wait for a pong from the websocket in response to a ping sent by
 /// this server.
 const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
-
-// Return a unique ID for an IDE websocket connection.
-fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
-    let mut connection_id = app_state.connection_id.lock().unwrap();
-    *connection_id += 1;
-    *connection_id
-}
 
 lazy_static! {
     // Define the location of static files.
@@ -307,6 +301,14 @@ lazy_static! {
         fs::read_to_string(bfm).unwrap()
     };
 
+}
+
+/// ## Webserver functionality
+/// Return a unique ID for an IDE websocket connection.
+fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
+    let mut connection_id = app_state.connection_id.lock().unwrap();
+    *connection_id += 1;
+    *connection_id
 }
 
 // Get the `mode` query parameter to determine `is_test_mode`; default to
@@ -387,9 +389,6 @@ fn get_client_framework(
 /// CodeChat Editor file, or a non-existent file. Determine which type this file
 /// is then serve it. Serve a CodeChat Editor Client webpage using the
 /// FileWatcher "IDE".
-///
-/// `fsc` stands for "FileSystem Client", and provides the Client contents from
-/// the filesystem.
 pub async fn filesystem_endpoint(
     path: web::Path<(String, String)>,
     req: &HttpRequest,
@@ -608,55 +607,6 @@ async fn serve_file(
         )),
         Some(codechat_for_web),
     )
-}
-
-// Send a response to the client after processing a message from the client.
-async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: Option<String>) {
-    if let Err(err) = client_tx
-        .send(EditorMessage {
-            id,
-            message: EditorMessageContents::Result(result, None),
-        })
-        .await
-    {
-        error!("Unable to enqueue: {err}");
-    }
-}
-
-fn url_to_path(url_string: String) -> Result<PathBuf, String> {
-    // Convert this URL back to a file path.
-    match urlencoding::decode(&url_string) {
-        Err(err) => Err(format!("Error: unable to decode URL {url_string}: {err}.")),
-        Ok(url_string) => match Url::parse(&url_string) {
-            Err(err) => Err(format!("Error: unable to parse URL {url_string}: {err}")),
-            Ok(url) => match url.path_segments() {
-                None => Err(format!("Error: URL {url} cannot be a base.")),
-                Some(path_segments) => {
-                    // Make sure the path segments start with
-                    // `/fw/fsc/{connection_id}`.
-                    let ps: Vec<_> = path_segments.collect();
-                    if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
-                        Err(format!("Error: URL {url} has incorrect prefix."))
-                    } else {
-                        // Strip these first three segments; the
-                        // remainder is a file path.
-                        let path_str = ps[3..].join("/");
-                        match PathBuf::from_str(&path_str) {
-                            Err(err) => Err(format!(
-                                "Error: unable to parse file path {path_str}: {err}."
-                            )),
-                            Ok(path_buf) => match path_buf.canonicalize() {
-                                Err(err) => {
-                                    Err(format!("Unable to canonicalize {path_buf:?}: {err}."))
-                                }
-                                Ok(p) => Ok(p),
-                            },
-                        }
-                    }
-                }
-            },
-        },
-    }
 }
 
 /// ## Websockets
@@ -926,7 +876,7 @@ async fn client_websocket(
     Ok(response)
 }
 
-// ## Webserver startup
+// ## Webserver core
 #[actix_web::main]
 pub async fn main() -> std::io::Result<()> {
     run_server().await
@@ -949,7 +899,6 @@ pub async fn run_server() -> std::io::Result<()> {
     server.run().await
 }
 
-// ## Utilities
 pub fn configure_logger() {
     log4rs::init_file("log4rs.yml", Default::default()).unwrap();
 }
@@ -996,6 +945,56 @@ where
         // Reroute to the filesystem for typical user-requested URLs.
         .route("/", web::get().to(filewatcher_root_fs_redirect))
         .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
+}
+
+// ## Utilities
+// Send a response to the client after processing a message from the client.
+async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: Option<String>) {
+    if let Err(err) = client_tx
+        .send(EditorMessage {
+            id,
+            message: EditorMessageContents::Result(result, None),
+        })
+        .await
+    {
+        error!("Unable to enqueue: {err}");
+    }
+}
+
+fn url_to_path(url_string: String) -> Result<PathBuf, String> {
+    // Convert this URL back to a file path.
+    match urlencoding::decode(&url_string) {
+        Err(err) => Err(format!("Error: unable to decode URL {url_string}: {err}.")),
+        Ok(url_string) => match Url::parse(&url_string) {
+            Err(err) => Err(format!("Error: unable to parse URL {url_string}: {err}")),
+            Ok(url) => match url.path_segments() {
+                None => Err(format!("Error: URL {url} cannot be a base.")),
+                Some(path_segments) => {
+                    // Make sure the path segments start with
+                    // `/fw/fsc/{connection_id}`.
+                    let ps: Vec<_> = path_segments.collect();
+                    if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
+                        Err(format!("Error: URL {url} has incorrect prefix."))
+                    } else {
+                        // Strip these first three segments; the
+                        // remainder is a file path.
+                        let path_str = ps[3..].join("/");
+                        match PathBuf::from_str(&path_str) {
+                            Err(err) => Err(format!(
+                                "Error: unable to parse file path {path_str}: {err}."
+                            )),
+                            Ok(path_buf) => match path_buf.canonicalize() {
+                                Err(err) => {
+                                    Err(format!("Unable to canonicalize {path_buf:?}: {err}."))
+                                }
+                                Ok(p) => Ok(p),
+                            },
+                        }
+                    }
+                }
+            },
+        },
+    }
 }
 
 // Given a `Path`, transform it into a displayable HTML string (with any

@@ -1,5 +1,3 @@
-use std::path::Path;
-
 /// Copyright (C) 2023 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -20,9 +18,8 @@ use std::path::Path;
 // ## Imports
 //
 // ### Standard library
-//
-// None.
-//
+use std::path::Path;
+
 // ### Third-party
 use actix_web::{
     error::{Error, ErrorBadRequest},
@@ -37,7 +34,6 @@ use super::{
     client_websocket, send_response, AppState, EditorMessage, EditorMessageContents, IdeType,
     WebsocketQueues,
 };
-
 use crate::{queue_send, webserver::html_not_found};
 
 // ## Code
