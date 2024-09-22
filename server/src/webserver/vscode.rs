@@ -207,10 +207,6 @@ pub async fn vscode_ide_websocket(
                         send_response(&to_ide_tx, message.id, None).await;
                     }
                 }
-                // Note: Currently, this code will never run because there's
-                // only one supported IDE type (VSCode). Keep it for future
-                // expansion.
-                #[allow(unreachable_patterns)]
                 _ => {
                     // This is the wrong IDE type. Report then error.
                     let msg = format!("Invalid IDE type: {ide_type:?}");

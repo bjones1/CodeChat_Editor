@@ -272,7 +272,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         };
         let encoded_file = urlencoding::encode(&file_name);
         file_html += &format!(
-            r#"<li><a href="/fw/fsb/{web_path}/{encoded_file}" target="_blank">{file_name}</a></li>
+            r#"<li><a href="/fw/fsb/{web_path}{encoded_file}" target="_blank">{file_name}</a></li>
 "#
         );
     }
