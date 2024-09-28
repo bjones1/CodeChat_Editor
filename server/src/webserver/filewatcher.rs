@@ -1,24 +1,24 @@
-/// Copyright (C) 2023 Bryan A. Jones.
-///
-/// This file is part of the CodeChat Editor. The CodeChat Editor is free
-/// software: you can redistribute it and/or modify it under the terms of the
-/// GNU General Public License as published by the Free Software Foundation,
-/// either version 3 of the License, or (at your option) any later version.
-///
-/// The CodeChat Editor is distributed in the hope that it will be useful, but
-/// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-/// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-/// more details.
-///
-/// You should have received a copy of the GNU General Public License along with
-/// the CodeChat Editor. If not, see
-/// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-///
+// Copyright (C) 2023 Bryan A. Jones.
+//
+// This file is part of the CodeChat Editor. The CodeChat Editor is free
+// software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+//
+// The CodeChat Editor is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+// more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// the CodeChat Editor. If not, see
+// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+//
 /// # `filewatcher.rs` -- Implement the File Watcher "IDE"
-///
-/// ## Imports
-///
-/// ### Standard library
+//
+// ## Imports
+//
+// ### Standard library
 use std::{path::Path, time::Duration};
 
 // ### Third-party
@@ -59,7 +59,7 @@ use crate::{
         codechat_for_web_to_source, source_to_codechat_for_web_string, TranslationResultsString,
     },
     queue_send,
-    webserver::{filesystem_endpoint, get_test_mode, path_to_url, url_to_path},
+    webserver::{filesystem_endpoint, get_test_mode, path_to_url, url_to_path, ResultOkTypes},
 };
 
 // ## Globals
@@ -401,7 +401,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     // Send using ID 0 to indicate this isn't a
                                     // response to a message received from the
                                     // client.
-                                    send_response(&to_websocket_tx, 0, Some(msg)).await;
+                                    send_response(&to_websocket_tx, 0, Err(msg)).await;
                                 }
                             }
 
@@ -529,7 +529,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     // remember the path, instead of needing it
                                     // repeated each time.
                                     let codechat_for_web = match update_message_contents.contents {
-                                        None => break 'process None,
+                                        None => break 'process Ok(ResultOkTypes::Void),
                                         Some(cwf) => cwf,
                                     };
 
@@ -540,7 +540,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     ) {
                                         Ok(r) => r,
                                         Err(message) => {
-                                            break 'process Some(format!(
+                                            break 'process Err(format!(
                                                 "Unable to translate to source: {message}"
                                             ));
                                         }
@@ -551,7 +551,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                             "Unable to unwatch file '{}': {err}.",
                                             current_filepath.to_string_lossy()
                                         );
-                                        break 'process Some(msg);
+                                        break 'process Err(msg);
                                     }
                                     // Save this string to a file.
                                     if let Err(err) = fs::write(current_filepath.as_path(), file_contents).await {
@@ -559,28 +559,28 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                             "Unable to save file '{}': {err}.",
                                             current_filepath.to_string_lossy()
                                         );
-                                        break 'process Some(msg);
+                                        break 'process Err(msg);
                                     }
                                     if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
                                         let msg = format!(
                                             "Unable to watch file '{}': {err}.",
                                             current_filepath.to_string_lossy()
                                         );
-                                        break 'process Some(msg);
+                                        break 'process Err(msg);
                                     }
-                                    None
+                                    Ok(ResultOkTypes::Void)
                                 };
                                 send_response(&to_websocket_tx, m.id, result).await;
                             }
 
                             EditorMessageContents::CurrentFile(url_string) => {
                                 let result = match url_to_path(url_string) {
-                                    Err(err) => Some(err),
+                                    Err(err) => Err(err),
                                     Ok(file_path) => 'err_exit: {
                                         // We finally have the desired path! First,
                                         // unwatch the old path.
                                         if let Err(err) = debounced_watcher.watcher().unwatch(&current_filepath) {
-                                            break 'err_exit Some(format!(
+                                            break 'err_exit Err(format!(
                                                 "Unable to unwatch file '{}': {err}.",
                                                 current_filepath.to_string_lossy()
                                             ));
@@ -589,7 +589,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                         current_filepath = file_path;
                                         // Watch the new file.
                                         if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
-                                            break 'err_exit Some(format!(
+                                            break 'err_exit Err(format!(
                                                 "Unable to watch file '{}': {err}.",
                                                 current_filepath.to_string_lossy()
                                             ));
@@ -597,7 +597,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
 
                                         // Indicate there was no error in the
                                         // `Result` message.
-                                        None
+                                        Ok(ResultOkTypes::Void)
                                     }
                                 };
                                 send_response(&to_websocket_tx, m.id, result).await;
@@ -605,10 +605,10 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
 
                             // Process a result, the respond to a message we
                             // sent.
-                            EditorMessageContents::Result(err, _) => {
+                            EditorMessageContents::Result(message_result) => {
                                 // Report errors to the log.
-                                if let Some(err_msg) = err {
-                                    error!("Error in message {}: {err_msg}.", m.id);
+                                if let Err(err) = message_result {
+                                    error!("Error in message {}: {err}.", m.id);
                                 }
                             }
 
@@ -620,7 +620,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             EditorMessageContents::Opened(_) | EditorMessageContents::ClientHtml(_) | EditorMessageContents::RequestClose => {
                                 let msg = format!("Client sent unsupported message type {m:?}");
                                 error!("{msg}");
-                                send_response(&to_websocket_tx, m.id, Some(msg)).await;
+                                send_response(&to_websocket_tx, m.id, Err(msg)).await;
                             }
 
                             other => {
@@ -682,13 +682,13 @@ mod tests {
         send_response, AppState, EditorMessage, EditorMessageContents, UpdateMessageContents,
     };
     use crate::{
+        cast, prep_test_dir,
         processing::{
             source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
             TranslationResults,
         },
         test_utils::{check_logger_errors, configure_testing_logger},
-        webserver::IdeType,
-        {cast, cast2, prep_test_dir},
+        webserver::{IdeType, ResultOkTypes},
     };
 
     async fn get_websocket_queues(
@@ -740,12 +740,6 @@ mod tests {
         };
     }
 
-    macro_rules! get_message_as2 {
-        ($client_rx: expr, $cast_type: ty) => {
-            cast2!(get_message(&mut $client_rx).await, $cast_type)
-        };
-    }
-
     #[actix_web::test]
     async fn test_websocket_opened_1() {
         configure_testing_logger();
@@ -757,7 +751,7 @@ mod tests {
         // The initial web request for the Client framework produces a
         // `CurrentFile`.
         let url_string = get_message_as!(client_rx, EditorMessageContents::CurrentFile);
-        send_response(&ide_tx_queue, 0, None).await;
+        send_response(&ide_tx_queue, 0, Ok(ResultOkTypes::Void)).await;
 
         // Check the path this message contains.
         let mut test_path = test_dir.clone();
@@ -782,7 +776,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
         let umc = get_message_as!(client_rx, EditorMessageContents::Update);
-        send_response(&ide_tx_queue, 0, None).await;
+        send_response(&ide_tx_queue, 0, Ok(ResultOkTypes::Void)).await;
 
         // Check the contents.
         let translation_results = source_to_codechat_for_web(&"".to_string(), "py", false, false);
@@ -805,7 +799,7 @@ mod tests {
         // The initial web request for the Client framework produces a
         // `CurrentFile`.
         get_message_as!(client_rx, EditorMessageContents::CurrentFile);
-        send_response(&ide_tx_queue, 0, None).await;
+        send_response(&ide_tx_queue, 0, Ok(ResultOkTypes::Void)).await;
 
         // The follow-up web request for the file produces an `Update`.
         let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_string_lossy());
@@ -813,7 +807,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
         get_message_as!(client_rx, EditorMessageContents::Update);
-        send_response(&ide_tx_queue, 0, None).await;
+        send_response(&ide_tx_queue, 0, Ok(ResultOkTypes::Void)).await;
 
         // 1.  Send an update message with no contents.
         ide_tx_queue
@@ -830,8 +824,8 @@ mod tests {
 
         // Check that it produces no error.
         assert_eq!(
-            get_message_as2!(client_rx, EditorMessageContents::Result),
-            (None, None)
+            get_message_as!(client_rx, EditorMessageContents::Result),
+            Ok(ResultOkTypes::Void)
         );
 
         // 2.  Send invalid messages.
@@ -849,8 +843,8 @@ mod tests {
                 .unwrap();
             assert_starts_with!(
                 cast!(
-                    get_message_as2!(client_rx, EditorMessageContents::Result).0,
-                    Option::Some
+                    get_message_as!(client_rx, EditorMessageContents::Result),
+                    Err
                 ),
                 "Client sent unsupported message type"
             );
@@ -879,8 +873,8 @@ mod tests {
 
         // Check that it produces no error.
         assert_eq!(
-            get_message_as2!(client_rx, EditorMessageContents::Result),
-            (None, None)
+            get_message_as!(client_rx, EditorMessageContents::Result),
+            Ok(ResultOkTypes::Void)
         );
 
         // 4.  Send an update message with unknown source language.
@@ -906,11 +900,8 @@ mod tests {
 
         // Check that it produces an error.
         assert_eq!(
-            get_message_as2!(client_rx, EditorMessageContents::Result),
-            (
-                Some("Unable to translate to source: Invalid mode".to_string()),
-                None
-            )
+            get_message_as!(client_rx, EditorMessageContents::Result),
+            Err("Unable to translate to source: Invalid mode".to_string())
         );
 
         // 5.  Send a valid message.
@@ -936,8 +927,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            get_message_as2!(client_rx, EditorMessageContents::Result),
-            (None, None)
+            get_message_as!(client_rx, EditorMessageContents::Result),
+            Ok(ResultOkTypes::Void)
         );
 
         // Check that the requested file is written.
@@ -966,7 +957,7 @@ mod tests {
             }
         );
         // Acknowledge this message.
-        send_response(&ide_tx_queue, 0, None).await;
+        send_response(&ide_tx_queue, 0, Ok(ResultOkTypes::Void)).await;
 
         // 7.  Rename it and check for an close (the file watcher can't detect
         //     the destination file, so it's treated as the file is deleted).
@@ -996,8 +987,8 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            get_message_as2!(client_rx, EditorMessageContents::Result),
-            (None, None)
+            get_message_as!(client_rx, EditorMessageContents::Result),
+            Ok(ResultOkTypes::Void)
         );
 
         // The follow-up web request for the file produces an `Update`.
@@ -1005,7 +996,7 @@ mod tests {
         let new_resp = test::call_service(&app, new_req).await;
         assert!(new_resp.status().is_success());
         get_message_as!(client_rx, EditorMessageContents::Update);
-        send_response(&ide_tx_queue, 0, None).await;
+        send_response(&ide_tx_queue, 0, Ok(ResultOkTypes::Void)).await;
 
         // 9.  Writes to this file should produce an update.
         fs::write(&new_file_path, "testing 1").unwrap();

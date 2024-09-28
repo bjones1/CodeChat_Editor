@@ -163,16 +163,24 @@ enum EditorMessageContents {
 
     // #### This message may be sent by anyone.
     /// Sent as a response to any of the above messages, reporting
-    /// success/error. None indicates success, while Some contains an error.
-    Result(Option<String>, Option<LoadFileResultContents>),
+    /// success/error.
+    Result(MessageResult),
 }
 
+/// The contents of a `Result` message.
+type MessageResult = Result<
+    // The result of the operation, if successful.
+    ResultOkTypes,
+    // The error message.
+    String,
+>;
+
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-struct LoadFileResultContents {
-    /// The path to the file that was queried.
-    file_path: PathBuf,
-    /// The contents of the file.
-    contents: String,
+enum ResultOkTypes {
+    /// Most messages have no result.
+    Void,
+    /// The `LoadFile` message provides file contents, if available. This message may only be sent from the IDE to the Server.
+    LoadFile(Option<String>),
 }
 
 /// Specify the type of IDE that this client represents.
@@ -645,8 +653,6 @@ async fn client_websocket(
             }
         };
 
-        // Assign each message unique id.
-        let mut id: u32 = 0;
         // Keep track of pending messages.
         let mut pending_messages: HashMap<u32, JoinHandle<()>> = HashMap::new();
 
@@ -735,7 +741,7 @@ async fn client_websocket(
                                         Ok(joint_message) => {
                                             // If this was a `Result`, remove it from
                                             // the pending queue.
-                                            if let EditorMessageContents::Result(_, _) = joint_message.message {
+                                            if let EditorMessageContents::Result(_) = joint_message.message {
                                                 // Cancel the timeout for this result.
                                                 if let Some(task) = pending_messages.remove(&joint_message.id) {
                                                     task.abort();
@@ -752,7 +758,7 @@ async fn client_websocket(
                                                     error!("{msg}");
                                                     queue_send!(from_websocket_tx.send(EditorMessage {
                                                         id: joint_message.id,
-                                                        message: EditorMessageContents::Result(Some(msg), None)
+                                                        message: EditorMessageContents::Result(Err(msg))
                                                     }));
                                                 },
 
@@ -791,12 +797,12 @@ async fn client_websocket(
                 }
 
                 // Forward a message from the processing task to the websocket.
-                Some(mut m) = to_websocket_rx.recv() => {
+                Some(m) = to_websocket_rx.recv() => {
                     // Pre-process this message.
                     match m.message {
                         // If it's a `Result`, no additional processing is
                         // needed.
-                        EditorMessageContents::Result(_, _) => {},
+                        EditorMessageContents::Result(_) => {},
                         // A `Closed` message causes the websocket to close.
                         EditorMessageContents::Closed => {
                             info!("Closing per request.");
@@ -806,9 +812,6 @@ async fn client_websocket(
                         // All other messages are added to the pending queue and
                         // assigned a unique id.
                         _ => {
-                            // Assign the id for the message.
-                            m.id = id;
-                            id += 1;
                             let timeout_tx = from_websocket_tx.clone();
                             let waiting_task = actix_rt::spawn(async move {
                                 sleep(REPLY_TIMEOUT).await;
@@ -818,12 +821,11 @@ async fn client_websocket(
                                 'timeout: {
                                         queue_send!(timeout_tx.send(EditorMessage {
                                         id: m.id,
-                                        message: EditorMessageContents::Result(Some(msg), None)
+                                        message: EditorMessageContents::Result(Err(msg))
                                     }), 'timeout);
                                 }
                             });
                             pending_messages.insert(m.id, waiting_task);
-                            info!("ID is {id}.");
                         }
                     }
 
@@ -948,11 +950,11 @@ where
 
 // ## Utilities
 // Send a response to the client after processing a message from the client.
-async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: Option<String>) {
+async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: MessageResult) {
     if let Err(err) = client_tx
         .send(EditorMessage {
             id,
-            message: EditorMessageContents::Result(result, None),
+            message: EditorMessageContents::Result(result),
         })
         .await
     {
