@@ -561,9 +561,8 @@ mod test {
         )
         .await;
 
-        // TODO: fix tests after this.
-        /*
         // This should be passed to the Client.
+        /*
         let em = read_message(&mut ws_client).await;
         assert_eq!(
             em,
@@ -580,7 +579,7 @@ mod test {
             &mut ws_client,
             &EditorMessage {
                 id: 2,
-                message: EditorMessageContents::Result(None, None),
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             },
         )
         .await;
@@ -591,7 +590,7 @@ mod test {
             em,
             EditorMessage {
                 id: 2,
-                message: EditorMessageContents::Result(None, None)
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
             }
         );
 
@@ -618,11 +617,10 @@ mod test {
         .await;
 
         // This should become one update to load the correct URL/directory, then another with the actual file contents.
-        let em = read_message(&mut ws_stream_client).await;
+        let em = read_message(&mut ws_client).await;
         assert_eq!(
             cast!(em.message, EditorMessageContents::Update),
             UpdateMessageContents {
-                path: Some(temp_py.clone()),
                 contents: None,
                 cursor_position: None,
                 scroll_position: None,

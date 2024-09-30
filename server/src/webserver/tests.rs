@@ -19,7 +19,6 @@
 use std::path::{self, PathBuf};
 
 use assertables::{assert_ends_with, assert_ends_with_as_result};
-use path_slash::PathExt;
 
 use super::{path_to_url, url_to_path};
 use crate::prep_test_dir;

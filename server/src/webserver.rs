@@ -175,7 +175,7 @@ type MessageResult = Result<
     String,
 >;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 enum ResultOkTypes {
     /// Most messages have no result.
     Void,
