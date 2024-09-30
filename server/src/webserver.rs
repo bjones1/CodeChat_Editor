@@ -51,14 +51,17 @@ use log::{error, info, warn};
 use log4rs;
 use mime::Mime;
 use mime_guess;
-use path_slash::PathBufExt;
-use path_slash::PathExt;
+use path_slash::{PathBufExt, PathExt};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::{
+    fs::File,
+    io::AsyncReadExt,
     select,
-    sync::mpsc::{Receiver, Sender},
-    sync::oneshot,
+    sync::{
+        mpsc::{Receiver, Sender},
+        oneshot,
+    },
     task::JoinHandle,
     time::sleep,
 };
@@ -91,7 +94,7 @@ struct WebsocketQueues {
 /// made to that task. Send: String, response
 struct ProcessingTaskHttpRequest {
     /// The path of the file requested.
-    request_path: PathBuf,
+    file_path: PathBuf,
     /// True if this file is a TOC.
     is_toc: bool,
     /// True if test mode is enabled.
@@ -175,7 +178,7 @@ type MessageResult = Result<
     String,
 >;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 enum ResultOkTypes {
     /// Most messages have no result.
     Void,
@@ -397,11 +400,11 @@ fn get_client_framework(
 /// is then serve it. Serve a CodeChat Editor Client webpage using the
 /// FileWatcher "IDE".
 pub async fn filesystem_endpoint(
-    path: web::Path<(String, String)>,
+    request_path: web::Path<(String, String)>,
     req: &HttpRequest,
     app_state: &web::Data<AppState>,
 ) -> HttpResponse {
-    let (connection_id, file_path) = path.into_inner();
+    let (connection_id, file_path) = request_path.into_inner();
     let request_path = match PathBuf::from_str(&file_path) {
         Ok(v) => v,
         Err(err) => {
@@ -442,7 +445,7 @@ pub async fn filesystem_endpoint(
     // Send it the request.
     if let Err(err) = processing_tx
         .send(ProcessingTaskHttpRequest {
-            request_path,
+            file_path: request_path,
             is_toc,
             is_test_mode,
             response_queue: tx,
@@ -472,6 +475,65 @@ pub async fn filesystem_endpoint(
             }
         },
         Err(err) => html_not_found(&format!("Error: {err}")),
+    }
+}
+
+// Use the provided HTTP request to look for the requested file, returning it as an HTTP response. This should be called from within a processing task.
+async fn make_simple_http_response(
+    // The HTTP request presented to the processing task.
+    http_request: &ProcessingTaskHttpRequest,
+    // Path to the file currently being edited.
+    current_filepath: &Path,
+) -> (
+    // The response to send back to the HTTP endpoint.
+    SimpleHttpResponse,
+    // If this file is currently being edited, this is the body of an `Update` message to send.
+    Option<EditorMessageContents>,
+) {
+    // Convert the provided URL back into a file name.
+    let file_path = &http_request.file_path;
+
+    // Read the file
+    match File::open(file_path).await {
+        Err(err) => (
+            SimpleHttpResponse::Err(format!("<p>Error opening file {file_path:?}: {err}.")),
+            None,
+        ),
+        Ok(mut fc) => {
+            let mut file_contents = String::new();
+            match fc.read_to_string(&mut file_contents).await {
+                // If this is a binary file (meaning we
+                // can't read the contents as UTF-8), just
+                // serve it raw; assume this is an
+                // image/video/etc.
+                Err(_) => (SimpleHttpResponse::Bin(file_path.clone()), None),
+                Ok(_) => {
+                    let is_current = file_path.canonicalize().unwrap() == current_filepath;
+                    let (simple_http_response, option_codechat_for_web) = serve_file(
+                        file_path,
+                        &file_contents,
+                        http_request.is_toc,
+                        is_current,
+                        http_request.is_test_mode,
+                    )
+                    .await;
+                    // If this file is editable and is the main
+                    // file, send an `Update`. The
+                    // `simple_http_response` contains the
+                    // Client.
+                    (
+                        simple_http_response,
+                        option_codechat_for_web.map(|codechat_for_web| {
+                            EditorMessageContents::Update(UpdateMessageContents {
+                                contents: Some(codechat_for_web),
+                                cursor_position: None,
+                                scroll_position: None,
+                            })
+                        }),
+                    )
+                }
+            }
+        }
     }
 }
 

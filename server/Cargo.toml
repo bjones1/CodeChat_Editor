@@ -83,9 +83,9 @@ win_partitions = "0.3.0"
 
 # ### Development-only dependencies
 [dev-dependencies]
-assertables = "7.0.1"
+assertables = "8"
 assert_fs = "1"
-tokio-tungstenite = "0.23.1"
+tokio-tungstenite = "0"
 minreq = "2.12.0"
 actix-http = "3.9.0"
 # See the [docs](https://github.com/rust-lang/rust-clippy#usage) to install

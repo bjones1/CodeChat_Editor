@@ -43,11 +43,13 @@ interface EditorMessage {
     message: EditorMessageContents;
 }
 
+type ResultType = { Ok: "Void" } | { Err: string };
+
 interface EditorMessageContents {
     Update?: UpdateMessageContents;
     CurrentFile?: string;
     Load?: string;
-    Result?: [string | null, null];
+    Result?: ResultType;
     RequestClose?: null;
 }
 
@@ -169,9 +171,9 @@ class WebSocketComm {
                     }
 
                     // Report if this was an error.
-                    const [err, _loadFile] = value as [string | null, null];
-                    if (err !== null) {
-                        console.log(`Error in message ${id}: ${err}.`);
+                    const result_contents = value as ResultType;
+                    if ("Err" in result_contents) {
+                        console.log(`Error in message ${id}: ${result_contents.Err}.`);
                     }
                     break;
 
@@ -239,7 +241,7 @@ class WebSocketComm {
         const jm: EditorMessage = {
             id: id,
             message: {
-                Result: [result, null],
+                Result: result === null ? { Ok: "Void" } : { Err: result },
             },
         };
         this.ws.send(JSON.stringify(jm));

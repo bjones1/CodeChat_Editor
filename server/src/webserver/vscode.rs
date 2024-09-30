@@ -23,9 +23,9 @@ use std::path::{Path, PathBuf};
 // ### Third-party
 use actix_web::{
     error::{Error, ErrorBadRequest},
-    get, web, HttpRequest, HttpResponse, Responder,
+    get, web, HttpRequest, HttpResponse,
 };
-use log::error;
+use log::{error, info, warn};
 use open;
 use tokio::{select, sync::mpsc};
 
@@ -35,8 +35,7 @@ use super::{
     EditorMessageContents, IdeType, WebsocketQueues,
 };
 use crate::{
-    queue_send,
-    webserver::{escape_html, html_not_found, html_wrapper, path_to_url, ResultOkTypes},
+    oneshot_send, queue_send, webserver::{escape_html, filesystem_endpoint, html_wrapper, make_simple_http_response, path_to_url, ResultOkTypes}
 };
 
 // ## Code
@@ -104,7 +103,7 @@ pub async fn vscode_ide_websocket(
             },
         )
         .is_none());
-    let (from_client_tx, _from_client_rx) = mpsc::channel(10);
+    let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
     let (to_client_tx, to_client_rx) = mpsc::channel(10);
     assert!(app_state
         .vscode_client_queues
@@ -126,6 +125,8 @@ pub async fn vscode_ide_websocket(
 
     // Clone variables owned by the processing task.
     let connection_id_task = connection_id_str.clone();
+    let app_state_task = app_state.clone();
+
     // Start the processing task.
     actix_rt::spawn(async move {
         // Use a
@@ -175,29 +176,33 @@ pub async fn vscode_ide_websocket(
                         }), 'task);
 
                         // Wait for the response.
-                        let Some(message): std::option::Option<EditorMessage> =
-                            from_ide_rx.recv().await
-                        else {
+                        let Some(message) = from_ide_rx.recv().await else {
                             error!("{}", "IDE websocket received no data.");
                             break 'task;
                         };
 
                         // Make sure it's the `Result` message with no errors.
-                        if let Err(err) = match message.message {
-                            EditorMessageContents::Result(message_result) => match message_result {
-                                Err(err) => Err(format!("Error in ClientHtml: {err}")),
-                                Ok(result_ok) => {
-                                    if let ResultOkTypes::LoadFile(contents) = result_ok {
-                                        Err(format!(
-                                            "Unexpected message LoadFile contents {contents:?}."
-                                        ))
-                                    } else {
-                                        Ok(())
-                                    }
+                        let res =
+                            // First, make sure the ID matches.
+                            if message.id != 0 {
+                                Err(format!("Unexpected message ID {}.", message.id))
+                            } else {
+                                match message.message {
+                                    EditorMessageContents::Result(message_result) => match message_result {
+                                        Err(err) => Err(format!("Error in ClientHtml: {err}")),
+                                        Ok(result_ok) =>
+                                            if let ResultOkTypes::Void = result_ok {
+                                                Ok(())
+                                            } else {
+                                                Err(format!(
+                                                    "Unexpected message LoadFile contents {result_ok:?}."
+                                                ))
+                                            }
+                                    },
+                                    _ => Err(format!("Unexpected message {message:?}")),
                                 }
-                            },
-                            _ => Err(format!("Unexpected message {message:?}")),
-                        } {
+                            };
+                        if let Err(err) = res {
                             error!("{err}");
                             // Send a `Closed` message.
                             queue_send!(to_ide_tx.send(EditorMessage {
@@ -236,13 +241,23 @@ pub async fn vscode_ide_websocket(
                 }
             }
 
+            // Create a queue for HTTP requests fo communicate with this task.
+            let (from_http_tx, mut from_http_rx) = mpsc::channel(10);
+            app_state_task
+                .processing_task_queue_tx
+                .lock()
+                .unwrap()
+                .insert(connection_id_task.to_string(), from_http_tx);
+
             // All further messages are handled in the main loop.
+            let mut id: u32 = 1;
             loop {
                 select! {
                     // Look for messages from the IDE.
                     Some(ide_message) = from_ide_rx.recv() => {
                         match ide_message.message {
                             // Handle messages that the IDE must not send.
+                            EditorMessageContents::Closed |
                             EditorMessageContents::Opened(_) |
                             EditorMessageContents::LoadFile(_) |
                             EditorMessageContents::ClientHtml(_) => {
@@ -252,10 +267,9 @@ pub async fn vscode_ide_websocket(
                             },
 
                             // Handle messages that are simply passed through.
-                            EditorMessageContents::Closed |
                             EditorMessageContents::RequestClose |
                             EditorMessageContents::Result(_) => {
-                                // Send the message to the client.
+                                // Send the message to the client. TODO: a LoadFile should be processed here.
                                 queue_send!(to_client_tx.send(ide_message));
                             },
 
@@ -269,7 +283,7 @@ pub async fn vscode_ide_websocket(
                             // Update the current file; translate it to a URL then pass it to the Client.
                             EditorMessageContents::CurrentFile(file_path) => {
                                 queue_send!(to_client_tx.send(EditorMessage {
-                                    id: 0,
+                                    id: ide_message.id,
                                     message: EditorMessageContents::CurrentFile(
                                         format!("/vsc/fs/{connection_id_task}/{}", path_to_url(Path::new(&file_path)))
                                     )
@@ -277,8 +291,91 @@ pub async fn vscode_ide_websocket(
                                 current_file = file_path.into();
                             }
                         }
+                    },
+
+                    // Handle HTTP requests.
+                    Some(http_request) = from_http_rx.recv() => {
+                        let (simple_http_response, option_update) = make_simple_http_response(&http_request, &current_file).await;
+                        if let Some(update) = option_update {
+                            // Send the update to the client.
+                            queue_send!(to_client_tx.send(EditorMessage { id, message: update }));
+                            id += 1;
+                        }
+                        oneshot_send!(http_request.response_queue.send(simple_http_response));
                     }
+
+                    // Handle messages from the client.
+                    Some(client_message) = from_client_rx.recv() => {
+                        match client_message.message {
+                            // Handle messages that the client must not send.
+                            EditorMessageContents::Closed |
+                            EditorMessageContents::Opened(_) |
+                            EditorMessageContents::LoadFile(_) |
+                            EditorMessageContents::ClientHtml(_) => {
+                                let msg = "Client must not send this message.";
+                                error!("{msg}");
+                                send_response(&to_client_tx, client_message.id, Err(msg.to_string())).await;
+                            },
+
+                            // Handle messages that are simply passed through.
+                            EditorMessageContents::RequestClose |
+                            EditorMessageContents::Result(_) => {
+                                // Send the message to the IDE.
+                                info!("Sending message {client_message:?} to IDE.");
+                                queue_send!(to_ide_tx.send(client_message));
+                            },
+
+                            // Handle the `Update` message.
+                            EditorMessageContents::Update(_update) => {
+                            },
+
+                            // Update the current file; translate it to a URL then pass it to the IDE.
+                            EditorMessageContents::CurrentFile(_file_path) => {
+                            }
+                        }
+                    },
+
+                    else => break
                 }
+            }
+
+            if app_state_task
+                .processing_task_queue_tx
+                .lock()
+                .unwrap()
+                .remove(&connection_id_task)
+                .is_none()
+            {
+                error!("Unable to remove connection ID {connection_id_task} from processing task queue.");
+            }
+            if app_state_task
+                .vscode_client_queues
+                .lock()
+                .unwrap()
+                .remove(&connection_id_task)
+                .is_none()
+            {
+                error!("Unable to remove connection ID {connection_id_task} from client queues.");
+            }
+            if app_state_task
+                .vscode_ide_queues
+                .lock()
+                .unwrap()
+                .remove(&connection_id_task)
+                .is_none()
+            {
+                error!("Unable to remove connection ID {connection_id_task} from IDE queues.");
+            }
+
+            from_ide_rx.close();
+            from_ide_rx.close();
+
+            // Drain any remaining messages after closing the queue.
+            while let Some(m) = from_ide_rx.recv().await {
+                warn!("Dropped queued message {m:?}");
+            }
+            while let Some(m) = from_client_rx.recv().await {
+                warn!("Dropped queued message {m:?}");
             }
         }
     });
@@ -311,31 +408,13 @@ pub async fn vscode_client_websocket(
 }
 
 // Respond to requests for the filesystem.
-#[get("/vsc/fs/{connection_id}/{path:.*}")]
+#[get("/vsc/fs/{connection_id}/{file_path:.*}")]
 async fn serve_vscode_fs(
-    _req: HttpRequest,
-    _app_state: web::Data<AppState>,
-    _connection_id: web::Path<String>,
-    orig_path: web::Path<String>,
-) -> impl Responder {
-    let _file_path = match Path::new(&orig_path.to_string()).canonicalize() {
-        Ok(p) => p,
-        Err(err) => {
-            return html_not_found(&format!(
-                "<p>The requested path <code>{orig_path}</code> is not valid: {err}.</p>"
-            ))
-        }
-    };
-
-    html_not_found("TODO")
-    /* ```
-    let file_contents = match smart_read(&file_path, &req).await {
-        Ok(fc) => fc,
-        Err(err) => return err,
-    };
-
-    serve_file(&file_path, &file_contents, &req, app_state).await
-    ``` */
+    request_path: web::Path<(String, String)>,
+    req: HttpRequest,
+    app_state: web::Data<AppState>,
+) -> HttpResponse {
+    filesystem_endpoint(request_path, &req, &app_state).await
 }
 
 // ## Tests
@@ -344,7 +423,7 @@ mod test {
     use std::io::Error;
 
     use actix_rt::task::JoinHandle;
-    use assertables::{assert_starts_with, assert_starts_with_as_result};
+    use assertables::{assert_ends_with, assert_starts_with};
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
     use minreq;
@@ -385,8 +464,18 @@ mod test {
     async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
         ws_stream: &mut WebSocketStream<S>,
     ) -> EditorMessage {
-        let msg = ws_stream.next().await.unwrap().unwrap();
-        serde_json::from_str(&msg.into_text().unwrap()).unwrap()
+        let msg_txt = loop {
+            let msg = ws_stream.next().await.unwrap().unwrap();
+            match msg {
+                Message::Close(_) => panic!("Unexpected close message."),
+                Message::Ping(_) => ws_stream.send(Message::Pong(vec![])).await.unwrap(),
+                Message::Pong(_) => panic!("Unexpected pong message."),
+                Message::Text(txt) => break txt,
+                Message::Binary(_) => panic!("Unexpected binary message."),
+                Message::Frame(_) => panic!("Unexpected frame message."),
+            }
+        };
+        serde_json::from_str(&msg_txt).expect(&format!("Unable to convert '{msg_txt}' to JSON."))
     }
 
     // Test incorrect inputs: two connections with the same ID, sending the
@@ -556,22 +645,20 @@ mod test {
             &mut ws_ide,
             &EditorMessage {
                 id: 2,
-                message: EditorMessageContents::CurrentFile("only-in-ide.py".to_string()),
+                message: EditorMessageContents::CurrentFile(format!(
+                    "{}/only-in-ide.py",
+                    test_dir.to_str().unwrap()
+                )),
             },
         )
         .await;
 
         // This should be passed to the Client.
-        /*
         let em = read_message(&mut ws_client).await;
-        assert_eq!(
-            em,
-            EditorMessage {
-                id: 2,
-                message: EditorMessageContents::CurrentFile(
-                    "/vsc/fs/test-connection-id3/only-in-ide.py".to_string()
-                )
-            }
+        assert_eq!(em.id, 2);
+        assert_ends_with!(
+            cast!(&em.message, EditorMessageContents::CurrentFile),
+            "/only-in-ide.py"
         );
 
         // The Client should send a response.
@@ -594,6 +681,17 @@ mod test {
             }
         );
 
+        // 5. The Client should send a GET request for this file.
+        let response = minreq::get(format!(
+            "http://localhost:8080/vsc/fs/test-connection-id3/{}/none.py",
+            test_dir.to_str().unwrap()
+        ))
+        .send()
+        .unwrap();
+        println!("{response:?}, {:?}", response.as_str());
+        //assert!(false);
+
+        /*
         // 5. Send an `Update` message with the contents of this file.
         send_message(
             &mut ws_ide,
