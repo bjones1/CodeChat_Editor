@@ -254,10 +254,10 @@ macro_rules! oneshot_send {
 #[macro_export]
 macro_rules! queue_send {
     ($tx: expr) => {
-        $crate::oneshot_send!($tx.await);
+        $crate::oneshot_send!($tx.await)
     };
     ($tx: expr, $label: tt) => {
-        $crate::oneshot_send!($tx.await, $label);
+        $crate::oneshot_send!($tx.await, $label)
     };
 }
 
@@ -508,33 +508,50 @@ async fn make_simple_http_response(
                 // image/video/etc.
                 Err(_) => (SimpleHttpResponse::Bin(file_path.clone()), None),
                 Ok(_) => {
-                    let is_current = file_path.canonicalize().unwrap() == current_filepath;
-                    let (simple_http_response, option_codechat_for_web) = serve_file(
-                        file_path,
-                        &file_contents,
-                        http_request.is_toc,
-                        is_current,
-                        http_request.is_test_mode,
-                    )
-                    .await;
-                    // If this file is editable and is the main
-                    // file, send an `Update`. The
-                    // `simple_http_response` contains the
-                    // Client.
-                    (
-                        simple_http_response,
-                        option_codechat_for_web.map(|codechat_for_web| {
-                            EditorMessageContents::Update(UpdateMessageContents {
-                                contents: Some(codechat_for_web),
-                                cursor_position: None,
-                                scroll_position: None,
-                            })
-                        }),
-                    )
+                    text_file_to_response(http_request, current_filepath, file_path, &file_contents)
+                        .await
                 }
             }
         }
     }
+}
+
+async fn text_file_to_response(
+    // The HTTP request presented to the processing task.
+    http_request: &ProcessingTaskHttpRequest,
+    // Path to the file currently being edited.
+    current_filepath: &Path,
+    file_path: &Path,
+    file_contents: &str,
+) -> (
+    // The response to send back to the HTTP endpoint.
+    SimpleHttpResponse,
+    // If this file is currently being edited, this is the body of an `Update` message to send.
+    Option<EditorMessageContents>,
+) {
+    let is_current = file_path.canonicalize().unwrap() == current_filepath;
+    let (simple_http_response, option_codechat_for_web) = serve_file(
+        file_path,
+        file_contents,
+        http_request.is_toc,
+        is_current,
+        http_request.is_test_mode,
+    )
+    .await;
+    // If this file is editable and is the main
+    // file, send an `Update`. The
+    // `simple_http_response` contains the
+    // Client.
+    (
+        simple_http_response,
+        option_codechat_for_web.map(|codechat_for_web| {
+            EditorMessageContents::Update(UpdateMessageContents {
+                contents: Some(codechat_for_web),
+                cursor_position: None,
+                scroll_position: None,
+            })
+        }),
+    )
 }
 
 async fn serve_file(

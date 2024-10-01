@@ -18,14 +18,17 @@
 // ## Imports
 //
 // ### Standard library
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 // ### Third-party
 use actix_web::{
     error::{Error, ErrorBadRequest},
     get, web, HttpRequest, HttpResponse,
 };
-use log::{error, info, warn};
+use log::{error, warn};
 use open;
 use tokio::{select, sync::mpsc};
 
@@ -35,7 +38,11 @@ use super::{
     EditorMessageContents, IdeType, WebsocketQueues,
 };
 use crate::{
-    oneshot_send, queue_send, webserver::{escape_html, filesystem_endpoint, html_wrapper, make_simple_http_response, path_to_url, ResultOkTypes}
+    oneshot_send, queue_send,
+    webserver::{
+        escape_html, filesystem_endpoint, html_wrapper, make_simple_http_response, path_to_url,
+        text_file_to_response, ProcessingTaskHttpRequest, ResultOkTypes,
+    },
 };
 
 // ## Code
@@ -134,6 +141,8 @@ pub async fn vscode_ide_websocket(
         // to provide a way to exit the current task.
         'task: {
             let mut current_file = PathBuf::new();
+            let mut load_file_requests: HashMap<u32, ProcessingTaskHttpRequest> = HashMap::new();
+
             // Get the first message sent by the IDE.
             let Some(message): std::option::Option<EditorMessage> = from_ide_rx.recv().await else {
                 error!("{}", "IDE websocket received no data.");
@@ -295,13 +304,16 @@ pub async fn vscode_ide_websocket(
 
                     // Handle HTTP requests.
                     Some(http_request) = from_http_rx.recv() => {
-                        let (simple_http_response, option_update) = make_simple_http_response(&http_request, &current_file).await;
-                        if let Some(update) = option_update {
-                            // Send the update to the client.
-                            queue_send!(to_client_tx.send(EditorMessage { id, message: update }));
-                            id += 1;
-                        }
-                        oneshot_send!(http_request.response_queue.send(simple_http_response));
+                        // Store the ID and request, which are needed to send a response when the `LoadFile` result is received.
+                        let file_path = http_request.file_path.clone();
+                        load_file_requests.insert(id, http_request);
+
+                        // Convert the request into a `LoadFile` message.
+                        queue_send!(to_ide_tx.send(EditorMessage {
+                            id,
+                            message: EditorMessageContents::LoadFile(file_path)
+                        }));
+                        id += 1;
                     }
 
                     // Handle messages from the client.
@@ -317,13 +329,49 @@ pub async fn vscode_ide_websocket(
                                 send_response(&to_client_tx, client_message.id, Err(msg.to_string())).await;
                             },
 
-                            // Handle messages that are simply passed through.
-                            EditorMessageContents::RequestClose |
-                            EditorMessageContents::Result(_) => {
-                                // Send the message to the IDE.
-                                info!("Sending message {client_message:?} to IDE.");
-                                queue_send!(to_ide_tx.send(client_message));
+                            // Pass a `Result` message to the Client, unless it's a `LoadFile` result.
+                            EditorMessageContents::Result(ref result) => {
+                                // Get the file contents from a `LoadFile` result; otherwise, this is None.
+                                let file_contents_option = match result {
+                                    Err(_) => None,
+                                    Ok(result_ok) => match result_ok {
+                                        ResultOkTypes::Void => None,
+                                        ResultOkTypes::LoadFile(file_contents) => Some(file_contents),
+                                    }
+                                };
+                                // Process the file contents.
+                                if let Some(file_contents) = file_contents_option {
+                                    // Get the associated HTTP request.
+                                    if let Some(http_request) = load_file_requests.remove(&client_message.id) {
+                                        if let Some(file_contents) = file_contents {
+                                            let (simple_http_response, option_update) = text_file_to_response(&http_request, &current_file, &http_request.file_path, file_contents).await;
+                                            if let Some(update) = option_update {
+                                                // Send the update to the client.
+                                                queue_send!(to_client_tx.send(EditorMessage { id: client_message.id, message: update }));
+                                                id += 1;
+                                            }
+                                            oneshot_send!(http_request.response_queue.send(simple_http_response));
+                                        } else {
+                                            // The file wasn't available in the IDE. Look for it in the filesystem.
+                                            let (simple_http_response, option_update) = make_simple_http_response(&http_request, &current_file).await;
+                                            if let Some(update) = option_update {
+                                                // Send the update to the client.
+                                                queue_send!(to_client_tx.send(EditorMessage { id, message: update }));
+                                                id += 1;
+                                            }
+                                            oneshot_send!(http_request.response_queue.send(simple_http_response));
+                                                            }
+                                    } else {
+                                        error!("Error: no HTTP request found for LoadFile result ID {}.", client_message.id);
+                                    }
+                                } else {
+                                    // Send the message to the IDE.
+                                    queue_send!(to_ide_tx.send(client_message));
+                                }
                             },
+
+                            // Handle messages that are simply passed through.
+                            EditorMessageContents::RequestClose => queue_send!(to_ide_tx.send(client_message)),
 
                             // Handle the `Update` message.
                             EditorMessageContents::Update(_update) => {
