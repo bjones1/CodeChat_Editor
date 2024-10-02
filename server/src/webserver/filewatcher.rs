@@ -377,13 +377,13 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
             // Provide it a file to open.
             let encoded_path = path_to_url(&current_filepath);
             let url_pathbuf = format!("/fw/fsc/{connection_id}/{encoded_path}");
-            let mut id: u32 = 0;
+            let mut id: f64 = 0.0;
             queue_send!(to_websocket_tx.send(EditorMessage {
                 id,
                 message: EditorMessageContents::CurrentFile(url_pathbuf)
             }), 'task);
             // Note: it's OK to postpone the increment to here; if the `queue_send` exits before this runs, the message didn't get sent, so the ID wasn't used.
-            id += 1;
+            id += 1.0;
 
             // Create a queue for HTTP requests fo communicate with this task.
             let (from_http_tx, mut from_http_rx) = mpsc::channel(10);
@@ -407,7 +407,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     // Send using ID 0 to indicate this isn't a
                                     // response to a message received from the
                                     // client.
-                                    send_response(&to_websocket_tx, 0, Err(msg)).await;
+                                    send_response(&to_websocket_tx, 0.0, Err(msg)).await;
                                 }
                             }
 
@@ -431,7 +431,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                                             id,
                                                             message: EditorMessageContents::Closed
                                                         }));
-                                                        id += 1;
+                                                        id += 1.0;
                                                         continue;
                                                     }
                                                 }
@@ -445,7 +445,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                                         id,
                                                         message: EditorMessageContents::Closed
                                                     }));
-                                                    id += 1;
+                                                    id += 1.0;
                                                 }
 
                                                 // Translate the file.
@@ -461,7 +461,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                                                 scroll_position: None,
                                                             }),
                                                         }));
-                                                        id += 1;
+                                                        id += 1.0;
 
                                                 } else {
                                                     // Close the file -- it's not CodeChat
@@ -470,7 +470,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                                         id,
                                                         message: EditorMessageContents::Closed
                                                     }));
-                                                    id += 1;
+                                                    id += 1.0;
                                                 }
 
                                             } else {
@@ -492,7 +492,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         if let Some(update) = option_update {
                             // Send the update to the client.
                             queue_send!(to_websocket_tx.send(EditorMessage { id, message: update }));
-                            id += 1;
+                            id += 1.0;
                         }
                         oneshot_send!(http_request.response_queue.send(simple_http_response));
                     }
@@ -740,7 +740,7 @@ mod tests {
         // The initial web request for the Client framework produces a
         // `CurrentFile`.
         let (id, url_string) = get_message_as!(client_rx, EditorMessageContents::CurrentFile);
-        assert_eq!(id, 0);
+        assert_eq!(id, 0.0);
 
         // Compute the path this message should contain.
         let mut test_path = test_dir.clone();
@@ -766,7 +766,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
         let (id, umc) = get_message_as!(client_rx, EditorMessageContents::Update);
-        assert_eq!(id, 1);
+        assert_eq!(id, 1.0);
         send_response(&ide_tx_queue, id, Ok(ResultOkTypes::Void)).await;
 
         // Check the contents.
@@ -790,8 +790,8 @@ mod tests {
         // The initial web request for the Client framework produces a
         // `CurrentFile`.
         let (id, _) = get_message_as!(client_rx, EditorMessageContents::CurrentFile);
-        assert_eq!(id, 0);
-        send_response(&ide_tx_queue, 0, Ok(ResultOkTypes::Void)).await;
+        assert_eq!(id, 0.0);
+        send_response(&ide_tx_queue, 0.0, Ok(ResultOkTypes::Void)).await;
 
         // The follow-up web request for the file produces an `Update`.
         let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_string_lossy());
@@ -799,13 +799,13 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
         let (id, _) = get_message_as!(client_rx, EditorMessageContents::Update);
-        assert_eq!(id, 1);
-        send_response(&ide_tx_queue, 1, Ok(ResultOkTypes::Void)).await;
+        assert_eq!(id, 1.0);
+        send_response(&ide_tx_queue, 1.0, Ok(ResultOkTypes::Void)).await;
 
         // 1.  Send an update message with no contents.
         ide_tx_queue
             .send(EditorMessage {
-                id: 0,
+                id: 0.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: None,
                     cursor_position: None,
@@ -818,14 +818,14 @@ mod tests {
         // Check that it produces no error.
         assert_eq!(
             get_message_as!(client_rx, EditorMessageContents::Result),
-            (0, Ok(ResultOkTypes::Void))
+            (0.0, Ok(ResultOkTypes::Void))
         );
 
         // 2.  Send invalid messages.
         for (id, msg) in [
-            (1, EditorMessageContents::Opened(IdeType::VSCode(true))),
-            (2, EditorMessageContents::ClientHtml("".to_string())),
-            (3, EditorMessageContents::RequestClose),
+            (1.0, EditorMessageContents::Opened(IdeType::VSCode(true))),
+            (2.0, EditorMessageContents::ClientHtml("".to_string())),
+            (3.0, EditorMessageContents::RequestClose),
         ] {
             ide_tx_queue
                 .send(EditorMessage { id, message: msg })
@@ -839,7 +839,7 @@ mod tests {
         // 3.  Send an update message with no path.
         ide_tx_queue
             .send(EditorMessage {
-                id: 4,
+                id: 4.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -860,13 +860,13 @@ mod tests {
         // Check that it produces no error.
         assert_eq!(
             get_message_as!(client_rx, EditorMessageContents::Result),
-            (4, Ok(ResultOkTypes::Void))
+            (4.0, Ok(ResultOkTypes::Void))
         );
 
         // 4.  Send an update message with unknown source language.
         ide_tx_queue
             .send(EditorMessage {
-                id: 5,
+                id: 5.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -888,7 +888,7 @@ mod tests {
         assert_eq!(
             get_message_as!(client_rx, EditorMessageContents::Result),
             (
-                5,
+                5.0,
                 Err("Unable to translate to source: Invalid mode".to_string())
             )
         );
@@ -898,7 +898,7 @@ mod tests {
         file_path.push("test.py");
         ide_tx_queue
             .send(EditorMessage {
-                id: 6,
+                id: 6.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -917,7 +917,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             get_message_as!(client_rx, EditorMessageContents::Result),
-            (6, Ok(ResultOkTypes::Void))
+            (6.0, Ok(ResultOkTypes::Void))
         );
 
         // Check that the requested file is written.
@@ -932,7 +932,7 @@ mod tests {
         assert_eq!(
             get_message_as!(client_rx, EditorMessageContents::Update),
             (
-                2,
+                2.0,
                 UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -949,7 +949,7 @@ mod tests {
             )
         );
         // Acknowledge this message.
-        send_response(&ide_tx_queue, 2, Ok(ResultOkTypes::Void)).await;
+        send_response(&ide_tx_queue, 2.0, Ok(ResultOkTypes::Void)).await;
 
         // 7.  Rename it and check for an close (the file watcher can't detect
         //     the destination file, so it's treated as the file is deleted).
@@ -959,11 +959,11 @@ mod tests {
         assert_eq!(
             client_rx.recv().await.unwrap(),
             EditorMessage {
-                id: 3,
+                id: 3.0,
                 message: EditorMessageContents::Closed
             }
         );
-        send_response(&ide_tx_queue, 3, Ok(ResultOkTypes::Void)).await;
+        send_response(&ide_tx_queue, 3.0, Ok(ResultOkTypes::Void)).await;
 
         // 8.  Load another file from the Client.
         let mut new_file_path = test_dir.clone();
@@ -974,14 +974,14 @@ mod tests {
         );
         ide_tx_queue
             .send(EditorMessage {
-                id: 7,
+                id: 7.0,
                 message: EditorMessageContents::CurrentFile(new_uri.clone()),
             })
             .await
             .unwrap();
         assert_eq!(
             get_message_as!(client_rx, EditorMessageContents::Result),
-            (7, Ok(ResultOkTypes::Void))
+            (7.0, Ok(ResultOkTypes::Void))
         );
 
         // The follow-up web request for the file produces an `Update`.
@@ -989,8 +989,8 @@ mod tests {
         let new_resp = test::call_service(&app, new_req).await;
         assert!(new_resp.status().is_success());
         let (id, _) = get_message_as!(client_rx, EditorMessageContents::Update);
-        assert_eq!(id, 4);
-        send_response(&ide_tx_queue, 4, Ok(ResultOkTypes::Void)).await;
+        assert_eq!(id, 4.0);
+        send_response(&ide_tx_queue, 4.0, Ok(ResultOkTypes::Void)).await;
 
         // 9.  Writes to this file should produce an update.
         fs::write(&new_file_path, "testing 1").unwrap();

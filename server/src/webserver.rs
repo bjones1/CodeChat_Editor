@@ -125,7 +125,7 @@ enum SimpleHttpResponse {
 struct EditorMessage {
     /// A value unique to this message; it's used to report results
     /// (success/failure) back to the sender.
-    id: u32,
+    id: f64,
     /// The actual message.
     message: EditorMessageContents,
 }
@@ -278,6 +278,17 @@ const REPLY_TIMEOUT: Duration = if cfg!(test) {
 /// The time to wait for a pong from the websocket in response to a ping sent by
 /// this server.
 const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
+
+/// The initial value for a message ID.
+const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
+    // A simpler value when testing.
+    0.0
+} else {
+    // In production, start with the smallest number exactly representable.
+    -((1i64 << f64::MANTISSA_DIGITS) - 1) as f64
+};
+/// The increment for a message ID. Since the Client, IDE, and Server all increment by this same amount but start at different values, this ensure that message IDs will be unique. (Given a mantissa of 53 bits plus a sign bit, 2^54 seconds = 574 million years before the message ID wraps around assuming an average of 1 message/second.)
+const MESSAGE_ID_INCREMENT: f64 = 3.0;
 
 lazy_static! {
     // Define the location of static files.
@@ -737,7 +748,7 @@ async fn client_websocket(
         };
 
         // Keep track of pending messages.
-        let mut pending_messages: HashMap<u32, JoinHandle<()>> = HashMap::new();
+        let mut pending_messages: HashMap<u64, JoinHandle<()>> = HashMap::new();
 
         // Shutdown may occur in a controlled process or an immediate websocket
         // close. If the Client needs to close, it can simply close its
@@ -826,7 +837,7 @@ async fn client_websocket(
                                             // the pending queue.
                                             if let EditorMessageContents::Result(_) = joint_message.message {
                                                 // Cancel the timeout for this result.
-                                                if let Some(task) = pending_messages.remove(&joint_message.id) {
+                                                if let Some(task) = pending_messages.remove(&joint_message.id.to_bits()) {
                                                     task.abort();
                                                 }
                                             }
@@ -863,7 +874,7 @@ async fn client_websocket(
                                 AggregatedMessage::Close(reason) => {
                                     info!("Closing per client request: {reason:?}");
                                     is_closing = true;
-                                    queue_send!(from_websocket_tx.send(EditorMessage { id: 0, message: EditorMessageContents::Closed }));
+                                    queue_send!(from_websocket_tx.send(EditorMessage { id: 0.0, message: EditorMessageContents::Closed }));
                                     break;
                                 }
 
@@ -908,7 +919,7 @@ async fn client_websocket(
                                     }), 'timeout);
                                 }
                             });
-                            pending_messages.insert(m.id, waiting_task);
+                            pending_messages.insert(m.id.to_bits(), waiting_task);
                         }
                     }
 
@@ -1033,7 +1044,7 @@ where
 
 // ## Utilities
 // Send a response to the client after processing a message from the client.
-async fn send_response(client_tx: &Sender<EditorMessage>, id: u32, result: MessageResult) {
+async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: MessageResult) {
     if let Err(err) = client_tx
         .send(EditorMessage {
             id,
