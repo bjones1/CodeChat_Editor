@@ -270,7 +270,7 @@ const IP_PORT: u16 = 8080;
 // The timeout for a reply from a websocket. Use a short timeout to speed up
 // unit tests.
 const REPLY_TIMEOUT: Duration = if cfg!(test) {
-    Duration::from_millis(50)
+    Duration::from_millis(500)
 } else {
     Duration::from_millis(2000)
 };
@@ -529,7 +529,11 @@ async fn text_file_to_response(
     // If this file is currently being edited, this is the body of an `Update` message to send.
     Option<EditorMessageContents>,
 ) {
-    let is_current = file_path.canonicalize().unwrap() == current_filepath;
+    // Compare using the canonical path first, then the absolute path if this fails. This is necessary because the file may not exist on the filesystem (only in the IDE).
+    let is_current = file_path
+        .canonicalize()
+        .map_or(false, |fp| fp == current_filepath)
+        || path::absolute(file_path).map_or(false, |fp| fp == current_filepath);
     let (simple_http_response, option_codechat_for_web) = serve_file(
         file_path,
         file_contents,

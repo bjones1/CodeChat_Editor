@@ -276,11 +276,57 @@ pub async fn vscode_ide_websocket(
                             },
 
                             // Handle messages that are simply passed through.
-                            EditorMessageContents::RequestClose |
-                            EditorMessageContents::Result(_) => {
-                                // Send the message to the client. TODO: a LoadFile should be processed here.
-                                queue_send!(to_client_tx.send(ide_message));
-                            },
+                            EditorMessageContents::RequestClose =>
+                                queue_send!(to_client_tx.send(ide_message)),
+
+                            // Pass a `Result` message to the Client, unless it's a `LoadFile` result.
+                            EditorMessageContents::Result(ref result) => {
+                                let is_loadfile = match result {
+                                    // See if this error was produced by a `LoadFile` result.
+                                    Err(err) => err.1,
+                                    Ok(result_ok) => match result_ok {
+                                        ResultOkTypes::Void => false,
+                                        ResultOkTypes::LoadFile(_) => true,
+                                    }
+                                };
+                                // Pass the message to the client if this isn't a `LoadFile` result (the only type of result which the Server should handle).
+                                if !is_loadfile {
+                                    queue_send!(to_client_tx.send(ide_message));
+                                    continue;
+                                }
+                                // Ensure there's an HTTP request for this `LoadFile` result.
+                                let Some(http_request) = load_file_requests.remove(&ide_message.id) else {
+                                    error!("Error: no HTTP request found for LoadFile result ID {}.", ide_message.id);
+                                    break 'task;
+                                };
+
+                                // Get the file contents from a `LoadFile` result; otherwise, this is None.
+                                let file_contents_option = match result {
+                                    Err((err, _)) => {
+                                        error!("{err}");
+                                        &None
+                                    },
+                                    Ok(result_ok) => match result_ok {
+                                        ResultOkTypes::Void => panic!("LoadFile result should not be void."),
+                                        ResultOkTypes::LoadFile(file_contents) => file_contents,
+                                    }
+                                };
+
+                                // Process the file contents.
+                                let (simple_http_response, option_update) = match file_contents_option {
+                                    Some(file_contents) =>
+                                        text_file_to_response(&http_request, &current_file, &http_request.file_path, file_contents).await,
+                                    None =>
+                                        // The file wasn't available in the IDE. Look for it in the filesystem.
+                                        make_simple_http_response(&http_request, &current_file).await
+                                };
+                                if let Some(update) = option_update {
+                                    // Send the update to the client.
+                                    queue_send!(to_client_tx.send(EditorMessage { id: ide_message.id, message: update }));
+                                    id += 1;
+                                }
+                                oneshot_send!(http_request.response_queue.send(simple_http_response));
+                            }
 
                             // Handle the `Update` message.
                             EditorMessageContents::Update(_update) => {
@@ -329,49 +375,12 @@ pub async fn vscode_ide_websocket(
                                 send_response(&to_client_tx, client_message.id, Err(msg.to_string())).await;
                             },
 
-                            // Pass a `Result` message to the Client, unless it's a `LoadFile` result.
-                            EditorMessageContents::Result(ref result) => {
-                                // Get the file contents from a `LoadFile` result; otherwise, this is None.
-                                let file_contents_option = match result {
-                                    Err(_) => None,
-                                    Ok(result_ok) => match result_ok {
-                                        ResultOkTypes::Void => None,
-                                        ResultOkTypes::LoadFile(file_contents) => Some(file_contents),
-                                    }
-                                };
-                                // Process the file contents.
-                                if let Some(file_contents) = file_contents_option {
-                                    // Get the associated HTTP request.
-                                    if let Some(http_request) = load_file_requests.remove(&client_message.id) {
-                                        if let Some(file_contents) = file_contents {
-                                            let (simple_http_response, option_update) = text_file_to_response(&http_request, &current_file, &http_request.file_path, file_contents).await;
-                                            if let Some(update) = option_update {
-                                                // Send the update to the client.
-                                                queue_send!(to_client_tx.send(EditorMessage { id: client_message.id, message: update }));
-                                                id += 1;
-                                            }
-                                            oneshot_send!(http_request.response_queue.send(simple_http_response));
-                                        } else {
-                                            // The file wasn't available in the IDE. Look for it in the filesystem.
-                                            let (simple_http_response, option_update) = make_simple_http_response(&http_request, &current_file).await;
-                                            if let Some(update) = option_update {
-                                                // Send the update to the client.
-                                                queue_send!(to_client_tx.send(EditorMessage { id, message: update }));
-                                                id += 1;
-                                            }
-                                            oneshot_send!(http_request.response_queue.send(simple_http_response));
-                                                            }
-                                    } else {
-                                        error!("Error: no HTTP request found for LoadFile result ID {}.", client_message.id);
-                                    }
-                                } else {
-                                    // Send the message to the IDE.
-                                    queue_send!(to_ide_tx.send(client_message));
-                                }
+                                send_response(&to_client_tx, client_message.id, Err((msg.to_string(), false))).await;
                             },
 
                             // Handle messages that are simply passed through.
-                            EditorMessageContents::RequestClose => queue_send!(to_ide_tx.send(client_message)),
+                            EditorMessageContents::RequestClose |
+                            EditorMessageContents::Result(_) => queue_send!(to_ide_tx.send(client_message)),
 
                             // Handle the `Update` message.
                             EditorMessageContents::Update(_update) => {
@@ -632,10 +641,12 @@ mod test {
         .expect("Failed to connect");
 
         // 1. Send the `Opened` message.
+        //
+        // Message ids: IDE - 100->200, Server - 0, Client - 1000.
         send_message(
             &mut ws_ide,
             &EditorMessage {
-                id: 0,
+                id: 100,
                 message: EditorMessageContents::Opened(IdeType::VSCode(true)),
             },
         )
@@ -646,12 +657,14 @@ mod test {
         assert_eq!(
             em,
             EditorMessage {
-                id: 0,
+                id: 100,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             }
         );
 
         // 2. Next, wait for the next message -- the HTML.
+        //
+        // Message ids: IDE - 200, Server - 0->1, Client - 1000.
         let em = read_message(&mut ws_ide).await;
         assert_starts_with!(
             cast!(&em.message, EditorMessageContents::ClientHtml),
@@ -670,16 +683,42 @@ mod test {
         .await;
 
         // 3. Fetch a non-existent file and verify the response returns an error.
-        assert_eq!(
-            minreq::get(format!(
-                "http://localhost:8080/vsc/fs/test-connection-id3/{}/none.py",
-                test_dir.to_str().unwrap()
-            ))
-            .send()
-            .unwrap()
-            .status_code,
-            404
-        );
+        //
+        // Do this is a thread, since the request generates a message that requires a response in order to complete.
+        let test_dir_thread = test_dir.clone();
+        let join_handle = thread::spawn(move || {
+            assert_eq!(
+                minreq::get(format!(
+                    "http://localhost:8080/vsc/fs/test-connection-id3/{}/none.py",
+                    test_dir_thread.to_str().unwrap()
+                ))
+                .send()
+                .unwrap()
+                .status_code,
+                404
+            )
+        });
+
+        // This should produce a `LoadFile` message.
+        //
+        // Message ids: IDE - 200, Server - 1->2, Client - 1000.
+        let em = read_message(&mut ws_ide).await;
+        let msg = cast!(em.message, EditorMessageContents::LoadFile);
+        assert_ends_with!(msg.to_string_lossy(), "/none.py");
+        assert_eq!(em.id, 1);
+
+        // Reply to the `LoadFile` message -- the file isn't present.
+        send_message(
+            &mut ws_ide,
+            &EditorMessage {
+                id: 1,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+            },
+        )
+        .await;
+
+        // This should cause the request to complete.
+        join_handle.join().unwrap();
 
         // Create a websocket to emulate the client.
         let (mut ws_client, _) = connect_async(format!(
@@ -689,10 +728,12 @@ mod test {
         .expect("Failed to connect");
 
         // 4. Send a `CurrentFile` message with a file to edit that exists only in the IDE.
+        //
+        // Message ids: IDE - 200->300, Server - 2, Client - 1000.
         send_message(
             &mut ws_ide,
             &EditorMessage {
-                id: 2,
+                id: 200,
                 message: EditorMessageContents::CurrentFile(format!(
                     "{}/only-in-ide.py",
                     test_dir.to_str().unwrap()
@@ -703,7 +744,7 @@ mod test {
 
         // This should be passed to the Client.
         let em = read_message(&mut ws_client).await;
-        assert_eq!(em.id, 2);
+        assert_eq!(em.id, 200);
         assert_ends_with!(
             cast!(&em.message, EditorMessageContents::CurrentFile),
             "/only-in-ide.py"
@@ -713,7 +754,7 @@ mod test {
         send_message(
             &mut ws_client,
             &EditorMessage {
-                id: 2,
+                id: 200,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             },
         )
@@ -724,22 +765,79 @@ mod test {
         assert_eq!(
             em,
             EditorMessage {
-                id: 2,
+                id: 200,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
             }
         );
 
         // 5. The Client should send a GET request for this file.
-        let response = minreq::get(format!(
-            "http://localhost:8080/vsc/fs/test-connection-id3/{}/none.py",
-            test_dir.to_str().unwrap()
-        ))
-        .send()
-        .unwrap();
-        println!("{response:?}, {:?}", response.as_str());
-        //assert!(false);
+        let test_dir_thread = test_dir.clone();
+        let join_handle = thread::spawn(move || {
+            assert_eq!(
+                minreq::get(format!(
+                    "http://localhost:8080/vsc/fs/test-connection-id3/{}/only-in-ide.py",
+                    test_dir_thread.to_str().unwrap()
+                ))
+                .send()
+                .unwrap()
+                .status_code,
+                200
+            )
+        });
 
-        /*
+        // This should produce a `LoadFile` message.
+        //
+        // Message ids: IDE - 200, Server - 2->3, Client - 1000.
+        let em = read_message(&mut ws_ide).await;
+        let msg = cast!(em.message, EditorMessageContents::LoadFile);
+        assert_ends_with!(msg.to_string_lossy(), "/only-in-ide.py");
+        assert_eq!(em.id, 2);
+
+        // Reply to the `LoadFile` message with the file's contents.
+        send_message(
+            &mut ws_ide,
+            &EditorMessage {
+                id: 2,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(Some(
+                    "testing".to_string(),
+                )))),
+            },
+        )
+        .await;
+        join_handle.join().unwrap();
+
+        // This should also produce an `Update` message.
+        //
+        // Message ids: IDE - 200, Server - 3, Client - 1000.
+        let em = read_message(&mut ws_client).await;
+        assert_eq!(
+            em,
+            EditorMessage {
+                id: 2,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "python".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "testing".to_string(),
+                            doc_blocks: vec![],
+                        },
+                    }),
+                    cursor_position: None,
+                    scroll_position: None,
+                })
+            }
+        );
+        send_message(
+            &mut ws_client,
+            &EditorMessage {
+                id: 2,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            },
+        )
+        .await;
+
         // 5. Send an `Update` message with the contents of this file.
         send_message(
             &mut ws_ide,
@@ -762,6 +860,7 @@ mod test {
         )
         .await;
 
+        /*
         // This should become one update to load the correct URL/directory, then another with the actual file contents.
         let em = read_message(&mut ws_client).await;
         assert_eq!(
