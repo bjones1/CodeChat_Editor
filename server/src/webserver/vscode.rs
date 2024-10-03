@@ -38,11 +38,16 @@ use super::{
     EditorMessageContents, IdeType, WebsocketQueues,
 };
 use crate::{
-    oneshot_send, queue_send,
+    oneshot_send,
+    processing::{
+        codechat_for_web_to_source, source_to_codechat_for_web_string, CodeChatForWeb, CodeMirror,
+        TranslationResultsString,
+    },
+    queue_send,
     webserver::{
         escape_html, filesystem_endpoint, html_wrapper, make_simple_http_response, path_to_url,
-        text_file_to_response, ProcessingTaskHttpRequest, ResultOkTypes, INITIAL_MESSAGE_ID,
-        MESSAGE_ID_INCREMENT,
+        text_file_to_response, ProcessingTaskHttpRequest, ResultOkTypes, UpdateMessageContents,
+        INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
     },
 };
 
@@ -330,10 +335,25 @@ pub async fn vscode_ide_websocket(
                             }
 
                             // Handle the `Update` message.
-                            EditorMessageContents::Update(_update) => {
-                                // First, see if this update requires a
-                                // different working directory. If so, split it
-                                // into two parts.
+                            EditorMessageContents::Update(update) => {
+                                if let Some(contents) = update.contents {
+                                // Translate the file.
+                                let (translation_results_string, _path_to_toc) =
+                                source_to_codechat_for_web_string(&contents.source.doc, &current_file, false);
+                                if let TranslationResultsString::CodeChat(cc) = translation_results_string {
+                                    // Send the new contents
+                                    queue_send!(to_client_tx.send(EditorMessage {
+                                            id: ide_message.id,
+                                            message: EditorMessageContents::Update(UpdateMessageContents {
+                                                contents: Some(cc),
+                                                cursor_position: None,
+                                                scroll_position: None,
+                                            }),
+                                        }));
+                                    } else {
+                                        error!("Error translating source to CodeChat.");
+                                    }
+                                }
                             }
 
                             // Update the current file; translate it to a URL then pass it to the Client.
@@ -379,7 +399,37 @@ pub async fn vscode_ide_websocket(
                             EditorMessageContents::Result(_) => queue_send!(to_ide_tx.send(client_message)),
 
                             // Handle the `Update` message.
-                            EditorMessageContents::Update(_update) => {
+                            EditorMessageContents::Update(update_message_contents) => {
+                                let codechat_for_web = match update_message_contents.contents {
+                                    None => None,
+                                    Some(cfw) => match codechat_for_web_to_source(
+                                        &cfw)
+                                    {
+                                        Ok(result) => Some(CodeChatForWeb {
+                                            metadata: cfw.metadata,
+                                            source: CodeMirror {
+                                                doc: result,
+                                                doc_blocks: vec![],
+                                            },
+                                        }),
+                                        Err(message) => {
+                                            let msg = format!(
+                                                "Unable to translate to source: {message}"
+                                            );
+                                            error!("{msg}");
+                                            send_response(&to_client_tx, client_message.id, Err(msg)).await;
+                                            continue;
+                                        }
+                                    },
+                                };
+                                queue_send!(to_ide_tx.send(EditorMessage {
+                                    id: client_message.id,
+                                    message: EditorMessageContents::Update(UpdateMessageContents {
+                                        contents: codechat_for_web,
+                                        cursor_position: update_message_contents.cursor_position,
+                                        scroll_position: update_message_contents.scroll_position,
+                                    })
+                                }));
                             },
 
                             // Update the current file; translate it to a URL then pass it to the IDE.
@@ -473,14 +523,22 @@ async fn serve_vscode_fs(
 // ## Tests
 #[cfg(test)]
 mod test {
-    use std::{io::Error, thread};
+    use std::{
+        io::Error,
+        thread,
+        time::{Duration, SystemTime},
+    };
 
     use actix_rt::task::JoinHandle;
     use assertables::{assert_ends_with, assert_starts_with};
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
     use minreq;
-    use tokio::io::{AsyncRead, AsyncWrite};
+    use tokio::{
+        io::{AsyncRead, AsyncWrite},
+        select,
+        time::sleep,
+    };
     use tokio_tungstenite::{
         connect_async, tungstenite::http::StatusCode, tungstenite::protocol::Message,
         WebSocketStream,
@@ -517,8 +575,12 @@ mod test {
     async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
         ws_stream: &mut WebSocketStream<S>,
     ) -> EditorMessage {
+        let now = SystemTime::now();
         let msg_txt = loop {
-            let msg = ws_stream.next().await.unwrap().unwrap();
+            let msg = select! {
+                data = ws_stream.next() => data.unwrap().unwrap(),
+                _ = sleep(Duration::from_secs(3) - now.elapsed().unwrap()) => panic!("Timeout waiting for message")
+            };
             match msg {
                 Message::Close(_) => panic!("Unexpected close message."),
                 Message::Ping(_) => ws_stream.send(Message::Pong(vec![])).await.unwrap(),
@@ -649,9 +711,8 @@ mod test {
         .await;
 
         // Get the response. It should be success.
-        let em = read_message(&mut ws_ide).await;
         assert_eq!(
-            em,
+            read_message(&mut ws_ide).await,
             EditorMessage {
                 id: 1.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
@@ -757,9 +818,8 @@ mod test {
         .await;
 
         // The IDE should receive it.
-        let em = read_message(&mut ws_ide).await;
         assert_eq!(
-            em,
+            read_message(&mut ws_ide).await,
             EditorMessage {
                 id: 4.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
@@ -795,19 +855,18 @@ mod test {
             &EditorMessage {
                 id: 6.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(Some(
-                    "testing".to_string(),
+                    "# testing".to_string(),
                 )))),
             },
         )
         .await;
         join_handle.join().unwrap();
 
-        // This should also produce an `Update` message.
+        // This should also produce an `Update` message sent from the Server.
         //
         // Message ids: IDE - 7, Server - 9->12, Client - 2->5.
-        let em = read_message(&mut ws_client).await;
         assert_eq!(
-            em,
+            read_message(&mut ws_client).await,
             EditorMessage {
                 id: 9.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
@@ -816,8 +875,14 @@ mod test {
                             mode: "python".to_string(),
                         },
                         source: CodeMirror {
-                            doc: "testing".to_string(),
-                            doc_blocks: vec![],
+                            doc: "\n".to_string(),
+                            doc_blocks: vec![(
+                                0,
+                                0,
+                                "".to_string(),
+                                "#".to_string(),
+                                "<p>testing</p>\n".to_string()
+                            )],
                         },
                     }),
                     cursor_position: None,
@@ -833,8 +898,16 @@ mod test {
             },
         )
         .await;
+        // The message, though a result for the `Update` sent by the Server, will still be echoed back to the IDE.
+        assert_eq!(
+            read_message(&mut ws_ide).await,
+            EditorMessage {
+                id: 9.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+            }
+        );
 
-        // 5. Send an `Update` message with the contents of this file.
+        // 6. Send an `Update` message from the IDE.
         //
         // Message ids: IDE - 7->10, Server - 9, Client - 5.
         send_message(
@@ -847,7 +920,7 @@ mod test {
                             mode: "python".to_string(),
                         },
                         source: CodeMirror {
-                            doc: "print('Hello, world!')".to_string(),
+                            doc: "# more".to_string(),
                             doc_blocks: vec![],
                         },
                     }),
@@ -857,19 +930,101 @@ mod test {
             },
         )
         .await;
-
-        /*
-        // This should become one update to load the correct URL/directory, then another with the actual file contents.
-        let em = read_message(&mut ws_client).await;
         assert_eq!(
-            cast!(em.message, EditorMessageContents::Update),
-            UpdateMessageContents {
-                contents: None,
-                cursor_position: None,
-                scroll_position: None,
+            read_message(&mut ws_client).await,
+            EditorMessage {
+                id: 7.0,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "python".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "\n".to_string(),
+                            doc_blocks: vec![(
+                                0,
+                                0,
+                                "".to_string(),
+                                "#".to_string(),
+                                "<p>more</p>\n".to_string()
+                            )],
+                        },
+                    }),
+                    cursor_position: None,
+                    scroll_position: None,
+                })
             }
         );
-        */
+        send_message(
+            &mut ws_client,
+            &EditorMessage {
+                id: 7.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            },
+        )
+        .await;
+        assert_eq!(
+            read_message(&mut ws_ide).await,
+            EditorMessage {
+                id: 7.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+            }
+        );
+
+        // 7. Send an `Update` message from the Client.
+        //
+        // Message ids: IDE - 10, Server - 9, Client - 5->8.
+        send_message(
+            &mut ws_client,
+            &EditorMessage {
+                id: 5.0,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "python".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "\n".to_string(),
+                            doc_blocks: vec![(
+                                0,
+                                0,
+                                "".to_string(),
+                                "#".to_string(),
+                                "less\n".to_string(),
+                            )],
+                        },
+                    }),
+                    cursor_position: None,
+                    scroll_position: None,
+                }),
+            },
+        )
+        .await;
+        assert_eq!(
+            read_message(&mut ws_ide).await,
+            EditorMessage {
+                id: 5.0,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "python".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "# less\n".to_string(),
+                            doc_blocks: vec![],
+                        },
+                    }),
+                    cursor_position: None,
+                    scroll_position: None,
+                })
+            }
+        );
+
+        // TODO:
+        // - Send a CurrentFile from the Client.
+        // - Fetch a file that exists in the filesystem but not in the IDE.
+        // - Send a `RequestClose` from the IDE.
+        // - Test shutdown from both ends (close the websocket).
 
         check_logger_errors(0);
         // Report any errors produced when removing the temporary directory.

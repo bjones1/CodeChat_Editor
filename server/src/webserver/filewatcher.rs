@@ -502,18 +502,16 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             EditorMessageContents::Update(update_message_contents) => {
                                 let result = 'process: {
                                     // With code or a path, there's nothing to
-                                    // save. TODO: this should store and
-                                    // remember the path, instead of needing it
-                                    // repeated each time.
+                                    // save.
                                     let codechat_for_web = match update_message_contents.contents {
                                         None => break 'process Ok(ResultOkTypes::Void),
-                                        Some(cwf) => cwf,
+                                        Some(cfw) => cfw,
                                     };
 
                                     // Translate from the CodeChatForWeb format
                                     // to the contents of a source file.
                                     let file_contents = match codechat_for_web_to_source(
-                                        codechat_for_web,
+                                        &codechat_for_web,
                                     ) {
                                         Ok(r) => r,
                                         Err(message) => {

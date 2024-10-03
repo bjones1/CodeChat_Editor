@@ -167,11 +167,11 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
 
 // ## Transform `CodeChatForWeb` to source code
 //
-// This function takes in a source file in web-editable format
-// (the `CodeChatForWeb` struct) and transforms it into source code.
+/// This function takes in a source file in web-editable format
+/// (the `CodeChatForWeb` struct) and transforms it into source code.
 pub fn codechat_for_web_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
-    codechat_for_web: CodeChatForWeb,
+    codechat_for_web: &CodeChatForWeb,
 ) -> Result<String, String> {
     // Given the mode, find the lexer.
     let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match LEXERS
@@ -860,13 +860,13 @@ mod tests {
     fn test_codechat_for_web_to_source() {
         let codechat_for_web = build_codechat_for_web("python", "", vec![]);
         assert_eq!(
-            codechat_for_web_to_source(codechat_for_web),
+            codechat_for_web_to_source(&codechat_for_web),
             Result::Ok("".to_string())
         );
 
         let codechat_for_web = build_codechat_for_web("undefined", "", vec![]);
         assert_eq!(
-            codechat_for_web_to_source(codechat_for_web),
+            codechat_for_web_to_source(&codechat_for_web),
             Result::Err("Invalid mode".to_string())
         );
     }
