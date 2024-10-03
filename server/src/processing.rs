@@ -166,7 +166,6 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
 }
 
 // ## Transform `CodeChatForWeb` to source code
-//
 /// This function takes in a source file in web-editable format
 /// (the `CodeChatForWeb` struct) and transforms it into source code.
 pub fn codechat_for_web_to_source(

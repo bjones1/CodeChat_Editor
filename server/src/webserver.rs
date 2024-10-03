@@ -15,7 +15,6 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// # `webserver.rs` -- Serve CodeChat Editor Client webpages
-//
 // ## Submodules
 mod filewatcher;
 #[cfg(test)]
@@ -182,7 +181,8 @@ type MessageResult = Result<
 enum ResultOkTypes {
     /// Most messages have no result.
     Void,
-    /// The `LoadFile` message provides file contents, if available. This message may only be sent from the IDE to the Server.
+    /// The `LoadFile` message provides file contents, if available. This
+    /// message may only be sent from the IDE to the Server.
     LoadFile(Option<String>),
 }
 
@@ -262,6 +262,7 @@ macro_rules! queue_send {
 }
 
 /// ## Globals
+///
 /// The IP address on which the server listens for incoming connections.
 const IP_ADDRESS: &str = "127.0.0.1";
 /// The port on which the server listens for incoming connections.
@@ -287,7 +288,11 @@ const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
     // In production, start with the smallest number exactly representable.
     -((1i64 << f64::MANTISSA_DIGITS) - 1) as f64
 };
-/// The increment for a message ID. Since the Client, IDE, and Server all increment by this same amount but start at different values, this ensure that message IDs will be unique. (Given a mantissa of 53 bits plus a sign bit, 2^54 seconds = 574 million years before the message ID wraps around assuming an average of 1 message/second.)
+/// The increment for a message ID. Since the Client, IDE, and Server all
+/// increment by this same amount but start at different values, this ensure
+/// that message IDs will be unique. (Given a mantissa of 53 bits plus a sign
+/// bit, 2^54 seconds = 574 million years before the message ID wraps around
+/// assuming an average of 1 message/second.)
 const MESSAGE_ID_INCREMENT: f64 = 3.0;
 
 lazy_static! {
@@ -296,13 +301,13 @@ lazy_static! {
         let exe_path = env::current_exe().unwrap();
         let exe_dir = exe_path.parent().unwrap();
         let mut client_static_path = PathBuf::from(exe_dir);
-        // When in debug or running tests, use the layout of the Git repo to find
-        // client files. In release mode, we assume the static folder is a
+        // When in debug or running tests, use the layout of the Git repo to
+        // find client files. In release mode, we assume the static folder is a
         // subdirectory of the directory containing the executable.
         #[cfg(test)]
         client_static_path.push("..");
-        // Note that `debug_assertions` is also enabled for testing, so this adds to
-        // the previous line when running tests.
+        // Note that `debug_assertions` is also enabled for testing, so this
+        // adds to the previous line when running tests.
         #[cfg(debug_assertions)]
         client_static_path.push("../../../client");
 
@@ -320,7 +325,8 @@ lazy_static! {
     // Read in the contents of the CodeChat Editor Framework.
     static ref CODECHAT_EDITOR_FRAMEWORK_JS: String = {
         let mut bfm = CLIENT_STATIC_PATH.clone();
-        // The bundled files map start with `static`, so pop that off the client static path to avoid duplication.
+        // The bundled files map start with `static`, so pop that off the client
+        // static path to avoid duplication.
         bfm.pop();
         bfm.push(BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap());
         fs::read_to_string(bfm).unwrap()
@@ -329,6 +335,7 @@ lazy_static! {
 }
 
 /// ## Webserver functionality
+///
 /// Return a unique ID for an IDE websocket connection.
 fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
     let mut connection_id = app_state.connection_id.lock().unwrap();
@@ -489,7 +496,8 @@ pub async fn filesystem_endpoint(
     }
 }
 
-// Use the provided HTTP request to look for the requested file, returning it as an HTTP response. This should be called from within a processing task.
+// Use the provided HTTP request to look for the requested file, returning it as
+// an HTTP response. This should be called from within a processing task.
 async fn make_simple_http_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
@@ -498,7 +506,8 @@ async fn make_simple_http_response(
 ) -> (
     // The response to send back to the HTTP endpoint.
     SimpleHttpResponse,
-    // If this file is currently being edited, this is the body of an `Update` message to send.
+    // If this file is currently being edited, this is the body of an `Update`
+    // message to send.
     Option<EditorMessageContents>,
 ) {
     // Convert the provided URL back into a file name.
@@ -513,9 +522,8 @@ async fn make_simple_http_response(
         Ok(mut fc) => {
             let mut file_contents = String::new();
             match fc.read_to_string(&mut file_contents).await {
-                // If this is a binary file (meaning we
-                // can't read the contents as UTF-8), just
-                // serve it raw; assume this is an
+                // If this is a binary file (meaning we can't read the contents
+                // as UTF-8), just serve it raw; assume this is an
                 // image/video/etc.
                 Err(_) => (SimpleHttpResponse::Bin(file_path.clone()), None),
                 Ok(_) => {
@@ -537,10 +545,13 @@ async fn text_file_to_response(
 ) -> (
     // The response to send back to the HTTP endpoint.
     SimpleHttpResponse,
-    // If this file is currently being edited, this is the body of an `Update` message to send.
+    // If this file is currently being edited, this is the body of an `Update`
+    // message to send.
     Option<EditorMessageContents>,
 ) {
-    // Compare using the canonical path first, then the absolute path if this fails. This is necessary because the file may not exist on the filesystem (only in the IDE).
+    // Compare using the canonical path first, then the absolute path if this
+    // fails. This is necessary because the file may not exist on the filesystem
+    // (only in the IDE).
     let is_current = file_path
         .canonicalize()
         .map_or(false, |fp| fp == current_filepath)
@@ -553,10 +564,8 @@ async fn text_file_to_response(
         http_request.is_test_mode,
     )
     .await;
-    // If this file is editable and is the main
-    // file, send an `Update`. The
-    // `simple_http_response` contains the
-    // Client.
+    // If this file is editable and is the main file, send an `Update`. The
+    // `simple_http_response` contains the Client.
     (
         simple_http_response,
         option_codechat_for_web.map(|codechat_for_web| {
@@ -911,7 +920,8 @@ async fn client_websocket(
                                 sleep(REPLY_TIMEOUT).await;
                                 let msg = format!("Timeout: message id {} unacknowledged.", m.id);
                                 error!("{msg}");
-                                // Since the websocket failed to send a `Result`, produce a timeout `Result` for it.
+                                // Since the websocket failed to send a
+                                // `Result`, produce a timeout `Result` for it.
                                 'timeout: {
                                         queue_send!(timeout_tx.send(EditorMessage {
                                         id: m.id,
@@ -1043,6 +1053,7 @@ where
 }
 
 // ## Utilities
+//
 // Send a response to the client after processing a message from the client.
 async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: MessageResult) {
     if let Err(err) = client_tx
@@ -1069,10 +1080,11 @@ fn url_to_path(url_string: String) -> Result<PathBuf, String> {
                 if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
                     Err(format!("Error: URL {url} has incorrect prefix."))
                 } else {
-                    // Strip these first three segments; the
-                    // remainder is a file path.
+                    // Strip these first three segments; the remainder is a file
+                    // path.
                     let path_str_encoded = ps[3..].join("/");
-                    // On non-Windows systems, the path should start with a `/`. Windows path already start with a drive letter.
+                    // On non-Windows systems, the path should start with a `/`.
+                    // Windows path already start with a drive letter.
                     #[cfg(not(target_os = "windows"))]
                     let path_str_encoded = "/".to_string() + &path_str_encoded;
                     match urlencoding::decode(&path_str_encoded) {
@@ -1084,7 +1096,12 @@ fn url_to_path(url_string: String) -> Result<PathBuf, String> {
                                 "Error: unable to parse file path {path_str_encoded}: {err}."
                             )),
                             Ok(path_buf) => match path_buf.canonicalize() {
-                                // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors) fails if the path doesn't exist. For unsaved files, this is expected; therefore, use [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html) on error, since it doesn't require the path to exist.
+                                // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
+                                // fails if the path doesn't exist. For unsaved
+                                // files, this is expected; therefore, use
+                                // [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html)
+                                // on error, since it doesn't require the path
+                                // to exist.
                                 Err(_) => match path::absolute(&*path_buf) {
                                     Err(err) => {
                                         Err(format!("Unable to make {path_buf:?} absolute: {err}"))
@@ -1107,8 +1124,8 @@ fn path_to_url(file_path: &Path) -> String {
     simplified(file_path)
         .to_slash()
         .unwrap()
-        // The convert each part of the path to a URL-encoded string.
-        // (This avoids encoding the slashes.)
+        // The convert each part of the path to a URL-encoded string. (This
+        // avoids encoding the slashes.)
         .split("/")
         .map(|s| urlencoding::encode(s))
         // Then put it all back together.

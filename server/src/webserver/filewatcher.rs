@@ -1,21 +1,19 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
-// software: you can redistribute it and/or modify it under the terms of the
-// GNU General Public License as published by the Free Software Foundation,
-// either version 3 of the License, or (at your option) any later version.
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
 //
 // The CodeChat Editor is distributed in the hope that it will be useful, but
-// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-// more details.
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
 //
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-//
 /// # `filewatcher.rs` -- Implement the File Watcher "IDE"
-//
 // ## Imports
 //
 // ### Standard library
@@ -382,7 +380,9 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                 id,
                 message: EditorMessageContents::CurrentFile(url_pathbuf)
             }), 'task);
-            // Note: it's OK to postpone the increment to here; if the `queue_send` exits before this runs, the message didn't get sent, so the ID wasn't used.
+            // Note: it's OK to postpone the increment to here; if the
+            // `queue_send` exits before this runs, the message didn't get sent,
+            // so the ID wasn't used.
             id += 1.0;
 
             // Create a queue for HTTP requests fo communicate with this task.

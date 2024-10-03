@@ -53,7 +53,8 @@ use crate::{
 
 // ## Code
 //
-// This is the processing task for the Visual Studio Code IDE. It handles all the core logic to moving data between the IDE and the client.
+// This is the processing task for the Visual Studio Code IDE. It handles all
+// the core logic to moving data between the IDE and the client.
 #[get("/vsc/ws-ide/{connection_id}")]
 pub async fn vscode_ide_websocket(
     connection_id: web::Path<String>,
@@ -285,28 +286,34 @@ pub async fn vscode_ide_websocket(
                             EditorMessageContents::RequestClose =>
                                 queue_send!(to_client_tx.send(ide_message)),
 
-                            // Pass a `Result` message to the Client, unless it's a `LoadFile` result.
+                            // Pass a `Result` message to the Client, unless
+                            // it's a `LoadFile` result.
                             EditorMessageContents::Result(ref result) => {
                                 let is_loadfile = match result {
-                                    // See if this error was produced by a `LoadFile` result.
+                                    // See if this error was produced by a
+                                    // `LoadFile` result.
                                     Err(_) => load_file_requests.contains_key(&ide_message.id.to_bits()),
                                     Ok(result_ok) => match result_ok {
                                         ResultOkTypes::Void => false,
                                         ResultOkTypes::LoadFile(_) => true,
                                     }
                                 };
-                                // Pass the message to the client if this isn't a `LoadFile` result (the only type of result which the Server should handle).
+                                // Pass the message to the client if this isn't
+                                // a `LoadFile` result (the only type of result
+                                // which the Server should handle).
                                 if !is_loadfile {
                                     queue_send!(to_client_tx.send(ide_message));
                                     continue;
                                 }
-                                // Ensure there's an HTTP request for this `LoadFile` result.
+                                // Ensure there's an HTTP request for this
+                                // `LoadFile` result.
                                 let Some(http_request) = load_file_requests.remove(&ide_message.id.to_bits()) else {
                                     error!("Error: no HTTP request found for LoadFile result ID {}.", ide_message.id);
                                     break 'task;
                                 };
 
-                                // Get the file contents from a `LoadFile` result; otherwise, this is None.
+                                // Get the file contents from a `LoadFile`
+                                // result; otherwise, this is None.
                                 let file_contents_option = match result {
                                     Err(err) => {
                                         error!("{err}");
@@ -323,7 +330,8 @@ pub async fn vscode_ide_websocket(
                                     Some(file_contents) =>
                                         text_file_to_response(&http_request, &current_file, &http_request.file_path, file_contents).await,
                                     None =>
-                                        // The file wasn't available in the IDE. Look for it in the filesystem.
+                                        // The file wasn't available in the IDE.
+                                        // Look for it in the filesystem.
                                         make_simple_http_response(&http_request, &current_file).await
                                 };
                                 if let Some(update) = option_update {
@@ -356,7 +364,8 @@ pub async fn vscode_ide_websocket(
                                 }
                             }
 
-                            // Update the current file; translate it to a URL then pass it to the Client.
+                            // Update the current file; translate it to a URL
+                            // then pass it to the Client.
                             EditorMessageContents::CurrentFile(file_path) => {
                                 queue_send!(to_client_tx.send(EditorMessage {
                                     id: ide_message.id,
@@ -376,7 +385,8 @@ pub async fn vscode_ide_websocket(
                             id,
                             message: EditorMessageContents::LoadFile(http_request.file_path.clone())
                         }));
-                        // Store the ID and request, which are needed to send a response when the `LoadFile` result is received.
+                        // Store the ID and request, which are needed to send a
+                        // response when the `LoadFile` result is received.
                         load_file_requests.insert(id.to_bits(), http_request);
                         id += MESSAGE_ID_INCREMENT;
                     }
@@ -432,7 +442,8 @@ pub async fn vscode_ide_websocket(
                                 }));
                             },
 
-                            // Update the current file; translate it to a URL then pass it to the IDE.
+                            // Update the current file; translate it to a URL
+                            // then pass it to the IDE.
                             EditorMessageContents::CurrentFile(_file_path) => {
                             }
                         }
@@ -483,7 +494,9 @@ pub async fn vscode_ide_websocket(
         }
     });
 
-    // Move data between the IDE and the processing task via queues. The websocket connection between the client and the IDE will run in the endpoint for that connection.
+    // Move data between the IDE and the processing task via queues. The
+    // websocket connection between the client and the IDE will run in the
+    // endpoint for that connection.
     client_websocket(
         connection_id,
         req,
@@ -698,7 +711,7 @@ mod test {
         .await
         .expect("Failed to connect");
 
-        // 1. Send the `Opened` message.
+        // 1.  Send the `Opened` message.
         //
         // Message ids: IDE - 1->4, Server - 0, Client - 2.
         send_message(
@@ -719,7 +732,7 @@ mod test {
             }
         );
 
-        // 2. Next, wait for the next message -- the HTML.
+        // 2.  Next, wait for the next message -- the HTML.
         //
         // Message ids: IDE - 4, Server - 0->3, Client - 2.
         let em = read_message(&mut ws_ide).await;
@@ -739,9 +752,11 @@ mod test {
         )
         .await;
 
-        // 3. Fetch a non-existent file and verify the response returns an error.
+        // 3.  Fetch a non-existent file and verify the response returns an
+        //     error.
         //
-        // Do this is a thread, since the request generates a message that requires a response in order to complete.
+        // Do this is a thread, since the request generates a message that
+        // requires a response in order to complete.
         let test_dir_thread = test_dir.clone();
         let join_handle = thread::spawn(move || {
             assert_eq!(
@@ -756,7 +771,7 @@ mod test {
             )
         });
 
-        // This should produce a `LoadFile` message.
+        // The HTTP request produces a `LoadFile` message.
         //
         // Message ids: IDE - 4, Server - 3->6, Client - 2.
         let em = read_message(&mut ws_ide).await;
@@ -774,7 +789,8 @@ mod test {
         )
         .await;
 
-        // This should cause the request to complete.
+        // This should cause the HTTP request to complete by receiving the
+        // response (file not found).
         join_handle.join().unwrap();
 
         // Create a websocket to emulate the client.
@@ -784,7 +800,8 @@ mod test {
         .await
         .expect("Failed to connect");
 
-        // 4. Send a `CurrentFile` message with a file to edit that exists only in the IDE.
+        // 4.  Send a `CurrentFile` message with a file to edit that exists only
+        //     in the IDE.
         //
         // Message ids: IDE - 4->7, Server - 6, Client - 2.
         send_message(
@@ -826,7 +843,7 @@ mod test {
             }
         );
 
-        // 5. The Client should send a GET request for this file.
+        // 5.  The Client should send a GET request for this file.
         let test_dir_thread = test_dir.clone();
         let join_handle = thread::spawn(move || {
             assert_eq!(
@@ -898,7 +915,9 @@ mod test {
             },
         )
         .await;
-        // The message, though a result for the `Update` sent by the Server, will still be echoed back to the IDE.
+
+        // The message, though a result for the `Update` sent by the Server,
+        // will still be echoed back to the IDE.
         assert_eq!(
             read_message(&mut ws_ide).await,
             EditorMessage {
@@ -907,7 +926,7 @@ mod test {
             }
         );
 
-        // 6. Send an `Update` message from the IDE.
+        // 6.  Send an `Update` message from the IDE.
         //
         // Message ids: IDE - 7->10, Server - 9, Client - 5.
         send_message(
@@ -971,7 +990,7 @@ mod test {
             }
         );
 
-        // 7. Send an `Update` message from the Client.
+        // 7.  Send an `Update` message from the Client.
         //
         // Message ids: IDE - 10, Server - 9, Client - 5->8.
         send_message(
@@ -1019,8 +1038,25 @@ mod test {
                 })
             }
         );
+        send_message(
+            &mut ws_ide,
+            &EditorMessage {
+                id: 5.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            },
+        )
+        .await;
+        assert_eq!(
+            read_message(&mut ws_client).await,
+            EditorMessage {
+                id: 5.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+            }
+        );
+
 
         // TODO:
+        //
         // - Send a CurrentFile from the Client.
         // - Fetch a file that exists in the filesystem but not in the IDE.
         // - Send a `RequestClose` from the IDE.

@@ -144,7 +144,7 @@ editor-overlay filesystem.
 - If the current file in the IDE changes (including the initial startup, when
   the change is from no file to the current file), or a link is followed in the
   Client's iframe:\
-  ![Load diagram](https://www.plantuml.com/plantuml/svg/hLHBJiCm4Dtx5AEksWMmpm9LAY0GbK3z7C0q3bXoR6DFa7fxF4cCMnoYWF0YJTFtUNepwT8ZTzZKYjdmAG_ISetmS7Dxzdqht8TmPuzMIWgDZAiM3ShmqaCbbM3GFhYuxY45h1hdmirT-76-HIVrQm7xpHfC1JMN-j8U5mnwTE0HlO2DyDPednXFZmicb1SHc1mpyYJ7BEQmeovP4kzwAE1-jti69zuRuN7-NRW3VMLPXvndGIp7Dq2J206Mn0TpN5McqMM6pAIf3JWOZKAZ7mWrtYvN60aWFOXI8d-XUdl3L5Pi8AgSMdQ8nI1hRqkEoJJHXZPXl182AcCiW_PCcv5lh3KEWqHNbTIdldGc3IzNYdIgS9kPa1Q3_aoUzZ0ZovHg7Ca5yDC2T4tIcJZcSIDwGxC6jC7VjZ0ZJjl3x5_oGULCtTxveqTHHr5wlxih9O_RG8d_kFzfeKXq6Ixqv_e9)
+  ![Load diagram](https://www.plantuml.com/plantuml/svg/hLBRJiCm37tlL_XnVO0Fw0EQD40W9fXs-O2mkX0fJKBY8ktlYTVGahQQEeayjBdOvnmVU-b9E6fgbTdmbqTfXIPuldz8pZjqt-YIgvMIg2aJwXmDoeZIGoKLPd2-kBcB8GMi6kV2vZ4yBdRafFueO2Fe4qm5jP3wrfxoa6LiWAfY5fJcsDIyaHvAwUYK0Q_u7E2PfO23BGNri4UZAJpx59hNKDGMlJNQu-BjXIDGbzaGF8r1vJ46fDMcIPFL7hRhHD5bDQob0utU5_2qts_0uLU3dXP3m3Qeqx0E-X81bkqcqoT4_WZUyuyokSX9MtFk_U-9kuIb9F7EbaJOli1EVMJvWnSZyiciUTqTUpLehZB6PX3MF5TzOwrn52ZRwgLEPscMsMESDfbDsuq86AcVqqkTISoRffZb_sK87lQHJ6teIgclHcF-3wAWSgO-x_p94zPHf2wpzijokr5acTVFOZfK3BeCdwPMFm00)
 - If the current file's contents in the IDE are edited:\
   ![Edit diagram](https://www.plantuml.com/plantuml/svg/XT1DQiCm40NWlKunItlH2tXH36vBInCI_7C09NeE0cNaIEFa-ed1OCVaPp_l6zxBe-WW_T6flwzl-lYa2k6Ca57J6Ir8AWcM3nanBhJtB629gT9EQAqjKsiTo4Q2iQ9t3ef6OA0APy7oXeABkBVOosklw4C0ouzr4zgKA_BjpANnVDxfjwwt573g4ILP9Xw-6XEnynoVDc2Zfb-t6JCgbudDVwfoi1c6lW80)
 - If the current file's contents in the Client are edited, the Client sends the
@@ -165,30 +165,13 @@ edit, then copy and paste the SVG URL back to this file.
 
 The message system connects the IDE, Server, and Client; all three can serve as
 the source or destination for a message. Any message sent should produce a
-Response message in return. This produces a potential problem: because the IDs
-between all three may not be unique (the IDE, Server, and Client don't have any
-way to communicate outside the message system in order to guarantee unique IDs),
-the Response message destination cannot be determined by looking at the ID. This
-isn't a problem for the IDE and Client, since they should only receive a
-Response intended for them. In contrast, the Server passes messages through
-(including Responses). How can the Server know if a given Response was intended
-for it, or for the IDE/Client, since the ID of the message doesn't determine who
-sent it?
-
-The Server generates only three messages:
-
-- ClientHtml -- this is generated once, before the Client is connected.
-  Therefore, Responses generated before the Client is connected are always sent
-  only to the Server.
-- LoadFile -- this is sent only to the IDE; the response produced by the IDE is
-  the only Response which contains a Some(LoadFileResultContents).
-- Closed -- this is sent between the IDE websocket task and the Client websocket
-  task, but never generates a Response.
-
-Therefore, the Server can always determine if a Response is for itself, or
-should be routed to the Client/IDE; likewise, the IDs for messages need only to
-be unique by source (i.e., the IDs produced by the IDE should be unique and
-therefore distinguishable), not globally unique.
+Response message in return. Therefore, we need globally unique IDs for each
+message. To achieve this, the Server uses IDs that are multiples of 3 (0, 3, 6,
+...), the Client multiples of 3 + 1 (1, 4, 7, ...) and the IDE multiples of 3 +
+2 (2, 5, 8, ...). A double-precision floating point number (the standard
+[numeric type](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#number_type)
+in JavaScript) has a 53-bit mantissa, meaning IDs won't wrap around for a very
+long time.
 
 #### Architecture
 
