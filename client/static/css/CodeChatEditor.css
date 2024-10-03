@@ -54,6 +54,10 @@ body {
     background: white;
 }
 
+.cm-line {
+    background-color: #EEE;
+}
+
 /* Provide space at the top of the screen for the filename and TinyMCE menu bar. */
 #CodeChat-top {
     height: var(--top-height);
