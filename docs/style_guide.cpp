@@ -41,7 +41,7 @@ const char* CODE_BLOCK =
 // handle.
 //
 // **Phase 2 - writing.** As you write code, save links to helpful code
-// snippets, documentation, and ideas.​Update the approach you sketched out as
+// snippets, documentation, and ideas. ​Update the approach you sketched out as
 // your learn what works (and doesn't) through the development process. Explain
 // any pieces of code that took significant development or debug time, or which
 // contain difficult to understand code.
@@ -85,6 +85,25 @@ class LedBlinker {
     );
 }
 
+// ## Excellence in code
+//
+// Literate programming should be accompanied by excellence in authoring code.
+// Specifically:
+//
+// - Use meaningful, descriptive names for variables, classes, functions, etc.
+//   Doc blocks should only supply what
+//   [self-documenting code](https://en.wikipedia.org/wiki/Self-documenting_code)
+//   cannot -- design choices, purpose, etc.
+// - Be consistent; preferably, use a
+//   [code formatter](https://en.wikipedia.org/wiki/Prettyprint#Programming_code_formatting)
+//   to ensure this consistency.
+// - Employ [DRY](https://en.wikipedia.org/wiki/Don%27t_repeat_yourself)
+//   principles.
+// - Address warnings, not only errors; preferably, use
+//   a [linter](<https://en.wikipedia.org/wiki/Lint_(software)>).
+// - Write automated tests; employ
+//   [test-driven development](https://en.wikipedia.org/wiki/Test-driven_development).
+//
 // ## Editor configuration
 //
 // Properly configuring the text editor used with the CodeChat Editor
@@ -98,6 +117,9 @@ class LedBlinker {
 //   [vscode](https://code.visualstudio.com/docs/editor/codebasics#_save-auto-save)
 // - Auto-reload enabled​: default in vscode
 // - On save, remove trailing whitespace​:
+//   [vscode](https://stackoverflow.com/a/53663494/16038919)
+// - Use a spell checker:
+//   [vscode](https://marketplace.visualstudio.com/items?itemName=streetsidesoftware.code-spell-checker)
 // - On a big monitor, place your IDE side by side with the CodeChat Editor.
 //
 // ## Common problems
@@ -119,6 +141,12 @@ class LedBlinker {
 //   Pasting from an HTML source (such as Word or a web page) directly to the
 //   CodeChat Editor likewise produces a lot of messy syntax; consider pasting
 //   text only, then reformatting as necessary.
+//
+// ### Highlighting bug
+//
+// The directions in
+// [this issue](https://github.com/bjones1/CodeChat_Editor/issues/27) provide a
+// manual edit which enables formatting of highlighted items in a doc block.
 //
 // ## Example structure
 //
