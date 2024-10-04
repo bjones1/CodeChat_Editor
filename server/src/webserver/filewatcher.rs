@@ -652,7 +652,12 @@ pub async fn filewatcher_websocket(
 // ## Tests
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf, str::FromStr, time::Duration};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        str::FromStr,
+        time::Duration,
+    };
 
     use actix_http::Request;
     use actix_web::{
@@ -681,7 +686,7 @@ mod tests {
 
     async fn get_websocket_queues(
         // A path to the temporary directory where the source file is located.
-        test_dir: &PathBuf,
+        test_dir: &Path,
     ) -> (
         WebsocketQueues,
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error>,
@@ -704,10 +709,10 @@ mod tests {
         let mut joint_editors = app_state.filewatcher_client_queues.lock().unwrap();
         let connection_id = *app_state.connection_id.lock().unwrap();
         assert_eq!(joint_editors.len(), 1);
-        return (
+        (
             joint_editors.remove(&connection_id.to_string()).unwrap(),
             app,
-        );
+        )
     }
 
     async fn get_message(client_rx: &mut Receiver<EditorMessage>) -> EditorMessage {
@@ -770,7 +775,7 @@ mod tests {
         send_response(&ide_tx_queue, id, Ok(ResultOkTypes::Void)).await;
 
         // Check the contents.
-        let translation_results = source_to_codechat_for_web(&"".to_string(), "py", false, false);
+        let translation_results = source_to_codechat_for_web("", "py", false, false);
         let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
         assert_eq!(umc.contents, Some(codechat_for_web));
 

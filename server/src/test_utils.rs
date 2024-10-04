@@ -27,6 +27,7 @@ use std::path::MAIN_SEPARATOR_STR;
 // ### Third-party
 use assert_fs::fixture::PathCopy;
 use assert_fs::TempDir;
+use assertables::assert_le;
 use log::Level;
 
 // ### Local
@@ -69,8 +70,8 @@ macro_rules! function_name {
 #[macro_export]
 macro_rules! prep_test_dir {
     () => {{
-        use crate::function_name;
-        use crate::test_utils::_prep_test_dir;
+        use $crate::function_name;
+        use $crate::test_utils::_prep_test_dir;
         _prep_test_dir(function_name!())
     }};
 }
@@ -151,18 +152,19 @@ pub fn configure_testing_logger() {
     testing_logger::setup();
 }
 
-pub fn check_logger_errors(num_errors: usize) {
+pub fn check_logger_errors(num_expected_errors: usize) {
     testing_logger::validate(|captured_logs| {
         let error_logs: Vec<_> = captured_logs
             .iter()
             .filter(|log_entry| log_entry.level == Level::Error)
             .collect();
-        if error_logs.len() > num_errors {
-            println!(
-                "Error(s) in logs: saw {}, expected {num_errors}.",
+        assert_le!(
+            error_logs.len(),
+            num_expected_errors,
+            format!(
+                "Error(s) in logs: saw {}, expected {num_expected_errors}.",
                 error_logs.len()
-            );
-            assert!(false);
-        }
+            )
+        );
     });
 }

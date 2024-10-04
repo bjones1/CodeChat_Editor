@@ -631,7 +631,8 @@ mod test {
                 Message::Frame(_) => panic!("Unexpected frame message."),
             }
         };
-        serde_json::from_str(&msg_txt).expect(&format!("Unable to convert '{msg_txt}' to JSON."))
+        serde_json::from_str(&msg_txt)
+            .unwrap_or_else(|_| panic!("Unable to convert '{msg_txt}' to JSON."))
     }
 
     type WebSocketStreamTcp = WebSocketStream<MaybeTlsStream<TcpStream>>;

@@ -122,12 +122,7 @@ impl Log for TestingLogger {
             };
             records.borrow_mut().push(captured_record);
         });
-        println!(
-            "{} {} {}",
-            record.level(),
-            record.target().to_string(),
-            record.args()
-        );
+        println!("{} {} {}", record.level(), record.target(), record.args());
     }
 
     fn flush(&self) {}

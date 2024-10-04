@@ -37,7 +37,7 @@ fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBloc
 }
 
 fn build_code_block(contents: &str) -> CodeDocBlock {
-    return CodeDocBlock::CodeBlock(contents.to_string());
+    CodeDocBlock::CodeBlock(contents.to_string())
 }
 
 // ### Source lexer tests
