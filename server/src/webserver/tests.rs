@@ -27,9 +27,7 @@ use crate::prep_test_dir;
 #[test]
 fn test_url_to_path() {
     assert_eq!(
-        url_to_path(
-            "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/path%20spaces/foo.py".to_string()
-        ),
+        url_to_path("http://127.0.0.1:8080/fw/fsc/dummy_connection_id/path%20spaces/foo.py"),
         Ok(path::absolute(PathBuf::from("path spaces/foo.py")).unwrap())
     );
 }

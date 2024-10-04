@@ -549,7 +549,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             }
 
                             EditorMessageContents::CurrentFile(url_string) => {
-                                let result = match url_to_path(url_string) {
+                                let result = match url_to_path(&url_string) {
                                     Err(err) => Err(err),
                                     Ok(file_path) => 'err_exit: {
                                         // We finally have the desired path! First,

@@ -1067,9 +1067,9 @@ async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: Messa
     }
 }
 
-fn url_to_path(url_string: String) -> Result<PathBuf, String> {
+fn url_to_path(url_string: &str) -> Result<PathBuf, String> {
     // Convert this URL back to a file path.
-    match Url::parse(&url_string) {
+    match Url::parse(url_string) {
         Err(err) => Err(format!("Error: unable to parse URL {url_string}: {err}")),
         Ok(url) => match url.path_segments() {
             None => Err(format!("Error: URL {url} cannot be a base.")),

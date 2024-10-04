@@ -183,7 +183,7 @@ pub fn codechat_for_web_to_source(
 
     // Convert from `CodeMirror` to a `SortaCodeDocBlocks`.
     let code_doc_block_vec = code_mirror_to_code_doc_blocks(&codechat_for_web.source);
-    code_doc_block_vec_to_source(code_doc_block_vec, lexer)
+    code_doc_block_vec_to_source(&code_doc_block_vec, lexer)
 }
 
 /// Translate from CodeMirror to CodeDocBlocks.
@@ -230,7 +230,7 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
 
 // Turn this vec of CodeDocBlocks into a string of source code.
 fn code_doc_block_vec_to_source(
-    code_doc_block_vec: Vec<CodeDocBlock>,
+    code_doc_block_vec: &Vec<CodeDocBlock>,
     lexer: &LanguageLexerCompiled,
 ) -> Result<String, String> {
     let mut file_contents = String::new();
@@ -368,7 +368,7 @@ fn code_doc_block_vec_to_source(
             // This is code. Simply append it (by definition, indent and
             // delimiter are empty).
             {
-                file_contents += &contents
+                file_contents += contents
             }
         }
     }
@@ -781,8 +781,7 @@ fn html_analyze(
 // ## Tests
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use std::str::FromStr;
+    use std::{path::PathBuf, str::FromStr};
 
     use super::{find_path_to_toc, TranslationResults};
     use super::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
@@ -1005,21 +1004,22 @@ mod tests {
         let py_lexer = llc.map_mode_to_lexer.get(&"python".to_string()).unwrap();
 
         // An empty document.
-        assert_eq!(code_doc_block_vec_to_source(vec![], py_lexer).unwrap(), "");
+        assert_eq!(code_doc_block_vec_to_source(&vec![], py_lexer).unwrap(), "");
         // A one-line comment.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "#", "Test")], py_lexer).unwrap(),
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "#", "Test")], py_lexer)
+                .unwrap(),
             "# Test"
         );
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "#", "Test\n")], py_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "#", "Test\n")], py_lexer)
                 .unwrap(),
             "# Test\n"
         );
         // Check empty doc block lines and multiple lines.
         assert_eq!(
             code_doc_block_vec_to_source(
-                vec![build_doc_block("", "#", "Test 1\n\nTest 2")],
+                &vec![build_doc_block("", "#", "Test 1\n\nTest 2")],
                 py_lexer
             )
             .unwrap(),
@@ -1028,18 +1028,18 @@ mod tests {
 
         // Repeat the above tests with an indent.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block(" ", "#", "Test")], py_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block(" ", "#", "Test")], py_lexer)
                 .unwrap(),
             " # Test"
         );
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("  ", "#", "Test\n")], py_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("  ", "#", "Test\n")], py_lexer)
                 .unwrap(),
             "  # Test\n"
         );
         assert_eq!(
             code_doc_block_vec_to_source(
-                vec![build_doc_block("   ", "#", "Test 1\n\nTest 2")],
+                &vec![build_doc_block("   ", "#", "Test 1\n\nTest 2")],
                 py_lexer
             )
             .unwrap(),
@@ -1048,13 +1048,13 @@ mod tests {
 
         // Basic code.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_code_block("Test")], py_lexer).unwrap(),
+            code_doc_block_vec_to_source(&vec![build_code_block("Test")], py_lexer).unwrap(),
             "Test"
         );
 
         // An incorrect delimiter.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "?", "Test")], py_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "?", "Test")], py_lexer)
                 .unwrap_err(),
             "Unknown comment opening delimiter '?'."
         );
@@ -1062,7 +1062,7 @@ mod tests {
         // Empty doc blocks separated by an empty code block.
         assert_eq!(
             code_doc_block_vec_to_source(
-                vec![
+                &vec![
                     build_doc_block("", "#", "\n"),
                     build_code_block("\n"),
                     build_doc_block("", "#", ""),
@@ -1075,7 +1075,7 @@ mod tests {
 
         assert_eq!(
             code_doc_block_vec_to_source(
-                vec![
+                &vec![
                     build_doc_block("", "#", "σ\n"),
                     build_code_block("σ\n"),
                     build_doc_block("", "#", "σ"),
@@ -1095,22 +1095,25 @@ mod tests {
         let css_lexer = llc.map_mode_to_lexer.get(&"css".to_string()).unwrap();
 
         // An empty document.
-        assert_eq!(code_doc_block_vec_to_source(vec![], css_lexer).unwrap(), "");
+        assert_eq!(
+            code_doc_block_vec_to_source(&vec![], css_lexer).unwrap(),
+            ""
+        );
         // A one-line comment.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "/*", "Test\n")], css_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "/*", "Test\n")], css_lexer)
                 .unwrap(),
             "/* Test */\n"
         );
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "/*", "Test")], css_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "/*", "Test")], css_lexer)
                 .unwrap(),
             "/* Test */"
         );
         // Check empty doc block lines and multiple lines.
         assert_eq!(
             code_doc_block_vec_to_source(
-                vec![
+                &vec![
                     build_code_block("Test_0\n"),
                     build_doc_block("", "/*", "Test 1\n\nTest 2\n")
                 ],
@@ -1126,13 +1129,13 @@ mod tests {
 
         // Repeat the above tests with an indent.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("  ", "/*", "Test\n")], css_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("  ", "/*", "Test\n")], css_lexer)
                 .unwrap(),
             "  /* Test */\n"
         );
         assert_eq!(
             code_doc_block_vec_to_source(
-                vec![
+                &vec![
                     build_code_block("Test_0\n"),
                     build_doc_block("   ", "/*", "Test 1\n\nTest 2\n")
                 ],
@@ -1148,13 +1151,13 @@ mod tests {
 
         // Basic code.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_code_block("Test")], css_lexer).unwrap(),
+            code_doc_block_vec_to_source(&vec![build_code_block("Test")], css_lexer).unwrap(),
             "Test"
         );
 
         // An incorrect delimiter.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "?", "Test")], css_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "?", "Test")], css_lexer)
                 .unwrap_err(),
             "Unknown comment opening delimiter '?'."
         );
@@ -1168,37 +1171,37 @@ mod tests {
 
         // An empty document.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![], csharp_lexer).unwrap(),
+            code_doc_block_vec_to_source(&vec![], csharp_lexer).unwrap(),
             ""
         );
 
         // An invalid comment.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "?", "Test\n")], csharp_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "?", "Test\n")], csharp_lexer)
                 .unwrap_err(),
             "Unknown comment opening delimiter '?'."
         );
 
         // Inline comments.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "//", "Test\n")], csharp_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "//", "Test\n")], csharp_lexer)
                 .unwrap(),
             "// Test\n"
         );
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "///", "Test\n")], csharp_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "///", "Test\n")], csharp_lexer)
                 .unwrap(),
             "/// Test\n"
         );
 
         // Block comments.
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "/*", "Test\n")], csharp_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "/*", "Test\n")], csharp_lexer)
                 .unwrap(),
             "/* Test */\n"
         );
         assert_eq!(
-            code_doc_block_vec_to_source(vec![build_doc_block("", "/**", "Test\n")], csharp_lexer)
+            code_doc_block_vec_to_source(&vec![build_doc_block("", "/**", "Test\n")], csharp_lexer)
                 .unwrap(),
             "/** Test */\n"
         );
