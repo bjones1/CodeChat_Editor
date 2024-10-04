@@ -562,33 +562,36 @@ mod test {
     use std::{
         fs,
         io::Error,
-        path::{self, Path},
+        path::{self, Path, PathBuf},
         thread,
         time::{Duration, SystemTime},
     };
 
     use actix_rt::task::JoinHandle;
+    use assert_fs::TempDir;
     use assertables::{assert_ends_with, assert_starts_with};
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
     use minreq;
     use tokio::{
         io::{AsyncRead, AsyncWrite},
+        net::TcpStream,
         select,
         time::sleep,
     };
     use tokio_tungstenite::{
-        connect_async, tungstenite::http::StatusCode, tungstenite::protocol::Message,
-        WebSocketStream,
+        connect_async,
+        tungstenite::{http::StatusCode, protocol::Message},
+        MaybeTlsStream, WebSocketStream,
     };
 
     use super::super::{
         run_server, EditorMessage, EditorMessageContents, IdeType, IP_ADDRESS, IP_PORT,
     };
     use crate::{
-        cast, prep_test_dir,
+        cast,
         processing::{CodeChatForWeb, CodeMirror, SourceFileMetadata},
-        test_utils::{check_logger_errors, configure_testing_logger},
+        test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
         webserver::{ResultOkTypes, UpdateMessageContents},
     };
 
@@ -631,24 +634,106 @@ mod test {
         serde_json::from_str(&msg_txt).expect(&format!("Unable to convert '{msg_txt}' to JSON."))
     }
 
-    // Test incorrect inputs: two connections with the same ID, sending the
-    // wrong first message.
-    #[actix_web::test]
-    async fn test_vscode_ide_websocket1() {
+    type WebSocketStreamTcp = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+    async fn connect_async_server(prefix: &str, connection_id: &str) -> WebSocketStreamTcp {
+        connect_async(format!(
+            "ws://{IP_ADDRESS}:{IP_PORT}{prefix}/{connection_id}",
+        ))
+        .await
+        .expect("Failed to connect")
+        .0
+    }
+
+    async fn connect_async_ide(connection_id: &str) -> WebSocketStreamTcp {
+        connect_async_server("/vsc/ws-ide", connection_id).await
+    }
+
+    async fn connect_async_client(connection_id: &str) -> WebSocketStreamTcp {
+        connect_async_server("/vsc/ws-client", connection_id).await
+    }
+
+    // Open the Client in the VSCode browser. (Although, for testing, the Client isn't opened at all.)
+    //
+    // Message ids at function end: IDE - 4, Server - 3, Client - 2.
+    async fn open_client<S: AsyncRead + AsyncWrite + Unpin>(ws_ide: &mut WebSocketStream<S>) {
+        // 1.  Send the `Opened` message.
+        //
+        // Message ids: IDE - 1->4, Server - 0, Client - 2.
+        send_message(
+            ws_ide,
+            &EditorMessage {
+                id: 1.0,
+                message: EditorMessageContents::Opened(IdeType::VSCode(true)),
+            },
+        )
+        .await;
+
+        // Get the response. It should be success.
+        assert_eq!(
+            read_message(ws_ide).await,
+            EditorMessage {
+                id: 1.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            }
+        );
+
+        // 2.  Next, wait for the next message -- the HTML.
+        //
+        // Message ids: IDE - 4, Server - 0->3, Client - 2.
+        let em = read_message(ws_ide).await;
+        assert_starts_with!(
+            cast!(&em.message, EditorMessageContents::ClientHtml),
+            "<!DOCTYPE html>"
+        );
+        assert_eq!(em.id, 0.0);
+
+        // Send a success response to this message.
+        send_message(
+            ws_ide,
+            &EditorMessage {
+                id: 0.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            },
+        )
+        .await;
+    }
+
+    // Perform all the setup for testing the Server via IDE and Client websockets. This should be invoked by the `prep_test!` macro; otherwise, test files won't be found.
+    async fn _prep_test(
+        connection_id: &str,
+        test_full_name: &str,
+    ) -> (TempDir, PathBuf, WebSocketStreamTcp, WebSocketStreamTcp) {
         configure_testing_logger();
+        let (temp_dir, test_dir) = _prep_test_dir(test_full_name);
         // Ensure the webserver is running.
         let _ = &*webserver_handle;
 
         // Connect to the VSCode IDE websocket.
-        let (mut ws_ide, _) = connect_async(format!(
-            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/test-connection-id1"
-        ))
-        .await
-        .expect("Failed to connect");
+        let ws_ide = connect_async_ide(connection_id).await;
+        let ws_client = connect_async_client(connection_id).await;
+
+        (temp_dir, test_dir, ws_ide, ws_client)
+    }
+
+    // This calls `_prep_test` with the current function name. It must be a macro, so that it's called with the test function's name; calling it inside `_prep_test` would give the wrong name.
+    macro_rules! prep_test {
+        ($connection_id: ident) => {{
+            use crate::function_name;
+            _prep_test($connection_id, function_name!())
+        }};
+    }
+
+    // Test incorrect inputs: two connections with the same ID, sending the
+    // wrong first message.
+    #[actix_web::test]
+    async fn test_vscode_ide_websocket1() {
+        let connection_id = "test-connection-id1";
+        let (_, _, mut ws_ide, _) = prep_test!(connection_id).await;
 
         // Start a second connection; verify that it fails.
         let err = connect_async(format!(
-            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/test-connection-id1"
+            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/{connection_id}",
         ))
         .await
         .expect_err("Should fail to connect");
@@ -690,16 +775,8 @@ mod test {
     // Test opening the Client in an external browser.
     #[actix_web::test]
     async fn test_vscode_ide_websocket2() {
-        configure_testing_logger();
-        // Ensure the webserver is running.
-        let _ = &*webserver_handle;
-
-        // Connect to the VSCode IDE websocket.
-        let (mut ws_ide, _) = connect_async(format!(
-            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/test-connection-id2"
-        ))
-        .await
-        .expect("Failed to connect");
+        let connection_id = "test-connection-id2";
+        let (_, _, mut ws_ide, _) = prep_test!(connection_id).await;
 
         // Send the `Opened` message.
         send_message(
@@ -721,64 +798,14 @@ mod test {
         check_logger_errors(0);
     }
 
-    // Test opening the Client in the VSCode browser.
+    // Fetch a non-existent file and verify the response returns an
+    // error.
     #[actix_web::test]
     async fn test_vscode_ide_websocket3() {
-        configure_testing_logger();
-        let (temp_dir, test_dir) = prep_test_dir!();
-        // Ensure the webserver is running.
-        let _ = &*webserver_handle;
-
-        // Connect to the VSCode IDE websocket.
-        let (mut ws_ide, _) = connect_async(format!(
-            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/test-connection-id3"
-        ))
-        .await
-        .expect("Failed to connect");
-
-        // 1.  Send the `Opened` message.
-        //
-        // Message ids: IDE - 1->4, Server - 0, Client - 2.
-        send_message(
-            &mut ws_ide,
-            &EditorMessage {
-                id: 1.0,
-                message: EditorMessageContents::Opened(IdeType::VSCode(true)),
-            },
-        )
-        .await;
-
-        // Get the response. It should be success.
-        assert_eq!(
-            read_message(&mut ws_ide).await,
-            EditorMessage {
-                id: 1.0,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
-            }
-        );
-
-        // 2.  Next, wait for the next message -- the HTML.
-        //
-        // Message ids: IDE - 4, Server - 0->3, Client - 2.
-        let em = read_message(&mut ws_ide).await;
-        assert_starts_with!(
-            cast!(&em.message, EditorMessageContents::ClientHtml),
-            "<!DOCTYPE html>"
-        );
-        assert_eq!(em.id, 0.0);
-
-        // Send a success response to this message.
-        send_message(
-            &mut ws_ide,
-            &EditorMessage {
-                id: 0.0,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
-            },
-        )
-        .await;
-
-        // 3.  Fetch a non-existent file and verify the response returns an
-        //     error.
+        let connection_id = "test-connection-id3";
+        let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+        open_client(&mut ws_ide).await;
+        // Message ids: IDE - 4, Server - 3, Client - 2.
         //
         // Do this is a thread, since the request generates a message that
         // requires a response in order to complete.
@@ -786,7 +813,7 @@ mod test {
         let join_handle = thread::spawn(move || {
             assert_eq!(
                 minreq::get(format!(
-                    "http://localhost:8080/vsc/fs/test-connection-id3/{}/none.py",
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}/none.py",
                     test_dir_thread.to_str().unwrap()
                 ))
                 .send()
@@ -825,13 +852,6 @@ mod test {
         // This should cause the HTTP request to complete by receiving the
         // response (file not found).
         join_handle.join().unwrap();
-
-        // Create a websocket to emulate the client.
-        let (mut ws_client, _) = connect_async(format!(
-            "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-client/test-connection-id3"
-        ))
-        .await
-        .expect("Failed to connect");
 
         // 4.  Send a `CurrentFile` message with a file to edit that exists only
         //     in the IDE.
@@ -881,7 +901,7 @@ mod test {
         let join_handle = thread::spawn(move || {
             assert_eq!(
                 minreq::get(format!(
-                    "http://localhost:8080/vsc/fs/test-connection-id3/{}/only-in-ide.py",
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}/only-in-ide.py",
                     test_dir_thread.to_str().unwrap()
                 ))
                 .send()
@@ -1090,15 +1110,25 @@ mod test {
             }
         );
 
-        // 8. Send a `CurrentFile` message from the Client, requesting a file that exists on disk, but not in the IDE.
-        //
-        // Message ids: IDE - 10, Server - 12, Client - 8->11.
+        check_logger_errors(0);
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    // Send a `CurrentFile` message from the Client, requesting a file that exists on disk, but not in the IDE.
+    #[actix_web::test]
+    async fn test_vscode_ide_websocket4() {
+        let connection_id = "test-connection-id4";
+        let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+        open_client(&mut ws_ide).await;
+
+        // Message ids: IDE - 4, Server - 3, Client - 2->5.
         send_message(
             &mut ws_client,
             &EditorMessage {
-                id: 8.0,
+                id: 2.0,
                 message: EditorMessageContents::CurrentFile(format!(
-                    "http://localhost:8080/vsc/fs/test-connection-id3/{}/test.py",
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}/test.py",
                     test_dir.to_str().unwrap()
                 )),
             },
@@ -1115,12 +1145,12 @@ mod test {
             )))
             .unwrap()
         );
-        assert_eq!(em.id, 8.0);
+        assert_eq!(em.id, 2.0);
 
         send_message(
             &mut ws_ide,
             &EditorMessage {
-                id: 8.0,
+                id: 2.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             },
         )
@@ -1128,7 +1158,7 @@ mod test {
         assert_eq!(
             read_message(&mut ws_client).await,
             EditorMessage {
-                id: 8.0,
+                id: 2.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
             }
         );
@@ -1138,7 +1168,7 @@ mod test {
         let join_handle = thread::spawn(move || {
             assert_eq!(
                 minreq::get(format!(
-                    "http://localhost:8080/vsc/fs/test-connection-id3/{}/test.py",
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}/test.py",
                     test_dir_thread.to_str().unwrap()
                 ))
                 .send()
@@ -1150,20 +1180,20 @@ mod test {
 
         // This should produce a `LoadFile` message.
         //
-        // Message ids: IDE - 10, Server - 12->15, Client - 11.
+        // Message ids: IDE - 4, Server - 3->6, Client - 5.
         let em = read_message(&mut ws_ide).await;
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
         assert_eq!(
             path::absolute(Path::new(&msg)).unwrap(),
             path::absolute(format!("{}/test.py", test_dir.to_str().unwrap())).unwrap()
         );
-        assert_eq!(em.id, 12.0);
+        assert_eq!(em.id, 3.0);
 
         // Reply to the `LoadFile` message: the IDE doesn't have the file.
         send_message(
             &mut ws_ide,
             &EditorMessage {
-                id: 12.0,
+                id: 3.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
             },
         )
@@ -1172,11 +1202,11 @@ mod test {
 
         // This should also produce an `Update` message sent from the Server.
         //
-        // Message ids: IDE - 10, Server - 15->18, Client - 11.
+        // Message ids: IDE - 4, Server - 6->9, Client - 5.
         assert_eq!(
             read_message(&mut ws_client).await,
             EditorMessage {
-                id: 15.0,
+                id: 6.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -1201,7 +1231,7 @@ mod test {
         send_message(
             &mut ws_client,
             &EditorMessage {
-                id: 15.0,
+                id: 6.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             },
         )
@@ -1209,18 +1239,30 @@ mod test {
         assert_eq!(
             read_message(&mut ws_ide).await,
             EditorMessage {
-                id: 15.0,
+                id: 6.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             }
         );
 
-        // 9. Send a `RequestClose` message to the Client.
+        check_logger_errors(0);
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    // Send a `RequestClose` message to the Client, then close the Client.
+    #[actix_web::test]
+    async fn test_vscode_ide_websocket5() {
+        let connection_id = "test-connection-id5";
+        let (temp_dir, _, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+        open_client(&mut ws_ide).await;
+
+        // Message ids: IDE - 4->7, Server - 3, Client - 2.
         //
-        // Message ids: IDE - 10->13, Server - 18, Client - 11.
+        // Send the `RequestClose` message.
         send_message(
             &mut ws_ide,
             &EditorMessage {
-                id: 10.0,
+                id: 4.0,
                 message: EditorMessageContents::RequestClose,
             },
         )
@@ -1228,14 +1270,14 @@ mod test {
         assert_eq!(
             read_message(&mut ws_client).await,
             EditorMessage {
-                id: 10.0,
+                id: 4.0,
                 message: EditorMessageContents::RequestClose
             }
         );
         send_message(
             &mut ws_client,
             &EditorMessage {
-                id: 10.0,
+                id: 4.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             },
         )
@@ -1243,12 +1285,12 @@ mod test {
         assert_eq!(
             read_message(&mut ws_ide).await,
             EditorMessage {
-                id: 10.0,
+                id: 4.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             }
         );
 
-        // 10. Close the Client websocket.
+        // Close the Client websocket.
         ws_client.close(None).await.unwrap();
         loop {
             match ws_ide.next().await.unwrap().unwrap() {
@@ -1258,12 +1300,26 @@ mod test {
             }
         }
 
-        // TODO:
+        check_logger_errors(0);
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    #[actix_web::test]
+    async fn test_vscode_ide_websocketn() {
+        let connection_id = "test-connection-idn";
+        let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+        open_client(&mut ws_ide).await;
+
+        // Message ids: IDE - 4, Server - 3, Client - 2.
         //
-        // - Test shutdown from the IDE.
 
         check_logger_errors(0);
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
     }
+
+    // TODO:
+    //
+    // - Test shutdown from the IDE.
 }
