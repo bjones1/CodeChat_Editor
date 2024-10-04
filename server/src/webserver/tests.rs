@@ -20,14 +20,17 @@ use std::path::{self, PathBuf};
 
 use assertables::assert_ends_with;
 
-use super::{path_to_url, url_to_path};
+use super::{filewatcher::FILEWATCHER_PATH_PREFIX, path_to_url, url_to_path};
 use crate::prep_test_dir;
 
 // ## Tests
 #[test]
 fn test_url_to_path() {
     assert_eq!(
-        url_to_path("http://127.0.0.1:8080/fw/fsc/dummy_connection_id/path%20spaces/foo.py"),
+        url_to_path(
+            "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/path%20spaces/foo.py",
+            &FILEWATCHER_PATH_PREFIX
+        ),
         Ok(path::absolute(PathBuf::from("path spaces/foo.py")).unwrap())
     );
 }

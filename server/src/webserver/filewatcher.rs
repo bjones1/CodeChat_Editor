@@ -69,6 +69,8 @@ lazy_static! {
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
 }
 
+pub const FILEWATCHER_PATH_PREFIX: &[&str] = &["fw", "fsc"];
+
 /// ## File browser endpoints
 ///
 /// The file browser provides a very crude interface, allowing a user to select
@@ -549,7 +551,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             }
 
                             EditorMessageContents::CurrentFile(url_string) => {
-                                let result = match url_to_path(&url_string) {
+                                let result = match url_to_path(&url_string, FILEWATCHER_PATH_PREFIX) {
                                     Err(err) => Err(err),
                                     Ok(file_path) => 'err_exit: {
                                         // We finally have the desired path! First,

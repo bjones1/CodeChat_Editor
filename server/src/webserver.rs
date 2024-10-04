@@ -1067,7 +1067,7 @@ async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: Messa
     }
 }
 
-fn url_to_path(url_string: &str) -> Result<PathBuf, String> {
+fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, String> {
     // Convert this URL back to a file path.
     match Url::parse(url_string) {
         Err(err) => Err(format!("Error: unable to parse URL {url_string}: {err}")),
@@ -1075,14 +1075,19 @@ fn url_to_path(url_string: &str) -> Result<PathBuf, String> {
             None => Err(format!("Error: URL {url} cannot be a base.")),
             Some(path_segments) => {
                 // Make sure the path segments start with
-                // `/fw/fsc/{connection_id}`.
-                let ps: Vec<_> = path_segments.collect();
-                if ps.len() <= 3 || ps[0] != "fw" || ps[1] != "fsc" {
+                // the `expected_prefix`.
+                let path_segments_vec: Vec<_> = path_segments.collect();
+                let prefix_equal = expected_prefix
+                    .iter()
+                    .zip(&path_segments_vec)
+                    .all(|(a, b)| a == b);
+                // The URL should have at least the expected prefix plus one more element (the connection ID).
+                if path_segments_vec.len() < expected_prefix.len() + 1 || !prefix_equal {
                     Err(format!("Error: URL {url} has incorrect prefix."))
                 } else {
                     // Strip these first three segments; the remainder is a file
                     // path.
-                    let path_str_encoded = ps[3..].join("/");
+                    let path_str_encoded = path_segments_vec[expected_prefix.len() + 1..].join("/");
                     // On non-Windows systems, the path should start with a `/`.
                     // Windows path already start with a drive letter.
                     #[cfg(not(target_os = "windows"))]

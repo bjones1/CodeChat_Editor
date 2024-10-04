@@ -46,10 +46,13 @@ use crate::{
     queue_send,
     webserver::{
         escape_html, filesystem_endpoint, html_wrapper, make_simple_http_response, path_to_url,
-        text_file_to_response, ProcessingTaskHttpRequest, ResultOkTypes, UpdateMessageContents,
-        INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
+        text_file_to_response, url_to_path, ProcessingTaskHttpRequest, ResultOkTypes,
+        UpdateMessageContents, INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
     },
 };
+
+// ## Globals
+const VSCODE_PATH_PREFIX: &[&str] = &["vsc", "fs"];
 
 // ## Code
 //
@@ -273,7 +276,6 @@ pub async fn vscode_ide_websocket(
                     Some(ide_message) = from_ide_rx.recv() => {
                         match ide_message.message {
                             // Handle messages that the IDE must not send.
-                            EditorMessageContents::Closed |
                             EditorMessageContents::Opened(_) |
                             EditorMessageContents::LoadFile(_) |
                             EditorMessageContents::ClientHtml(_) => {
@@ -283,6 +285,7 @@ pub async fn vscode_ide_websocket(
                             },
 
                             // Handle messages that are simply passed through.
+                            EditorMessageContents::Closed |
                             EditorMessageContents::RequestClose =>
                                 queue_send!(to_client_tx.send(ide_message)),
 
@@ -395,7 +398,6 @@ pub async fn vscode_ide_websocket(
                     Some(client_message) = from_client_rx.recv() => {
                         match client_message.message {
                             // Handle messages that the client must not send.
-                            EditorMessageContents::Closed |
                             EditorMessageContents::Opened(_) |
                             EditorMessageContents::LoadFile(_) |
                             EditorMessageContents::ClientHtml(_) => {
@@ -405,6 +407,7 @@ pub async fn vscode_ide_websocket(
                             },
 
                             // Handle messages that are simply passed through.
+                            EditorMessageContents::Closed |
                             EditorMessageContents::RequestClose |
                             EditorMessageContents::Result(_) => queue_send!(to_ide_tx.send(client_message)),
 
@@ -444,7 +447,27 @@ pub async fn vscode_ide_websocket(
 
                             // Update the current file; translate it to a URL
                             // then pass it to the IDE.
-                            EditorMessageContents::CurrentFile(_file_path) => {
+                            EditorMessageContents::CurrentFile(url_string) => {
+                                let result = match url_to_path(&url_string, VSCODE_PATH_PREFIX) {
+                                    Err(err) => Err(format!("Unable to convert URL to path: {err}")),
+                                    Ok(file_path) => {
+                                        match file_path.to_str() {
+                                            None => Err("Unable to convert path to string.".to_string()),
+                                            Some(file_path_string) => {
+                                                queue_send!(to_ide_tx.send(EditorMessage {
+                                                    id: client_message.id,
+                                                    message: EditorMessageContents::CurrentFile(file_path_string.to_string())
+                                                }));
+                                                current_file = file_path;
+                                                Ok(())
+                                            }
+                                        }
+                                    }
+                                };
+                                if let Err(msg) = result {
+                                    error!("{msg}");
+                                    send_response(&to_client_tx, client_message.id, Err(msg)).await;
+                                }
                             }
                         }
                     },
@@ -537,7 +560,9 @@ async fn serve_vscode_fs(
 #[cfg(test)]
 mod test {
     use std::{
+        fs,
         io::Error,
+        path::{self, Path},
         thread,
         time::{Duration, SystemTime},
     };
@@ -776,7 +801,15 @@ mod test {
         // Message ids: IDE - 4, Server - 3->6, Client - 2.
         let em = read_message(&mut ws_ide).await;
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
-        assert_ends_with!(msg.to_string_lossy(), "/none.py");
+        // We can't use `canonicalize` here, since the file doesn't exist.
+        assert_eq!(
+            path::absolute(Path::new(&format!(
+                "{}/none.py",
+                test_dir.to_str().unwrap()
+            )))
+            .unwrap(),
+            path::absolute(Path::new(&msg)).unwrap()
+        );
         assert_eq!(em.id, 3.0);
 
         // Reply to the `LoadFile` message -- the file isn't present.
@@ -863,7 +896,10 @@ mod test {
         // Message ids: IDE - 7, Server - 6->9, Client - 2.
         let em = read_message(&mut ws_ide).await;
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
-        assert_ends_with!(msg.to_string_lossy(), "/only-in-ide.py");
+        assert_eq!(
+            path::absolute(Path::new(&msg)).unwrap(),
+            path::absolute(format!("{}/only-in-ide.py", test_dir.to_str().unwrap())).unwrap()
+        );
         assert_eq!(em.id, 6.0);
 
         // Reply to the `LoadFile` message with the file's contents.
@@ -928,7 +964,7 @@ mod test {
 
         // 6.  Send an `Update` message from the IDE.
         //
-        // Message ids: IDE - 7->10, Server - 9, Client - 5.
+        // Message ids: IDE - 7->10, Server - 12, Client - 5.
         send_message(
             &mut ws_ide,
             &EditorMessage {
@@ -992,7 +1028,7 @@ mod test {
 
         // 7.  Send an `Update` message from the Client.
         //
-        // Message ids: IDE - 10, Server - 9, Client - 5->8.
+        // Message ids: IDE - 10, Server - 12, Client - 5->8.
         send_message(
             &mut ws_client,
             &EditorMessage {
@@ -1054,13 +1090,177 @@ mod test {
             }
         );
 
+        // 8. Send a `CurrentFile` message from the Client, requesting a file that exists on disk, but not in the IDE.
+        //
+        // Message ids: IDE - 10, Server - 12, Client - 8->11.
+        send_message(
+            &mut ws_client,
+            &EditorMessage {
+                id: 8.0,
+                message: EditorMessageContents::CurrentFile(format!(
+                    "http://localhost:8080/vsc/fs/test-connection-id3/{}/test.py",
+                    test_dir.to_str().unwrap()
+                )),
+            },
+        )
+        .await;
+
+        let em = read_message(&mut ws_ide).await;
+        let cf = cast!(em.message, EditorMessageContents::CurrentFile);
+        assert_eq!(
+            fs::canonicalize(Path::new(&cf)).unwrap(),
+            fs::canonicalize(Path::new(&format!(
+                "{}/test.py",
+                test_dir.to_str().unwrap()
+            )))
+            .unwrap()
+        );
+        assert_eq!(em.id, 8.0);
+
+        send_message(
+            &mut ws_ide,
+            &EditorMessage {
+                id: 8.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            },
+        )
+        .await;
+        assert_eq!(
+            read_message(&mut ws_client).await,
+            EditorMessage {
+                id: 8.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+            }
+        );
+
+        // The Client should send a GET request for this file.
+        let test_dir_thread = test_dir.clone();
+        let join_handle = thread::spawn(move || {
+            assert_eq!(
+                minreq::get(format!(
+                    "http://localhost:8080/vsc/fs/test-connection-id3/{}/test.py",
+                    test_dir_thread.to_str().unwrap()
+                ))
+                .send()
+                .unwrap()
+                .status_code,
+                200
+            )
+        });
+
+        // This should produce a `LoadFile` message.
+        //
+        // Message ids: IDE - 10, Server - 12->15, Client - 11.
+        let em = read_message(&mut ws_ide).await;
+        let msg = cast!(em.message, EditorMessageContents::LoadFile);
+        assert_eq!(
+            path::absolute(Path::new(&msg)).unwrap(),
+            path::absolute(format!("{}/test.py", test_dir.to_str().unwrap())).unwrap()
+        );
+        assert_eq!(em.id, 12.0);
+
+        // Reply to the `LoadFile` message: the IDE doesn't have the file.
+        send_message(
+            &mut ws_ide,
+            &EditorMessage {
+                id: 12.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+            },
+        )
+        .await;
+        join_handle.join().unwrap();
+
+        // This should also produce an `Update` message sent from the Server.
+        //
+        // Message ids: IDE - 10, Server - 15->18, Client - 11.
+        assert_eq!(
+            read_message(&mut ws_client).await,
+            EditorMessage {
+                id: 15.0,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    contents: Some(CodeChatForWeb {
+                        metadata: SourceFileMetadata {
+                            mode: "python".to_string(),
+                        },
+                        source: CodeMirror {
+                            doc: "\n".to_string(),
+                            doc_blocks: vec![(
+                                0,
+                                0,
+                                "".to_string(),
+                                "#".to_string(),
+                                "<p>test.py</p>\n".to_string()
+                            )],
+                        },
+                    }),
+                    cursor_position: None,
+                    scroll_position: None,
+                })
+            }
+        );
+        send_message(
+            &mut ws_client,
+            &EditorMessage {
+                id: 15.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            },
+        )
+        .await;
+        assert_eq!(
+            read_message(&mut ws_ide).await,
+            EditorMessage {
+                id: 15.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            }
+        );
+
+        // 9. Send a `RequestClose` message to the Client.
+        //
+        // Message ids: IDE - 10->13, Server - 18, Client - 11.
+        send_message(
+            &mut ws_ide,
+            &EditorMessage {
+                id: 10.0,
+                message: EditorMessageContents::RequestClose,
+            },
+        )
+        .await;
+        assert_eq!(
+            read_message(&mut ws_client).await,
+            EditorMessage {
+                id: 10.0,
+                message: EditorMessageContents::RequestClose
+            }
+        );
+        send_message(
+            &mut ws_client,
+            &EditorMessage {
+                id: 10.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            },
+        )
+        .await;
+        assert_eq!(
+            read_message(&mut ws_ide).await,
+            EditorMessage {
+                id: 10.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            }
+        );
+
+        // 10. Close the Client websocket.
+        ws_client.close(None).await.unwrap();
+        loop {
+            match ws_ide.next().await.unwrap().unwrap() {
+                Message::Ping(_) => ws_ide.send(Message::Pong(vec![])).await.unwrap(),
+                Message::Close(_) => break,
+                _ => panic!("Unexpected message."),
+            }
+        }
 
         // TODO:
         //
-        // - Send a CurrentFile from the Client.
-        // - Fetch a file that exists in the filesystem but not in the IDE.
-        // - Send a `RequestClose` from the IDE.
-        // - Test shutdown from both ends (close the websocket).
+        // - Test shutdown from the IDE.
 
         check_logger_errors(0);
         // Report any errors produced when removing the temporary directory.
