@@ -804,10 +804,9 @@ mod test {
     #[actix_web::test]
     async fn test_vscode_ide_websocket3() {
         let connection_id = "test-connection-id3";
-        let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+        let (temp_dir, test_dir, mut ws_ide, _) = prep_test!(connection_id).await;
         open_client(&mut ws_ide).await;
-        // Message ids: IDE - 4, Server - 3, Client - 2.
-        //
+
         // Do this is a thread, since the request generates a message that
         // requires a response in order to complete.
         let test_dir_thread = test_dir.clone();
@@ -854,10 +853,20 @@ mod test {
         // response (file not found).
         join_handle.join().unwrap();
 
-        // 4.  Send a `CurrentFile` message with a file to edit that exists only
-        //     in the IDE.
-        //
-        // Message ids: IDE - 4->7, Server - 6, Client - 2.
+        check_logger_errors(0);
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    // Send a `CurrentFile` message with a file to edit that exists only
+    // in the IDE.
+    #[actix_web::test]
+    async fn test_vscode_ide_websocket8() {
+        let connection_id = "test-connection-id8";
+        let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+        open_client(&mut ws_ide).await;
+
+        // Message ids: IDE - 4->7, Server - 3, Client - 2.
         send_message(
             &mut ws_ide,
             &EditorMessage {
@@ -897,7 +906,7 @@ mod test {
             }
         );
 
-        // 5.  The Client should send a GET request for this file.
+        // The Client should send a GET request for this file.
         let test_dir_thread = test_dir.clone();
         let join_handle = thread::spawn(move || {
             assert_eq!(
@@ -914,20 +923,20 @@ mod test {
 
         // This should produce a `LoadFile` message.
         //
-        // Message ids: IDE - 7, Server - 6->9, Client - 2.
+        // Message ids: IDE - 7, Server - 3->6, Client - 2.
         let em = read_message(&mut ws_ide).await;
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
         assert_eq!(
             path::absolute(Path::new(&msg)).unwrap(),
             path::absolute(format!("{}/only-in-ide.py", test_dir.to_str().unwrap())).unwrap()
         );
-        assert_eq!(em.id, 6.0);
+        assert_eq!(em.id, 3.0);
 
         // Reply to the `LoadFile` message with the file's contents.
         send_message(
             &mut ws_ide,
             &EditorMessage {
-                id: 6.0,
+                id: 3.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(Some(
                     "# testing".to_string(),
                 )))),
@@ -938,11 +947,11 @@ mod test {
 
         // This should also produce an `Update` message sent from the Server.
         //
-        // Message ids: IDE - 7, Server - 9->12, Client - 2->5.
+        // Message ids: IDE - 7, Server - 6->9, Client - 2.
         assert_eq!(
             read_message(&mut ws_client).await,
             EditorMessage {
-                id: 9.0,
+                id: 6.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -967,7 +976,7 @@ mod test {
         send_message(
             &mut ws_client,
             &EditorMessage {
-                id: 9.0,
+                id: 6.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             },
         )
@@ -978,18 +987,72 @@ mod test {
         assert_eq!(
             read_message(&mut ws_ide).await,
             EditorMessage {
-                id: 9.0,
+                id: 6.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
             }
         );
 
-        // 6.  Send an `Update` message from the IDE.
+        check_logger_errors(0);
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    // Send an `Update` message from the IDE.
+    #[actix_web::test]
+    async fn test_vscode_ide_websocket7() {
+        let connection_id = "test-connection-id7";
+        let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+        open_client(&mut ws_ide).await;
+
+        // Set the current file, so a subsequent `Update` message can be translated.
         //
-        // Message ids: IDE - 7->10, Server - 12, Client - 5.
+        // Message ids: IDE - 4, Server - 3, Client - 2->5.
+        send_message(
+            &mut ws_client,
+            &EditorMessage {
+                id: 2.0,
+                message: EditorMessageContents::CurrentFile(format!(
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}/test.py",
+                    test_dir.to_str().unwrap()
+                )),
+            },
+        )
+        .await;
+        let em = read_message(&mut ws_ide).await;
+        let cf = cast!(em.message, EditorMessageContents::CurrentFile);
+        assert_eq!(
+            path::absolute(Path::new(&cf)).unwrap(),
+            path::absolute(Path::new(&format!(
+                "{}/test.py",
+                test_dir.to_str().unwrap()
+            )))
+            .unwrap()
+        );
+        assert_eq!(em.id, 2.0);
+
         send_message(
             &mut ws_ide,
             &EditorMessage {
-                id: 7.0,
+                id: 2.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            },
+        )
+        .await;
+        assert_eq!(
+            read_message(&mut ws_client).await,
+            EditorMessage {
+                id: 2.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+            }
+        );
+
+        // Send an `Update` message.
+        //
+        // Message ids: IDE - 4->7, Server - 3, Client - 5.
+        send_message(
+            &mut ws_ide,
+            &EditorMessage {
+                id: 4.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -1009,7 +1072,7 @@ mod test {
         assert_eq!(
             read_message(&mut ws_client).await,
             EditorMessage {
-                id: 7.0,
+                id: 4.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -1034,7 +1097,7 @@ mod test {
         send_message(
             &mut ws_client,
             &EditorMessage {
-                id: 7.0,
+                id: 4.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             },
         )
@@ -1042,18 +1105,28 @@ mod test {
         assert_eq!(
             read_message(&mut ws_ide).await,
             EditorMessage {
-                id: 7.0,
+                id: 4.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
             }
         );
 
-        // 7.  Send an `Update` message from the Client.
-        //
-        // Message ids: IDE - 10, Server - 12, Client - 5->8.
+        check_logger_errors(0);
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    // Send an `Update` message from the Client.
+    #[actix_web::test]
+    async fn test_vscode_ide_websocket6() {
+        let connection_id = "test-connection-id6";
+        let (temp_dir, _, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+        open_client(&mut ws_ide).await;
+
+        // Message ids: IDE - 4, Server - 3, Client - 2->5.
         send_message(
             &mut ws_client,
             &EditorMessage {
-                id: 5.0,
+                id: 2.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -1079,7 +1152,7 @@ mod test {
         assert_eq!(
             read_message(&mut ws_ide).await,
             EditorMessage {
-                id: 5.0,
+                id: 2.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
@@ -1098,7 +1171,7 @@ mod test {
         send_message(
             &mut ws_ide,
             &EditorMessage {
-                id: 5.0,
+                id: 2.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
             },
         )
@@ -1106,7 +1179,7 @@ mod test {
         assert_eq!(
             read_message(&mut ws_client).await,
             EditorMessage {
-                id: 5.0,
+                id: 2.0,
                 message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
             }
         );
@@ -1306,21 +1379,24 @@ mod test {
         temp_dir.close().unwrap();
     }
 
+    // Close the IDE.
     #[actix_web::test]
-    async fn test_vscode_ide_websocketn() {
-        let connection_id = "test-connection-idn";
-        let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+    async fn test_vscode_ide_websocket9() {
+        let connection_id = "test-connection-id9";
+        let (temp_dir, _, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
         open_client(&mut ws_ide).await;
 
-        // Message ids: IDE - 4, Server - 3, Client - 2.
-        //
+        ws_ide.close(None).await.unwrap();
+        loop {
+            match ws_client.next().await.unwrap().unwrap() {
+                Message::Ping(_) => ws_client.send(Message::Pong(vec![])).await.unwrap(),
+                Message::Close(_) => break,
+                _ => panic!("Unexpected message."),
+            }
+        }
 
         check_logger_errors(0);
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
     }
-
-    // TODO:
-    //
-    // - Test shutdown from the IDE.
 }
