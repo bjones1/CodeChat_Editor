@@ -74,9 +74,11 @@ futures-util = "0.3.29"
 async-trait = "0.1.81"
 open = "5.3.0"
 dunce = "1.0.5"
+minreq = "2.12.0"
 mime = "0.3.17"
 mime_guess = "2.0.5"
 url = "2.5.2"
+clap = { version = "4.5.19", features = ["derive"] }
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"
@@ -86,7 +88,6 @@ win_partitions = "0.3.0"
 assertables = "8"
 assert_fs = "1"
 tokio-tungstenite = "0"
-minreq = "2.12.0"
 actix-http = "3.9.0"
 # See the [docs](https://github.com/rust-lang/rust-clippy#usage) to install
 # clippy; it can't be installed as a dev-dependency. See the

@@ -21,9 +21,9 @@ mod filewatcher;
 mod tests;
 mod vscode;
 
-/// ## Imports
-///
-/// ### Standard library
+// ## Imports
+//
+// ### Standard library
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
@@ -36,8 +36,9 @@ use std::{
 // ### Third-party
 use actix_files;
 use actix_web::{
-    dev::{ServiceFactory, ServiceRequest},
+    dev::{ServerHandle, ServiceFactory, ServiceRequest},
     error::Error,
+    get,
     http::header::ContentType,
     web, App, HttpRequest, HttpResponse, HttpServer,
 };
@@ -46,7 +47,7 @@ use bytes::Bytes;
 use dunce::simplified;
 use futures_util::StreamExt;
 use lazy_static::lazy_static;
-use log::{error, info, warn};
+use log::{error, info, warn, LevelFilter};
 use log4rs;
 use mime::Mime;
 use mime_guess;
@@ -217,6 +218,8 @@ struct UpdateMessageContents {
 /// Define the [state](https://actix.rs/docs/application/#state) available to
 /// all endpoints.
 pub struct AppState {
+    // Provide methods to control the server.
+    server_handle: Mutex<Option<ServerHandle>>,
     // The number of the next connection ID to assign.
     connection_id: Mutex<u32>,
     // For each connection ID, store a queue tx for the HTTP server to send
@@ -264,9 +267,9 @@ macro_rules! queue_send {
 /// ## Globals
 ///
 /// The IP address on which the server listens for incoming connections.
-const IP_ADDRESS: &str = "127.0.0.1";
+pub const IP_ADDRESS: &str = "127.0.0.1";
 /// The port on which the server listens for incoming connections.
-const IP_PORT: u16 = 8080;
+pub const IP_PORT: u16 = 8080;
 
 // The timeout for a reply from a websocket. Use a short timeout to speed up
 // unit tests.
@@ -334,8 +337,23 @@ lazy_static! {
 
 }
 
-/// ## Webserver functionality
-///
+// ## Webserver functionality
+#[get("/ping")]
+async fn ping() -> HttpResponse {
+    HttpResponse::Ok().body("pong")
+}
+
+#[get("/stop")]
+async fn stop(app_state: web::Data<AppState>) -> HttpResponse {
+    let Some(ref server_handle) = *app_state.server_handle.lock().unwrap() else {
+        error!("Server handle not available to stop server.");
+        return HttpResponse::InternalServerError().finish();
+    };
+    // Don't await this, since that shuts down the server, preventing the following HTTP response. Assign it to a variable to suppress the warning.
+    drop(server_handle.stop(true));
+    HttpResponse::NoContent().finish()
+}
+
 /// Return a unique ID for an IDE websocket connection.
 fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
     let mut connection_id = app_state.connection_id.lock().unwrap();
@@ -992,20 +1010,25 @@ pub async fn run_server() -> std::io::Result<()> {
     let _ = &*BUNDLED_FILES_MAP;
     let _ = &*CODECHAT_EDITOR_FRAMEWORK_JS;
     let app_data = make_app_data();
-    let server = match HttpServer::new(move || configure_app(App::new(), &app_data))
+    let app_data_server = app_data.clone();
+    let server = match HttpServer::new(move || configure_app(App::new(), &app_data_server))
         .bind((IP_ADDRESS, IP_PORT))
     {
-        Ok(server) => server,
+        Ok(server) => server.run(),
         Err(err) => {
             error!("Unable to bind to {IP_ADDRESS}:{IP_PORT} - {err}");
             return Err(err);
         }
     };
-    server.run().await
+    // Store the server handle in the global state.
+    *(app_data.server_handle.lock().unwrap()) = Some(server.handle());
+    // Start the server.
+    server.await
 }
 
-pub fn configure_logger() {
+pub fn configure_logger(level: LevelFilter) {
     log4rs::init_file("log4rs.yml", Default::default()).unwrap();
+    log::set_max_level(level);
 }
 
 // Quoting the [docs](https://actix.rs/docs/application#shared-mutable-state),
@@ -1015,6 +1038,7 @@ pub fn configure_logger() {
 // `configure_app`, preventing globally shared state.
 fn make_app_data() -> web::Data<AppState> {
     web::Data::new(AppState {
+        server_handle: Mutex::new(None),
         connection_id: Mutex::new(0),
         processing_task_queue_tx: Arc::new(Mutex::new(HashMap::new())),
         filewatcher_client_queues: Arc::new(Mutex::new(HashMap::new())),
@@ -1047,7 +1071,9 @@ where
         .service(serve_vscode_fs)
         .service(vscode_ide_websocket)
         .service(vscode_client_websocket)
-        // Reroute to the filesystem for typical user-requested URLs.
+        .service(ping)
+        .service(stop)
+        // Reroute to the filewatcher filesystem for typical user-requested URLs.
         .route("/", web::get().to(filewatcher_root_fs_redirect))
         .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
 }
