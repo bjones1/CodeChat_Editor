@@ -775,7 +775,7 @@ mod tests {
         send_response(&ide_tx_queue, id, Ok(ResultOkTypes::Void)).await;
 
         // Check the contents.
-        let translation_results = source_to_codechat_for_web("", "py", false, false);
+        let translation_results = source_to_codechat_for_web("", &"py".to_string(), false, false);
         let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
         assert_eq!(umc.contents, Some(codechat_for_web));
 
