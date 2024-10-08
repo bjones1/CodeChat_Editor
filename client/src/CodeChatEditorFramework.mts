@@ -56,8 +56,9 @@ interface EditorMessageContents {
 let webSocketComm: WebSocketComm;
 
 class WebSocketComm {
-    // Use a unique ID for each websocket message sent.
-    ws_id = 0;
+    // Use a unique ID for each websocket message sent. See the Implementation
+    // section on Message IDs for more information.
+    ws_id = -9007199254740990;
     // The websocket used by this class. Really a `ReconnectingWebSocket`, but
     // that's not a type.
     ws: WebSocket;
@@ -210,7 +211,7 @@ class WebSocketComm {
         message: EditorMessageContents,
         callback: () => void = () => 0,
     ) => {
-        const id = this.ws_id++;
+        const id = this.ws_id += 3;
         const jm: EditorMessage = {
             id: id,
             message: message,
