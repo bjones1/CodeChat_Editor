@@ -347,7 +347,8 @@ async fn stop(app_state: web::Data<AppState>) -> HttpResponse {
         error!("Server handle not available to stop server.");
         return HttpResponse::InternalServerError().finish();
     };
-    // Don't await this, since that shuts down the server, preventing the following HTTP response. Assign it to a variable to suppress the warning.
+    // Don't await this, since that shuts down the server, preventing the
+    // following HTTP response. Assign it to a variable to suppress the warning.
     drop(server_handle.stop(true));
     HttpResponse::NoContent().finish()
 }
@@ -1071,7 +1072,8 @@ where
         .service(vscode_client_websocket)
         .service(ping)
         .service(stop)
-        // Reroute to the filewatcher filesystem for typical user-requested URLs.
+        // Reroute to the filewatcher filesystem for typical user-requested
+        // URLs.
         .route("/", web::get().to(filewatcher_root_fs_redirect))
         .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
 }
@@ -1098,14 +1100,14 @@ fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, St
         Ok(url) => match url.path_segments() {
             None => Err(format!("Error: URL {url} cannot be a base.")),
             Some(path_segments) => {
-                // Make sure the path segments start with
-                // the `expected_prefix`.
+                // Make sure the path segments start with the `expected_prefix`.
                 let path_segments_vec: Vec<_> = path_segments.collect();
                 let prefix_equal = expected_prefix
                     .iter()
                     .zip(&path_segments_vec)
                     .all(|(a, b)| a == b);
-                // The URL should have at least the expected prefix plus one more element (the connection ID).
+                // The URL should have at least the expected prefix plus one
+                // more element (the connection ID).
                 if path_segments_vec.len() < expected_prefix.len() + 1 || !prefix_equal {
                     Err(format!("Error: URL {url} has incorrect prefix."))
                 } else {

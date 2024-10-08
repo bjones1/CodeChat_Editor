@@ -3,6 +3,7 @@
 // ## Imports
 //
 // ### Standard library
+//
 // None.
 //
 // ### Third-party
@@ -46,7 +47,8 @@ async fn test_start_no_response() {
             .await
             .unwrap();
     });
-    // The test must be run in a separate thread to avoid blocking the main thread; otherwise, the webserver will not respond.
+    // The test must be run in a separate thread to avoid blocking the main
+    // thread; otherwise, the webserver will not respond.
     let test = spawn_blocking(move || {
         let mut cmd = Command::cargo_bin("codechat-editor-server").unwrap();
         let assert = cmd

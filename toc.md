@@ -14,12 +14,15 @@
     3.  [lexer.rs](server/src/lexer.rs)
         1.  [Lexer walkthrough](server/src/lexer/lexer-walkthrough.md)
         2.  [supported_languages.rs](server/src/lexer/supported_languages.rs)
-        3.  [tests.rs](server/src/lexer/tests.rs)
     4.  [webserver.rs](server/src/webserver.rs)
         1.  [filewatcher.rs](server/src/webserver/filewatcher.rs)
         2.  [vscode.rs](server/src/webserver/vscode.rs)
     5.  [processing.rs](server/src/processing.rs)
-    6.  [Cargo.toml](server/Cargo.toml)
+    6.  Tests
+        1.  [test_utils.rs](server/src/test_utils.rs)
+        2.  Lexer [tests.rs](server/src/lexer/tests.rs)
+        3.  [cli.rs](server/tests/cli.rs)
+    7.  [Cargo.toml](server/Cargo.toml)
 2.  Client
     1.  Editor
         1.  [CodeChatEditorFramework.mts](client/src/CodeChatEditorFramework.mts)
@@ -49,7 +52,7 @@
         4.  [.eslintrc.yml](client/.eslintrc.yml)
         5.  [.prettierignore](.prettierignore)
     3.  Misc
-        1.  [config.toml](server/.cargo/config.toml) - for rust code coverage
+        1.  [config.toml](server/.cargo/config.toml) - for Rust code coverage
 
 ## Misc
 

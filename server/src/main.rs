@@ -1,25 +1,22 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
-// software: you can redistribute it and/or modify it under the terms of the
-// GNU General Public License as published by the Free Software Foundation,
-// either version 3 of the License, or (at your option) any later version.
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
 //
 // The CodeChat Editor is distributed in the hope that it will be useful, but
-// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-// more details.
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
 //
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-//
 /// # `main.rs` -- Entrypoint for the CodeChat Editor Server
-///
 // ## Imports
 //
 // ### Standard library
-//
 use std::{
     env,
     process::{exit, Command},
@@ -38,7 +35,9 @@ use code_chat_editor::webserver::{self, IP_ADDRESS};
 // ## Code
 //
 // ### Command-line interface
-// The following code defines the command-line interface for the CodeChat Editor.
+//
+// The following code defines the command-line interface for the CodeChat
+// Editor.
 #[derive(Parser)]
 #[command(name = "The CodeChat Editor Server", version, about, long_about=None)]
 struct Cli {
@@ -80,7 +79,9 @@ struct ServeCommand {
 }
 
 // ### CLI implementation
-// The following code implements the command-line interface for the CodeChat Editor.
+//
+// The following code implements the command-line interface for the CodeChat
+// Editor.
 impl Cli {
     fn run(self) {
         match &self.command {
@@ -184,7 +185,8 @@ impl Cli {
             }
             Some(Commands::Stop) => {
                 println!("Stopping server...");
-                // TODO: Use https://crates.io/crates/sysinfo to find the server process and kill it if it doesn't respond to a stop request.
+                // TODO: Use https://crates.io/crates/sysinfo to find the server
+                // process and kill it if it doesn't respond to a stop request.
                 let err_msg = match minreq::get(format!("http://{IP_ADDRESS}:{}/stop", self.port))
                     .with_timeout(3)
                     .send()
@@ -221,7 +223,8 @@ mod test {
     use super::Cli;
     use clap::CommandFactory;
 
-    // This is recommended in the [docs](https://docs.rs/clap/latest/clap/_derive/_tutorial/chapter_4/index.html).
+    // This is recommended in the
+    // [docs](https://docs.rs/clap/latest/clap/_derive/_tutorial/chapter_4/index.html).
     #[test]
     fn verify_cli() {
         Cli::command().debug_assert();

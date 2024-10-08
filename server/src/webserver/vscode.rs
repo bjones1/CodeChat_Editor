@@ -654,7 +654,8 @@ mod test {
         connect_async_server("/vsc/ws-client", connection_id).await
     }
 
-    // Open the Client in the VSCode browser. (Although, for testing, the Client isn't opened at all.)
+    // Open the Client in the VSCode browser. (Although, for testing, the Client
+    // isn't opened at all.)
     //
     // Message ids at function end: IDE - 4, Server - 3, Client - 2.
     async fn open_client<S: AsyncRead + AsyncWrite + Unpin>(ws_ide: &mut WebSocketStream<S>) {
@@ -700,7 +701,9 @@ mod test {
         .await;
     }
 
-    // Perform all the setup for testing the Server via IDE and Client websockets. This should be invoked by the `prep_test!` macro; otherwise, test files won't be found.
+    // Perform all the setup for testing the Server via IDE and Client
+    // websockets. This should be invoked by the `prep_test!` macro; otherwise,
+    // test files won't be found.
     async fn _prep_test(
         connection_id: &str,
         test_full_name: &str,
@@ -717,7 +720,9 @@ mod test {
         (temp_dir, test_dir, ws_ide, ws_client)
     }
 
-    // This calls `_prep_test` with the current function name. It must be a macro, so that it's called with the test function's name; calling it inside `_prep_test` would give the wrong name.
+    // This calls `_prep_test` with the current function name. It must be a
+    // macro, so that it's called with the test function's name; calling it
+    // inside `_prep_test` would give the wrong name.
     macro_rules! prep_test {
         ($connection_id: ident) => {{
             use crate::function_name;
@@ -799,8 +804,7 @@ mod test {
         check_logger_errors(0);
     }
 
-    // Fetch a non-existent file and verify the response returns an
-    // error.
+    // Fetch a non-existent file and verify the response returns an error.
     #[actix_web::test]
     async fn test_vscode_ide_websocket3() {
         let connection_id = "test-connection-id3";
@@ -858,8 +862,8 @@ mod test {
         temp_dir.close().unwrap();
     }
 
-    // Send a `CurrentFile` message with a file to edit that exists only
-    // in the IDE.
+    // Send a `CurrentFile` message with a file to edit that exists only in the
+    // IDE.
     #[actix_web::test]
     async fn test_vscode_ide_websocket8() {
         let connection_id = "test-connection-id8";
@@ -1004,7 +1008,8 @@ mod test {
         let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
         open_client(&mut ws_ide).await;
 
-        // Set the current file, so a subsequent `Update` message can be translated.
+        // Set the current file, so a subsequent `Update` message can be
+        // translated.
         //
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
         send_message(
@@ -1189,7 +1194,8 @@ mod test {
         temp_dir.close().unwrap();
     }
 
-    // Send a `CurrentFile` message from the Client, requesting a file that exists on disk, but not in the IDE.
+    // Send a `CurrentFile` message from the Client, requesting a file that
+    // exists on disk, but not in the IDE.
     #[actix_web::test]
     async fn test_vscode_ide_websocket4() {
         let connection_id = "test-connection-id4";
