@@ -20,7 +20,7 @@ or (better) build from source.
 4.  Install all NPM dependencies: in the `client/` directory, run `npm update`.
 5.  Package all JavaScript dependencies from NPM: also in the `client/`
     directory, run `npm run build`.
-6.  In the `server/` directory, execute `cargo run`.
+6.  In the `server/` directory, execute `cargo run -- serve`.
 7.  Open `http://localhost:8080` in your browser.
 8.  Open the file `README.md`.
 

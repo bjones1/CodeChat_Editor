@@ -286,7 +286,8 @@ const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
     // A simpler value when testing.
     0.0
 } else {
-    // In production, start with the smallest number exactly representable.
+    // In production, start with the smallest whole number exactly
+    // representable. This is -9007199254740991.
     -((1i64 << f64::MANTISSA_DIGITS) - 1) as f64
 };
 /// The increment for a message ID. Since the Client, IDE, and Server all
