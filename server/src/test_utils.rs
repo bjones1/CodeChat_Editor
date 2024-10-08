@@ -168,3 +168,12 @@ pub fn check_logger_errors(num_expected_errors: usize) {
         );
     });
 }
+
+// This avoids a lot of clippy warnings: "unnecessary use of `to_string`", for a line like this:
+//
+// `let css_lexer = llc.map_mode_to_lexer.get(&"css".to_string()).unwrap();`
+//
+// Here, the call to `get` really does require a `&String`, so the code above is necessary. Calling `stringit` instead avoids the warning.
+pub fn stringit(s: &str) -> String {
+    s.to_string()
+}

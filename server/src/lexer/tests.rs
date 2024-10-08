@@ -18,6 +18,7 @@
 // ## Imports
 use super::supported_languages::get_language_lexer_vec;
 use super::{compile_lexers, source_lexer, CodeDocBlock, DocBlock};
+use crate::test_utils::stringit;
 
 // ## Utilities
 //
@@ -44,7 +45,7 @@ fn build_code_block(contents: &str) -> CodeDocBlock {
 #[test]
 fn test_py() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let py = llc.map_mode_to_lexer.get(&"python".to_string()).unwrap();
+    let py = llc.map_mode_to_lexer.get(&stringit("python")).unwrap();
 
     // Try basic cases: make sure than newlines are processed correctly.
     assert_eq!(source_lexer("", py), []);
@@ -220,10 +221,7 @@ fn test_py() {
 #[test]
 fn test_js() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let js = llc
-        .map_mode_to_lexer
-        .get(&"javascript".to_string())
-        .unwrap();
+    let js = llc.map_mode_to_lexer.get(&stringit("javascript")).unwrap();
 
     // JavaScript tests.
     //
@@ -459,7 +457,7 @@ fn test_js() {
 #[test]
 fn test_cpp() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let cpp = llc.map_mode_to_lexer.get(&"c_cpp".to_string()).unwrap();
+    let cpp = llc.map_mode_to_lexer.get(&stringit("c_cpp")).unwrap();
 
     // Try out a C++ heredoc.
     assert_eq!(
@@ -474,7 +472,7 @@ fn test_cpp() {
 #[test]
 fn test_csharp() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let csharp = llc.map_mode_to_lexer.get(&"csharp".to_string()).unwrap();
+    let csharp = llc.map_mode_to_lexer.get(&stringit("csharp")).unwrap();
 
     // Try out a verbatim string literal with embedded double quotes.
     assert_eq!(
@@ -489,7 +487,7 @@ fn test_csharp() {
 #[test]
 fn test_matlab() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let matlab = llc.map_mode_to_lexer.get(&"matlab".to_string()).unwrap();
+    let matlab = llc.map_mode_to_lexer.get(&stringit("matlab")).unwrap();
 
     // Test both inline comment styles. Verify that escaped quotes are ignored,
     // and that doubled quotes are handled correctly.
@@ -533,7 +531,7 @@ a = 2
 #[test]
 fn test_rust() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let rust = llc.map_mode_to_lexer.get(&"rust".to_string()).unwrap();
+    let rust = llc.map_mode_to_lexer.get(&stringit("rust")).unwrap();
 
     // Test Rust raw strings.
     assert_eq!(
@@ -578,7 +576,7 @@ More depth 1 */"#
 #[test]
 fn test_sql() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let sql = llc.map_mode_to_lexer.get(&"sql".to_string()).unwrap();
+    let sql = llc.map_mode_to_lexer.get(&stringit("sql")).unwrap();
 
     // Test strings with embedded single quotes.
     assert_eq!(
@@ -593,7 +591,7 @@ fn test_sql() {
 #[test]
 fn test_swift() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let swift = llc.map_mode_to_lexer.get(&"swift".to_string()).unwrap();
+    let swift = llc.map_mode_to_lexer.get(&stringit("swift")).unwrap();
 
     // Test comments.
     assert_eq!(
@@ -669,7 +667,7 @@ foo(#"""
 #[test]
 fn test_toml() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let toml = llc.map_mode_to_lexer.get(&"toml".to_string()).unwrap();
+    let toml = llc.map_mode_to_lexer.get(&stringit("toml")).unwrap();
     assert_eq!(toml.language_lexer.lexer_name.as_str(), "toml");
 
     // Multi-line literal strings don't have escapes.
@@ -695,7 +693,7 @@ fn test_toml() {
 fn test_compiler() {
     let llc = compile_lexers(get_language_lexer_vec());
 
-    let c_ext_lexer_arr = llc.map_ext_to_lexer_vec.get(&"c".to_string()).unwrap();
+    let c_ext_lexer_arr = llc.map_ext_to_lexer_vec.get(&stringit("c")).unwrap();
     assert_eq!(c_ext_lexer_arr.len(), 1);
     assert_eq!(
         c_ext_lexer_arr[0].language_lexer.lexer_name.as_str(),
@@ -703,7 +701,7 @@ fn test_compiler() {
     );
     assert_eq!(
         llc.map_mode_to_lexer
-            .get(&"verilog".to_string())
+            .get(&stringit("verilog"))
             .unwrap()
             .language_lexer
             .lexer_name

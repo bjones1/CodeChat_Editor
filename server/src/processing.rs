@@ -783,6 +783,8 @@ fn html_analyze(
 mod tests {
     use std::{path::PathBuf, str::FromStr};
 
+    use predicates::prelude::predicate::str;
+
     use super::{find_path_to_toc, TranslationResults};
     use super::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
     use crate::lexer::{
@@ -792,6 +794,7 @@ mod tests {
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
         source_to_codechat_for_web,
     };
+    use crate::test_utils::stringit;
 
     use crate::prep_test_dir;
 
@@ -1001,7 +1004,7 @@ mod tests {
     #[test]
     fn test_code_doc_blocks_to_source_py() {
         let llc = compile_lexers(get_language_lexer_vec());
-        let py_lexer = llc.map_mode_to_lexer.get(&"python".to_string()).unwrap();
+        let py_lexer = llc.map_mode_to_lexer.get(&stringit("python")).unwrap();
 
         // An empty document.
         assert_eq!(code_doc_block_vec_to_source(&vec![], py_lexer).unwrap(), "");
@@ -1092,7 +1095,7 @@ mod tests {
     #[test]
     fn test_code_doc_blocks_to_source_css() {
         let llc = compile_lexers(get_language_lexer_vec());
-        let css_lexer = llc.map_mode_to_lexer.get(&"css".to_string()).unwrap();
+        let css_lexer = llc.map_mode_to_lexer.get(&stringit("css")).unwrap();
 
         // An empty document.
         assert_eq!(
@@ -1167,7 +1170,7 @@ mod tests {
     #[test]
     fn test_code_doc_blocks_to_source_csharp() {
         let llc = compile_lexers(get_language_lexer_vec());
-        let csharp_lexer = llc.map_mode_to_lexer.get(&"csharp".to_string()).unwrap();
+        let csharp_lexer = llc.map_mode_to_lexer.get(&stringit("csharp")).unwrap();
 
         // An empty document.
         assert_eq!(
