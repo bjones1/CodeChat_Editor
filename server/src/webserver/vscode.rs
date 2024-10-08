@@ -586,7 +586,7 @@ mod test {
     };
 
     use super::super::{
-        run_server, EditorMessage, EditorMessageContents, IdeType, IP_ADDRESS, IP_PORT,
+        run_server, tests::IP_PORT, EditorMessage, EditorMessageContents, IdeType, IP_ADDRESS,
     };
     use crate::{
         cast,
@@ -598,7 +598,7 @@ mod test {
     lazy_static! {
         // Run a single webserver for all tests.
         static ref webserver_handle: JoinHandle<Result<(), Error>> =
-            actix_rt::spawn(async move { run_server().await });
+            actix_rt::spawn(async move { run_server(IP_PORT).await });
     }
 
     // Send a message via a websocket.

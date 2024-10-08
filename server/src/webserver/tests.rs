@@ -23,6 +23,10 @@ use assertables::assert_ends_with;
 use super::{filewatcher::FILEWATCHER_PATH_PREFIX, path_to_url, url_to_path};
 use crate::prep_test_dir;
 
+// ## Constants
+/// The default port on which the server listens for incoming connections.
+pub const IP_PORT: u16 = 8080;
+
 // ## Tests
 #[test]
 fn test_url_to_path() {

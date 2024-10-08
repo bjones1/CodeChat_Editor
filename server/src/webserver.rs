@@ -18,7 +18,7 @@
 // ## Submodules
 mod filewatcher;
 #[cfg(test)]
-mod tests;
+pub mod tests;
 mod vscode;
 
 // ## Imports
@@ -268,8 +268,6 @@ macro_rules! queue_send {
 ///
 /// The IP address on which the server listens for incoming connections.
 pub const IP_ADDRESS: &str = "127.0.0.1";
-/// The port on which the server listens for incoming connections.
-pub const IP_PORT: u16 = 8080;
 
 // The timeout for a reply from a websocket. Use a short timeout to speed up
 // unit tests.
@@ -1001,22 +999,22 @@ async fn client_websocket(
 
 // ## Webserver core
 #[actix_web::main]
-pub async fn main() -> std::io::Result<()> {
-    run_server().await
+pub async fn main(port: u16) -> std::io::Result<()> {
+    run_server(port).await
 }
 
-pub async fn run_server() -> std::io::Result<()> {
+pub async fn run_server(port: u16) -> std::io::Result<()> {
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
     let _ = &*CODECHAT_EDITOR_FRAMEWORK_JS;
     let app_data = make_app_data();
     let app_data_server = app_data.clone();
     let server = match HttpServer::new(move || configure_app(App::new(), &app_data_server))
-        .bind((IP_ADDRESS, IP_PORT))
+        .bind((IP_ADDRESS, port))
     {
         Ok(server) => server.run(),
         Err(err) => {
-            error!("Unable to bind to {IP_ADDRESS}:{IP_PORT} - {err}");
+            error!("Unable to bind to {IP_ADDRESS}:{port} - {err}");
             return Err(err);
         }
     };
