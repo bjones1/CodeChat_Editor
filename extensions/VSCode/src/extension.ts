@@ -77,14 +77,24 @@ interface IdeType {
     VSCode: boolean,
 }
 
+interface CodeMirror {
+    doc: string
+    doc_blocks: []
+}
+
+interface CodeChatForWeb {
+    metadata: { mode: ""}
+    source: CodeMirror
+}
+
 interface UpdateMessageContents {
-    contents: string | undefined,
+    contents: CodeChatForWeb | undefined,
     cursor_position: number | undefined,
     scroll_position: number | undefined
 }
 
 interface ResultOkTypes {
-    LoadFile?: string | undefined,
+    LoadFile: string | null,
 }
 
 interface MessageResult {
@@ -266,7 +276,7 @@ export function activate(context: vscode.ExtensionContext) {
                             `Error communicating with the CodeChat Editor Server: ${err.message}. Re-run the CodeChat Editor extension to restart it.`
                         );
                         // The close event will be
-                        // `emitted next <https://nodejs.org/api/net.html#net_event_error_1>`\_;
+                        // [emitted next](https://nodejs.org/api/net.html#net_event_error_1);
                         // that will handle cleanup.
                     });
 
@@ -276,7 +286,7 @@ export function activate(context: vscode.ExtensionContext) {
                         );
                         // If there was an error, the event handler above
                         // already provided the message. Note: the
-                        // `parameter hadError <https://nodejs.org/api/net.html#net_event_close_1>`\_
+                        // [parameter hadError](https://nodejs.org/api/net.html#net_event_close_1)
                         // only applies to transmission errors, not to any other
                         // errors which trigger the error callback. Therefore,
                         // I'm using the `was_error` flag instead to catch
@@ -296,6 +306,11 @@ export function activate(context: vscode.ExtensionContext) {
                         send_message({
                             Opened: { VSCode: codechat_client_location === CodeChatEditorClientLocation.html }
                         });
+                        console.log("CodeChat Editor extension: sent Opened message.");
+                        // For the external browser, we can immediately send the `CurrentFile` message. For the WebView, we must first wait to receive the HTML for the WebView (the `ClientHtml` message).
+                        if (codechat_client_location === CodeChatEditorClientLocation.browser) {
+                            current_file();
+                        }
                     });
 
                     websocket.on("message", data => {
@@ -316,7 +331,13 @@ export function activate(context: vscode.ExtensionContext) {
                                 console.log(
                                     `Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`,
                                 );
-                                // TODO!
+                                // TODO: handle activeTextEditor undefined, handle contents undefined.
+                                vscode.window.activeTextEditor!.edit((editBuilder) => {
+                                    editBuilder.replace(
+                                        new vscode.Range(0, 0, vscode.window.activeTextEditor!.document.lineCount, 0),
+                                        current_update.contents!.source.doc
+                                    );
+                                });
                                 send_result(id);
                                 break;
                             }
@@ -354,7 +375,7 @@ export function activate(context: vscode.ExtensionContext) {
                                 const load_file = value as string;
                                 console.log(`LoadFile(${load_file})`);
                                 // TODO!
-                                send_result(id, {Ok: {LoadFile: undefined}});
+                                send_result(id, {Ok: {LoadFile: null}});
                                 break;
                             }
 
@@ -364,7 +385,7 @@ export function activate(context: vscode.ExtensionContext) {
                                 webview_panel.webview.html = client_html;
                                 send_result(id);
                                 // Send editor's current file to the server.
-                                send_message({CurrentFile: vscode.window.activeTextEditor!.document.fileName});
+                                current_file();
                                 break;
                             }
 
@@ -405,6 +426,7 @@ const send_message = (
             message,
         };
         assert(websocket);
+        console.log(`CodeChat Editor extension: sending message id ${jm.id}.`);
         websocket.send(JSON.stringify(jm));
         pending_messages[id] = {
             timer_id: setTimeout(report_server_timeout, 2000, id),
@@ -448,7 +470,10 @@ function start_render() {
                 console.log("CodeChat Editor extension: starting render.");
                 send_message({
                     Update: {
-                        contents: vscode.window.activeTextEditor!.document.getText(),
+                        contents: {
+                            metadata: { mode: "" },
+                            source: { doc: vscode.window.activeTextEditor!.document.getText(), doc_blocks: [] }
+                        },
                         cursor_position: 0,
                         scroll_position: 0
                     }
@@ -461,6 +486,7 @@ function start_render() {
 const current_file = () => {
     if (can_render()) {
         send_message({CurrentFile: vscode.window.activeTextEditor!.document.fileName});
+        console.log("CodeChat Editor extension: sent CurrentFile message.");
     }
 }
 
@@ -505,7 +531,6 @@ function show_error(message: string) {
 // Only render if the window and editor are active, we have a valid render
 // client, and the webview is visible.
 function can_render(): boolean {
-    console.log(vscode.window.activeTextEditor);
     return (
         vscode.window.activeTextEditor !== undefined &&
         websocket !== undefined &&

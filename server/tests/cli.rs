@@ -15,10 +15,15 @@ use predicates::str::contains;
 use code_chat_editor::webserver::IP_ADDRESS;
 use tokio::task::spawn_blocking;
 
+// ## Support functions
+fn get_server() -> Command {
+    Command::cargo_bin("codechat-editor-server").unwrap()
+}
+
 // ## Tests
 #[test]
 fn test_start_not_found() {
-    let mut cmd = Command::cargo_bin("codechat-editor-server").unwrap();
+    let mut cmd = get_server();
     let assert = cmd.args(["--test-mode", "not-found", "start"]).assert();
     assert
         .failure()
@@ -27,7 +32,7 @@ fn test_start_not_found() {
 
 #[test]
 fn test_start_no_start() {
-    let mut cmd = Command::cargo_bin("codechat-editor-server").unwrap();
+    let mut cmd = get_server();
     let assert = cmd
         .args(["--test-mode", "sleep", "--port", "8081", "start"])
         .assert();

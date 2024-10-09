@@ -375,8 +375,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
             );
 
             // Provide it a file to open.
-            let encoded_path = path_to_url(&current_filepath);
-            let url_pathbuf = format!("/fw/fsc/{connection_id}/{encoded_path}");
+            let url_pathbuf = path_to_url("/fw/fsc", &connection_id.to_string(), &current_filepath);
             let mut id: f64 = 0.0;
             queue_send!(to_websocket_tx.send(EditorMessage {
                 id,
@@ -681,7 +680,7 @@ mod tests {
             TranslationResults,
         },
         test_utils::{check_logger_errors, configure_testing_logger},
-        webserver::{IdeType, ResultOkTypes},
+        webserver::{tests::IP_PORT, IdeType, ResultOkTypes},
     };
 
     async fn get_websocket_queues(
@@ -691,7 +690,7 @@ mod tests {
         WebsocketQueues,
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error>,
     ) {
-        let app_data = make_app_data();
+        let app_data = make_app_data(IP_PORT);
         let app = test::init_service(configure_app(App::new(), &app_data)).await;
 
         // Load in a test source file to create a websocket.
@@ -752,12 +751,13 @@ mod tests {
         test_path.push("test.py");
         // The comparison below fails without this.
         let test_path = test_path.canonicalize().unwrap();
-        let url = Url::parse(&format!(
-            "http://localhost{}",
-            urlencoding::decode(&url_string).unwrap()
-        ))
-        .unwrap();
-        let url_segs: Vec<_> = url.path_segments().unwrap().collect();
+        // The URL parser requires a valid origin.
+        let url = Url::parse(&format!("http://foo.com{url_string}")).unwrap();
+        let url_segs: Vec<_> = url
+            .path_segments()
+            .unwrap()
+            .map(|s| urlencoding::decode(s).unwrap())
+            .collect();
         let url_path = PathBuf::from_str(&url_segs[3..].join("/"))
             .unwrap()
             .canonicalize()

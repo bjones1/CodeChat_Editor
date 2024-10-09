@@ -27,7 +27,7 @@ mod vscode;
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
-    path::{self, Path, PathBuf},
+    path::{self, Path, PathBuf, MAIN_SEPARATOR_STR},
     str::FromStr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -66,7 +66,9 @@ use tokio::{
     time::sleep,
 };
 use url::Url;
-use vscode::{serve_vscode_fs, vscode_client_websocket, vscode_ide_websocket};
+use vscode::{
+    serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
+};
 
 // ### Local
 use crate::processing::{
@@ -222,6 +224,8 @@ pub struct AppState {
     server_handle: Mutex<Option<ServerHandle>>,
     // The number of the next connection ID to assign.
     connection_id: Mutex<u32>,
+    // The port this server listens on.
+    port: u16,
     // For each connection ID, store a queue tx for the HTTP server to send
     // requests to the processing task for that ID.
     processing_task_queue_tx: Arc<Mutex<HashMap<String, Sender<ProcessingTaskHttpRequest>>>>,
@@ -365,6 +369,28 @@ async fn stop(app_state: web::Data<AppState>) -> HttpResponse {
     // following HTTP response. Assign it to a variable to suppress the warning.
     drop(server_handle.stop(true));
     HttpResponse::NoContent().finish()
+}
+
+/// Assign an ID to a new connection.
+#[get("/id")]
+async fn connection_id_endpoint(
+    req: HttpRequest,
+    body: web::Payload,
+    app_state: web::Data<AppState>,
+) -> Result<HttpResponse, Error> {
+    let (response, mut session, _msg_stream) = actix_ws::handle(&req, body)?;
+    actix_rt::spawn(async move {
+        if let Err(err) = session
+            .text(get_connection_id(&app_state).to_string())
+            .await
+        {
+            error!("Unable to send connection ID: {err}");
+        }
+        if let Err(err) = session.close(None).await {
+            error!("Unable to close connection: {err}");
+        }
+    });
+    Ok(response)
 }
 
 /// Return a unique ID for an IDE websocket connection.
@@ -868,7 +894,7 @@ async fn client_websocket(
                                     match serde_json::from_str::<EditorMessage>(&b) {
                                         Err(err) => {
                                             error!(
-                                                "Unable to decode JSON message from the CodeChat Editor client: {err}"
+                                                "Unable to decode JSON message from the CodeChat Editor IDE or client: {err}.\nText was: '{b}'."
                                             );
                                             break;
                                         }
@@ -1022,7 +1048,7 @@ pub async fn run_server(port: u16) -> std::io::Result<()> {
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
     let _ = &*CODECHAT_EDITOR_FRAMEWORK_JS;
-    let app_data = make_app_data();
+    let app_data = make_app_data(port);
     let app_data_server = app_data.clone();
     let server = match HttpServer::new(move || configure_app(App::new(), &app_data_server))
         .bind((IP_ADDRESS, port))
@@ -1052,10 +1078,11 @@ pub fn configure_logger(level: LevelFilter) {
 // closure passed to `HttpServer::new` and moved/cloned in." Putting this code
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
-fn make_app_data() -> web::Data<AppState> {
+fn make_app_data(port: u16) -> web::Data<AppState> {
     web::Data::new(AppState {
         server_handle: Mutex::new(None),
         connection_id: Mutex::new(0),
+        port,
         processing_task_queue_tx: Arc::new(Mutex::new(HashMap::new())),
         filewatcher_client_queues: Arc::new(Mutex::new(HashMap::new())),
         vscode_ide_queues: Arc::new(Mutex::new(HashMap::new())),
@@ -1087,6 +1114,7 @@ where
         .service(serve_vscode_fs)
         .service(vscode_ide_websocket)
         .service(vscode_client_websocket)
+        .service(vscode_client_framework)
         .service(ping)
         .service(stop)
         // Reroute to the filewatcher filesystem for typical user-requested
@@ -1130,7 +1158,8 @@ fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, St
                 } else {
                     // Strip these first three segments; the remainder is a file
                     // path.
-                    let path_str_encoded = path_segments_vec[expected_prefix.len() + 1..].join("/");
+                    let path_str_encoded =
+                        path_segments_vec[expected_prefix.len() + 1..].join(MAIN_SEPARATOR_STR);
                     // On non-Windows systems, the path should start with a `/`.
                     // Windows path already start with a drive letter.
                     #[cfg(not(target_os = "windows"))]
@@ -1167,9 +1196,9 @@ fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, St
 }
 
 // Given a file path, convert it to a URL, encoding as necessary.
-fn path_to_url(file_path: &Path) -> String {
+fn path_to_url(prefix: &str, connection_id: &str, file_path: &Path) -> String {
     // First, convert the path to use forward slashes.
-    simplified(file_path)
+    let pathname = simplified(file_path)
         .to_slash()
         .unwrap()
         // The convert each part of the path to a URL-encoded string. (This
@@ -1178,7 +1207,8 @@ fn path_to_url(file_path: &Path) -> String {
         .map(|s| urlencoding::encode(s))
         // Then put it all back together.
         .collect::<Vec<_>>()
-        .join("/")
+        .join("/");
+    format!("{prefix}/{connection_id}/{pathname}")
 }
 
 // Given a `Path`, transform it into a displayable HTML string (with any

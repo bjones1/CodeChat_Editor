@@ -16,9 +16,15 @@
 //
 /// # `test.rs` -- Unit tests for the webserver
 // ## Imports
-use std::path::{self, PathBuf};
+use std::{
+    env::{current_dir, set_current_dir},
+    path::{self, PathBuf, MAIN_SEPARATOR_STR},
+    thread::{self, sleep},
+    time::Duration,
+};
 
-use assertables::assert_ends_with;
+use assert_cmd::Command;
+use assertables::{assert_ends_with, assert_starts_with};
 
 use super::{filewatcher::FILEWATCHER_PATH_PREFIX, path_to_url, url_to_path};
 use crate::prep_test_dir;
@@ -26,6 +32,11 @@ use crate::prep_test_dir;
 // ## Constants
 /// The default port on which the server listens for incoming connections.
 pub const IP_PORT: u16 = 8080;
+
+// ## Support functions
+fn get_server() -> Command {
+    Command::cargo_bin("codechat-editor-server").unwrap()
+}
 
 // ## Tests
 #[test]
@@ -35,7 +46,10 @@ fn test_url_to_path() {
             "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/path%20spaces/foo.py",
             FILEWATCHER_PATH_PREFIX
         ),
-        Ok(path::absolute(PathBuf::from("path spaces/foo.py")).unwrap())
+        Ok(path::absolute(PathBuf::from(format!(
+            "path spaces{MAIN_SEPARATOR_STR}foo.py"
+        )))
+        .unwrap())
     );
 }
 
@@ -45,10 +59,38 @@ fn test_path_to_url() {
 
     let mut file_path = test_dir.clone();
     file_path.push("test spaces.py");
-    assert_ends_with!(
-        path_to_url(&file_path),
-        "/test_path_to_url/test%20spaces.py"
-    );
+    let url = path_to_url("/a/b", "conn1", &file_path);
+    assert_starts_with!(url, "/a/b/conn1/");
+    assert_ends_with!(url, "test_path_to_url/test%20spaces.py");
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
+}
+
+// Test startup outside the repo path.
+#[test]
+fn test_other_path() {
+    let (temp_dir, test_dir) = prep_test_dir!();
+
+    let old_dir = current_dir().unwrap();
+    set_current_dir(&test_dir).unwrap();
+
+    // Start the server.
+    let handle = thread::spawn(move || {
+        get_server()
+            .args(["--port", "8083", "start"])
+            .assert()
+            .success();
+    });
+    sleep(Duration::from_millis(200));
+    get_server()
+        .args(["--port", "8083", "stop"])
+        .assert()
+        .success();
+    handle.join().unwrap();
+
+    // Restore the original directory, so the temporary directory can be removed.
+    set_current_dir(&old_dir).unwrap();
+
     // Report any errors produced when removing the temporary directory.
     temp_dir.close().unwrap();
 }

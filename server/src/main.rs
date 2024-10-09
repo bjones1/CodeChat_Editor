@@ -85,14 +85,14 @@ struct ServeCommand {
 impl Cli {
     fn run(self) {
         match &self.command {
-            Some(Commands::Serve(serve_commad)) => {
+            Some(Commands::Serve(serve_command)) => {
                 #[cfg(debug_assertions)]
                 if let Some(TestMode::Sleep) = self.test_mode {
                     // For testing, don't start the server at all.
                     std::thread::sleep(std::time::Duration::from_secs(10));
                     exit(0);
                 }
-                webserver::configure_logger(serve_commad.log.unwrap_or(LevelFilter::Warn));
+                webserver::configure_logger(serve_command.log.unwrap_or(LevelFilter::Warn));
                 webserver::main(self.port).unwrap();
             }
             None | Some(Commands::Start) => {

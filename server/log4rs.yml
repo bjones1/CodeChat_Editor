@@ -8,9 +8,7 @@ appenders:
     encoder:
       pattern: "{d} {l} {t} {L} - {m}{n}"
 
-# Set the default logging level to "warn" and attach the "stdout" appender to
-# the root
+# Attach the "stdout" appender to the root logger.
 root:
-  level: info
   appenders:
     - stdout
