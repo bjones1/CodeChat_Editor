@@ -277,7 +277,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         // ### JSON5
         make_language_lexer(
             "json5",
-            &["json"],
+            &["json", "json5"],
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
             &[

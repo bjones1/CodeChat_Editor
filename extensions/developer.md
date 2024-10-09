@@ -1,16 +1,15 @@
-***********************
-Developer documentation
-***********************
+**NOTE**: This file was copied from a previous project and needs significant
+editing.
 
-Release procedures
-==================
+# Developer documentation
+
+## Release procedures
 Each extension/plugin has a unique release procedure. See each extension/plugin's developer docs.
 
--   `Visual studio code <VSCode/developer>`
+-   [Visual studio code](VSCode/developer)
 
 
-Resources
-=========
+## Resources
 Extensions need the following support from an editor/IDE:
 
 -   An activation point -- a menu item/command to enable and disable CodeChat in the editor/IDE.
@@ -30,64 +29,55 @@ Extensions need the following support from the host programming language and its
 
 A typical plugin/extension has these modules:
 
--   A ``thrift_connection``: Thrift network connection to the server, along with a ``thrift_client`` created from that connection. There should be just one instance of these classes for each process.
--   A set of functions/methods to invoke `CodeChat editor/IDE services <editor_services>` along with a ``codechat_client_id`` used to communicate with the CodeChat Client. Each window needs its own client ID.
+-   A `thrift_connection`: Thrift network connection to the server, along with a `thrift_client` created from that connection. There should be just one instance of these classes for each process.
+-   A set of functions/methods to invoke on the CodeChat Editor Server along with a `codechat_client_id` used to communicate with the CodeChat Client. Each window needs its own client ID.
 
 
-Pseudocode
-==========
+## Pseudocode
 The typical operation of a plugin/extension is:
 
-Initialization
---------------
-#.  Register an activation point which invokes the start-up sequence below.
+### Initialization
+1.  Register an activation point which invokes the start-up sequence below.
 
-Enable sequence
----------------
+### Enable sequence
 This sequence may occur after CodeChat has already been enabled.
 
-#.  Is the Thrift network connection open? If not, the server may not be running. Therefore:
+1.  Is the Thrift network connection open? If not, the server may not be running. Therefore:
 
-    #.  Use IDE/editor's settings to determine the path to the CodeChat Server executable. If this path is not empty, then:
+    1.  Use IDE/editor's settings to determine the path to the CodeChat Server executable. If this path is not empty, then:
 
-        #.  Use the IDE's status message facility to tell the user that the CodeChat System is starting; this is important since starting the server usually takes a few seconds.
-        #.  Run the CodeChat Server with the ``start`` subcommand and wait for it to finish. If the return value was 0, the server is running. Otherwise, a non-zero return value indicates an error; stop here, reporting stdout and stderr to the user via the editor/IDE's error message facility.
+        1.  Use the IDE's status message facility to tell the user that the CodeChat System is starting; this is important since starting the server usually takes a few seconds.
+        1.  Run the CodeChat Server with the `start` subcommand and wait for it to finish. If the return value was 0, the server is running. Otherwise, a non-zero return value indicates an error; stop here, reporting stdout and stderr to the user via the editor/IDE's error message facility.
 
-    #.  Open a network connection to the server. If the connection fails, stop here and report the error; if the CodeChat Server executable path was empty, include this in the error message.
+    2.  Open a network connection to the server. If the connection fails, stop here and report the error; if the CodeChat Server executable path was empty, include this in the error message.
 
-#.  If the Thrift client isn't running, open it. If this fails, stop here and report the error.
-#.  Invoke ``get_client``; send the returned HTML/URL to an in-editor web browser if so instructed. Save the returned client ID.
-#.  Register for all relevant notifications (text edited, editor widow switched, etc.). Allocate a timer which will fire a timeout after the last notifications completes.
+3.  If the Thrift client isn't running, open it. If this fails, stop here and report the error.
+4.  Invoke `get_client`; send the returned HTML/URL to an in-editor web browser if so instructed. Save the returned client ID.
+5.  Register for all relevant notifications (text edited, editor widow switched, etc.). Allocate a timer which will fire a timeout after the last notifications completes.
 
-Main loop
----------
+### Main loop
 At this point, the CodeChat System is up and running. Now, the system should:
 
 -   Watch for IDE events, then send render requests to the server.
 -   Respond to and report connection errors.
 -   Respond to closing of the extension or the CodeChat Client web browser window.
 
-Disable sequence
-----------------
-#.  If the Thrift client is running, call ``stop_client()``. Close the client.
-#.  If the Thrift network connection is open, close it.
-#.  Close the in-editor/IDE web browser (if applicable).
-#.  Disable the idle timer and unregister for all notifications.
+### Disable sequence
+1.  If the Thrift client is running, call `stop_client()`. Close the client.
+2.  If the Thrift network connection is open, close it.
+3.  Close the in-editor/IDE web browser (if applicable).
+4.  Disable the idle timer and unregister for all notifications.
 
 
-Logging
-=======
+## Logging
 To help track down bugs, each side of a network connection needs to provide logging:
 
 -   The server logs all requests from the IDE, web server activity, and CodeChat Client activity.
--   The CodeChat Client emits ``console.log`` info.
+-   The CodeChat Client emits `console.log` info.
 -   Each extension should provide IDE-specific logging capabilities.
 
 
-.. _Settings system:
-
-Settings
-========
+## Settings
 Levels for settings:
 
 -   The system (admin user) level, where a given user may have only read access.

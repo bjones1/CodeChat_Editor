@@ -1,67 +1,61 @@
-// .. Copyright (C) 2012-2020 Bryan A. Jones.
+// Copyright (C) 2023 Bryan A. Jones.
 //
-//  This file is part of the CodeChat System.
+// This file is part of the CodeChat Editor. The CodeChat Editor is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
 //
-//  The CodeChat System is free software: you can redistribute it and/or
-//  modify it under the terms of the GNU General Public License as
-//  published by the Free Software Foundation, either version 3 of the
-//  License, or (at your option) any later version.
+// The CodeChat Editor is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
 //
-//  The CodeChat System is distributed in the hope that it will be
-//  useful, but WITHOUT ANY WARRANTY; without even the implied warranty
-//  of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-//  General Public License for more details.
+// You should have received a copy of the GNU General Public License along with
+// the CodeChat Editor. If not, see
+// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-//  You should have received a copy of the GNU General Public License
-//  along with the CodeChat System.  If not, see
-//  <http://www.gnu.org/licenses/>.
+// # `extension.ts` - The CodeChat Editor Visual Studio Code extension
 //
-// *****************************************************
-// |docname| - The CodeChat Visual Studio Code extension
-// *****************************************************
-// This extension creates a webview (see `activation/deactivation`_), then uses `CodeChat services`_ to render editor text in that webview.
+// This extension creates a webview (see `activation/deactivation`\_), then uses
+// a websocket connection to the CodeChat Editor Server and Client to render
+// editor text in that webview.
 //
-// Remote operation
-// ================
-// This extension doesn't fully work when running remotely. Specifically, the web browser in VSCode can't talk with the CodeChat Server via a websocket, since the server runs on the remote host while `the web browser (a WebView) runs locally <https://code.visualstudio.com/api/advanced-topics/remote-extensions#using-the-webview-api>`_. While the solutions on that page seem helpful, they don't support websocket connections (see the ``portMapping`` dropdown text in `WebViewOptions <https://code.visualstudio.com/api/references/vscode-api#WebviewOptions>`_). The workaround: use an external browser (running on the remote host).
+// ## Imports
 //
-//
-// Requirements
-// ============
-// Node.js packages
-// ----------------
+// ### Node.js packages
 import assert from "assert";
 import child_process  from"child_process";
 
-// Third-party packages
-// --------------------
+// ### Third-party packages
 import escape from "escape-html";
 import vscode from "vscode";
 import { WebSocket } from 'ws';
 
-// Local packages
-// --------------
+// ### Local packages
+//
 // None.
 //
-// Globals
-// =======
+// ## Globals
 enum CodeChatEditorClientLocation {
     html,
     browser
 }
 // These globals are truly global: only one is needed for this entire plugin.
-//
 let websocket: WebSocket | undefined;
-// Where the webclient resides: ``html`` for a webview panel embedded in VSCode; ``browser`` to use an external browser.
+// Where the webclient resides: `html` for a webview panel embedded in VSCode;
+// `browser` to use an external browser.
 let codechat_client_location: CodeChatEditorClientLocation = CodeChatEditorClientLocation.html;
 // True if the subscriptions to IDE change notifications have been registered.
 let subscribed = false;
 
-// A unique instance of these variables is required for each CodeChat panel. However, this code doesn't have a good UI way to deal with multiple panels, so only one is supported at this time.
+// A unique instance of these variables is required for each CodeChat panel.
+// However, this code doesn't have a good UI way to deal with multiple panels,
+// so only one is supported at this time.
 //
 // The webview panel used to display the CodeChat Client
 let webview_panel: vscode.WebviewPanel | undefined;
-// A timer used to wait for additional events (keystrokes, etc.) before performing a render.
+// A timer used to wait for additional events (keystrokes, etc.) before
+// performing a render.
 let idle_timer: NodeJS.Timeout | undefined;
 // Use a unique ID for each websocket message sent. See the Implementation
 // section on Message IDs for more information.
@@ -114,9 +108,10 @@ interface JointMessage {
 }
 
 
-// Activation/deactivation
-// =======================
-// This is invoked when the extension is activated. It either creates a new CodeChat Editor Server instance or reveals the currently running one.
+// ## Activation/deactivation
+//
+// This is invoked when the extension is activated. It either creates a new
+// CodeChat Editor Server instance or reveals the currently running one.
 export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand(
@@ -131,7 +126,9 @@ export function activate(context: vscode.ExtensionContext) {
                 if (!subscribed) {
                     subscribed = true;
 
-                    // Render when the text is changed by listening for the correct `event <https://code.visualstudio.com/docs/extensionAPI/vscode-api#Event>`_.
+                    // Render when the text is changed by listening for the
+                    // correct
+                    // `event <https://code.visualstudio.com/docs/extensionAPI/vscode-api#Event>`\_.
                     context.subscriptions.push(
                         vscode.workspace.onDidChangeTextDocument((_event) => {
                             start_render();
@@ -146,7 +143,8 @@ export function activate(context: vscode.ExtensionContext) {
                     );
                 }
 
-                // Get the CodeChat Client's location from the VSCode configuration.
+                // Get the CodeChat Client's location from the VSCode
+                // configuration.
                 const codechat_client_location_str = vscode.workspace
                     .getConfiguration("CodeChatEditor.Server")
                     .get("ClientLocation");
@@ -166,7 +164,8 @@ export function activate(context: vscode.ExtensionContext) {
                         assert(false);
                 }
 
-                // Create or reveal the webview panel; if this is an external browser, we'll open it after the client is created.
+                // Create or reveal the webview panel; if this is an external
+                // browser, we'll open it after the client is created.
                 if (
                     codechat_client_location ===
                     CodeChatEditorClientLocation.html
@@ -180,20 +179,36 @@ export function activate(context: vscode.ExtensionContext) {
                             "CodeChat Editor",
                             "CodeChat Editor",
                             {
-                                // Without this, the focus becomes this webview; setting this allows the code window open before this command was executed to retain the focus and be immediately rendered.
+                                // Without this, the focus becomes this webview;
+                                // setting this allows the code window open
+                                // before this command was executed to retain
+                                // the focus and be immediately rendered.
                                 preserveFocus: true,
-                                // Put this in the a column beside the current column.
+                                // Put this in the a column beside the current
+                                // column.
                                 viewColumn: vscode.ViewColumn.Beside,
                             },
-                            // See WebViewOptions_.
+                            // See WebViewOptions\_.
                             {
                                 enableScripts: true,
-                                // Note: Per the `docs <https://code.visualstudio.com/api/advanced-topics/remote-extensions#option-2-use-a-port-mapping>`__, there's a way to map from ports on the extension host machine (which may be running remotely) to local ports the webview sees (since webviews always run locally). However, this doesn't support websockets, and should also be in place when using an external browser. Therefore, we don't supply ``portMapping``.
+                                // Note: Per the
+                                // `docs <https://code.visualstudio.com/api/advanced-topics/remote-extensions#option-2-use-a-port-mapping>`\_\_,
+                                // there's a way to map from ports on the
+                                // extension host machine (which may be running
+                                // remotely) to local ports the webview sees
+                                // (since webviews always run locally). However,
+                                // this doesn't support websockets, and should
+                                // also be in place when using an external
+                                // browser. Therefore, we don't supply
+                                // `portMapping`.
                             }
                         );
-                        // TODO: do I need to dispose of this and the following event handlers? I'm assuming that it will be done automatically when the object is disposed.
+                        // TODO: do I need to dispose of this and the following
+                        // event handlers? I'm assuming that it will be done
+                        // automatically when the object is disposed.
                         webview_panel.onDidDispose(() => {
-                            // Shut down the render client when the webview panel closes.
+                            // Shut down the render client when the webview
+                            // panel closes.
                             console.log(
                                 "CodeChat Editor extension: shut down webview."
                             );
@@ -203,7 +218,8 @@ export function activate(context: vscode.ExtensionContext) {
 
                         // Render when the webview panel is shown.
                         webview_panel.onDidChangeViewState((_event: vscode.WebviewPanelOnDidChangeViewStateEvent) => {
-                            // Only render if the webview was activated; this event also occurs when it's deactivated.
+                            // Only render if the webview was activated; this
+                            // event also occurs when it's deactivated.
                             if (webview_panel?.active) {
                                 start_render()
                             }
@@ -211,9 +227,11 @@ export function activate(context: vscode.ExtensionContext) {
                     }
                 }
 
-                // Provide a simple status display while the CodeChat Editor Server is starting up.
+                // Provide a simple status display while the CodeChat Editor
+                // Server is starting up.
                 if (webview_panel !== undefined) {
-                    // If we have an ID, then the GUI is already running; don't replace it.
+                    // If we have an ID, then the GUI is already running; don't
+                    // replace it.
                     webview_panel.webview.html =
                         "<h1>CodeChat Editor</h1><p>Loading...</p>";
                 } else {
@@ -247,14 +265,22 @@ export function activate(context: vscode.ExtensionContext) {
                         show_error(
                             `Error communicating with the CodeChat Editor Server: ${err.message}. Re-run the CodeChat Editor extension to restart it.`
                         );
-                        // The close event will be `emitted next <https://nodejs.org/api/net.html#net_event_error_1>`_; that will handle cleanup.
+                        // The close event will be
+                        // `emitted next <https://nodejs.org/api/net.html#net_event_error_1>`\_;
+                        // that will handle cleanup.
                     });
 
                     websocket.on("close", (hadError: CloseEvent) => {
                         console.log(
                             "CodeChat Editor extension: closing websocket connection."
                         );
-                        // If there was an error, the event handler above already provided the message. Note: the `parameter hadError <https://nodejs.org/api/net.html#net_event_close_1>`_ only applies to transmission errors, not to any other errors which trigger the error callback. Therefore, I'm using the ``was_error`` flag instead to catch non-transmission errors.
+                        // If there was an error, the event handler above
+                        // already provided the message. Note: the
+                        // `parameter hadError <https://nodejs.org/api/net.html#net_event_close_1>`\_
+                        // only applies to transmission errors, not to any other
+                        // errors which trigger the error callback. Therefore,
+                        // I'm using the `was_error` flag instead to catch
+                        // non-transmission errors.
                         if (!was_error && hadError) {
                             show_error(
                                 "The connection to the CodeChat Editor Server was closed due to a transmission error. Re-run the CodeChat Editor extension to restart it."
@@ -304,8 +330,8 @@ export function activate(context: vscode.ExtensionContext) {
                             }
 
                             case "Result": {
-                                // Cancel the timer for this message and remove it from
-                                // `pending_messages`.
+                                // Cancel the timer for this message and remove
+                                // it from `pending_messages`.
                                 const pending_message = pending_messages[id];
                                 if (pending_message !== undefined) {
                                     const { timer_id, callback } =
@@ -365,7 +391,9 @@ export async function deactivate() {
     console.log("CodeChat extension: deactivated.");
 }
 
-    // Send a message expecting a result to the server.
+// ## Supporting functions
+//
+// Send a message expecting a result to the server.
 const send_message = (
         message: JointMessageContents,
         callback: () => void = () => 0,
@@ -390,8 +418,7 @@ const report_server_timeout = (message_id: number) => {
     console.log(`Error: server timeout for message id ${message_id}`);
 };
 
-// Send a result (a response to a message from the server) back to the
-// server.
+// Send a result (a response to a message from the server) back to the server.
 const send_result = (id: number, result: MessageResult = {Ok: "Void"}) => {
     // We can't simply call `send_message` because that function expects a
     // result message back from the server.
@@ -406,7 +433,9 @@ const send_result = (id: number, result: MessageResult = {Ok: "Void"}) => {
 };
 
 
-// This is called after an event such as an edit, or when the CodeChat panel becomes visible. Wait a bit in case any other events occur, then request a render.
+// This is called after an event such as an edit, or when the CodeChat panel
+// becomes visible. Wait a bit in case any other events occur, then request a
+// render.
 function start_render() {
     if (can_render()) {
         // Render after some inactivity: cancel any existing timer, then ...
@@ -435,7 +464,8 @@ const current_file = () => {
     }
 }
 
-// Gracefully shut down the render client if possible. Shut down the client as well.
+// Gracefully shut down the render client if possible. Shut down the client as
+// well.
 function stop_client() {
     console.log("CodeChat Editor extension: stopping client.");
     if (websocket !== undefined) {
@@ -446,15 +476,14 @@ function stop_client() {
         websocket = undefined;
     }
 
-    // Shut the timer down after the client is undefined, to ensure it can't be started again by a call to ``start_render()``.
+    // Shut the timer down after the client is undefined, to ensure it can't be
+    // started again by a call to `start_render()`.
     if (idle_timer !== undefined) {
         clearTimeout(idle_timer);
         idle_timer = undefined;
     }
 }
 
-// Supporting functions
-// ====================
 // Provide an error message in the panel if possible.
 function show_error(message: string) {
     if (webview_panel !== undefined) {
@@ -473,13 +502,15 @@ function show_error(message: string) {
     }
 }
 
-// Only render if the window and editor are active, we have a valid render client, and the webview is visible.
+// Only render if the window and editor are active, we have a valid render
+// client, and the webview is visible.
 function can_render(): boolean {
     console.log(vscode.window.activeTextEditor);
     return (
         vscode.window.activeTextEditor !== undefined &&
         websocket !== undefined &&
-        // If rendering in an external browser, the CodeChat panel doesn't need to be visible.
+        // If rendering in an external browser, the CodeChat panel doesn't need
+        // to be visible.
         (codechat_client_location === CodeChatEditorClientLocation.browser ||
             (webview_panel !== undefined && webview_panel.visible))
     );

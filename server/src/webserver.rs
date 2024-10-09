@@ -1,19 +1,19 @@
-/// Copyright (C) 2023 Bryan A. Jones.
-///
-/// This file is part of the CodeChat Editor. The CodeChat Editor is free
-/// software: you can redistribute it and/or modify it under the terms of the
-/// GNU General Public License as published by the Free Software Foundation,
-/// either version 3 of the License, or (at your option) any later version.
-///
-/// The CodeChat Editor is distributed in the hope that it will be useful, but
-/// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-/// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-/// more details.
-///
-/// You should have received a copy of the GNU General Public License along with
-/// the CodeChat Editor. If not, see
-/// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-///
+// Copyright (C) 2023 Bryan A. Jones.
+//
+// This file is part of the CodeChat Editor. The CodeChat Editor is free
+// software: you can redistribute it and/or modify it under the terms of the
+// GNU General Public License as published by the Free Software Foundation,
+// either version 3 of the License, or (at your option) any later version.
+//
+// The CodeChat Editor is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+// more details.
+//
+// You should have received a copy of the GNU General Public License along with
+// the CodeChat Editor. If not, see
+// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+//
 /// # `webserver.rs` -- Serve CodeChat Editor Client webpages
 // ## Submodules
 mod filewatcher;
@@ -298,28 +298,41 @@ const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
 const MESSAGE_ID_INCREMENT: f64 = 3.0;
 
 lazy_static! {
-    // Define the location of static files.
-    static ref CLIENT_STATIC_PATH: PathBuf = {
+
+    // Define the location of the root path, which contains `static/`, `log4rs.yml`, and `hashLocations.json` in a production build, or `client/` and `server/` in a development build.
+    static ref ROOT_PATH: PathBuf = {
         let exe_path = env::current_exe().unwrap();
         let exe_dir = exe_path.parent().unwrap();
-        let mut client_static_path = PathBuf::from(exe_dir);
+        let mut root_path = PathBuf::from(exe_dir);
         // When in debug or running tests, use the layout of the Git repo to
         // find client files. In release mode, we assume the static folder is a
         // subdirectory of the directory containing the executable.
         #[cfg(test)]
-        client_static_path.push("..");
+        root_path.push("..");
         // Note that `debug_assertions` is also enabled for testing, so this
         // adds to the previous line when running tests.
         #[cfg(debug_assertions)]
-        client_static_path.push("../../../client");
+        root_path.push("../../..");
+        root_path.canonicalize().unwrap()
+    };
+
+    // Define the location of static files.
+    static ref CLIENT_STATIC_PATH: PathBuf = {
+        let mut client_static_path = ROOT_PATH.clone();
+        #[cfg(debug_assertions)]
+        client_static_path.push("client");
 
         client_static_path.push("static");
-        client_static_path.canonicalize().unwrap()
+        client_static_path
     };
 
     // Read in the hashed names of files bundled by esbuild.
     static ref BUNDLED_FILES_MAP: HashMap<String, String> = {
-        let json = fs::read_to_string("hashLocations.json").unwrap();
+        let mut hl = ROOT_PATH.clone();
+        #[cfg(debug_assertions)]
+        hl.push("server");
+        hl.push("hashLocations.json");
+        let json = fs::read_to_string(hl).unwrap();
         let hmm: HashMap<String, String> = serde_json::from_str(&json).unwrap();
         hmm
     };
@@ -327,7 +340,7 @@ lazy_static! {
     // Read in the contents of the CodeChat Editor Framework.
     static ref CODECHAT_EDITOR_FRAMEWORK_JS: String = {
         let mut bfm = CLIENT_STATIC_PATH.clone();
-        // The bundled files map start with `static`, so pop that off the client
+        // The bundled files map (bfm) starts with `static`, so pop that off the client
         // static path to avoid duplication.
         bfm.pop();
         bfm.push(BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap());
@@ -1027,7 +1040,10 @@ pub async fn run_server(port: u16) -> std::io::Result<()> {
 }
 
 pub fn configure_logger(level: LevelFilter) {
-    log4rs::init_file("log4rs.yml", Default::default()).unwrap();
+    let mut l4rs = ROOT_PATH.clone();
+    #[cfg(debug_assertions)]
+    l4rs.push("server");
+    log4rs::init_file(l4rs.join("log4rs.yml"), Default::default()).unwrap();
     log::set_max_level(level);
 }
 

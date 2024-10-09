@@ -40,17 +40,22 @@
         1.  [CodeChatEditor-test.mts](client/src/CodeChatEditor-test.mts)
             1.  [Run tests](server/src/lib.rs?test)
         2.  [HTML to Markdown conversion test document](docs/Markdown_HTML.js)
-3.  Development tools
+3.  Extensions
+    1.  Visual Studio Code
+        1.  [extension.ts](extensions/VSCode/src/extension.ts)
+4.  Development tools
     1.  Git
         1.  [server/.gitignore](server/.gitignore)
         2.  [client/static/.gitignore](client/static/.gitignore)
         3.  [client/.gitignore](client/.gitignore)
+        4.  [extensions/VSCode/.gitignore](extensions/VSCode/.gitignore)
     2.  NPM/esbuild
         1.  [HashReader.mts](client/src/HashReader.mts)
-        2.  package.json
-        3.  [tsconfig.json](client/tsconfig.json)
-        4.  [.eslintrc.yml](client/.eslintrc.yml)
-        5.  [.prettierignore](.prettierignore)
+        2.  client/package.json
+        3.  [client/tsconfig.json](client/tsconfig.json)
+        4.  [client/.eslintrc.yml](client/.eslintrc.yml)
+        5.  [client/.prettierrc.json5](client/.prettierrc.json5)
+        6.  [.prettierignore](.prettierignore)
     3.  Misc
         1.  [config.toml](server/.cargo/config.toml) - for Rust code coverage
 
