@@ -258,7 +258,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 // Start the server.
                 try {
-                    await start_server();
+                    await run_server(["start"]);
                 } catch (err) {
                     assert(err instanceof Error);
                     show_error(err.message);
@@ -554,7 +554,7 @@ const current_file = () => {
 
 // Gracefully shut down the render client if possible. Shut down the client as
 // well.
-function stop_client() {
+async function stop_client() {
     console.log("CodeChat Editor extension: stopping client.");
     if (websocket !== undefined) {
         send_message({ RequestClose: null });
@@ -569,6 +569,14 @@ function stop_client() {
     if (idle_timer !== undefined) {
         clearTimeout(idle_timer);
         idle_timer = undefined;
+    }
+
+    // Shut down the server.
+    try {
+        await run_server(["stop"]);
+    } catch (err) {
+        assert(err instanceof Error);
+        console.log(err.message);
     }
 }
 
@@ -604,7 +612,7 @@ function can_render(): boolean {
     );
 }
 
-async function start_server() {
+async function run_server(args: string[]): Promise<string> {
     // Get the command from the VSCode configuration.
     let codechat_editor_server_command = vscode.workspace
         .getConfiguration("CodeChatEditor.Server")
@@ -623,7 +631,7 @@ async function start_server() {
     return new Promise((resolve, reject) => {
         const server_process = child_process.spawn(
             codechat_editor_server_command as string,
-            ["start"]
+            args
         );
         server_process.on("error", (err: NodeJS.ErrnoException) => {
             const msg =

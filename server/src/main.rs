@@ -42,7 +42,7 @@ use code_chat_editor::webserver::{self, IP_ADDRESS};
 #[command(name = "The CodeChat Editor Server", version, about, long_about=None)]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 
     /// Select the port to use for the server. Defaults to 8080.
     #[arg(short, long, default_value_t = 8080)]
@@ -85,7 +85,7 @@ struct ServeCommand {
 impl Cli {
     fn run(self) {
         match &self.command {
-            Some(Commands::Serve(serve_command)) => {
+            Commands::Serve(serve_command) => {
                 #[cfg(debug_assertions)]
                 if let Some(TestMode::Sleep) = self.test_mode {
                     // For testing, don't start the server at all.
@@ -95,7 +95,7 @@ impl Cli {
                 webserver::configure_logger(serve_command.log.unwrap_or(LevelFilter::Warn));
                 webserver::main(self.port).unwrap();
             }
-            None | Some(Commands::Start) => {
+            Commands::Start => {
                 println!("Starting server in background...");
                 let current_exe = match env::current_exe() {
                     Ok(exe) => exe,
@@ -183,7 +183,7 @@ impl Cli {
                 }
                 println!("Server started.");
             }
-            Some(Commands::Stop) => {
+            Commands::Stop => {
                 println!("Stopping server...");
                 // TODO: Use https://crates.io/crates/sysinfo to find the server
                 // process and kill it if it doesn't respond to a stop request.
