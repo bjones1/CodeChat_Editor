@@ -341,16 +341,6 @@ lazy_static! {
         hmm
     };
 
-    // Read in the contents of the CodeChat Editor Framework.
-    static ref CODECHAT_EDITOR_FRAMEWORK_JS: String = {
-        let mut bfm = CLIENT_STATIC_PATH.clone();
-        // The bundled files map (bfm) starts with `static`, so pop that off the client
-        // static path to avoid duplication.
-        bfm.pop();
-        bfm.push(BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap());
-        fs::read_to_string(bfm).unwrap()
-    };
-
 }
 
 // ## Webserver functionality
@@ -431,6 +421,7 @@ fn get_client_framework(
             ))
         }
     };
+    let codechat_editor_framework_js = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap();
 
     // Build and return the webpage.
     Ok(format!(
@@ -441,7 +432,7 @@ fn get_client_framework(
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>The CodeChat Editor</title>
         <script type="module">
-            {}
+            import {{ page_init }} from "/{codechat_editor_framework_js}"
             page_init({ws_url}, {is_test_mode})
         </script>
     </head>
@@ -463,8 +454,7 @@ fn get_client_framework(
         </iframe>
     </body>
 </html>
-"#,
-        *CODECHAT_EDITOR_FRAMEWORK_JS
+"#
     ))
 }
 
@@ -1047,7 +1037,6 @@ pub async fn main(port: u16) -> std::io::Result<()> {
 pub async fn run_server(port: u16) -> std::io::Result<()> {
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
-    let _ = &*CODECHAT_EDITOR_FRAMEWORK_JS;
     let app_data = make_app_data(port);
     let app_data_server = app_data.clone();
     let server = match HttpServer::new(move || configure_app(App::new(), &app_data_server))
