@@ -24,12 +24,12 @@
 //
 // ### Node.js packages
 import assert from "assert";
-import child_process  from"child_process";
+import child_process from "child_process";
 
 // ### Third-party packages
 import escape from "escape-html";
 import vscode from "vscode";
-import { WebSocket } from 'ws';
+import { WebSocket } from "ws";
 
 // ### Local packages
 //
@@ -38,13 +38,14 @@ import { WebSocket } from 'ws';
 // ## Globals
 enum CodeChatEditorClientLocation {
     html,
-    browser
+    browser,
 }
 // These globals are truly global: only one is needed for this entire plugin.
 let websocket: WebSocket | undefined;
 // Where the webclient resides: `html` for a webview panel embedded in VSCode;
 // `browser` to use an external browser.
-let codechat_client_location: CodeChatEditorClientLocation = CodeChatEditorClientLocation.html;
+let codechat_client_location: CodeChatEditorClientLocation =
+    CodeChatEditorClientLocation.html;
 // True if the subscriptions to IDE change notifications have been registered.
 let subscribed = false;
 
@@ -74,49 +75,48 @@ const pending_messages: Record<
 // These mirror the same definitions in the Rust webserver, so that the two can
 // exchange messages.
 interface IdeType {
-    VSCode: boolean,
+    VSCode: boolean;
 }
 
 interface CodeMirror {
-    doc: string
-    doc_blocks: []
+    doc: string;
+    doc_blocks: [];
 }
 
 interface CodeChatForWeb {
-    metadata: { mode: ""}
-    source: CodeMirror
+    metadata: { mode: "" };
+    source: CodeMirror;
 }
 
 interface UpdateMessageContents {
-    contents: CodeChatForWeb | undefined,
-    cursor_position: number | undefined,
-    scroll_position: number | undefined
+    contents: CodeChatForWeb | undefined;
+    cursor_position: number | undefined;
+    scroll_position: number | undefined;
 }
 
 interface ResultOkTypes {
-    LoadFile: string | null,
+    LoadFile: string | null;
 }
 
 interface MessageResult {
-    Ok?: "Void" | ResultOkTypes,
-    Err?: string
+    Ok?: "Void" | ResultOkTypes;
+    Err?: string;
 }
 
 interface JointMessageContents {
-    Update?: UpdateMessageContents,
-    CurrentFile?: string | undefined,
-    Opened?: IdeType,
-    RequestClose?: null,
-    LoadFile?: string,
-    ClientHtml?: string,
-    Result?: MessageResult,
+    Update?: UpdateMessageContents;
+    CurrentFile?: string | undefined;
+    Opened?: IdeType;
+    RequestClose?: null;
+    LoadFile?: string;
+    ClientHtml?: string;
+    Result?: MessageResult;
 }
 
 interface JointMessage {
-    id: number,
-    message: JointMessageContents
+    id: number;
+    message: JointMessageContents;
 }
-
 
 // ## Activation/deactivation
 //
@@ -227,13 +227,17 @@ export function activate(context: vscode.ExtensionContext) {
                         });
 
                         // Render when the webview panel is shown.
-                        webview_panel.onDidChangeViewState((_event: vscode.WebviewPanelOnDidChangeViewStateEvent) => {
-                            // Only render if the webview was activated; this
-                            // event also occurs when it's deactivated.
-                            if (webview_panel?.active) {
-                                start_render()
+                        webview_panel.onDidChangeViewState(
+                            (
+                                _event: vscode.WebviewPanelOnDidChangeViewStateEvent
+                            ) => {
+                                // Only render if the webview was activated; this
+                                // event also occurs when it's deactivated.
+                                if (webview_panel?.active) {
+                                    start_render();
+                                }
                             }
-                        });
+                        );
                     }
                 }
 
@@ -260,10 +264,14 @@ export function activate(context: vscode.ExtensionContext) {
                 }
 
                 if (websocket === undefined) {
-                    console.log("CodeChat Editor extension: opening websocket.");
+                    console.log(
+                        "CodeChat Editor extension: opening websocket."
+                    );
 
                     // Try to connect to the CodeChat Editor Server.
-                    websocket = new WebSocket("ws://localhost:8080/vsc/ws-ide/1")
+                    websocket = new WebSocket(
+                        "ws://localhost:8080/vsc/ws-ide/1"
+                    );
 
                     let was_error: boolean = false;
 
@@ -301,24 +309,39 @@ export function activate(context: vscode.ExtensionContext) {
                     });
 
                     websocket.on("open", () => {
-                        console.log("CodeChat Editor extension: connected to server.");
+                        console.log(
+                            "CodeChat Editor extension: connected to server."
+                        );
                         assert(websocket !== undefined);
                         send_message({
-                            Opened: { VSCode: codechat_client_location === CodeChatEditorClientLocation.html }
+                            Opened: {
+                                VSCode:
+                                    codechat_client_location ===
+                                    CodeChatEditorClientLocation.html,
+                            },
                         });
-                        console.log("CodeChat Editor extension: sent Opened message.");
+                        console.log(
+                            "CodeChat Editor extension: sent Opened message."
+                        );
                         // For the external browser, we can immediately send the `CurrentFile` message. For the WebView, we must first wait to receive the HTML for the WebView (the `ClientHtml` message).
-                        if (codechat_client_location === CodeChatEditorClientLocation.browser) {
+                        if (
+                            codechat_client_location ===
+                            CodeChatEditorClientLocation.browser
+                        ) {
                             current_file();
                         }
                     });
 
-                    websocket.on("message", data => {
+                    websocket.on("message", (data) => {
                         // Parse the data into a message.
-                        console.log(`CodeChat Editor extension: Received data ${data}.`)
-                        const {id, message} = JSON.parse(data.toString()) as JointMessage;
+                        console.log(
+                            `CodeChat Editor extension: Received data ${data}.`
+                        );
+                        const { id, message } = JSON.parse(
+                            data.toString()
+                        ) as JointMessage;
                         assert(id !== undefined);
-                        assert (message !== undefined);
+                        assert(message !== undefined);
                         const keys = Object.keys(message);
                         console.assert(keys.length === 1);
                         const key = keys[0];
@@ -327,22 +350,43 @@ export function activate(context: vscode.ExtensionContext) {
                         // Process this message.
                         switch (key) {
                             case "Update": {
-                                const current_update = value as UpdateMessageContents;
+                                const current_update =
+                                    value as UpdateMessageContents;
                                 console.log(
-                                    `Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`,
+                                    `Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`
                                 );
-                                // TODO: handle activeTextEditor undefined, handle contents undefined.
-                                vscode.window.activeTextEditor!.edit((editBuilder) => {
-                                    editBuilder.replace(
-                                        new vscode.Range(0, 0, vscode.window.activeTextEditor!.document.lineCount, 0),
-                                        current_update.contents!.source.doc
+                                if (
+                                    vscode.window.activeTextEditor === undefined
+                                ) {
+                                    console.log(
+                                        "Error: no active text editor."
                                     );
-                                });
+                                    send_result(id, {
+                                        Err: "No active text editor.",
+                                    });
+                                    break;
+                                }
+                                if (current_update.contents !== undefined) {
+                                    vscode.window.activeTextEditor.edit(
+                                        (editBuilder) => {
+                                            editBuilder.replace(
+                                                new vscode.Range(
+                                                    0,
+                                                    0,
+                                                    vscode.window.activeTextEditor!.document.lineCount,
+                                                    0
+                                                ),
+                                                current_update.contents!.source
+                                                    .doc
+                                            );
+                                        }
+                                    );
+                                }
                                 send_result(id);
                                 break;
                             }
 
-                            case "CurrentFile" : {
+                            case "CurrentFile": {
                                 const current_file = value as string;
                                 console.log(`CurrentFile(${current_file})`);
                                 // TODO!
@@ -365,21 +409,23 @@ export function activate(context: vscode.ExtensionContext) {
                                 // Report if this was an error.
                                 const result_contents = value as MessageResult;
                                 if ("Err" in result_contents) {
-                                    console.log(`Error in message ${id}: ${result_contents.Err}.`);
+                                    console.log(
+                                        `Error in message ${id}: ${result_contents.Err}.`
+                                    );
                                 }
                                 // TODO!
                                 break;
                             }
 
-                            case "LoadFile" : {
+                            case "LoadFile": {
                                 const load_file = value as string;
                                 console.log(`LoadFile(${load_file})`);
                                 // TODO!
-                                send_result(id, {Ok: {LoadFile: null}});
+                                send_result(id, { Ok: { LoadFile: null } });
                                 break;
                             }
 
-                            case "ClientHtml" : {
+                            case "ClientHtml": {
                                 const client_html = value as string;
                                 assert(webview_panel !== undefined);
                                 webview_panel.webview.html = client_html;
@@ -390,10 +436,12 @@ export function activate(context: vscode.ExtensionContext) {
                             }
 
                             default:
-                                console.log(`Unhandled message ${key}(${value})`);
+                                console.log(
+                                    `Unhandled message ${key}(${value})`
+                                );
                                 break;
                         }
-                    })
+                    });
                 } else {
                     console.log(
                         "CodeChat Editor extension: connection already pending, so a new client wasn't created."
@@ -416,23 +464,23 @@ export async function deactivate() {
 //
 // Send a message expecting a result to the server.
 const send_message = (
-        message: JointMessageContents,
-        callback: () => void = () => 0,
-    ) => {
-        const id = message_id;
-        message_id += 3;
-        const jm: JointMessage = {
-            id,
-            message,
-        };
-        assert(websocket);
-        console.log(`CodeChat Editor extension: sending message id ${jm.id}.`);
-        websocket.send(JSON.stringify(jm));
-        pending_messages[id] = {
-            timer_id: setTimeout(report_server_timeout, 2000, id),
-            callback,
-        };
+    message: JointMessageContents,
+    callback: () => void = () => 0
+) => {
+    const id = message_id;
+    message_id += 3;
+    const jm: JointMessage = {
+        id,
+        message,
     };
+    assert(websocket);
+    console.log(`CodeChat Editor extension: sending message id ${jm.id}.`);
+    websocket.send(JSON.stringify(jm));
+    pending_messages[id] = {
+        timer_id: setTimeout(report_server_timeout, 2000, id),
+        callback,
+    };
+};
 
 // Report an error from the server.
 const report_server_timeout = (message_id: number) => {
@@ -441,19 +489,18 @@ const report_server_timeout = (message_id: number) => {
 };
 
 // Send a result (a response to a message from the server) back to the server.
-const send_result = (id: number, result: MessageResult = {Ok: "Void"}) => {
+const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
     // We can't simply call `send_message` because that function expects a
     // result message back from the server.
     const jm: JointMessage = {
         id,
         message: {
-            Result: result
+            Result: result,
         },
     };
     assert(websocket);
     websocket.send(JSON.stringify(jm));
 };
-
 
 // This is called after an event such as an edit, or when the CodeChat panel
 // becomes visible. Wait a bit in case any other events occur, then request a
@@ -472,11 +519,14 @@ function start_render() {
                     Update: {
                         contents: {
                             metadata: { mode: "" },
-                            source: { doc: vscode.window.activeTextEditor!.document.getText(), doc_blocks: [] }
+                            source: {
+                                doc: vscode.window.activeTextEditor!.document.getText(),
+                                doc_blocks: [],
+                            },
                         },
                         cursor_position: 0,
-                        scroll_position: 0
-                    }
+                        scroll_position: 0,
+                    },
                 });
             }
         }, 300);
@@ -485,20 +535,22 @@ function start_render() {
 
 const current_file = () => {
     if (can_render()) {
-        send_message({CurrentFile: vscode.window.activeTextEditor!.document.fileName});
+        send_message({
+            CurrentFile: vscode.window.activeTextEditor!.document.fileName,
+        });
         console.log("CodeChat Editor extension: sent CurrentFile message.");
     }
-}
+};
 
 // Gracefully shut down the render client if possible. Shut down the client as
 // well.
 function stop_client() {
     console.log("CodeChat Editor extension: stopping client.");
     if (websocket !== undefined) {
-        send_message({RequestClose: null}, );
+        send_message({ RequestClose: null });
         // TODO: wait for the response.
         console.log("CodeChat Editor extension: ending connection.");
-        websocket.close()
+        websocket.close();
         websocket = undefined;
     }
 
@@ -514,7 +566,9 @@ function stop_client() {
 function show_error(message: string) {
     if (webview_panel !== undefined) {
         // If the panel was displaying other content, reset it for errors.
-        if (!webview_panel.webview.html.startsWith("<h1>CodeChat Editor</h1>")) {
+        if (
+            !webview_panel.webview.html.startsWith("<h1>CodeChat Editor</h1>")
+        ) {
             webview_panel.webview.html = "<h1>CodeChat Editor</h1>";
         }
         webview_panel.webview.html += `<p style="white-space: pre-wrap;">${escape(
@@ -522,8 +576,7 @@ function show_error(message: string) {
         )}</p><p>See the <a href="https://github.com/bjones1/CodeChat_Editor" target="_blank" rel="noreferrer noopener">docs</a>.</p>`;
     } else {
         vscode.window.showErrorMessage(
-            message +
-            "\nSee https://github.com/bjones1/CodeChat_Editor."
+            message + "\nSee https://github.com/bjones1/CodeChat_Editor."
         );
     }
 }
@@ -551,15 +604,18 @@ async function start_server() {
     let stdout = "";
     let stderr = "";
     return new Promise((resolve, reject) => {
-        const server_process = child_process.spawn(codechat_editor_server_command, [
-            "start",
-        ]);
+        const server_process = child_process.spawn(
+            codechat_editor_server_command,
+            ["start"]
+        );
         server_process.on("error", (err: NodeJS.ErrnoException) => {
             const msg =
                 err.code === "ENOENT"
                     ? `Error - cannot find the file ${err.path}`
                     : err;
-            reject(new Error(`While starting the CodeChat Editor Server: ${msg}.`));
+            reject(
+                new Error(`While starting the CodeChat Editor Server: ${msg}.`)
+            );
         });
 
         server_process.on("exit", (code, signal) => {
