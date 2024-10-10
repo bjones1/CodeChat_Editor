@@ -38,6 +38,13 @@
                         "In the default external web browser"
                     ],
                     "markdownDescription": "Select the location of the CodeChat Editor Client. After changing this value, you **must** close then restart the CodeChat Editor extension."
+                },
+                "CodeChatEditor.Server.Port": {
+                    "type": "number",
+                    "default": 8080,
+                    "minimum": 0,
+                    "maximum": 65535,
+                    "markdownDescription": "Port number for the CodeChat Editor Server."
                 }
             }
         },

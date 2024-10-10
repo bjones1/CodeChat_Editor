@@ -272,7 +272,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                     // Try to connect to the CodeChat Editor Server.
                     websocket = new WebSocket(
-                        "ws://localhost:8080/vsc/ws-ide/1"
+                        `ws://localhost:${get_port()}/vsc/ws-ide/${Math.random()}`
                     );
 
                     let was_error: boolean = false;
@@ -612,6 +612,13 @@ function can_render(): boolean {
     );
 }
 
+const get_port = (): number => {
+    let port = vscode.workspace.getConfiguration("CodeChatEditor.Server").get("Port");
+    assert(typeof port === "number");
+    return port;
+}
+
+
 async function run_server(args: string[]): Promise<string> {
     // Get the command from the VSCode configuration.
     let codechat_editor_server_command = vscode.workspace
@@ -631,7 +638,7 @@ async function run_server(args: string[]): Promise<string> {
     return new Promise((resolve, reject) => {
         const server_process = child_process.spawn(
             codechat_editor_server_command as string,
-            args
+            ["--port", get_port().toString()].concat(args)
         );
         server_process.on("error", (err: NodeJS.ErrnoException) => {
             const msg =
