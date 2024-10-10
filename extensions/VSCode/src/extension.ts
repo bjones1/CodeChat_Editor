@@ -69,6 +69,8 @@ const pending_messages: Record<
         callback: () => void;
     }
 > = {};
+// The text editor containing the current file.
+let current_editor: vscode.TextEditor | undefined;
 
 // ### Message types
 //
@@ -148,7 +150,7 @@ export function activate(context: vscode.ExtensionContext) {
                     // Render when the active editor changes.
                     context.subscriptions.push(
                         vscode.window.onDidChangeActiveTextEditor((_event) => {
-                            start_render();
+                            current_file();
                         })
                     );
                 }
@@ -356,7 +358,8 @@ export function activate(context: vscode.ExtensionContext) {
                                     `Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`
                                 );
                                 if (
-                                    vscode.window.activeTextEditor === undefined
+                                    current_editor === undefined ||
+                                    current_editor.document.isClosed
                                 ) {
                                     console.log(
                                         "Error: no active text editor."
@@ -367,20 +370,17 @@ export function activate(context: vscode.ExtensionContext) {
                                     break;
                                 }
                                 if (current_update.contents !== undefined) {
-                                    vscode.window.activeTextEditor.edit(
-                                        (editBuilder) => {
-                                            editBuilder.replace(
-                                                new vscode.Range(
-                                                    0,
-                                                    0,
-                                                    vscode.window.activeTextEditor!.document.lineCount,
-                                                    0
-                                                ),
-                                                current_update.contents!.source
-                                                    .doc
-                                            );
-                                        }
-                                    );
+                                    current_editor.edit((editBuilder) => {
+                                        editBuilder.replace(
+                                            new vscode.Range(
+                                                0,
+                                                0,
+                                                current_editor!.document.lineCount,
+                                                0
+                                            ),
+                                            current_update.contents!.source.doc
+                                        );
+                                    });
                                 }
                                 send_result(id);
                                 break;
@@ -420,8 +420,16 @@ export function activate(context: vscode.ExtensionContext) {
                             case "LoadFile": {
                                 const load_file = value as string;
                                 console.log(`LoadFile(${load_file})`);
-                                // TODO!
-                                send_result(id, { Ok: { LoadFile: null } });
+                                send_result(id, {
+                                    Ok: {
+                                        LoadFile:
+                                            load_file ===
+                                            vscode.window.activeTextEditor
+                                                ?.document.fileName
+                                                ? vscode.window.activeTextEditor!.document.getText()
+                                                : null,
+                                    },
+                                });
                                 break;
                             }
 
@@ -430,7 +438,7 @@ export function activate(context: vscode.ExtensionContext) {
                                 assert(webview_panel !== undefined);
                                 webview_panel.webview.html = client_html;
                                 send_result(id);
-                                // Send editor's current file to the server.
+                                // Now that the Client is loaded, send the editor's current file to the server.
                                 current_file();
                                 break;
                             }
@@ -515,12 +523,13 @@ function start_render() {
         idle_timer = setTimeout(() => {
             if (can_render()) {
                 console.log("CodeChat Editor extension: starting render.");
+                current_editor = vscode.window.activeTextEditor!;
                 send_message({
                     Update: {
                         contents: {
                             metadata: { mode: "" },
                             source: {
-                                doc: vscode.window.activeTextEditor!.document.getText(),
+                                doc: current_editor.document.getText(),
                                 doc_blocks: [],
                             },
                         },
@@ -535,8 +544,9 @@ function start_render() {
 
 const current_file = () => {
     if (can_render()) {
+        current_editor = vscode.window.activeTextEditor!;
         send_message({
-            CurrentFile: vscode.window.activeTextEditor!.document.fileName,
+            CurrentFile: current_editor.document.fileName,
         });
         console.log("CodeChat Editor extension: sent CurrentFile message.");
     }
