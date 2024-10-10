@@ -44,7 +44,7 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Select the port to use for the server. Defaults to 8080.
+    /// Select the port to use for the server.
     #[arg(short, long, default_value_t = 8080)]
     port: u16,
 
