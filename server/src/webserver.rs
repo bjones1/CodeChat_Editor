@@ -46,6 +46,7 @@ use actix_ws::AggregatedMessage;
 use bytes::Bytes;
 use dunce::simplified;
 use futures_util::StreamExt;
+use indoc::formatdoc;
 use lazy_static::lazy_static;
 use log::{error, info, warn, LevelFilter};
 use log4rs;
@@ -424,37 +425,37 @@ fn get_client_framework(
     let codechat_editor_framework_js = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap();
 
     // Build and return the webpage.
-    Ok(format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>The CodeChat Editor</title>
-        <script type="module">
-            import {{ page_init }} from "/{codechat_editor_framework_js}"
-            page_init({ws_url}, {is_test_mode})
-        </script>
-    </head>
-    <body style="margin: 0px; padding: 0px; overflow: hidden">
-        <iframe id="CodeChat-iframe"
-            style="width:100%; height:100vh; border:none;"
-            srcdoc="<!DOCTYPE html>
-            <html lang='en'>
-                <body style='background-color:#f0f0ff'>
-                    <div style='display:flex;justify-content:center;align-items:center;height:95vh;'>
-                        <div style='text-align:center;font-family:Trebuchet MS;'>
-                            <h1>The CodeChat Editor</h1>
-                            <p>Waiting for initial render. Switch the active source code window to begin.</p>
-                        </div>
-                    </div>
-                </body>
-            </html>"
-        >
-        </iframe>
-    </body>
-</html>
-"#
+    Ok(formatdoc!(
+        r#"
+        <!DOCTYPE html>
+        <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>The CodeChat Editor</title>
+                <script type="module">
+                    import {{ page_init }} from "/{codechat_editor_framework_js}"
+                    page_init({ws_url}, {is_test_mode})
+                </script>
+            </head>
+            <body style="margin: 0px; padding: 0px; overflow: hidden">
+                <iframe id="CodeChat-iframe"
+                    style="width:100%; height:100vh; border:none;"
+                    srcdoc="<!DOCTYPE html>
+                    <html lang='en'>
+                        <body style='background-color:#f0f0ff'>
+                            <div style='display:flex;justify-content:center;align-items:center;height:95vh;'>
+                                <div style='text-align:center;font-family:Trebuchet MS;'>
+                                    <h1>The CodeChat Editor</h1>
+                                    <p>Waiting for initial render. Switch the active source code window to begin.</p>
+                                </div>
+                            </div>
+                        </body>
+                    </html>"
+                >
+                </iframe>
+            </body>
+        </html>"#
     ))
 }
 
@@ -668,22 +669,23 @@ async fn serve_file(
             // The TOC is a simplified web page which requires no additional
             // processing.
             return (
-                SimpleHttpResponse::Ok(format!(
-                    r#"<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>{name} - The CodeChat Editor</title>
+                SimpleHttpResponse::Ok(formatdoc!(
+                    r#"
+                    <!DOCTYPE html>
+                    <html lang="en">
+                        <head>
+                            <meta charset="UTF-8">
+                            <meta name="viewport" content="width=device-width, initial-scale=1">
+                            <title>{name} - The CodeChat Editor</title>
 
-        <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
-        <link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
-        </script>
-    </head>
-    <body>
-        {html}
-    </body>
-</html>"#
+                            <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
+                            <link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
+                            </script>
+                        </head>
+                        <body>
+                            {html}
+                        </body>
+                    </html>"#
                 )),
                 None,
             );
@@ -725,42 +727,42 @@ async fn serve_file(
 
     // Build and return the webpage.
     (
-        SimpleHttpResponse::Ok(format!(
-            r##"<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>{name} - The CodeChat Editor</title>
-        <script type="module">
-            import {{ page_init }} from "/{codechat_editor_js}"
-            page_init()
-        </script>
-        <link rel="stylesheet" href="/{codehat_editor_css}">
-        {testing_src}
-        {sidebar_css}
-    </head>
-    <body>
-        {sidebar_iframe}
-        <div id="CodeChat-contents">
-            <div id="CodeChat-top">
-                <div id="CodeChat-filename">
-                    <p>
-                        <button id="CodeChat-save-button">
-                            <span class="CodeChat-hotkey">S</span>ave
-                        </button>
-                        - {name} - {dir}
-                    </p>
-                </div>
-                <div id="CodeChat-menu"></div>
-            </div>
-            <div id="CodeChat-body"></div>
-            <div id="CodeChat-bottom"></div>
-            <div id="mocha"></div>
-        </div>
-    </body>
-</html>
-"##
+        SimpleHttpResponse::Ok(formatdoc!(
+            r#"
+            <!DOCTYPE html>
+            <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <title>{name} - The CodeChat Editor</title>
+                    <script type="module">
+                        import {{ page_init }} from "/{codechat_editor_js}"
+                        page_init()
+                    </script>
+                    <link rel="stylesheet" href="/{codehat_editor_css}">
+                    {testing_src}
+                    {sidebar_css}
+                </head>
+                <body>
+                    {sidebar_iframe}
+                    <div id="CodeChat-contents">
+                        <div id="CodeChat-top">
+                            <div id="CodeChat-filename">
+                                <p>
+                                    <button id="CodeChat-save-button">
+                                        <span class="CodeChat-hotkey">S</span>ave
+                                    </button>
+                                    - {name} - {dir}
+                                </p>
+                            </div>
+                            <div id="CodeChat-menu"></div>
+                        </div>
+                        <div id="CodeChat-body"></div>
+                        <div id="CodeChat-bottom"></div>
+                        <div id="mocha"></div>
+                    </div>
+                </body>
+            </html>"#
         )),
         Some(codechat_for_web),
     )
@@ -1215,18 +1217,19 @@ fn html_not_found(msg: &str) -> HttpResponse {
 
 // Wrap the provided HTML body in DOCTYPE/html/head tags.
 fn html_wrapper(body: &str) -> String {
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>The CodeChat Editor</title>
-    </head>
-    <body>
-        {body}
-    </body>
-</html>"#
+    formatdoc!(
+        r#"
+        <!DOCTYPE html>
+        <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>The CodeChat Editor</title>
+            </head>
+            <body>
+                {body}
+            </body>
+        </html>"#
     )
 }
 

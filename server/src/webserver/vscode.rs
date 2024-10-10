@@ -28,6 +28,7 @@ use actix_web::{
     error::{Error, ErrorBadRequest},
     get, web, HttpRequest, HttpResponse,
 };
+use indoc::formatdoc;
 use log::{debug, error, warn};
 use open;
 use tokio::{select, sync::mpsc};
@@ -176,11 +177,22 @@ pub async fn vscode_ide_websocket(
             match ide_type {
                 IdeType::VSCode(is_self_hosted) => {
                     if is_self_hosted {
-                        let client_html = get_vscode_client_framework(&connection_id_task);
                         // Send a response (successful) to the `Opened` message.
                         send_response(&to_ide_tx, message.id, Ok(ResultOkTypes::Void)).await;
 
                         // Send the HTML for the internal browser.
+                        let port = app_state_task.port;
+                        let client_html = formatdoc!(
+                            r#"
+                            <!DOCTYPE html>
+                            <html>
+                                <head>
+                                </head>
+                                <body style="margin: 0px; padding: 0px; overflow: hidden">
+                                    <iframe src="http://{IP_ADDRESS}:{port}/vsc/cf/{connection_id_task}" style="width: 100%; height: 100vh; border: none"></iframe>
+                                </body>
+                            </html>"#
+                        );
                         queue_send!(to_ide_tx.send(EditorMessage {
                             id: 0.0,
                             message: EditorMessageContents::ClientHtml(client_html)

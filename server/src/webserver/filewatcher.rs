@@ -26,6 +26,7 @@ use actix_web::{
     http::header::{self, ContentType},
     web, HttpRequest, HttpResponse, Responder,
 };
+use indoc::formatdoc;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
 use notify_debouncer_full::{
@@ -175,12 +176,13 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
 
         return HttpResponse::Ok()
             .content_type(ContentType::html())
-            .body(html_wrapper(&format!(
-                "<h1>Drives</h1>
-<ul>
-{drive_html}
-</ul>
-"
+            .body(html_wrapper(&formatdoc!(
+                "
+                <h1>Drives</h1>
+                <ul>
+                {drive_html}
+                </ul>
+                "
             )));
     }
 
@@ -276,22 +278,24 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             }
         };
         let encoded_file = urlencoding::encode(&file_name);
-        file_html += &format!(
-            r#"<li><a href="/fw/fsb/{web_path}/{encoded_file}" target="_blank">{file_name}</a></li>
-"#
+        file_html += &formatdoc!(
+            r#"
+            <li><a href="/fw/fsb/{web_path}/{encoded_file}" target="_blank">{file_name}</a></li>
+            "#
         );
     }
-    let body = format!(
-        "<h1>Directory {}</h1>
-<h2>Subdirectories</h2>
-<ul>
-{dir_html}
-</ul>
-<h2>Files</h2>
-<ul>
-{file_html}
-</ul>
-",
+    let body = formatdoc!(
+        "
+        <h1>Directory {}</h1>
+        <h2>Subdirectories</h2>
+        <ul>
+        {dir_html}
+        </ul>
+        <h2>Files</h2>
+        <ul>
+        {file_html}
+        </ul>
+        ",
         path_display(dir_path)
     );
 
