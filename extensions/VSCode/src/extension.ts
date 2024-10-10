@@ -258,7 +258,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 // Start the server.
                 try {
-                    // await start_server();
+                    await start_server();
                 } catch (err) {
                     assert(err instanceof Error);
                     show_error(err.message);
@@ -606,16 +606,23 @@ function can_render(): boolean {
 
 async function start_server() {
     // Get the command from the VSCode configuration.
-    const codechat_editor_server_command = vscode.workspace
+    let codechat_editor_server_command = vscode.workspace
         .getConfiguration("CodeChatEditor.Server")
         .get("Command");
     assert(typeof codechat_editor_server_command === "string");
+
+    // If not specified, use the packaged binary.
+    if (codechat_editor_server_command === "") {
+        const ext = vscode.extensions.getExtension("CodeChat.codechat-editor-client");
+        assert(ext !== undefined);
+        codechat_editor_server_command = ext.extensionPath + "/server/codechat-editor-server";
+    }
 
     let stdout = "";
     let stderr = "";
     return new Promise((resolve, reject) => {
         const server_process = child_process.spawn(
-            codechat_editor_server_command,
+            codechat_editor_server_command as string,
             ["start"]
         );
         server_process.on("error", (err: NodeJS.ErrnoException) => {

@@ -24,9 +24,11 @@ src/**
 # Omit VSCode config.
 .vscode/**
 # Misc files not needed in a package.
-tsconfig.json
-contents.rst
-token.txt
+.eslintrc.yml
+.gitignore
+contents.md
+developer.md
 jsconfig.json
+tsconfig.json
 
 # CodeChat Editor lexer: python. See TODO.

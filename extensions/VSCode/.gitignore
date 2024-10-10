@@ -22,4 +22,7 @@
 node_modules/
 out/
 
+# Server
+server/
+
 # CodeChat Editor lexer: python. See TODO.

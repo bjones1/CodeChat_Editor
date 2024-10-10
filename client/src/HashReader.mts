@@ -42,43 +42,37 @@ interface Metafile {
     };
 }
 
-// Load the esbuild metafiles.
-const data_client_framework = await fs.readFile("metaClientFramework.json", {
-    encoding: "utf8",
-});
-const data_client = await fs.readFile("metaClient.json", { encoding: "utf8" });
+// Load the esbuild metafile.
+const data = await fs.readFile("meta.json", { encoding: "utf8" });
 
 // Interpret it as JSON.
-const metafile_client_framework: Metafile = JSON.parse(data_client_framework);
-const metafile_client: Metafile = JSON.parse(data_client);
+const metafile: Metafile = JSON.parse(data);
 
 // Walk the file, looking for the names of specific entry points. Transform
 // those into paths used to import these files.
 let outputContents: Record<string, string> = {};
 let num_found = 0;
-for (const metafile of [metafile_client_framework, metafile_client]) {
-    for (const output in metafile.outputs) {
-        const outputInfo = metafile.outputs[output];
-        switch (outputInfo.entryPoint) {
-            case "src/CodeChatEditorFramework.mts":
-                outputContents["CodeChatEditorFramework.js"] = output;
-                ++num_found;
-                break;
+for (const output in metafile.outputs) {
+    const outputInfo = metafile.outputs[output];
+    switch (outputInfo.entryPoint) {
+        case "src/CodeChatEditorFramework.mts":
+            outputContents["CodeChatEditorFramework.js"] = output;
+            ++num_found;
+            break;
 
-            case "src/CodeChatEditor.mts":
-                outputContents["CodeChatEditor.js"] = output;
-                outputContents["CodeChatEditor.css"] = outputInfo.cssBundle!;
-                ++num_found;
-                break;
+        case "src/CodeChatEditor.mts":
+            outputContents["CodeChatEditor.js"] = output;
+            outputContents["CodeChatEditor.css"] = outputInfo.cssBundle!;
+            ++num_found;
+            break;
 
-            case "src/CodeChatEditor-test.mts":
-                outputContents["CodeChatEditor-test.js"] = output;
-                outputContents["CodeChatEditor-test.css"] =
-                    outputInfo.cssBundle!;
-                ++num_found;
-        }
+        case "src/CodeChatEditor-test.mts":
+            outputContents["CodeChatEditor-test.js"] = output;
+            outputContents["CodeChatEditor-test.css"] = outputInfo.cssBundle!;
+            ++num_found;
     }
 }
+
 console.assert(num_found === 3);
 
 // Write this to disk.

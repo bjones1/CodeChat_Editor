@@ -33,10 +33,12 @@ edition = "2021"
 include = [
     "src/**",
     "log4rs.yml",
+    "hashLocations.json",
     # Referencing `../client/static` causes the files not to be included when
     # packaging. So, copy them manually (see the steps above). I'd like to
-    # exclude `.gitignore`, but don't see how to do this.
+    # exclude `.gitignore`, but don't see how to do this. Will this work?
     "static/**",
+    "!static/.gitignore",
 ]
 keywords = ["literate programming"]
 license = "GPL-3.0-only"
@@ -139,7 +141,11 @@ lto = "thin"
 cargo-dist-version = "0.19.1"
 # Extra static files to include in each App (path relative to this Cargo.toml's
 # dir)
-include = ["log4rs.yml", "../client/static"]
+include = [
+    "log4rs.yml",
+    "hashLocations.json",
+    "../client/static",
+]
 # The installers to generate for each app
 installers = ["msi"]
 # Target platforms to build apps for (Rust target-triple syntax)

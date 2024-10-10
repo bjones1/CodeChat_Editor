@@ -1,11 +1,11 @@
 {
-    "name": "codechat-editor",
+    "name": "codechat-editor-client",
     "version": "0.1.0",
     "publisher": "CodeChat",
     "engines": {
         "vscode": "^1.51.0"
     },
-    "license": "SEE LICENSE IN LICENSE.rst",
+    "license": "GPL-3.0-only",
     "displayName": "CodeChat Editor",
     "description": "This embeds the CodeChat Editor in the Visual Studio Code Editor.",
     "categories": [
@@ -23,8 +23,8 @@
             "properties": {
                 "CodeChatEditor.Server.Command": {
                     "type": "string",
-                    "default": "codechat-editor-server",
-                    "markdownDescription": "Path to the CodeChat Editor Server executable; for example, `codechat-editor-server`."
+                    "default": "",
+                    "markdownDescription": "Path to the CodeChat Editor Server executable; for example, `codechat-editor-server`. Leave blank to use the binary included with the extension."
                 },
                 "CodeChatEditor.Server.ClientLocation": {
                     "type": "string",
