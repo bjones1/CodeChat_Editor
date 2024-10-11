@@ -122,6 +122,7 @@ impl Cli {
                 let mut process = match cmd
                     .args(["--port", &self.port.to_string(), "serve", "--log", "off"])
                     // Subtle: the default of `stdout(Stdio::inherit())` causes a parent process to block, since the child process inherits the parent's stdout. So, use the pipes to avoid blocking.
+                    .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
                     .spawn()
@@ -134,7 +135,7 @@ impl Cli {
                 };
                 // Poll the server to ensure it starts.
                 let now = SystemTime::now();
-                loop {
+                let exit_code = loop {
                     // Look for a ping/pong response from the server.
                     match minreq::get(format!("http://{IP_ADDRESS}:{}/ping", self.port))
                         .with_timeout(3)
@@ -145,7 +146,7 @@ impl Cli {
                             let body = response.as_str().unwrap_or("Non-text body");
                             if status_code == 200 && body == "pong" {
                                 println!("Server started.");
-                                exit(0);
+                                break 0;
                             } else {
                                 eprintln!(
                                     "Unexpected response from server: {body}, status code = {status_code}"
@@ -162,25 +163,19 @@ impl Cli {
                         Ok(Some(status)) => {
                             let mut stdout_buf = String::new();
                             let mut stderr_buf = String::new();
-                            process
-                                .stdout
-                                .unwrap()
-                                .read_to_string(&mut stdout_buf)
-                                .unwrap();
-                            process
-                                .stderr
-                                .unwrap()
-                                .read_to_string(&mut stderr_buf)
-                                .unwrap();
+                            let stdout = process.stdout.as_mut().unwrap();
+                            let stderr = process.stderr.as_mut().unwrap();
+                            stdout.read_to_string(&mut stdout_buf).unwrap();
+                            stderr.read_to_string(&mut stderr_buf).unwrap();
                             eprintln!(
                                 "Server failed to start: {status:?}\n{stdout_buf}\n{stderr_buf}"
                             );
-                            exit(1);
+                            break 1;
                         }
                         Ok(None) => {}
                         Err(e) => {
                             eprintln!("Error starting server: {e}");
-                            exit(1);
+                            break 1;
                         }
                     }
                     // Wait a bit before trying again.
@@ -190,16 +185,19 @@ impl Cli {
                         Ok(elapsed) => {
                             if elapsed.as_secs() > 5 {
                                 eprintln!("Server failed to start after 5 seconds.");
-                                exit(1);
+                                break 1;
                             }
                         }
 
                         Err(e) => {
                             eprintln!("Error getting elapsed time: {e}");
-                            exit(1);
+                            break 1;
                         }
                     }
-                }
+                };
+                drop(process.stdout.unwrap());
+                drop(process.stderr.unwrap());
+                exit(exit_code);
             }
             Commands::Stop => {
                 println!("Stopping server...");

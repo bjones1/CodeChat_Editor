@@ -74,7 +74,8 @@ const pending_messages: Record<
 > = {};
 // The text editor containing the current file.
 let current_editor: vscode.TextEditor | undefined;
-// True to ignore the next change event, which is produced by applying an `Update` from the Client.
+// True to ignore the next change event, which is produced by applying an
+// `Update` from the Client.
 let ignore_change = false;
 
 // ### Message types
@@ -152,7 +153,8 @@ export function activate(context: vscode.ExtensionContext) {
                             if (event.contentChanges.length === 0) {
                                 return;
                             }
-                            // If this change was produced by applying an `Update` from the Client, ignore it.
+                            // If this change was produced by applying an
+                            // `Update` from the Client, ignore it.
                             if (ignore_change) {
                                 ignore_change = false;
                                 return;
@@ -252,8 +254,8 @@ export function activate(context: vscode.ExtensionContext) {
                             (
                                 _event: vscode.WebviewPanelOnDidChangeViewStateEvent
                             ) => {
-                                // Only render if the webview was activated; this
-                                // event also occurs when it's deactivated.
+                                // Only render if the webview was activated;
+                                // this event also occurs when it's deactivated.
                                 if (webview_panel?.active) {
                                     start_render();
                                 }
@@ -278,7 +280,7 @@ export function activate(context: vscode.ExtensionContext) {
                 // Start the server.
                 try {
                     console.log("CodeChat Editor extension: starting server.");
-                    //await run_server(["start"]);
+                    await run_server(["start"]);
                 } catch (err) {
                     assert(err instanceof Error);
                     show_error(err.message);
@@ -345,7 +347,10 @@ export function activate(context: vscode.ExtensionContext) {
                                     CodeChatEditorClientLocation.html,
                             },
                         });
-                        // For the external browser, we can immediately send the `CurrentFile` message. For the WebView, we must first wait to receive the HTML for the WebView (the `ClientHtml` message).
+                        // For the external browser, we can immediately send the
+                        // `CurrentFile` message. For the WebView, we must first
+                        // wait to receive the HTML for the WebView (the
+                        // `ClientHtml` message).
                         if (
                             codechat_client_location ===
                             CodeChatEditorClientLocation.browser
@@ -390,7 +395,8 @@ export function activate(context: vscode.ExtensionContext) {
                                     break;
                                 }
                                 if (current_update.contents !== undefined) {
-                                    // This will produce a change event, which we'll ignore.
+                                    // This will produce a change event, which
+                                    // we'll ignore.
                                     ignore_change = true;
                                     current_editor.edit((editBuilder) => {
                                         editBuilder.replace(
@@ -430,7 +436,8 @@ export function activate(context: vscode.ExtensionContext) {
                                     const { timer_id, callback } =
                                         pending_messages[id];
                                     clearTimeout(timer_id);
-                                    // eslint-disable-next-line n/no-callback-literal
+                                    // eslint-disable-next-line
+                                    // n/no-callback-literal
                                     callback(true);
                                     delete pending_messages[id];
                                 }
@@ -474,7 +481,8 @@ export function activate(context: vscode.ExtensionContext) {
                                     "CodeChat Editor extension: sent Result = Ok."
                                 );
                                 send_result(id);
-                                // Now that the Client is loaded, send the editor's current file to the server.
+                                // Now that the Client is loaded, send the
+                                // editor's current file to the server.
                                 current_file();
                                 break;
                             }
@@ -663,7 +671,7 @@ const get_port = (): number => {
     return port;
 };
 
-async function run_server(args: string[]) {
+async function run_server(args: string[]): Promise<string> {
     // Get the command from the VSCode configuration.
     let codechat_editor_server_command = vscode.workspace
         .getConfiguration("CodeChatEditor.Server")
@@ -672,22 +680,49 @@ async function run_server(args: string[]) {
 
     // If not specified, use the packaged binary.
     if (codechat_editor_server_command === "") {
-        const ext = vscode.extensions.getExtension(
-            "CodeChat.codechat-editor-client"
-        );
+        const ext = vscode.extensions.getExtension("CodeChat.codechat-editor-client");
         assert(ext !== undefined);
-        codechat_editor_server_command =
-            ext.extensionPath + "/server/codechat-editor-server";
+        codechat_editor_server_command = ext.extensionPath + "/server/codechat-editor-server";
     }
 
-    try {
-        await execFile(
+    let stdout = "";
+    let stderr = "";
+    return new Promise((resolve, reject) => {
+        const server_process = child_process.spawn(
             codechat_editor_server_command as string,
             ["--port", get_port().toString()].concat(args)
         );
-    } catch (err: any) {
-        throw new Error(
-            `While starting the CodeChat Editor Server: ${err}.\nCommand: ${err.cmd}\n${err.stderr}\n${err.stdout}`
-        );
-    }
+        server_process.on("error", (err: NodeJS.ErrnoException) => {
+            const msg =
+                err.code === "ENOENT"
+                    ? `Error - cannot find the file ${err.path}`
+                    : err;
+            reject(
+                new Error(`While starting the CodeChat Editor Server: ${msg}.`)
+            );
+        });
+
+        server_process.on("exit", (code, signal) => {
+            const exit_str = code ? `code ${code}` : `signal ${signal}`;
+            if (code === 0) {
+                resolve("");
+            } else {
+                reject(
+                    new Error(
+                        `${stdout}\n${stderr}\n\nCodeChat Editor Server exited with ${exit_str}.\n`
+                    )
+                );
+            }
+        });
+
+        assert(server_process.stdout !== null);
+        server_process.stdout.on("data", (chunk) => {
+            stdout += chunk.toString();
+        });
+
+        assert(server_process.stderr !== null);
+        server_process.stderr.on("data", (chunk) => {
+            stderr += chunk.toString();
+        });
+    });
 }
