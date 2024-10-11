@@ -24,7 +24,6 @@
 //
 // ### Node.js packages
 import assert from "assert";
-import util from "node:util";
 import child_process from "node:child_process";
 
 // ### Third-party packages
@@ -37,8 +36,6 @@ import { WebSocket } from "ws";
 // None.
 //
 // ## Globals
-const execFile = util.promisify(child_process.execFile);
-
 enum CodeChatEditorClientLocation {
     html,
     browser,
@@ -398,17 +395,19 @@ export function activate(context: vscode.ExtensionContext) {
                                     // This will produce a change event, which
                                     // we'll ignore.
                                     ignore_change = true;
-                                    current_editor.edit((editBuilder) => {
-                                        editBuilder.replace(
-                                            new vscode.Range(
-                                                0,
-                                                0,
-                                                current_editor!.document.lineCount,
-                                                0
-                                            ),
-                                            current_update.contents!.source.doc
-                                        );
-                                    });
+                                    // Use a workspace edit, since calls to `TextEditor.edit` must be made to the active editor only.
+                                    const wse = new vscode.WorkspaceEdit();
+                                    wse.replace(
+                                        current_editor.document.uri!,
+                                        new vscode.Range(
+                                            0,
+                                            0,
+                                            current_editor!.document.lineCount,
+                                            0
+                                        ),
+                                        current_update.contents!.source.doc
+                                    );
+                                    vscode.workspace.applyEdit(wse);
                                 }
                                 console.log(
                                     "CodeChat Editor extension: sent Result = Ok."
@@ -436,8 +435,7 @@ export function activate(context: vscode.ExtensionContext) {
                                     const { timer_id, callback } =
                                         pending_messages[id];
                                     clearTimeout(timer_id);
-                                    // eslint-disable-next-line
-                                    // n/no-callback-literal
+                                    // eslint-disable-next-line n/no-callback-literal
                                     callback(true);
                                     delete pending_messages[id];
                                 }
@@ -680,9 +678,12 @@ async function run_server(args: string[]): Promise<string> {
 
     // If not specified, use the packaged binary.
     if (codechat_editor_server_command === "") {
-        const ext = vscode.extensions.getExtension("CodeChat.codechat-editor-client");
+        const ext = vscode.extensions.getExtension(
+            "CodeChat.codechat-editor-client"
+        );
         assert(ext !== undefined);
-        codechat_editor_server_command = ext.extensionPath + "/server/codechat-editor-server";
+        codechat_editor_server_command =
+            ext.extensionPath + "/server/codechat-editor-server";
     }
 
     let stdout = "";
