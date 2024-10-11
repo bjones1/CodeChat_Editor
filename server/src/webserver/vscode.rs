@@ -19,8 +19,7 @@
 //
 // ### Standard library
 use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
+    cmp::min, collections::HashMap, path::{Path, PathBuf}
 };
 
 // ### Third-party
@@ -178,6 +177,10 @@ pub async fn vscode_ide_websocket(
                 IdeType::VSCode(is_self_hosted) => {
                     if is_self_hosted {
                         // Send a response (successful) to the `Opened` message.
+                        debug!(
+                            "Sending response = OK to IDE Opened message, id {}.",
+                            message.id
+                        );
                         send_response(&to_ide_tx, message.id, Ok(ResultOkTypes::Void)).await;
 
                         // Send the HTML for the internal browser.
@@ -193,6 +196,7 @@ pub async fn vscode_ide_websocket(
                                 </body>
                             </html>"#
                         );
+                        debug!("Sending ClientHtml message to IDE: {client_html}");
                         queue_send!(to_ide_tx.send(EditorMessage {
                             id: 0.0,
                             message: EditorMessageContents::ClientHtml(client_html)
@@ -203,7 +207,6 @@ pub async fn vscode_ide_websocket(
                             error!("{}", "IDE websocket received no data.");
                             break 'task;
                         };
-                        debug!("Sent IDE ClientHtml message.");
 
                         // Make sure it's the `Result` message with no errors.
                         let res =
@@ -282,6 +285,8 @@ pub async fn vscode_ide_websocket(
                 select! {
                     // Look for messages from the IDE.
                     Some(ide_message) = from_ide_rx.recv() => {
+                        let msg = format!("{:?}", ide_message.message);
+                        debug!("Received IDE message id = {}, message = {}", ide_message.id, &msg[..min(100, msg.len())]);
                         match ide_message.message {
                             // Handle messages that the IDE must not send.
                             EditorMessageContents::Opened(_) |
@@ -295,14 +300,13 @@ pub async fn vscode_ide_websocket(
                             // Handle messages that are simply passed through.
                             EditorMessageContents::Closed |
                             EditorMessageContents::RequestClose => {
-                                debug!("Forwarding IDE {:?} message from IDE to Client.", ide_message.message);
+                                debug!("Forwarding it to the Client.");
                                 queue_send!(to_client_tx.send(ide_message))
                             },
 
                             // Pass a `Result` message to the Client, unless
                             // it's a `LoadFile` result.
                             EditorMessageContents::Result(ref result) => {
-                                debug!("Received IDE {:?} message.", ide_message.message);
                                 let is_loadfile = match result {
                                     // See if this error was produced by a
                                     // `LoadFile` result.
@@ -316,7 +320,7 @@ pub async fn vscode_ide_websocket(
                                 // a `LoadFile` result (the only type of result
                                 // which the Server should handle).
                                 if !is_loadfile {
-                                    debug!("Forwarding it from IDE to Client.");
+                                    debug!("Forwarding it to the Client.");
                                     queue_send!(to_client_tx.send(ide_message));
                                     continue;
                                 }
@@ -362,7 +366,6 @@ pub async fn vscode_ide_websocket(
 
                             // Handle the `Update` message.
                             EditorMessageContents::Update(ref update) => {
-                                debug!("Received IDE {:?} message.", ide_message.message);
                                 if let Some(contents) = &update.contents {
                                 // Translate the file.
                                 let (translation_results_string, _path_to_toc) =
@@ -387,7 +390,7 @@ pub async fn vscode_ide_websocket(
                             // Update the current file; translate it to a URL
                             // then pass it to the Client.
                             EditorMessageContents::CurrentFile(ref file_path) => {
-                                debug!("Translating IDE {:?} message and forwarding to Client.", ide_message.message);
+                                debug!("Translating and forwarding it to the Client.");
                                 queue_send!(to_client_tx.send(EditorMessage {
                                     id: ide_message.id,
                                     message: EditorMessageContents::CurrentFile(
@@ -415,6 +418,8 @@ pub async fn vscode_ide_websocket(
 
                     // Handle messages from the client.
                     Some(client_message) = from_client_rx.recv() => {
+                        let msg = format!("{:?}", client_message.message);
+                        debug!("Received Client message id = {}, message = {}", client_message.id, &msg[..min(100, msg.len())]);
                         match client_message.message {
                             // Handle messages that the client must not send.
                             EditorMessageContents::Opened(_) |
@@ -429,13 +434,13 @@ pub async fn vscode_ide_websocket(
                             // Handle messages that are simply passed through.
                             EditorMessageContents::Closed |
                             EditorMessageContents::Result(_) => {
-                                debug!("Forwarding Client {:?} message to IDE.", client_message.message);
+                                debug!("Forwarding it to the IDE.");
                                 queue_send!(to_ide_tx.send(client_message))
                             },
 
                             // Handle the `Update` message.
                             EditorMessageContents::Update(update_message_contents) => {
-                                debug!("Received Client Update message and forwarding translation to IDE.");
+                                debug!("Forwarding translation of it to the IDE.");
                                 let codechat_for_web = match update_message_contents.contents {
                                     None => None,
                                     Some(cfw) => match codechat_for_web_to_source(
@@ -471,7 +476,7 @@ pub async fn vscode_ide_websocket(
                             // Update the current file; translate it to a URL
                             // then pass it to the IDE.
                             EditorMessageContents::CurrentFile(ref url_string) => {
-                                debug!("Received Client {:?} message and forwarding translated path to IDE.", client_message.message);
+                                debug!("Forwarding translated path to IDE.");
                                 let result = match url_to_path(url_string, VSCODE_PATH_PREFIX) {
                                     Err(err) => Err(format!("Unable to convert URL to path: {err}")),
                                     Ok(file_path) => {
