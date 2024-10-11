@@ -560,7 +560,8 @@ function start_render() {
 }
 
 const current_file = () => {
-    if (can_render()) {
+    // Only send a new current file is there's a change.
+    if (can_render() && vscode.window.activeTextEditor !== current_editor) {
         send_message(
             {
                 CurrentFile: vscode.window.activeTextEditor!.document.fileName,
