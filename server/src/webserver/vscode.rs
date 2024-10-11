@@ -19,7 +19,9 @@
 //
 // ### Standard library
 use std::{
-    cmp::min, collections::HashMap, path::{Path, PathBuf}
+    cmp::min,
+    collections::HashMap,
+    path::{Path, PathBuf},
 };
 
 // ### Third-party

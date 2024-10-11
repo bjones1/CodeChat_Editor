@@ -1184,7 +1184,7 @@ fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, St
                                     }
                                     Ok(p) => Ok(p),
                                 },
-                                Ok(p) => Ok(p),
+                                Ok(p) => Ok(PathBuf::from(simplified(&p))),
                             },
                         },
                     }

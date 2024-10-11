@@ -41,6 +41,9 @@ fn get_server() -> Command {
 // ## Tests
 #[test]
 fn test_url_to_path() {
+    let (temp_dir, test_dir) = prep_test_dir!();
+
+    // Test a non-existent path.
     assert_eq!(
         url_to_path(
             "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/path%20spaces/foo.py",
@@ -51,6 +54,23 @@ fn test_url_to_path() {
         )))
         .unwrap())
     );
+
+    // Test an actual path.
+    let test_dir_str = test_dir.to_str().unwrap();
+    assert_eq!(
+        url_to_path(
+            &format!(
+                "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{test_dir_str}/test%20spaces.py"
+            ),
+            FILEWATCHER_PATH_PREFIX
+        ),
+        Ok(PathBuf::from(format!(
+            "{test_dir_str}{MAIN_SEPARATOR_STR}test spaces.py"
+        )))
+    );
+
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
 }
 
 #[test]
