@@ -19,7 +19,8 @@
 // ### Standard library
 use std::{
     env,
-    process::{exit, Command},
+    io::Read,
+    process::{exit, Command, Stdio},
     time::SystemTime,
 };
 
@@ -120,6 +121,9 @@ impl Cli {
                 let cmd = &mut Command::new(current_exe);
                 let mut process = match cmd
                     .args(["--port", &self.port.to_string(), "serve", "--log", "off"])
+                    // Subtle: the default of `stdout(Stdio::inherit())` causes a parent process to block, since the child process inherits the parent's stdout. So, use the pipes to avoid blocking.
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
                     .spawn()
                 {
                     Ok(process) => process,
@@ -140,11 +144,12 @@ impl Cli {
                             let status_code = response.status_code;
                             let body = response.as_str().unwrap_or("Non-text body");
                             if status_code == 200 && body == "pong" {
-                                break;
+                                println!("Server started.");
+                                exit(0);
                             } else {
                                 eprintln!(
-                                "Unexpected response from server: {body}, status code = {status_code}"
-                            );
+                                    "Unexpected response from server: {body}, status code = {status_code}"
+                                );
                             }
                         }
                         Err(err) => {
@@ -155,7 +160,21 @@ impl Cli {
                     // Check if the server has exited or failed to start.
                     match process.try_wait() {
                         Ok(Some(status)) => {
-                            eprintln!("Server failed to start: {:?}", status);
+                            let mut stdout_buf = String::new();
+                            let mut stderr_buf = String::new();
+                            process
+                                .stdout
+                                .unwrap()
+                                .read_to_string(&mut stdout_buf)
+                                .unwrap();
+                            process
+                                .stderr
+                                .unwrap()
+                                .read_to_string(&mut stderr_buf)
+                                .unwrap();
+                            eprintln!(
+                                "Server failed to start: {status:?}\n{stdout_buf}\n{stderr_buf}"
+                            );
                             exit(1);
                         }
                         Ok(None) => {}
@@ -181,7 +200,6 @@ impl Cli {
                         }
                     }
                 }
-                println!("Server started.");
             }
             Commands::Stop => {
                 println!("Stopping server...");

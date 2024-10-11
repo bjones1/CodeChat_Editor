@@ -81,7 +81,7 @@ fn test_other_path() {
             .assert()
             .success();
     });
-    sleep(Duration::from_millis(200));
+    sleep(Duration::from_millis(1000));
     get_server()
         .args(["--port", "8083", "stop"])
         .assert()

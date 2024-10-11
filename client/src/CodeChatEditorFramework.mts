@@ -116,7 +116,7 @@ class WebSocketComm {
                     // Load this data in.
                     const current_update = value as UpdateMessageContents;
                     console.log(
-                        `Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`,
+                        `Received Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`,
                     );
 
                     let result = null;
@@ -147,16 +147,24 @@ class WebSocketComm {
 
                 case "CurrentFile":
                     const current_file = value as string;
-                    console.log(`CurrentFile(${current_file})`);
-                    const testSuffix = testMode
-                        ? // Append the test parameter correctly, depending if
-                          // there are already parameters or not.
-                          current_file.indexOf("?") === -1
-                            ? "?test"
-                            : "&test"
-                        : "";
-                    this.set_root_iframe_src(current_file + testSuffix);
-                    this.send_result(id, null);
+                    console.log(`Received CurrentFile(${current_file})`);
+                    // If the page is still loading, then don't save.
+                    let os = root_iframe?.contentWindow?.CodeChatEditor?.on_save;
+                    let promise = os !== undefined ? os(true) : Promise.resolve();
+                    // Save the editor contents if necessary.
+                    promise
+                        .then((_) => {
+                            // Now, it's safe to load a new file.
+                            const testSuffix = testMode
+                                ? // Append the test parameter correctly, depending if
+                                  // there are already parameters or not.
+                                  current_file.indexOf("?") === -1
+                                    ? "?test"
+                                    : "&test"
+                                : "";
+                            this.set_root_iframe_src(current_file + testSuffix);
+                            this.send_result(id, null);
+                        });
                     break;
 
                 case "Result":
@@ -174,12 +182,15 @@ class WebSocketComm {
                     // Report if this was an error.
                     const result_contents = value as ResultType;
                     if ("Err" in result_contents) {
-                        console.log(`Error in message ${id}: ${result_contents.Err}.`);
+                        console.log(
+                            `Error in message ${id}: ${result_contents.Err}.`,
+                        );
                     }
                     break;
 
                 default:
-                    console.log(`Unhandled message ${key}(${value})`);
+                    console.log(`Received unhandled message ${key}(${value})`);
+                    this.send_result(id, `Unhandled message ${key}(${value})`);
                     break;
             }
         };
@@ -211,7 +222,9 @@ class WebSocketComm {
         message: EditorMessageContents,
         callback: () => void = () => 0,
     ) => {
-        const id = this.ws_id += 3;
+        const id = this.ws_id;
+        this.ws_id += 3;
+        console.log(`Sent message ${id}`);
         const jm: EditorMessage = {
             id: id,
             message: message,
@@ -226,6 +239,7 @@ class WebSocketComm {
     current_file = (url: URL) => {
         // If this points to the Server, then tell the IDE to load a new file.
         if (url.host === window.location.host) {
+            console.log(`Sending CurrentFile(${url.toString()})`);
             this.send_message({ CurrentFile: url.toString() }, () => {
                 this.set_root_iframe_src(url.toString());
             });

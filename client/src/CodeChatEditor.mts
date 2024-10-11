@@ -86,7 +86,7 @@ export const page_init = () => {
     on_dom_content_loaded(async () => {
         document
             .getElementById("CodeChat-save-button")!
-            .addEventListener("click", on_save);
+            .addEventListener("click", () => on_save());
         document.body.addEventListener("keydown", on_keydown);
 
         // Intercept links in this document to save before following the link.
@@ -103,6 +103,8 @@ export const page_init = () => {
 
         window.CodeChatEditor = {
             open_lp,
+            on_save,
+            allow_navigation: false,
         };
     });
 };
@@ -177,6 +179,9 @@ export const open_lp = async (
     const codechat_body = document.getElementById(
         "CodeChat-body",
     ) as HTMLDivElement;
+    // Disable autosave when updating the document.
+    autosaveEnabled = false;
+    clearAutosaveTimer();
     if (is_doc_only()) {
         if (tinymce.activeEditor === null) {
             // Special case: a CodeChat Editor document's HTML is stored in
@@ -216,6 +221,7 @@ export const open_lp = async (
             autosaveExtension,
         ]);
     }
+    autosaveEnabled = true;
 
     // <a id="CodeChatEditor_test"></a>If tests should be run, then the
     // [following global variable](CodeChatEditor-test.mts#CodeChatEditor_test)
@@ -273,11 +279,14 @@ const on_keydown = (event: KeyboardEvent) => {
 };
 
 // Save CodeChat Editor contents.
-const on_save = async () => {
+const on_save = async (_only_if_dirty: boolean = false) => {
     // <a id="save"></a>Save the provided contents back to the filesystem, by
     // sending an update message over the websocket.
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
-    webSocketComm.send_message({ Update: await save_lp() });
+    console.log("Sent Update - saving document.");
+    await new Promise(async (resolve) => {
+        webSocketComm.send_message({ Update: await save_lp() }, () => resolve(0));
+    });
 };
 
 const codechat_html_to_markdown = async (source: any) => {
@@ -339,11 +348,18 @@ const startAutosaveTimer = () => {
     // When the document is changed, perform an autosave after no changes have
     // occurred for a little while. To do this, first cancel any current
     // timeout...
+    clearAutosaveTimer();
+    // ...then start another timeout which saves the document when it expires.
+    autosaveTimeoutId = window.setTimeout(() => {
+        console.log("Autosaving.");
+        on_save();
+    }, 1000);
+};
+
+const clearAutosaveTimer = () => {
     if (autosaveTimeoutId !== null) {
         clearTimeout(autosaveTimeoutId);
     }
-    // ...then start another timeout which saves the document when it expires.
-    autosaveTimeoutId = window.setTimeout(on_save, 1000);
 };
 
 // There doesn't seem to be any tracking of a dirty/clean flag built into
@@ -446,14 +462,21 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
     }
 
     // If we can't intercept this, we can't save the current content. TODO --
-    // this is a problem is data wasn't saved! Need a sync way to do this. Store
+    // this is a problem if data wasn't saved! Need a sync way to do this. Store
     // it in local data or something.
     if (!navigateEvent.canIntercept) {
         return;
     }
 
+    // If the IDE initiated this navigation via a `CurrentFile` message, then allow it.
+    if (window.CodeChatEditor.allow_navigation) {
+        // We don't need to reset this flag, since this window will be reloaded.
+        return;
+    }
+
     // Intercept this navigation so we can save the document first.
     navigateEvent.intercept();
+    console.log("CodeChat Editor: saving document before navigation.");
     on_save().then((_value) => {
         // Avoid recursion!
         /// @ts-ignore
@@ -470,7 +493,10 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
 declare global {
     interface Window {
         CodeChatEditor: {
+            // Called by the Client Framework.
             open_lp: (all_source: CodeChatForWeb) => Promise<void>;
+            on_save: (_only_if_dirty: boolean) => Promise<void>;
+            allow_navigation: boolean;
         };
         CodeChatEditor_test: any;
     }
@@ -482,6 +508,5 @@ declare global {
 // exported, and it's clearly marked for testing only. Test code still gets
 // access to everything it needs.
 export const exportedForTesting = {
-    open_lp,
     codechat_html_to_markdown,
 };
