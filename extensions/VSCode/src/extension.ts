@@ -156,11 +156,8 @@ export function activate(context: vscode.ExtensionContext) {
                                 ignore_change = false;
                                 return;
                             }
-                            console.log(
-                                `CodeChat Editor extension: text changed - ${
-                                    event.reason
-                                }, ${JSON.stringify(event.contentChanges)}.`
-                            );
+                            const msg = `CodeChat Editor extension: text changed - ${event.reason}, ${event.contentChanges}.`;
+                            console.log(msg.substring(0, 100));
                             start_render();
                         })
                     );
@@ -277,7 +274,7 @@ export function activate(context: vscode.ExtensionContext) {
                 // Start the server.
                 try {
                     console.log("CodeChat Editor extension: starting server.");
-                    await run_server(["start"]);
+                    //await run_server(["start"]);
                 } catch (err) {
                     assert(err instanceof Error);
                     show_error(err.message);
@@ -358,9 +355,8 @@ export function activate(context: vscode.ExtensionContext) {
 
                     websocket.on("message", (data) => {
                         // Parse the data into a message.
-                        console.log(
-                            `CodeChat Editor extension: Received data ${data}.`
-                        );
+                        const msg = `CodeChat Editor extension: Received data ${data}.`;
+                        console.log(msg.substring(0, 100));
                         const { id, message } = JSON.parse(
                             data.toString()
                         ) as JointMessage;

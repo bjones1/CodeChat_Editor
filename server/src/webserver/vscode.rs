@@ -607,7 +607,7 @@ mod test {
     use std::{
         fs,
         io::Error,
-        path::{self, Path, PathBuf},
+        path::{self, Path, PathBuf, MAIN_SEPARATOR_STR},
         thread,
         time::{Duration, SystemTime},
     };
@@ -877,14 +877,10 @@ mod test {
         // Message ids: IDE - 4, Server - 3->6, Client - 2.
         let em = read_message(&mut ws_ide).await;
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
-        // We can't use `canonicalize` here, since the file doesn't exist.
+        // Compare these as strings -- we want to ensure the path separator is correct for the current platform.
         assert_eq!(
-            path::absolute(Path::new(&format!(
-                "{}/none.py",
-                test_dir.to_str().unwrap()
-            )))
-            .unwrap(),
-            path::absolute(Path::new(&msg)).unwrap()
+            format!("{}{MAIN_SEPARATOR_STR}none.py", test_dir.to_str().unwrap()),
+            msg.to_string_lossy()
         );
         assert_eq!(em.id, 3.0);
 

@@ -148,23 +148,28 @@ class WebSocketComm {
                 case "CurrentFile":
                     const current_file = value as string;
                     console.log(`Received CurrentFile(${current_file})`);
-                    // If the page is still loading, then don't save.
-                    let os = root_iframe?.contentWindow?.CodeChatEditor?.on_save;
-                    let promise = os !== undefined ? os(true) : Promise.resolve();
-                    // Save the editor contents if necessary.
-                    promise
-                        .then((_) => {
-                            // Now, it's safe to load a new file.
-                            const testSuffix = testMode
-                                ? // Append the test parameter correctly, depending if
-                                  // there are already parameters or not.
-                                  current_file.indexOf("?") === -1
-                                    ? "?test"
-                                    : "&test"
-                                : "";
-                            this.set_root_iframe_src(current_file + testSuffix);
-                            this.send_result(id, null);
-                        });
+                    // If the page is still loading, then don't save. Otherwise, save the editor contents if necessary.
+                    let cce = root_iframe?.contentWindow?.CodeChatEditor;
+                    let promise =
+                        cce !== undefined
+                            ? cce.on_save(true)
+                            : Promise.resolve();
+                    promise.then((_) => {
+                        // Now, it's safe to load a new file.
+                        const testSuffix = testMode
+                            ? // Append the test parameter correctly, depending if
+                              // there are already parameters or not.
+                              current_file.indexOf("?") === -1
+                                ? "?test"
+                                : "&test"
+                            : "";
+                        // Tell the client to allow this navigation -- the document it contains has already been saved.
+                        if (cce !== undefined) {
+                            cce.allow_navigation = true;
+                        }
+                        this.set_root_iframe_src(current_file + testSuffix);
+                        this.send_result(id, null);
+                    });
                     break;
 
                 case "Result":

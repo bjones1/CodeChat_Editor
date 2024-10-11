@@ -471,8 +471,16 @@ pub async fn filesystem_endpoint(
     app_state: &web::Data<AppState>,
 ) -> HttpResponse {
     let (connection_id, file_path) = request_path.into_inner();
-    let request_path = match PathBuf::from_str(&file_path) {
-        Ok(v) => v,
+    let file_path = match PathBuf::from_str(&file_path) {
+        // For Windows, use `absolute` to switch to Windows path separators.
+        Ok(v) => match path::absolute(&v) {
+            Ok(v) => v,
+            Err(err) => {
+                let msg = format!("Error: unable to resolve absolute path {file_path}: {err}.");
+                error!("{msg}");
+                return html_not_found(&msg);
+            }
+        },
         Err(err) => {
             let msg = format!("Error: unable to convert path {file_path}: {err}.");
             error!("{msg}");
@@ -511,7 +519,7 @@ pub async fn filesystem_endpoint(
     // Send it the request.
     if let Err(err) = processing_tx
         .send(ProcessingTaskHttpRequest {
-            file_path: request_path,
+            file_path,
             is_toc,
             is_test_mode,
             response_queue: tx,
