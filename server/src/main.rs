@@ -121,7 +121,10 @@ impl Cli {
                 let cmd = &mut Command::new(current_exe);
                 let mut process = match cmd
                     .args(["--port", &self.port.to_string(), "serve", "--log", "off"])
-                    // Subtle: the default of `stdout(Stdio::inherit())` causes a parent process to block, since the child process inherits the parent's stdout. So, use the pipes to avoid blocking.
+                    // Subtle: the default of `stdout(Stdio::inherit())` causes
+                    // a parent process to block, since the child process
+                    // inherits the parent's stdout. So, use the pipes to avoid
+                    // blocking.
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())

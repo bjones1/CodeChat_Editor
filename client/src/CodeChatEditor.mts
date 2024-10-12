@@ -38,7 +38,7 @@
 //     writes this code to the disk.
 //
 // ## Imports
-
+//
 // ### JavaScript/TypeScript
 //
 // #### Third-party
@@ -319,14 +319,15 @@ const codechat_html_to_markdown = async (source: any) => {
         const dbm = doc_blocks_markdown[index];
         doc_block[4] =
             (await prettier_markdown(
-                // Replace the placeholder here, so it won't be wrapped by Prettier.
+                // Replace the placeholder here, so it won't be wrapped by
+                // Prettier.
                 dbm == placeholder_markdown ? "" : dbm,
                 Math.max(
                     40,
                     80 - doc_block[3].length - doc_block[2].length - 1,
                 ),
-                // Prettier trims whitespace; we can't include the newline in the
-                // replacement above. So, put it here.
+                // Prettier trims whitespace; we can't include the newline in
+                // the replacement above. So, put it here.
             )) || "\n";
     }
 };
@@ -468,7 +469,8 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
         return;
     }
 
-    // If the IDE initiated this navigation via a `CurrentFile` message, then allow it.
+    // If the IDE initiated this navigation via a `CurrentFile` message, then
+    // allow it.
     if (window.CodeChatEditor.allow_navigation) {
         // We don't need to reset this flag, since this window will be reloaded.
         return;
