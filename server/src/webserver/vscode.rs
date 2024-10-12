@@ -55,6 +55,9 @@ use crate::{
 
 // ## Globals
 const VSCODE_PATH_PREFIX: &[&str] = &["vsc", "fs"];
+// The max length of a message to show in the console.
+const MAX_MESSAGE_LENGTH: usize = 200;
+
 
 // ## Code
 //
@@ -288,7 +291,7 @@ pub async fn vscode_ide_websocket(
                     // Look for messages from the IDE.
                     Some(ide_message) = from_ide_rx.recv() => {
                         let msg = format!("{:?}", ide_message.message);
-                        debug!("Received IDE message id = {}, message = {}", ide_message.id, &msg[..min(100, msg.len())]);
+                        debug!("Received IDE message id = {}, message = {}", ide_message.id, &msg[..min(MAX_MESSAGE_LENGTH, msg.len())]);
                         match ide_message.message {
                             // Handle messages that the IDE must not send.
                             EditorMessageContents::Opened(_) |
@@ -421,7 +424,7 @@ pub async fn vscode_ide_websocket(
                     // Handle messages from the client.
                     Some(client_message) = from_client_rx.recv() => {
                         let msg = format!("{:?}", client_message.message);
-                        debug!("Received Client message id = {}, message = {}", client_message.id, &msg[..min(100, msg.len())]);
+                        debug!("Received Client message id = {}, message = {}", client_message.id, &msg[..min(MAX_MESSAGE_LENGTH, msg.len())]);
                         match client_message.message {
                             // Handle messages that the client must not send.
                             EditorMessageContents::Opened(_) |

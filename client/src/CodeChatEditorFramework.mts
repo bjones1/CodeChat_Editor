@@ -53,6 +53,10 @@ interface EditorMessageContents {
     RequestClose?: null;
 }
 
+// The max length of a message to show in the console.
+const MAX_MESSAGE_LENGTH = 200;
+
+// An instance of the websocket communication class.
 let webSocketComm: WebSocketComm;
 
 class WebSocketComm {
@@ -103,6 +107,7 @@ class WebSocketComm {
             // dictionary representing a `JointMessage`.
             const joint_message = JSON.parse(event.data) as EditorMessage;
             const { id: id, message: message } = joint_message;
+            console.log(`Received data id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`);
             console.assert(id !== undefined);
             console.assert(message !== undefined);
             const keys = Object.keys(message);
@@ -115,10 +120,6 @@ class WebSocketComm {
                 case "Update":
                     // Load this data in.
                     const current_update = value as UpdateMessageContents;
-                    console.log(
-                        `Received Update(cursor_position: ${current_update.cursor_position}, scroll_position: ${current_update.scroll_position})`,
-                    );
-
                     let result = null;
                     const contents = current_update.contents;
                     if (contents !== null && contents !== undefined) {
@@ -147,7 +148,6 @@ class WebSocketComm {
 
                 case "CurrentFile":
                     const current_file = value as string;
-                    console.log(`Received CurrentFile(${current_file})`);
                     // If the page is still loading, then don't save. Otherwise, save the editor contents if necessary.
                     let cce = root_iframe?.contentWindow?.CodeChatEditor;
                     let promise =
@@ -194,7 +194,9 @@ class WebSocketComm {
                     break;
 
                 default:
-                    console.log(`Received unhandled message ${key}(${value})`);
+                    console.log(
+                        `Received unhandled message ${key}(${JSON.stringify(value).substring(0, MAX_MESSAGE_LENGTH)})`,
+                    );
                     this.send_result(id, `Unhandled message ${key}(${value})`);
                     break;
             }
@@ -229,7 +231,9 @@ class WebSocketComm {
     ) => {
         const id = this.ws_id;
         this.ws_id += 3;
-        console.log(`Sent message ${id}`);
+        console.log(
+            `Sent message ${id}, ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
+        );
         const jm: EditorMessage = {
             id: id,
             message: message,
@@ -244,7 +248,6 @@ class WebSocketComm {
     current_file = (url: URL) => {
         // If this points to the Server, then tell the IDE to load a new file.
         if (url.host === window.location.host) {
-            console.log(`Sending CurrentFile(${url.toString()})`);
             this.send_message({ CurrentFile: url.toString() }, () => {
                 this.set_root_iframe_src(url.toString());
             });
@@ -256,13 +259,15 @@ class WebSocketComm {
     // Send a result (a response to a message from the server) back to the
     // server.
     send_result = (id: number, result: string | null = null) => {
+        const message: EditorMessageContents = {
+            Result: result === null ? { Ok: "Void" } : { Err: result },
+        };
+        console.log(`Sending result id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`);
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
         const jm: EditorMessage = {
-            id: id,
-            message: {
-                Result: result === null ? { Ok: "Void" } : { Err: result },
-            },
+            id,
+            message,
         };
         this.ws.send(JSON.stringify(jm));
     };

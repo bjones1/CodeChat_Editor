@@ -40,6 +40,9 @@ enum CodeChatEditorClientLocation {
     html,
     browser,
 }
+// The max length of a message to show in the console.
+const MAX_MESSAGE_LENGTH = 200;
+
 // These globals are truly global: only one is needed for this entire plugin.
 let websocket: WebSocket | undefined;
 // Where the webclient resides: `html` for a webview panel embedded in VSCode;
@@ -73,7 +76,9 @@ const pending_messages: Record<
 let current_editor: vscode.TextEditor | undefined;
 // True to ignore the next change event, which is produced by applying an
 // `Update` from the Client.
-let ignore_change = false;
+let ignore_text_document_change = false;
+// True to ignore the next active editor change event, since a `CurrentFile` message from the Client caused this change.
+let ignore_active_editor_change = false;
 
 // ### Message types
 //
@@ -152,8 +157,8 @@ export function activate(context: vscode.ExtensionContext) {
                             }
                             // If this change was produced by applying an
                             // `Update` from the Client, ignore it.
-                            if (ignore_change) {
-                                ignore_change = false;
+                            if (ignore_text_document_change) {
+                                ignore_text_document_change = false;
                                 return;
                             }
                             console.log(
@@ -161,7 +166,7 @@ export function activate(context: vscode.ExtensionContext) {
                                     event.reason
                                 }, ${JSON.stringify(
                                     event.contentChanges
-                                ).substring(0, 100)}.`
+                                ).substring(0, MAX_MESSAGE_LENGTH)}.`
                             );
                             start_render();
                         })
@@ -170,6 +175,10 @@ export function activate(context: vscode.ExtensionContext) {
                     // Render when the active editor changes.
                     context.subscriptions.push(
                         vscode.window.onDidChangeActiveTextEditor((_event) => {
+                            if (ignore_active_editor_change) {
+                                ignore_active_editor_change = false;
+                                return;
+                            }
                             current_file();
                         })
                     );
@@ -362,7 +371,7 @@ export function activate(context: vscode.ExtensionContext) {
                         console.log(
                             `CodeChat Editor extension: Received data id = ${id}, message = ${JSON.stringify(
                                 message
-                            ).substring(0, 100)}.`
+                            ).substring(0, MAX_MESSAGE_LENGTH)}.`
                         );
                         assert(id !== undefined);
                         assert(message !== undefined);
@@ -388,7 +397,7 @@ export function activate(context: vscode.ExtensionContext) {
                                 if (current_update.contents !== undefined) {
                                     // This will produce a change event, which
                                     // we'll ignore.
-                                    ignore_change = true;
+                                    ignore_text_document_change = true;
                                     // Use a workspace edit, since calls to `TextEditor.edit` must be made to the active editor only.
                                     const wse = new vscode.WorkspaceEdit();
                                     wse.replace(
@@ -411,9 +420,13 @@ export function activate(context: vscode.ExtensionContext) {
                                 const current_file = value as string;
                                 vscode.workspace
                                     .openTextDocument(current_file)
-                                    .then((document) =>
-                                        vscode.window.showTextDocument(document)
-                                    );
+                                    .then((document) => {
+                                        ignore_active_editor_change = true;
+                                        vscode.window.showTextDocument(
+                                            document,
+                                            current_editor?.viewColumn
+                                        );
+                                    });
                                 send_result(id);
                                 break;
                             }
@@ -434,25 +447,27 @@ export function activate(context: vscode.ExtensionContext) {
                                 // Report if this was an error.
                                 const result_contents = value as MessageResult;
                                 if ("Err" in result_contents) {
-                                    console.log(
-                                        `Error in message ${id}: ${result_contents.Err}.`
-                                    );
+                                    const msg = `Error in message ${id}: ${result_contents.Err}.`;
+                                    console.log(msg);
+                                    show_error(msg);
                                 }
-                                // TODO!
                                 break;
                             }
 
                             case "LoadFile": {
                                 const load_file = value as string;
-                                const contents =
-                                    load_file ===
-                                    vscode.window.activeTextEditor?.document
-                                        .fileName
-                                        ? vscode.window.activeTextEditor!.document.getText()
-                                        : null;
+                                // Look through all open documents to see if we have the requested file.
+                                let load_file_result = null;
+                                for (const file_path of vscode.workspace
+                                    .textDocuments) {
+                                    if (file_path.fileName === load_file) {
+                                        load_file_result = file_path.getText();
+                                        break;
+                                    }
+                                }
                                 send_result(id, {
                                     Ok: {
-                                        LoadFile: contents,
+                                        LoadFile: load_file_result,
                                     },
                                 });
                                 break;
@@ -473,7 +488,7 @@ export function activate(context: vscode.ExtensionContext) {
                                 console.log(
                                     `Unhandled message ${key}(${value.substring(
                                         0,
-                                        100
+                                        MAX_MESSAGE_LENGTH
                                     )})`
                                 );
                                 break;
@@ -514,7 +529,7 @@ const send_message = (
     console.log(
         `CodeChat Editor extension: sending message ${JSON.stringify(
             jm
-        ).substring(0, 100)}.`
+        ).substring(0, MAX_MESSAGE_LENGTH)}.`
     );
     websocket.send(JSON.stringify(jm));
     pending_messages[id] = {
@@ -547,7 +562,7 @@ const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
     console.log(
         `CodeChat Editor extension: sending result ${JSON.stringify(
             jm
-        ).substring(0, 100)}.`
+        ).substring(0, MAX_MESSAGE_LENGTH)}.`
     );
     websocket.send(JSON.stringify(jm));
 };
