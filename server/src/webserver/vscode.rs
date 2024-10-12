@@ -359,7 +359,7 @@ pub async fn vscode_ide_websocket(
                                 };
                                 if let Some(update) = option_update {
                                     // Send the update to the client.
-                                    debug!("Sending Update to Client.");
+                                    debug!("Sending Update to Client, id = {id}.");
                                     queue_send!(to_client_tx.send(EditorMessage { id, message: update }));
                                     id += MESSAGE_ID_INCREMENT;
                                 }
@@ -406,7 +406,7 @@ pub async fn vscode_ide_websocket(
 
                     // Handle HTTP requests.
                     Some(http_request) = from_http_rx.recv() => {
-                        debug!("Received HTTP request for {:?} and sending LoadFile to IDE.", http_request.file_path);
+                        debug!("Received HTTP request for {:?} and sending LoadFile to IDE, id = {id}.", http_request.file_path);
                         // Convert the request into a `LoadFile` message.
                         queue_send!(to_ide_tx.send(EditorMessage {
                             id,

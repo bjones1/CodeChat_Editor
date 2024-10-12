@@ -236,7 +236,7 @@ class WebSocketComm {
         };
         this.ws.send(JSON.stringify(jm));
         this.pending_messages[id] = {
-            timer_id: window.setTimeout(this.report_server_timeout, 2000, id),
+            timer_id: window.setTimeout(this.report_server_timeout, 5000, id),
             callback,
         };
     };

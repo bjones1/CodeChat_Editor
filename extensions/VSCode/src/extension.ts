@@ -156,7 +156,13 @@ export function activate(context: vscode.ExtensionContext) {
                                 ignore_change = false;
                                 return;
                             }
-                            console.log(`CodeChat Editor extension: text changed - ${event.reason}, ${JSON.stringify(event.contentChanges).substring(0, 100)}.`);
+                            console.log(
+                                `CodeChat Editor extension: text changed - ${
+                                    event.reason
+                                }, ${JSON.stringify(
+                                    event.contentChanges
+                                ).substring(0, 100)}.`
+                            );
                             start_render();
                         })
                     );
@@ -217,16 +223,15 @@ export function activate(context: vscode.ExtensionContext) {
                             // See WebViewOptions\_.
                             {
                                 enableScripts: true,
-                                // Note: Per the
-                                // `docs <https://code.visualstudio.com/api/advanced-topics/remote-extensions#option-2-use-a-port-mapping>`\_\_,
-                                // there's a way to map from ports on the
-                                // extension host machine (which may be running
-                                // remotely) to local ports the webview sees
-                                // (since webviews always run locally). However,
-                                // this doesn't support websockets, and should
-                                // also be in place when using an external
-                                // browser. Therefore, we don't supply
-                                // `portMapping`.
+                                // Per the [docs](https://code.visualstudio.com/api/references/vscode-api#WebviewOptions), "If a webview accesses localhost content, we recommend that you specify port mappings even if the `webviewPort` and `extensionHostPort` ports are the same."
+                                portMapping: [
+                                    {
+                                        extensionHostPort: get_port(),
+                                        webviewPort: get_port(),
+                                    },
+                                ],
+                                // Without this, the websocket connection is dropped when the panel is hidden.
+                                retainContextWhenHidden: true,
                             }
                         );
                         // TODO: do I need to dispose of this and the following
@@ -354,7 +359,11 @@ export function activate(context: vscode.ExtensionContext) {
                         const { id, message } = JSON.parse(
                             data.toString()
                         ) as JointMessage;
-                        console.log(`CodeChat Editor extension: Received data id = ${id}, message = ${JSON.stringify(message).substring(0, 100)}.`);
+                        console.log(
+                            `CodeChat Editor extension: Received data id = ${id}, message = ${JSON.stringify(
+                                message
+                            ).substring(0, 100)}.`
+                        );
                         assert(id !== undefined);
                         assert(message !== undefined);
                         const keys = Object.keys(message);
@@ -400,7 +409,11 @@ export function activate(context: vscode.ExtensionContext) {
 
                             case "CurrentFile": {
                                 const current_file = value as string;
-                                // TODO!
+                                vscode.workspace
+                                    .openTextDocument(current_file)
+                                    .then((document) =>
+                                        vscode.window.showTextDocument(document)
+                                    );
                                 send_result(id);
                                 break;
                             }
@@ -458,7 +471,10 @@ export function activate(context: vscode.ExtensionContext) {
 
                             default:
                                 console.log(
-                                    `Unhandled message ${key}(${value.substring(0, 100)})`
+                                    `Unhandled message ${key}(${value.substring(
+                                        0,
+                                        100
+                                    )})`
                                 );
                                 break;
                         }
@@ -495,10 +511,14 @@ const send_message = (
         message,
     };
     assert(websocket);
-    console.log(`CodeChat Editor extension: sending message ${JSON.stringify(jm).substring(0, 100)}.`);
+    console.log(
+        `CodeChat Editor extension: sending message ${JSON.stringify(
+            jm
+        ).substring(0, 100)}.`
+    );
     websocket.send(JSON.stringify(jm));
     pending_messages[id] = {
-        timer_id: setTimeout(report_server_timeout, 2000, id),
+        timer_id: setTimeout(report_server_timeout, 5000, id),
         callback,
     };
 };
@@ -524,7 +544,11 @@ const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
         },
     };
     assert(websocket);
-    console.log(`CodeChat Editor extension: sending result ${JSON.stringify(jm).substring(0, 100)}.`);
+    console.log(
+        `CodeChat Editor extension: sending result ${JSON.stringify(
+            jm
+        ).substring(0, 100)}.`
+    );
     websocket.send(JSON.stringify(jm));
 };
 
@@ -596,7 +620,9 @@ async function stop_client() {
         await run_server(["stop"]);
     } catch (err) {
         assert(err instanceof Error);
-        console.log(`CodeChat Editor Client: error on server shutdown - ${err.message}`);
+        console.log(
+            `CodeChat Editor Client: error on server shutdown - ${err.message}`
+        );
     }
 }
 

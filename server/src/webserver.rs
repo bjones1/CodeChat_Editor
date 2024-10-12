@@ -279,7 +279,7 @@ pub const IP_ADDRESS: &str = "127.0.0.1";
 const REPLY_TIMEOUT: Duration = if cfg!(test) {
     Duration::from_millis(500)
 } else {
-    Duration::from_millis(2000)
+    Duration::from_millis(5000)
 };
 
 /// The time to wait for a pong from the websocket in response to a ping sent by
