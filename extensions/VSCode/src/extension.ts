@@ -136,7 +136,7 @@ interface JointMessage {
 //
 // This is invoked when the extension is activated. It either creates a new
 // CodeChat Editor Server instance or reveals the currently running one.
-export function activate(context: vscode.ExtensionContext) {
+export const activate = (context: vscode.ExtensionContext) => {
     context.subscriptions.push(
         vscode.commands.registerCommand(
             "extension.codeChatEditorDeactivate",
@@ -514,7 +514,7 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 // On deactivation, close everything down.
-export async function deactivate() {
+export const deactivate = async () => {
     console.log("CodeChat extension: deactivating.");
     await stop_client();
     webview_panel?.dispose();
@@ -579,7 +579,7 @@ const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
 // This is called after an event such as an edit, or when the CodeChat panel
 // becomes visible. Wait a bit in case any other events occur, then request a
 // render.
-function start_render() {
+const start_render = () => {
     if (can_render()) {
         // Render after some inactivity: cancel any existing timer, then ...
         if (idle_timer !== undefined) {
@@ -623,7 +623,7 @@ const current_file = () => {
 
 // Gracefully shut down the render client if possible. Shut down the client as
 // well.
-async function stop_client() {
+const stop_client = async () => {
     console.log("CodeChat Editor extension: stopping client.");
     if (websocket !== undefined) {
         console.log("CodeChat Editor extension: ending connection.");
@@ -651,7 +651,7 @@ async function stop_client() {
 }
 
 // Provide an error message in the panel if possible.
-function show_error(message: string) {
+const show_error = (message: string) => {
     if (webview_panel !== undefined) {
         // If the panel was displaying other content, reset it for errors.
         if (
@@ -671,7 +671,7 @@ function show_error(message: string) {
 
 // Only render if the window and editor are active, we have a valid render
 // client, and the webview is visible.
-function can_render(): boolean {
+const can_render = () => {
     return (
         vscode.window.activeTextEditor !== undefined &&
         websocket !== undefined &&
@@ -700,7 +700,7 @@ const get_port = (): number => {
     return port;
 };
 
-async function run_server(args: string[]): Promise<string> {
+const run_server = (args: string[]) => {
     // Get the command from the VSCode configuration.
     let codechat_editor_server_command = vscode.workspace
         .getConfiguration("CodeChatEditor.Server")
