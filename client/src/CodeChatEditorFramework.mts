@@ -78,6 +78,9 @@ class WebSocketComm {
     // until the page load is finished. Otherwise, the page is fully loaded, so
     // the `Update` may be applied immediately.
     onloading = false;
+    // The current filename of the file being edited. This is provided by the
+    // IDE and passed back to it, but not otherwise used by the Framework.
+    current_filename: string | undefined = undefined;
 
     constructor(ws_url: string) {
         // The `ReconnectingWebSocket` doesn't provide ALL the `WebSocket`
@@ -120,6 +123,15 @@ class WebSocketComm {
                 case "Update":
                     // Load this data in.
                     const current_update = value as UpdateMessageContents;
+                    // Check or update the `current_filename`.
+                    if (this.current_filename === undefined) {
+                        this.current_filename = current_update.file_path;
+                    } else if (current_update.file_path !== this.current_filename) {
+                        const msg = `Ignoring update for ${current_update.file_path} because it's not the current file ${this.current_filename}.`;
+                        console.log(msg);
+                        this.send_result(id, msg);
+                        break;
+                    }
                     let result = null;
                     const contents = current_update.contents;
                     if (contents !== null && contents !== undefined) {
@@ -148,7 +160,8 @@ class WebSocketComm {
 
                 case "CurrentFile":
                     const current_file = value as string;
-                    // If the page is still loading, then don't save. Otherwise, save the editor contents if necessary.
+                    // If the page is still loading, then don't save. Otherwise,
+                    // save the editor contents if necessary.
                     let cce = root_iframe?.contentWindow?.CodeChatEditor;
                     let promise =
                         cce !== undefined
@@ -163,11 +176,18 @@ class WebSocketComm {
                                 ? "?test"
                                 : "&test"
                             : "";
-                        // Tell the client to allow this navigation -- the document it contains has already been saved.
+                        // Tell the client to allow this navigation -- the
+                        // document it contains has already been saved.
                         if (cce !== undefined) {
                             cce.allow_navigation = true;
                         }
                         this.set_root_iframe_src(current_file + testSuffix);
+                        // The `current_file` is a URL-encoded path, not a
+                        // filesystem path. So, we can't use it for
+                        // `current_filename`. Instead, signal that the
+                        // `current_filename` should be set on the next `Update`
+                        // message.
+                        this.current_filename = undefined;
                         this.send_result(id, null);
                     });
                     break;
@@ -231,6 +251,11 @@ class WebSocketComm {
     ) => {
         const id = this.ws_id;
         this.ws_id += 3;
+        // Add in the current filename to the message, if it's an `Update`.
+        if (message.Update !== undefined) {
+            console.assert(this.current_filename !== undefined);
+            message.Update.file_path = this.current_filename!;
+        }
         console.log(
             `Sent message ${id}, ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
         );
@@ -254,6 +279,8 @@ class WebSocketComm {
         } else {
             this.set_root_iframe_src(url.toString());
         }
+        // Read the `current_filename` from the next `Update` message.
+        this.current_filename = undefined;
     };
 
     // Send a result (a response to a message from the server) back to the

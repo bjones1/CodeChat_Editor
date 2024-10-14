@@ -42,6 +42,7 @@ type DocBlockJSON = [
 ];
 
 interface UpdateMessageContents {
+    file_path: string;
     contents: CodeChatForWeb | undefined;
     cursor_position: number | undefined;
     scroll_position: number | undefined;

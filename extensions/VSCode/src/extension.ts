@@ -99,6 +99,7 @@ interface CodeChatForWeb {
 }
 
 interface UpdateMessageContents {
+    file_path: string;
     contents: CodeChatForWeb | undefined;
     cursor_position: number | undefined;
     scroll_position: number | undefined;
@@ -287,7 +288,7 @@ export function activate(context: vscode.ExtensionContext) {
                 // Start the server.
                 try {
                     console.log("CodeChat Editor extension: starting server.");
-                    //await run_server(["start"]);
+                    await run_server(["start"]);
                 } catch (err) {
                     assert(err instanceof Error);
                     show_error(err.message);
@@ -385,12 +386,10 @@ export function activate(context: vscode.ExtensionContext) {
                             case "Update": {
                                 const current_update =
                                     value as UpdateMessageContents;
-                                if (
-                                    current_editor === undefined ||
-                                    current_editor.document.isClosed
-                                ) {
+                                const doc = get_document(current_update.file_path);
+                                if (doc === undefined) {
                                     send_result(id, {
-                                        Err: "No active text editor.",
+                                        Err: "No open document for this file.",
                                     });
                                     break;
                                 }
@@ -401,14 +400,14 @@ export function activate(context: vscode.ExtensionContext) {
                                     // Use a workspace edit, since calls to `TextEditor.edit` must be made to the active editor only.
                                     const wse = new vscode.WorkspaceEdit();
                                     wse.replace(
-                                        current_editor.document.uri!,
+                                        doc.uri,
                                         new vscode.Range(
                                             0,
                                             0,
-                                            current_editor!.document.lineCount,
+                                            doc.lineCount,
                                             0
                                         ),
-                                        current_update.contents!.source.doc
+                                        current_update.contents.source.doc
                                     );
                                     vscode.workspace.applyEdit(wse);
                                 }
@@ -426,8 +425,8 @@ export function activate(context: vscode.ExtensionContext) {
                                             document,
                                             current_editor?.viewColumn
                                         );
+                                        send_result(id);
                                     });
-                                send_result(id);
                                 break;
                             }
 
@@ -449,7 +448,8 @@ export function activate(context: vscode.ExtensionContext) {
                                 if ("Err" in result_contents) {
                                     const msg = `Error in message ${id}: ${result_contents.Err}.`;
                                     console.log(msg);
-                                    show_error(msg);
+                                    // Calling `show_error` shuts down the client; instead, display the error via the VSCode GUI.
+                                    vscode.window.showErrorMessage(msg);
                                 }
                                 break;
                             }
@@ -457,14 +457,8 @@ export function activate(context: vscode.ExtensionContext) {
                             case "LoadFile": {
                                 const load_file = value as string;
                                 // Look through all open documents to see if we have the requested file.
-                                let load_file_result = null;
-                                for (const file_path of vscode.workspace
-                                    .textDocuments) {
-                                    if (file_path.fileName === load_file) {
-                                        load_file_result = file_path.getText();
-                                        break;
-                                    }
-                                }
+                                const doc = get_document(load_file);
+                                const load_file_result = doc === undefined ? null : doc.getText();
                                 send_result(id, {
                                     Ok: {
                                         LoadFile: load_file_result,
@@ -579,13 +573,14 @@ function start_render() {
         // ... schedule a render after 300 ms.
         idle_timer = setTimeout(() => {
             if (can_render()) {
-                current_editor = vscode.window.activeTextEditor!;
+                const ate = vscode.window.activeTextEditor!;
                 send_message({
                     Update: {
+                        file_path: ate.document.fileName,
                         contents: {
                             metadata: { mode: "" },
                             source: {
-                                doc: current_editor.document.getText(),
+                                doc: ate.document.getText(),
                                 doc_blocks: [],
                             },
                         },
@@ -600,15 +595,13 @@ function start_render() {
 
 const current_file = () => {
     // Only send a new current file is there's a change.
-    if (can_render() && vscode.window.activeTextEditor !== current_editor) {
+    const ate = vscode.window.activeTextEditor;
+    if (can_render() && ate !== current_editor) {
+        current_editor = ate;
         send_message(
             {
-                CurrentFile: vscode.window.activeTextEditor!.document.fileName,
+                CurrentFile: ate!.document.fileName,
             },
-            (_) => {
-                current_editor = vscode.window.activeTextEditor!;
-                return 0;
-            }
         );
     }
 };
@@ -639,6 +632,7 @@ async function stop_client() {
             `CodeChat Editor Client: error on server shutdown - ${err.message}`
         );
     }
+    current_editor = undefined;
 }
 
 // Provide an error message in the panel if possible.
@@ -672,6 +666,16 @@ function can_render(): boolean {
             (webview_panel !== undefined && webview_panel.visible))
     );
 }
+
+const get_document = (file_path: string) => {
+    // Look through all open documents to see if we have the requested file.
+    for (const doc of vscode.workspace.textDocuments) {
+        if (doc.fileName === file_path) {
+            return doc;
+        }
+    }
+    return undefined;
+};
 
 const get_port = (): number => {
     const port = vscode.workspace

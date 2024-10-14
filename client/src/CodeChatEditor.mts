@@ -247,6 +247,8 @@ const save_lp = async () => {
     }
 
     let update: UpdateMessageContents = {
+        // The Framework will fill in this value.
+        file_path: "",
         contents: {
             metadata: current_metadata,
             source,

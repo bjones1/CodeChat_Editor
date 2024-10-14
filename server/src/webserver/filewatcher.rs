@@ -329,6 +329,11 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
     //
     // The path to the currently open CodeChat Editor file.
     let mut current_filepath = file_path.to_path_buf().canonicalize().unwrap();
+    let Some(current_filepath_str) = current_filepath.to_str() else {
+        error!("Unable to convert path {current_filepath:?} to string.");
+        return;
+    };
+    let mut current_filepath_str = current_filepath_str.to_string();
     // #### The filewatcher task.
     actix_rt::spawn(async move {
         'task: {
@@ -461,6 +466,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                                     queue_send!(to_websocket_tx.send(EditorMessage {
                                                             id,
                                                             message: EditorMessageContents::Update(UpdateMessageContents {
+                                                                file_path: current_filepath_str.clone(),
                                                                 contents: Some(cc),
                                                                 cursor_position: None,
                                                                 scroll_position: None,
@@ -506,6 +512,11 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         match m.message {
                             EditorMessageContents::Update(update_message_contents) => {
                                 let result = 'process: {
+                                    if update_message_contents.file_path != current_filepath_str {
+                                        break 'process Err(format!(
+                                            "Update for file '{}' doesn't match current file '{current_filepath_str}'.", update_message_contents.file_path
+                                        ));
+                                    }
                                     // With code or a path, there's nothing to
                                     // save.
                                     let codechat_for_web = match update_message_contents.contents {
@@ -567,6 +578,11 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                         }
                                         // Update to the new path.
                                         current_filepath = file_path;
+                                        current_filepath_str = match current_filepath.to_str() {
+                                            Some(v) => v.to_string(),
+                                            None => break 'err_exit Err(format!("Unable to convert path {current_filepath:?} to string."))
+                                        };
+
                                         // Watch the new file.
                                         if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
                                             break 'err_exit Err(format!(
@@ -803,6 +819,14 @@ mod tests {
         send_response(&ide_tx_queue, 0.0, Ok(ResultOkTypes::Void)).await;
 
         // The follow-up web request for the file produces an `Update`.
+        let mut file_path = test_dir.clone();
+        file_path.push("test.py");
+        let file_path = file_path
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
         let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_string_lossy());
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
@@ -816,6 +840,7 @@ mod tests {
             .send(EditorMessage {
                 id: 0.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: file_path.clone(),
                     contents: None,
                     cursor_position: None,
                     scroll_position: None,
@@ -850,6 +875,7 @@ mod tests {
             .send(EditorMessage {
                 id: 4.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: "".to_string(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "".to_string(),
@@ -866,10 +892,12 @@ mod tests {
             .await
             .unwrap();
 
-        // Check that it produces no error.
-        assert_eq!(
-            get_message_as!(client_rx, EditorMessageContents::Result),
-            (4.0, Ok(ResultOkTypes::Void))
+        // Check that it produces an error.
+        let (id, err_msg) = get_message_as!(client_rx, EditorMessageContents::Result);
+        assert_eq!(id, 4.0);
+        assert_starts_with!(
+            cast!(err_msg, Err),
+            "Update for file '' doesn't match current file"
         );
 
         // 4.  Send an update message with unknown source language.
@@ -877,6 +905,7 @@ mod tests {
             .send(EditorMessage {
                 id: 5.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: file_path.clone(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "nope".to_string(),
@@ -903,12 +932,11 @@ mod tests {
         );
 
         // 5.  Send a valid message.
-        let mut file_path = test_dir.clone();
-        file_path.push("test.py");
         ide_tx_queue
             .send(EditorMessage {
                 id: 6.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: file_path.clone(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -943,6 +971,7 @@ mod tests {
             (
                 2.0,
                 UpdateMessageContents {
+                    file_path: file_path.clone(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -962,7 +991,7 @@ mod tests {
 
         // 7.  Rename it and check for an close (the file watcher can't detect
         //     the destination file, so it's treated as the file is deleted).
-        let mut dest = file_path.clone().parent().unwrap().to_path_buf();
+        let mut dest = PathBuf::from(&file_path).parent().unwrap().to_path_buf();
         dest.push("test2.py");
         fs::rename(file_path, dest.as_path()).unwrap();
         assert_eq!(

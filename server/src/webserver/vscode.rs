@@ -58,7 +58,6 @@ const VSCODE_PATH_PREFIX: &[&str] = &["vsc", "fs"];
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH: usize = 200;
 
-
 // ## Code
 //
 // This is the processing task for the Visual Studio Code IDE. It handles all
@@ -370,7 +369,7 @@ pub async fn vscode_ide_websocket(
                             }
 
                             // Handle the `Update` message.
-                            EditorMessageContents::Update(ref update) => {
+                            EditorMessageContents::Update(update) => {
                                 if let Some(contents) = &update.contents {
                                 // Translate the file.
                                 let (translation_results_string, _path_to_toc) =
@@ -381,6 +380,7 @@ pub async fn vscode_ide_websocket(
                                     queue_send!(to_client_tx.send(EditorMessage {
                                             id: ide_message.id,
                                             message: EditorMessageContents::Update(UpdateMessageContents {
+                                                file_path: update.file_path,
                                                 contents: Some(cc),
                                                 cursor_position: None,
                                                 scroll_position: None,
@@ -394,7 +394,7 @@ pub async fn vscode_ide_websocket(
 
                             // Update the current file; translate it to a URL
                             // then pass it to the Client.
-                            EditorMessageContents::CurrentFile(ref file_path) => {
+                            EditorMessageContents::CurrentFile(file_path) => {
                                 debug!("Translating and forwarding it to the Client.");
                                 queue_send!(to_client_tx.send(EditorMessage {
                                     id: ide_message.id,
@@ -471,6 +471,7 @@ pub async fn vscode_ide_websocket(
                                 queue_send!(to_ide_tx.send(EditorMessage {
                                     id: client_message.id,
                                     message: EditorMessageContents::Update(UpdateMessageContents {
+                                        file_path: update_message_contents.file_path,
                                         contents: codechat_for_web,
                                         cursor_position: update_message_contents.cursor_position,
                                         scroll_position: update_message_contents.scroll_position,
@@ -480,9 +481,9 @@ pub async fn vscode_ide_websocket(
 
                             // Update the current file; translate it to a URL
                             // then pass it to the IDE.
-                            EditorMessageContents::CurrentFile(ref url_string) => {
+                            EditorMessageContents::CurrentFile(url_string) => {
                                 debug!("Forwarding translated path to IDE.");
-                                let result = match url_to_path(url_string, VSCODE_PATH_PREFIX) {
+                                let result = match url_to_path(&url_string, VSCODE_PATH_PREFIX) {
                                     Err(err) => Err(format!("Unable to convert URL to path: {err}")),
                                     Ok(file_path) => {
                                         match file_path.to_str() {
@@ -812,6 +813,7 @@ mod test {
             &EditorMessage {
                 id: 0.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: "".to_string(),
                     contents: None,
                     cursor_position: None,
                     scroll_position: None,
@@ -887,7 +889,8 @@ mod test {
         // Message ids: IDE - 4, Server - 3->6, Client - 2.
         let em = read_message(&mut ws_ide).await;
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
-        // Compare these as strings -- we want to ensure the path separator is correct for the current platform.
+        // Compare these as strings -- we want to ensure the path separator is
+        // correct for the current platform.
         assert_eq!(
             format!("{}{MAIN_SEPARATOR_STR}none.py", test_dir.to_str().unwrap()),
             msg.to_string_lossy()
@@ -922,14 +925,15 @@ mod test {
         open_client(&mut ws_ide).await;
 
         // Message ids: IDE - 4->7, Server - 3, Client - 2.
+        let file_path = format!(
+            "{}{MAIN_SEPARATOR_STR}only-in-ide.py",
+            test_dir.to_str().unwrap()
+        );
         send_message(
             &mut ws_ide,
             &EditorMessage {
                 id: 4.0,
-                message: EditorMessageContents::CurrentFile(format!(
-                    "{}/only-in-ide.py",
-                    test_dir.to_str().unwrap()
-                )),
+                message: EditorMessageContents::CurrentFile(file_path.clone()),
             },
         )
         .await;
@@ -983,7 +987,7 @@ mod test {
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
         assert_eq!(
             path::absolute(Path::new(&msg)).unwrap(),
-            path::absolute(format!("{}/only-in-ide.py", test_dir.to_str().unwrap())).unwrap()
+            path::absolute(&file_path).unwrap()
         );
         assert_eq!(em.id, 3.0);
 
@@ -1008,6 +1012,7 @@ mod test {
             EditorMessage {
                 id: 6.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path,
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1063,13 +1068,14 @@ mod test {
         // translated.
         //
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
+        let file_path = format!("{}/test.py", test_dir.to_str().unwrap());
         send_message(
             &mut ws_client,
             &EditorMessage {
                 id: 2.0,
                 message: EditorMessageContents::CurrentFile(format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}/test.py",
-                    test_dir.to_str().unwrap()
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    &file_path
                 )),
             },
         )
@@ -1110,6 +1116,7 @@ mod test {
             &EditorMessage {
                 id: 4.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: file_path.clone(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1130,6 +1137,7 @@ mod test {
             EditorMessage {
                 id: 4.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path,
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1179,11 +1187,13 @@ mod test {
         open_client(&mut ws_ide).await;
 
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
+        let file_path = "foo.py".to_string();
         send_message(
             &mut ws_client,
             &EditorMessage {
                 id: 2.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: file_path.clone(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1210,6 +1220,7 @@ mod test {
             EditorMessage {
                 id: 2.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path,
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1254,13 +1265,14 @@ mod test {
         open_client(&mut ws_ide).await;
 
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
+        let file_path = format!("{}{MAIN_SEPARATOR_STR}test.py", test_dir.to_str().unwrap());
         send_message(
             &mut ws_client,
             &EditorMessage {
                 id: 2.0,
                 message: EditorMessageContents::CurrentFile(format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}/test.py",
-                    test_dir.to_str().unwrap()
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    &file_path
                 )),
             },
         )
@@ -1339,6 +1351,7 @@ mod test {
             EditorMessage {
                 id: 6.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path,
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),

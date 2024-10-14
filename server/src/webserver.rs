@@ -1,19 +1,18 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
-// software: you can redistribute it and/or modify it under the terms of the
-// GNU General Public License as published by the Free Software Foundation,
-// either version 3 of the License, or (at your option) any later version.
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
 //
 // The CodeChat Editor is distributed in the hope that it will be useful, but
-// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-// more details.
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
 //
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-//
 /// # `webserver.rs` -- Serve CodeChat Editor Client webpages
 // ## Submodules
 mod filewatcher;
@@ -203,6 +202,8 @@ enum IdeType {
 /// Contents of the `Update` message.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct UpdateMessageContents {
+    /// The filesystem path to this file. This is only used by the IDE to determine which file to apply Update contents to. The Client stores then then sends it back to the IDE in `Update` messages. This helps deal with transition times when the IDE and Client have different files loaded, guaranteeing to updates are still applied to the correct file.
+    file_path: String,
     /// The contents of this file. TODO: this should be just a string if sent by
     /// the IDE.
     contents: Option<CodeChatForWeb>,
@@ -304,7 +305,9 @@ const MESSAGE_ID_INCREMENT: f64 = 3.0;
 
 lazy_static! {
 
-    // Define the location of the root path, which contains `static/`, `log4rs.yml`, and `hashLocations.json` in a production build, or `client/` and `server/` in a development build.
+    // Define the location of the root path, which contains `static/`,
+    // `log4rs.yml`, and `hashLocations.json` in a production build, or
+    // `client/` and `server/` in a development build.
     static ref ROOT_PATH: PathBuf = {
         let exe_path = env::current_exe().unwrap();
         let exe_dir = exe_path.parent().unwrap();
@@ -620,12 +623,18 @@ async fn text_file_to_response(
         http_request.is_test_mode,
     )
     .await;
+    let Some(file_path) = file_path.to_str() else {
+        let msg = format!("Error: unable to convert path {file_path:?} to a string.");
+        error!("{msg}");
+        return (SimpleHttpResponse::Err(msg), None);
+    };
     // If this file is editable and is the main file, send an `Update`. The
     // `simple_http_response` contains the Client.
     (
         simple_http_response,
         option_codechat_for_web.map(|codechat_for_web| {
             EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path.to_string(),
                 contents: Some(codechat_for_web),
                 cursor_position: None,
                 scroll_position: None,
@@ -688,7 +697,6 @@ async fn serve_file(
 
                             <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
                             <link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
-                            </script>
                         </head>
                         <body>
                             {html}
