@@ -55,6 +55,8 @@ interface EditorMessageContents {
 
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH = 200;
+// The timeout for a websocket `Response`.
+const RESPONSE_TIMEOUT = 15000;
 
 // An instance of the websocket communication class.
 let webSocketComm: WebSocketComm;
@@ -265,7 +267,7 @@ class WebSocketComm {
         };
         this.ws.send(JSON.stringify(jm));
         this.pending_messages[id] = {
-            timer_id: window.setTimeout(this.report_server_timeout, 5000, id),
+            timer_id: window.setTimeout(this.report_server_timeout, RESPONSE_TIMEOUT, id),
             callback,
         };
     };
