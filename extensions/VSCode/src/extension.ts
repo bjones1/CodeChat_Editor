@@ -449,8 +449,7 @@ export function activate(context: vscode.ExtensionContext) {
                                     const { timer_id, callback } =
                                         pending_messages[id];
                                     clearTimeout(timer_id);
-                                    // eslint-disable-next-line
-                                    // n/no-callback-literal
+                                    // eslint-disable-next-line n/no-callback-literal
                                     callback(true);
                                     delete pending_messages[id];
                                 }
@@ -460,10 +459,11 @@ export function activate(context: vscode.ExtensionContext) {
                                 if ("Err" in result_contents) {
                                     const msg = `Error in message ${id}: ${result_contents.Err}.`;
                                     console.log(msg);
-                                    // Calling `show_error` shuts down the
-                                    // client; instead, display the error via
-                                    // the VSCode GUI.
-                                    vscode.window.showErrorMessage(msg);
+                                    // Warning: Calling `show_error` shuts down
+                                    // the client. Do this deliberately, since
+                                    // timeouts (missed messages) can cause data
+                                    // corruption.
+                                    show_error(msg);
                                 }
                                 break;
                             }
