@@ -77,7 +77,8 @@ let current_editor: vscode.TextEditor | undefined;
 // True to ignore the next change event, which is produced by applying an
 // `Update` from the Client.
 let ignore_text_document_change = false;
-// True to ignore the next active editor change event, since a `CurrentFile` message from the Client caused this change.
+// True to ignore the next active editor change event, since a `CurrentFile`
+// message from the Client caused this change.
 let ignore_active_editor_change = false;
 
 // ### Message types
@@ -233,14 +234,20 @@ export function activate(context: vscode.ExtensionContext) {
                             // See WebViewOptions\_.
                             {
                                 enableScripts: true,
-                                // Per the [docs](https://code.visualstudio.com/api/references/vscode-api#WebviewOptions), "If a webview accesses localhost content, we recommend that you specify port mappings even if the `webviewPort` and `extensionHostPort` ports are the same."
+                                // Per the
+                                // [docs](https://code.visualstudio.com/api/references/vscode-api#WebviewOptions),
+                                // "If a webview accesses localhost content, we
+                                // recommend that you specify port mappings even
+                                // if the `webviewPort` and `extensionHostPort`
+                                // ports are the same."
                                 portMapping: [
                                     {
                                         extensionHostPort: get_port(),
                                         webviewPort: get_port(),
                                     },
                                 ],
-                                // Without this, the websocket connection is dropped when the panel is hidden.
+                                // Without this, the websocket connection is
+                                // dropped when the panel is hidden.
                                 retainContextWhenHidden: true,
                             }
                         );
@@ -397,7 +404,9 @@ export function activate(context: vscode.ExtensionContext) {
                                     // This will produce a change event, which
                                     // we'll ignore.
                                     ignore_text_document_change = true;
-                                    // Use a workspace edit, since calls to `TextEditor.edit` must be made to the active editor only.
+                                    // Use a workspace edit, since calls to
+                                    // `TextEditor.edit` must be made to the
+                                    // active editor only.
                                     const wse = new vscode.WorkspaceEdit();
                                     wse.replace(
                                         doc.uri,
@@ -438,7 +447,8 @@ export function activate(context: vscode.ExtensionContext) {
                                     const { timer_id, callback } =
                                         pending_messages[id];
                                     clearTimeout(timer_id);
-                                    // eslint-disable-next-line n/no-callback-literal
+                                    // eslint-disable-next-line
+                                    // n/no-callback-literal
                                     callback(true);
                                     delete pending_messages[id];
                                 }
@@ -448,7 +458,9 @@ export function activate(context: vscode.ExtensionContext) {
                                 if ("Err" in result_contents) {
                                     const msg = `Error in message ${id}: ${result_contents.Err}.`;
                                     console.log(msg);
-                                    // Calling `show_error` shuts down the client; instead, display the error via the VSCode GUI.
+                                    // Calling `show_error` shuts down the
+                                    // client; instead, display the error via
+                                    // the VSCode GUI.
                                     vscode.window.showErrorMessage(msg);
                                 }
                                 break;
@@ -456,7 +468,8 @@ export function activate(context: vscode.ExtensionContext) {
 
                             case "LoadFile": {
                                 const load_file = value as string;
-                                // Look through all open documents to see if we have the requested file.
+                                // Look through all open documents to see if we
+                                // have the requested file.
                                 const doc = get_document(load_file);
                                 const load_file_result = doc === undefined ? null : doc.getText();
                                 send_result(id, {

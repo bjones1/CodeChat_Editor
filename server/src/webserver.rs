@@ -202,7 +202,11 @@ enum IdeType {
 /// Contents of the `Update` message.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct UpdateMessageContents {
-    /// The filesystem path to this file. This is only used by the IDE to determine which file to apply Update contents to. The Client stores then then sends it back to the IDE in `Update` messages. This helps deal with transition times when the IDE and Client have different files loaded, guaranteeing to updates are still applied to the correct file.
+    /// The filesystem path to this file. This is only used by the IDE to
+    /// determine which file to apply Update contents to. The Client stores then
+    /// then sends it back to the IDE in `Update` messages. This helps deal with
+    /// transition times when the IDE and Client have different files loaded,
+    /// guaranteeing to updates are still applied to the correct file.
     file_path: String,
     /// The contents of this file. TODO: this should be just a string if sent by
     /// the IDE.

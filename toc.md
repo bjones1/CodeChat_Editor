@@ -21,7 +21,8 @@
     6.  Tests
         1.  [test_utils.rs](server/src/test_utils.rs)
         2.  Lexer [tests.rs](server/src/lexer/tests.rs)
-        3.  [cli.rs](server/tests/cli.rs)
+        3.  Webserver [tests.rs](server/src/webserver/tests.rs)
+        4.  [cli.rs](server/tests/cli.rs)
     7.  [Cargo.toml](server/Cargo.toml)
 2.  Client
     1.  Editor
