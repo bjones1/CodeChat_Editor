@@ -45,6 +45,8 @@
 // 5.  Define a set of StateEffects to add/update/etc. doc blocks.
 //
 // ## Imports
+//
+// ### Third-party
 import { basicSetup } from "codemirror";
 import {
     EditorView,
@@ -75,6 +77,12 @@ import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { Editor, init, tinymce } from "./tinymce-config.mjs";
 
+// ### Local
+import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
+
+// ## Globals
+
+let current_view: EditorView;
 let tinymce_singleton: Editor | undefined;
 
 // ## Doc blocks in CodeMirror
@@ -227,6 +235,8 @@ const docBlockField = StateField.define<DecorationSet>({
             ),
         ),
 });
+
+const CodeMirror_JSON_fields = { doc_blocks: docBlockField };
 
 // Per the [docs](https://codemirror.net/docs/ref/#state.StateEffect^define),
 // "State effects can be used to represent additional effects associated with a
@@ -595,8 +605,49 @@ const doc_block_indent_on_before_input = (event: InputEvent) => {
     }
 };
 
-let current_view: EditorView;
-const CodeMirror_JSON_fields = { doc_blocks: docBlockField };
+// There doesn't seem to be any tracking of a dirty/clean flag built into
+// CodeMirror v6 (although
+// [v5 does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've
+// found is a
+// [forum post](https://discuss.codemirror.net/t/codemirror-6-proper-way-to-listen-for-changes/2395/11)
+// showing code to do this, which I use below.
+//
+// How this works: the
+// [EditorView.updateListener](https://codemirror.net/docs/ref/#codemirror) is a
+// [Facet](https://codemirror.net/docs/ref/#state.Facet) with an
+// [of function](https://codemirror.net/docs/ref/#state.Facet.of) that creates a
+// CodeMirror extension.
+const autosaveExtension = EditorView.updateListener.of(
+    // CodeMirror passes this function a
+    // [ViewUpdate](https://codemirror.net/docs/ref/#view.ViewUpdate) which
+    // describes a change being made to the document.
+    (v: ViewUpdate) => {
+        // The
+        // [docChanged](https://codemirror.net/docs/ref/#view.ViewUpdate.docChanged)
+        // flag is the relevant part of this change description. However, this
+        // only describes changes to the code blocks (the document, from
+        // CodeMirror's perspective).
+        let isChanged = v.docChanged;
+        // Look for changes to doc blocks as well; skip if a change was already
+        // detected for efficiency.
+        if (!v.docChanged && v.transactions?.length) {
+            // Check each effect of each transaction.
+            outer: for (let tr of v.transactions) {
+                for (let effect of tr.effects) {
+                    // Look for a change to a doc block.
+                    if (effect.is(addDocBlock) || effect.is(updateDocBlock)) {
+                        isChanged = true;
+                        break outer;
+                    }
+                }
+            }
+        }
+        if (isChanged) {
+            set_is_dirty();
+            startAutosaveTimer();
+        }
+    },
+);
 
 // Given source code in a CodeMirror-friendly JSON format, load it into the
 // provided div.
@@ -608,7 +659,7 @@ export const CodeMirror_load = async (
     // The name of the lexer to use.
     lexer_name: string,
     // Additional extensions.
-    extensions: [Extension],
+    extensions: Array<Extension>,
 ) => {
     // Save the current scroll position, to prevent the view from scrolling back
     // to the top after an update/reload.
@@ -697,6 +748,7 @@ export const CodeMirror_load = async (
                 parser,
                 basicSetup,
                 EditorView.lineWrapping,
+                autosaveExtension,
                 ...extensions,
             ],
         },

@@ -65,7 +65,71 @@ import { tinymce, init, Editor } from "./tinymce-config.mjs";
 // ### CSS
 import "./../static/css/CodeChatEditor.css";
 
-// ## Markdown to HTML conversion
+// ## Data structures
+// <a id="EditorMode"></a>Define all possible editor modes; these are passed as
+// a [query string](https://en.wikipedia.org/wiki/Query_string)
+// (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
+enum EditorMode {
+    // Display the source code using CodeChat, but disallow editing.
+    view,
+    // For this source, the same a view; the server uses this to avoid recursive
+    // iframes of the table of contents.
+    toc,
+    // The full CodeChat editor.
+    edit,
+    // Show only raw source code; ignore doc blocks, treating them also as code.
+    raw,
+}
+
+// Since this is experimental, TypeScript doesn't define it. See the
+// [docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
+interface NavigateEvent extends Event {
+    canIntercept: boolean;
+    destination: any;
+    downloadRequest: String | null;
+    formData: any;
+    hashChange: boolean;
+    info: any;
+    navigationType: String;
+    signal: AbortSignal;
+    userInitiated: boolean;
+    intercept: any;
+    scroll: any;
+}
+
+// Tell TypeScript about the global namespace this program defines.
+declare global {
+    interface Window {
+        CodeChatEditor: {
+            // Called by the Client Framework.
+            open_lp: (all_source: CodeChatForWeb) => Promise<void>;
+            on_save: (_only_if_dirty: boolean) => Promise<void>;
+            allow_navigation: boolean;
+        };
+        CodeChatEditor_test: any;
+    }
+}
+
+// ## Globals
+// The ID of the autosave timer; when this timer expires, the document will be
+// autosaved.
+let autosaveTimeoutId: null | number = null;
+
+// True to enable autosave.
+let autosaveEnabled = true;
+
+// Store the lexer info for the currently-loaded language.
+//
+// <a id="current_metadata"></a>This mirrors the data provided by the server --
+// see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
+let current_metadata: {
+    mode: string;
+};
+
+// True if the document is dirty (needs saving).
+let is_dirty = false;
+
+// ### Markdown to HTML conversion
 //
 // Instantiate [turndown](https://github.com/mixmark-io/turndown) for HTML to
 // Markdown conversion
@@ -79,6 +143,7 @@ const turndownService = new TurndownService({
 // [turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm)
 // to enable conversions for tables, task lists, and strikethroughs.
 turndownService.use(gfm);
+
 // ## Page initialization
 //
 // Load the dynamic content into the static page.
@@ -109,6 +174,10 @@ export const page_init = () => {
     });
 };
 
+export const set_is_dirty = (value: boolean = true) => {
+    is_dirty = value;
+}
+
 // This is copied from
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
 const on_dom_content_loaded = (on_load_func: () => void) => {
@@ -123,33 +192,10 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
 
 // ## File handling
 //
-// Store the lexer info for the currently-loaded language.
-//
-// <a id="current_metadata"></a>This mirrors the data provided by the server --
-// see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
-let current_metadata: {
-    mode: string;
-};
-
 // True if this is a CodeChat Editor document (not a source file).
 const is_doc_only = () => {
     return current_metadata["mode"] === "markdown";
 };
-
-// <a id="EditorMode"></a>Define all possible editor modes; these are passed as
-// a [query string](https://en.wikipedia.org/wiki/Query_string)
-// (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
-enum EditorMode {
-    // Display the source code using CodeChat, but disallow editing.
-    view,
-    // For this source, the same a view; the server uses this to avoid recursive
-    // iframes of the table of contents.
-    toc,
-    // The full CodeChat editor.
-    edit,
-    // Show only raw source code; ignore doc blocks, treating them also as code.
-    raw,
-}
 
 // This function is called on page load to "load" a file. Before this point, the
 // server has already lexed the source file into code and doc blocks; this
@@ -202,6 +248,7 @@ export const open_lp = async (
                     // [supported browser-native events list](https://www.tiny.cloud/docs/tinymce/6/events/#supported-browser-native-events)
                     // includes the `input` event.
                     editor.on("input", (_event: Event) => {
+                        is_dirty = true;
                         startAutosaveTimer();
                     });
                 },
@@ -217,9 +264,7 @@ export const open_lp = async (
             tinymce.activeEditor!.selection.moveToBookmark(bm);
         }
     } else {
-        await CodeMirror_load(codechat_body, source, current_metadata.mode, [
-            autosaveExtension,
-        ]);
+        await CodeMirror_load(codechat_body, source, current_metadata.mode, []);
     }
     autosaveEnabled = true;
 
@@ -281,7 +326,10 @@ const on_keydown = (event: KeyboardEvent) => {
 };
 
 // Save CodeChat Editor contents.
-const on_save = async (_only_if_dirty: boolean = false) => {
+const on_save = async (only_if_dirty: boolean = false) => {
+    if (only_if_dirty && !is_dirty) {
+        return;
+    }
     // <a id="save"></a>Save the provided contents back to the filesystem, by
     // sending an update message over the websocket.
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
@@ -289,6 +337,7 @@ const on_save = async (_only_if_dirty: boolean = false) => {
     await new Promise(async (resolve) => {
         webSocketComm.send_message({ Update: await save_lp() }, () => resolve(0));
     });
+    is_dirty = false;
 };
 
 const codechat_html_to_markdown = async (source: any) => {
@@ -336,15 +385,8 @@ const codechat_html_to_markdown = async (source: any) => {
 
 // ### Autosave feature
 //
-// The ID of the autosave timer; when this timer expires, the document will be
-// autosaved.
-let autosaveTimeoutId: null | number = null;
-
-// True to enable autosave.
-let autosaveEnabled = true;
-
 // Schedule an autosave; call this whenever the document is modified.
-const startAutosaveTimer = () => {
+export const startAutosaveTimer = () => {
     if (!autosaveEnabled) {
         return;
     }
@@ -364,49 +406,6 @@ const clearAutosaveTimer = () => {
         clearTimeout(autosaveTimeoutId);
     }
 };
-
-// There doesn't seem to be any tracking of a dirty/clean flag built into
-// CodeMirror v6 (although
-// [v5 does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've
-// found is a
-// [forum post](https://discuss.codemirror.net/t/codemirror-6-proper-way-to-listen-for-changes/2395/11)
-// showing code to do this, which I use below.
-//
-// How this works: the
-// [EditorView.updateListener](https://codemirror.net/docs/ref/#codemirror) is a
-// [Facet](https://codemirror.net/docs/ref/#state.Facet) with an
-// [of function](https://codemirror.net/docs/ref/#state.Facet.of) that creates a
-// CodeMirror extension.
-const autosaveExtension = EditorView.updateListener.of(
-    // CodeMirror passes this function a
-    // [ViewUpdate](https://codemirror.net/docs/ref/#view.ViewUpdate) which
-    // describes a change being made to the document.
-    (v: ViewUpdate) => {
-        // The
-        // [docChanged](https://codemirror.net/docs/ref/#view.ViewUpdate.docChanged)
-        // flag is the relevant part of this change description. However, this
-        // only describes changes to the code blocks (the document, from
-        // CodeMirror's perspective).
-        let isChanged = v.docChanged;
-        // Look for changes to doc blocks as well; skip if a change was already
-        // detected for efficiency.
-        if (!v.docChanged && v.transactions?.length) {
-            // Check each effect of each transaction.
-            outer: for (let tr of v.transactions) {
-                for (let effect of tr.effects) {
-                    // Look for a change to a doc block.
-                    if (effect.is(addDocBlock) || effect.is(updateDocBlock)) {
-                        isChanged = true;
-                        break outer;
-                    }
-                }
-            }
-        }
-        if (isChanged) {
-            startAutosaveTimer();
-        }
-    },
-);
 
 // User `prettier` to word-wrap Markdown before saving it.
 const prettier_markdown = async (markdown: string, print_width: number) => {
@@ -432,22 +431,6 @@ const prettier_markdown = async (markdown: string, print_width: number) => {
 
 // ## Navigation
 //
-// Since this is experimental, TypeScript doesn't define it. See the
-// [docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
-interface NavigateEvent extends Event {
-    canIntercept: boolean;
-    destination: any;
-    downloadRequest: String | null;
-    formData: any;
-    hashChange: boolean;
-    info: any;
-    navigationType: String;
-    signal: AbortSignal;
-    userInitiated: boolean;
-    intercept: any;
-    scroll: any;
-}
-
 // The TOC and this page calls this when a hyperlink is clicked. This saves the
 // current document before navigating.
 const on_navigate = (navigateEvent: NavigateEvent) => {
@@ -481,7 +464,7 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
     // Intercept this navigation so we can save the document first.
     navigateEvent.intercept();
     console.log("CodeChat Editor: saving document before navigation.");
-    on_save().then((_value) => {
+    on_save(true).then((_value) => {
         // Avoid recursion!
         /// @ts-ignore
         navigation.removeEventListener("navigate", on_navigate);
@@ -493,19 +476,6 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
 
 // ## Testing
 //
-// Tell TypeScript about the global namespace this program defines.
-declare global {
-    interface Window {
-        CodeChatEditor: {
-            // Called by the Client Framework.
-            open_lp: (all_source: CodeChatForWeb) => Promise<void>;
-            on_save: (_only_if_dirty: boolean) => Promise<void>;
-            allow_navigation: boolean;
-        };
-        CodeChatEditor_test: any;
-    }
-}
-
 // A great and simple idea taken from
 // [SO](https://stackoverflow.com/a/54116079): wrap all testing exports in a
 // single variable. This avoids namespace pollution, since only one name is
