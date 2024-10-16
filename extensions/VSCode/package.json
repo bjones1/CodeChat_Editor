@@ -3,7 +3,7 @@
     "version": "0.1.0",
     "publisher": "CodeChat",
     "engines": {
-        "vscode": "^1.51.0"
+        "vscode": "^1.61.0"
     },
     "license": "GPL-3.0-only",
     "displayName": "CodeChat Editor",
