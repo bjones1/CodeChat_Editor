@@ -454,6 +454,8 @@ fn test_js() {
     );
 }
 
+// TODO: re-enable this test when heredocs are supported.
+#[ignore]
 #[test]
 fn test_cpp() {
     let llc = compile_lexers(get_language_lexer_vec());

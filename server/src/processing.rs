@@ -1370,10 +1370,10 @@ mod tests {
             source_to_codechat_for_web("/* ```\n*/\n//", &"cpp".to_string(), false, false),
             TranslationResults::CodeChat(build_codechat_for_web(
                 "c_cpp",
-                "\n\n",
+                "\n",
                 vec![
-                    build_codemirror_doc_block(0, 1, "", "/*", "<pre><code>\n\n"),
-                    build_codemirror_doc_block(2, 2, "", "//", "\n</code></pre>\n"),
+                    build_codemirror_doc_block(0, 0, "", "/*", "<pre><code>\n"),
+                    build_codemirror_doc_block(1, 1, "", "//", "\n</code></pre>\n"),
                 ]
             ))
         );

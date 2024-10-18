@@ -82,6 +82,9 @@ mime_guess = "2.0.5"
 url = "2.5.2"
 clap = { version = "4.5.19", features = ["derive"] }
 indoc = "2.0.5"
+pest = "2.7.14"
+pest_derive = "2.7.14"
+normalize-line-endings = "0.3.0"
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"
