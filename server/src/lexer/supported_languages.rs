@@ -145,8 +145,8 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // - The `.ino` extension is for Arduino source files.
             // - The `.pest` extension is for
             //   [Pest grammars](https://docs.rs/pest/latest/pest/#grammar).
-            //   (TODO: Pest doesn't support virtual newlines, so this is a bit
-            //   inaccurate.)
+            //   TODO: Pest doesn't support line continuations and allows
+            //   multiline strings, so this is a inaccurate.
             &["c", "cc", "cpp", "h", "hh", "hpp", "ino", "pest"],
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
