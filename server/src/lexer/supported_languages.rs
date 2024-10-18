@@ -140,8 +140,14 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         // ### C/C++
         make_language_lexer(
             "c_cpp",
-            // Note that the `.ino` extension is for Arduino source files.
-            &["c", "cc", "cpp", "h", "hh", "hpp", "ino"],
+            // Unusual extensions:
+            //
+            // - The `.ino` extension is for Arduino source files.
+            // - The `.pest` extension is for
+            //   [Pest grammars](https://docs.rs/pest/latest/pest/#grammar).
+            //   (TODO: Pest doesn't support virtual newlines, so this is a bit
+            //   inaccurate.)
+            &["c", "cc", "cpp", "h", "hh", "hpp", "ino", "pest"],
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
             &[make_string_delimiter_spec(
