@@ -36,15 +36,11 @@ white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
 // whitespace indentation.
 inline_comment      =  { inline_comment_init ~ inline_comment_cont* ~ DROP ~ DROP }
 inline_comment_init = _{ PUSH(white_space) ~ PUSH(inline_comment_delims) ~ inline_comment_body }
-// Match on the same whitespace (1 from the top of stack) and then the same
-// comment delimiter
-// (at the top of stack) for continued comments. TODO: is this the correct
-// syntax for
-// 1 from the top of stack? What if more items were on the stack?
-inline_comment_cont = _{ PEEK[1..2] ~ PEEK ~ inline_comment_body }
+// Match on the same whitespace (second from the top of stack) and then the same
+// comment delimiter (at the top of stack) for continued comments.
+inline_comment_cont = _{ PEEK[-1..-2] ~ PEEK ~ inline_comment_body }
 // Other languages support more inline comment delimiters; even if they're not
-// used,
-// they must be defined here.
+// used, they must be defined here.
 inline_comment_delims  = _{ inline_comment_delim_0 }
 inline_comment_delim_0 =  { "//" }
 inline_comment_delim_1 =  { "unused" }
@@ -52,8 +48,7 @@ inline_comment_delim_2 =  { "unused" }
 not_newline            = _{ !NEWLINE ~ ANY }
 newline_eoi            = _{ NEWLINE | EOI }
 // This accepts an inline comment containing a space then some contents, or an
-// inline comment
-// immediately followed by a newline.
+// inline comment immediately followed by a newline.
 inline_comment_body     = { (" " ~ inline_comment_contents) | newline_eoi }
 inline_comment_contents = { not_newline* ~ newline_eoi }
 
@@ -62,8 +57,7 @@ inline_comment_contents = { not_newline* ~ newline_eoi }
 // Block comments never combine.
 block_comment = { white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ "*/" ~ white_space ~ newline_eoi }
 // Support multiple opening delimiters for other languages; assume the closing
-// delimiter
-// is always the same.
+// delimiter is always the same.
 block_comment_opening_delims  = _{ block_comment_opening_delim_0 }
 block_comment_opening_delim_0 =  { "/*" }
 block_comment_opening_delim_1 =  { "unused" }

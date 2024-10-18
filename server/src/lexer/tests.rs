@@ -19,6 +19,7 @@
 use super::supported_languages::get_language_lexer_vec;
 use super::{compile_lexers, source_lexer, CodeDocBlock, DocBlock};
 use crate::test_utils::stringit;
+use indoc::indoc;
 
 // ## Utilities
 //
@@ -468,6 +469,28 @@ fn test_cpp() {
             build_code_block("R\"heredoc(\n// Test 1)heredoc\"\n"),
             build_doc_block("", "//", "Test 2")
         ]
+    );
+}
+
+#[test]
+fn test_c() {
+    let llc = compile_lexers(get_language_lexer_vec());
+    let c = llc.map_mode_to_lexer.get(&stringit("c_cpp")).unwrap();
+
+    // Test logical lines.
+    let s = indoc!(
+        r#"
+        "A string that\
+        // spans two lines but is not a comment."
+        "#
+    );
+    assert_eq!(source_lexer(s, c), [build_code_block(s),]);
+
+    // Test other line endings.
+    assert_eq!(source_lexer("a\r\nb\rc", c), [build_code_block("a\nb\nc"),]);
+    assert_eq!(
+        source_lexer("// a\r\n//\r// c", c),
+        [build_doc_block("", "//", "a\n\nc"),]
     );
 }
 
