@@ -492,6 +492,13 @@ fn test_c() {
         source_lexer("// a\r\n//\r// c", c),
         [build_doc_block("", "//", "a\n\nc"),]
     );
+
+    // Test end of file cases.
+    assert_eq!(source_lexer("// a", c), [build_doc_block("", "//", "a"),]);
+    assert_eq!(
+        source_lexer("/* a */", c),
+        [build_doc_block("", "/*", "a"),]
+    );
 }
 
 #[test]

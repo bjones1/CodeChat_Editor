@@ -108,6 +108,8 @@ macro_rules! make_parse_to_code_doc_blocks {
                         let block_comment_pre = block_comment.next().unwrap().as_str();
                         let comment = block_comment.next().unwrap().as_str();
                         let post_whitespace = block_comment.next().unwrap().as_str();
+                        // If this is an EOI, then its string is empty -- which is exactly what we want. Otherwise, use the newline provided by the `block_comment_ending` token.
+                        let block_comment_ending = block_comment.next().unwrap().as_str();
                         assert!(block_comment.next().is_none());
 
                         // Determine which opening delimiter was used.
@@ -124,7 +126,7 @@ macro_rules! make_parse_to_code_doc_blocks {
                         // following the comment, rather than discarding it --
                         // this seems safer.
                         let full_comment = format!(
-                            "{}{comment}{post_whitespace}",
+                            "{}{comment}{post_whitespace}{block_comment_ending}",
                             // If there's a newline immediately after the block
                             // comment opening delimiter, include it; omit the
                             // space if that instead follows block comment
@@ -135,6 +137,9 @@ macro_rules! make_parse_to_code_doc_blocks {
                                 block_comment_pre
                             }
                         );
+
+                        // Remove indents, if possible.
+                        let full_comment = parse_block_comment(&pre_whitespace, &full_comment);
 
                         // Transform this to a doc block.
                         //println!("Block comment: {pre_whitespace}{full_comment:#?}");
@@ -157,6 +162,33 @@ macro_rules! make_parse_to_code_doc_blocks {
     };
 }
 
+#[macro_export]
+macro_rules! make_parse_block_comment {
+    ($parser: ty) => {
+        pub fn parse_block_comment(indent: &str, comment: &str) -> String {
+            let combined = format!("{}\n{}", indent, comment);
+            let Ok(mut pairs) = <$parser>::parse(Rule::dedenter, &combined)
+                else {
+                    // The parse failed -- this comment can't be de-indented.
+                    return comment.to_string();
+                };
+            let dedenter =
+                // The first (and only) element is the `dedenter` token.
+                pairs.next()
+                .unwrap()
+                // Return the contents of this token (code and doc block
+                // tokens).
+                .into_inner();
+            // Combine all remaining tokens into a single string.
+            println!("{:#?}", dedenter);
+            dedenter.fold(String::new(), |mut acc, e| {
+                acc.push_str(e.as_str());
+                acc
+            })
+        }
+    };
+}
+
 // # Parsers
 //
 // Each parser is kept in a separate module to avoid name conflicts, since Pest
@@ -169,6 +201,7 @@ pub mod c {
     #[grammar = "lexer/pest/c.pest"]
     struct CParser;
     make_parse_to_code_doc_blocks!(CParser);
+    make_parse_block_comment!(CParser);
 }
 
 // ## Tests
@@ -176,7 +209,7 @@ pub mod c {
 mod test {
     use indoc::indoc;
 
-    use super::c::parse_to_code_doc_blocks;
+    use super::c::{parse_block_comment, parse_to_code_doc_blocks};
 
     #[test]
     fn test_pest_1() {
@@ -184,13 +217,30 @@ mod test {
             "{:#?}",
             parse_to_code_doc_blocks(indoc!(
                 r#"
-                //
-
-                //
-
-                //"#
+                code;
+                /* Testing
+                   1,
+                   2, 3
+                 */"#
             ))
         );
-        //assert_eq!(0, 1);
+        assert_eq!(0, 1);
+    }
+
+    #[test]
+    fn test_pest_2() {
+        println!(
+            "{:#?}",
+            parse_block_comment(
+                "",
+                indoc!(
+                    r#"
+                first line
+                  second line
+                "#
+                )
+            )
+        );
+        assert_eq!(0, 1);
     }
 }
