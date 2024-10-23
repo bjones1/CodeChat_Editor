@@ -86,10 +86,21 @@ for (const output in metafile.outputs) {
             outputContents["CodeChatEditor-test.js"] = output;
             outputContents["CodeChatEditor-test.css"] = outputInfo.cssBundle!;
             ++num_found;
+            break;
+
+        case "static/css/CodeChatEditorProject.css":
+            outputContents["CodeChatEditorProject.css"] = output;
+            ++num_found;
+            break;
+
+        case "static/css/CodeChatEditorTOC.css":
+            outputContents["CodeChatEditorTOC.css"] = output;
+            ++num_found;
+            break;
     }
 }
 
-console.assert(num_found === 3);
+console.assert(num_found === 5);
 
 // Write this to disk.
 await fs.writeFile(

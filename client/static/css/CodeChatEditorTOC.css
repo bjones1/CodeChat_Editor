@@ -16,10 +16,10 @@
    the CodeChat Editor. If not, see
    [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 
-   # `CodeChatEditorSidebar.css` -- Styles for the CodeChat Editor's project sidebar
+   # `CodeChatEditorTOC.css` -- Styles for the CodeChat Editor's project table of contents
 
-   Make lists more compact. */
-ol {
-    /* Provide approximately enough space for two digits. */
-    padding-inline-start: 1.5rem;
-}
+   Include base styling. */
+@import url('CodeChatEditor.css');
+
+/* Include theme. */
+@import url('themes/light-TOC.css');

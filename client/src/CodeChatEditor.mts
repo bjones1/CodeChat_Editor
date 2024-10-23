@@ -157,7 +157,7 @@ export const page_init = () => {
         // Intercept links in this document to save before following the link.
         /// @ts-ignore
         navigation.addEventListener("navigate", on_navigate);
-        const ccb = document.getElementById("CodeChat-sidebar") as
+        const ccb = document.getElementById("CodeChat-TOC") as
             | HTMLIFrameElement
             | undefined;
         /// @ts-ignore
@@ -176,7 +176,7 @@ export const page_init = () => {
 
 export const set_is_dirty = (value: boolean = true) => {
     is_dirty = value;
-}
+};
 
 // This is copied from
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
@@ -335,7 +335,9 @@ const on_save = async (only_if_dirty: boolean = false) => {
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
     console.log("Sent Update - saving document.");
     await new Promise(async (resolve) => {
-        webSocketComm.send_message({ Update: await save_lp() }, () => resolve(0));
+        webSocketComm.send_message({ Update: await save_lp() }, () =>
+            resolve(0),
+        );
     });
     is_dirty = false;
 };

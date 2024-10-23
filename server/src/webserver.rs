@@ -699,13 +699,15 @@ async fn serve_file(
                             <meta name="viewport" content="width=device-width, initial-scale=1">
                             <title>{name} - The CodeChat Editor</title>
 
-                            <link rel="stylesheet" href="/static/css/CodeChatEditor.css">
-                            <link rel="stylesheet" href="/static/css/CodeChatEditorSidebar.css">
+                            <link rel="stylesheet" href="/{}">
                         </head>
                         <body>
-                            {html}
+                            <div class="CodeChat-TOC">
+                                {html}
+                            </div>
                         </body>
-                    </html>"#
+                    </html>"#,
+                    BUNDLED_FILES_MAP.get("CodeChatEditorTOC.css").unwrap()
                 )),
                 None,
             );
@@ -720,10 +722,13 @@ async fn serve_file(
                 r#"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"#,
                 path_to_toc.unwrap().to_slash_lossy()
             ),
-            r#"<link rel="stylesheet" href="/static/css/CodeChatEditorProject.css">"#,
+            format!(
+                r#"<link rel="stylesheet" href="/{}">"#,
+                BUNDLED_FILES_MAP.get("CodeChatEditorProject.css").unwrap()
+            ),
         )
     } else {
-        ("".to_string(), "")
+        ("".to_string(), "".to_string())
     };
 
     // Add testing mode scripts if requested.

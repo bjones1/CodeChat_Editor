@@ -25,8 +25,7 @@ body {
     overflow: hidden;
 }
 
-/* TODO: This is a overly simple, non-responsive layout to create a sidebar.
-   Fix. */
+/* TODO: This is a overly simple, non-responsive layout to create a sidebar containing the table of contents. Fix. */
 #CodeChat-sidebar {
     width: var(--sidebar-width);
     height: calc(100vh - 2 * var(--body-padding));

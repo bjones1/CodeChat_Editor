@@ -36,7 +36,10 @@
     2.  Styles
         1.  [CodeChatEditor.css](client/static/css/CodeChatEditor.css)
         2.  [CodeChatEditorProject.css](client/static/css/CodeChatEditorProject.css)
-        3.  [CodeChatEditorSidebar.css](client/static/css/CodeChatEditorSidebar.css)
+        3.  [CodeChatEditorTOC.css](client/static/css/CodeChatEditorTOC.css)
+        4.  Themes
+            1.  [light.css](client/static/css/themes/light.css)
+            2.  [light-TOC.css](client/static/css/themes/light-TOC.css)
     3.  Tests
         1.  [CodeChatEditor-test.mts](client/src/CodeChatEditor-test.mts)
             1.  [Run tests](server/src/lib.rs?test)
