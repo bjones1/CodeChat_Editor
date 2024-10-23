@@ -1,0 +1,106 @@
+/* Copyright (C) 2023 Bryan A. Jones.
+
+   This file is part of the CodeChat Editor.
+
+   The CodeChat Editor is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by the Free
+   Software Foundation, either version 3 of the License, or (at your option) any
+   later version.
+
+   The CodeChat Editor is distributed in the hope that it will be useful, but
+   WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+   details.
+
+   You should have received a copy of the GNU General Public License along with
+   the CodeChat Editor. If not, see
+   [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+
+   # `light.css` -- Styles for the light theme
+*/
+
+/* Style code blocks so that they are clearly separated from doc blocks. */
+.cm-line {
+    background-color: #EEE;
+}
+
+/* Mark a hotkey. */
+.CodeChat-hotkey {
+    text-decoration: underline;
+}
+
+/* CodeMirror draws its own caret, hiding the actual caret. Disable this inside
+   embedded TinyMCE blocks, which use the native caret. */
+   .CodeChat-doc-contents {
+    caret-color: black;
+}
+
+/* The settings below are copied from the Sphinx Alabaster theme. */
+body {
+    color: #000;
+    background-color: #fff;
+}
+
+hr {
+    border: 1px solid #B1B4B6;
+}
+
+div.CodeChat-doc-contents {
+    font-family: Georgia, serif;
+    font-size: 17px;
+    color: #3E4349;
+}
+
+
+a {
+    color: #004B6B;
+    text-decoration: underline;
+}
+
+a:hover {
+    color: #6D4100;
+    text-decoration: underline;
+}
+
+div.CodeChat-doc-contents h1,
+div.CodeChat-doc-contents h2,
+div.CodeChat-doc-contents h3,
+div.CodeChat-doc-contents h4,
+div.CodeChat-doc-contents h5,
+div.CodeChat-doc-contents h6 {
+    font-family: Georgia, serif;
+    font-weight: normal;
+    margin: 30px 0px 10px 0px;
+    padding: 0;
+}
+
+div.CodeChat-doc-contents h1 { margin-top: 0; padding-top: 0; font-size: 240%; }
+div.CodeChat-doc-contents h2 { font-size: 180%; }
+div.CodeChat-doc-contents h3 { font-size: 150%; }
+div.CodeChat-doc-contents h4 { font-size: 130%; }
+div.CodeChat-doc-contents h5 { font-size: 100%; }
+div.CodeChat-doc-contents h6 { font-size: 100%; }
+
+pre, tt, code {
+    font-family: 'Consolas', 'Menlo', 'DejaVu Sans Mono', 'Bitstream Vera Sans Mono', monospace;
+    font-size: 0.9em;
+}
+
+ul, ol {
+    /* Matches the 30px from the narrow-screen "li > ul" selector below */
+    margin: 10px 0 10px 30px;
+    padding: 0;
+}
+
+pre {
+    background: #EEE;
+    padding: 7px 30px;
+    margin: 15px 0px;
+    line-height: 1.3em;
+}
+
+tt, code {
+    background-color: #ecf0f3;
+    color: #222;
+    /* padding: 1px 2px; */
+}

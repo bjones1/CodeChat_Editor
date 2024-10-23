@@ -24,7 +24,12 @@
    TODO: do a much better job of grouping common styles. Rename styles based on
    whether they style a code or doc block.
 
-   ## Styles for the entire page layout
+   ## Import a theme
+   Eventually, this will be a user-configurable setting.
+ */
+ @import url('themes/light.css');
+
+/* ## Styles for the entire page layout
 
    This is used only to store a reused variable value. See the
    [CSS docs](https://drafts.csswg.org/css-variables/). */
@@ -49,13 +54,6 @@ body {
     /* For box model simplicity, switch the padding and margin. */
     padding: var(--body-padding);
     margin: 0px;
-    /* The default of transparent makes VS Code's black show up and confuse
-       everything. For now, make it white. */
-    background: white;
-}
-
-.cm-line {
-    background-color: #EEE;
 }
 
 /* Provide space at the top of the screen for the filename and TinyMCE menu bar. */
@@ -63,20 +61,17 @@ body {
     height: var(--top-height);
 }
 
-/* The rest of the screen is the editor area. */
-#CodeChat-body {
-    height: calc(100vh - var(--top-height) - 2 * var(--body-padding));
-    overflow: auto;
+/* The rest of the screen is the editor area. Omit this for printing, so the
+   text flows across multiple pages. */
+@media not print {
+    #CodeChat-body {
+        height: calc(100vh - var(--top-height) - 2 * var(--body-padding));
+        overflow: auto;
+    }
 }
-
 /* ## Misc styling
 
-   Mark a hotkey. */
-.CodeChat-hotkey {
-    text-decoration: underline;
-}
-
-/* Make the filename compact. */
+ Make the filename compact. */
 #CodeChat-filename p {
     margin: 0px;
     white-space: nowrap;
@@ -178,10 +173,4 @@ body {
     padding-left: 4px;
     padding-right: 4px;
     border: 1px solid;
-}
-
-/* CodeMirror draws its own caret, hiding the actual caret. Disable this inside
-   embedded TinyMCE blocks, which use the native caret. */
-.CodeChat-doc-contents {
-    caret-color: black;
 }
