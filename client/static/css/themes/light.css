@@ -17,90 +17,153 @@
    [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 
    # `light.css` -- Styles for the light theme
-*/
 
-/* Style code blocks so that they are clearly separated from doc blocks. */
-.cm-line {
-    background-color: #EEE;
-}
+   Use
+   [CSS nesting](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_nesting/Using_CSS_nesting)
+   to make everything in this style sheet apply only to the light theme. */
+body.CodeChat-theme-light {
+    /* Style code blocks so that they are clearly separated from doc blocks. */
+    .cm-line {
+        background-color: #EEE;
+    }
 
-/* Mark a hotkey. */
-.CodeChat-hotkey {
-    text-decoration: underline;
-}
+    /* Mark a hotkey. */
+    .CodeChat-hotkey {
+        text-decoration: underline;
+    }
 
-/* CodeMirror draws its own caret, hiding the actual caret. Disable this inside
-   embedded TinyMCE blocks, which use the native caret. */
-   .CodeChat-doc-contents {
-    caret-color: black;
-}
-
-/* The settings below are copied from the Sphinx Alabaster theme. */
-body {
+    /* The settings below are copied from the Sphinx Alabaster theme. */
     color: #000;
+    /* The default of transparent makes VS Code's black show up and confuse
+       everything. For now, make it white. */
     background-color: #fff;
-}
 
-hr {
-    border: 1px solid #B1B4B6;
-}
+    /* Styles for doc blocks. */
+    div.CodeChat-doc-contents {
+        /* CodeMirror draws its own caret, hiding the actual caret. Disable this
+           inside embedded TinyMCE blocks, which use the native caret. */
+        caret-color: black;
 
-div.CodeChat-doc-contents {
-    font-family: Georgia, serif;
-    font-size: 15px;
-    color: #3E4349;
-}
+        font-family: Georgia, serif;
+        font-size: 15px;
+        color: #3E4349;
 
+        hr {
+            border: 1px solid #B1B4B6;
+        }
 
-a {
-    color: #004B6B;
-    text-decoration: underline;
-}
+        a {
+            color: #004B6B;
+            text-decoration: underline;
+        }
 
-a:hover {
-    color: #6D4100;
-    text-decoration: underline;
-}
+        a:hover {
+            color: #6D4100;
+            text-decoration: underline;
+        }
 
-div.CodeChat-doc-contents h1,
-div.CodeChat-doc-contents h2,
-div.CodeChat-doc-contents h3,
-div.CodeChat-doc-contents h4,
-div.CodeChat-doc-contents h5,
-div.CodeChat-doc-contents h6 {
-    font-family: Georgia, serif;
-    font-weight: normal;
-    margin: 30px 0px 10px 0px;
-    padding: 0;
-}
+        h1, h2, h3, h4, h5, h6 {
+            font-family: Georgia, serif;
+            font-weight: normal;
+            margin: 30px 0px 10px 0px;
+            padding: 0;
+        }
 
-div.CodeChat-doc-contents h1 { margin-top: 0; padding-top: 0; font-size: 240%; }
-div.CodeChat-doc-contents h2 { font-size: 180%; }
-div.CodeChat-doc-contents h3 { font-size: 150%; }
-div.CodeChat-doc-contents h4 { font-size: 130%; }
-div.CodeChat-doc-contents h5 { font-size: 100%; }
-div.CodeChat-doc-contents h6 { font-size: 100%; }
+        h1 { margin-top: 0; padding-top: 0; font-size: 240%; }
+        h2 { font-size: 180%; }
+        h3 { font-size: 150%; }
+        h4 { font-size: 130%; }
+        h5 { font-size: 100%; }
+        h6 { font-size: 100%; }
 
-pre, tt, code {
-    font-family: 'Consolas', 'Menlo', 'DejaVu Sans Mono', 'Bitstream Vera Sans Mono', monospace;
-    font-size: 0.9em;
-}
+        pre, tt, code {
+            font-family: 'Consolas', 'Menlo', 'DejaVu Sans Mono', 'Bitstream Vera Sans Mono', monospace;
+            font-size: 0.9em;
+        }
 
-ul, ol {
-    /* Matches the 30px from the narrow-screen "li > ul" selector below */
-    margin: 10px 0 10px 30px;
-    padding: 0;
-}
+        ul, ol {
+            /* Matches the 30px from the narrow-screen "li > ul" selector below */
+            margin: 10px 0 10px 30px;
+            padding: 0;
+        }
 
-pre {
-    background: #EEE;
-    padding: 7px 30px;
-    margin: 15px 0px;
-    line-height: 1.3em;
-}
+        pre {
+            background: #EEE;
+            padding: 7px 30px;
+            margin: 15px 0px;
+            line-height: 1.3em;
+        }
 
-tt, code {
-    background-color: #ecf0f3;
-    color: #222;
-    /* padding: 1px 2px; */
+        tt, code {
+            background-color: #ecf0f3;
+            color: #222;
+            /* padding: 1px 2px; */
+        }
+    }
+
+    /* Styles for the table of contents. */
+    div.CodeChat-TOC {
+        font-family: Georgia, serif;
+        font-size: 15px;
+        color: #3E4349;
+
+        /* Make lists more compact. */
+        ol {
+           /* Provide approximately enough space for two digits. */
+           padding-inline-start: 1.5rem;
+        }
+
+        a {
+           color: #444;
+           text-decoration: none;
+           border-bottom: 1px dotted #999;
+        }
+
+        a:hover {
+           border-bottom: 1px solid #999;
+        }
+
+        h3, h4 {
+           font-family: Georgia, serif;
+           color: #444;
+           font-size: 24px;
+           font-weight: normal;
+           margin: 0 0 5px 0;
+           padding: 0;
+        }
+
+        h4 {
+           font-size: 20px;
+        }
+
+        h3 a {
+           color: #444;
+        }
+
+        h3 a, a:hover {
+           border: none;
+        }
+
+        p {
+           color: #555;
+           margin: 10px 0;
+        }
+
+        ul {
+           margin: 10px 0;
+           padding: 0;
+           color: #000;
+        }
+
+        hr {
+           border: none;
+           height: 1px;
+           color: #AAA;
+           background: #AAA;
+
+           text-align: left;
+           margin-left: 0;
+           width: 50%;
+        }
+    }
 }

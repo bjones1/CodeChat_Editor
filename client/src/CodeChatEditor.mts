@@ -157,7 +157,7 @@ export const page_init = () => {
         // Intercept links in this document to save before following the link.
         /// @ts-ignore
         navigation.addEventListener("navigate", on_navigate);
-        const ccb = document.getElementById("CodeChat-TOC") as
+        const ccb = document.getElementById("CodeChat-sidebar") as
             | HTMLIFrameElement
             | undefined;
         /// @ts-ignore

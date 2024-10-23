@@ -660,6 +660,15 @@ async fn serve_file(
     let dir = path_display(raw_dir);
     let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
 
+    // Get the locations for bundled files.
+    let js_test_suffix = if is_test_mode { "-test" } else { "" };
+    let codechat_editor_js = BUNDLED_FILES_MAP
+        .get(&format!("CodeChatEditor{js_test_suffix}.js"))
+        .unwrap();
+    let codehat_editor_css = BUNDLED_FILES_MAP
+        .get(&format!("CodeChatEditor{js_test_suffix}.css"))
+        .unwrap();
+
     // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) = if is_current_file || is_toc {
         source_to_codechat_for_web_string(file_contents, file_path, is_toc)
@@ -699,15 +708,14 @@ async fn serve_file(
                             <meta name="viewport" content="width=device-width, initial-scale=1">
                             <title>{name} - The CodeChat Editor</title>
 
-                            <link rel="stylesheet" href="/{}">
+                            <link rel="stylesheet" href="/{codehat_editor_css}">
                         </head>
-                        <body>
+                        <body class="CodeChat-theme-light">
                             <div class="CodeChat-TOC">
                                 {html}
                             </div>
                         </body>
                     </html>"#,
-                    BUNDLED_FILES_MAP.get("CodeChatEditorTOC.css").unwrap()
                 )),
                 None,
             );
@@ -732,7 +740,6 @@ async fn serve_file(
     };
 
     // Add testing mode scripts if requested.
-    let js_test_suffix = if is_test_mode { "-test" } else { "" };
     let testing_src = if is_test_mode {
         r#"
         <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
@@ -741,14 +748,6 @@ async fn serve_file(
     } else {
         ""
     };
-
-    // Get the locations for bundled files.
-    let codechat_editor_js = BUNDLED_FILES_MAP
-        .get(&format!("CodeChatEditor{js_test_suffix}.js"))
-        .unwrap();
-    let codehat_editor_css = BUNDLED_FILES_MAP
-        .get(&format!("CodeChatEditor{js_test_suffix}.css"))
-        .unwrap();
 
     // Build and return the webpage.
     (
@@ -768,7 +767,7 @@ async fn serve_file(
                     {testing_src}
                     {sidebar_css}
                 </head>
-                <body>
+                <body class="CodeChat-theme-light">
                     {sidebar_iframe}
                     <div id="CodeChat-contents">
                         <div id="CodeChat-top">
