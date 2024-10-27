@@ -85,6 +85,12 @@ import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
 let current_view: EditorView;
 let tinymce_singleton: Editor | undefined;
 
+declare global {
+    interface Window {
+        MathJax: any;
+    }
+}
+
 // ## Doc blocks in CodeMirror
 //
 // The goal: given a [Range](https://codemirror.net/docs/ref/#state.Range) of
@@ -320,6 +326,9 @@ class DocBlockWidget extends WidgetType {
             `<div class="CodeChat-doc-contents" contenteditable>` +
             this.contents +
             "</div>";
+        window.MathJax.startup.promise = window.MathJax.startup.promise
+            .then(() => window.MathJax.typesetPromise([wrap]))
+            .catch((err: any) => console.log("Typeset failed: " + err.message));
         return wrap;
     }
 
@@ -344,6 +353,9 @@ class DocBlockWidget extends WidgetType {
         } else {
             contents_div.innerHTML = this.contents;
         }
+        window.MathJax.startup.promise = window.MathJax.startup.promise
+            .then(() => window.MathJax.typesetPromise([this.contents]))
+            .catch((err: any) => console.log("Typeset failed: " + err.message));
 
         // Indicate the update was successful.
         return true;
@@ -365,6 +377,12 @@ class DocBlockWidget extends WidgetType {
     destroy(dom: HTMLElement): void {
         // If this is the TinyMCE editor, save it.
         const [contents_div, is_tinymce] = get_contents(dom);
+        // Revert the typeset math to its original form.
+        window.MathJax.startup.document
+            .getMathItemsWithin(contents_div)
+            .forEach((item: any) => {
+                item.removeFromDocument(true);
+            });
         if (is_tinymce) {
             const codechat_body = document.getElementById("CodeChat-body")!;
             const tinymce_div = document.getElementById("TinyMCE-inst")!;
@@ -523,9 +541,10 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                                 ;
                                 selection_path.length;
                                 selection_node =
-                                    // As before, use the more-consistent `children`
-                                    // except for the last element, where we might
-                                    // be selecting a `text` node.
+                                    // As before, use the more-consistent
+                                    // `children` except for the last element,
+                                    // where we might be selecting a `text`
+                                    // node.
                                     (
                                         selection_path.length > 1
                                             ? selection_node.children
@@ -570,6 +589,12 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 const indent = indent_div.innerHTML;
                 const delimiter = indent_div.getAttribute("data-delimiter")!;
                 const [contents_div, is_tinymce] = get_contents(target);
+                // Revert the typeset math to its original form.
+                window.MathJax.startup.document
+                    .getMathItemsWithin(contents_div)
+                    .forEach((item: any) => {
+                        item.removeFromDocument(true);
+                    });
                 const content = is_tinymce
                     ? tinymce_singleton!.getContent()
                     : contents_div.innerHTML;
@@ -584,6 +609,13 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 ];
 
                 view.dispatch({ effects });
+
+                // Re-typeset.
+                window.MathJax.startup.promise = window.MathJax.startup.promise
+                    .then(() => window.MathJax.typesetPromise([contents_div]))
+                    .catch((err: any) =>
+                        console.log("Typeset failed: " + err.message),
+                    );
                 return false;
             },
         },

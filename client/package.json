@@ -49,6 +49,7 @@
         "@codemirror/view": "^6",
         "codemirror": "^6",
         "graphviz-webcomponent": "=2.0.0",
+        "mathjax": "^3",
         "tinymce": "^7"
     },
     "repository": {

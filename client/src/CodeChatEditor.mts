@@ -42,19 +42,13 @@
 // ### JavaScript/TypeScript
 //
 // #### Third-party
-import { EditorView, ViewUpdate } from "@codemirror/view";
 import prettier from "prettier/esm/standalone.mjs";
 import parserMarkdown from "prettier/esm/parser-markdown.mjs";
 import TurndownService from "./turndown/turndown.browser.es.js";
 import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
 
 // #### Local
-import {
-    CodeMirror_load,
-    CodeMirror_save,
-    addDocBlock,
-    updateDocBlock,
-} from "./CodeMirror-integration.mjs";
+import { CodeMirror_load, CodeMirror_save } from "./CodeMirror-integration.mjs";
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 // This must be imported _after_ the previous setup import, so it's placed here,
@@ -66,6 +60,7 @@ import { tinymce, init, Editor } from "./tinymce-config.mjs";
 import "./../static/css/CodeChatEditor.css";
 
 // ## Data structures
+//
 // <a id="EditorMode"></a>Define all possible editor modes; these are passed as
 // a [query string](https://en.wikipedia.org/wiki/Query_string)
 // (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
@@ -107,10 +102,12 @@ declare global {
             allow_navigation: boolean;
         };
         CodeChatEditor_test: any;
+        MathJax: any;
     }
 }
 
 // ## Globals
+//
 // The ID of the autosave timer; when this timer expires, the document will be
 // autosaved.
 let autosaveTimeoutId: null | number = null;
@@ -228,6 +225,12 @@ export const open_lp = async (
     // Disable autosave when updating the document.
     autosaveEnabled = false;
     clearAutosaveTimer();
+    // Per the
+    // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
+    // "If you modify the page to remove content that contains typeset
+    // mathematics, you will need to tell MathJax about that so that it knows
+    // the typeset math that you are removing is no longer on the page."
+    window.MathJax.typesetClear(codechat_body);
     if (is_doc_only()) {
         if (tinymce.activeEditor === null) {
             // Special case: a CodeChat Editor document's HTML is stored in

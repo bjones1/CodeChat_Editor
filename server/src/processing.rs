@@ -562,6 +562,7 @@ fn markdown_to_html(markdown: &str) -> String {
     // Turndown (which converts HTML back to Markdown) doesn't support smart
     // punctuation.
     options.remove(Options::ENABLE_SMART_PUNCTUATION);
+    options.remove(Options::ENABLE_MATH);
     let parser = Parser::new_ext(markdown, options);
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);

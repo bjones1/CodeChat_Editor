@@ -763,6 +763,18 @@ async fn serve_file(
                         import {{ page_init }} from "/{codechat_editor_js}"
                         page_init()
                     </script>
+                    <script>
+                        MathJax = {{
+                            tex: {{
+                                inlineMath: [['$', '$'], ['\\(', '\\)']]
+                            }},
+                            svg: {{
+                                fontCache: 'global'
+                            }}
+                        }};
+                    </script>
+                    <script type="text/javascript" id="MathJax-script" async
+                    src="/static/mathjax/es5/tex-chtml.js"></script>
                     <link rel="stylesheet" href="/{codehat_editor_css}">
                     {testing_src}
                     {sidebar_css}
