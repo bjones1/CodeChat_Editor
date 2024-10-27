@@ -17,7 +17,10 @@
 // ## Imports
 //
 // ### Standard library
-use std::{path::Path, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 // ### Third-party
 use actix_web::{
@@ -328,7 +331,10 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
     // First, allocate variables needed by these two tasks.
     //
     // The path to the currently open CodeChat Editor file.
-    let mut current_filepath = file_path.to_path_buf().canonicalize().unwrap();
+    let Ok(mut current_filepath) = file_path.to_path_buf().canonicalize() else {
+        error!("Unable to canonicalize path {file_path:?}.");
+        return;
+    };
     let Some(current_filepath_str) = current_filepath.to_str() else {
         error!("Unable to convert path {current_filepath:?} to string.");
         return;
@@ -512,9 +518,11 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         match m.message {
                             EditorMessageContents::Update(update_message_contents) => {
                                 let result = 'process: {
-                                    if update_message_contents.file_path != current_filepath_str {
+                                    // Check that the file path matches the current file. If `canonicalize` fails, then the files don't match.
+                                    let file_path = PathBuf::from(&update_message_contents.file_path);
+                                    if !file_path.canonicalize().map_or(false, |v| v == current_filepath) {
                                         break 'process Err(format!(
-                                            "Update for file '{}' doesn't match current file '{current_filepath_str}'.", update_message_contents.file_path
+                                            "Update for file '{}' doesn't match current file '{}'.", file_path.to_string_lossy(), current_filepath.to_string_lossy()
                                         ));
                                     }
                                     // With code or a path, there's nothing to
