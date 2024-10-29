@@ -45,18 +45,23 @@ inline_comment_delims  = _{ inline_comment_delim_0 }
 inline_comment_delim_0 =  { "//" }
 inline_comment_delim_1 =  { "unused" }
 inline_comment_delim_2 =  { "unused" }
-not_newline            = _{ !NEWLINE ~ ANY }
-newline_eoi            = _{ NEWLINE | EOI }
 // This accepts an inline comment containing a space then some contents, or an
 // inline comment immediately followed by a newline.
 inline_comment_body     = { (" " ~ inline_comment_contents) | newline_eoi }
-inline_comment_contents = { not_newline* ~ newline_eoi }
+inline_comment_contents = { logical_line ~ newline_eoi }
+// Per the
+// [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
+// if a line of code ends with a backslash, it continues on the next line. This
+// is a logical line; treat it as a single line.
+logical_line = _{ ("\\" ~ NEWLINE | not_newline)* }
+newline_eoi  = _{ NEWLINE | EOI }
+not_newline  = _{ !NEWLINE ~ ANY }
 
 // ## Block comments
 //
 // Block comments never combine.
 block_comment = {
-    white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ " "? ~ "*/" ~ white_space ~ block_comment_ending
+    white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ optional_space ~ "*/" ~ white_space ~ block_comment_ending
 }
 // Support multiple opening delimiters for other languages; assume the closing
 // delimiter is always the same.
@@ -71,18 +76,13 @@ block_comment_pre             =  { " " | newline_eoi }
 // If there's a space immediately before the block closing delimiter, don't
 // capture it, so that this space can be discarded in the `block_comment` token.
 contents = { (!(" "? ~ block_comment_closing_delim) ~ ANY)* }
+optional_space = { " "? }
 // Use this so that the ending (usually a newline) gets captured in a token.
 block_comment_ending = { newline_eoi }
 
 // ## Code blocks
 code_block = { code_line+ }
-
-// Per the
-// [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
-// if a line of code ends with a backslash, it continues on the next line. This
-// is a logical line; treat it as a single line.
-logical_line = _{ ("\\" ~ NEWLINE | not_newline)* }
-code_line    = _{ (!doc_block ~ logical_line ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
+code_line = _{ (!doc_block ~ logical_line ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
 
 // ## Dedenter
 //
@@ -160,7 +160,7 @@ dedenter = {
 // "\* ".
 indent           = _{ PUSH(" "*) ~ NEWLINE }
 valid_first_line =  { not_newline* ~ NEWLINE }
-valid_space_line =  { (space_dedent ~ dedented_line) | last_line | (white_space ~ not_newline_eoi ~ vis_newline) }
+valid_space_line =  _{ (space_dedent ~ dedented_line) | last_line | (white_space ~ not_newline_eoi ~ vis_newline) }
 valid_star_line  = _{ (star_dedent ~ dedented_line) | last_line | (PEEK ~ " *" ~ not_newline_eoi ~ vis_newline) }
 space_dedent     = _{ PEEK ~ "   " }
 dedented_line    =  { not_newline* ~ not_newline_eoi ~ newline_eoi }
