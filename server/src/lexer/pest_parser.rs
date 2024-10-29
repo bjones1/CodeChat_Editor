@@ -206,9 +206,20 @@ pub mod c {
 
     #[derive(Parser)]
     #[grammar = "lexer/pest/c.pest"]
-    struct CParser;
-    make_parse_to_code_doc_blocks!(CParser);
-    make_parse_block_comment!(CParser);
+    struct ThisParser;
+    make_parse_to_code_doc_blocks!(ThisParser);
+    make_parse_block_comment!(ThisParser);
+}
+
+pub mod python {
+    use pest::Parser;
+    use pest_derive::Parser;
+
+    #[derive(Parser)]
+    #[grammar = "lexer/pest/python.pest"]
+    struct ThisParser;
+    make_parse_to_code_doc_blocks!(ThisParser);
+    make_parse_block_comment!(ThisParser);
 }
 
 // ## Tests
@@ -216,13 +227,13 @@ pub mod c {
 mod test {
     use indoc::indoc;
 
-    use super::c::parse_to_code_doc_blocks;
+    use super::{c, python};
     use crate::lexer::{CodeDocBlock, DocBlock};
 
     #[test]
     fn test_pest_1() {
         assert_eq!(
-            parse_to_code_doc_blocks(indoc!(
+            c::parse_to_code_doc_blocks(indoc!(
                 r#"
                 code;
                 /* Testing
@@ -242,7 +253,7 @@ mod test {
             ],
         );
         assert_eq!(
-            parse_to_code_doc_blocks(indoc!(
+            c::parse_to_code_doc_blocks(indoc!(
                 r#"
                 code;
                 /* Testing
@@ -258,6 +269,24 @@ mod test {
                     delimiter: "/*".to_string(),
                     contents: "Testing\n1,\n\n2, 3\n ".to_string(),
                     lines: 5,
+                })
+            ],
+        );
+
+        assert_eq!(
+            python::parse_to_code_doc_blocks(indoc!(
+                r#"
+                code("""not
+                # a comment.""")
+                # A comment."#
+            )),
+            vec![
+                CodeDocBlock::CodeBlock(r#"code("""not\na comment.""")\n"#.to_string()),
+                CodeDocBlock::DocBlock(DocBlock {
+                    indent: "".to_string(),
+                    delimiter: "#".to_string(),
+                    contents: "A comment.".to_string(),
+                    lines: 1,
                 })
             ],
         );
