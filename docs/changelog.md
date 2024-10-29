@@ -20,7 +20,11 @@ CodeChat Editor. If not, see
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
   - Added basic theme support; used a theme similar to Sphinx's Alabaster.
-  - Added support for printing
+  - Added support for printing.
+  - Added a user manual, improved documentation.
+  - Fixed a bug in the filewatcher that prevented saving changes made in the
+    Client.
 - v0.1.0, 2024-Oct-16
-  - Initial release, with binaries for Windows only. Built with manually-patched CodeMirror per [this issue](https://github.com/bjones1/CodeChat_Editor/issues/27).
-
+  - Initial release, with binaries for Windows only. Built with manually-patched
+    CodeMirror per
+    [this issue](https://github.com/bjones1/CodeChat_Editor/issues/27).
