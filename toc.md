@@ -2,12 +2,12 @@
 
 ## About
 
-1.  [User manual](docs/manual.md)
+1.  [User manual](README.md)
 2.  [Literate programming using the CodeChat Editor](docs/style_guide.cpp)
 
 ## Design
 
-1.  [CodeChat Editor Overview](README.md)
+1.  [CodeChat Editor Design](docs/design.md)
 2.  [Implementation](docs/implementation.md)
 
 ## Implementation
