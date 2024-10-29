@@ -1,3 +1,9 @@
+// # `style_guide.cpp` - Literate programming using the CodeChat Editor
+//
+// This document, written as a C++ source file, primarily demonstrates the use
+// of the CodeChat Editor in literate programming. It should be viewed using the
+// CodeChat Editor.
+//
 // Copyright (C) 2023 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -14,12 +20,10 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `style_guide.cpp` - Literate programming using the CodeChat Editor
-//
-// This document, written as a C++ source file, primarily demonstrates the use
-// of the CodeChat Editor in literate programming.
-//
 // ## Introduction
+//
+// This document provides a style guide for literate programming using the
+// CodeChat Editor. For basic use, see the [user manual](../README.md).
 //
 // The CodeChat Editor divides code into code blocks and documentation (doc)
 // blocks.​ These blocks are separated by newlines; comments on the same line as

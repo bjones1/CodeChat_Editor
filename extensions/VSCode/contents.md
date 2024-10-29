@@ -3,6 +3,8 @@
 This extension provides the CodeChat Editor's capabilities within the Visual
 Studio Code editor.
 
+![Screenshot of the CodeChat Editor extension](screenshot.png)
+
 ## Installation
 
 First, install [Visual Studio Code](https://code.visualstudio.com/). Next:
