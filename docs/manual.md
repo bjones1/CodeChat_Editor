@@ -1,0 +1,103 @@
+# User manual
+
+## Introduction
+
+The CodeChat Editor is a GUI-based programmer's word processor / Jupyter for
+software developers. This document describes its basic features and use. In
+contrast, the style guide provides strategies for effectively employing the
+CodeChat Editor to improve the software development process.
+
+## Structure
+
+The [style guide](style_guide.cpp)'s introduction defines code blocks and doc
+blocks, the foundation of the CodeChat Editor and its use of Markdown; see that
+document for syntax and examples.
+
+## Editing
+
+Edits may be made either in the IDE hosting the CodeChat Editor, or within the
+CodeChat Editor window itself. Edits made in one place are transferred to the
+other after a short delay.
+
+## References to other files
+
+The CodeChat Editor supports hyperlinks to any recognized file type; to refer to
+another source file, simply insert a hyperlink to it. For example, this is a
+link to [style_guide.cpp](style_guide.cpp) (the style guide); here's a link to
+[../README.md](../README.md). Note that:
+
+1.  Hyperlinks are relative to the current file; to refer to the README.md file
+    which is located in the parent directory of this file, use ../README.md.
+2.  As usual, the text of a hyperlink does not need to match the link itself;
+    here's another link to the [style guide](style_guide.cpp), for example.
+
+Likewise, the path to local image is relative to the current file's location.
+For example [\[1\]](#notes):
+
+![Monitor icon](images/website.png)
+
+## Projects
+
+The CodeChat Editor can either display a single file, or a project. In a
+project, the table of contents is displayed on the left, while a file within the
+project is displayed on the right. To create a project, simply place a file
+named `toc.md` at the root of your project [\[2\]](#notes); its contents define
+the table of contents. See the
+[new project template](https://github.com/bjones1/CodeChat_Editor/tree/main/new-project-template)
+for a simple example.
+
+## Diagrams
+
+### Graphviz
+
+The CodeChat Editor contains rudimentary support for diagrams created by
+[Graphviz](https://graphviz.org/). For example:
+
+<graphviz-graph graph="digraph { one -> two }"></graphviz-graph>
+
+To edit these diagrams, use an
+[HTML entity encoder/decoder](https://mothereff.in/html-entities) and a Graphviz
+editor such as [Edotor](https://edotor.net/).
+
+### PlantUML
+
+![Sample PlantUML diagram](https://www.plantuml.com/plantuml/svg/SoWkIImgAStDuNBAJrBGjLDmpCbCJbMmKiX8pSd9vt98pKi1IW80)
+
+To edit these diagrams, paste the URL into the
+[PlantUML web server](https://www.plantuml.com/plantuml/uml), click Decode URL,
+edit, then copy and paste the SVG URL back to this file.
+
+## Issues and feature requests
+
+Please report issues and provide suggestions for improvement using the
+[Github page for this project](https://github.com/bjones1/CodeChat_Editor).
+Contributions to the code are welcome and encouraged!
+
+## License
+
+Copyright (C) 2022 Bryan A. Jones.
+
+This file is part of the CodeChat Editor.
+
+The CodeChat Editor is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+The CodeChat Editor is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+details.
+
+You should have received a [copy](LICENSE.html) of the GNU General Public
+License along with the CodeChat Editor. If not, see
+[https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
+
+## <a id="notes"></a>Notes
+
+1.  The image used comes from
+    [Monitor icons created by prettycons - Flaticon](https://www.flaticon.com/free-icons/monitor "monitor icons").
+2.  Note that the filename for the table of contents is lowercase; while the
+    acronym is TOC, requiring upper-case naming can cause confusion when moving
+    files between case-insensitive filesystems (Windows) and case-sensitive
+    filesystems (Linux/OS X).

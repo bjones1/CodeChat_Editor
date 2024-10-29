@@ -113,4 +113,4 @@
 // <p>Some Emoji (more unicode)</p>
 // <p>💯🅱️</p>
 // <p>And some images:</p>
-// <p><img src="CodeChat1.png" alt="This is an image"></p>
+// <p><img src="images/website.png" alt="This is an image" title="Monitor icon"></p>

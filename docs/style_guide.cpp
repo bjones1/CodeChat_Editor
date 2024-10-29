@@ -24,7 +24,7 @@
 // The CodeChat Editor divides code into code blocks and documentation (doc)
 // blocks.​ These blocks are separated by newlines; comments on the same line as
 // code are not interpreted doc blocks.​ Doc blocks must have 1 space after the
-// comment delimiter.​ For example, this is a doc block;
+// comment delimiter.​ For example, this paragraph is a doc block;
 
 const char* CODE_BLOCK =
     "this is a code block."; // Comments here are NOT part of a doc block.

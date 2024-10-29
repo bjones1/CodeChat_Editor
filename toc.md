@@ -1,10 +1,14 @@
 # The CodeChat Editor
 
+## About
+
+1.  [User manual](docs/manual.md)
+2.  [Literate programming using the CodeChat Editor](docs/style_guide.cpp)
+
 ## Design
 
 1.  [CodeChat Editor Overview](README.md)
-2.  [Literate programming using the CodeChat Editor](docs/style_guide.cpp)
-3.  [Implementation](docs/implementation.md)
+2.  [Implementation](docs/implementation.md)
 
 ## Implementation
 
@@ -36,7 +40,7 @@
     2.  Styles
         1.  [CodeChatEditor.css](client/static/css/CodeChatEditor.css)
         2.  [CodeChatEditorProject.css](client/static/css/CodeChatEditorProject.css)
-        4.  Themes
+        3.  Themes
             1.  [light.css](client/static/css/themes/light.css)
     3.  Tests
         1.  [CodeChatEditor-test.mts](client/src/CodeChatEditor-test.mts)
