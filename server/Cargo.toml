@@ -24,22 +24,6 @@ authors = ["Bryan A. Jones", "Peter Loux"]
 categories = ["development-tools", "text-editors"]
 description = "A programmer's word processor."
 edition = "2021"
-# We don't currently (fully) support publishing via cargo. The expected process:
-#
-# 1.  In `client/`, remove all the files in `static/bundled` then run
-#     `npm run dist`.
-# 2.  Copy `../client/static` to `./static`.
-# 3.  Package away.
-include = [
-    "src/**",
-    "log4rs.yml",
-    "hashLocations.json",
-    # Referencing `../client/static` causes the files not to be included when
-    # packaging. So, copy them manually (see the steps above). I'd like to
-    # exclude `.gitignore`, but don't see how to do this. Will this work?
-    "static/**",
-    "!static/.gitignore",
-]
 keywords = ["literate programming"]
 license = "GPL-3.0-only"
 name = "codechat-editor-server"
@@ -137,31 +121,24 @@ lto = "thin"
 
 # ### Config for `cargo dist`
 [workspace.metadata.dist]
-# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
+# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax).
 cargo-dist-version = "0.19.1"
 # Extra static files to include in each App (path relative to this Cargo.toml's
-# dir)
+# dir).
 include = [
     "log4rs.yml",
     "hashLocations.json",
     "../client/static",
 ]
-# The installers to generate for each app
+# The installers to generate for each app.
 installers = ["msi"]
-# Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
-# CI backends to support
+# Target platforms to build apps for (Rust target-triple syntax).
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+# CI backends to support.
 ci = "github"
-# Publish jobs to run in CI
+# Publish jobs to run in CI.
 pr-run-mode = "plan"
-# Skip checking whether the specified configuration files are up to date
+# Skip checking whether the specified configuration files are up to date.
 allow-dirty = ["ci"]
-# Publish jobs to run in CI
+# Publish jobs to run in CI.
 publish-jobs = ["./npm-build"]
-
-[package.metadata.wix]
-upgrade-guid = "5B17D308-C9EF-4B26-86F6-88EF5D0953DE"
-path-guid = "22FB97BF-3F93-4AE5-B83C-A5BC12D1DBF1"
-# Don't require users to agree to the license or EULA before installing.
-license = false
-eula = false
