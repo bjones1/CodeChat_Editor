@@ -82,6 +82,10 @@ code_block = { code_line+ }
 // if a line of code ends with a backslash, it continues on the next line. This
 // is a logical line; treat it as a single line.
 logical_line = _{ ("\\" ~ NEWLINE | not_newline)* }
+// multi-line support
+//
+//
+// 
 code_line    = _{ (!doc_block ~ logical_line ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
 
 // ## Dedenter
