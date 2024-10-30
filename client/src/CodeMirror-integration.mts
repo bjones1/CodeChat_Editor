@@ -81,7 +81,6 @@ import { Editor, init, tinymce } from "./tinymce-config.mjs";
 import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
 
 // ## Globals
-
 let current_view: EditorView;
 let tinymce_singleton: Editor | undefined;
 
@@ -326,8 +325,8 @@ class DocBlockWidget extends WidgetType {
             `<div class="CodeChat-doc-contents" contenteditable>` +
             this.contents +
             "</div>";
-        window.MathJax.startup.promise = window.MathJax.startup.promise
-            .then(() => window.MathJax.typesetPromise([wrap]))
+        parent.window.MathJax.startup.promise = parent.window.MathJax.startup.promise
+            .then(() => parent.window.MathJax.typesetPromise([wrap]))
             .catch((err: any) => console.log("Typeset failed: " + err.message));
         return wrap;
     }
@@ -353,8 +352,8 @@ class DocBlockWidget extends WidgetType {
         } else {
             contents_div.innerHTML = this.contents;
         }
-        window.MathJax.startup.promise = window.MathJax.startup.promise
-            .then(() => window.MathJax.typesetPromise([this.contents]))
+        parent.window.MathJax.startup.promise = parent.window.MathJax.startup.promise
+            .then(() => parent.window.MathJax.typesetPromise([this.contents]))
             .catch((err: any) => console.log("Typeset failed: " + err.message));
 
         // Indicate the update was successful.
@@ -378,7 +377,7 @@ class DocBlockWidget extends WidgetType {
         // If this is the TinyMCE editor, save it.
         const [contents_div, is_tinymce] = get_contents(dom);
         // Revert the typeset math to its original form.
-        window.MathJax.startup.document
+        parent.window.MathJax.startup.document
             .getMathItemsWithin(contents_div)
             .forEach((item: any) => {
                 item.removeFromDocument(true);
@@ -590,7 +589,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 const delimiter = indent_div.getAttribute("data-delimiter")!;
                 const [contents_div, is_tinymce] = get_contents(target);
                 // Revert the typeset math to its original form.
-                window.MathJax.startup.document
+                parent.window.MathJax.startup.document
                     .getMathItemsWithin(contents_div)
                     .forEach((item: any) => {
                         item.removeFromDocument(true);
@@ -611,8 +610,8 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 view.dispatch({ effects });
 
                 // Re-typeset.
-                window.MathJax.startup.promise = window.MathJax.startup.promise
-                    .then(() => window.MathJax.typesetPromise([contents_div]))
+                parent.window.MathJax.startup.promise = parent.window.MathJax.startup.promise
+                    .then(() => parent.window.MathJax.typesetPromise([contents_div]))
                     .catch((err: any) =>
                         console.log("Typeset failed: " + err.message),
                     );

@@ -230,7 +230,7 @@ export const open_lp = async (
     // "If you modify the page to remove content that contains typeset
     // mathematics, you will need to tell MathJax about that so that it knows
     // the typeset math that you are removing is no longer on the page."
-    window.MathJax.typesetClear(codechat_body);
+    parent.window.MathJax.typesetClear(codechat_body);
     if (is_doc_only()) {
         if (tinymce.activeEditor === null) {
             // Special case: a CodeChat Editor document's HTML is stored in

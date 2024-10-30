@@ -440,6 +440,18 @@ fn get_client_framework(
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>The CodeChat Editor</title>
+                <script>
+                    MathJax = {{
+                        tex: {{
+                            inlineMath: [['$', '$'], ['\\(', '\\)']]
+                        }},
+                        svg: {{
+                            fontCache: 'global'
+                        }}
+                    }};
+                </script>
+                <script type="text/javascript" id="MathJax-script" async
+                src="/static/mathjax/es5/tex-chtml.js"></script>
                 <script type="module">
                     import {{ page_init }} from "/{codechat_editor_framework_js}"
                     page_init({ws_url}, {is_test_mode})
@@ -710,7 +722,7 @@ async fn serve_file(
 
                             <link rel="stylesheet" href="/{codehat_editor_css}">
                         </head>
-                        <body class="CodeChat-theme-light">
+                        <body class="CodeChat-theme-light" onload="parent.window.parent.window.MathJax.typesetPromise()">
                             <div class="CodeChat-TOC">
                                 {html}
                             </div>
@@ -763,18 +775,6 @@ async fn serve_file(
                         import {{ page_init }} from "/{codechat_editor_js}"
                         page_init()
                     </script>
-                    <script>
-                        MathJax = {{
-                            tex: {{
-                                inlineMath: [['$', '$'], ['\\(', '\\)']]
-                            }},
-                            svg: {{
-                                fontCache: 'global'
-                            }}
-                        }};
-                    </script>
-                    <script type="text/javascript" id="MathJax-script" async
-                    src="/static/mathjax/es5/tex-chtml.js"></script>
                     <link rel="stylesheet" href="/{codehat_editor_css}">
                     {testing_src}
                     {sidebar_css}
