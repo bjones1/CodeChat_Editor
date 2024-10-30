@@ -2,8 +2,9 @@
 
 ## About
 
-1.  [User manual](README.md)
-2.  [Literate programming using the CodeChat Editor](docs/style_guide.cpp)
+1.  [The CodeChat Editor manual](README.md)
+2.  [The CodeChat Editor extension for Visual Studio Code manual](extensions/VSCode/README.md)
+3.  [Literate programming using the CodeChat Editor](docs/style_guide.cpp)
 
 ## Design
 
@@ -49,6 +50,7 @@
 3.  Extensions
     1.  Visual Studio Code
         1.  [extension.ts](extensions/VSCode/src/extension.ts)
+        2.  [Developer documentation](extensions/VSCode/developer.md)
 4.  Development tools
     1.  Git
         1.  [server/.gitignore](server/.gitignore)
@@ -61,7 +63,11 @@
         3.  [client/tsconfig.json](client/tsconfig.json)
         4.  [client/.eslintrc.yml](client/.eslintrc.yml)
         5.  [client/.prettierrc.json5](client/.prettierrc.json5)
-        6.  [.prettierignore](.prettierignore)
+        6.  [extensions/VSCode/.eslintrc.yml](extensions/VSCode/.eslintrc.yml)
+        7.  [extensions/VSCode/tsconfig.json](extensions/VSCode/tsconfig.json)
+        8.  [extensions/VSCode/jsconfig.json](extensions/VSCode/jsconfig.json)
+        9.  [extensions/VSCode/.vscodeignore](extensions/VSCode/.vscodeignore)
+        10. [.prettierignore](.prettierignore)
     3.  Misc
         1.  [config.toml](server/.cargo/config.toml) - for Rust code coverage
 

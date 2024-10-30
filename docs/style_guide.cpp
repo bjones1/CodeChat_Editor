@@ -103,7 +103,7 @@ class LedBlinker {
         // The time, in ms, between blinks.
         unsigned int blink_time_ms
     );
-}
+};
 
 // ## Use of mathematics
 //
