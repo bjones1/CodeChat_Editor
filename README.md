@@ -15,16 +15,20 @@ For developers, see [building from source](docs/design.md).
 ## Structure
 
 The CodeChat Editor divides source code into code blocks and documentation (doc)
-blocks.​ These blocks are separated by newlines; the image below shows the [style guide](docs/style_guide.cpp)
-on the left in the Visual Studio Code (VSCode) text editor, while the right pane shows the same text from style guide in the CodeChat
-Editor (using the VSCode extension). Specifically, this screenshot shows:
+blocks.​ These blocks are separated by newlines; the image below shows the
+[style guide](docs/style_guide.cpp) on the left in the Visual Studio Code
+(VSCode) text editor, while the right pane shows the same text from style guide
+in the CodeChat Editor (using the VSCode extension). Specifically, this
+screenshot shows:
 
-- <span style="font-size: 20pt;">❶</span>: a doc block. Doc blocks must have one space after the
-comment delimiter.​
-- <span style="font-size: 20pt;">❷</span>: a code block. Comments on the same line as
-code are not interpreted as doc blocks.​
+- <span style="font-size: 20pt;">❶</span>: a doc block. Doc blocks must have one
+  space after the comment delimiter.​
+- <span style="font-size: 20pt;">❷</span>: a code block. Comments on the same
+  line as code are not interpreted as doc blocks.​
 - <span style="font-size: 20pt;">❸</span>: varying indents before a doc block.
-- <span style="font-size: 20pt;">❹</span>: [Markdown](https://commonmark.org/) in a doc block; see a [brief overview of Markdown](https://commonmark.org/help/).
+- <span style="font-size: 20pt;">❹</span>: [Markdown](https://commonmark.org/)
+  in a doc block; see a
+  [brief overview of Markdown](https://commonmark.org/help/).
 
 ![Image showing code blocks and doc blocks in Visual Studio Code](docs/code-blocks-doc-blocks.png)
 
@@ -73,6 +77,11 @@ named `toc.md` at the root of your project [\[2\]](#notes); its contents define
 the table of contents. See the
 [new project template](https://github.com/bjones1/CodeChat_Editor/tree/main/new-project-template)
 for a simple example.
+
+## Mathematics
+
+The CodeChat Editor uses [MathJax](https://www.mathjax.org/) to support typeset
+mathematics; for example, $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$.
 
 ## Diagrams
 

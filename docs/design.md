@@ -7,12 +7,13 @@
     recommend the 64-bit toolset for Windows.
 3.  [Install NPM](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
     (the Node.js package manager).
-4.  Install all NPM dependencies: in the `client/` directory, run `npm update`.
-5.  Package all JavaScript dependencies from NPM: also in the `client/`
-    directory, run `npm run build`.
-6.  In the `server/` directory, execute `cargo run -- serve`.
-7.  Open `http://localhost:8080` in your browser.
-8.  Open the file `README.md`.
+4.  In the `client/` directory:
+    1.  Install all NPM dependencies: run `npm update`.
+    2.  Package all JavaScript dependencies from NPM: run `npm run build`.
+    3.  Copy MathJax from node_modules/mathjax to  static/mathjax.
+5.  In the `server/` directory, execute `cargo run -- serve`.
+6.  Open `http://localhost:8080` in your browser.
+7.  Open the file `README.md`.
 
 ## <a id="vision"></a>Vision
 

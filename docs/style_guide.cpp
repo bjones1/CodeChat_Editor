@@ -105,6 +105,49 @@ class LedBlinker {
     );
 }
 
+// ## Use of mathematics
+//
+// Formulas should be placed near code that implements them, along with good
+// explanations of the equations used. For example:
+//
+// This function computes an accurate value for $g$, the acceleration due to
+// Earth's gravity.
+//
+// Return value: $g$, in $m/s^2$.
+double accurate_g(
+    // Latitude, in degrees.
+    double degrees_latitude,
+    // Height above sea level, in meters.
+    double height_meters
+) {
+    // This text comes from the
+    // [SensorsOne Local Gravity Calculator](https://www.sensorsone.com/local-gravity-calculator/).
+    // For more detail, see
+    // [Theoretical Gravity](https://en.wikipedia.org/wiki/Theoretical_gravity).
+    //
+    // The formulas used by this function are based on
+    // the [International Gravity Formula IGF) 1980](https://en.wikipedia.org/wiki/Normal_gravity_formula#International_gravity_formula_1980) from
+    // the parameters of
+    // the [Geodetic Reference System 1980 (GRS80)](https://en.wikipedia.org/wiki/GRS_80),
+    // which determines the gravity from the position of latitude, and
+    // the [Free Air Correction (FAC)](https://en.wikipedia.org/wiki/Gravity_of_Earth#Free_air_correction)
+    // which corrects for height above and below mean sea level in free air.
+    //
+    // Compute the International Gravity Formula (IGF):\
+    // $IGF = 9.780327 (1 + 0.0053024 \\sin^2 \\phi – 0.0000058 \\sin^2 2\\phi)$
+    double IGF = 9.780327 * (1 + 0.0053024 * pow(sin(degrees_latitude), 2) - 0.0000058 * pow(sin(2 * degrees_latitude), 2));
+    // Compute the Free Air Correction (FAC):\
+    // $FAC = -3.086 x 10^{-6} h$
+    double FAC = -3.086E-6 * height_meters;
+    // $g = IGF + FAC$
+    return IGF + FAC;
+    // Symbols:
+    //
+    // - $g$ = Theoretical local gravity, in $m/s^2$.
+    // - $\\phi$ = Latitude, in decimal degrees.
+    // - $h$ = Height relative to sea level, in $m$.
+}
+
 // ## Excellence in code
 //
 // Literate programming should be accompanied by excellence in authoring code.
@@ -195,7 +238,7 @@ class LedBlinker {
 // ## Global variables/constants
 //
 // Use units when describing physical quantities. For example, this gives the
-// acceleration due to gravity in m/s^2.
+// acceleration due to gravity in $m/s^2$.
 const double accel_m_s2 = 9.8067;
 
 // ## Macros

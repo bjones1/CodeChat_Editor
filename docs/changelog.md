@@ -24,6 +24,7 @@ CodeChat Editor. If not, see
   - Added a user manual, improved documentation.
   - Fixed a bug in the filewatcher that prevented saving changes made in the
     Client.
+  - Added math support.
 - v0.1.0, 2024-Oct-16
   - Initial release, with binaries for Windows only. Built with manually-patched
     CodeMirror per
