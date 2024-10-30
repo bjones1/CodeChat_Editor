@@ -14,10 +14,11 @@ First, install [Visual Studio Code](https://code.visualstudio.com/). Next:
     [switch to a light theme](https://code.visualstudio.com/docs/getstarted/themes),
     since the CodeChat Editor only provides a light theme.
 
-## Use
+## Running
 
-1.  Open a file that the CodeChat Editor can render (many source files, along
-    with `.md` files).
+1.  Open a file that the CodeChat Editor
+    [supports](https://github.com/bjones1/CodeChat_Editor/blob/main/README.md#supported-languages)
+    (many source files, along with Markdown files).
 2.  Open the
     [Visual Studio Code command palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette)
     by pressing `Ctrl+Shift+P`. Type `CodeChat`, select "Enable the CodeChat
@@ -31,6 +32,7 @@ First, install [Visual Studio Code](https://code.visualstudio.com/). Next:
     2.  Run the extension again (close the existing window, type `Ctrl+Shift+P`
         then select Enable the CodeChat Editor).
 
+## Additional documentation
+
 See the
-[user manual](https://github.com/bjones1/CodeChat_Editor/blob/main/docs/manual.md)
-for additional help.
+[user manual](https://github.com/bjones1/CodeChat_Editor/blob/main/README.md).

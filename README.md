@@ -104,6 +104,29 @@ To edit these diagrams, paste the URL into the
 [PlantUML web server](https://www.plantuml.com/plantuml/uml), click Decode URL,
 edit, then copy and paste the SVG URL back to this file.
 
+## <a id="supported-languages">Supported languages</a>
+
+- C/C++
+- C#
+- CSS
+- Go
+- HTML
+- Java
+- JavaScript/ECMAScript and TypeScript
+- JSON with comments (JSON5)
+- Markdown
+- MATLAB
+- Python
+- Rust
+- Shell scripts (`.sh`)
+- SQL
+- Swift
+- TOML
+- VHDL
+- Verilog/SystemVerilog
+- Vlang
+- YAML
+
 ## Issues and feature requests
 
 Please report issues and provide suggestions for improvement using the
