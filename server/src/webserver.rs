@@ -722,7 +722,7 @@ async fn serve_file(
 
                             <link rel="stylesheet" href="/{codehat_editor_css}">
                         </head>
-                        <body class="CodeChat-theme-light" onload="parent.window.parent.window.MathJax.typesetPromise()">
+                        <body class="CodeChat-theme-light" onload="parent.window.parent.window.MathJax.typesetPromise([document.body])">
                             <div class="CodeChat-TOC">
                                 {html}
                             </div>
