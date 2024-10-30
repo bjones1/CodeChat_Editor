@@ -14,15 +14,33 @@ For developers, see [building from source](docs/design.md).
 
 ## Structure
 
-The [style guide](docs/style_guide.cpp)'s introduction defines code blocks and
-doc blocks, the foundation of the CodeChat Editor and its use of Markdown; see
-that document for syntax and examples.
+The CodeChat Editor divides source code into code blocks and documentation (doc)
+blocks.​ These blocks are separated by newlines; the image below shows the [style guide](docs/style_guide.cpp)
+on the left in the Visual Studio Code (VSCode) text editor, while the right pane shows the same text from style guide in the CodeChat
+Editor (using the VSCode extension). Specifically, this screenshot shows:
+
+- <span style="font-size: 20pt;">❶</span>: a doc block. Doc blocks must have one space after the
+comment delimiter.​
+- <span style="font-size: 20pt;">❷</span>: a code block. Comments on the same line as
+code are not interpreted as doc blocks.​
+- <span style="font-size: 20pt;">❸</span>: varying indents before a doc block.
+- <span style="font-size: 20pt;">❹</span>: [Markdown](https://commonmark.org/) in a doc block; see a [brief overview of Markdown](https://commonmark.org/help/).
+
+![Image showing code blocks and doc blocks in Visual Studio Code](docs/code-blocks-doc-blocks.png)
+
+See the [style guide](docs/style_guide.cpp) for more examples.
 
 ## Editing
 
 Edits may be made either in the IDE hosting the CodeChat Editor, or within the
 CodeChat Editor window itself. Edits made in one place are transferred to the
 other after a short delay.
+
+## Navigation
+
+Switching documents in the IDE likewise switches the document shown in the
+CodeChat Editor. Likewise, following hyperlinks in the CodeChat Editor to a
+local file loads that file in the IDE, as well as showing it in the Editor.
 
 ## References to other files
 
@@ -33,14 +51,18 @@ in the `docs/` subdirectory); here's a link to [LICENSE.md](LICENSE.md), which
 is in the same directory as this file. Note that:
 
 1.  Hyperlinks are relative to the current file; to refer to the style guide,
-    use docs/style_guide.cpp.
+    use `docs/style_guide.cpp`.
 2.  As usual, the text of a hyperlink does not need to match the link itself;
     here's another link to the [style guide](style_guide.cpp), for example.
 
-Likewise, the path to local image is relative to the current file's location.
+Likewise, the path to local images is relative to the current file's location.
 For example [\[1\]](#notes):
 
-![Monitor icon](docs/website.png)
+![Monitor icon](docs/monitor.png)
+
+Although the CodeChat Editor allows drag-and-drop of images, the result is a
+mess -- the image data is embedded directly in the source file. Avoid this;
+instead, place images in a separate file, then reference them as shown above.
 
 ## Projects
 
