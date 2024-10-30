@@ -29,6 +29,7 @@ use actix_web::{
     http::header::{self, ContentType},
     web, HttpRequest, HttpResponse, Responder,
 };
+use dunce::simplified;
 use indoc::formatdoc;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
@@ -335,6 +336,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
         error!("Unable to canonicalize path {file_path:?}.");
         return;
     };
+    current_filepath = PathBuf::from(simplified(&current_filepath));
     let Some(current_filepath_str) = current_filepath.to_str() else {
         error!("Unable to convert path {current_filepath:?} to string.");
         return;
@@ -519,10 +521,9 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             EditorMessageContents::Update(update_message_contents) => {
                                 let result = 'process: {
                                     // Check that the file path matches the current file. If `canonicalize` fails, then the files don't match.
-                                    let file_path = PathBuf::from(&update_message_contents.file_path);
-                                    if !file_path.canonicalize().map_or(false, |v| v == current_filepath) {
+                                    if update_message_contents.file_path != current_filepath_str {
                                         break 'process Err(format!(
-                                            "Update for file '{}' doesn't match current file '{}'.", file_path.to_string_lossy(), current_filepath.to_string_lossy()
+                                            "Update for file '{}' doesn't match current file '{current_filepath_str}'.", update_message_contents.file_path
                                         ));
                                     }
                                     // With code or a path, there's nothing to
@@ -693,6 +694,7 @@ mod tests {
         test, web, App,
     };
     use assertables::assert_starts_with;
+    use dunce::simplified;
     use path_slash::PathExt;
     use tokio::{select, sync::mpsc::Receiver, time::sleep};
     use url::Url;
@@ -829,9 +831,7 @@ mod tests {
         // The follow-up web request for the file produces an `Update`.
         let mut file_path = test_dir.clone();
         file_path.push("test.py");
-        let file_path = file_path
-            .canonicalize()
-            .unwrap()
+        let file_path = simplified(&file_path.canonicalize().unwrap())
             .to_str()
             .unwrap()
             .to_string();
