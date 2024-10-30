@@ -325,9 +325,7 @@ class DocBlockWidget extends WidgetType {
             `<div class="CodeChat-doc-contents" contenteditable>` +
             this.contents +
             "</div>";
-        parent.window.MathJax.startup.promise = parent.window.MathJax.startup.promise
-            .then(() => parent.window.MathJax.typesetPromise([wrap]))
-            .catch((err: any) => console.log("Typeset failed: " + err.message));
+        mathJaxTypeset(wrap);
         return wrap;
     }
 
@@ -352,9 +350,7 @@ class DocBlockWidget extends WidgetType {
         } else {
             contents_div.innerHTML = this.contents;
         }
-        parent.window.MathJax.startup.promise = parent.window.MathJax.startup.promise
-            .then(() => parent.window.MathJax.typesetPromise([this.contents]))
-            .catch((err: any) => console.log("Typeset failed: " + err.message));
+        mathJaxTypeset(contents_div);
 
         // Indicate the update was successful.
         return true;
@@ -389,6 +385,14 @@ class DocBlockWidget extends WidgetType {
         }
     }
 }
+
+// Typeset the provided node; taken from the [MathJax docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
+export const mathJaxTypeset = (node: HTMLElement) => {
+    parent.window.MathJax.startup.promise =
+        parent.window.MathJax.startup.promise
+            .then(() => parent.window.MathJax.typesetPromise([node]))
+            .catch((err: any) => console.log("Typeset failed: " + err.message));
+};
 
 // Given a doc block div element, return the contents div and if TinyMCE is
 // attached to that div.
@@ -610,11 +614,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 view.dispatch({ effects });
 
                 // Re-typeset.
-                parent.window.MathJax.startup.promise = parent.window.MathJax.startup.promise
-                    .then(() => parent.window.MathJax.typesetPromise([contents_div]))
-                    .catch((err: any) =>
-                        console.log("Typeset failed: " + err.message),
-                    );
+                mathJaxTypeset(contents_div);
                 return false;
             },
         },

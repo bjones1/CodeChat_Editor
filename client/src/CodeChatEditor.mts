@@ -48,7 +48,7 @@ import TurndownService from "./turndown/turndown.browser.es.js";
 import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
 
 // #### Local
-import { CodeMirror_load, CodeMirror_save } from "./CodeMirror-integration.mjs";
+import { CodeMirror_load, CodeMirror_save, mathJaxTypeset } from "./CodeMirror-integration.mjs";
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 // This must be imported _after_ the previous setup import, so it's placed here,
@@ -283,12 +283,19 @@ const save_lp = async () => {
     /// @ts-expect-error
     let source: CodeChatForWeb["source"] = {};
     if (is_doc_only()) {
+        // Untypeset all math before saving the document.
+        const codechat_body = document.getElementById(
+            "CodeChat-body",
+        ) as HTMLDivElement;
+        parent.window.MathJax.typesetClear(codechat_body);
         // To save a document only, simply get the HTML from the only Tiny MCE
         // div.
         const html = tinymce.get(0)!.getContent();
         const markdown = turndownService.turndown(html);
         source.doc = await prettier_markdown(markdown, 80);
         source.doc_blocks = [];
+        // Retypeset all math after saving the document.
+        mathJaxTypeset(codechat_body);
     } else {
         source = CodeMirror_save();
         await codechat_html_to_markdown(source);
