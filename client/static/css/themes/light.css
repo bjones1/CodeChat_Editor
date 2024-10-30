@@ -27,11 +27,6 @@ body.CodeChat-theme-light {
         background-color: #EEE;
     }
 
-    /* Mark a hotkey. */
-    .CodeChat-hotkey {
-        text-decoration: underline;
-    }
-
     /* The settings below are copied from the Sphinx Alabaster theme. */
     color: #000;
     /* The default of transparent makes VS Code's black show up and confuse

@@ -146,11 +146,6 @@ turndownService.use(gfm);
 // Load the dynamic content into the static page.
 export const page_init = () => {
     on_dom_content_loaded(async () => {
-        document
-            .getElementById("CodeChat-save-button")!
-            .addEventListener("click", () => on_save());
-        document.body.addEventListener("keydown", on_keydown);
-
         // Intercept links in this document to save before following the link.
         /// @ts-ignore
         navigation.addEventListener("navigate", on_navigate);
@@ -323,18 +318,6 @@ const os_is_osx =
     navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
         ? true
         : false;
-
-// Provide a shortcut of ctrl-s (or command-s) to save the current file.
-const on_keydown = (event: KeyboardEvent) => {
-    if (
-        event.key === "s" &&
-        ((event.ctrlKey && !os_is_osx) || (event.metaKey && os_is_osx)) &&
-        !event.altKey
-    ) {
-        on_save();
-        event.preventDefault();
-    }
-};
 
 // Save CodeChat Editor contents.
 const on_save = async (only_if_dirty: boolean = false) => {

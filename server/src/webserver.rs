@@ -785,10 +785,7 @@ async fn serve_file(
                         <div id="CodeChat-top">
                             <div id="CodeChat-filename">
                                 <p>
-                                    <button id="CodeChat-save-button">
-                                        <span class="CodeChat-hotkey">S</span>ave
-                                    </button>
-                                    - {name} - {dir}
+                                    {name} - {dir}
                                 </p>
                             </div>
                             <div id="CodeChat-menu"></div>
