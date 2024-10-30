@@ -266,6 +266,7 @@ export const open_lp = async (
             tinymce.activeEditor!.setContent(source.doc);
             tinymce.activeEditor!.selection.moveToBookmark(bm);
         }
+        mathJaxTypeset(codechat_body);
     } else {
         await CodeMirror_load(codechat_body, source, current_metadata.mode, []);
     }
