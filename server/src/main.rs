@@ -32,6 +32,7 @@ use log::LevelFilter;
 
 // ### Local
 use code_chat_editor::webserver::{self, IP_ADDRESS};
+use cmd_lib::*;
 
 // ## Code
 //
@@ -70,6 +71,12 @@ enum Commands {
     Start,
     /// Stop the webserver child process.
     Stop,
+    /// Install NPM dependencies (npm update)
+    Install,
+    /// Package JavaScript dependencies from npm (npm run build)
+    Build,
+    /// Run the CodeChat Editor in a new window (cargo run -- serve) (open http://localhost:8080)
+    Run,
 }
 
 #[derive(Args)]
@@ -226,6 +233,27 @@ impl Cli {
                 };
                 eprintln!("{}", err_msg);
                 exit(1);
+            }
+            Commands::Install => {
+                println!("Installing NPM dependiencies...");
+                run_cmd!(
+                    cd /client;
+                    npm update;
+                );
+            }
+            Commands::Build => {
+                println!("Packaging JavaScript dependencies...");
+                run_cmd!(
+                    cd /client;
+                    npm run build;
+                );
+            }
+            Commands::Run => {
+                println!("Executing server...");
+                run_cmd!(
+                    cd /server;
+                    npm run build;
+                );
             }
         }
     }
