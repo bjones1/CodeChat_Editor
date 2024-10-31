@@ -111,7 +111,7 @@ edit, then copy and paste the SVG URL back to this file.
 - CSS
 - Go
 - HTML
-- Java
+- Java/Kotlin
 - JavaScript/ECMAScript and TypeScript
 - JSON with comments (JSON5)
 - Markdown

@@ -220,10 +220,10 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             None,
             SpecialCase::None,
         ),
-        // ### Java
+        // ### Java/Kotlin
         make_language_lexer(
             "java",
-            &["java"],
+            &["java", "kt"],
             // See the
             // [Java Language Specification, Java SE 19 edition](https://docs.oracle.com/javase/specs/jls/se19/html/index.html),
             // [§3.7. Comments](https://docs.oracle.com/javase/specs/jls/se19/html/jls-3.html#jls-3.7).
