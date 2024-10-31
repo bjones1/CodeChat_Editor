@@ -107,6 +107,7 @@ macro_rules! make_parse_to_code_doc_blocks {
                         let block_comment_opening_delim = block_comment.next().unwrap().as_rule();
                         let block_comment_pre = block_comment.next().unwrap().as_str();
                         let comment = block_comment.next().unwrap().as_str();
+                        let optional_space = block_comment.next().unwrap().as_str();
                         let post_whitespace = block_comment.next().unwrap().as_str();
                         // If this is an EOI, then its string is empty -- which is exactly what we want. Otherwise, use the newline provided by the `block_comment_ending` token.
                         let block_comment_ending = block_comment.next().unwrap().as_str();
@@ -126,7 +127,7 @@ macro_rules! make_parse_to_code_doc_blocks {
                         // following the comment, rather than discarding it --
                         // this seems safer.
                         let full_comment = format!(
-                            "{}{comment}{post_whitespace}{block_comment_ending}",
+                            "{}{comment}{optional_space}{post_whitespace}{block_comment_ending}",
                             // If there's a newline immediately after the block
                             // comment opening delimiter, include it; omit the
                             // space if that instead follows block comment
@@ -139,7 +140,11 @@ macro_rules! make_parse_to_code_doc_blocks {
                         );
 
                         // Remove indents, if possible.
-                        let full_comment = parse_block_comment(&pre_whitespace, &full_comment);
+                        let mut full_comment = parse_block_comment(&pre_whitespace, &full_comment);
+                        // Trim the optional space, if it exists.
+                        if !optional_space.is_empty() && full_comment.ends_with(optional_space) {
+                            full_comment.pop();
+                        }
 
                         // Transform this to a doc block.
                         //println!("Block comment: {pre_whitespace}{full_comment:#?}");
@@ -147,7 +152,7 @@ macro_rules! make_parse_to_code_doc_blocks {
                         $crate::lexer::CodeDocBlock::DocBlock($crate::lexer::DocBlock {
                             indent: pre_whitespace.to_string(),
                             delimiter: "/*".to_string(),
-                            contents: full_comment,
+                            contents: full_comment.to_string(),
                             lines,
                         })
                     }
@@ -166,9 +171,11 @@ macro_rules! make_parse_to_code_doc_blocks {
 macro_rules! make_parse_block_comment {
     ($parser: ty) => {
         pub fn parse_block_comment(indent: &str, comment: &str) -> String {
+            //println!("Indent: '{indent}', comment: '{comment}'");
             let combined = format!("{}\n{}", indent, comment);
             let Ok(mut pairs) = <$parser>::parse(Rule::dedenter, &combined)
                 else {
+                    //println!("Block comment cannot be dedented.");
                     // The parse failed -- this comment can't be de-indented.
                     return comment.to_string();
                 };
@@ -180,7 +187,7 @@ macro_rules! make_parse_block_comment {
                 // tokens).
                 .into_inner();
             // Combine all remaining tokens into a single string.
-            println!("{:#?}", dedenter);
+            //println!("{:#?}", dedenter);
             dedenter.fold(String::new(), |mut acc, e| {
                 acc.push_str(e.as_str());
                 acc
@@ -199,9 +206,20 @@ pub mod c {
 
     #[derive(Parser)]
     #[grammar = "lexer/pest/c.pest"]
-    struct CParser;
-    make_parse_to_code_doc_blocks!(CParser);
-    make_parse_block_comment!(CParser);
+    struct ThisParser;
+    make_parse_to_code_doc_blocks!(ThisParser);
+    make_parse_block_comment!(ThisParser);
+}
+
+pub mod python {
+    use pest::Parser;
+    use pest_derive::Parser;
+
+    #[derive(Parser)]
+    #[grammar = "lexer/pest/python.pest"]
+    struct ThisParser;
+    make_parse_to_code_doc_blocks!(ThisParser);
+    make_parse_block_comment!(ThisParser);
 }
 
 // ## Tests
@@ -209,38 +227,68 @@ pub mod c {
 mod test {
     use indoc::indoc;
 
-    use super::c::{parse_block_comment, parse_to_code_doc_blocks};
+    use super::{c, python};
+    use crate::lexer::{CodeDocBlock, DocBlock};
 
     #[test]
     fn test_pest_1() {
-        println!(
-            "{:#?}",
-            parse_to_code_doc_blocks(indoc!(
+        assert_eq!(
+            c::parse_to_code_doc_blocks(indoc!(
                 r#"
                 code;
                 /* Testing
                    1,
+
                    2, 3
                  */"#
-            ))
+            )),
+            vec![
+                CodeDocBlock::CodeBlock("code;\n".to_string()),
+                CodeDocBlock::DocBlock(DocBlock {
+                    indent: "".to_string(),
+                    delimiter: "/*".to_string(),
+                    contents: "Testing\n1,\n\n2, 3\n ".to_string(),
+                    lines: 5,
+                })
+            ],
         );
-        assert_eq!(0, 1);
-    }
+        assert_eq!(
+            c::parse_to_code_doc_blocks(indoc!(
+                r#"
+                code;
+                /* Testing
+                 * 1,
+                 *
+                 * 2, 3
+                 */"#
+            )),
+            vec![
+                CodeDocBlock::CodeBlock("code;\n".to_string()),
+                CodeDocBlock::DocBlock(DocBlock {
+                    indent: "".to_string(),
+                    delimiter: "/*".to_string(),
+                    contents: "Testing\n1,\n\n2, 3\n ".to_string(),
+                    lines: 5,
+                })
+            ],
+        );
 
-    #[test]
-    fn test_pest_2() {
-        println!(
-            "{:#?}",
-            parse_block_comment(
-                "",
-                indoc!(
-                    r#"
-                first line
-                  second line
-                "#
-                )
-            )
+        assert_eq!(
+            python::parse_to_code_doc_blocks(indoc!(
+                r#"
+                code("""not
+                # a comment.""")
+                # A comment."#
+            )),
+            vec![
+                CodeDocBlock::CodeBlock(r#"code("""not\na comment.""")\n"#.to_string()),
+                CodeDocBlock::DocBlock(DocBlock {
+                    indent: "".to_string(),
+                    delimiter: "#".to_string(),
+                    contents: "A comment.".to_string(),
+                    lines: 1,
+                })
+            ],
         );
-        assert_eq!(0, 1);
     }
 }
