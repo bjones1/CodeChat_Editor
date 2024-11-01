@@ -118,27 +118,3 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
 [profile.dist]
 inherits = "release"
 lto = "thin"
-
-# ### Config for `cargo dist`
-[workspace.metadata.dist]
-# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax).
-cargo-dist-version = "0.19.1"
-# Extra static files to include in each App (path relative to this Cargo.toml's
-# dir).
-include = [
-    "log4rs.yml",
-    "hashLocations.json",
-    "../client/static",
-]
-# The installers to generate for each app.
-installers = ["msi"]
-# Target platforms to build apps for (Rust target-triple syntax).
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
-# CI backends to support.
-ci = "github"
-# Publish jobs to run in CI.
-pr-run-mode = "plan"
-# Skip checking whether the specified configuration files are up to date.
-allow-dirty = ["ci"]
-# Publish jobs to run in CI.
-publish-jobs = ["./npm-build"]

@@ -22,6 +22,7 @@
     4.  [webserver.rs](server/src/webserver.rs)
         1.  [filewatcher.rs](server/src/webserver/filewatcher.rs)
         2.  [vscode.rs](server/src/webserver/vscode.rs)
+        3.  [log4rs.yml](server/log4rs.yml)
     5.  [processing.rs](server/src/processing.rs)
     6.  Tests
         1.  [test_utils.rs](server/src/test_utils.rs)
@@ -70,6 +71,8 @@
         10. [.prettierignore](.prettierignore)
     3.  Misc
         1.  [config.toml](server/.cargo/config.toml) - for Rust code coverage
+        2.  [dist-workspace.toml](server/dist-workspace.toml) - cargo-dist
+            configuration
 
 ## Misc
 
