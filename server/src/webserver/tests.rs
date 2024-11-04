@@ -65,12 +65,13 @@ fn test_url_to_path() {
                 "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{test_dir_str}/test%20spaces.py"
             ),
             FILEWATCHER_PATH_PREFIX
-        ),
-        Ok(
-            PathBuf::from(format!("{test_dir_str}{MAIN_SEPARATOR_STR}test spaces.py"))
-                .canonicalize()
-                .unwrap()
         )
+        .unwrap()
+        .canonicalize()
+        .unwrap(),
+        PathBuf::from(format!("{test_dir_str}{MAIN_SEPARATOR_STR}test spaces.py"))
+            .canonicalize()
+            .unwrap()
     );
 
     // Report any errors produced when removing the temporary directory.
