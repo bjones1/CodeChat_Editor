@@ -768,6 +768,15 @@ mod test {
         let (temp_dir, test_dir) = _prep_test_dir(test_full_name);
         // Ensure the webserver is running.
         let _ = &*webserver_handle;
+        let now = SystemTime::now();
+        while now.elapsed().unwrap().as_millis() < 100 {
+            if minreq::get(format!("http://{IP_ADDRESS}:{IP_PORT}/ping",))
+                .send()
+                .is_ok()
+            {
+                break;
+            }
+        }
 
         // Connect to the VSCode IDE websocket.
         let ws_ide = connect_async_ide(connection_id).await;
