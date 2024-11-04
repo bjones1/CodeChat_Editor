@@ -17,7 +17,7 @@
 // ## Imports
 use std::{
     env::{current_dir, set_current_dir},
-    path::{self, PathBuf, MAIN_SEPARATOR_STR},
+    path::{PathBuf, MAIN_SEPARATOR_STR},
     thread::{self, sleep},
     time::Duration,
 };
@@ -45,13 +45,16 @@ fn test_url_to_path() {
     // Test a non-existent path.
     assert_eq!(
         url_to_path(
-            "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/path%20spaces/foo.py",
+            &format!(
+                "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{}path%20spaces/foo.py",
+                if cfg!(windows) { "C:/" } else { "" }
+            ),
             FILEWATCHER_PATH_PREFIX
         ),
-        Ok(path::absolute(PathBuf::from(format!(
-            "path spaces{MAIN_SEPARATOR_STR}foo.py"
-        )))
-        .unwrap())
+        Ok(PathBuf::from(format!(
+            "{}path spaces{MAIN_SEPARATOR_STR}foo.py",
+            if cfg!(windows) { "C:\\" } else { "/" }
+        ),))
     );
 
     // Test an actual path.

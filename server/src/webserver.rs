@@ -1184,34 +1184,36 @@ fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, St
                     // path.
                     let path_str_encoded =
                         path_segments_vec[expected_prefix.len() + 1..].join(MAIN_SEPARATOR_STR);
-                    // On non-Windows systems, the path should start with a `/`.
-                    // Windows path already start with a drive letter.
-                    #[cfg(not(target_os = "windows"))]
-                    let path_str_encoded = "/".to_string() + &path_str_encoded;
                     match urlencoding::decode(&path_str_encoded) {
                         Err(err) => {
                             Err(format!("Error: unable to decode URL {url_string}: {err}."))
                         }
-                        Ok(path_str) => match PathBuf::from_str(&path_str) {
-                            Err(err) => Err(format!(
-                                "Error: unable to parse file path {path_str_encoded}: {err}."
-                            )),
-                            Ok(path_buf) => match path_buf.canonicalize() {
-                                // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
-                                // fails if the path doesn't exist. For unsaved
-                                // files, this is expected; therefore, use
-                                // [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html)
-                                // on error, since it doesn't require the path
-                                // to exist.
-                                Err(_) => match path::absolute(&*path_buf) {
-                                    Err(err) => {
-                                        Err(format!("Unable to make {path_buf:?} absolute: {err}"))
-                                    }
-                                    Ok(p) => Ok(p),
+                        Ok(path_str) => {
+                            // On non-Windows systems, the path should start with a `/`.
+                            // Windows paths should already start with a drive letter.
+                            #[cfg(not(target_os = "windows"))]
+                            let path_str = "/".to_string() + &path_str;
+                            match PathBuf::from_str(&path_str) {
+                                Err(err) => Err(format!(
+                                    "Error: unable to parse file path {path_str_encoded}: {err}."
+                                )),
+                                Ok(path_buf) => match path_buf.canonicalize() {
+                                    // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
+                                    // fails if the path doesn't exist. For unsaved
+                                    // files, this is expected; therefore, use
+                                    // [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html)
+                                    // on error, since it doesn't require the path
+                                    // to exist.
+                                    Err(_) => match path::absolute(&*path_buf) {
+                                        Err(err) => Err(format!(
+                                            "Unable to make {path_buf:?} absolute: {err}"
+                                        )),
+                                        Ok(p) => Ok(p),
+                                    },
+                                    Ok(p) => Ok(PathBuf::from(simplified(&p))),
                                 },
-                                Ok(p) => Ok(PathBuf::from(simplified(&p))),
-                            },
-                        },
+                            }
+                        }
                     }
                 }
             }
