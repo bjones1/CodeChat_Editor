@@ -653,7 +653,7 @@ mod test {
 
     lazy_static! {
         // Run a single webserver for all tests.
-        static ref webserver_handle: JoinHandle<Result<(), Error>> =
+        static ref WEBSERVER_HANDLE: JoinHandle<Result<(), Error>> =
             actix_rt::spawn(async move { run_server(IP_PORT).await });
     }
 
@@ -767,7 +767,7 @@ mod test {
         configure_testing_logger();
         let (temp_dir, test_dir) = _prep_test_dir(test_full_name);
         // Ensure the webserver is running.
-        let _ = &*webserver_handle;
+        let _ = &*WEBSERVER_HANDLE;
         let now = SystemTime::now();
         while now.elapsed().unwrap().as_millis() < 100 {
             if minreq::get(format!("http://{IP_ADDRESS}:{IP_PORT}/ping",))

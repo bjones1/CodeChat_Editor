@@ -66,9 +66,11 @@ fn test_url_to_path() {
             ),
             FILEWATCHER_PATH_PREFIX
         ),
-        Ok(PathBuf::from(format!(
-            "{test_dir_str}{MAIN_SEPARATOR_STR}test spaces.py"
-        )))
+        Ok(
+            PathBuf::from(format!("{test_dir_str}{MAIN_SEPARATOR_STR}test spaces.py"))
+                .canonicalize()
+                .unwrap()
+        )
     );
 
     // Report any errors produced when removing the temporary directory.
