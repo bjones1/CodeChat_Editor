@@ -3,7 +3,7 @@
 This extension provides the CodeChat Editor's capabilities within the Visual
 Studio Code IDE.
 
-![Screenshot of the CodeChat Editor extension](screenshot.png)
+![Screenshot of the CodeChat Editor extension](https://github.com/bjones1/CodeChat_Editor/blob/main/extensions/VSCode/screenshot.png?raw=true)
 
 ## Installation
 
