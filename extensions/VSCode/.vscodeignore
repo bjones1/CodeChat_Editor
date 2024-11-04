@@ -21,8 +21,13 @@
 #
 # Omit all TypeScript source.
 src/**
+
 # Omit VSCode config.
 .vscode/**
+
+# Omit target-specific binaries. (Comment out when publishing for a specific target.)
+#server/**
+
 # Misc files not needed in a package.
 .eslintrc.yml
 .gitignore

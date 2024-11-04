@@ -30,13 +30,27 @@ To install from source:
 
 ## Release procedure
 
-- Update the version of the plugin in `package.json`.
-- Run `npm update`.
-- Verify that the extension still works after upgrading these packages.
-- Run `npx vsce publish`
+- In the Client:
+  - Update the version of the plugin in `package.json`.
+  - Clean out `client/static/bundled`.
+  - Run `npm update`.
+  - Run `npm outdated` and check that everything is current.
+  - Run `npm run dist`.
+- In the Server:
+  - Run `cargo update`.
+  - Run `cargo outdated` and check that everything is current.
+  - Run `cargo test`.
+  - Run `dist build`, then copy files to this extension
+- Here:
+  - Update the version of the plugin in `package.json`.
+  - Run `npm update`.
+  - Run `npm outdated` and check that everything is current.
+  - Verify that the extension still works after upgrading these packages.
+  - Run `npx vsce publish --target win32-x64` (on Windows)
+  - Repeat this for each target.
   ([docs](https://code.visualstudio.com/api/working-with-extensions/publishing-extension))
-  and `npx ovsx publish -p <token>`
-  ([docs](https://github.com/eclipse/openvsx/wiki/Publishing-Extensions#5-package-and-upload)).
+  - Uncomment the ignore for `server/` in `.vscodeignore`.
+  - Run `npx vsce publish`.
 
 ## Tests
 
