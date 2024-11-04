@@ -28,6 +28,7 @@ CodeChat Editor. If not, see
   - Removed save button.
   - Added support for Kotlin.
   - Updates to the build system.
+  - Cross-platform fixes.
 - v0.1.0, 2024-Oct-16
   - Initial release, with binaries for Windows only. Built with manually-patched
     CodeMirror per
