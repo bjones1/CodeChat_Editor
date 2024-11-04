@@ -35,7 +35,7 @@ use lazy_static::lazy_static;
 use log::{error, info, warn};
 use notify_debouncer_full::{
     new_debouncer,
-    notify::{EventKind, RecursiveMode, Watcher},
+    notify::{EventKind, RecursiveMode},
     DebounceEventResult,
 };
 use regex::Regex;
@@ -371,9 +371,8 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                 error!("Unable to create debouncer.");
                 break 'task;
             };
-            if let Err(err) = debounced_watcher
-                .watcher()
-                .watch(&current_filepath, RecursiveMode::NonRecursive)
+            if let Err(err) =
+                debounced_watcher.watch(&current_filepath, RecursiveMode::NonRecursive)
             {
                 error!("Unable to watch file: {err}");
                 break 'task;
@@ -546,7 +545,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                         }
                                     };
 
-                                    if let Err(err) = debounced_watcher.watcher().unwatch(&current_filepath) {
+                                    if let Err(err) = debounced_watcher.unwatch(&current_filepath) {
                                         let msg = format!(
                                             "Unable to unwatch file '{}': {err}.",
                                             current_filepath.to_string_lossy()
@@ -561,7 +560,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                         );
                                         break 'process Err(msg);
                                     }
-                                    if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
+                                    if let Err(err) = debounced_watcher.watch(&current_filepath, RecursiveMode::NonRecursive) {
                                         let msg = format!(
                                             "Unable to watch file '{}': {err}.",
                                             current_filepath.to_string_lossy()
@@ -579,7 +578,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     Ok(file_path) => 'err_exit: {
                                         // We finally have the desired path! First,
                                         // unwatch the old path.
-                                        if let Err(err) = debounced_watcher.watcher().unwatch(&current_filepath) {
+                                        if let Err(err) = debounced_watcher.unwatch(&current_filepath) {
                                             break 'err_exit Err(format!(
                                                 "Unable to unwatch file '{}': {err}.",
                                                 current_filepath.to_string_lossy()
@@ -593,7 +592,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                         };
 
                                         // Watch the new file.
-                                        if let Err(err) = debounced_watcher.watcher().watch(&current_filepath, RecursiveMode::NonRecursive) {
+                                        if let Err(err) = debounced_watcher.watch(&current_filepath, RecursiveMode::NonRecursive) {
                                             break 'err_exit Err(format!(
                                                 "Unable to watch file '{}': {err}.",
                                                 current_filepath.to_string_lossy()
