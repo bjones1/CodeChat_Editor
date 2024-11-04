@@ -776,6 +776,7 @@ mod test {
             {
                 break;
             }
+            sleep(Duration::from_millis(10)).await;
         }
 
         // Connect to the VSCode IDE websocket.
