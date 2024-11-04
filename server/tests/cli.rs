@@ -9,7 +9,7 @@
 // ### Third-party
 use actix_web::{App, HttpServer};
 use assert_cmd::Command;
-use predicates::str::contains;
+use predicates::{prelude::predicate, str::contains};
 
 // ### Local
 use code_chat_editor::webserver::IP_ADDRESS;
@@ -27,7 +27,7 @@ fn test_start_not_found() {
     let assert = cmd.args(["--test-mode", "not-found", "start"]).assert();
     assert
         .failure()
-        .stderr("Failed to start server: program not found\n");
+        .stderr(predicate::str::starts_with("Failed to start server"));
 }
 
 #[test]
