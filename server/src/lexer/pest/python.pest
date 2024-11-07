@@ -82,6 +82,7 @@ block_comment_ending = { newline_eoi }
 
 // ## Code blocks
 code_block = { code_line+ }
+[regex](https://docs.python.org/3/library/re.html)
 // If there is text or characters within the triple quoted string, it will be regarded as a code block.
 multi_line_string = { ("'''" ~ (!("'''") ~ ANY)* ~ "'''") | "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\""}
 code_line = _{ (multi_line_string ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
