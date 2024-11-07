@@ -43,7 +43,7 @@ inline_comment_cont = _{ PEEK[-1..-2] ~ PEEK ~ inline_comment_body }
 // Other languages support more inline comment delimiters; even if they're not
 // used, they must be defined here.
 inline_comment_delims  = _{ inline_comment_delim_0 }
-inline_comment_delim_0 =  { "//" }
+inline_comment_delim_0 =  { "#" }
 inline_comment_delim_1 =  { "unused" }
 inline_comment_delim_2 =  { "unused" }
 // This accepts an inline comment containing a space then some contents, or an
@@ -54,7 +54,7 @@ inline_comment_contents = { logical_line ~ newline_eoi }
 // [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
 // if a line of code ends with a backslash, it continues on the next line. This
 // is a logical line; treat it as a single line.
-logical_line = _{ ("\\" ~ NEWLINE | not_newline)* }
+logical_line = _{ ("#" ~ NEWLINE | not_newline)* }
 newline_eoi  = _{ NEWLINE | EOI }
 not_newline  = _{ !NEWLINE ~ ANY }
 
@@ -82,7 +82,9 @@ block_comment_ending = { newline_eoi }
 
 // ## Code blocks
 code_block = { code_line+ }
-code_line = _{ (!doc_block ~ logical_line ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
+// If there is text or characters within the triple quoted string, it will be regarded as a code block.
+multi_line_string = { ("'''" ~ (!("'''") ~ ANY)* ~ "'''") | "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\""}
+code_line = _{ (multi_line_string ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
 
 // ## Dedenter
 dedenter = { "not used" }
