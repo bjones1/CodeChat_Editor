@@ -82,10 +82,10 @@ block_comment_ending = { newline_eoi }
 
 // ## Code blocks
 code_block = { code_line+ }
-[regex](https://docs.python.org/3/library/re.html)
+single_line_string = {("\"" ~ (!("\"") ~ ANY)* ~ "\"") | ("'" ~ (!("'") ~ ANY)* ~ "'")}
 // If there is text or characters within the triple quoted string, it will be regarded as a code block.
 multi_line_string = { ("'''" ~ (!("'''") ~ ANY)* ~ "'''") | "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\""}
-code_line = _{ (multi_line_string ~ NEWLINE) | !(inline_comment_delim_0) ~ ("'''" | "\"\"\"") | (!doc_block ~ not_newline+ ~ EOI) }
+code_line = _{ (!single_line_string ~ NEWLINE | not_newline) | (multi_line_string ~ NEWLINE) | !(inline_comment_delim_0) ~ ("'''" | "\"\"\"") | (!doc_block ~ not_newline+ ~ EOI) }
 
 // ## Dedenter
 dedenter = { "not used" }
