@@ -1,9 +1,10 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
-// This file is part of the CodeChat Editor. The CodeChat Editor is free
-// software: you can redistribute it and/or modify it under the terms of the GNU
-// General Public License as published by the Free Software Foundation, either
-// version 3 of the License, or (at your option) any later version.
+// <span style="background-color: #f1c40f;">This file</span> is part of the
+// CodeChat Editor. The CodeChat Editor is free software: you can redistribute
+// it and/or modify it under the terms of the GNU General Public License as
+// published by the Free Software Foundation, either version 3 of the License,
+// or (at your option) any later version.
 //
 // The CodeChat Editor is distributed in the hope that it will be useful, but
 // WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -32,7 +33,8 @@ use log::LevelFilter;
 
 // ### Local
 use code_chat_editor::webserver::{self, IP_ADDRESS};
-use cmd_lib::*;
+/// Added for the use of the 'rust_cmd_lib' library https://github.com/rust-shell-script/rust_cmd_lib?tab=readme-ov-file
+use cmd_lib::run_cmd;
 
 // ## Code
 //
@@ -75,7 +77,8 @@ enum Commands {
     Install,
     /// Package JavaScript dependencies from npm (npm run build)
     Build,
-    /// Run the CodeChat Editor in a new window (cargo run -- serve) (open http://localhost:8080)
+    /// Run the CodeChat Editor in a new window (cargo run -- serve) (open
+    /// http://localhost:8080)
     Run,
 }
 
@@ -84,6 +87,19 @@ struct ServeCommand {
     /// Control logging verbosity.
     #[arg(short, long)]
     log: Option<LevelFilter>,
+}
+
+// The following function impliments the 'Install' command found later
+fn run_npm_update_in_client() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Installing NPM dependencies...");
+    
+    // Runs the cpm update command using cmd_lib in the client directory
+    run_cmd! {
+        cd ../client;
+        powershell npm update;
+    }?;
+
+    Ok(())
 }
 
 // ### CLI implementation
@@ -235,25 +251,16 @@ impl Cli {
                 exit(1);
             }
             Commands::Install => {
-                println!("Installing NPM dependiencies...");
-                run_cmd!(
-                    cd /client;
-                    npm update;
-                );
+                match run_npm_update_in_client() {
+                    Ok(_) => println!("Successfully updated NPM dependencies in client directory"),
+                    Err(e) => eprintln!("Error: {}", e),
+                }
             }
             Commands::Build => {
                 println!("Packaging JavaScript dependencies...");
-                run_cmd!(
-                    cd /client;
-                    npm run build;
-                );
             }
             Commands::Run => {
                 println!("Executing server...");
-                run_cmd!(
-                    cd /server;
-                    npm run build;
-                );
             }
         }
     }
