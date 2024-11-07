@@ -49,15 +49,15 @@ local file loads that file in the IDE, as well as showing it in the Editor.
 ## References to other files
 
 The CodeChat Editor supports hyperlinks to any recognized file type; to refer to
-another source file, simply insert a hyperlink to it. For example, this is a
+another source file, simply insert a hyperlink to it. For example, `[docs/style_guide.cpp](docs/style_guide.cpp)` is a
 link to [docs/style_guide.cpp](docs/style_guide.cpp) (the style guide, which is
-in the `docs/` subdirectory); here's a link to [LICENSE.md](LICENSE.md), which
+in the `docs/` subdirectory); `[LICENSE.md](LICENSE.md)` is a link to [LICENSE.md](LICENSE.md), which
 is in the same directory as this file. Note that:
 
 1.  Hyperlinks are relative to the current file; to refer to the style guide,
     use `docs/style_guide.cpp`.
 2.  As usual, the text of a hyperlink does not need to match the link itself;
-    here's another link to the [style guide](style_guide.cpp), for example.
+    `[style guide](style_guide.cpp)` is another link to the [style guide](style_guide.cpp), for example.
 
 Likewise, the path to local images is relative to the current file's location.
 For example [\[1\]](#notes):
@@ -81,14 +81,14 @@ for a simple example.
 ## Mathematics
 
 The CodeChat Editor uses [MathJax](https://www.mathjax.org/) to support typeset
-mathematics; for example, $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$.
+mathematics; for example, $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$. Place the delimiters `$` or `\\(` and `\\)` immediately before and after an equation; for example, either `\\(a^2\\)` or `$a^2$` becomes \\(a^2\\) and $a^2$.
 
 ## Diagrams
 
 ### Graphviz
 
 The CodeChat Editor contains rudimentary support for diagrams created by
-[Graphviz](https://graphviz.org/). For example:
+[Graphviz](https://graphviz.org/). For example, `<graphviz-graph graph="digraph { one -> two }"></graphviz-graph>` becomes:
 
 <graphviz-graph graph="digraph { one -> two }"></graphviz-graph>
 
