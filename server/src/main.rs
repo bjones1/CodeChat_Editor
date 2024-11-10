@@ -31,7 +31,10 @@ use clap::{Args, Parser, Subcommand};
 use log::LevelFilter;
 
 // ### Local
-use code_chat_editor::webserver::{self, IP_ADDRESS};
+use code_chat_editor::{
+    capture,
+    webserver::{self, IP_ADDRESS},
+};
 
 // ## Code
 //
@@ -97,6 +100,8 @@ impl Cli {
                 webserver::main(self.port).unwrap();
             }
             Commands::Start => {
+                println!("Starting capture Server...");
+                let _ = capture::run();
                 println!("Starting server in background...");
                 let current_exe = match env::current_exe() {
                     Ok(exe) => exe,
