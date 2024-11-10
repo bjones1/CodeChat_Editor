@@ -1,12 +1,22 @@
-use tokio::net::TcpListener;
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio_postgres::{NoTls, Client};
-use serde::Deserialize;
-use tokio::sync::mpsc;
-use simplelog::*;
-use std::fs::File;
 use log::{error, info};
-use simplelog::{TermLogger, TerminalMode, ColorChoice}; // Import necessary types
+use serde::Deserialize;
+use simplelog::*;
+use simplelog::{ColorChoice, TermLogger, TerminalMode};
+use std::fs;
+use std::fs::File;
+use std::path::Path;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
+use tokio_postgres::{Client, NoTls}; // Import necessary types
+
+#[derive(Debug, Deserialize)]
+struct DatabaseConfig {
+    db_name: String,
+    db_ip: String,
+    db_user: String,
+    db_password: String,
+}
 
 #[derive(Deserialize, Debug)]
 struct Event {
@@ -16,12 +26,27 @@ struct Event {
     data: Option<String>,
 }
 
+fn load_config() -> Result<DatabaseConfig, Box<dyn std::error::Error>> {
+    // Specify the path to your configuration file
+    let config_path = Path::new("config.json");
+    let config_data = fs::read_to_string(config_path)?;
+    let config: DatabaseConfig = serde_json::from_str(&config_data)?;
+    Ok(config)
+}
+
 async fn db_connect() -> Result<Client, tokio_postgres::Error> {
-    // Hardcoded database credentials
-    let db_user = "CodeChatCaptureUser";
-    let db_password = "OB3yc8Hk9SuVjzXMdUDr0C7w4PqLQisn"; // Ensure special characters are escaped
-    let db_name = "CodeChatCaptureDB";
-    let db_host = "3.146.138.182";
+    // Load the database configuration
+    let config = load_config().expect("Failed to load database configuration");
+
+    let db_user = &config.db_user;
+    let db_password = &config.db_password;
+    let db_name = &config.db_name;
+    let db_host = &config.db_ip;
+
+    info!(
+        "Connecting to Database:[{}] IP:[{}] as User [{}]...",
+        db_name, db_host, db_user
+    );
 
     // Build the connection string
     let conn_str = format!(
@@ -35,13 +60,13 @@ async fn db_connect() -> Result<Client, tokio_postgres::Error> {
     // Spawn the connection handling in the background
     tokio::spawn(async move {
         if let Err(e) = connection.await {
-            error!("Database connection error: {}", e);
+            error!("Database connection error: [{}]", e);
         }
     });
 
     // Print a message for successful DB connection
     info!(
-        "Successfully connected to database '{}' as user '{}'",
+        "Successfully Connected to Database [{}] as User [{}]",
         db_name, db_user
     );
 
@@ -72,11 +97,7 @@ pub async fn run() -> std::io::Result<()> {
             TerminalMode::Mixed,
             ColorChoice::Auto,
         ),
-        WriteLogger::new(
-            LevelFilter::Info,
-            config,
-            log_file,
-        ),
+        WriteLogger::new(LevelFilter::Info, config, log_file),
     ])
     .unwrap();
 
