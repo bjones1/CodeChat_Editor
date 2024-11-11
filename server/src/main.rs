@@ -1,9 +1,8 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
-// <span style="background-color: #f1c40f;">This file</span> is part of the
-// CodeChat Editor. The CodeChat Editor is free software: you can redistribute
-// it and/or modify it under the terms of the GNU General Public License as
-// published by the Free Software Foundation, either version 3 of the License,
+// This file is part of the CodeChat Editor. The CodeChat Editor is free software: 
+// you can redistribute it and/or modify it under the terms of the GNU General Public 
+// License as published by the Free Software Foundation, either version 3 of the License,
 // or (at your option) any later version.
 //
 // The CodeChat Editor is distributed in the hope that it will be useful, but
@@ -33,8 +32,9 @@ use log::LevelFilter;
 
 // ### Local
 use code_chat_editor::webserver::{self, IP_ADDRESS};
-/// Added for the use of the 'rust_cmd_lib' library https://github.com/rust-shell-script/rust_cmd_lib?tab=readme-ov-file
+// Added for the use of the 'rust_cmd_lib' library [rust_cmd_lib](https://github.com/rust-shell-script/rust_cmd_lib?tab=readme-ov-file)
 use cmd_lib::run_cmd;
+use webbrowser;
 
 // ## Code
 //
@@ -73,9 +73,9 @@ enum Commands {
     Start,
     /// Stop the webserver child process.
     Stop,
-    /// Install NPM dependencies (npm update)
+    /// Install NPM dependencies
     Install,
-    /// Package JavaScript dependencies from npm (npm run build)
+    /// Package JavaScript dependencies from npm
     Build,
     /// Run the CodeChat Editor in a new window (cargo run -- serve) (open
     /// http://localhost:8080)
@@ -89,16 +89,41 @@ struct ServeCommand {
     log: Option<LevelFilter>,
 }
 
-// The following function impliments the 'Install' command found later
-fn run_npm_update_in_client() -> Result<(), Box<dyn std::error::Error>> {
+// The following function implements the 'Install' command
+fn run_npm_update() -> Result<(), Box<dyn std::error::Error>> {
     println!("Installing NPM dependencies...");
     
-    // Runs the cpm update command using cmd_lib in the client directory
+    // Runs the 'npm update' command using cmd_lib in the client directory
     run_cmd! {
         cd ../client;
         powershell npm update;
     }?;
 
+    Ok(())
+}
+
+// The following function implements the 'Build' command
+fn run_npm_run_build() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Packaging JavaScript dependencies...");
+
+    // runs the 'npm run build' command in the client directory
+    run_cmd! {
+        cd ../client;
+        powershell npm run build;
+    }?;
+
+    Ok(())
+}
+
+// The following function impliments the 'Run' command
+fn run_server() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Executing server...");
+
+    // runs the 'cargo run --serve' command in the server directory
+    run_cmd! {
+        cd ../server;
+        powershell cargo run -- serve;
+    }?;
     Ok(())
 }
 
@@ -251,16 +276,23 @@ impl Cli {
                 exit(1);
             }
             Commands::Install => {
-                match run_npm_update_in_client() {
-                    Ok(_) => println!("Successfully updated NPM dependencies in client directory"),
+                match run_npm_update() {
+                    Ok(_) => println!("Successfully updated NPM dependencies"),
                     Err(e) => eprintln!("Error: {}", e),
                 }
             }
             Commands::Build => {
-                println!("Packaging JavaScript dependencies...");
+                match run_npm_run_build() {
+                    Ok(_) => println!("Successfully packaged JavaScript dependencies"),
+                    Err(e) => eprintln!("Error: {}", e),
+                }
             }
             Commands::Run => {
-                println!("Executing server...");
+                match run_server() {
+                    Ok(_) => println!("Successfully executed server"),
+                    Err(e) => eprintln!("Error: {}", e),
+                }
+                webbrowser::open("http://localhost:8080").is_ok()
             }
         }
     }
