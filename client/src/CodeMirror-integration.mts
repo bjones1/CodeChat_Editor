@@ -726,7 +726,7 @@ export const CodeMirror_load = async (
     }
 
     codechat_body.innerHTML =
-        '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents"></div>';
+        '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents" spellcheck="true"></div>';
     let parser;
     // TODO: dynamically load the parser.
     switch (lexer_name) {

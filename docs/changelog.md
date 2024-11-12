@@ -23,6 +23,7 @@ CodeChat Editor. If not, see
     autosave failures.
   - Fix filewatcher -- incorrect file path comparison.
   - Fix errors saving mathematics in Markdown-only files.
+  - Improve spellchecking coverage.
 - v0.1.1, 2024-Nov-04
   - Added basic theme support; used a theme similar to Sphinx's Alabaster.
   - Added support for printing.
