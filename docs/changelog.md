@@ -19,7 +19,9 @@ CodeChat Editor. If not, see
 # Changelog
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
-  - Fix [issue #28](https://github.com/bjones1/CodeChat_Editor/issues/28), autosave failures.
+  - Fix [issue #28](https://github.com/bjones1/CodeChat_Editor/issues/28),
+    autosave failures.
+  - Fix filewatcher -- incorrect file path comparison.re
 - v0.1.1, 2024-Nov-04
   - Added basic theme support; used a theme similar to Sphinx's Alabaster.
   - Added support for printing.
