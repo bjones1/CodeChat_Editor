@@ -63,7 +63,7 @@ that:
     [style guide](style_guide.cpp), for example.
 
 Likewise, the path to local images is relative to the current file's location.
-For example [\[1\]](#notes):
+For example, `![Monitor icon](docs/monitor.png)` [\[1\]](#notes) produces:
 
 ![Monitor icon](docs/monitor.png)
 
