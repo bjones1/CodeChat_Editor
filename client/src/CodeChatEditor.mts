@@ -283,7 +283,11 @@ const save_lp = async () => {
         const codechat_body = document.getElementById(
             "CodeChat-body",
         ) as HTMLDivElement;
-        parent.window.MathJax.typesetClear(codechat_body);
+        parent.window.MathJax.startup.document
+        .getMathItemsWithin(codechat_body)
+        .forEach((item: any) => {
+            item.removeFromDocument(true);
+        });
         // To save a document only, simply get the HTML from the only Tiny MCE
         // div.
         tinymce.activeEditor!.save();

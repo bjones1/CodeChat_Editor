@@ -84,7 +84,10 @@ for a simple example.
 ## Mathematics
 
 The CodeChat Editor uses [MathJax](https://www.mathjax.org/) to support typeset
-mathematics; for example, `$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$` becomes $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$. Place the delimiters `$` or `\\(` and `\\)` immediately before and after an equation; for example, either `\\(a^2\\)` or `$a^2$` becomes \\(a^2\\) and $a^2$.
+mathematics; for example, `$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$` becomes
+$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$. Place the delimiters `$` or `\\(`
+and `\\)` immediately before and after an equation; for example, either
+`\\(a^2\\)` or `$a^2$` becomes \\(a^2\\) and $a^2$.
 
 ## Diagrams
 
