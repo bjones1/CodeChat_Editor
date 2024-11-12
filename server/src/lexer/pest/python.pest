@@ -20,12 +20,13 @@ file      =  { SOI ~ (doc_block | code_block)* }
 doc_block = _{ inline_comment | block_comment }
 
 // Per the
-// [C standard, section 6.4.3](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
-// "white-space consists of: (space, horizontal tab, new-line, vertical tab, and
+// [Python standard, section string.whitespace](https://docs.python.org/3/library/string.html#string.whitespace),
+// "white-space consists of: (space, horizontal tab, linefeed, return, vertical tab, and
 // form-feed)." Omit newlines, since the rest of this parser uses these.
 vertical_tab = { "\x0B" }
 form_feed    = { "\x0C" }
-white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
+return = {"\0x0D"}
+white_space  = { (" " | "\t" | vertical_tab | form_feed | return)* }
 
 // The
 // [C standard, section 6.4.9](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
