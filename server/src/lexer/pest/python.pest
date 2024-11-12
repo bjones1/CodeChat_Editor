@@ -64,15 +64,15 @@ not_newline  = _{ !NEWLINE ~ ANY }
 //
 // Block comments never combine.
 block_comment = {
-    white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ " "? ~ "*/" ~ white_space ~ block_comment_ending
+    white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ " "? ~ ("'''" | """"" | #) ~ white_space ~ block_comment_ending
 }
 // Support multiple opening delimiters for other languages; assume the closing
 // delimiter is always the same.
 block_comment_opening_delims  = _{ block_comment_opening_delim_0 }
-block_comment_opening_delim_0 =  { "/*" }
+block_comment_opening_delim_0 =  { "'''" | """"" | "#"}
 block_comment_opening_delim_1 =  { "unused" }
 block_comment_opening_delim_2 =  { "unused" }
-block_comment_closing_delim   = _{ "*/" }
+block_comment_closing_delim   = _{ "'''" | """""| "#" }
 block_comment_pre             =  { " " | newline_eoi }
 // TODO: rewrite for languages that supported nested block comments.
 //
