@@ -675,10 +675,8 @@ const can_render = () => {
     return (
         vscode.window.activeTextEditor !== undefined &&
         websocket !== undefined &&
-        // If rendering in an external browser, the CodeChat panel doesn't need
-        // to be visible.
         (codechat_client_location === CodeChatEditorClientLocation.browser ||
-            (webview_panel !== undefined && webview_panel.visible))
+            (webview_panel !== undefined))
     );
 }
 
