@@ -19,6 +19,8 @@ CodeChat Editor. If not, see
 # Changelog
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
+  - No changes.
+- v0.1.2, 2024-Nov-12:
   - Fix [issue #28](https://github.com/bjones1/CodeChat_Editor/issues/28),
     autosave failures.
   - Fix filewatcher -- incorrect file path comparison.
