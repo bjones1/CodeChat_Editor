@@ -25,7 +25,7 @@ doc_block = _{ inline_comment | block_comment }
 // form-feed)." Omit newlines, since the rest of this parser uses these.
 vertical_tab = { "\x0B" }
 form_feed    = { "\x0C" }
-return = {"\0x0D"}
+return       = {"\0x0D"}
 white_space  = { (" " | "\t" | vertical_tab | form_feed | return)* }
 
 // The
@@ -50,12 +50,13 @@ inline_comment_delim_2 =  { "unused" }
 // This accepts an inline comment containing a space then some contents, or an
 // inline comment immediately followed by a newline.
 inline_comment_body     = { (" " ~ inline_comment_contents) | newline_eoi }
-inline_comment_contents = { logical_line ~ newline_eoi }
+inline_comment_contents = { "#" ~ newline_eoi }
 // Per the
-// [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
-// if a line of code ends with a backslash, it continues on the next line. This
-// is a logical line; treat it as a single line.
-logical_line = _{ ("#" ~ NEWLINE | not_newline)* }
+// [Python Standard, section 2.1.1](https://docs.python.org/3/reference/lexical_analysis.html#logical-lines),
+// The end of a logical line is represented by the token NEWLINE.
+// A line ending in a backslash cannot carry a comment.
+// A backslash does not continue a comment. 
+// A backslash does not continue a token except for string literals
 newline_eoi  = _{ NEWLINE | EOI }
 not_newline  = _{ !NEWLINE ~ ANY }
 
