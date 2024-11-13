@@ -17,7 +17,7 @@
 // # `python.pest` - Pest parser definition for Python
 // TODO: this is mostly a copy of `c.pest`; it needs to be updated for Python.
 file      =  { SOI ~ (doc_block | code_block)* }
-doc_block = _{ inline_comment | block_comment }
+doc_block = _{ inline_comment }
 
 // Per the
 // [C standard, section 6.4.3](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
@@ -43,7 +43,7 @@ inline_comment_cont = _{ PEEK[-1..-2] ~ PEEK ~ inline_comment_body }
 // Other languages support more inline comment delimiters; even if they're not
 // used, they must be defined here.
 inline_comment_delims  = _{ inline_comment_delim_0 }
-inline_comment_delim_0 =  { "//" }
+inline_comment_delim_0 =  { "#" }
 inline_comment_delim_1 =  { "unused" }
 inline_comment_delim_2 =  { "unused" }
 // This accepts an inline comment containing a space then some contents, or an
@@ -54,34 +54,37 @@ inline_comment_contents = { logical_line ~ newline_eoi }
 // [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
 // if a line of code ends with a backslash, it continues on the next line. This
 // is a logical line; treat it as a single line.
-logical_line = _{ ("\\" ~ NEWLINE | not_newline)* }
+logical_line = _{ ("//" ~ NEWLINE | not_newline)* }
 newline_eoi  = _{ NEWLINE | EOI }
 not_newline  = _{ !NEWLINE ~ ANY }
 
 // ## Block comments
 //
 // Block comments never combine.
-block_comment = {
-    white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ " "? ~ "*/" ~ white_space ~ block_comment_ending
-}
+//block_comment = {
+//    white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ " "? ~ "'''" ~ white_space ~ block_comment_ending
+//}
 // Support multiple opening delimiters for other languages; assume the closing
 // delimiter is always the same.
-block_comment_opening_delims  = _{ block_comment_opening_delim_0 }
-block_comment_opening_delim_0 =  { "/*" }
-block_comment_opening_delim_1 =  { "unused" }
-block_comment_opening_delim_2 =  { "unused" }
-block_comment_closing_delim   = _{ "*/" }
-block_comment_pre             =  { " " | newline_eoi }
+ //block_comment_opening_delims  = _{ block_comment_opening_delim_0 }
+ //block_comment_opening_delim_0 =  { "'''" }
+// block_comment_opening_delim_1 =  { "unused" }
+// block_comment_opening_delim_2 =  { "unused" }
+// block_comment_closing_delim   = _{ "'''" }
+// block_comment_pre             =  { " " | newline_eoi }
 // TODO: rewrite for languages that supported nested block comments.
 //
 // If there's a space immediately before the block closing delimiter, don't
 // capture it, so that this space can be discarded in the `block_comment` token.
-contents = { (!(" "? ~ block_comment_closing_delim) ~ ANY)* }
+// contents = { (!(" "? ~ block_comment_closing_delim) ~ ANY)* }
 // Use this so that the ending (usually a newline) gets captured in a token.
-block_comment_ending = { newline_eoi }
+// block_comment_ending = { newline_eoi }
 
 // ## Code blocks
-code_block = { code_line+ }
+
+multiline_string = { "'''" ~ (!"'''" ~ ANY)* ~ "'''" }
+root = _{ multiline_string | inline_comment }
+code_block = { multiline_string | code_line+ }
 code_line = _{ (!doc_block ~ logical_line ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
 
 // ## Dedenter
