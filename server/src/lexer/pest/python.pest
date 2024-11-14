@@ -17,7 +17,7 @@
 // # `python.pest` - Pest parser definition for Python
 // TODO: this is mostly a copy of `c.pest`; it needs to be updated for Python.
 file      =  { SOI ~ (doc_block | code_block)* }
-doc_block = _{ inline_comment | block_comment }
+doc_block = _{ inline_comment }
 
 // Per the
 // [Python standard, section string.whitespace](https://docs.python.org/3/library/string.html#string.whitespace),
@@ -25,8 +25,7 @@ doc_block = _{ inline_comment | block_comment }
 // form-feed)." Omit newlines, since the rest of this parser uses these.
 vertical_tab = { "\x0B" }
 form_feed    = { "\x0C" }
-return       = {"\0x0D"}
-white_space  = { (" " | "\t" | vertical_tab | form_feed | return)* }
+white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
 
 // The
 // [C standard, section 6.4.9](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
@@ -56,38 +55,18 @@ inline_comment_contents = { "#" ~ newline_eoi }
 // The end of a logical line is represented by the token NEWLINE.
 // A line ending in a backslash cannot carry a comment.
 // A backslash does not continue a comment. 
-// A backslash does not continue a token except for string literals
+// A backslash does not continue a token except for string literals.
 newline_eoi  = _{ NEWLINE | EOI }
 not_newline  = _{ !NEWLINE ~ ANY }
 
-// ## Block comments
-//
-// Block comments never combine.
-block_comment = {
-    white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ " "? ~ ("'''" | """"" | #) ~ white_space ~ block_comment_ending
-}
-// Support multiple opening delimiters for other languages; assume the closing
-// delimiter is always the same.
-block_comment_opening_delims  = _{ block_comment_opening_delim_0 }
-block_comment_opening_delim_0 =  { "'''" | """"" | "#"}
-block_comment_opening_delim_1 =  { "unused" }
-block_comment_opening_delim_2 =  { "unused" }
-block_comment_closing_delim   = _{ "'''" | """""| "#" }
-block_comment_pre             =  { " " | newline_eoi }
-// TODO: rewrite for languages that supported nested block comments.
-//
-// If there's a space immediately before the block closing delimiter, don't
-// capture it, so that this space can be discarded in the `block_comment` token.
-contents = { (!(" "? ~ block_comment_closing_delim) ~ ANY)* }
-// Use this so that the ending (usually a newline) gets captured in a token.
-block_comment_ending = { newline_eoi }
+// ## Block comments: Not supported by Python
 
 // ## Code blocks
 code_block = { code_line+ }
 single_line_string = {("\"" ~ (!("\"") ~ ANY)* ~ "\"") | ("'" ~ (!("'") ~ ANY)* ~ "'")}
 // If there is text or characters within the triple quoted string, it will be regarded as a code block.
 multi_line_string = { ("'''" ~ (!("'''") ~ ANY)* ~ "'''") | "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\""}
-code_line = _{ (!single_line_string ~ NEWLINE | not_newline) | (multi_line_string ~ NEWLINE) | !(inline_comment_delim_0) ~ ("'''" | "\"\"\"") | (!doc_block ~ not_newline+ ~ EOI) }
+code_line = _{ (multi_line_string ~ NEWLINE | not_newline) | (single_line_string ~ NEWLINE) | !(inline_comment_delim_0) ~ ("'''" | "\"\"\"") | (!doc_block ~ not_newline+ ~ EOI) }
 
 // ## Dedenter
 dedenter = { "not used" }
