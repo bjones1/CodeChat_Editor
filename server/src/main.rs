@@ -34,7 +34,6 @@ use log::LevelFilter;
 use code_chat_editor::webserver::{self, IP_ADDRESS};
 // Added for the use of the 'rust_cmd_lib' library [rust_cmd_lib](https://github.com/rust-shell-script/rust_cmd_lib?tab=readme-ov-file)
 use cmd_lib::run_cmd;
-use webbrowser;
 
 // ## Code
 //
@@ -94,6 +93,7 @@ fn run_npm_update() -> Result<(), Box<dyn std::error::Error>> {
     println!("Installing NPM dependencies...");
     
     // Runs the 'npm update' command using cmd_lib in the client directory
+    // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
     run_cmd! {
         cd ../client;
         powershell npm update;
@@ -107,6 +107,7 @@ fn run_npm_run_build() -> Result<(), Box<dyn std::error::Error>> {
     println!("Packaging JavaScript dependencies...");
 
     // runs the 'npm run build' command in the client directory
+    // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
     run_cmd! {
         cd ../client;
         powershell npm run build;
@@ -120,6 +121,7 @@ fn run_server() -> Result<(), Box<dyn std::error::Error>> {
     println!("Executing server...");
 
     // runs the 'cargo run --serve' command in the server directory
+    // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
     run_cmd! {
         cd ../server;
         powershell cargo run -- serve;
@@ -276,23 +278,25 @@ impl Cli {
                 exit(1);
             }
             Commands::Install => {
+                // calls the 'run_npm_update' function that was defined earlier
                 match run_npm_update() {
                     Ok(_) => println!("Successfully updated NPM dependencies"),
                     Err(e) => eprintln!("Error: {}", e),
                 }
             }
             Commands::Build => {
+                // calls the 'run_npm_run_build' function that was defined earlier
                 match run_npm_run_build() {
                     Ok(_) => println!("Successfully packaged JavaScript dependencies"),
                     Err(e) => eprintln!("Error: {}", e),
                 }
             }
             Commands::Run => {
+                // calls the 'run_server' function that was defined earlier
                 match run_server() {
                     Ok(_) => println!("Successfully executed server"),
                     Err(e) => eprintln!("Error: {}", e),
                 }
-                webbrowser::open("http://localhost:8080").is_ok()
             }
         }
     }
