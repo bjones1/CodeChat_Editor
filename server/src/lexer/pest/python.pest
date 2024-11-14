@@ -61,17 +61,15 @@ not_newline  = _{ !NEWLINE ~ ANY }
 // ## Block comments
 //
 // Block comments never combine.
-//block_comment = {
-//    white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ " "? ~ "'''" ~ white_space ~ block_comment_ending
-//}
+block_comment = {"unused"}
 // Support multiple opening delimiters for other languages; assume the closing
 // delimiter is always the same.
- //block_comment_opening_delims  = _{ block_comment_opening_delim_0 }
- //block_comment_opening_delim_0 =  { "'''" }
-// block_comment_opening_delim_1 =  { "unused" }
-// block_comment_opening_delim_2 =  { "unused" }
-// block_comment_closing_delim   = _{ "'''" }
-// block_comment_pre             =  { " " | newline_eoi }
+block_comment_opening_delims  = _{ "unused" }
+block_comment_opening_delim_0 =  { "unused" }
+block_comment_opening_delim_1 =  { "unused" }
+block_comment_opening_delim_2 =  { "unused" }
+block_comment_closing_delim   = _{ "unused" }
+block_comment_pre             =  { "unused" }
 // TODO: rewrite for languages that supported nested block comments.
 //
 // If there's a space immediately before the block closing delimiter, don't
@@ -82,9 +80,10 @@ not_newline  = _{ !NEWLINE ~ ANY }
 
 // ## Code blocks
 
-multiline_string = { "'''" ~ (!"'''" ~ ANY)* ~ "'''" }
-root = _{ multiline_string | inline_comment }
-code_block = { multiline_string | code_line+ }
+multiline_string = _{ "'''" ~ (!"'''" ~ ANY)* ~ "'''" }
+
+code_block = {(!doc_block ~ not_newline ~ NEWLINE) | (!doc_block ~ not_newline ~ EOI) | (not_newline ~ NEWLINE) | multiline_string }
+
 code_line = _{ (!doc_block ~ logical_line ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
 
 // ## Dedenter
