@@ -70,8 +70,9 @@ docs/
 
 ## Images
 
-Likewise, the path to local images is relative to the current file's location (see the preceding diagram for the location of `monitor.png`).
-For example [\[1\]](#notes),
+Likewise, the path to local images is relative to the current file's location
+(see the preceding diagram for the location of `monitor.png`). For example
+[\[1\]](#notes),
 
 | Source                              | Rendered                          |
 | ----------------------------------- | --------------------------------- |
@@ -95,8 +96,8 @@ for a simple example.
 
 The CodeChat Editor uses [MathJax](https://www.mathjax.org/) to support typeset
 mathematics. Place the delimiters `$` or `\\(` and `\\)` immediately before and
-after an in-line equation; place `$$` or `\\\[` and `\\\]` immediately before and
-after displayed mathematics. For example,
+after in-line mathematics; place `$$` or `\\\[` and `\\\]` immediately before
+and after displayed mathematics. For example,
 
 | Source                                        | Rendered                                    |
 | --------------------------------------------- | ------------------------------------------- |
@@ -107,6 +108,20 @@ after displayed mathematics. For example,
 
 See [Latex Mathematics](https://en.wikibooks.org/wiki/LaTeX/Mathematics#Symbols)
 for the syntax used to write mathematics expressions.
+
+### Escaping
+
+Markdown recognizes several characters common in mathematical expressions; these
+must be backslash escaped when used in math expressions to avoid problems. The
+following characters should be escaped: `*`, `_`, `\`, `[`, `]`, `<`.
+
+| Wrong source     | Wrong rendered | Correct source     | Correctly Rendered |
+| ---------------- | -------------- | ------------------ | ------------------ |
+| `${a}_1, b_{2}$` | ${a}*1, b*{2}$ | `${a}\_1, b\_{2}$` | ${a}\_1, b\_{2}$   |
+| `$a*1, b*2$`     | $a*1, b*2$     | `$a\*1, b\*2$`     | $a\*1, b\*2$       |
+| `$[a](b)$`       | $[a](b)$       | `$\[a\](b)$`       | $\[a\](b)$         |
+| `$3 <a> b$`      | $3 <a>b$</a>   | `$3 \<a> b$`       | $3 \<a> b$         |
+| `$a \; b$`       | $a ; b$        | `$a \\; b$`        | $a \\; b$          |
 
 ## Diagrams
 
