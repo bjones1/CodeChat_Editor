@@ -59,7 +59,13 @@ inline_comment_contents = { "#" ~ newline_eoi }
 newline_eoi  = _{ NEWLINE | EOI }
 not_newline  = _{ !NEWLINE ~ ANY }
 
-// ## Block comments: Not supported by Python
+// ## Block comments:
+block_comment = { "unused" }
+// Support multiple opening delimiters for other languages; assume the closing
+// delimiter is always the same.
+block_comment_opening_delim_0 =  { "unused" }
+block_comment_opening_delim_1 =  { "unused" }
+block_comment_opening_delim_2 =  { "unused" }
 
 // ## Code blocks
 code_block = { code_line+ }
