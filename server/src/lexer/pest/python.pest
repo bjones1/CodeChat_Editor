@@ -28,8 +28,8 @@ form_feed    = { "\x0C" }
 white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
 
 // The
-// [C standard, section 6.4.9](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
-// defines inline and block comments.
+// [Python standard, PEP 8 Style guide](https://peps.python.org/pep-0008/#inline-comments),
+// defines inline comments.
 //
 // ## Inline comments
 //
