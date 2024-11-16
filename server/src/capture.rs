@@ -1,13 +1,21 @@
 // src/capture.rs
 
-use log::{error, info};
-use serde::{Deserialize, Serialize};
+// ## Imports
+//
+// ### Standard library
 use std::fs;
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
+
+// ### Third-party
+use log::{error, info};
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio_postgres::{Client, NoTls};
+
+// ### Local
+
 /*
 The `Event` struct represents an event to be stored in the database.
 

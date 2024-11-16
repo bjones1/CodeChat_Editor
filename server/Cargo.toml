@@ -34,7 +34,6 @@ version = "0.1.2"
 # This library allows other packages to use core CodeChat Editor features.
 [lib]
 name = "code_chat_editor"
-path = "src/lib.rs"
 
 # ## Dependencies
 [dependencies]
