@@ -20,6 +20,13 @@ CodeChat Editor. If not, see
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
   - No changes.
+- v0.1.2, 2024-Nov-12:
+  - Fix [issue #28](https://github.com/bjones1/CodeChat_Editor/issues/28),
+    autosave failures.
+  - Fix filewatcher -- incorrect file path comparison.
+  - Fix errors saving mathematics in Markdown-only files.
+  - Improve spellchecking coverage.
+  - Fix data loss when the CodeChat Editor Client is not visible.
 - v0.1.1, 2024-Nov-04
   - Added basic theme support; used a theme similar to Sphinx's Alabaster.
   - Added support for printing.

@@ -243,9 +243,9 @@ export const open_lp = async (
                 // this is how to create a TinyMCE event handler.
                 setup: (editor: Editor) => {
                     // The
-                    // [supported browser-native events list](https://www.tiny.cloud/docs/tinymce/6/events/#supported-browser-native-events)
-                    // includes the `input` event.
-                    editor.on("input", (_event: Event) => {
+                    // [editor core events list](https://www.tiny.cloud/docs/tinymce/6/events/#editor-core-events)
+                    // includes the `Dirty` event.
+                    editor.on("Dirty", (_event: Event) => {
                         is_dirty = true;
                         startAutosaveTimer();
                     });
@@ -283,10 +283,15 @@ const save_lp = async () => {
         const codechat_body = document.getElementById(
             "CodeChat-body",
         ) as HTMLDivElement;
-        parent.window.MathJax.typesetClear(codechat_body);
+        parent.window.MathJax.startup.document
+        .getMathItemsWithin(codechat_body)
+        .forEach((item: any) => {
+            item.removeFromDocument(true);
+        });
         // To save a document only, simply get the HTML from the only Tiny MCE
         // div.
-        const html = tinymce.get(0)!.getContent();
+        tinymce.activeEditor!.save();
+        const html = tinymce.activeEditor!.getContent();
         const markdown = turndownService.turndown(html);
         source.doc = await prettier_markdown(markdown, 80);
         source.doc_blocks = [];
