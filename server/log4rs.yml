@@ -32,7 +32,7 @@ appenders:
   # File appender for INFO, WARN, and ERROR levels
   file_appender:
     kind: file
-    path: "app.log"  # Specify your desired logfile path
+    path: "app.log"  # Specify desired logfile path
     encoder:
       pattern: "{d} {l} {t} {L} - {m}{n}"
 

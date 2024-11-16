@@ -3,11 +3,11 @@
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio_postgres::{Client, Error as PgError, NoTls};
-
+use tokio_postgres::{Client, NoTls};
 /*
 The `Event` struct represents an event to be stored in the database.
 
@@ -53,7 +53,7 @@ let config = Config {
 */
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
-    pub db_host: String,
+    pub db_ip: String,
     pub db_user: String,
     pub db_password: String,
     pub db_name: String,
@@ -67,8 +67,6 @@ It holds a `tokio_postgres::Client` for database operations.
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-     // Initialize logging using the configuration file
-     log4rs::init_file("log4rs.yaml", Default::default())?;
 
      // Create an instance of EventCapture using the configuration file
      let event_capture = EventCapture::new("config.json").await?;
@@ -103,21 +101,29 @@ impl EventCapture {
             A `Result` containing an `EventCapture` instance or a `Box<dyn std::error::Error>`.
 
     */
-    pub async fn new<P: AsRef<Path>>(config_path: P) -> Result<Self, Box<dyn std::error::Error>> {
+
+    pub async fn new<P: AsRef<Path>>(config_path: P) -> Result<Self, io::Error> {
         // Read the configuration file
-        let config_content = fs::read_to_string(config_path)?;
-        let config: Config = serde_json::from_str(&config_content)?;
+        let config_content =
+            fs::read_to_string(config_path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let config: Config = serde_json::from_str(&config_content)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
         // Build the connection string for the PostgreSQL database
         let conn_str = format!(
             "host={} user={} password={} dbname={}",
-            config.db_host, config.db_user, config.db_password, config.db_name
+            config.db_ip, config.db_user, config.db_password, config.db_name
         );
 
-        println!("Attempting Capture Database COnnection...");
+        info!(
+            "Attempting Capture Database Connection. IP:[{}] Username:[{}] Database Name:[{}]",
+            config.db_ip, config.db_user, config.db_name
+        );
 
         // Connect to the database asynchronously
-        let (client, connection) = tokio_postgres::connect(&conn_str, NoTls).await?;
+        let (client, connection) = tokio_postgres::connect(&conn_str, NoTls)
+            .await
+            .map_err(|e| io::Error::new(io::ErrorKind::ConnectionRefused, e))?;
 
         // Spawn a task to manage the database connection in the background
         tokio::spawn(async move {
@@ -127,7 +133,7 @@ impl EventCapture {
         });
 
         info!(
-            "Connected to database [{}] as user [{}]",
+            "Connected to Database [{}] as User [{}]",
             config.db_name, config.db_user
         );
 
@@ -161,7 +167,7 @@ impl EventCapture {
         Ok(())
     }
     */
-    pub async fn insert_event(&self, event: Event) -> Result<(), PgError> {
+    pub async fn insert_event(&self, event: Event) -> Result<(), io::Error> {
         // SQL statement to insert the event into the 'events' table
         let stmt = "
             INSERT INTO events (user_id, event_type, timestamp, data)
@@ -182,7 +188,8 @@ impl EventCapture {
                     &event.data,
                 ],
             )
-            .await?;
+            .await
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
         info!("Event inserted into database: {:?}", event);
 
