@@ -20,13 +20,24 @@
 #
 # This file configures log4rs for this application.
 appenders:
-  # An appender named "stdout" that writes to stdout
-  stdout:
+  # Console appender for WARN and ERROR levels
+  console_appender:
     kind: console
     encoder:
       pattern: "{d} {l} {t} {L} - {m}{n}"
+    filters:
+      - kind: threshold
+        level: warn
 
-# Attach the "stdout" appender to the root logger.
+  # File appender for INFO, WARN, and ERROR levels
+  file_appender:
+    kind: file
+    path: "app.log"  # Specify your desired logfile path
+    encoder:
+      pattern: "{d} {l} {t} {L} - {m}{n}"
+
 root:
+  level: info
   appenders:
-    - stdout
+    - console_appender
+    - file_appender
