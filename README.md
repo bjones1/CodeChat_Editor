@@ -1,10 +1,10 @@
 # Welcome to the CodeChat Editor
 
-The CodeChat Editor is a GUI-based programmer's word processor / Jupyter for
-software developers. This document describes its basic features and use. In
-contrast, the [style guide](docs/style_guide.cpp) provides strategies for
-effectively employing the CodeChat Editor to improve the software development
-process.
+The CodeChat Editor is a GUI-based programmer's word processor /
+[Jupyter](https://jupyter.org/) for software developers. This document describes
+its basic features and use. In contrast, the [style guide](docs/style_guide.cpp)
+provides strategies for effectively employing the CodeChat Editor to improve the
+software development process.
 
 ## Installation
 
@@ -49,20 +49,34 @@ local file loads that file in the IDE, as well as showing it in the Editor.
 ## References to other files
 
 The CodeChat Editor supports hyperlinks to any recognized file type; to refer to
-another source file, simply insert a hyperlink to it. For example, `[docs/style_guide.cpp](docs/style_guide.cpp)` is a
-link to [docs/style_guide.cpp](docs/style_guide.cpp) (the style guide, which is
-in the `docs/` subdirectory); `[LICENSE.md](LICENSE.md)` is a link to [LICENSE.md](LICENSE.md), which
-is in the same directory as this file. Note that:
+another source file, simply insert a hyperlink to it. For example,
 
-1.  Hyperlinks are relative to the current file; to refer to the style guide,
-    use `docs/style_guide.cpp`.
-2.  As usual, the text of a hyperlink does not need to match the link itself;
-    `[style guide](style_guide.cpp)` is another link to the [style guide](style_guide.cpp), for example.
+| Source                                         | Rendered                            |
+| ---------------------------------------------- | ----------------------------------- |
+| `[docs/style_guide.cpp](docs/style_guide.cpp)` | [Style guide](docs/style_guide.cpp) |
+| `[LICENSE.md](LICENSE.md)`                     | [License](LICENSE.md)               |
 
-Likewise, the path to local images is relative to the current file's location.
-For example [\[1\]](#notes):
+As usual, hyperlinks are relative to the current file; to refer to the style
+guide, use `docs/style_guide.cpp`, since this file resides in the `docs/`
+subdirectory:
 
-![Monitor icon](docs/monitor.png)
+```
+README.md (this file)
+LICENSE.md
+docs/
+  style_guide.cpp
+  monitor.png
+```
+
+## Images
+
+Likewise, the path to local images is relative to the current file's location
+(see the preceding diagram for the location of `monitor.png`). For example
+[\[1\]](#notes),
+
+| Source                              | Rendered                          |
+| ----------------------------------- | --------------------------------- |
+| `![Monitor icon](docs/monitor.png)` | ![Monitor icon](docs/monitor.png) |
 
 Although the CodeChat Editor allows drag-and-drop of images, the result is a
 mess -- the image data is embedded directly in the source file. Avoid this;
@@ -81,16 +95,44 @@ for a simple example.
 ## Mathematics
 
 The CodeChat Editor uses [MathJax](https://www.mathjax.org/) to support typeset
-mathematics; for example, $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$. Place the delimiters `$` or `\\(` and `\\)` immediately before and after an equation; for example, either `\\(a^2\\)` or `$a^2$` becomes \\(a^2\\) and $a^2$.
+mathematics. Place the delimiters `$` or `\\(` and `\\)` immediately before and
+after in-line mathematics; place `$$` or `\\\[` and `\\\]` immediately before
+and after displayed mathematics. For example,
+
+| Source                                        | Rendered                                    |
+| --------------------------------------------- | ------------------------------------------- |
+| `$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$` | $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$ |
+| `\\(a^2\\)`                                   | \\(a^2\\)                                   |
+| `$$a^2$$`                                     | $$a^2$$                                     |
+| `\\\[a^2\\\]`                                 | \\\[a^2\\\]                                 |
+
+See [Latex Mathematics](https://en.wikibooks.org/wiki/LaTeX/Mathematics#Symbols)
+for the syntax used to write mathematics expressions.
+
+### Escaping
+
+Markdown recognizes several characters common in mathematical expressions; these
+must be backslash escaped when used in math expressions to avoid problems. The
+following characters should be escaped: `*`, `_`, `\`, `[`, `]`, `<`.
+
+| Wrong source     | Wrong rendered | Correct source     | Correctly Rendered |
+| ---------------- | -------------- | ------------------ | ------------------ |
+| `${a}_1, b_{2}$` | ${a}*1, b*{2}$ | `${a}\_1, b\_{2}$` | ${a}\_1, b\_{2}$   |
+| `$a*1, b*2$`     | $a*1, b*2$     | `$a\*1, b\*2$`     | $a\*1, b\*2$       |
+| `$[a](b)$`       | $[a](b)$       | `$\[a\](b)$`       | $\[a\](b)$         |
+| `$3 <a> b$`      | $3 <a>b$</a>   | `$3 \<a> b$`       | $3 \<a> b$         |
+| `$a \; b$`       | $a ; b$        | `$a \\; b$`        | $a \\; b$          |
 
 ## Diagrams
 
 ### Graphviz
 
 The CodeChat Editor contains rudimentary support for diagrams created by
-[Graphviz](https://graphviz.org/). For example, `<graphviz-graph graph="digraph { one -> two }"></graphviz-graph>` becomes:
+[Graphviz](https://graphviz.org/). For example,
 
-<graphviz-graph graph="digraph { one -> two }"></graphviz-graph>
+| Source                                                             | Rendered                                                         |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `<graphviz-graph graph="digraph { one -> two }"></graphviz-graph>` | <graphviz-graph graph="digraph { one -> two }"></graphviz-graph> |
 
 To edit these diagrams, use an
 [HTML entity encoder/decoder](https://mothereff.in/html-entities) and a Graphviz
@@ -98,13 +140,18 @@ editor such as [Edotor](https://edotor.net/).
 
 ### PlantUML
 
-![Sample PlantUML diagram](https://www.plantuml.com/plantuml/svg/SoWkIImgAStDuNBAJrBGjLDmpCbCJbMmKiX8pSd9vt98pKi1IW80)
+[PlantUML](https://plantuml.com/) transforms a hyperlink to a user-defined
+diagram directly to an SVG; for example,
+
+| Source                                                                                                                    | Rendered                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `![Sample PlantUML diagram](https://www.plantuml.com/plantuml/svg/ SoWkIImgAStDuNBAJrBGjLDmpCbCJbMmKiX8pSd9vt98pKi1IW80)` | ![Sample PlantUML diagram](https://www.plantuml.com/plantuml/svg/SoWkIImgAStDuNBAJrBGjLDmpCbCJbMmKiX8pSd9vt98pKi1IW80) |
 
 To edit these diagrams, paste the URL into the
 [PlantUML web server](https://www.plantuml.com/plantuml/uml), click Decode URL,
 edit, then copy and paste the SVG URL back to this file.
 
-## <a id="supported-languages">Supported languages</a>
+## <a id="supported-languages"></a>Supported languages
 
 - C/C++
 - C#
@@ -113,7 +160,7 @@ edit, then copy and paste the SVG URL back to this file.
 - HTML
 - Java/Kotlin
 - JavaScript/ECMAScript and TypeScript
-- JSON with comments (JSON5)
+- JSON with comments ([JSON5](https://json5.org/))
 - Markdown
 - MATLAB
 - Python

@@ -627,10 +627,10 @@ async fn text_file_to_response(
     // Compare using the canonical path first, then the absolute path if this
     // fails. This is necessary because the file may not exist on the filesystem
     // (only in the IDE).
-    let is_current = file_path
-        .canonicalize()
-        .map_or(false, |fp| fp == current_filepath)
-        || path::absolute(file_path).map_or(false, |fp| fp == current_filepath);
+    let is_current = match file_path.canonicalize() {
+        Ok(fp) => simplified(&fp) == current_filepath,
+        Err(_) => path::absolute(file_path).map_or(false, |fp| fp == current_filepath),
+    };
     let (simple_http_response, option_codechat_for_web) = serve_file(
         file_path,
         file_contents,

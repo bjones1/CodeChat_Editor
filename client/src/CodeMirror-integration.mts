@@ -83,6 +83,7 @@ import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
 // ## Globals
 let current_view: EditorView;
 let tinymce_singleton: Editor | undefined;
+let ignore_next_dirty = false;
 
 declare global {
     interface Window {
@@ -347,6 +348,8 @@ class DocBlockWidget extends WidgetType {
         const [contents_div, is_tinymce] = get_contents(dom);
         if (is_tinymce) {
             tinymce_singleton!.setContent(this.contents);
+            ignore_next_dirty = true;
+            tinymce_singleton!.save();
         } else {
             contents_div.innerHTML = this.contents;
         }
@@ -386,7 +389,8 @@ class DocBlockWidget extends WidgetType {
     }
 }
 
-// Typeset the provided node; taken from the [MathJax docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
+// Typeset the provided node; taken from the
+// [MathJax docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
 export const mathJaxTypeset = (node: HTMLElement) => {
     parent.window.MathJax.startup.promise =
         parent.window.MathJax.startup.promise
@@ -415,6 +419,52 @@ const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
     return false;
 };
 
+// Called when a doc block is dirty.
+const on_dirty = (
+    // The div that's dirty. It must be a child of the doc block div.
+    event_target: HTMLElement,
+) => {
+    if (ignore_next_dirty) {
+        ignore_next_dirty = false;
+        return;
+    }
+    // Find the doc block parent div.
+    const target = (event_target as HTMLDivElement).closest(
+        ".CodeChat-doc",
+    )! as HTMLDivElement;
+    // Send an update to the state field associated with this DOM element.
+    const pos = current_view.posAtDOM(target);
+    const indent_div = target.childNodes[0] as HTMLDivElement;
+    const indent = indent_div.innerHTML;
+    const delimiter = indent_div.getAttribute("data-delimiter")!;
+    const [contents_div, is_tinymce] = get_contents(target);
+    // Revert the typeset math to its original form.
+    parent.window.MathJax.startup.document
+        .getMathItemsWithin(contents_div)
+        .forEach((item: any) => {
+            item.removeFromDocument(true);
+        });
+    tinymce_singleton!.save();
+    const content = is_tinymce
+        ? tinymce_singleton!.getContent()
+        : contents_div.innerHTML;
+    let effects: StateEffect<unknown>[] = [
+        updateDocBlock.of({
+            pos,
+            indent,
+            delimiter,
+            content,
+            dom: target,
+        }),
+    ];
+
+    current_view.dispatch({ effects });
+
+    // Re-typeset.
+    mathJaxTypeset(contents_div);
+    return false;
+};
+
 const DocBlockPlugin = ViewPlugin.fromClass(
     class {
         constructor(view: EditorView) {}
@@ -431,9 +481,24 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 if (!target_or_false) {
                     return false;
                 }
-                // If the target is in the indent, not the contents, then none
-                // of this is necessary.
+                // Set up for editing the indent of doc blocks.
                 const target = target_or_false as HTMLDivElement;
+                const indent_div = target.childNodes[0] as HTMLDivElement;
+                // Use the
+                // [beforeinput](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event)
+                // event to allow only whitespace in the indent. Note that
+                // [addEventListener](https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener)
+                // states "If the function or object is already in the list of
+                // event listeners for this target, the function or object is
+                // not added a second time." So, we can just add it here without
+                // needing to check if it's already present.
+                indent_div.addEventListener(
+                    "beforeinput",
+                    doc_block_indent_on_before_input,
+                );
+
+                // If the target is in the indent, not the contents, then the
+                // following code isn't needed.
                 if (
                     (event.target as HTMLElement).closest(
                         ".CodeChat-doc-contents",
@@ -522,9 +587,9 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                         // Move TinyMCE to the new location, then remove the old
                         // div it will replace.
                         target.insertBefore(tinymce_div, null);
-                        tinymce_singleton!
-                            .getContentAreaContainer()
-                            .replaceChildren(...contents_div.childNodes);
+                        tinymce_singleton!.setContent(contents_div.innerHTML);
+                        ignore_next_dirty = true;
+                        tinymce_singleton!.save();
                         contents_div.remove();
 
                         // This process causes TinyMCE to lose focus. Restore
@@ -561,60 +626,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                             );
                         }
                     }, 0);
-
-                    // Set up for editing the indent of doc blocks.
-                    const indent_div = target.childNodes[0] as HTMLDivElement;
-                    // While this follows the
-                    // [MDN docs](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event)
-                    // and also works, TypeScript still reports an error.
-                    // Suppress it.
-                    /// @ts-ignore
-                    indent_div.addEventListener(
-                        "beforeinput",
-                        doc_block_indent_on_before_input,
-                    );
                 }
-                return false;
-            },
-
-            // When a doc block changes, update the CodeMirror state to match
-            // these changes.
-            input: (event: Event, view: EditorView) => {
-                const target_or_false = event_is_in_doc_block(event);
-                if (!target_or_false) {
-                    return false;
-                }
-                // Send an update to the state field associated with this DOM
-                // element.
-                const target = target_or_false as HTMLDivElement;
-                const pos = view.posAtDOM(target);
-                const indent_div = target.childNodes[0] as HTMLDivElement;
-                const indent = indent_div.innerHTML;
-                const delimiter = indent_div.getAttribute("data-delimiter")!;
-                const [contents_div, is_tinymce] = get_contents(target);
-                // Revert the typeset math to its original form.
-                parent.window.MathJax.startup.document
-                    .getMathItemsWithin(contents_div)
-                    .forEach((item: any) => {
-                        item.removeFromDocument(true);
-                    });
-                const content = is_tinymce
-                    ? tinymce_singleton!.getContent()
-                    : contents_div.innerHTML;
-                let effects: StateEffect<unknown>[] = [
-                    updateDocBlock.of({
-                        pos,
-                        indent,
-                        delimiter: delimiter,
-                        content: content,
-                        dom: target,
-                    }),
-                ];
-
-                view.dispatch({ effects });
-
-                // Re-typeset.
-                mathJaxTypeset(contents_div);
                 return false;
             },
         },
@@ -625,7 +637,10 @@ const DocBlockPlugin = ViewPlugin.fromClass(
 //
 // Allow only spaces and delete/backspaces when editing the indent of a doc
 // block.
-const doc_block_indent_on_before_input = (event: InputEvent) => {
+const doc_block_indent_on_before_input = (event_: Event) => {
+    // Declaring this as an InputEvent causes TypeScript to complain about an
+    // incorrect type, so fix it here.
+    const event = event_ as InputEvent;
     // Only modify the behavior of inserts.
     if (event.data) {
         // Block any insert that's not an insert of spaces. TODO: need to
@@ -634,6 +649,8 @@ const doc_block_indent_on_before_input = (event: InputEvent) => {
             event.preventDefault();
         }
     }
+    // Signal that this indent is dirty.
+    event.target && on_dirty(event.target as HTMLElement);
 };
 
 // There doesn't seem to be any tracking of a dirty/clean flag built into
@@ -692,16 +709,24 @@ export const CodeMirror_load = async (
     // Additional extensions.
     extensions: Array<Extension>,
 ) => {
+    // This is the first parameter in the call to
+    // [EditorState.fromJSON](https://codemirror.net/docs/ref/#state.EditorState^fromJSON).
+    // While the type of this parameter is `any`, it is probably instead an
+    // [EditorState](https://codemirror.net/docs/ref/#state.EditorState), which
+    // requires a defined selection. Define it here.
+    source.selection = EditorSelection.single(0).toJSON();
     // Save the current scroll position, to prevent the view from scrolling back
     // to the top after an update/reload.
     let scrollSnapshot;
     if (current_view !== undefined) {
         scrollSnapshot = current_view.scrollSnapshot();
+        // For reloads, we need to remove previous instances; otherwise, Bad
+        // Things happen.
+        tinymce.remove();
     }
 
     codechat_body.innerHTML =
-        '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents"></div>';
-    source.selection = EditorSelection.single(0).toJSON();
+        '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents" spellcheck="true"></div>';
     let parser;
     // TODO: dynamically load the parser.
     switch (lexer_name) {
@@ -790,10 +815,22 @@ export const CodeMirror_load = async (
         state,
         scrollTo: scrollSnapshot,
     });
-    // For reloads, we need to remove previous instances; otherwise, Bad Things
-    // happen.
-    tinymce.remove();
-    tinymce_singleton = (await init({ selector: "#TinyMCE-inst" }))[0];
+    tinymce_singleton = (
+        await init({
+            selector: "#TinyMCE-inst",
+            setup: (editor: Editor) => {
+                editor.on("Dirty", (event: any) => {
+                    // Get the div TinyMCE stores edits in. TODO: find
+                    // documentation for this.
+                    const target_or_false = event.target?.bodyElement;
+                    if (target_or_false == null) {
+                        return false;
+                    }
+                    on_dirty(target_or_false);
+                });
+            },
+        })
+    )[0];
 };
 
 // Return the JSON data to save from the current CodeMirror-based document.
