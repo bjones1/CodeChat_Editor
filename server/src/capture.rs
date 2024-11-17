@@ -9,6 +9,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 // ### Third-party
+use chrono::Local;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -22,7 +23,6 @@ The `Event` struct represents an event to be stored in the database.
 Fields:
     - `user_id`: The ID of the user associated with the event.
     - `event_type`: The type of event (e.g., "keystroke", "file_open").
-    - `timestamp`: The timestamp of when the event occurred.
     - `data`: Optional additional data associated with the event.
 
 # Example
@@ -30,7 +30,6 @@ Fields:
 let event = Event {
     user_id: "user123".to_string(),
     event_type: "keystroke".to_string(),
-    timestamp: "2023-10-01T12:34:56Z".to_string(),
     data: Some("Pressed key A".to_string()),
 };
 
@@ -39,7 +38,7 @@ let event = Event {
 pub struct Event {
     pub user_id: String,
     pub event_type: String,
-    pub timestamp: String,
+    //    pub timestamp: String,
     pub data: Option<String>,
 }
 
@@ -83,7 +82,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
      let event = Event {
          user_id: "user123".to_string(),
          event_type: "keystroke".to_string(),
-         timestamp: "2023-10-01T12:34:56Z".to_string(),
          data: Some("Pressed key A".to_string()),
      };
 
@@ -167,7 +165,6 @@ impl EventCapture {
         let event = Event {
             user_id: "user123".to_string(),
             event_type: "keystroke".to_string(),
-            timestamp: "2023-10-01T12:34:56Z".to_string(),
             data: Some("Pressed key A".to_string()),
         };
 
@@ -176,6 +173,9 @@ impl EventCapture {
     }
     */
     pub async fn insert_event(&self, event: Event) -> Result<(), io::Error> {
+        let current_time = Local::now();
+        let formatted_time = current_time.to_rfc3339();
+
         // SQL statement to insert the event into the 'events' table
         let stmt = "
             INSERT INTO events (user_id, event_type, timestamp, data)
@@ -192,7 +192,7 @@ impl EventCapture {
                 &[
                     &event.user_id,
                     &event.event_type,
-                    &event.timestamp,
+                    &formatted_time,
                     &event.data,
                 ],
             )

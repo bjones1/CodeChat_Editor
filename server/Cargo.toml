@@ -43,6 +43,7 @@ actix-rt = "2.9.0"
 actix-web = "4"
 actix-ws = "0.3.0"
 bytes = { version = "1", features = ["serde"] }
+chrono = "0.4"
 lazy_static = "1"
 log = "0.4"
 log4rs = "1.3"
