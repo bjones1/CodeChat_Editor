@@ -49,7 +49,7 @@ inline_comment_delim_2 =  { "unused" }
 // This accepts an inline comment containing a space then some contents, or an
 // inline comment immediately followed by a newline.
 inline_comment_body     = { (" " ~ inline_comment_contents) | newline_eoi }
-inline_comment_contents = { "#" ~ newline_eoi }
+inline_comment_contents = { ("#" ~ NEWLINE | not_newline)* ~ newline_eoi }
 // Per the
 // [Python Standard, section 2.1.1](https://docs.python.org/3/reference/lexical_analysis.html#logical-lines),
 // The end of a logical line is represented by the token NEWLINE.
@@ -59,20 +59,33 @@ inline_comment_contents = { "#" ~ newline_eoi }
 newline_eoi  = _{ NEWLINE | EOI }
 not_newline  = _{ !NEWLINE ~ ANY }
 
-// ## Block comments:
-block_comment = { "unused" }
+// ## Block comments
+//
+// Block comments never combine.
+block_comment = {
+    white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ " "? ~ "*/" ~ white_space ~ block_comment_ending
+}
 // Support multiple opening delimiters for other languages; assume the closing
 // delimiter is always the same.
+block_comment_opening_delims  = _{ block_comment_opening_delim_0 }
 block_comment_opening_delim_0 =  { "unused" }
 block_comment_opening_delim_1 =  { "unused" }
 block_comment_opening_delim_2 =  { "unused" }
+block_comment_closing_delim   = _{ "unused" }
+block_comment_pre             =  { " " | newline_eoi }
+// TODO: rewrite for languages that supported nested block comments.
+//
+// If there's a space immediately before the block closing delimiter, don't
+// capture it, so that this space can be discarded in the `block_comment` token.
+contents = { (!(" "? ~ block_comment_closing_delim) ~ ANY)* }
+// Use this so that the ending (usually a newline) gets captured in a token.
+block_comment_ending = { newline_eoi }
 
 // ## Code blocks
 code_block = { code_line+ }
-single_line_string = {("\"" ~ (!("\"") ~ ANY)* ~ "\"") | ("'" ~ (!("'") ~ ANY)* ~ "'")}
 // If there is text or characters within the triple quoted string, it will be regarded as a code block.
 multi_line_string = { ("'''" ~ (!("'''") ~ ANY)* ~ "'''") | "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\""}
-code_line = _{ (multi_line_string ~ NEWLINE | not_newline) | (single_line_string ~ NEWLINE) | !(inline_comment_delim_0) ~ ("'''" | "\"\"\"") | (!doc_block ~ not_newline+ ~ EOI) }
+code_line = _{ (!doc_block ~ not_newline+ ~ NEWLINE) | (multi_line_string ~ NEWLINE) | !(inline_comment_delim_0) ~ ("'''" | "\"\"\"") | (!doc_block ~ not_newline+ ~ EOI) }
 
 // ## Dedenter
 dedenter = { "not used" }
