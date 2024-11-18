@@ -668,9 +668,7 @@ async fn serve_file(
     let codehat_editor_css = BUNDLED_FILES_MAP
         .get(&format!("CodeChatEditor{js_test_suffix}.css"))
         .unwrap();
-    let codechat_editor_toc_js = BUNDLED_FILES_MAP
-        .get(&format!("CodeChatEditorToc.js"))
-        .unwrap();
+    let codechat_editor_toc_js = BUNDLED_FILES_MAP.get("CodeChatEditorToc.js").unwrap();
 
     // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) = if is_current_file || is_toc {

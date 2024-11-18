@@ -176,10 +176,8 @@ pub fn check_logger_errors(num_expected_errors: usize) {
         assert_le!(
             error_logs.len(),
             num_expected_errors,
-            format!(
-                "Error(s) in logs: saw {}, expected {num_expected_errors}.",
-                error_logs.len()
-            )
+            "Error(s) in logs: saw {}, expected {num_expected_errors}.",
+            error_logs.len()
         );
     });
 }
