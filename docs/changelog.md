@@ -22,6 +22,7 @@ CodeChat Editor. If not, see
   - Switch to using MathJax 4 beta; load MathJax in the frame it's used, per
     [MathJax issue #3309](https://github.com/mathjax/MathJax/issues/3309).
   - Modernize graphviz-webcomponent build.
+  - Move CSS to `client/src`.
 - v0.1.2, 2024-Nov-12:
   - Fix [issue #28](https://github.com/bjones1/CodeChat_Editor/issues/28),
     autosave failures.

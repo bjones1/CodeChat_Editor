@@ -61,7 +61,7 @@ import "mathjax/tex-chtml.js";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
 
 // ### CSS
-import "./../static/css/CodeChatEditor.css";
+import "./css/CodeChatEditor.css";
 
 // ## Data structures
 //

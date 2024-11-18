@@ -93,7 +93,7 @@ for (const output in metafile.outputs) {
             ++num_found;
             break;
 
-        case "static/css/CodeChatEditorProject.css":
+        case "src/css/CodeChatEditorProject.css":
             outputContents["CodeChatEditorProject.css"] = output;
             ++num_found;
             break;
