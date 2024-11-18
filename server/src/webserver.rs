@@ -440,18 +440,6 @@ fn get_client_framework(
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>The CodeChat Editor</title>
-                <script>
-                    MathJax = {{
-                        tex: {{
-                            inlineMath: [['$', '$'], ['\\(', '\\)']]
-                        }},
-                        svg: {{
-                            fontCache: 'global'
-                        }}
-                    }};
-                </script>
-                <script type="text/javascript" id="MathJax-script" async
-                src="/static/mathjax/es5/tex-chtml.js"></script>
                 <script type="module">
                     import {{ page_init }} from "/{codechat_editor_framework_js}"
                     page_init({ws_url}, {is_test_mode})
@@ -680,6 +668,9 @@ async fn serve_file(
     let codehat_editor_css = BUNDLED_FILES_MAP
         .get(&format!("CodeChatEditor{js_test_suffix}.css"))
         .unwrap();
+    let codechat_editor_toc_js = BUNDLED_FILES_MAP
+        .get(&format!("CodeChatEditorToc.js"))
+        .unwrap();
 
     // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) = if is_current_file || is_toc {
@@ -719,10 +710,12 @@ async fn serve_file(
                             <meta charset="UTF-8">
                             <meta name="viewport" content="width=device-width, initial-scale=1">
                             <title>{name} - The CodeChat Editor</title>
-
+                            <script type="module">
+                                import "/{codechat_editor_toc_js}"
+                            </script>
                             <link rel="stylesheet" href="/{codehat_editor_css}">
                         </head>
-                        <body class="CodeChat-theme-light" onload="parent.window.parent.window.MathJax.typesetPromise([document.body])">
+                        <body class="CodeChat-theme-light">
                             <div class="CodeChat-TOC">
                                 {html}
                             </div>

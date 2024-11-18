@@ -1,15 +1,15 @@
-// Configure MathJax.
+// # `MathJax-config.mts` -- Configure MathJax.
 window.MathJax = {
+    // See the [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
     chtml: {
-        fontURL: "/static/mathjax/components/output/chtml/fonts/woff-v2",
+        fontURL: "/static/mathjax-modern-font/chtml/woff",
     },
     tex: {
         inlineMath: [
             ["$", "$"],
-            ["(", ")"],
+            ["\\(", "\\)"],
         ],
-    },
-    svg: {
-        fontCache: "global",
+        // Per the [docs](https://docs.mathjax.org/en/latest/options/input/tex.html#option-descriptions), this is enabled as suggested.
+        processEscapes: true,
     },
 };

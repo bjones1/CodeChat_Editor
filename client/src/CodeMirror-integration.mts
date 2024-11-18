@@ -376,7 +376,7 @@ class DocBlockWidget extends WidgetType {
         // If this is the TinyMCE editor, save it.
         const [contents_div, is_tinymce] = get_contents(dom);
         // Revert the typeset math to its original form.
-        parent.window.MathJax.startup.document
+        window.MathJax.startup.document
             .getMathItemsWithin(contents_div)
             .forEach((item: any) => {
                 item.removeFromDocument(true);
@@ -392,10 +392,9 @@ class DocBlockWidget extends WidgetType {
 // Typeset the provided node; taken from the
 // [MathJax docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
 export const mathJaxTypeset = (node: HTMLElement) => {
-    parent.window.MathJax.startup.promise =
-        parent.window.MathJax.startup.promise
-            .then(() => parent.window.MathJax.typesetPromise([node]))
-            .catch((err: any) => console.log("Typeset failed: " + err.message));
+    window.MathJax.typesetPromise([node]).catch((err: any) =>
+        console.log("Typeset failed: " + err.message),
+    );
 };
 
 // Given a doc block div element, return the contents div and if TinyMCE is
@@ -439,7 +438,7 @@ const on_dirty = (
     const delimiter = indent_div.getAttribute("data-delimiter")!;
     const [contents_div, is_tinymce] = get_contents(target);
     // Revert the typeset math to its original form.
-    parent.window.MathJax.startup.document
+    window.MathJax.startup.document
         .getMathItemsWithin(contents_div)
         .forEach((item: any) => {
             item.removeFromDocument(true);

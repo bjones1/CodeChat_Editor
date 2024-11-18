@@ -54,6 +54,10 @@ import "./graphviz-webcomponent-setup.mts";
 // This must be imported _after_ the previous setup import, so it's placed here,
 // instead of in the third-party category above.
 import "graphviz-webcomponent";
+import "./MathJax-config.mts";
+// Likewise, this must be imported _after_ the previous setup import, so it's placed here,
+// instead of in the third-party category above.
+import "mathjax/tex-chtml.js";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
 
 // ### CSS
@@ -220,12 +224,14 @@ export const open_lp = async (
     // Disable autosave when updating the document.
     autosaveEnabled = false;
     clearAutosaveTimer();
+    // Before calling any MathJax, make sure it's fully loaded.
+    await window.MathJax.startup.promise;
     // Per the
     // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
     // "If you modify the page to remove content that contains typeset
     // mathematics, you will need to tell MathJax about that so that it knows
     // the typeset math that you are removing is no longer on the page."
-    parent.window.MathJax.typesetClear(codechat_body);
+    window.MathJax.typesetClear(codechat_body);
     if (is_doc_only()) {
         if (tinymce.activeEditor === null) {
             // Special case: a CodeChat Editor document's HTML is stored in
@@ -283,7 +289,7 @@ const save_lp = async () => {
         const codechat_body = document.getElementById(
             "CodeChat-body",
         ) as HTMLDivElement;
-        parent.window.MathJax.startup.document
+        window.MathJax.startup.document
         .getMathItemsWithin(codechat_body)
         .forEach((item: any) => {
             item.removeFromDocument(true);

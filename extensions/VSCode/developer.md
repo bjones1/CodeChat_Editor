@@ -34,6 +34,9 @@ To install from source:
   - Update the version of the plugin in `package.json`.
   - Clean out `client/static/bundled`.
   - Run `npm update`.
+  - Manually copy:
+    - `client/node_modules/mathjax-modern-font/` to `client/static`.
+    - `client/node_modules/graphviz-webcomponent/renderer.min.js*` to `client/static`.
   - Run `npm outdated` and check that everything is current.
   - Run `npm run dist`.
 - In the Server:
