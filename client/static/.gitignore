@@ -19,5 +19,6 @@
 # # `.gitignore` -- files for Git to ignore
 bundled/
 mathjax-modern-font/
+graphviz-webcomponent/
 
 # CodeChat Editor lexer: python. See TODO.

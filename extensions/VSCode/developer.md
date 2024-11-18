@@ -36,7 +36,8 @@ To install from source:
   - Run `npm update`.
   - Manually copy:
     - `client/node_modules/mathjax-modern-font/` to `client/static`.
-    - `client/node_modules/graphviz-webcomponent/renderer.min.js*` to `client/static`.
+    - `client/node_modules/graphviz-webcomponent/dist/renderer.min.js*` to
+      `client/static/graphviz-webcomponent`.
   - Run `npm outdated` and check that everything is current.
   - Run `npm run dist`.
 - In the Server:
