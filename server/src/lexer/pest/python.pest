@@ -80,11 +80,11 @@ block_comment_pre             =  { "unused" }
 
 // ## Code blocks
 
-multiline_string = _{ "'''" ~ (!"'''" ~ ANY)* ~ "'''" }
+multiline_string = { "'''" ~ (!"'''" ~ ANY)* ~ "'''" }
 
-code_block = {(!doc_block ~ not_newline ~ NEWLINE) | (!doc_block ~ not_newline ~ EOI) | (not_newline ~ NEWLINE) | multiline_string }
+code_block = {code_line+}
 
-code_line = _{ (!doc_block ~ logical_line ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
+code_line = { multiline_string | (!doc_block ~ not_newline ~ multiline_string ~ NEWLINE) | (!doc_block ~ not_newline+ ~ multiline_string ~ EOI) }
 
 // ## Dedenter
 dedenter = { "not used" }
