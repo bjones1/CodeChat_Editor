@@ -294,6 +294,37 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         make_language_lexer(
             "json5",
             &["json", "json5"],
+            // [Comments & data structure for json5](https://ecma-international.org/wp-content/uploads/ECMA-262_5.1_edition_june_2011.pdf?_gl=1*1jmj021*_ga*MTY3MDAxNTcxMi4xNzMwMjEyNDY2*_ga_TDCK4DWEPP*MTczMDIxMjQ2Ni4xLjEuMTczMDIxMjgwNS4wLjAuMA..) 
+            /*  [json parser pest](https://github.com/pest-parser/pest-ide-tools/blob/6344e2a0fdb4af42dfdc106980fe730b818204c5/vscode/tests/json.pest#L4)
+                json = { SOI ~ (object | array) ~ EOI }
+
+                /// Matches object, e.g.: `{ "foo": "bar" }`
+                /// Foobar
+                object = { "{" ~ pair ~ ("," ~ pair)* ~ "}" | "{" ~ "}" }
+                pair   = { string ~ ":" ~ value }
+
+                array = { "[" ~ value ~ ("," ~ value)* ~ "]" | "[" ~ "]" }
+
+                /* Match value */
+                value = { string | number | object | array | bool | null }
+
+                string = @{ "\"" ~ inner ~ "\"" }
+                inner  = @{ (!("\"" | "\\") ~ ANY)* ~ (escape ~ inner)? }
+                escape = @{ "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t" | unicode) }
+                // Unicode, e.g.: `u0000`
+                unicode = @{ "u" ~ ASCII_HEX_DIGIT{4} }
+
+                /// int and float, including nagative number
+                number = @{ "-"? ~ int ~ ("." ~ ASCII_DIGIT+ ~ exp? | exp)? }
+                int    = @{ "0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
+                exp    = @{ ("E" | "e") ~ ("+" | "-")? ~ ASCII_DIGIT+ }
+
+                bool = { "true" | "false" }
+
+                null = { "null" }
+
+                WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+            */
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
             &[
