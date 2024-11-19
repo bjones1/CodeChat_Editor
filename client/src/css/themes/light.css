@@ -146,7 +146,7 @@ body.CodeChat-theme-light {
 
         ul {
            margin: 10px 0;
-           padding: 0;
+           padding-inline-start: 1rem;
            color: #000;
         }
 
