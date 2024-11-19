@@ -44,7 +44,7 @@ To install from source:
   - Run `cargo update`.
   - Run `cargo outdated` and check that everything is current.
   - Run `cargo test`.
-  - Run `dist build`, then copy files to this extension
+  - Run `dist build`, then copy files to this extension.
 - Here:
   - Update the version of the plugin in `package.json`.
   - Run `npm update`.
