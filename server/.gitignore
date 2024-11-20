@@ -31,5 +31,4 @@ hashLocations.json
 
 config.json
 *.log
-Cargo.lock
 # CodeChat Editor lexer: python. See TODO.

@@ -3,6 +3,7 @@
 // ## Imports
 //
 // ### Standard library
+use indoc::indoc;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -38,7 +39,6 @@ let event = Event {
 pub struct Event {
     pub user_id: String,
     pub event_type: String,
-    //    pub timestamp: String,
     pub data: Option<String>,
 }
 
@@ -177,10 +177,10 @@ impl EventCapture {
         let formatted_time = current_time.to_rfc3339();
 
         // SQL statement to insert the event into the 'events' table
-        let stmt = "
+        let stmt = indoc! {"
             INSERT INTO events (user_id, event_type, timestamp, data)
             VALUES ($1, $2, $3, $4)
-        ";
+        "};
 
         // Acquire a lock on the database client for thread-safe access
         let client = self.db_client.lock().await;
