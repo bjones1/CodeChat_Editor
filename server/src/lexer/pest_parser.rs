@@ -231,7 +231,7 @@ mod test {
     use crate::lexer::{CodeDocBlock, DocBlock};
 
     #[test]
-    fn test_pest_1() {
+    fn test_pest_c_1() {
         assert_eq!(
             c::parse_to_code_doc_blocks(indoc!(
                 r#"
@@ -247,8 +247,8 @@ mod test {
                 CodeDocBlock::DocBlock(DocBlock {
                     indent: "".to_string(),
                     delimiter: "/*".to_string(),
-                    contents: "Testing\n1,\n\n2, 3\n ".to_string(),
-                    lines: 5,
+                    contents: "Testing\n1,\n\n2, 3\n".to_string(),
+                    lines: 4,
                 })
             ],
         );
@@ -267,12 +267,15 @@ mod test {
                 CodeDocBlock::DocBlock(DocBlock {
                     indent: "".to_string(),
                     delimiter: "/*".to_string(),
-                    contents: "Testing\n1,\n\n2, 3\n ".to_string(),
-                    lines: 5,
+                    contents: "Testing\n1,\n\n2, 3\n".to_string(),
+                    lines: 4,
                 })
             ],
         );
+    }
 
+    #[test]
+    fn test_pest_python_1() {
         assert_eq!(
             python::parse_to_code_doc_blocks(indoc!(
                 r#"
