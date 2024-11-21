@@ -85,7 +85,7 @@ block_comment_ending = { newline_eoi }
 code_block = { code_line+ }
 // If there is text or characters within the triple quoted string, it will be regarded as a code block.
 multi_line_string = { ("'''" ~ (!("'''") ~ ANY)* ~ "'''") | "\"\"\"" ~ (!("\"\"\"") ~ ANY)* ~ "\"\"\""}
-code_line = _{ (!doc_block ~ not_newline+ ~ NEWLINE) | (multi_line_string ~ NEWLINE) | !(inline_comment_delim_0) ~ ("'''" | "\"\"\"") | (!doc_block ~ not_newline+ ~ EOI) }
+code_line = _{ (!doc_block ~ (multi_line_string | not_newline)+ ~ NEWLINE) | (multi_line_string ~ NEWLINE) | !(inline_comment_delim_0) ~ ("'''" | "\"\"\"") | (!doc_block ~ not_newline+ ~ EOI) }
 
 // ## Dedenter
 dedenter = { "not used" }
