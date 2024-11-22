@@ -84,7 +84,10 @@ multiline_string = { "'''" ~ (!"'''" ~ ANY)* ~ "'''" }
 
 code_block = {code_line+}
 
-code_line = { multiline_string | (!doc_block ~ not_newline ~ multiline_string ~ NEWLINE) | (!doc_block ~ not_newline+ ~ multiline_string ~ EOI) }
 
+code_line = { 
+  (!doc_block  ~ (multiline_string | not_newline)+ ~ (NEWLINE | EOI)) 
+  | multiline_string 
+}
 // ## Dedenter
 dedenter = { "not used" }
