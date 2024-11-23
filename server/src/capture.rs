@@ -1,40 +1,53 @@
-// src/capture.rs
+// Copyright (C) 2023 Bryan A. Jones.
+//
+// This file is part of the CodeChat Editor. The CodeChat Editor is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// The CodeChat Editor is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along with
+// the CodeChat Editor. If not, see
+// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+/// # `Capture.rs` -- Capture CodeChat Editor Events
+// ## Submodules
 
 // ## Imports
 //
-// ### Standard library
+// Standard library
 use indoc::indoc;
 use std::fs;
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
-// ### Third-party
+// Third-party
 use chrono::Local;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio_postgres::{Client, NoTls};
 
-// ### Local
+// Local
 
-/*
-The `Event` struct represents an event to be stored in the database.
+/* ## The Event Structure:
 
-Fields:
-    - `user_id`: The ID of the user associated with the event.
-    - `event_type`: The type of event (e.g., "keystroke", "file_open").
-    - `data`: Optional additional data associated with the event.
+   The `Event` struct represents an event to be stored in the database.
 
-# Example
+   Fields: - `user_id`: The ID of the user associated with the event. -
+   `event_type`: The type of event (e.g., "keystroke", "file_open"). - `data`:
+   Optional additional data associated with the event.
 
-let event = Event {
-    user_id: "user123".to_string(),
-    event_type: "keystroke".to_string(),
-    data: Some("Pressed key A".to_string()),
-};
+   ### Example
 
- */
+   let event = Event { user_id: "user123".to_string(), event_type:
+   "keystroke".to_string(), data: Some("Pressed key A".to_string()), };
+*/
+
 #[derive(Deserialize, Debug)]
 pub struct Event {
     pub user_id: String,
@@ -42,22 +55,21 @@ pub struct Event {
     pub data: Option<String>,
 }
 
-/* The `Config` struct represents the database connection parameters read from `config.json`.
+/*
+    ## The Config Structure:
 
-Fields:
-    - `db_host`: The hostname or IP address of the database server.
-    - `db_user`: The username for the database connection.
-    - `db_password`: The password for the database connection.
-    - `db_name`: The name of the database.
+    The `Config` struct represents the database connection parameters read from
+   `config.json`.
 
-let config = Config {
-    db_host: "localhost".to_string(),
-    db_user: "your_db_user".to_string(),
-    db_password: "your_db_password".to_string(),
-    db_name: "your_db_name".to_string(),
-};
+   Fields: - `db_host`: The hostname or IP address of the database server. -
+   `db_user`: The username for the database connection. - `db_password`: The
+   password for the database connection. - `db_name`: The name of the database.
 
+   let config = Config { db_host: "localhost".to_string(), db_user:
+   "your_db_user".to_string(), db_password: "your_db_password".to_string(),
+   db_name: "your_db_name".to_string(), };
 */
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
     pub db_ip: String,
@@ -67,45 +79,51 @@ pub struct Config {
 }
 
 /*
-The `EventCapture` struct provides methods to interact with the database.
-It holds a `tokio_postgres::Client` for database operations.
 
-# Usage Example
+ ## The EventCapture Structure:
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+ The `EventCapture` struct provides methods to interact with the database. It
+holds a `tokio_postgres::Client` for database operations.
 
-     // Create an instance of EventCapture using the configuration file
-     let event_capture = EventCapture::new("config.json").await?;
+### Usage Example
 
-     // Create an event
-     let event = Event {
-         user_id: "user123".to_string(),
-         event_type: "keystroke".to_string(),
-         data: Some("Pressed key A".to_string()),
-     };
+#\[tokio::main\] async fn main() -> Result<(), Box> {
 
-     // Insert the event into the database
-     event_capture.insert_event(event).await?;
+```
+ // Create an instance of EventCapture using the configuration file
+ let event_capture = EventCapture::new("config.json").await?;
 
-     Ok(())
-}
- */
+ // Create an event
+ let event = Event {
+     user_id: "user123".to_string(),
+     event_type: "keystroke".to_string(),
+     data: Some("Pressed key A".to_string()),
+ };
+
+ // Insert the event into the database
+ event_capture.insert_event(event).await?;
+
+ Ok(())
+```
+} */
+
 pub struct EventCapture {
     db_client: Arc<Mutex<Client>>,
 }
 
+/*
+    ## The EventCapture Implementation
+*/
+
 impl EventCapture {
     /*
-        Creates a new `EventCapture` instance by reading the database connection parameters
-        from the `config.json` file and connecting to the PostgreSQL database.
+        Creates a new `EventCapture` instance by reading the database connection parameters from the `config.json` file and connecting to the PostgreSQL database.
+            # Arguments
+            - config_path: The file path to the config.json file.
 
-        # Arguments
-        - `config_path`: The file path to the `config.json` file.
+            # Returns
 
-        # Returns
-            A `Result` containing an `EventCapture` instance or a `Box<dyn std::error::Error>`.
-
+            A `Result` containing an `EventCapture` instance
     */
 
     pub async fn new<P: AsRef<Path>>(config_path: P) -> Result<Self, io::Error> {
@@ -149,29 +167,30 @@ impl EventCapture {
     }
 
     /*
-    Inserts an event into the database.
+       Inserts an event into the database.
 
-    # Arguments
-    - `event`: An `Event` instance containing the event data to insert.
+       # Arguments
+       - `event`: An `Event` instance containing the event data to insert.
 
-    # Returns
-    A `Result` indicating success or containing a `tokio_postgres::Error`.
+       # Returns
+       A `Result` indicating success or containing a `tokio_postgres::Error`.
 
-    # Example
-    #[tokio::main]
-    async fn main() -> Result<(), Box<dyn std::error::Error>> {
-        let event_capture = EventCapture::new("config.json").await?;
+       # Example
+       #[tokio::main]
+       async fn main() -> Result<(), Box<dyn std::error::Error>> {
+           let event_capture = EventCapture::new("config.json").await?;
 
-        let event = Event {
-            user_id: "user123".to_string(),
-            event_type: "keystroke".to_string(),
-            data: Some("Pressed key A".to_string()),
-        };
+           let event = Event {
+               user_id: "user123".to_string(),
+               event_type: "keystroke".to_string(),
+               data: Some("Pressed key A".to_string()),
+           };
 
-        event_capture.insert_event(event).await?;
-        Ok(())
-    }
+           event_capture.insert_event(event).await?;
+           Ok(())
+       }
     */
+
     pub async fn insert_event(&self, event: Event) -> Result<(), io::Error> {
         let current_time = Local::now();
         let formatted_time = current_time.to_rfc3339();
@@ -205,23 +224,17 @@ impl EventCapture {
     }
 }
 
-/*
-Database Schema (SQL DDL)
+/* Database Schema (SQL DDL)
 
 The following SQL statement creates the `events` table used by this library:
 
-CREATE TABLE events (
-    id SERIAL PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    event_type TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    data TEXT
-);
+CREATE TABLE events ( id SERIAL PRIMARY KEY, user_id TEXT NOT NULL,
+event_type TEXT NOT NULL, timestamp TEXT NOT NULL, data TEXT );
 
 - **`id SERIAL PRIMARY KEY`**: Auto-incrementing primary key.
 - **`user_id TEXT NOT NULL`**: The ID of the user associated with the event.
 - **`event_type TEXT NOT NULL`**: The type of event.
 - **`timestamp TEXT NOT NULL`**: The timestamp of the event.
 - **`data TEXT`**: Optional additional data associated with the event.
-**Note:** Ensure this table exists in your PostgreSQL database before using the library.
-*/
+  **Note:** Ensure this table exists in your PostgreSQL database before using
+  the library. */
