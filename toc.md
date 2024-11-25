@@ -39,8 +39,9 @@
             2.  [tinymce-config.mts](client/src/tinymce-config.mts)
             3.  [EditorComponents.mts](client/src/EditorComponents.mts)
             4.  [graphviz-webcomponent-setup.mts](client/src/graphviz-webcomponent-setup.mts)
-            5.  [MathJax-config.mts](client/src/MathJax-config.mts)
-            6.  [typings.d.ts](client/src/typings.d.ts)
+            5.  [Mermaid](client/src/wc-mermaid/developer.md)
+            6.  [MathJax-config.mts](client/src/MathJax-config.mts)
+            7.  [typings.d.ts](client/src/typings.d.ts)
     2.  Styles
         1.  [CodeChatEditor.css](client/static/css/CodeChatEditor.css)
         2.  [CodeChatEditorProject.css](client/static/css/CodeChatEditorProject.css)

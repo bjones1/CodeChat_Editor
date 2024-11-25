@@ -132,8 +132,8 @@ export const init = async (
             image_title: true,
             // Needed to allow custom elements.
             extended_valid_elements:
-                "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale]",
+                "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale],wc-mermaid",
             custom_elements:
-                "graphviz-graph,graphviz-script-editor,graphviz-combined",
+                "graphviz-graph,graphviz-script-editor,graphviz-combined,wc-mermaid",
         }),
     );

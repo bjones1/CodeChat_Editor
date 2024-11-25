@@ -46,6 +46,7 @@ import prettier from "prettier/esm/standalone.mjs";
 import parserMarkdown from "prettier/esm/parser-markdown.mjs";
 import TurndownService from "./turndown/turndown.browser.es.js";
 import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
+import "./wc-mermaid/wc-mermaid";
 
 // #### Local
 import { CodeMirror_load, CodeMirror_save, mathJaxTypeset } from "./CodeMirror-integration.mjs";
