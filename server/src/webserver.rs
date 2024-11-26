@@ -71,6 +71,7 @@ use vscode::{
 };
 
 // ### Local
+use crate::capture::EventCapture;
 use crate::processing::{
     source_to_codechat_for_web_string, CodeChatForWeb, TranslationResultsString,
 };
@@ -275,6 +276,8 @@ macro_rules! queue_send {
 }
 
 /// ## Globals
+///
+///
 ///
 /// The IP address on which the server listens for incoming connections.
 pub const IP_ADDRESS: &str = "127.0.0.1";
@@ -1061,6 +1064,9 @@ pub async fn main(port: u16) -> std::io::Result<()> {
 }
 
 pub async fn run_server(port: u16) -> std::io::Result<()> {
+    // Connect to the Capture Database
+    let _event_capture = EventCapture::new("config.json").await?;
+
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
     let app_data = make_app_data(port);

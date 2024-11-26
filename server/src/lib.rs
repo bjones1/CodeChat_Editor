@@ -1,3 +1,4 @@
+pub mod capture;
 /// Copyright (C) 2023 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free

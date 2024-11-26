@@ -29,4 +29,6 @@ tarpaulin-report.html
 static/
 hashLocations.json
 
+config.json
+*.log
 # CodeChat Editor lexer: python. See TODO.

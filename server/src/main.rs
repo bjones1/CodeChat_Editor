@@ -93,7 +93,7 @@ impl Cli {
                     std::thread::sleep(std::time::Duration::from_secs(10));
                     exit(0);
                 }
-                webserver::configure_logger(serve_command.log.unwrap_or(LevelFilter::Warn));
+                webserver::configure_logger(serve_command.log.unwrap_or(LevelFilter::Info));
                 webserver::main(self.port).unwrap();
             }
             Commands::Start => {
