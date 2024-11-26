@@ -47,6 +47,10 @@ body.CodeChat-theme-light {
             border: 1px solid #B1B4B6;
         }
 
+        img {
+            max-width: 100%;
+        }
+
         a {
             color: #004B6B;
             text-decoration: underline;
