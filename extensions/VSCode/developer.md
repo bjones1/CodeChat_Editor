@@ -1,6 +1,3 @@
-**NOTE**: This file was copied from a previous project and needs significant
-editing.
-
 # Developer documentation
 
 ## From source
@@ -35,6 +32,7 @@ To install from source:
   - Clean out `client/static/bundled`.
   - Run `npm update`.
   - Manually copy:
+    - `client/node_modules/mathjax/` to `client/static`.
     - `client/node_modules/mathjax-modern-font/` to `client/static`.
     - `client/node_modules/graphviz-webcomponent/dist/renderer.min.js*` to
       `client/static/graphviz-webcomponent`.

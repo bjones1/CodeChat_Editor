@@ -45,7 +45,7 @@ use actix_ws::AggregatedMessage;
 use bytes::Bytes;
 use dunce::simplified;
 use futures_util::StreamExt;
-use indoc::formatdoc;
+use indoc::{formatdoc, indoc};
 use lazy_static::lazy_static;
 use log::{error, info, warn, LevelFilter};
 use log4rs;
@@ -671,7 +671,20 @@ async fn serve_file(
     let codehat_editor_css = BUNDLED_FILES_MAP
         .get(&format!("CodeChatEditor{js_test_suffix}.css"))
         .unwrap();
-    let codechat_editor_toc_js = BUNDLED_FILES_MAP.get("CodeChatEditorToc.js").unwrap();
+    let mathjax_tags = indoc!(r#"
+        <script>
+            MathJax = {
+                // See the [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
+                chtml: {
+                    fontURL: "/static/mathjax-modern-font/chtml/woff",
+                },
+                tex: {
+                    inlineMath: [['$', '$'], ['\\(', '\\)']]
+                },
+            };
+        </script>
+        <script defer src="/static/mathjax/tex-chtml.js"></script>
+        "#);
 
     // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) = if is_current_file || is_toc {
@@ -711,9 +724,7 @@ async fn serve_file(
                             <meta charset="UTF-8">
                             <meta name="viewport" content="width=device-width, initial-scale=1">
                             <title>{name} - The CodeChat Editor</title>
-                            <script type="module">
-                                import "/{codechat_editor_toc_js}"
-                            </script>
+                            {mathjax_tags}
                             <link rel="stylesheet" href="/{codehat_editor_css}">
                         </head>
                         <body class="CodeChat-theme-light">
@@ -765,6 +776,7 @@ async fn serve_file(
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1">
                     <title>{name} - The CodeChat Editor</title>
+                    {mathjax_tags}
                     <script type="module">
                         import {{ page_init }} from "/{codechat_editor_js}"
                         page_init()

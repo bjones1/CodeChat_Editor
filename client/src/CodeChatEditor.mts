@@ -49,16 +49,16 @@ import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
 import "./wc-mermaid/wc-mermaid";
 
 // #### Local
-import { CodeMirror_load, CodeMirror_save, mathJaxTypeset } from "./CodeMirror-integration.mjs";
+import {
+    CodeMirror_load,
+    CodeMirror_save,
+    mathJaxTypeset,
+} from "./CodeMirror-integration.mjs";
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 // This must be imported _after_ the previous setup import, so it's placed here,
 // instead of in the third-party category above.
 import "graphviz-webcomponent";
-import "./MathJax-config.mts";
-// Likewise, this must be imported _after_ the previous setup import, so it's placed here,
-// instead of in the third-party category above.
-import "mathjax/tex-chtml.js";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
 
 // ### CSS
@@ -194,11 +194,15 @@ const is_doc_only = () => {
     return current_metadata["mode"] === "markdown";
 };
 
+// Wait for the DOM to load before opening the file.
+const open_lp = async (all_source: CodeChatForWeb) =>
+    on_dom_content_loaded(() => _open_lp(all_source));
+
 // This function is called on page load to "load" a file. Before this point, the
 // server has already lexed the source file into code and doc blocks; this
 // function transforms the code and doc blocks into HTML and updates the current
 // web page with the results.
-export const open_lp = async (
+const _open_lp = async (
     // A data structure provided by the server, containing the source and
     // associated metadata. See [`AllSource`](#AllSource).
     all_source: CodeChatForWeb,
@@ -291,10 +295,10 @@ const save_lp = async () => {
             "CodeChat-body",
         ) as HTMLDivElement;
         window.MathJax.startup.document
-        .getMathItemsWithin(codechat_body)
-        .forEach((item: any) => {
-            item.removeFromDocument(true);
-        });
+            .getMathItemsWithin(codechat_body)
+            .forEach((item: any) => {
+                item.removeFromDocument(true);
+            });
         // To save a document only, simply get the HTML from the only Tiny MCE
         // div.
         tinymce.activeEditor!.save();

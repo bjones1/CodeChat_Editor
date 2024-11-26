@@ -20,6 +20,8 @@ CodeChat Editor. If not, see
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
   - Added support for [Mermaid](https://mermaid.js.org/).
+  - Fixed MathJax packaging.
+  - Resize large images to fit in browser.
 - v0.1.3, 2024-Nov-18:
   - Switch to using MathJax 4 beta; load MathJax in the frame it's used, per
     [MathJax issue #3309](https://github.com/mathjax/MathJax/issues/3309).

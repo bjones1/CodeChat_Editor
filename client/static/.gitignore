@@ -18,6 +18,7 @@
 #
 # # `.gitignore` -- files for Git to ignore
 bundled/
+mathjax/
 mathjax-modern-font/
 graphviz-webcomponent/
 
