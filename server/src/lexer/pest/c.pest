@@ -15,7 +15,7 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // # `c.pest` - Pest parser definition for the C language
-file      =  { SOI ~ (doc_block | code_block)* }
+file      =  { SOI ~ (doc_block | code_block)* ~ EOI }
 doc_block = _{ inline_comment | block_comment }
 
 // Per the

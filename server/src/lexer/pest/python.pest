@@ -15,21 +15,20 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // # `python.pest` - Pest parser definition for Python
-// TODO: this is mostly a copy of `c.pest`; it needs to be updated for Python.
-file      =  { SOI ~ (doc_block | code_block)* }
-doc_block = _{ inline_comment | block_comment }
+file      =  { SOI ~ (doc_block | code_block)* ~ EOI}
+doc_block = _{ inline_comment }
 
 // Per the
-// [C standard, section 6.4.3](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
-// "white-space consists of: (space, horizontal tab, new-line, vertical tab, and
+// [Python standard, section string.whitespace](https://docs.python.org/3/library/string.html#string.whitespace),
+// "white-space consists of: (space, horizontal tab, linefeed, return, vertical tab, and
 // form-feed)." Omit newlines, since the rest of this parser uses these.
 vertical_tab = { "\x0B" }
 form_feed    = { "\x0C" }
 white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
 
 // The
-// [C standard, section 6.4.9](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
-// defines inline and block comments.
+// [Python standard, PEP 8 Style guide](https://peps.python.org/pep-0008/#inline-comments),
+// defines inline comments.
 //
 // ## Inline comments
 //
@@ -43,20 +42,21 @@ inline_comment_cont = _{ PEEK[-1..-2] ~ PEEK ~ inline_comment_body }
 // Other languages support more inline comment delimiters; even if they're not
 // used, they must be defined here.
 inline_comment_delims  = _{ inline_comment_delim_0 }
-inline_comment_delim_0 =  { "//" }
+inline_comment_delim_0 =  { "#" }
 inline_comment_delim_1 =  { "unused" }
 inline_comment_delim_2 =  { "unused" }
 // This accepts an inline comment containing a space then some contents, or an
 // inline comment immediately followed by a newline.
 inline_comment_body     = { (" " ~ inline_comment_contents) | newline_eoi }
-inline_comment_contents = { logical_line ~ newline_eoi }
+inline_comment_contents = { "#" ~ NEWLINE | not_newline* ~ newline_eoi }
 // Per the
-// [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
-// if a line of code ends with a backslash, it continues on the next line. This
-// is a logical line; treat it as a single line.
-logical_line = _{ ("\\" ~ NEWLINE | not_newline)* }
-newline_eoi  = _{ NEWLINE | EOI }
-not_newline  = _{ !NEWLINE ~ ANY }
+// [Python Standard, section 2.1.1](https://docs.python.org/3/reference/lexical_analysis.html#logical-lines),
+// The end of a logical line is represented by the token NEWLINE.
+// A line ending in a backslash cannot carry a comment.
+// A backslash does not continue a comment.
+// A backslash does not continue a token except for string literals.
+newline_eoi = _{ NEWLINE | EOI }
+not_newline = _{ !NEWLINE ~ ANY }
 
 // ## Block comments
 //
@@ -67,10 +67,10 @@ block_comment = {
 // Support multiple opening delimiters for other languages; assume the closing
 // delimiter is always the same.
 block_comment_opening_delims  = _{ block_comment_opening_delim_0 }
-block_comment_opening_delim_0 =  { "/*" }
+block_comment_opening_delim_0 =  { "unused" }
 block_comment_opening_delim_1 =  { "unused" }
 block_comment_opening_delim_2 =  { "unused" }
-block_comment_closing_delim   = _{ "*/" }
+block_comment_closing_delim   = _{ "unused" }
 block_comment_pre             =  { " " | newline_eoi }
 // TODO: rewrite for languages that supported nested block comments.
 //
@@ -82,7 +82,16 @@ block_comment_ending = { newline_eoi }
 
 // ## Code blocks
 code_block = { code_line+ }
-code_line = _{ (!doc_block ~ logical_line ~ NEWLINE) | (!doc_block ~ not_newline+ ~ EOI) }
-
+multi_line_string_delim_0   = _{"'''" | "\"\"\""}
+multi_line_string_contents  = _{!(multi_line_string_delim_0) ~ ANY}
+// If there is text or characters within the triple quoted string, it will be regarded as a code block.
+multi_line_string           =  _{ (multi_line_string_delim_0 ~ (multi_line_string_contents)* ~ multi_line_string_delim_0) }
+// Account for the continuation character of concatenating strings on a new line
+continuation_character      =  _{ "\\" ~ NEWLINE }
+single_double_quoted_string_delim_0   = _{"'" | "\""}
+single_double_quoted_string_contents  =  _{!continuation_character ~ !single_double_quoted_string_delim_0 ~ ANY}
+single_double_quoted_string           = _{single_double_quoted_string_delim_0 ~ (single_double_quoted_string_contents)* ~ (NEWLINE | single_double_quoted_string)}
+// ## Code line
+code_line                   = _{ ((!doc_block ~ multi_line_string | single_double_quoted_string | not_newline)+ ~ NEWLINE) | !(inline_comment_delim_0) ~ ("'''" | "\"\"\"") | (!doc_block ~ not_newline+ ~ EOI) }
 // ## Dedenter
 dedenter = { "not used" }
