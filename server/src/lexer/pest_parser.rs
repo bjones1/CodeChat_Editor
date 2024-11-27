@@ -43,9 +43,11 @@ macro_rules! make_parse_to_code_doc_blocks {
             // CodeMirror indexes work.
             let normalized_input =
                 &String::from_iter(normalize_line_endings::normalized(input.chars()));
-            let pairs = <$parser>::parse(Rule::file, normalized_input)
-                // The parser should never produce a syntax error.
-                .unwrap()
+            let pairs = match <$parser>::parse(Rule::file, normalized_input) {
+                Ok(pairs) => pairs,
+                Err(e) =>
+                    panic!("Parse error: {e:#?}")
+            }
                 // The first (and only) element is the `file` token.
                 .next()
                 .unwrap()
@@ -53,14 +55,16 @@ macro_rules! make_parse_to_code_doc_blocks {
                 // tokens).
                 .into_inner();
             //println!("{:#?}", pairs);
-            // Transforms these tokens into code and doc blocks.
-            pairs
+            // The last token is the `EOI` token.
+            assert_eq!(pairs.clone().last().unwrap().as_rule(), Rule::EOI);
+            // Transform these tokens into code and doc blocks; ignore the last token (EOI).
+            pairs.rev().skip(1).rev()
                 .map(|block| match block.as_rule() {
                     Rule::inline_comment => {
                         // Gather all tokens in the inline comment.
                         let mut inline_comment = block.into_inner();
                         let whitespace = inline_comment.next().unwrap().as_str();
-                        let inline_comment_delim = inline_comment.next().unwrap().as_rule();
+                        let inline_comment_delim = inline_comment.next().unwrap();
                         // Combine the text of all the inline comments.
                         let comment = &mut inline_comment.fold(String::new(), |mut acc, e| {
                             let s = e.as_str();
@@ -83,19 +87,19 @@ macro_rules! make_parse_to_code_doc_blocks {
                         });
 
                         // Determine which opening delimiter was used.
-                        let _delimiter_index = match inline_comment_delim {
+                        let _delimiter_index = match inline_comment_delim.as_rule() {
                             Rule::inline_comment_delim_0 => 0,
                             Rule::inline_comment_delim_1 => 1,
                             Rule::inline_comment_delim_2 => 2,
                             _ => unreachable!(),
                         };
-                        //println!("Delimiter: {delimiter_index}");
+                        //println!("Delimiter: {_delimiter_index}");
 
                         //println!("Inline comment: {whitespace}{comment:#?}");
                         let lines = comment.lines().count();
                         $crate::lexer::CodeDocBlock::DocBlock($crate::lexer::DocBlock {
                             indent: whitespace.to_string(),
-                            delimiter: "//".to_string(),
+                            delimiter: inline_comment_delim.as_str().to_string(),
                             contents: comment.to_string(),
                             lines,
                         })
@@ -276,15 +280,119 @@ mod test {
 
     #[test]
     fn test_pest_python_1() {
+        // A newline code block.
+        assert_eq!(
+            python::parse_to_code_doc_blocks("\n"),
+            vec![
+                CodeDocBlock::CodeBlock("\n".to_string()),
+            ],
+        );
+
+        // Test tri-quoted strings separated by a doc block.
         assert_eq!(
             python::parse_to_code_doc_blocks(indoc!(
                 r#"
-                code("""not
+                code("""is""")
+                # A comment.
+                code("""is""")
+                "#
+            )),
+            vec![
+                CodeDocBlock::CodeBlock(
+                    indoc!(
+                        r#"
+                        code("""is""")
+                        "#
+                    )
+                    .to_string()
+                ),
+                CodeDocBlock::DocBlock(DocBlock {
+                    indent: "".to_string(),
+                    delimiter: "#".to_string(),
+                    contents: "A comment.".to_string(),
+                    lines: 1,
+                }),
+                CodeDocBlock::CodeBlock(
+                    indoc!(
+                        r#"
+                        code("""is""")
+                        "#
+                    )
+                    .to_string()
+                ),
+            ],
+        );
+
+        // Test a multi-line string with comment-line contents. Include an escaped quote.
+        assert_eq!(
+            python::parse_to_code_doc_blocks(indoc!(
+                r#"
+                code("""not\"""
                 # a comment.""")
                 # A comment."#
             )),
             vec![
-                CodeDocBlock::CodeBlock(r#"code("""not\na comment.""")\n"#.to_string()),
+                CodeDocBlock::CodeBlock(
+                    indoc!(
+                        r#"
+                        code("""not\"""
+                        # a comment.""")
+                        "#
+                    )
+                    .to_string()
+                ),
+                CodeDocBlock::DocBlock(DocBlock {
+                    indent: "".to_string(),
+                    delimiter: "#".to_string(),
+                    contents: "A comment.".to_string(),
+                    lines: 1,
+                })
+            ],
+        );
+
+        // Test a single-line string with comment-line contents.
+        assert_eq!(
+            python::parse_to_code_doc_blocks(indoc!(
+                r#"
+                code("not\"\
+                # a comment.")
+                # A comment."#
+            )),
+            vec![
+                CodeDocBlock::CodeBlock(
+                    indoc!(
+                        r#"
+                        code("not\"\
+                        # a comment.")
+                        "#
+                    )
+                    .to_string()
+                ),
+                CodeDocBlock::DocBlock(DocBlock {
+                    indent: "".to_string(),
+                    delimiter: "#".to_string(),
+                    contents: "A comment.".to_string(),
+                    lines: 1,
+                })
+            ],
+        );
+
+        // Test an improperly terminated string.
+        assert_eq!(
+            python::parse_to_code_doc_blocks(indoc!(
+                r#"
+                code("is
+                # A comment."#
+            )),
+            vec![
+                CodeDocBlock::CodeBlock(
+                    indoc!(
+                        r#"
+                        code("is
+                        "#
+                    )
+                    .to_string()
+                ),
                 CodeDocBlock::DocBlock(DocBlock {
                     indent: "".to_string(),
                     delimiter: "#".to_string(),

@@ -1,22 +1,21 @@
 // Copyright (C) 2023 Bryan A. Jones.
-// 
+//
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
 // software: you can redistribute it and/or modify it under the terms of the GNU
 // General Public License as published by the Free Software Foundation, either
 // version 3 of the License, or (at your option) any later version.
-// 
+//
 // The CodeChat Editor is distributed in the hope that it will be useful, but
 // WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
 // FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
 // details.
-// 
+//
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-// 
+//
 // # `python.pest` - Pest parser definition for Python
-// TODO: this is mostly a copy of `c.pest`; it needs to be updated for Python.
-file      =  { SOI ~ (doc_block | code_block)* }
+file      =  { SOI ~ (doc_block | code_block)* ~ EOI}
 doc_block = _{ inline_comment }
 
 // Per the
@@ -30,9 +29,9 @@ white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
 // The
 // [Python standard, PEP 8 Style guide](https://peps.python.org/pep-0008/#inline-comments),
 // defines inline comments.
-// 
+//
 // ## Inline comments
-// 
+//
 // Use this approach to match a group of inline comments with the same
 // whitespace indentation.
 inline_comment      =  { inline_comment_init ~ inline_comment_cont* ~ DROP ~ DROP }
@@ -60,7 +59,7 @@ newline_eoi = _{ NEWLINE | EOI }
 not_newline = _{ !NEWLINE ~ ANY }
 
 // ## Block comments
-// 
+//
 // Block comments never combine.
 block_comment = {
     white_space ~ block_comment_opening_delims ~ block_comment_pre ~ contents ~ " "? ~ "*/" ~ white_space ~ block_comment_ending
@@ -74,7 +73,7 @@ block_comment_opening_delim_2 =  { "unused" }
 block_comment_closing_delim   = _{ "unused" }
 block_comment_pre             =  { " " | newline_eoi }
 // TODO: rewrite for languages that supported nested block comments.
-// 
+//
 // If there's a space immediately before the block closing delimiter, don't
 // capture it, so that this space can be discarded in the `block_comment` token.
 contents = { (!(" "? ~ block_comment_closing_delim) ~ ANY)* }

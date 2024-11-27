@@ -294,7 +294,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         make_language_lexer(
             "json5",
             &["json", "json5"],
-            // [Comments & data structure for json5](https://ecma-international.org/wp-content/uploads/ECMA-262_5.1_edition_june_2011.pdf?_gl=1*1jmj021*_ga*MTY3MDAxNTcxMi4xNzMwMjEyNDY2*_ga_TDCK4DWEPP*MTczMDIxMjQ2Ni4xLjEuMTczMDIxMjgwNS4wLjAuMA..) 
+            // [Comments & data structure for json5](https://ecma-international.org/wp-content/uploads/ECMA-262_5.1_edition_june_2011.pdf?_gl=1*1jmj021*_ga*MTY3MDAxNTcxMi4xNzMwMjEyNDY2*_ga_TDCK4DWEPP*MTczMDIxMjQ2Ni4xLjEuMTczMDIxMjgwNS4wLjAuMA..)
             /*  [json parser pest](https://github.com/pest-parser/pest-ide-tools/blob/6344e2a0fdb4af42dfdc106980fe730b818204c5/vscode/tests/json.pest#L4)
                 json = { SOI ~ (object | array) ~ EOI }
 
@@ -376,7 +376,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
-            None,
+            Some(pest_parser::python::parse_to_code_doc_blocks),
         ),
         // ### [Rust](https://doc.rust-lang.org/reference/tokens.html#literals)
         make_language_lexer(
