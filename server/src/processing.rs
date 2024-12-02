@@ -625,7 +625,7 @@ fn markdown_to_html(markdown: &str) -> String {
 // - Upsert a Hyperlink.
 // - Upsert a file.
 // - Remove a file.
-/**
+/*
 /// There are two types of files that can serve as an anchor: these are file
 /// anchor targets.
 enum FileAnchor {

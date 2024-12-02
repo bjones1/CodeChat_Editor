@@ -1,7 +1,7 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
-// This file is part of the CodeChat Editor. The CodeChat Editor is free software: 
-// you can redistribute it and/or modify it under the terms of the GNU General Public 
+// This file is part of the CodeChat Editor. The CodeChat Editor is free software:
+// you can redistribute it and/or modify it under the terms of the GNU General Public
 // License as published by the Free Software Foundation, either version 3 of the License,
 // or (at your option) any later version.
 //
@@ -91,7 +91,7 @@ struct ServeCommand {
 // The following function implements the 'Install' command
 fn run_npm_update() -> Result<(), Box<dyn std::error::Error>> {
     println!("Installing NPM dependencies...");
-    
+
     // Runs the 'npm update' command using cmd_lib in the client directory
     // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
     run_cmd! {

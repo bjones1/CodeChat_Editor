@@ -671,7 +671,8 @@ async fn serve_file(
     let codehat_editor_css = BUNDLED_FILES_MAP
         .get(&format!("CodeChatEditor{js_test_suffix}.css"))
         .unwrap();
-    let mathjax_tags = indoc!(r#"
+    let mathjax_tags = indoc!(
+        r#"
         <script>
             MathJax = {
                 // See the [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
@@ -684,7 +685,8 @@ async fn serve_file(
             };
         </script>
         <script defer src="/static/mathjax/tex-chtml.js"></script>
-        "#);
+        "#
+    );
 
     // See if this is a CodeChat Editor file.
     let (translation_results_string, path_to_toc) = if is_current_file || is_toc {

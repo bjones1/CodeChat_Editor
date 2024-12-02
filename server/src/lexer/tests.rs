@@ -24,7 +24,7 @@ use crate::test_utils::stringit;
 //
 // Provide a compact way to create a `CodeDocBlock`.
 fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {
-    return CodeDocBlock::DocBlock(DocBlock {
+    CodeDocBlock::DocBlock(DocBlock {
         indent: indent.to_string(),
         delimiter: delimiter.to_string(),
         contents: contents.to_string(),
@@ -34,7 +34,7 @@ fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBloc
             } else {
                 1
             }),
-    });
+    })
 }
 
 fn build_code_block(contents: &str) -> CodeDocBlock {
