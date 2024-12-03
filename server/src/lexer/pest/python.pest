@@ -80,14 +80,19 @@ block_comment_pre             =  { "unused" }
 
 // ## Code blocks
 
-multiline_string = { "'''" ~ (!"'''" ~ ANY)* ~ "'''" }
+multiline_string = { ("'''" ~ (!"'''" ~ ANY)* ~ "'''") | ("\"\"\"" ~ (!"\"\"\"" ~ ANY)* ~ "\"\"\"") }
+
+
+multiline_string_backslash = { 
+"\"" ~ (("\\" ~ ANY) | (!( "\"" | NEWLINE ) ~ ANY))+ ~ "\"" 
+}
 
 code_block = {code_line+}
 
 
 code_line = { 
-  (!doc_block  ~ (multiline_string | not_newline)+ ~ (NEWLINE | EOI)) 
-  | multiline_string 
+  (!doc_block  ~ ( multiline_string_backslash | multiline_string | not_newline)+ ~ (NEWLINE | EOI)) 
+  
 }
 // ## Dedenter
 dedenter = { "not used" }
