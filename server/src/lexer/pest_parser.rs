@@ -54,27 +54,35 @@ macro_rules! make_parse_to_code_doc_blocks {
                 // Return the contents of this token (code and doc block
                 // tokens).
                 .into_inner();
+            // For debugging, print out the parse tree.
             //println!("{:#?}", pairs);
             // The last token is the `EOI` token.
             assert_eq!(pairs.clone().last().unwrap().as_rule(), Rule::EOI);
-            // Transform these tokens into code and doc blocks; ignore the last token (EOI).
+            // Transform these tokens into code and doc blocks; ignore the last
+            // token (EOI).
             pairs.rev().skip(1).rev()
                 .map(|block| match block.as_rule() {
                     Rule::inline_comment => {
                         // Gather all tokens in the inline comment.
                         let mut inline_comment = block.into_inner();
-                        let whitespace = inline_comment.next().unwrap().as_str();
+                        let whitespace_pair = inline_comment.next().unwrap();
+                        assert_eq!(whitespace_pair.as_rule(), Rule::white_space);
+                        let whitespace = whitespace_pair.as_str();
                         let inline_comment_delim = inline_comment.next().unwrap();
                         // Combine the text of all the inline comments.
-                        let comment = &mut inline_comment.fold(String::new(), |mut acc, e| {
-                            let s = e.as_str();
-                            let inner = &mut e.into_inner();
+                        let comment = &mut inline_comment.fold(String::new(), |mut acc, inline_comment_body| {
+                            assert_eq!(inline_comment_body.as_rule(), Rule::inline_comment_body);
+                            let s = inline_comment_body.as_str();
+                            let inner = &mut inline_comment_body.into_inner();
+                            // See the notes on inline comments in
+                            // [c.pest](pest/c.pest) for the expected structure
+                            // of the `inline_comment_body`.
                             let contents = if let Some(inline_comment_contents) = inner.next() {
                                 // For comments which contains contents, include
                                 // that.
                                 inline_comment_contents.as_str()
                             } else {
-                                // For comment which are just a newline, include
+                                // For comments which are just a newline, include
                                 // that.
                                 s
                             };
@@ -107,14 +115,28 @@ macro_rules! make_parse_to_code_doc_blocks {
                     Rule::block_comment => {
                         // Gather all tokens in the block comment.
                         let mut block_comment = block.into_inner();
-                        let pre_whitespace = block_comment.next().unwrap().as_str();
+                        let pre_whitespace_pair = block_comment.next().unwrap();
+                        assert_eq!(pre_whitespace_pair.as_rule(), Rule::white_space);
+                        let pre_whitespace = pre_whitespace_pair.as_str();
                         let block_comment_opening_delim = block_comment.next().unwrap().as_rule();
-                        let block_comment_pre = block_comment.next().unwrap().as_str();
-                        let comment = block_comment.next().unwrap().as_str();
-                        let optional_space = block_comment.next().unwrap().as_str();
-                        let post_whitespace = block_comment.next().unwrap().as_str();
-                        // If this is an EOI, then its string is empty -- which is exactly what we want. Otherwise, use the newline provided by the `block_comment_ending` token.
-                        let block_comment_ending = block_comment.next().unwrap().as_str();
+                        let block_comment_pre_pair = block_comment.next().unwrap();
+                        assert_eq!(block_comment_pre_pair.as_rule(), Rule::block_comment_pre);
+                        let block_comment_pre = block_comment_pre_pair.as_str();
+                        let comment_pair = block_comment.next().unwrap();
+                        assert_eq!(comment_pair.as_rule(), Rule::contents);
+                        let comment = comment_pair.as_str();
+                        let optional_space_pair = block_comment.next().unwrap();
+                        assert_eq!(optional_space_pair.as_rule(), Rule::optional_space);
+                        let optional_space = optional_space_pair.as_str();
+                        let post_whitespace_pair = block_comment.next().unwrap();
+                        assert_eq!(post_whitespace_pair.as_rule(), Rule::white_space);
+                        let post_whitespace = post_whitespace_pair.as_str();
+                        // If this is an EOI, then its string is empty -- which
+                        // is exactly what we want. Otherwise, use the newline
+                        // provided by the `block_comment_ending` token.
+                        let block_comment_ending_pair = block_comment.next().unwrap();
+                        assert_eq!(block_comment_ending_pair.as_rule(), Rule::block_comment_ending);
+                        let block_comment_ending = block_comment_ending_pair.as_str();
                         assert!(block_comment.next().is_none());
 
                         // Determine which opening delimiter was used.
@@ -239,6 +261,20 @@ mod test {
         assert_eq!(
             c::parse_to_code_doc_blocks(indoc!(
                 r#"
+                //"#
+            )),
+            vec![
+                CodeDocBlock::DocBlock(DocBlock {
+                    indent: "".to_string(),
+                    delimiter: "//".to_string(),
+                    contents: "".to_string(),
+                    lines: 0,
+                })
+            ],
+        );
+        assert_eq!(
+            c::parse_to_code_doc_blocks(indoc!(
+                r#"
                 code;
                 /* Testing
                    1,
@@ -283,9 +319,7 @@ mod test {
         // A newline code block.
         assert_eq!(
             python::parse_to_code_doc_blocks("\n"),
-            vec![
-                CodeDocBlock::CodeBlock("\n".to_string()),
-            ],
+            vec![CodeDocBlock::CodeBlock("\n".to_string()),],
         );
 
         // Test tri-quoted strings separated by a doc block.
@@ -309,7 +343,7 @@ mod test {
                 CodeDocBlock::DocBlock(DocBlock {
                     indent: "".to_string(),
                     delimiter: "#".to_string(),
-                    contents: "A comment.".to_string(),
+                    contents: "A comment.\n".to_string(),
                     lines: 1,
                 }),
                 CodeDocBlock::CodeBlock(
@@ -323,7 +357,8 @@ mod test {
             ],
         );
 
-        // Test a multi-line string with comment-line contents. Include an escaped quote.
+        // Test a multi-line string with comment-line contents. Include an
+        // escaped quote.
         assert_eq!(
             python::parse_to_code_doc_blocks(indoc!(
                 r#"
