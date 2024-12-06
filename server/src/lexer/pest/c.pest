@@ -65,7 +65,9 @@ newline_eoi  = _{ NEWLINE | EOI }
 // Per the
 // [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
 // if a line of code ends with a backslash, it continues on the next line. This
-// is a logical line; treat it as a single line. Therefore, consider a backslash-newline (or anything that's not a newline) a part of the current logical line.
+// is a logical line; treat it as a single line. Therefore, consider a
+// backslash-newline (or anything that's not a newline) a part of the current
+// logical line.
 logical_line_char = _{ ("\\" ~ NEWLINE) | (!NEWLINE ~ ANY) }
 
 // ## Block comments
@@ -84,8 +86,6 @@ block_comment_opening_delim_1 =  { "unused" }
 block_comment_opening_delim_2 =  { "unused" }
 block_comment_closing_delim   = _{ "*/" }
 block_comment_pre             =  { " " | NEWLINE }
-// TODO: rewrite for languages that supported nested block comments.
-//
 // If there's a space immediately before the block closing delimiter, don't
 // capture it, so that this space can be discarded in the `block_comment` token.
 contents = { (!(optional_space ~ block_comment_closing_delim) ~ ANY)* }
@@ -171,8 +171,8 @@ dedenter = {
 }
 // Provide as input to this the amount of whitespace preceding either a " " or a
 // "\* ".
-indent           = _{ PUSH(" "*) ~ NEWLINE }
-valid_first_line =  { not_newline* ~ NEWLINE }
+indent           =  _{ PUSH(" "*) ~ NEWLINE }
+valid_first_line =   { not_newline* ~ NEWLINE }
 valid_space_line =  _{ (space_dedent ~ dedented_line) | last_line | (white_space ~ not_newline_eoi ~ vis_newline) }
 valid_star_line  = _{ (star_dedent ~ dedented_line) | last_line | (PEEK ~ " *" ~ not_newline_eoi ~ vis_newline) }
 space_dedent     = _{ PEEK ~ "   " }

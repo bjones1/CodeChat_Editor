@@ -72,21 +72,22 @@ code_block     =  { code_line+ }
 code_line      = _{ (!doc_block ~ code_line_char* ~ NEWLINE) | (!doc_block ~ code_line_char+ ~ EOI) }
 code_line_char = _{ long_string | short_string | not_newline }
 long_string    = _{
-    // The opening string delimiter
+    // The opening string delimiter.
     ( PUSH("'''") | PUSH("\"\"\"") ) ~
-    // Any escaped character, or anything that's not the closing delimiter, is part of the string.
+    // Any escaped character, or anything that's not the closing delimiter, is
+    // part of the string.
     ( ("\\" | !PEEK) ~ ANY)* ~
     // The closing string delimiter or EOI (for unterminated strings).
     (POP | (EOI ~ DROP) )
 }
 short_string = _{
-    // The opening string delimiter
+    // The opening string delimiter.
     ( PUSH("'") | PUSH("\"") ) ~
-    // Any escaped character, or anything that's not the closing delimiter, is part of the string.
-    // An unescaped newline is a closing delimiter.
+    // Any escaped character, or anything that's not the closing delimiter, is
+    // part of the string. An unescaped newline is a closing delimiter.
     ( ("\\" | !(PEEK | NEWLINE)) ~ ANY)* ~
-    // The closing string delimiter or EOI (for unterminated strings). Don't consume a newline here -- it will instead be
-    // consumed by the `code_line`.
+    // The closing string delimiter or EOI (for unterminated strings). Don't
+    // consume a newline here -- it will instead be consumed by the `code_line`.
     (POP | ((EOI | &NEWLINE) ~ DROP) )
 }
 
