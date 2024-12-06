@@ -15,28 +15,16 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // # `python.pest` - Pest parser definition for Python
-file      =  { SOI ~ (doc_block | code_block)* ~ EOI}
 doc_block = _{ inline_comment }
-// Indicates this token isn't used by the parser.
-unused = { "unused" }
 
 // Per the
 // [Python language reference](https://docs.python.org/3/reference/lexical_analysis.html#indentation),
 // leading whitespace used to determine the indentation level consists of spaces
 // and tabs.
-white_space  = { (" " | "\t")* }
+white_space = { (" " | "\t")* }
 
 // ## Inline comments
 //
-// Use this approach to match a group of inline comments with the same
-// whitespace indentation.
-inline_comment      =  { inline_comment_init ~ inline_comment_cont* ~ DROP ~ DROP }
-inline_comment_init = _{ PUSH(white_space) ~ PUSH(inline_comment_delims) ~ inline_comment_body }
-// Match on the same whitespace (second from the top of stack) and then the same
-// comment delimiter (at the top of stack) for continued comments.
-inline_comment_cont = _{ PEEK[-2..-1] ~ PEEK ~ inline_comment_body }
-// Other languages support more inline comment delimiters; even if they're not
-// used, they must be defined here.
 inline_comment_delims  = _{ inline_comment_delim_0 }
 inline_comment_delim_0 =  { "#" }
 inline_comment_delim_1 =  { unused }
@@ -44,34 +32,26 @@ inline_comment_delim_2 =  { unused }
 // This accepts an inline comment containing a space then some contents, or an
 // inline comment immediately.
 inline_comment_body = { (" " ~ comment_line) | newline_eoi }
-newline_eoi  = _{ NEWLINE | EOI }
 // Per the
 // [Python language reference, section 2.1.3](https://docs.python.org/3/reference/lexical_analysis.html#comments),
 // comments end at the end of a physical line. There's no C-like backslash that
 // can join physical lines into logical lines for comments.
-comment_line =  { not_newline* ~ newline_eoi }
-not_newline  = _{ !NEWLINE ~ ANY }
+comment_line = { not_newline* ~ newline_eoi }
 
 // ## Block comments
 //
 // Other languages support block comments; even though Python doesn't, the
 // following must be defined. Block comments never combine.
-block_comment                 = { unused }
+block_comment_opening_delims  = { unused }
 block_comment_opening_delim_0 = { unused }
 block_comment_opening_delim_1 = { unused }
 block_comment_opening_delim_2 = { unused }
 block_comment_closing_delim   = { unused }
-block_comment_pre             = { unused }
-contents                      = { unused }
-optional_space                = { unused }
-block_comment_ending          = { unused }
 
 
 // ## Code blocks
-code_block     =  { code_line+ }
-code_line      = _{ (!doc_block ~ code_line_char* ~ NEWLINE) | (!doc_block ~ code_line_char+ ~ EOI) }
-code_line_char = _{ long_string | short_string | not_newline }
-long_string    = _{
+code_line_token = _{ long_string | short_string | not_newline }
+long_string     = _{
     // The opening string delimiter.
     ( PUSH("'''") | PUSH("\"\"\"") ) ~
     // Any escaped character, or anything that's not the closing delimiter, is

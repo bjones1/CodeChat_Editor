@@ -231,6 +231,7 @@ pub mod c {
     use pest_derive::Parser;
 
     #[derive(Parser)]
+    #[grammar = "lexer/pest/shared.pest"]
     #[grammar = "lexer/pest/c.pest"]
     struct ThisParser;
     make_parse_to_code_doc_blocks!(ThisParser);
@@ -242,6 +243,7 @@ pub mod python {
     use pest_derive::Parser;
 
     #[derive(Parser)]
+    #[grammar = "lexer/pest/shared.pest"]
     #[grammar = "lexer/pest/python.pest"]
     struct ThisParser;
     make_parse_to_code_doc_blocks!(ThisParser);
