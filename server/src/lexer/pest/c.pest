@@ -34,41 +34,25 @@ white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
 // used, they must be defined here.
 inline_comment_delims  = _{ inline_comment_delim_0 }
 inline_comment_delim_0 =  { "//" }
-inline_comment_delim_1 =  { "unused" }
-inline_comment_delim_2 =  { "unused" }
-// This accepts an inline comment containing a space then some contents, or an
-// inline comment immediately followed by a newline or EOI.
-inline_comment_body     = { (" " ~ logical_line) | newline_eoi }
-// Don't factor this into the `inline_comment_body` -- this approach causes it
-// to be output as a pair without the preceding space. For example,
-//
-// ```
-// // a
-// //
-// ```
-//
-// becomes:
-//
-// - inline_comment_body > logical_line: `a\n`
-// - inline_comment_body: `\n`
-logical_line = { logical_line_char* ~ newline_eoi }
+inline_comment_delim_1 =  { unused }
+inline_comment_delim_2 =  { unused }
 // Per the
 // [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
 // if a line of code ends with a backslash, it continues on the next line. This
 // is a logical line; treat it as a single line. Therefore, consider a
 // backslash-newline (or anything that's not a newline) a part of the current
 // logical line.
-logical_line_char = _{ ("\\" ~ NEWLINE) | (!NEWLINE ~ ANY) }
+logical_line_char   = _{ ("\\" ~ NEWLINE) | not_newline }
+inline_comment_char = _{ logical_line_char }
 
 // ## Block comments
-//
-// Support multiple opening delimiters for other languages; assume the closing
-// delimiter is always the same.
-block_comment_opening_delims  = _{ block_comment_opening_delim_0 }
+block_comment                 =  { block_comment_0 }
 block_comment_opening_delim_0 =  { "/*" }
-block_comment_opening_delim_1 =  { "unused" }
-block_comment_opening_delim_2 =  { "unused" }
-block_comment_closing_delim   = _{ "*/" }
+block_comment_opening_delim_1 =  { unused }
+block_comment_opening_delim_2 =  { unused }
+block_comment_closing_delim_0 =  { "*/" }
+block_comment_closing_delim_1 =  { unused }
+block_comment_closing_delim_2 =  { unused }
 
 // ## Code blocks
 code_line_token = _{ logical_line_char }

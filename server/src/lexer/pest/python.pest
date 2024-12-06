@@ -29,25 +29,23 @@ inline_comment_delims  = _{ inline_comment_delim_0 }
 inline_comment_delim_0 =  { "#" }
 inline_comment_delim_1 =  { unused }
 inline_comment_delim_2 =  { unused }
-// This accepts an inline comment containing a space then some contents, or an
-// inline comment immediately.
-inline_comment_body = { (" " ~ comment_line) | newline_eoi }
 // Per the
 // [Python language reference, section 2.1.3](https://docs.python.org/3/reference/lexical_analysis.html#comments),
 // comments end at the end of a physical line. There's no C-like backslash that
 // can join physical lines into logical lines for comments.
-comment_line = { not_newline* ~ newline_eoi }
+inline_comment_char = { not_newline }
 
 // ## Block comments
 //
 // Other languages support block comments; even though Python doesn't, the
 // following must be defined. Block comments never combine.
-block_comment_opening_delims  = { unused }
+block_comment                 = { unused }
 block_comment_opening_delim_0 = { unused }
 block_comment_opening_delim_1 = { unused }
 block_comment_opening_delim_2 = { unused }
-block_comment_closing_delim   = { unused }
-
+block_comment_closing_delim_0 = { unused }
+block_comment_closing_delim_1 = { unused }
+block_comment_closing_delim_2 = { unused }
 
 // ## Code blocks
 code_line_token = _{ long_string | short_string | not_newline }

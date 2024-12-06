@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// # `pest_parser.rs` -- Lex source code into code and doc blocks
+// # `pest_parser.rs` -- Lex source code into code and doc blocks
 // ## Imports
 //
 // ### Standard library
@@ -27,12 +27,12 @@
 // ### Local
 //
 // None.
-
-/// # Parser generator
-// This macro generates a parser function that converts the provided string into
-// a series of code and doc blocks. I'd prefer to use traits, but don't see a
-// way to pass the `Rule` types as a usable. (Using `RuleType` means we can't
-// access `Rule::file`, etc.)
+//
+/// ## Parser generator
+/// This macro generates a parser function that converts the provided string into
+/// a series of code and doc blocks. I'd prefer to use traits, but don't see a
+/// way to pass the `Rule` types as a usable. (Using `RuleType` means we can't
+/// access `Rule::file`, etc.)
 #[macro_export]
 macro_rules! make_parse_to_code_doc_blocks {
     ($parser: ty) => {
@@ -71,7 +71,7 @@ macro_rules! make_parse_to_code_doc_blocks {
                         let inline_comment_delim = inline_comment.next().unwrap();
                         // Combine the text of all the inline comments.
                         let comment = &mut inline_comment.fold(String::new(), |mut acc, inline_comment_body| {
-                            assert_eq!(inline_comment_body.as_rule(), Rule::inline_comment_body);
+                            assert_eq!(inline_comment_body.as_rule(), Rule::inline_comment_line);
                             let s = inline_comment_body.as_str();
                             let inner = &mut inline_comment_body.into_inner();
                             // See the notes on inline comments in
@@ -123,11 +123,21 @@ macro_rules! make_parse_to_code_doc_blocks {
                         assert_eq!(block_comment_pre_pair.as_rule(), Rule::block_comment_pre);
                         let block_comment_pre = block_comment_pre_pair.as_str();
                         let comment_pair = block_comment.next().unwrap();
-                        assert_eq!(comment_pair.as_rule(), Rule::contents);
+                        assert!(
+                            comment_pair.as_rule() == Rule::contents_0 ||
+                            comment_pair.as_rule() == Rule::contents_1 ||
+                            comment_pair.as_rule() == Rule::contents_2
+                        );
                         let comment = comment_pair.as_str();
                         let optional_space_pair = block_comment.next().unwrap();
                         assert_eq!(optional_space_pair.as_rule(), Rule::optional_space);
                         let optional_space = optional_space_pair.as_str();
+                        let block_comment_closing_delim_rule = block_comment.next().unwrap().as_rule();
+                        assert!(
+                            block_comment_closing_delim_rule == Rule::block_comment_closing_delim_0 ||
+                            block_comment_closing_delim_rule == Rule::block_comment_closing_delim_1 ||
+                            block_comment_closing_delim_rule == Rule::block_comment_closing_delim_2
+                        );
                         let post_whitespace_pair = block_comment.next().unwrap();
                         assert_eq!(post_whitespace_pair.as_rule(), Rule::white_space);
                         let post_whitespace = post_whitespace_pair.as_str();
@@ -222,7 +232,7 @@ macro_rules! make_parse_block_comment {
     };
 }
 
-// # Parsers
+// ## Parsers
 //
 // Each parser is kept in a separate module to avoid name conflicts, since Pest
 // generates a `Rule` enum for each grammar.
@@ -265,14 +275,12 @@ mod test {
                 r#"
                 //"#
             )),
-            vec![
-                CodeDocBlock::DocBlock(DocBlock {
-                    indent: "".to_string(),
-                    delimiter: "//".to_string(),
-                    contents: "".to_string(),
-                    lines: 0,
-                })
-            ],
+            vec![CodeDocBlock::DocBlock(DocBlock {
+                indent: "".to_string(),
+                delimiter: "//".to_string(),
+                contents: "".to_string(),
+                lines: 0,
+            })],
         );
         assert_eq!(
             c::parse_to_code_doc_blocks(indoc!(
