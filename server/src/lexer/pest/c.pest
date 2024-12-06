@@ -30,8 +30,6 @@ white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
 // defines inline and block comments.
 //
 // ## Inline comments
-// Other languages support more inline comment delimiters; even if they're not
-// used, they must be defined here.
 inline_comment_delims  = _{ inline_comment_delim_0 }
 inline_comment_delim_0 =  { "//" }
 inline_comment_delim_1 =  { unused }
