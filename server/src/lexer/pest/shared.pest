@@ -1,0 +1,81 @@
+// Copyright (C) 2023 Bryan A. Jones.
+//
+// This file is part of the CodeChat Editor. The CodeChat Editor is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// The CodeChat Editor is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along with
+// the CodeChat Editor. If not, see
+// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+//
+// # `shared.pest` - Pest parser definition shared by all languages
+file = { SOI ~ (doc_block | code_block)* ~ EOI }
+
+// ## Inline comments
+//
+// Use this approach to match a group of inline comments with the same
+// whitespace indentation.
+inline_comment      =  { inline_comment_init ~ inline_comment_cont* ~ DROP ~ DROP }
+inline_comment_init = _{ PUSH(white_space) ~ PUSH(inline_comment_delims) ~ inline_comment_line }
+// Match on the same whitespace (second from the top of stack) and then the same
+// comment delimiter (at the top of stack) for continued comments.
+inline_comment_cont = _{ PEEK[-2..-1] ~ PEEK ~ inline_comment_line }
+// This accepts an inline comment containing a space then some contents, or an
+// inline comment immediately followed by a newline or EOI.
+inline_comment_line = { (" " ~ inline_comment_body) | newline_eoi }
+// Don't factor this into the `inline_comment_line` -- this approach causes it
+// to be output as a pair without the preceding space. For example,
+//
+// ```
+// // a
+// //
+// ```
+//
+// becomes:
+//
+// - inline_comment_body > logical_line: `a\n`
+// - inline_comment_body: `\n`
+inline_comment_body = { inline_comment_char* ~ newline_eoi }
+
+// ## Block comments
+//
+// Support multiple opening and closing delimiters using some repetition.
+block_comment_0   = _{
+    white_space ~ block_comment_opening_delim_0 ~ block_comment_pre ~ contents_0 ~
+    optional_space ~ block_comment_closing_delim_0 ~ white_space ~ block_comment_ending
+}
+block_comment_1   = _{
+    white_space ~ block_comment_opening_delim_1 ~ block_comment_pre ~ contents_1 ~
+    optional_space ~ block_comment_closing_delim_1 ~ white_space ~ block_comment_ending
+}
+block_comment_2   = _{
+    white_space ~ block_comment_opening_delim_2 ~ block_comment_pre ~ contents_2 ~
+    optional_space ~ block_comment_closing_delim_2 ~ white_space ~ block_comment_ending
+}
+block_comment_pre = { " " | NEWLINE }
+// If there's a space immediately before the block closing delimiter, don't
+// capture it, so that this space can be discarded in the `block_comment` token.
+contents_0     = { (!(optional_space ~ block_comment_closing_delim_0) ~ ANY)* }
+contents_1     = { (!(optional_space ~ block_comment_closing_delim_1) ~ ANY)* }
+contents_2     = { (!(optional_space ~ block_comment_closing_delim_2) ~ ANY)* }
+optional_space = { " "? }
+// Use this so that the ending (usually a newline) gets captured in a token.
+block_comment_ending = { newline_eoi }
+
+// ## Code blocks
+code_block =  { code_line+ }
+code_line  = _{ (!doc_block ~ code_line_token* ~ NEWLINE) | (!doc_block ~ code_line_token+ ~ EOI) }
+
+// ## Other commonly-used tokens
+newline_eoi = _{ NEWLINE | EOI }
+not_newline = _{ !NEWLINE ~ ANY }
+// Indicates this token isn't used by the parser.
+unused = { "unused" }
+
+// CodeChat Editor lexer: c_cpp.

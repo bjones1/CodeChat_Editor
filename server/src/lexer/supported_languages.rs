@@ -49,8 +49,8 @@ use std::sync::Arc;
 
 // ### Local
 use super::{
-    BlockCommentDelim, HeredocDelim, LanguageLexer, NewlineSupport, SpecialCase,
-    StringDelimiterSpec,
+    pest_parser, BlockCommentDelim, CodeDocBlock, HeredocDelim, LanguageLexer, NewlineSupport,
+    SpecialCase, StringDelimiterSpec,
 };
 
 // ## Helper functions
@@ -64,6 +64,7 @@ fn make_language_lexer(
     string_delim_spec_arr: &[StringDelimiterSpec],
     heredoc_delim: Option<HeredocDelim>,
     special_case: SpecialCase,
+    parser: Option<fn(&str) -> Vec<CodeDocBlock>>,
 ) -> LanguageLexer {
     LanguageLexer {
         lexer_name: Arc::new(lexer_name.to_string()),
@@ -76,6 +77,7 @@ fn make_language_lexer(
         string_delim_spec_arr: string_delim_spec_arr.to_vec(),
         heredoc_delim,
         special_case,
+        parser,
     }
 }
 
@@ -133,12 +135,19 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // or mismatched quote; for example, `TODO`.
             make_heredoc_delim("<<-?('|\")?", "\\w+", "('|\")?", "", ""),
             SpecialCase::None,
+            None,
         ),
         // ### C/C++
         make_language_lexer(
             "c_cpp",
-            // Note that the `.ino` extension is for Arduino source files.
-            &["c", "cc", "cpp", "h", "hh", "hpp", "ino"],
+            // Unusual extensions:
+            //
+            // - The `.ino` extension is for Arduino source files.
+            // - The `.pest` extension is for
+            //   [Pest grammars](https://docs.rs/pest/latest/pest/#grammar).
+            //   TODO: Pest doesn't support line continuations and allows
+            //   multiline strings, so this is a inaccurate.
+            &["c", "cc", "cpp", "h", "hh", "hpp", "ino", "pest"],
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
             &[make_string_delimiter_spec(
@@ -153,6 +162,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // [string literals docs for the reasoning behind the start body regex.](https://en.cppreference.com/w/cpp/language/string_literal)
             make_heredoc_delim("R\"", "[^()\\\\[[:space:]]]*", "(", ")", "\""),
             SpecialCase::None,
+            Some(pest_parser::c::parse_to_code_doc_blocks),
         ),
         // ### C#
         make_language_lexer(
@@ -176,6 +186,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             )],
             None,
             SpecialCase::CSharpVerbatimStringLiteral,
+            None,
         ),
         // ### CSS
         make_language_lexer(
@@ -189,6 +200,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### Go
         make_language_lexer(
@@ -206,6 +218,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### HTML
         make_language_lexer(
@@ -219,6 +232,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### Java/Kotlin
         make_language_lexer(
@@ -249,6 +263,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### JavaScript
         make_language_lexer(
@@ -273,6 +288,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::TemplateLiteral,
+            None,
         ),
         // ### JSON5
         make_language_lexer(
@@ -286,6 +302,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### MATLAB
         make_language_lexer(
@@ -309,6 +326,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::Matlab,
+            None,
         ),
         // ### Python
         make_language_lexer(
@@ -327,6 +345,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            Some(pest_parser::python::parse_to_code_doc_blocks),
         ),
         // ### [Rust](https://doc.rust-lang.org/reference/tokens.html#literals)
         make_language_lexer(
@@ -343,6 +362,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // this lexer's perspective.
             make_heredoc_delim("r", "#+", "\"", "\"", ""),
             SpecialCase::None,
+            None,
         ),
         // ### SQL
         make_language_lexer(
@@ -370,6 +390,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### [Swift](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/)
         make_language_lexer(
@@ -399,6 +420,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // comment starting with `/*"#`.
             make_heredoc_delim("", "#+", "\"\"\"", "\"\"\"", ""),
             SpecialCase::None,
+            None,
         ),
         // ### [TOML](https://toml.io/en/)
         make_language_lexer(
@@ -418,6 +440,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### TypeScript
         make_language_lexer(
@@ -431,6 +454,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::TemplateLiteral,
+            None,
         ),
         // ### VHDL
         make_language_lexer(
@@ -448,6 +472,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             &[make_string_delimiter_spec("\"", "", NewlineSupport::None)],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### Verilog
         make_language_lexer(
@@ -462,6 +487,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             )],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### [V](https://vlang.io/)
         make_language_lexer(
@@ -480,6 +506,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### YAML
         make_language_lexer(
@@ -506,8 +533,18 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             ],
             None,
             SpecialCase::None,
+            None,
         ),
         // ### Markdown
-        make_language_lexer("markdown", &["md"], &[], &[], &[], None, SpecialCase::None),
+        make_language_lexer(
+            "markdown",
+            &["md"],
+            &[],
+            &[],
+            &[],
+            None,
+            SpecialCase::None,
+            None,
+        ),
     ]
 }

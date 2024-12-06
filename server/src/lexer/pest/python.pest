@@ -1,0 +1,75 @@
+// Copyright (C) 2023 Bryan A. Jones.
+//
+// This file is part of the CodeChat Editor. The CodeChat Editor is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// The CodeChat Editor is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along with
+// the CodeChat Editor. If not, see
+// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+//
+// # `python.pest` - Pest parser definition for Python
+doc_block = _{ inline_comment }
+
+// Per the
+// [Python language reference](https://docs.python.org/3/reference/lexical_analysis.html#indentation),
+// leading whitespace used to determine the indentation level consists of spaces
+// and tabs.
+white_space = { (" " | "\t")* }
+
+// ## Inline comments
+//
+inline_comment_delims  = _{ inline_comment_delim_0 }
+inline_comment_delim_0 =  { "#" }
+inline_comment_delim_1 =  { unused }
+inline_comment_delim_2 =  { unused }
+// Per the
+// [Python language reference, section 2.1.3](https://docs.python.org/3/reference/lexical_analysis.html#comments),
+// comments end at the end of a physical line. There's no C-like backslash that
+// can join physical lines into logical lines for comments.
+inline_comment_char = { not_newline }
+
+// ## Block comments
+//
+// Other languages support block comments; even though Python doesn't, the
+// following must be defined. Block comments never combine.
+block_comment                 = { unused }
+block_comment_opening_delim_0 = { unused }
+block_comment_opening_delim_1 = { unused }
+block_comment_opening_delim_2 = { unused }
+block_comment_closing_delim_0 = { unused }
+block_comment_closing_delim_1 = { unused }
+block_comment_closing_delim_2 = { unused }
+
+// ## Code blocks
+code_line_token = _{ long_string | short_string | not_newline }
+long_string     = _{
+    // The opening string delimiter.
+    ( PUSH("'''") | PUSH("\"\"\"") ) ~
+    // Any escaped character, or anything that's not the closing delimiter, is
+    // part of the string.
+    ( ("\\" | !PEEK) ~ ANY)* ~
+    // The closing string delimiter or EOI (for unterminated strings).
+    (POP | (EOI ~ DROP) )
+}
+short_string = _{
+    // The opening string delimiter.
+    ( PUSH("'") | PUSH("\"") ) ~
+    // Any escaped character, or anything that's not the closing delimiter, is
+    // part of the string. An unescaped newline is a closing delimiter.
+    ( ("\\" | !(PEEK | NEWLINE)) ~ ANY)* ~
+    // The closing string delimiter or EOI (for unterminated strings). Don't
+    // consume a newline here -- it will instead be consumed by the `code_line`.
+    (POP | ((EOI | &NEWLINE) ~ DROP) )
+}
+
+// ## Dedenter
+dedenter = { unused }
+
+// CodeChat Editor lexer: c_cpp.

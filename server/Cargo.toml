@@ -71,6 +71,9 @@ cmd_lib = "1.9.5"
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
 simplelog = "0.12.0"
 config = "0.13"
+pest = "2.7.14"
+pest_derive = "2.7.14"
+normalize-line-endings = "0.3.0"
 
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]

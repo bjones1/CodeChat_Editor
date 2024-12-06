@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+mod pest_parser;
 /// # `lexer.rs` -- Lex source code into code and doc blocks
 // ## Submodule definitions
 pub mod supported_languages;
@@ -143,7 +144,7 @@ pub struct LanguageLexer {
     /// specially-formatted comment in a source file to override the lexer
     /// chosen by looking at the file's extension.
     pub lexer_name: Arc<String>,
-    /// An array of file extensions for this language. They \_do not_begin with
+    /// An array of file extensions for this language. They *do not* begin with
     /// a period, such as `rs`. This is the typical way that the CodeChat Editor
     /// uses to determine which lexer to use for a given source file.
     ext_arr: Vec<Arc<String>>,
@@ -161,6 +162,8 @@ pub struct LanguageLexer {
     heredoc_delim: Option<HeredocDelim>,
     /// Any special case treatment for this language.
     special_case: SpecialCase,
+    /// The PEG-based parser for this language.
+    parser: Option<fn(&str) -> Vec<CodeDocBlock>>,
 }
 
 /// ### Compiled language definition
@@ -680,6 +683,9 @@ pub fn source_lexer(
     // Provide a method to intelligently append to the code/doc block vec. Empty
     // appends are ignored; appends of the same type append to `contents`
     // instead of creating a new entry.
+    if let Some(parser) = language_lexer_compiled.language_lexer.parser {
+        return parser(source_code);
+    }
     let mut classified_source: Vec<CodeDocBlock> = Vec::new();
     let mut append_code_doc_block = |indent: &str, delimiter: &str, contents: &str| {
         // Don't append empty entries.
