@@ -22,9 +22,17 @@
    [CSS nesting](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_nesting/Using_CSS_nesting)
    to make everything in this style sheet apply only to the light theme. */
 body.CodeChat-theme-light {
-    /* Style code blocks so that they are clearly separated from doc blocks. */
+    /* Style code blocks so that they are clearly separated from doc blocks. Per
+       the
+       [docs](https://codemirror.net/examples/styling/#things-you-can-style),
+       use transparency to avoid hiding things behind the text (such as the
+       selection). */
     .cm-line {
-        background-color: #EEE;
+        background-color: #EEE7;
+    }
+
+    .cm-activeLine {
+        background-color: #CCC7;
     }
 
     /* The settings below are copied from the Sphinx Alabaster theme. */

@@ -22,6 +22,8 @@ CodeChat Editor. If not, see
   - Added support for [Mermaid](https://mermaid.js.org/).
   - Fixed MathJax packaging.
   - Resize large images to fit in browser.
+  - Switch to new parser for Python and C/C++.
+  - Correct styles so that the selection and current line are visible.
 - v0.1.3, 2024-Nov-18:
   - Switch to using MathJax 4 beta; load MathJax in the frame it's used, per
     [MathJax issue #3309](https://github.com/mathjax/MathJax/issues/3309).
