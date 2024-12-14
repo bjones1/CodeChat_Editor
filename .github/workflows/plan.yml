@@ -1,5 +1,5 @@
-# # `npm-build.yml` - Build JavaScript bundle containing the CodeChat Editor Client.
-name: NPM build
+# # `plan.yml` - Run build steps before `cargo dist build`.
+name: Plan
 
 on:
   # Defining workflow_call means that this workflow can be called from
@@ -19,8 +19,8 @@ jobs:
     env:
       PLAN: ${{ inputs.plan }}
     steps:
-      - name: NPM build
+      - name: cargo build
         run: |
-          cd client
-          npm run dist
           echo "Plan is: ${PLAN}"
+          cd server
+          cargo run -- prerelease

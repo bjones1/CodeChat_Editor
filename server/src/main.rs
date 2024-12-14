@@ -1,9 +1,9 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
-// This file is part of the CodeChat Editor. The CodeChat Editor is free software:
-// you can redistribute it and/or modify it under the terms of the GNU General Public
-// License as published by the Free Software Foundation, either version 3 of the License,
-// or (at your option) any later version.
+// This file is part of the CodeChat Editor. The CodeChat Editor is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
 //
 // The CodeChat Editor is distributed in the hope that it will be useful, but
 // WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -23,17 +23,20 @@ use std::{
     process::{exit, Command, Stdio},
     time::SystemTime,
 };
+#[cfg(debug_assertions)]
+use std::{ffi::OsStr, fs, path::Path};
 
 // ### Third-party
 #[cfg(debug_assertions)]
-use clap::ValueEnum;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+#[cfg(debug_assertions)]
+use cmd_lib::run_cmd;
 use log::LevelFilter;
 
 // ### Local
 use code_chat_editor::webserver::{self, IP_ADDRESS};
-// Added for the use of the 'rust_cmd_lib' library [rust_cmd_lib](https://github.com/rust-shell-script/rust_cmd_lib?tab=readme-ov-file)
-use cmd_lib::run_cmd;
+// Added for the use of the 'rust_cmd_lib' library
+// [rust_cmd_lib](https://github.com/rust-shell-script/rust_cmd_lib?tab=readme-ov-file)
 
 // ## Code
 //
@@ -72,13 +75,20 @@ enum Commands {
     Start,
     /// Stop the webserver child process.
     Stop,
-    /// Install NPM dependencies
+    #[cfg(debug_assertions)]
+    /// Install all dependencies.
     Install,
-    /// Package JavaScript dependencies from npm
+    #[cfg(debug_assertions)]
+    /// Update all dependencies.
+    Update,
+    #[cfg(debug_assertions)]
+    /// Build everything.
     Build,
-    /// Run the CodeChat Editor in a new window (cargo run -- serve) (open
-    /// http://localhost:8080)
-    Run,
+    #[cfg(debug_assertions)]
+    /// Steps to run before `cargo dist build`.
+    Prerelease,
+    /// Steps to run after `cargo dist build`. This builds a VSCode release, producing a VSCode `.vsix` file.
+    Postrelease,
 }
 
 #[derive(Args)]
@@ -88,44 +98,249 @@ struct ServeCommand {
     log: Option<LevelFilter>,
 }
 
-// The following function implements the 'Install' command
-fn run_npm_update() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Installing NPM dependencies...");
-
+// ### Build support
+//
+// These functions simplify common build-focused development tasks and support
+// CI builds.
+#[cfg(debug_assertions)]
+/// The following function implements the 'Install' command
+fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
+    script: T,
+    args: &[T],
+    dir: P,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // On Windows, scripts must be run from a shell; on Linux and OS X, scripts are
+    // directly executable.
+    #[cfg(windows)]
+    let mut tmp;
+    let process = if cfg!(windows) {
+        tmp = Command::new("cmd");
+        tmp.arg("/c").arg(script)
+    } else {
+        &mut Command::new("npm")
+    };
     // Runs the 'npm update' command using cmd_lib in the client directory
-    // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
-    run_cmd! {
-        cd ../client;
-        powershell npm update;
-    }?;
+    // comments cannot be placed in the code below or the commands will not run.
+    // 'run_cmd!' puts the text you type into the terminal and it doesn't know
+    // how to handle comments.
+    let npm_process = process.args(args).current_dir(&dir);
+    // A bit crude, but display the command being run.
+    println!("{dir}: {npm_process:#?}");
+    let exit_code = npm_process.status()?.code();
+
+    if exit_code == Some(0) {
+        Ok(())
+    } else {
+        Err("npm exit code indicates failure".into())
+    }
+}
+
+#[cfg(debug_assertions)]
+/// After updating files in the client's Node files, perform some fix-ups.
+fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
+    // Apply a the fixes described in
+    // [issue 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
+    //
+    // Insert this line...
+    let patch = "
+        selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)";
+    // After this line.
+    let before_path = "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
+            hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));";
+    // First, see if the patch was applied already.
+    let index_js_path = Path::new("../client/node_modules/@codemirror/view/dist/index.js");
+    let index_js = fs::read_to_string(index_js_path)?;
+    if !index_js.contains(patch) {
+        let patch_loc = index_js
+            .find(before_path)
+            .expect("Patch location not found.")
+            + before_path.len();
+        let patched_index_js = format!(
+            "{}{patch}{}",
+            &index_js[..patch_loc],
+            &index_js[patch_loc..]
+        );
+        fs::write(index_js_path, &patched_index_js)?;
+    }
+
+    // Copy across the parts of MathJax that are needed, since bundling it is
+    // difficult.
+    quick_copy_dir("../client/node_modules/mathjax/", "../client/static")?;
+    quick_copy_dir(
+        "../client/node_modules/mathjax-modern-font/chtml",
+        "../client/static/mathjax-modern-font",
+    )?;
+    // Copy over the graphviz files needed.
+    quick_copy_file(
+        "../client/node_modules/graphviz-webcomponent/dist/renderer.min.js",
+        "../client/static/graphviz-webcomponent/renderer.min.js",
+    )?;
+    quick_copy_file(
+        "../client/node_modules/graphviz-webcomponent/dist/renderer.min.js.map",
+        "../client/static/graphviz-webcomponent/renderer.min.js.map",
+    )?;
 
     Ok(())
 }
 
-// The following function implements the 'Build' command
-fn run_npm_run_build() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Packaging JavaScript dependencies...");
+#[cfg(debug_assertions)]
+fn quick_copy_file<P: AsRef<Path> + std::fmt::Display>(
+    src: P,
+    dest: P,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // This is a bit simplistic -- it doesn't check dates/sizes/etc. Better
+    // would be to compare metadata.
+    if !dest.as_ref().try_exists().unwrap() {
+        println!("Copying from {src} to {dest}.");
+        // Create the appropriate directories if needed. Ignore errors for
+        // simplicity; the copy will produce errors if necessary.
+        let _ = fs::create_dir_all(dest.as_ref().parent().unwrap());
+        fs::copy(&src, &dest)?;
+    }
+    Ok(())
+}
 
-    // runs the 'npm run build' command in the client directory
-    // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
-    run_cmd! {
-        cd ../client;
-        powershell npm run build;
-    }?;
+#[cfg(debug_assertions)]
+fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P) -> Result<(), Box<dyn std::error::Error>> {
+    let mut os_copy_process;
+    let copy_process = if cfg!(windows) {
+        // Robocopy copies the contents of the source directory, not the source
+        // directory itself. So, append the final path of the source directory
+        // to the destination directory.
+        let mut robo_dest = Path::new(&dest).to_path_buf();
+        robo_dest.push(
+            Path::new(&src)
+                .file_name()
+                .expect("Cannot get parent directory."),
+        );
+        // From `robocopy /?`:
+        //
+        // /MIR MIRror a directory tree (equivalent to /E plus /PURGE).
+        //
+        // /MT Do multi-threaded copies with n threads (default 8).
+        //
+        // /NFL No File List - don't log file names.
+        //
+        // /NDL : No Directory List - don't log directory names.
+        //
+        // /NJH : No Job Header.
+        //
+        // /NJS : No Job Summary.
+        //
+        // /NP : No Progress - don't display percentage copied.
+        //
+        // /NS : No Size - don't log file sizes.
+        //
+        // /NC : No Class - don't log file classes.
+        //
+        // Robocopy copies the contents of the source directory, not the source
+        // directory itself. So, append the final path of the source directory
+        // to the destination directory.
+        os_copy_process = Command::new("robocopy");
+        os_copy_process
+            .args([
+                "/MIR", "/MT", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/NS", "/NC",
+            ])
+            .arg(src)
+            .arg(robo_dest)
+    } else {
+        os_copy_process = Command::new("rsync");
+        os_copy_process
+            .args(["--archive", "--delete"])
+            .arg(src)
+            .arg(dest)
+    };
+
+    // Print the command, to help this produces an error.
+    println!("{:#?}", &copy_process);
+
+    // Per
+    // [these docs](https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/return-codes-used-robocopy-utility),
+    // check the return code.
+    if copy_process.status()?.code().expect("Error copying") < 8 {
+        Ok(())
+    } else {
+        Err("Copy failed".into())
+    }
+}
+
+#[cfg(debug_assertions)]
+fn run_install() -> Result<(), Box<dyn std::error::Error>> {
+    run_script("npm", &["install"], "../client")?;
+    patch_client_npm()?;
+    run_script("npm", &["install"], "../extensions/VSCode")?;
+    run_cmd!(cargo install)?;
+    Ok(())
+}
+
+#[cfg(debug_assertions)]
+fn run_update() -> Result<(), Box<dyn std::error::Error>> {
+    run_script("npm", &["update"], "../client")?;
+    patch_client_npm()?;
+    run_script("npm", &["update"], "../extensions/VSCode")?;
+    run_script("npm", &["outdated"], "../client")?;
+    run_script("npm", &["outdated"], "../extensions/VSCode")?;
+    run_cmd!(cargo update)?;
+    Ok(())
+}
+
+#[cfg(debug_assertions)]
+fn run_build() -> Result<(), Box<dyn std::error::Error>> {
+    // Clean out all bundled files before the rebuild.
+    fs::remove_dir_all("../client/static/bundled")?;
+    run_script("npm", &["run", "build"], "../client")?;
+    run_script("npm", &["run", "compile"], "../extensions/VSCode")?;
+    run_cmd!(cargo build)?;
+    Ok(())
+}
+
+#[cfg(debug_assertions)]
+fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
+    // Clean out all bundled files before the rebuild.
+    fs::remove_dir_all("../client/static/bundled")?;
+    run_script("npm", &["run", "dist"], "../client")?;
 
     Ok(())
 }
 
-// The following function impliments the 'Run' command
-fn run_server() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Executing server...");
+#[cfg(debug_assertions)]
+fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
+    let server_dir = "../extensions/VSCode/server";
+    // Only clean the `server/` directory if it exists.
+    if Path::new(&server_dir).try_exists().unwrap() {
+        fs::remove_dir_all("../extensions/VSCode/server")?;
+    }
+    let src_prefix = "target/distrib/";
+    let src_name_prefix = "codechat-editor-server";
 
-    // runs the 'cargo run --serve' command in the server directory
-    // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
-    run_cmd! {
-        cd ../server;
-        powershell cargo run -- serve;
-    }?;
+    #[cfg(windows)]
+    let (src_name, vsce_target) = (
+        format!("{src_name_prefix}-x86_64-pc-windows-msvc"),
+        "win32-x64",
+    );
+    #[cfg(unix)]
+    let (src_name, vsce_target) = (
+        format!("{src_name_prefix}-x86_64-unknown-linux-gnu"),
+        "linux-x64",
+    );
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    let (src_name, vsce_target) = (format!("{src_name_prefix}-x86_64-apple-darwin", "darwin-x64"));
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    let (src_name, vsce_target) =
+        (format!("{src_name_prefix}-aarch64-apple-darwin", "darwin-arm64"));
+
+    let src = format!("{src_prefix}{src_name}");
+    quick_copy_dir(src.as_str(), "../extensions/VSCode")?;
+    fs::rename(
+        format!("../extensions/VSCode/{src_name}"),
+        "../extensions/VSCode/server",
+    )?;
+    run_script(
+        "vsce",
+        &["package", "--target", vsce_target],
+        "../extensions/VSCode",
+    )?;
+
     Ok(())
 }
 
@@ -277,27 +492,31 @@ impl Cli {
                 eprintln!("{}", err_msg);
                 exit(1);
             }
-            Commands::Install => {
-                // calls the 'run_npm_update' function that was defined earlier
-                match run_npm_update() {
-                    Ok(_) => println!("Successfully updated NPM dependencies"),
-                    Err(e) => eprintln!("Error: {}", e),
-                }
-            }
-            Commands::Build => {
-                // calls the 'run_npm_run_build' function that was defined earlier
-                match run_npm_run_build() {
-                    Ok(_) => println!("Successfully packaged JavaScript dependencies"),
-                    Err(e) => eprintln!("Error: {}", e),
-                }
-            }
-            Commands::Run => {
-                // calls the 'run_server' function that was defined earlier
-                match run_server() {
-                    Ok(_) => println!("Successfully executed server"),
-                    Err(e) => eprintln!("Error: {}", e),
-                }
-            }
+            #[cfg(debug_assertions)]
+            Commands::Install => match run_install() {
+                Ok(_) => (),
+                Err(e) => eprintln!("Error: {e}"),
+            },
+            #[cfg(debug_assertions)]
+            Commands::Update => match run_update() {
+                Ok(_) => (),
+                Err(e) => eprintln!("Error: {e}"),
+            },
+            #[cfg(debug_assertions)]
+            Commands::Build => match run_build() {
+                Ok(_) => (),
+                Err(e) => eprintln!("Error: {e}"),
+            },
+            #[cfg(debug_assertions)]
+            Commands::Prerelease => match run_prerelease() {
+                Ok(_) => (),
+                Err(e) => eprintln!("Error: {}", e),
+            },
+            #[cfg(debug_assertions)]
+            Commands::Postrelease => match run_postrelease() {
+                Ok(_) => (),
+                Err(e) => eprintln!("Error: {}", e),
+            },
         }
     }
 }

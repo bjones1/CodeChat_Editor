@@ -29,34 +29,13 @@ To install from source:
 
 - In the Client:
   - Update the version of the plugin in `package.json`.
-  - Clean out `client/static/bundled`.
-  - Run `npm update`.
-  - Manually copy:
-    - `client/node_modules/mathjax/` to `client/static`.
-    - `client/node_modules/mathjax-modern-font/` to `client/static`.
-    - `client/node_modules/graphviz-webcomponent/dist/renderer.min.js*` to
-      `client/static/graphviz-webcomponent`.
-  - Run `npm outdated` and check that everything is current.
-  - Run `npm run dist`.
 - In the Server:
-  - Run `cargo update`.
-  - Run `cargo outdated` and check that everything is current.
-  - Run `cargo test`.
-  - Run `dist build`, then copy files to this extension.
+  - Update the version in `cargo.toml`.
 - Here:
   - Update the version of the plugin in `package.json`.
-  - Run `npm update`.
-  - Run `npm outdated` and check that everything is current.
-  - Verify that the extension still works after upgrading these packages.
-  - Run `npx vsce publish --target win32-x64` (on Windows)
-  - Repeat this for each target (e.g. `linux-x64`, `darwin-arm64`); however, use
-    `npx vsce package --target blah` to produce a `.visx`, then
-    `npx vsce publish --packagePath blah` on Windows. This is because simply
-    copying the binary doesn't set the executable bit when publishing directly
-    from Windows.
+  - Run `cargo run -- release` on each platform, which produces a `.vsix` file for that platform
+  - Run `npx vsce publish --packagePath blah`.
     ([docs](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#platformspecific-extensions))
-  - Uncomment the ignore for `server/` in `.vscodeignore`.
-  - Run `npx vsce publish`.
 
 ## Tests
 
