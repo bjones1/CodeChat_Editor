@@ -28,21 +28,21 @@ use std::{ffi::OsStr, fs, path::Path};
 
 // ### Third-party
 #[cfg(debug_assertions)]
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::ValueEnum;
+use clap::{Args, Parser, Subcommand};
 #[cfg(debug_assertions)]
 use cmd_lib::run_cmd;
 use log::LevelFilter;
 
 // ### Local
 use code_chat_editor::webserver::{self, IP_ADDRESS};
-// Added for the use of the 'rust_cmd_lib' library
+// Added for the use of the '**rust_cmd_lib**' library
 // [rust_cmd_lib](https://github.com/rust-shell-script/rust_cmd_lib?tab=readme-ov-file)
 
-// ## Code
+// ## Data structures
 //
 // ### Command-line interface
-//
-// The following code defines the command-line interface for the CodeChat
+// The following defines the command-line interface for the CodeChat
 // Editor.
 #[derive(Parser)]
 #[command(name = "The CodeChat Editor Server", version, about, long_about=None)]
@@ -87,7 +87,9 @@ enum Commands {
     #[cfg(debug_assertions)]
     /// Steps to run before `cargo dist build`.
     Prerelease,
-    /// Steps to run after `cargo dist build`. This builds a VSCode release, producing a VSCode `.vsix` file.
+    #[cfg(debug_assertions)]
+    /// Steps to run after `cargo dist build`. This builds a VSCode release,
+    /// producing a VSCode `.vsix` file.
     Postrelease,
 }
 
@@ -98,10 +100,13 @@ struct ServeCommand {
     log: Option<LevelFilter>,
 }
 
+// ## Code
+//
 // ### Build support
 //
-// These functions simplify common build-focused development tasks and support
-// CI builds.
+// #### Utilities
+//
+// These functions are called by the build support functions.
 #[cfg(debug_assertions)]
 /// The following function implements the 'Install' command
 fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
@@ -109,15 +114,14 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
     args: &[T],
     dir: P,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // On Windows, scripts must be run from a shell; on Linux and OS X, scripts are
-    // directly executable.
-    #[cfg(windows)]
+    // On Windows, scripts must be run from a shell; on Linux and OS X, scripts
+    // are directly executable.
     let mut tmp;
     let process = if cfg!(windows) {
         tmp = Command::new("cmd");
         tmp.arg("/c").arg(script)
     } else {
-        &mut Command::new("npm")
+        &mut Command::new(script)
     };
     // Runs the 'npm update' command using cmd_lib in the client directory
     // comments cannot be placed in the code below or the commands will not run.
@@ -133,54 +137,6 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
     } else {
         Err("npm exit code indicates failure".into())
     }
-}
-
-#[cfg(debug_assertions)]
-/// After updating files in the client's Node files, perform some fix-ups.
-fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
-    // Apply a the fixes described in
-    // [issue 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
-    //
-    // Insert this line...
-    let patch = "
-        selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)";
-    // After this line.
-    let before_path = "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
-            hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));";
-    // First, see if the patch was applied already.
-    let index_js_path = Path::new("../client/node_modules/@codemirror/view/dist/index.js");
-    let index_js = fs::read_to_string(index_js_path)?;
-    if !index_js.contains(patch) {
-        let patch_loc = index_js
-            .find(before_path)
-            .expect("Patch location not found.")
-            + before_path.len();
-        let patched_index_js = format!(
-            "{}{patch}{}",
-            &index_js[..patch_loc],
-            &index_js[patch_loc..]
-        );
-        fs::write(index_js_path, &patched_index_js)?;
-    }
-
-    // Copy across the parts of MathJax that are needed, since bundling it is
-    // difficult.
-    quick_copy_dir("../client/node_modules/mathjax/", "../client/static")?;
-    quick_copy_dir(
-        "../client/node_modules/mathjax-modern-font/chtml",
-        "../client/static/mathjax-modern-font",
-    )?;
-    // Copy over the graphviz files needed.
-    quick_copy_file(
-        "../client/node_modules/graphviz-webcomponent/dist/renderer.min.js",
-        "../client/static/graphviz-webcomponent/renderer.min.js",
-    )?;
-    quick_copy_file(
-        "../client/node_modules/graphviz-webcomponent/dist/renderer.min.js.map",
-        "../client/static/graphviz-webcomponent/renderer.min.js.map",
-    )?;
-
-    Ok(())
 }
 
 #[cfg(debug_assertions)]
@@ -265,11 +221,74 @@ fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P) -> Result<(), Box<dyn std::e
 }
 
 #[cfg(debug_assertions)]
+fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(
+    path: P,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if Path::new(path.as_ref()).try_exists().unwrap() {
+        fs::remove_dir_all(path.as_ref())?;
+    }
+
+    Ok(())
+}
+
+// ### Core routines
+//
+// These functions simplify common build-focused development tasks and support
+// CI builds.
+#[cfg(debug_assertions)]
+/// After updating files in the client's Node files, perform some fix-ups.
+fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
+    // Apply a the fixes described in
+    // [issue 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
+    //
+    // Insert this line...
+    let patch = "
+        selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)";
+    // After this line.
+    let before_path = "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
+            hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));";
+    // First, see if the patch was applied already.
+    let index_js_path = Path::new("../client/node_modules/@codemirror/view/dist/index.js");
+    let index_js = fs::read_to_string(index_js_path)?;
+    if !index_js.contains(patch) {
+        let patch_loc = index_js
+            .find(before_path)
+            .expect("Patch location not found.")
+            + before_path.len();
+        let patched_index_js = format!(
+            "{}{patch}{}",
+            &index_js[..patch_loc],
+            &index_js[patch_loc..]
+        );
+        fs::write(index_js_path, &patched_index_js)?;
+    }
+
+    // Copy across the parts of MathJax that are needed, since bundling it is
+    // difficult.
+    quick_copy_dir("../client/node_modules/mathjax/", "../client/static")?;
+    quick_copy_dir(
+        "../client/node_modules/mathjax-modern-font/chtml",
+        "../client/static/mathjax-modern-font",
+    )?;
+    // Copy over the graphviz files needed.
+    quick_copy_file(
+        "../client/node_modules/graphviz-webcomponent/dist/renderer.min.js",
+        "../client/static/graphviz-webcomponent/renderer.min.js",
+    )?;
+    quick_copy_file(
+        "../client/node_modules/graphviz-webcomponent/dist/renderer.min.js.map",
+        "../client/static/graphviz-webcomponent/renderer.min.js.map",
+    )?;
+
+    Ok(())
+}
+
+#[cfg(debug_assertions)]
 fn run_install() -> Result<(), Box<dyn std::error::Error>> {
     run_script("npm", &["install"], "../client")?;
     patch_client_npm()?;
     run_script("npm", &["install"], "../extensions/VSCode")?;
-    run_cmd!(cargo install)?;
+    run_cmd!(cargo fetch)?;
     Ok(())
 }
 
@@ -287,7 +306,7 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(debug_assertions)]
 fn run_build() -> Result<(), Box<dyn std::error::Error>> {
     // Clean out all bundled files before the rebuild.
-    fs::remove_dir_all("../client/static/bundled")?;
+    remove_dir_all_if_exists("../client/static/bundled")?;
     run_script("npm", &["run", "build"], "../client")?;
     run_script("npm", &["run", "compile"], "../extensions/VSCode")?;
     run_cmd!(cargo build)?;
@@ -297,7 +316,8 @@ fn run_build() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(debug_assertions)]
 fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
     // Clean out all bundled files before the rebuild.
-    fs::remove_dir_all("../client/static/bundled")?;
+    remove_dir_all_if_exists("../client/static/bundled")?;
+    run_install()?;
     run_script("npm", &["run", "dist"], "../client")?;
 
     Ok(())
@@ -307,9 +327,7 @@ fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
 fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
     let server_dir = "../extensions/VSCode/server";
     // Only clean the `server/` directory if it exists.
-    if Path::new(&server_dir).try_exists().unwrap() {
-        fs::remove_dir_all("../extensions/VSCode/server")?;
-    }
+    remove_dir_all_if_exists(server_dir)?;
     let src_prefix = "target/distrib/";
     let src_name_prefix = "codechat-editor-server";
 
@@ -324,20 +342,22 @@ fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
         "linux-x64",
     );
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    let (src_name, vsce_target) = (format!("{src_name_prefix}-x86_64-apple-darwin", "darwin-x64"));
+    let (src_name, vsce_target) = (
+        format!("{src_name_prefix}-x86_64-apple-darwin"),
+        "darwin-x64",
+    );
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    let (src_name, vsce_target) =
-        (format!("{src_name_prefix}-aarch64-apple-darwin", "darwin-arm64"));
+    let (src_name, vsce_target) = (
+        format!("{src_name_prefix}-aarch64-apple-darwin"),
+        "darwin-arm64",
+    );
 
     let src = format!("{src_prefix}{src_name}");
     quick_copy_dir(src.as_str(), "../extensions/VSCode")?;
-    fs::rename(
-        format!("../extensions/VSCode/{src_name}"),
-        "../extensions/VSCode/server",
-    )?;
+    fs::rename(format!("../extensions/VSCode/{src_name}"), server_dir)?;
     run_script(
-        "vsce",
-        &["package", "--target", vsce_target],
+        "npx",
+        &["vsce", "package", "--target", vsce_target],
         "../extensions/VSCode",
     )?;
 
