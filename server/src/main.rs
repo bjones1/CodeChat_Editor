@@ -20,7 +20,7 @@
 use std::{
     env,
     io::Read,
-    process::{exit, Command, Stdio},
+    process::{Command, Stdio},
     time::SystemTime,
 };
 #[cfg(debug_assertions)]
@@ -369,14 +369,14 @@ fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
 // The following code implements the command-line interface for the CodeChat
 // Editor.
 impl Cli {
-    fn run(self) {
+    fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
             Commands::Serve(serve_command) => {
                 #[cfg(debug_assertions)]
                 if let Some(TestMode::Sleep) = self.test_mode {
                     // For testing, don't start the server at all.
                     std::thread::sleep(std::time::Duration::from_secs(10));
-                    exit(0);
+                    return Ok(());
                 }
                 webserver::configure_logger(serve_command.log.unwrap_or(LevelFilter::Info));
                 webserver::main(self.port).unwrap();
@@ -385,10 +385,7 @@ impl Cli {
                 println!("Starting server in background...");
                 let current_exe = match env::current_exe() {
                     Ok(exe) => exe,
-                    Err(e) => {
-                        eprintln!("Failed to get current executable: {}", e);
-                        exit(1);
-                    }
+                    Err(e) => return Err(format!("Failed to get current executable: {e}").into()),
                 };
                 // Define here, to avoid lifetime issues.
                 #[cfg(debug_assertions)]
@@ -417,13 +414,12 @@ impl Cli {
                 {
                     Ok(process) => process,
                     Err(e) => {
-                        eprintln!("Failed to start server: {}", e);
-                        exit(1);
+                        return Err(format!("Failed to start server: {e}").into());
                     }
                 };
                 // Poll the server to ensure it starts.
                 let now = SystemTime::now();
-                let exit_code = loop {
+                loop {
                     // Look for a ping/pong response from the server.
                     match minreq::get(format!("http://{IP_ADDRESS}:{}/ping", self.port))
                         .with_timeout(3)
@@ -434,7 +430,7 @@ impl Cli {
                             let body = response.as_str().unwrap_or("Non-text body");
                             if status_code == 200 && body == "pong" {
                                 println!("Server started.");
-                                break 0;
+                                return Ok(());
                             } else {
                                 eprintln!(
                                     "Unexpected response from server: {body}, status code = {status_code}"
@@ -455,16 +451,13 @@ impl Cli {
                             let stderr = process.stderr.as_mut().unwrap();
                             stdout.read_to_string(&mut stdout_buf).unwrap();
                             stderr.read_to_string(&mut stderr_buf).unwrap();
-                            eprintln!(
+                            return Err(format!(
                                 "Server failed to start: {status:?}\n{stdout_buf}\n{stderr_buf}"
-                            );
-                            break 1;
+                            )
+                            .into());
                         }
                         Ok(None) => {}
-                        Err(e) => {
-                            eprintln!("Error starting server: {e}");
-                            break 1;
-                        }
+                        Err(e) => return Err(format!("Error starting server: {e}").into()),
                     }
                     // Wait a bit before trying again.
                     std::thread::sleep(std::time::Duration::from_millis(50));
@@ -472,79 +465,60 @@ impl Cli {
                     match now.elapsed() {
                         Ok(elapsed) => {
                             if elapsed.as_secs() > 5 {
-                                eprintln!("Server failed to start after 5 seconds.");
-                                break 1;
+                                return Err("Server failed to start after 5 seconds.".into());
                             }
                         }
 
-                        Err(e) => {
-                            eprintln!("Error getting elapsed time: {e}");
-                            break 1;
-                        }
+                        Err(e) => return Err(format!("Error getting elapsed time: {e}").into()),
                     }
-                };
-                drop(process.stdout.unwrap());
-                drop(process.stderr.unwrap());
-                exit(exit_code);
+                }
             }
             Commands::Stop => {
                 println!("Stopping server...");
                 // TODO: Use https://crates.io/crates/sysinfo to find the server
                 // process and kill it if it doesn't respond to a stop request.
-                let err_msg = match minreq::get(format!("http://{IP_ADDRESS}:{}/stop", self.port))
+                return match minreq::get(format!("http://{IP_ADDRESS}:{}/stop", self.port))
                     .with_timeout(3)
                     .send()
                 {
-                    Err(err) => format!("Failed to stop server: {err}"),
+                    Err(err) => Err(format!("Failed to stop server: {err}").into()),
                     Ok(response) => {
                         let status_code = response.status_code;
                         if status_code == 204 {
                             println!("Server shutting down.");
-                            exit(0);
+                            Ok(())
                         } else {
-                            format!(
+                            Err(format!(
                                 "Unexpected response from server: {}, status code = {status_code}",
                                 response.as_str().unwrap_or("Non-text body")
                             )
+                            .into())
                         }
                     }
                 };
-                eprintln!("{}", err_msg);
-                exit(1);
             }
             #[cfg(debug_assertions)]
-            Commands::Install => match run_install() {
-                Ok(_) => (),
-                Err(e) => eprintln!("Error: {e}"),
-            },
+            Commands::Install => return run_install(),
             #[cfg(debug_assertions)]
-            Commands::Update => match run_update() {
-                Ok(_) => (),
-                Err(e) => eprintln!("Error: {e}"),
-            },
+            Commands::Update => return run_update(),
             #[cfg(debug_assertions)]
-            Commands::Build => match run_build() {
-                Ok(_) => (),
-                Err(e) => eprintln!("Error: {e}"),
-            },
+            Commands::Build => return run_build(),
             #[cfg(debug_assertions)]
-            Commands::Prerelease => match run_prerelease() {
-                Ok(_) => (),
-                Err(e) => eprintln!("Error: {}", e),
-            },
+            Commands::Prerelease => return run_prerelease(),
             #[cfg(debug_assertions)]
-            Commands::Postrelease => match run_postrelease() {
-                Ok(_) => (),
-                Err(e) => eprintln!("Error: {}", e),
-            },
+            Commands::Postrelease => return run_postrelease(),
         }
+
+        Ok(())
     }
 }
 
 #[cfg(not(tarpaulin_include))]
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    cli.run();
+    cli.run()?;
+
+    Ok(())
 }
 
 #[cfg(test)]
