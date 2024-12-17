@@ -36,14 +36,12 @@ use log::LevelFilter;
 
 // ### Local
 use code_chat_editor::webserver::{self, IP_ADDRESS};
-// Added for the use of the '**rust_cmd_lib**' library
-// [rust_cmd_lib](https://github.com/rust-shell-script/rust_cmd_lib?tab=readme-ov-file)
 
 // ## Data structures
 //
 // ### Command-line interface
-// The following defines the command-line interface for the CodeChat
-// Editor.
+//
+// The following defines the command-line interface for the CodeChat Editor.
 #[derive(Parser)]
 #[command(name = "The CodeChat Editor Server", version, about, long_about=None)]
 struct Cli {
@@ -108,29 +106,31 @@ struct ServeCommand {
 //
 // These functions are called by the build support functions.
 #[cfg(debug_assertions)]
-/// The following function implements the 'Install' command
+/// On Windows, scripts must be run from a shell; on Linux and OS X, scripts are
+/// directly executable. This function runs a script regardless of OS.
 fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
+    // The script to run.
     script: T,
+    // Arguments to pass.
     args: &[T],
+    // The directory to run the script in.
     dir: P,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // On Windows, scripts must be run from a shell; on Linux and OS X, scripts
-    // are directly executable.
-    let mut tmp;
-    let process = if cfg!(windows) {
-        tmp = Command::new("cmd");
-        tmp.arg("/c").arg(script)
+    let mut process;
+    if cfg!(windows) {
+        process = Command::new("cmd");
+        process.arg("/c").arg(script);
     } else {
-        &mut Command::new(script)
+        process = Command::new(script);
     };
     // Runs the 'npm update' command using cmd_lib in the client directory
     // comments cannot be placed in the code below or the commands will not run.
     // 'run_cmd!' puts the text you type into the terminal and it doesn't know
     // how to handle comments.
-    let npm_process = process.args(args).current_dir(&dir);
+    process.args(args).current_dir(&dir);
     // A bit crude, but display the command being run.
-    println!("{dir}: {npm_process:#?}");
-    let exit_code = npm_process.status()?.code();
+    println!("{dir}: {process:#?}");
+    let exit_code = process.status()?.code();
 
     if exit_code == Some(0) {
         Ok(())
@@ -139,6 +139,9 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
     }
 }
 
+/// Copy the provided file `src` to `dest`, unless `dest` already exists. TODO:
+/// check metadata to see if the files are the same. It avoids comparing bytes,
+/// to help with performance.
 #[cfg(debug_assertions)]
 fn quick_copy_file<P: AsRef<Path> + std::fmt::Display>(
     src: P,
@@ -147,19 +150,25 @@ fn quick_copy_file<P: AsRef<Path> + std::fmt::Display>(
     // This is a bit simplistic -- it doesn't check dates/sizes/etc. Better
     // would be to compare metadata.
     if !dest.as_ref().try_exists().unwrap() {
-        println!("Copying from {src} to {dest}.");
         // Create the appropriate directories if needed. Ignore errors for
         // simplicity; the copy will produce errors if necessary.
         let _ = fs::create_dir_all(dest.as_ref().parent().unwrap());
-        fs::copy(&src, &dest)?;
+        if let Err(err) = fs::copy(&src, &dest) {
+            return Err(format!("Error copy from {src} to {dest}: {err}").into());
+        }
     }
     Ok(())
 }
 
+/// Quickly synchronize the `src` directory with the `dest` directory, by
+/// copying files and removing anything in `dest` not in `src`. It uses OS
+/// programs (`robocopy`/`rsync`) to accomplish this. Following `rsync`
+/// conventions, if `src` is `foo/bar` and `dest` is `one/two`, then this copies
+/// files and directories in `foo/bar` to `one/two/bar`.
 #[cfg(debug_assertions)]
 fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P) -> Result<(), Box<dyn std::error::Error>> {
-    let mut os_copy_process;
-    let copy_process = if cfg!(windows) {
+    let mut copy_process;
+    if cfg!(windows) {
         // Robocopy copies the contents of the source directory, not the source
         // directory itself. So, append the final path of the source directory
         // to the destination directory.
@@ -192,31 +201,39 @@ fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P) -> Result<(), Box<dyn std::e
         // Robocopy copies the contents of the source directory, not the source
         // directory itself. So, append the final path of the source directory
         // to the destination directory.
-        os_copy_process = Command::new("robocopy");
-        os_copy_process
+        copy_process = Command::new("robocopy");
+        copy_process
             .args([
                 "/MIR", "/MT", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/NS", "/NC",
             ])
             .arg(src)
-            .arg(robo_dest)
+            .arg(robo_dest);
     } else {
-        os_copy_process = Command::new("rsync");
-        os_copy_process
+        copy_process = Command::new("rsync");
+        copy_process
             .args(["--archive", "--delete"])
             .arg(src)
-            .arg(dest)
+            .arg(dest);
     };
 
-    // Print the command, to help this produces an error.
+    // Print the command, in case this produces and error or takes a while.
     println!("{:#?}", &copy_process);
 
+    // Check for errors.
+    let exit_status = match copy_process.status() {
+        Ok(es) => es,
+        Err(err) => return Err(format!("Error running copy process: {err}").into()),
+    };
+    let exit_code = exit_status
+        .code()
+        .expect("Copy process terminated by signal");
     // Per
     // [these docs](https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/return-codes-used-robocopy-utility),
     // check the return code.
-    if copy_process.status()?.code().expect("Error copying") < 8 {
-        Ok(())
+    if cfg!(windows) && exit_code >= 8 || !cfg!(windows) && exit_code != 0 {
+        Err(format!("Copy process return code {exit_code} indicates failure.").into())
     } else {
-        Err("Copy failed".into())
+        Ok(())
     }
 }
 
@@ -225,7 +242,9 @@ fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(
     path: P,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if Path::new(path.as_ref()).try_exists().unwrap() {
-        fs::remove_dir_all(path.as_ref())?;
+        if let Err(err) = fs::remove_dir_all(path.as_ref()) {
+            return Err(format!("Error removing directory tree {path}: {err}").into());
+        }
     }
 
     Ok(())
@@ -319,7 +338,6 @@ fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
     remove_dir_all_if_exists("../client/static/bundled")?;
     run_install()?;
     run_script("npm", &["run", "dist"], "../client")?;
-
     Ok(())
 }
 
@@ -331,6 +349,7 @@ fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
     let src_prefix = "target/distrib/";
     let src_name_prefix = "codechat-editor-server";
 
+    // Get OS-specific strings for the `dist` output and `vsce` target.
     #[cfg(windows)]
     let (src_name, vsce_target) = (
         format!("{src_name_prefix}-x86_64-pc-windows-msvc"),
@@ -354,7 +373,10 @@ fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
 
     let src = format!("{src_prefix}{src_name}");
     quick_copy_dir(src.as_str(), "../extensions/VSCode")?;
-    fs::rename(format!("../extensions/VSCode/{src_name}"), server_dir)?;
+    let src = &format!("../extensions/VSCode/{src_name}");
+    if let Err(err) = fs::rename(src, server_dir) {
+        return Err(format!("Error renaming {src} to {server_dir}: {err}").into());
+    }
     run_script(
         "npx",
         &["vsce", "package", "--target", vsce_target],
@@ -387,20 +409,19 @@ impl Cli {
                     Ok(exe) => exe,
                     Err(e) => return Err(format!("Failed to get current executable: {e}").into()),
                 };
-                // Define here, to avoid lifetime issues.
-                #[cfg(debug_assertions)]
-                let mut cmd_temp: Command;
-                #[cfg(debug_assertions)]
-                let cmd = match self.test_mode {
-                    None => &mut Command::new(current_exe),
-                    Some(TestMode::NotFound) => &mut Command::new("nonexistent-command"),
-                    Some(TestMode::Sleep) => {
-                        cmd_temp = Command::new(current_exe);
-                        cmd_temp.args(["--test-mode", "sleep"])
-                    }
-                };
-                #[cfg(not(debug_assertions))]
-                let cmd = &mut Command::new(current_exe);
+                let mut cmd;
+                if cfg!(debug_assertions) {
+                    match self.test_mode {
+                        None => cmd = Command::new(&current_exe),
+                        Some(TestMode::NotFound) => cmd = Command::new("nonexistent-command"),
+                        Some(TestMode::Sleep) => {
+                            cmd = Command::new(&current_exe);
+                            cmd.args(["--test-mode", "sleep"]);
+                        }
+                    };
+                } else {
+                    cmd = Command::new(&current_exe);
+                }
                 let mut process = match cmd
                     .args(["--port", &self.port.to_string(), "serve", "--log", "off"])
                     // Subtle: the default of `stdout(Stdio::inherit())` causes
