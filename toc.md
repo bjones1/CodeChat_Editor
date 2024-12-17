@@ -59,12 +59,16 @@
         1.  [extension.ts](extensions/VSCode/src/extension.ts)
         2.  [Developer documentation](extensions/VSCode/developer.md)
 4.  Development tools
-    1.  Git
+    1.  Builder
+        1.  [builder/Cargo.toml](builder/Cargo.toml)
+        2.  [builder/src/main.rs](builder/src/main.rs)
+    2.   Git
         1.  [server/.gitignore](server/.gitignore)
         2.  [client/static/.gitignore](client/static/.gitignore)
         3.  [client/.gitignore](client/.gitignore)
         4.  [extensions/VSCode/.gitignore](extensions/VSCode/.gitignore)
-    2.  NPM/esbuild
+        5.  [builder/.gitignore](builder/.gitignore)
+    3.  NPM/esbuild
         1.  [HashReader.mts](client/src/HashReader.mts)
         2.  client/package.json
         3.  [client/tsconfig.json](client/tsconfig.json)
@@ -75,7 +79,7 @@
         8.  [extensions/VSCode/jsconfig.json](extensions/VSCode/jsconfig.json)
         9.  [extensions/VSCode/.vscodeignore](extensions/VSCode/.vscodeignore)
         10. [.prettierignore](.prettierignore)
-    3.  Misc
+    4.  Misc
         1.  [config.toml](server/.cargo/config.toml) - for Rust code coverage
         2.  [dist-workspace.toml](server/dist-workspace.toml) - cargo-dist
             configuration
