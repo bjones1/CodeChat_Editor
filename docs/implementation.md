@@ -233,6 +233,19 @@ Simplest IDE integration:
 More complex IDE integration: everything that the simple IDE does, plus the
 ability to toggle between the IDE's editor and the CodeChat Editor.
 
+## Build system
+
+The app needs build support because of complexity:
+
+- The client's NPM libraries need patching and some partial copying.
+- After building a release for a platform, client/server binaries must be copied
+  to the VSCode extension, then a release published for that platform.
+
+So, this project contains Rust code to automate this process. It's currently in
+`main.rs`.
+
+## Future work
+
 ### Table of contents
 
 - While the TOC file must be placed in the root of the project, it will be
@@ -380,8 +393,8 @@ with descriptions of each setting.
 
 ### <a id="core-developmnt-priorities"></a>Core development priorities
 
-1.  IDE integration
-2.  Editor functionality
+1.  Bug fixes
+2.  Book support
 
 ### <a id="next-steps"></a>Next steps
 
