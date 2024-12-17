@@ -80,10 +80,10 @@ use filewatcher::{
     filewatcher_websocket,
 };
 
-/// ## Data structures
-///
-/// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
-///
+// ## Data structures
+//
+// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
+//
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
 #[derive(Debug)]
 struct WebsocketQueues {
