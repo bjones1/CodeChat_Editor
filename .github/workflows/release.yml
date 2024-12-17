@@ -148,10 +148,10 @@ jobs:
       - name: Build artifacts
         run: |
           cd server
-          cargo run -- prerelease
+          ./bt prerelease
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
-          cargo run -- postrelease
+          ./bt postrelease
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build
