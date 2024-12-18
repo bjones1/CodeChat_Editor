@@ -27,7 +27,7 @@ use current_platform::CURRENT_PLATFORM;
 // ### Local
 //
 // None
-
+//
 // ## Data structures
 //
 // The following defines the command-line interface for the CodeChat Editor.
@@ -65,9 +65,7 @@ enum Commands {
 
 // ## Code
 //
-// ### Build support
-//
-// #### Utilities
+// ### Utilities
 //
 // These functions are called by the build support functions.
 #[cfg(debug_assertions)]
@@ -214,7 +212,7 @@ fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(
     Ok(())
 }
 
-// ### Core routines
+// ## Core routines
 //
 // These functions simplify common build-focused development tasks and support
 // CI builds.
@@ -351,7 +349,7 @@ fn run_postrelease(target: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// ### CLI implementation
+// ## CLI implementation
 //
 // The following code implements the command-line interface for the CodeChat
 // Editor.
