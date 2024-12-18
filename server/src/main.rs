@@ -27,7 +27,7 @@ use std::{
 // ### Third-party
 #[cfg(debug_assertions)]
 use clap::ValueEnum;
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 // ### Local
@@ -64,18 +64,15 @@ enum TestMode {
 #[derive(Subcommand)]
 enum Commands {
     /// Run the webserver.
-    Serve(ServeCommand),
+    Serve {
+        /// Control logging verbosity.
+        #[arg(short, long)]
+        log: Option<LevelFilter>,
+    },
     /// Start the webserver in a child process then exit.
     Start,
     /// Stop the webserver child process.
     Stop,
-}
-
-#[derive(Args)]
-struct ServeCommand {
-    /// Control logging verbosity.
-    #[arg(short, long)]
-    log: Option<LevelFilter>,
 }
 
 // ## Code
@@ -85,14 +82,14 @@ struct ServeCommand {
 impl Cli {
     fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
-            Commands::Serve(serve_command) => {
+            Commands::Serve { log } => {
                 #[cfg(debug_assertions)]
                 if let Some(TestMode::Sleep) = self.test_mode {
                     // For testing, don't start the server at all.
                     std::thread::sleep(std::time::Duration::from_secs(10));
                     return Ok(());
                 }
-                webserver::configure_logger(serve_command.log.unwrap_or(LevelFilter::Info));
+                webserver::configure_logger(log.unwrap_or(LevelFilter::Info));
                 webserver::main(self.port).unwrap();
             }
             Commands::Start => {
