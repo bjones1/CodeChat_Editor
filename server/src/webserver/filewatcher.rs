@@ -432,74 +432,77 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
 
                             Ok(debounced_event_vec) => {
                                 for debounced_event in debounced_event_vec {
-                                    match debounced_event.event.kind {
-                                        EventKind::Modify(_modify_kind) => {
-                                            // On Windows, the `_modify_kind` is `Any`;
-                                            // therefore; ignore it rather than trying
-                                            // to look at only content modifications.
-                                            if debounced_event.event.paths.len() == 1 && debounced_event.event.paths[0] == current_filepath {
-                                                // Since the parents are identical, send an
-                                                // update. First, read the modified file.
-                                                let mut file_contents = String::new();
-                                                let read_ret = match File::open(&current_filepath).await {
-                                                    Ok(fc) => fc,
-                                                    Err(_err) => {
-                                                        // We can't open the file -- it's been
-                                                        // moved or deleted. Close the file.
-                                                        queue_send!(to_websocket_tx.send(EditorMessage {
-                                                            id,
-                                                            message: EditorMessageContents::Closed
-                                                        }));
-                                                        id += 1.0;
-                                                        continue;
-                                                    }
-                                                }
-                                                .read_to_string(&mut file_contents)
-                                                .await;
-
-                                                // Close the file if it can't be read as
-                                                // Unicode text.
-                                                if read_ret.is_err() {
-                                                    queue_send!(to_websocket_tx.send(EditorMessage {
-                                                        id,
-                                                        message: EditorMessageContents::Closed
-                                                    }));
-                                                    id += 1.0;
-                                                }
-
-                                                // Translate the file.
-                                                let (translation_results_string, _path_to_toc) =
-                                                source_to_codechat_for_web_string(&file_contents, &current_filepath, false);
-                                                if let TranslationResultsString::CodeChat(cc) = translation_results_string {
-                                                    // Send the new contents
-                                                    queue_send!(to_websocket_tx.send(EditorMessage {
-                                                            id,
-                                                            message: EditorMessageContents::Update(UpdateMessageContents {
-                                                                file_path: current_filepath_str.clone(),
-                                                                contents: Some(cc),
-                                                                cursor_position: None,
-                                                                scroll_position: None,
-                                                            }),
-                                                        }));
-                                                        id += 1.0;
-
-                                                } else {
-                                                    // Close the file -- it's not CodeChat
-                                                    // anymore.
-                                                    queue_send!(to_websocket_tx.send(EditorMessage {
-                                                        id,
-                                                        message: EditorMessageContents::Closed
-                                                    }));
-                                                    id += 1.0;
-                                                }
-
-                                            } else {
-                                                warn!("TODO: Modification to different file.")
-                                            }
-                                        }
+                                    let is_modify = match debounced_event.event.kind {
+                                        // On OS X, we get a `Create` event when a file is modified.
+                                        EventKind::Create(_create_kind) => true,
+                                        // On Windows, the `_modify_kind` is `Any`;
+                                        // therefore; ignore it rather than trying
+                                        // to look at only content modifications.
+                                        EventKind::Modify(_modify_kind) => true,
                                         _ => {
                                             // TODO: handle delete.
                                             info!("Watcher event: {debounced_event:?}.");
+                                            false
+                                        }
+                                    };
+                                    if is_modify {
+                                        if debounced_event.event.paths.len() != 1 || debounced_event.event.paths[0] != current_filepath {
+                                            warn!("TODO: Modification to different file.")
+                                        } else {
+                                            // Since the parents are identical, send an
+                                            // update. First, read the modified file.
+                                            let mut file_contents = String::new();
+                                            let read_ret = match File::open(&current_filepath).await {
+                                                Ok(fc) => fc,
+                                                Err(_err) => {
+                                                    // We can't open the file -- it's been
+                                                    // moved or deleted. Close the file.
+                                                    queue_send!(to_websocket_tx.send(EditorMessage {
+                                                        id,
+                                                        message: EditorMessageContents::Closed
+                                                    }));
+                                                    id += 1.0;
+                                                    continue;
+                                                }
+                                            }
+                                            .read_to_string(&mut file_contents)
+                                            .await;
+
+                                            // Close the file if it can't be read as
+                                            // Unicode text.
+                                            if read_ret.is_err() {
+                                                queue_send!(to_websocket_tx.send(EditorMessage {
+                                                    id,
+                                                    message: EditorMessageContents::Closed
+                                                }));
+                                                id += 1.0;
+                                            }
+
+                                            // Translate the file.
+                                            let (translation_results_string, _path_to_toc) =
+                                            source_to_codechat_for_web_string(&file_contents, &current_filepath, false);
+                                            if let TranslationResultsString::CodeChat(cc) = translation_results_string {
+                                                // Send the new contents
+                                                queue_send!(to_websocket_tx.send(EditorMessage {
+                                                        id,
+                                                        message: EditorMessageContents::Update(UpdateMessageContents {
+                                                            file_path: current_filepath_str.clone(),
+                                                            contents: Some(cc),
+                                                            cursor_position: None,
+                                                            scroll_position: None,
+                                                        }),
+                                                    }));
+                                                    id += 1.0;
+
+                                            } else {
+                                                // Close the file -- it's not CodeChat
+                                                // anymore.
+                                                queue_send!(to_websocket_tx.send(EditorMessage {
+                                                    id,
+                                                    message: EditorMessageContents::Closed
+                                                }));
+                                                id += 1.0;
+                                            }
                                         }
                                     }
                                 }
