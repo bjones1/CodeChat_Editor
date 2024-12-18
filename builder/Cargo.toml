@@ -25,3 +25,4 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.19", features = ["derive"] }
 cmd_lib = "1.9.5"
+current_platform = "0.2.0"
