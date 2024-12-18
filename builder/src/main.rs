@@ -22,8 +22,10 @@ use std::{ffi::OsStr, fs, path::Path, process::Command};
 // ### Third-party
 use clap::{Parser, Subcommand};
 use cmd_lib::run_cmd;
+use current_platform::CURRENT_PLATFORM;
 
 // ### Local
+//
 // None
 
 // ## Data structures
@@ -46,9 +48,19 @@ enum Commands {
     Build,
     /// Steps to run before `cargo dist build`.
     Prerelease,
-    /// Steps to run after `cargo dist build`. This builds a VSCode release,
-    /// producing a VSCode `.vsix` file.
-    Postrelease,
+    /// Steps to run after `cargo dist build`. This builds and publishes a
+    /// VSCode release.
+    Postrelease {
+        /// Receives a target triple, such as `x86_64-pc-windows-msvc`. We can't
+        /// always infer this, since `dist` cross-compiles the server on OS X,
+        /// while this program isn't cross-compiled.
+        #[arg(short, long, default_value_t = CURRENT_PLATFORM.to_string())]
+        target: String,
+        /// The CI build passes this. We don't use it, but must receive it to
+        /// avoid an error.
+        #[arg(short, long)]
+        artifacts: Option<String>,
+    },
 }
 
 // ## Code
@@ -68,7 +80,8 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
     args: &[T],
     // The directory to run the script in.
     dir: P,
-    // True to report errors based on the process' exit code; false to ignore the code.
+    // True to report errors based on the process' exit code; false to ignore
+    // the code.
     check_exit_code: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut process;
@@ -303,42 +316,31 @@ fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(debug_assertions)]
-fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
+fn run_postrelease(target: &str) -> Result<(), Box<dyn std::error::Error>> {
     let server_dir = "../extensions/VSCode/server";
     // Only clean the `server/` directory if it exists.
     remove_dir_all_if_exists(server_dir)?;
-    let src_prefix = "target/distrib/";
-    let src_name_prefix = "codechat-editor-server";
 
-    // Get OS-specific strings for the `dist` output and `vsce` target.
-    #[cfg(windows)]
-    let (src_name, vsce_target) = (
-        format!("{src_name_prefix}-x86_64-pc-windows-msvc"),
-        "win32-x64",
-    );
-    #[cfg(target_os = "linux")]
-    let (src_name, vsce_target) = (
-        format!("{src_name_prefix}-x86_64-unknown-linux-gnu"),
-        "linux-x64",
-    );
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    let (src_name, vsce_target) = (
-        format!("{src_name_prefix}-x86_64-apple-darwin"),
-        "darwin-x64",
-    );
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    let (src_name, vsce_target) = (
-        format!("{src_name_prefix}-aarch64-apple-darwin"),
-        "darwin-arm64",
-    );
+    // Translate from the target triple to VSCE's target parameter.
+    let vsce_target = match target {
+        "x86_64-pc-windows-msvc" => "win32-x64",
+        "x86_64-unknown-linux-gnu" => "linux-x64",
+        "x86_64-apple-darwin" => "darwin-x64",
+        "aarch64-apple-darwin" => "darwin-arm64",
+        _ => panic!("Unsupported platform {target}."),
+    };
 
-    let src = format!("{src_prefix}{src_name}");
-    quick_copy_dir(src.as_str(), "../extensions/VSCode")?;
+    let src_name = format!("codechat-editor-server-{target}");
+    quick_copy_dir(
+        format!("target/distrib/{src_name}").as_str(),
+        "../extensions/VSCode",
+    )?;
     let src = &format!("../extensions/VSCode/{src_name}");
     if let Err(err) = fs::rename(src, server_dir) {
         return Err(format!("Error renaming {src} to {server_dir}: {err}").into());
     }
-    // Per `vsce publish --help`, the `--pat` flag "defaults to `VSCE_PAT` environment variable".
+    // Per `vsce publish --help`, the `--pat` flag "defaults to `VSCE_PAT`
+    // environment variable".
     run_script(
         "npx",
         &["vsce", "publish", "--target", vsce_target],
@@ -360,7 +362,7 @@ impl Cli {
             Commands::Update => run_update(),
             Commands::Build => run_build(),
             Commands::Prerelease => run_prerelease(),
-            Commands::Postrelease => run_postrelease(),
+            Commands::Postrelease { target, .. } => run_postrelease(target),
         }
     }
 }
