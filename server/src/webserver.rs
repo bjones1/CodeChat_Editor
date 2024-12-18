@@ -318,6 +318,9 @@ lazy_static! {
     static ref ROOT_PATH: PathBuf = {
         let exe_path = env::current_exe().unwrap();
         let exe_dir = exe_path.parent().unwrap();
+        #[cfg(not(any(test, debug_assertions)))]
+        let root_path = PathBuf::from(exe_dir);
+        #[cfg(any(test, debug_assertions))]
         let mut root_path = PathBuf::from(exe_dir);
         // When in debug or running tests, use the layout of the Git repo to
         // find client files. In release mode, we assume the static folder is a
@@ -1101,6 +1104,9 @@ pub async fn run_server(port: u16) -> std::io::Result<()> {
 }
 
 pub fn configure_logger(level: LevelFilter) {
+    #[cfg(not(debug_assertions))]
+    let l4rs = ROOT_PATH.clone();
+    #[cfg(debug_assertions)]
     let mut l4rs = ROOT_PATH.clone();
     #[cfg(debug_assertions)]
     l4rs.push("server");

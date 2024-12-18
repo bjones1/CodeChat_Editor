@@ -28,7 +28,6 @@ use std::{
 #[cfg(debug_assertions)]
 use clap::ValueEnum;
 use clap::{Args, Parser, Subcommand};
-#[cfg(debug_assertions)]
 use log::LevelFilter;
 
 // ### Local
@@ -102,18 +101,18 @@ impl Cli {
                     Ok(exe) => exe,
                     Err(e) => return Err(format!("Failed to get current executable: {e}").into()),
                 };
+                #[cfg(not(debug_assertions))]
+                let mut cmd = Command::new(&current_exe);
+                #[cfg(debug_assertions)]
                 let mut cmd;
-                if cfg!(debug_assertions) {
-                    match self.test_mode {
-                        None => cmd = Command::new(&current_exe),
-                        Some(TestMode::NotFound) => cmd = Command::new("nonexistent-command"),
-                        Some(TestMode::Sleep) => {
-                            cmd = Command::new(&current_exe);
-                            cmd.args(["--test-mode", "sleep"]);
-                        }
-                    };
-                } else {
-                    cmd = Command::new(&current_exe);
+                #[cfg(debug_assertions)]
+                match self.test_mode {
+                    None => cmd = Command::new(&current_exe),
+                    Some(TestMode::NotFound) => cmd = Command::new("nonexistent-command"),
+                    Some(TestMode::Sleep) => {
+                        cmd = Command::new(&current_exe);
+                        cmd.args(["--test-mode", "sleep"]);
+                    }
                 }
                 let mut process = match cmd
                     .args(["--port", &self.port.to_string(), "serve", "--log", "off"])

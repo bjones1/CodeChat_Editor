@@ -104,6 +104,9 @@ async fn filewatcher_browser_endpoint(
     app_state: web::Data<AppState>,
     orig_path: web::Path<String>,
 ) -> impl Responder {
+    #[cfg(not(target_os = "windows"))]
+    let fixed_path = orig_path.to_string();
+    #[cfg(target_os = "windows")]
     let mut fixed_path = orig_path.to_string();
     #[cfg(target_os = "windows")]
     // On Windows, a path of `drive_letter:` needs a `/` appended.
