@@ -259,8 +259,8 @@ fn run_install() -> Result<(), Box<dyn std::error::Error>> {
     patch_client_npm()?;
     run_script("npm", &["install"], "../extensions/VSCode", true)?;
     run_cmd!(
-        cargo fetch --manifest-path=../builder/Cargo.toml
-        cargo fetch
+        cargo fetch --manifest-path=../builder/Cargo.toml;
+        cargo fetch;
     )?;
     Ok(())
 }
@@ -271,8 +271,8 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     patch_client_npm()?;
     run_script("npm", &["update"], "../extensions/VSCode", true)?;
     run_cmd!(
-        cargo update --manifest-path=../builder/Cargo.toml
-        cargo update
+        cargo update --manifest-path=../builder/Cargo.toml;
+        cargo update;
     )?;
     // Simply display outdated dependencies, but don't considert them an error.
     run_script("npm", &["outdated"], "../client", false)?;
@@ -287,8 +287,8 @@ fn run_build() -> Result<(), Box<dyn std::error::Error>> {
     run_script("npm", &["run", "build"], "../client", true)?;
     run_script("npm", &["run", "compile"], "../extensions/VSCode", true)?;
     run_cmd!(
-        cargo build --manifest-path=../builder/Cargo.toml
-        cargo build
+        cargo build --manifest-path=../builder/Cargo.toml;
+        cargo build;
     )?;
     Ok(())
 }
