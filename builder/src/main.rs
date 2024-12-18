@@ -341,7 +341,7 @@ fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
     // Per `vsce publish --help`, the `--pat` flag "defaults to `VSCE_PAT` environment variable".
     run_script(
         "npx",
-        &["vsce", "publish", "--pat", "--target", vsce_target],
+        &["vsce", "publish", "--target", vsce_target],
         "../extensions/VSCode",
         true,
     )?;
