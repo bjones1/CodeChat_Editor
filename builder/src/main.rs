@@ -44,6 +44,8 @@ enum Commands {
     Install,
     /// Update all dependencies.
     Update,
+    /// Run lints and compile.
+    Check,
     /// Build everything.
     Build,
     /// Steps to run before `cargo dist build`.
@@ -68,7 +70,6 @@ enum Commands {
 // ### Utilities
 //
 // These functions are called by the build support functions.
-#[cfg(debug_assertions)]
 /// On Windows, scripts must be run from a shell; on Linux and OS X, scripts are
 /// directly executable. This function runs a script regardless of OS.
 fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
@@ -104,7 +105,6 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
 /// Copy the provided file `src` to `dest`, unless `dest` already exists. TODO:
 /// check metadata to see if the files are the same. It avoids comparing bytes,
 /// to help with performance.
-#[cfg(debug_assertions)]
 fn quick_copy_file<P: AsRef<Path> + std::fmt::Display>(
     src: P,
     dest: P,
@@ -127,7 +127,6 @@ fn quick_copy_file<P: AsRef<Path> + std::fmt::Display>(
 /// programs (`robocopy`/`rsync`) to accomplish this. Following `rsync`
 /// conventions, if `src` is `foo/bar` and `dest` is `one/two`, then this copies
 /// files and directories in `foo/bar` to `one/two/bar`.
-#[cfg(debug_assertions)]
 fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P) -> Result<(), Box<dyn std::error::Error>> {
     let mut copy_process;
     if cfg!(windows) {
@@ -199,7 +198,6 @@ fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P) -> Result<(), Box<dyn std::e
     }
 }
 
-#[cfg(debug_assertions)]
 fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(
     path: P,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -216,7 +214,7 @@ fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(
 //
 // These functions simplify common build-focused development tasks and support
 // CI builds.
-#[cfg(debug_assertions)]
+//
 /// After updating files in the client's Node files, perform some fix-ups.
 fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
     // Apply a the fixes described in
@@ -264,7 +262,6 @@ fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(debug_assertions)]
 fn run_install() -> Result<(), Box<dyn std::error::Error>> {
     run_script("npm", &["install"], "../client", true)?;
     patch_client_npm()?;
@@ -276,7 +273,6 @@ fn run_install() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(debug_assertions)]
 fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     run_script("npm", &["update"], "../client", true)?;
     patch_client_npm()?;
@@ -291,7 +287,24 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(debug_assertions)]
+fn run_check() -> Result<(), Box<dyn std::error::Error>> {
+    // The `-D warnings` flag causes clippy to return a non-zero exit status if it issues warnings.
+    run_cmd!(
+        cargo clippy --all-targets -- -D warnings;
+        cargo fmt --check;
+        cargo clippy --all-targets --manifest-path=../builder/Cargo.toml -- -D warnings;
+        cargo fmt --check --manifest-path=../builder/Cargo.toml;
+    )?;
+    run_build()?;
+    // Verify that compiling for release produces no errors.
+    run_cmd!(dist build;)?;
+    run_cmd!(
+        cargo test --manifest-path=../builder/Cargo.toml;
+        cargo test;
+    )?;
+    Ok(())
+}
+
 fn run_build() -> Result<(), Box<dyn std::error::Error>> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
@@ -304,7 +317,6 @@ fn run_build() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(debug_assertions)]
 fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
@@ -313,7 +325,6 @@ fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(debug_assertions)]
 fn run_postrelease(target: &str) -> Result<(), Box<dyn std::error::Error>> {
     let server_dir = "../extensions/VSCode/server";
     // Only clean the `server/` directory if it exists.
@@ -358,6 +369,7 @@ impl Cli {
         match &self.command {
             Commands::Install => run_install(),
             Commands::Update => run_update(),
+            Commands::Check => run_check(),
             Commands::Build => run_build(),
             Commands::Prerelease => run_prerelease(),
             Commands::Postrelease { target, .. } => run_postrelease(target),
