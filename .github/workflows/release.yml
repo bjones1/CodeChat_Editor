@@ -112,6 +112,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+      VSC_PAT: ${{ secrets.VSC_PAT }}
     steps:
       - name: enable windows longpaths
         run: |

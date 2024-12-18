@@ -338,9 +338,10 @@ fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
     if let Err(err) = fs::rename(src, server_dir) {
         return Err(format!("Error renaming {src} to {server_dir}: {err}").into());
     }
+    // Per `vsce publish --help`, the `--pat` flag "defaults to `VSCE_PAT` environment variable".
     run_script(
         "npx",
-        &["vsce", "package", "--target", vsce_target],
+        &["vsce", "publish", "--pat", "--target", vsce_target],
         "../extensions/VSCode",
         true,
     )?;
