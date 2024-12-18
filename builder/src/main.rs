@@ -316,7 +316,7 @@ fn run_postrelease() -> Result<(), Box<dyn std::error::Error>> {
         format!("{src_name_prefix}-x86_64-pc-windows-msvc"),
         "win32-x64",
     );
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     let (src_name, vsce_target) = (
         format!("{src_name_prefix}-x86_64-unknown-linux-gnu"),
         "linux-x64",
