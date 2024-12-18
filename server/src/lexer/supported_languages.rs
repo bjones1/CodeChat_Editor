@@ -56,6 +56,7 @@ use super::{
 // ## Helper functions
 //
 // These functions simplify the syntax needed to create a `LanguageLexer`.
+#[allow(clippy::too_many_arguments)]
 fn make_language_lexer(
     lexer_name: &str,
     ext_arr: &[&str],

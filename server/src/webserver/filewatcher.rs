@@ -241,8 +241,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         Ok::<String, std::ffi::OsString>(a.file_name().into_string()?.to_lowercase())
     };
     #[cfg(not(target_os = "windows"))]
-    let file_name_key =
-        |a: &DirEntry| Ok::<String, std::ffi::OsString>(a.file_name().into_string()?);
+    let file_name_key = |a: &DirEntry| a.file_name().into_string();
     files.sort_unstable_by_key(file_name_key);
     dirs.sort_unstable_by_key(file_name_key);
 

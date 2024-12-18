@@ -1,0 +1,49 @@
+# Copyright (C) 2023 Bryan A. Jones.
+#
+# This file is part of the CodeChat Editor.
+#
+# The CodeChat Editor is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option) any
+# later version.
+#
+# The CodeChat Editor is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# the CodeChat Editor. If not, see
+# [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+#
+# # `check.yml` -- Run tests in CI
+
+name: Check
+on:
+  pull_request:
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    name: Run tests
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dist
+        # we specify bash to get pipefail; it guards against the `curl` command
+        # failing. otherwise `sh` won't catch that `curl` returned non-0
+        shell: bash
+        run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.26.1/cargo-dist-installer.sh | sh"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run tests
+        run: |
+          cd server
+          ./bt install
+          ./bt check
