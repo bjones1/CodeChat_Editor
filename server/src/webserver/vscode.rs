@@ -663,7 +663,9 @@ mod test {
         message: &EditorMessage,
     ) {
         ws_stream
-            .send(Message::Text(serde_json::to_string(message).unwrap()))
+            .send(Message::Text(
+                serde_json::to_string(message).unwrap().into(),
+            ))
             .await
             .unwrap();
     }
@@ -680,7 +682,7 @@ mod test {
             };
             match msg {
                 Message::Close(_) => panic!("Unexpected close message."),
-                Message::Ping(_) => ws_stream.send(Message::Pong(vec![])).await.unwrap(),
+                Message::Ping(_) => ws_stream.send(Message::Pong(vec![].into())).await.unwrap(),
                 Message::Pong(_) => panic!("Unexpected pong message."),
                 Message::Text(txt) => break txt,
                 Message::Binary(_) => panic!("Unexpected binary message."),
@@ -1448,7 +1450,7 @@ mod test {
         ws_client.close(None).await.unwrap();
         loop {
             match ws_ide.next().await.unwrap().unwrap() {
-                Message::Ping(_) => ws_ide.send(Message::Pong(vec![])).await.unwrap(),
+                Message::Ping(_) => ws_ide.send(Message::Pong(vec![].into())).await.unwrap(),
                 Message::Close(_) => break,
                 _ => panic!("Unexpected message."),
             }
@@ -1469,7 +1471,7 @@ mod test {
         ws_ide.close(None).await.unwrap();
         loop {
             match ws_client.next().await.unwrap().unwrap() {
-                Message::Ping(_) => ws_client.send(Message::Pong(vec![])).await.unwrap(),
+                Message::Ping(_) => ws_client.send(Message::Pong(vec![].into())).await.unwrap(),
                 Message::Close(_) => break,
                 _ => panic!("Unexpected message."),
             }
