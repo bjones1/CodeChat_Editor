@@ -13,7 +13,19 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// # `main.rs` -- Entrypoint for the CodeChat Editor Builder
+//
+// # `main.rs` -- Entrypoint for the CodeChat Editor Builder
+//
+// This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
+// of the release process. To update the `./release.yaml` file this tool
+// creates:
+//
+// 1.  Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
+// 2.  Run `dist init` and accept the defaults.
+// 3.  Review changes to `./release.yaml`, reapplying hand edits.
+// 4.  Revert the changes to `server/dist-workspace.toml`.
+// 5.  Test
+//
 // ## Imports
 //
 // ### Standard library
@@ -214,7 +226,6 @@ fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(
 //
 // These functions simplify common build-focused development tasks and support
 // CI builds.
-//
 /// After updating files in the client's Node files, perform some fix-ups.
 fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
     // Apply a the fixes described in
@@ -288,7 +299,8 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_check() -> Result<(), Box<dyn std::error::Error>> {
-    // The `-D warnings` flag causes clippy to return a non-zero exit status if it issues warnings.
+    // The `-D warnings` flag causes clippy to return a non-zero exit status if
+    // it issues warnings.
     run_cmd!(
         cargo clippy --all-targets -- -D warnings;
         cargo fmt --check;

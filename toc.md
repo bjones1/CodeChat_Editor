@@ -1,6 +1,6 @@
 # The CodeChat Editor
 
-## About
+## User documentation
 
 1.  [The CodeChat Editor manual](README.md)
 2.  [The CodeChat Editor extension for Visual Studio Code manual](extensions/VSCode/README.md)
