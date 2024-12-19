@@ -364,7 +364,7 @@ fn run_postrelease(target: &str) -> Result<(), Box<dyn std::error::Error>> {
     // environment variable".
     run_script(
         "npx",
-        &["vsce", "package", "--target", vsce_target],
+        &["vsce", "package", "--target", vsce_target, "--out", "codechat-editor-client.vsix"],
         "../extensions/VSCode",
         true,
     )?;

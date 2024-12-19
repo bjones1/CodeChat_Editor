@@ -38,5 +38,5 @@ allow-dirty = ["ci"]
 pr-run-mode = "upload"
 
 [[dist.extra-artifacts]]
-artifacts = ["../extensions/VSCode/codechat-editor-client-*.vsix"]
+artifacts = ["../extensions/VSCode/codechat-editor-client.vsix"]
 build = ["echo", "placeholder"]
