@@ -36,3 +36,7 @@ ci = "github"
 allow-dirty = ["ci"]
 # Which actions to run on pull requests
 pr-run-mode = "upload"
+
+[[dist.extra-artifacts]]
+artifacts = ["../extensions/VSCode/codechat-editor-client-*.vsix"]
+build = ["echo", "placeholder"]

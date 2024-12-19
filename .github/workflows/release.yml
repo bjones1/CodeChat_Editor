@@ -85,7 +85,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-plan-dist-manifest
-          path: plan-dist-manifest.json
+          path: server/plan-dist-manifest.json
 
   # Build and packages all the platform-specific things
   build-local-artifacts:

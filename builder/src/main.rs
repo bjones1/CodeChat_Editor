@@ -21,7 +21,7 @@
 // creates:
 //
 // 1.  Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
-// 2.  Run `dist init` and accept the defaults.
+// 2.  Run `dist init` and accept the defaults, then run `dist generate`.
 // 3.  Review changes to `./release.yaml`, reapplying hand edits.
 // 4.  Revert the changes to `server/dist-workspace.toml`.
 // 5.  Test
@@ -364,7 +364,7 @@ fn run_postrelease(target: &str) -> Result<(), Box<dyn std::error::Error>> {
     // environment variable".
     run_script(
         "npx",
-        &["vsce", "publish", "--target", vsce_target],
+        &["vsce", "package", "--target", vsce_target],
         "../extensions/VSCode",
         true,
     )?;
