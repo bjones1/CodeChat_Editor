@@ -27,7 +27,7 @@ fn test_start_not_found() {
     let assert = cmd.args(["--test-mode", "not-found", "start"]).assert();
     assert
         .failure()
-        .stderr(predicate::str::starts_with("Failed to start server"));
+        .stderr(predicate::str::contains("Failed to start server"));
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn test_start_no_start() {
         .assert();
     assert
         .failure()
-        .stderr(contains("Server failed to start after 5 seconds.\n"));
+        .stderr(contains("Server failed to start after 5 seconds."));
 }
 
 #[actix_web::test]
@@ -61,8 +61,8 @@ async fn test_start_no_response() {
             .assert();
         assert
             .failure()
-            .stderr(contains("Server failed to start after 5 seconds.\n"))
-            .stderr(contains("status code = 404\n"));
+            .stderr(contains("Server failed to start after 5 seconds."))
+            .stderr(contains("status code = 404"));
     });
     test.await.unwrap();
 }

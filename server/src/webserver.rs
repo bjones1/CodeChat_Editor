@@ -71,7 +71,7 @@ use vscode::{
 };
 
 // ### Local
-use crate::capture::EventCapture;
+//use crate::capture::EventCapture;
 use crate::processing::{
     source_to_codechat_for_web_string, CodeChatForWeb, TranslationResultsString,
 };
@@ -80,10 +80,10 @@ use filewatcher::{
     filewatcher_websocket,
 };
 
-/// ## Data structures
-///
-/// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
-///
+// ## Data structures
+//
+// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
+//
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
 #[derive(Debug)]
 struct WebsocketQueues {
@@ -318,6 +318,9 @@ lazy_static! {
     static ref ROOT_PATH: PathBuf = {
         let exe_path = env::current_exe().unwrap();
         let exe_dir = exe_path.parent().unwrap();
+        #[cfg(not(any(test, debug_assertions)))]
+        let root_path = PathBuf::from(exe_dir);
+        #[cfg(any(test, debug_assertions))]
         let mut root_path = PathBuf::from(exe_dir);
         // When in debug or running tests, use the layout of the Git repo to
         // find client files. In release mode, we assume the static folder is a
@@ -1079,7 +1082,7 @@ pub async fn main(port: u16) -> std::io::Result<()> {
 
 pub async fn run_server(port: u16) -> std::io::Result<()> {
     // Connect to the Capture Database
-    let _event_capture = EventCapture::new("config.json").await?;
+    //let _event_capture = EventCapture::new("config.json").await?;
 
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
@@ -1101,6 +1104,9 @@ pub async fn run_server(port: u16) -> std::io::Result<()> {
 }
 
 pub fn configure_logger(level: LevelFilter) {
+    #[cfg(not(debug_assertions))]
+    let l4rs = ROOT_PATH.clone();
+    #[cfg(debug_assertions)]
     let mut l4rs = ROOT_PATH.clone();
     #[cfg(debug_assertions)]
     l4rs.push("server");

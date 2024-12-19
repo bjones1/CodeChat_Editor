@@ -1,9 +1,9 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
-// This file is part of the CodeChat Editor. The CodeChat Editor is free software:
-// you can redistribute it and/or modify it under the terms of the GNU General Public
-// License as published by the Free Software Foundation, either version 3 of the License,
-// or (at your option) any later version.
+// This file is part of the CodeChat Editor. The CodeChat Editor is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
 //
 // The CodeChat Editor is distributed in the hope that it will be useful, but
 // WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -20,27 +20,24 @@
 use std::{
     env,
     io::Read,
-    process::{exit, Command, Stdio},
+    process::{Command, Stdio},
     time::SystemTime,
 };
 
 // ### Third-party
 #[cfg(debug_assertions)]
 use clap::ValueEnum;
-use clap::{Args, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 // ### Local
 use code_chat_editor::webserver::{self, IP_ADDRESS};
-// Added for the use of the 'rust_cmd_lib' library [rust_cmd_lib](https://github.com/rust-shell-script/rust_cmd_lib?tab=readme-ov-file)
-use cmd_lib::run_cmd;
 
-// ## Code
+// ## Data structures
 //
 // ### Command-line interface
 //
-// The following code defines the command-line interface for the CodeChat
-// Editor.
+// The following defines the command-line interface for the CodeChat Editor.
 #[derive(Parser)]
 #[command(name = "The CodeChat Editor Server", version, about, long_about=None)]
 struct Cli {
@@ -67,108 +64,53 @@ enum TestMode {
 #[derive(Subcommand)]
 enum Commands {
     /// Run the webserver.
-    Serve(ServeCommand),
+    Serve {
+        /// Control logging verbosity.
+        #[arg(short, long)]
+        log: Option<LevelFilter>,
+    },
     /// Start the webserver in a child process then exit.
     Start,
     /// Stop the webserver child process.
     Stop,
-    /// Install NPM dependencies
-    Install,
-    /// Package JavaScript dependencies from npm
-    Build,
-    /// Run the CodeChat Editor in a new window (cargo run -- serve) (open
-    /// http://localhost:8080)
-    Run,
 }
 
-#[derive(Args)]
-struct ServeCommand {
-    /// Control logging verbosity.
-    #[arg(short, long)]
-    log: Option<LevelFilter>,
-}
-
-// The following function implements the 'Install' command
-fn run_npm_update() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Installing NPM dependencies...");
-
-    // Runs the 'npm update' command using cmd_lib in the client directory
-    // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
-    run_cmd! {
-        cd ../client;
-        powershell npm update;
-    }?;
-
-    Ok(())
-}
-
-// The following function implements the 'Build' command
-fn run_npm_run_build() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Packaging JavaScript dependencies...");
-
-    // runs the 'npm run build' command in the client directory
-    // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
-    run_cmd! {
-        cd ../client;
-        powershell npm run build;
-    }?;
-
-    Ok(())
-}
-
-// The following function impliments the 'Run' command
-fn run_server() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Executing server...");
-
-    // runs the 'cargo run --serve' command in the server directory
-    // comments cannot be placed in the code below or the commands will not run. 'run_cmd!' puts the text you type into the terminal and it doesn't know how to handle comments.
-    run_cmd! {
-        cd ../server;
-        powershell cargo run -- serve;
-    }?;
-    Ok(())
-}
-
-// ### CLI implementation
+// ## Code
 //
 // The following code implements the command-line interface for the CodeChat
 // Editor.
 impl Cli {
-    fn run(self) {
+    fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
-            Commands::Serve(serve_command) => {
+            Commands::Serve { log } => {
                 #[cfg(debug_assertions)]
                 if let Some(TestMode::Sleep) = self.test_mode {
                     // For testing, don't start the server at all.
                     std::thread::sleep(std::time::Duration::from_secs(10));
-                    exit(0);
+                    return Ok(());
                 }
-                webserver::configure_logger(serve_command.log.unwrap_or(LevelFilter::Info));
+                webserver::configure_logger(log.unwrap_or(LevelFilter::Info));
                 webserver::main(self.port).unwrap();
             }
             Commands::Start => {
                 println!("Starting server in background...");
                 let current_exe = match env::current_exe() {
                     Ok(exe) => exe,
-                    Err(e) => {
-                        eprintln!("Failed to get current executable: {}", e);
-                        exit(1);
-                    }
-                };
-                // Define here, to avoid lifetime issues.
-                #[cfg(debug_assertions)]
-                let mut cmd_temp: Command;
-                #[cfg(debug_assertions)]
-                let cmd = match self.test_mode {
-                    None => &mut Command::new(current_exe),
-                    Some(TestMode::NotFound) => &mut Command::new("nonexistent-command"),
-                    Some(TestMode::Sleep) => {
-                        cmd_temp = Command::new(current_exe);
-                        cmd_temp.args(["--test-mode", "sleep"])
-                    }
+                    Err(e) => return Err(format!("Failed to get current executable: {e}").into()),
                 };
                 #[cfg(not(debug_assertions))]
-                let cmd = &mut Command::new(current_exe);
+                let mut cmd = Command::new(&current_exe);
+                #[cfg(debug_assertions)]
+                let mut cmd;
+                #[cfg(debug_assertions)]
+                match self.test_mode {
+                    None => cmd = Command::new(&current_exe),
+                    Some(TestMode::NotFound) => cmd = Command::new("nonexistent-command"),
+                    Some(TestMode::Sleep) => {
+                        cmd = Command::new(&current_exe);
+                        cmd.args(["--test-mode", "sleep"]);
+                    }
+                }
                 let mut process = match cmd
                     .args(["--port", &self.port.to_string(), "serve", "--log", "off"])
                     // Subtle: the default of `stdout(Stdio::inherit())` causes
@@ -182,13 +124,12 @@ impl Cli {
                 {
                     Ok(process) => process,
                     Err(e) => {
-                        eprintln!("Failed to start server: {}", e);
-                        exit(1);
+                        return Err(format!("Failed to start server: {e}").into());
                     }
                 };
                 // Poll the server to ensure it starts.
                 let now = SystemTime::now();
-                let exit_code = loop {
+                loop {
                     // Look for a ping/pong response from the server.
                     match minreq::get(format!("http://{IP_ADDRESS}:{}/ping", self.port))
                         .with_timeout(3)
@@ -199,7 +140,7 @@ impl Cli {
                             let body = response.as_str().unwrap_or("Non-text body");
                             if status_code == 200 && body == "pong" {
                                 println!("Server started.");
-                                break 0;
+                                return Ok(());
                             } else {
                                 eprintln!(
                                     "Unexpected response from server: {body}, status code = {status_code}"
@@ -220,16 +161,13 @@ impl Cli {
                             let stderr = process.stderr.as_mut().unwrap();
                             stdout.read_to_string(&mut stdout_buf).unwrap();
                             stderr.read_to_string(&mut stderr_buf).unwrap();
-                            eprintln!(
+                            return Err(format!(
                                 "Server failed to start: {status:?}\n{stdout_buf}\n{stderr_buf}"
-                            );
-                            break 1;
+                            )
+                            .into());
                         }
                         Ok(None) => {}
-                        Err(e) => {
-                            eprintln!("Error starting server: {e}");
-                            break 1;
-                        }
+                        Err(e) => return Err(format!("Error starting server: {e}").into()),
                     }
                     // Wait a bit before trying again.
                     std::thread::sleep(std::time::Duration::from_millis(50));
@@ -237,75 +175,50 @@ impl Cli {
                     match now.elapsed() {
                         Ok(elapsed) => {
                             if elapsed.as_secs() > 5 {
-                                eprintln!("Server failed to start after 5 seconds.");
-                                break 1;
+                                return Err("Server failed to start after 5 seconds.".into());
                             }
                         }
 
-                        Err(e) => {
-                            eprintln!("Error getting elapsed time: {e}");
-                            break 1;
-                        }
+                        Err(e) => return Err(format!("Error getting elapsed time: {e}").into()),
                     }
-                };
-                drop(process.stdout.unwrap());
-                drop(process.stderr.unwrap());
-                exit(exit_code);
+                }
             }
             Commands::Stop => {
                 println!("Stopping server...");
                 // TODO: Use https://crates.io/crates/sysinfo to find the server
                 // process and kill it if it doesn't respond to a stop request.
-                let err_msg = match minreq::get(format!("http://{IP_ADDRESS}:{}/stop", self.port))
+                return match minreq::get(format!("http://{IP_ADDRESS}:{}/stop", self.port))
                     .with_timeout(3)
                     .send()
                 {
-                    Err(err) => format!("Failed to stop server: {err}"),
+                    Err(err) => Err(format!("Failed to stop server: {err}").into()),
                     Ok(response) => {
                         let status_code = response.status_code;
                         if status_code == 204 {
                             println!("Server shutting down.");
-                            exit(0);
+                            Ok(())
                         } else {
-                            format!(
+                            Err(format!(
                                 "Unexpected response from server: {}, status code = {status_code}",
                                 response.as_str().unwrap_or("Non-text body")
                             )
+                            .into())
                         }
                     }
                 };
-                eprintln!("{}", err_msg);
-                exit(1);
-            }
-            Commands::Install => {
-                // calls the 'run_npm_update' function that was defined earlier
-                match run_npm_update() {
-                    Ok(_) => println!("Successfully updated NPM dependencies"),
-                    Err(e) => eprintln!("Error: {}", e),
-                }
-            }
-            Commands::Build => {
-                // calls the 'run_npm_run_build' function that was defined earlier
-                match run_npm_run_build() {
-                    Ok(_) => println!("Successfully packaged JavaScript dependencies"),
-                    Err(e) => eprintln!("Error: {}", e),
-                }
-            }
-            Commands::Run => {
-                // calls the 'run_server' function that was defined earlier
-                match run_server() {
-                    Ok(_) => println!("Successfully executed server"),
-                    Err(e) => eprintln!("Error: {}", e),
-                }
             }
         }
+
+        Ok(())
     }
 }
 
 #[cfg(not(tarpaulin_include))]
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    cli.run();
+    cli.run()?;
+
+    Ok(())
 }
 
 #[cfg(test)]
