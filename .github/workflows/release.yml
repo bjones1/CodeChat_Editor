@@ -112,7 +112,6 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
-      VSCE_PAT: ${{ secrets.VSCE_PAT }}
     steps:
       - name: enable windows longpaths
         run: |
@@ -175,6 +174,7 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
+            extensions/VSCode/codechat-editor-client-*.vsix
 
   # Build and package all the platform-agnostic(ish) things
   build-global-artifacts:
@@ -185,6 +185,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -205,6 +206,10 @@ jobs:
       - id: cargo-dist
         shell: bash
         run: |
+          npx vsce publish --packagePath extensions/VSCode/codechat-editor-client-win32-x64-1.4.0.vsix
+          npx vsce publish --packagePath extensions/VSCode/codechat-editor-client-linux-x64-1.4.0.vsix
+          npx vsce publish --packagePath extensions/VSCode/codechat-editor-client-darwin-x64-1.4.0.vsix
+          npx vsce publish --packagePath extensions/VSCode/codechat-editor-client-darwin-arm64-1.4.0.vsix
           cd server
           dist build ${{ needs.plan.outputs.tag-flag }} --output-format=json "--artifacts=global" > dist-manifest.json
           echo "dist ran successfully"
