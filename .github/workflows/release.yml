@@ -85,7 +85,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-plan-dist-manifest
-          path: plan-dist-manifest.json
+          path: server/plan-dist-manifest.json
 
   # Build and packages all the platform-specific things
   build-local-artifacts:
@@ -112,7 +112,6 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
-      VSC_PAT: ${{ secrets.VSC_PAT }}
     steps:
       - name: enable windows longpaths
         run: |
@@ -130,6 +129,10 @@ jobs:
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
             echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           fi
+      - uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ join(matrix.targets, '-') }}
+          cache-provider: ${{ matrix.cache_provider }}
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest
@@ -171,6 +174,7 @@ jobs:
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
             ${{ env.BUILD_MANIFEST_NAME }}
+            extensions/VSCode/codechat-editor-client-*.vsix
 
   # Build and package all the platform-agnostic(ish) things
   build-global-artifacts:
@@ -181,6 +185,8 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      APP_VERSION: ${{ fromJson(needs.plan.outputs.val).releases[0].app_version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -198,9 +204,19 @@ jobs:
           pattern: artifacts-*
           path: server/target/distrib/
           merge-multiple: true
+      - name: Fetch local artifacts (.visx)
+        uses: actions/download-artifact@v4
+        with:
+          path: extensions/VSCode
+          merge-multiple: true
       - id: cargo-dist
         shell: bash
         run: |
+          echo ${APP_VERSION}
+          npx vsce publish --packagePath extensions/VSCode/codechat-editor-client-win32-x64-1.4.0.vsix
+          npx vsce publish --packagePath extensions/VSCode/codechat-editor-client-linux-x64-1.4.0.vsix
+          npx vsce publish --packagePath extensions/VSCode/codechat-editor-client-darwin-x64-1.4.0.vsix
+          npx vsce publish --packagePath extensions/VSCode/codechat-editor-client-darwin-arm64-1.4.0.vsix
           cd server
           dist build ${{ needs.plan.outputs.tag-flag }} --output-format=json "--artifacts=global" > dist-manifest.json
           echo "dist ran successfully"
