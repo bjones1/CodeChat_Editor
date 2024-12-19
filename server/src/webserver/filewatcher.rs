@@ -334,16 +334,11 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
     // First, allocate variables needed by these two tasks.
     //
     // The path to the currently open CodeChat Editor file.
-    let Ok(mut current_filepath) = file_path.to_path_buf().canonicalize() else {
+    let Ok(current_filepath) = file_path.to_path_buf().canonicalize() else {
         error!("Unable to canonicalize path {file_path:?}.");
         return;
     };
-    current_filepath = PathBuf::from(simplified(&current_filepath));
-    let Some(current_filepath_str) = current_filepath.to_str() else {
-        error!("Unable to convert path {current_filepath:?} to string.");
-        return;
-    };
-    let mut current_filepath_str = current_filepath_str.to_string();
+    let mut current_filepath = Some(PathBuf::from(simplified(&current_filepath)));
     // #### The filewatcher task.
     actix_rt::spawn(async move {
         'task: {
@@ -373,12 +368,12 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                 error!("Unable to create debouncer.");
                 break 'task;
             };
-            if let Err(err) =
-                debounced_watcher.watch(&current_filepath, RecursiveMode::NonRecursive)
-            {
-                error!("Unable to watch file: {err}");
-                break 'task;
-            };
+            if let Some(ref cfp) = current_filepath {
+                if let Err(err) = debounced_watcher.watch(cfp, RecursiveMode::NonRecursive) {
+                    error!("Unable to watch file: {err}");
+                    break 'task;
+                };
+            }
 
             // Create the queues for the websocket connection to communicate
             // with this task.
@@ -393,16 +388,18 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
             );
 
             // Provide it a file to open.
-            let url_pathbuf = path_to_url("/fw/fsc", &connection_id.to_string(), &current_filepath);
             let mut id: f64 = 0.0;
-            queue_send!(to_websocket_tx.send(EditorMessage {
-                id,
-                message: EditorMessageContents::CurrentFile(url_pathbuf)
-            }), 'task);
-            // Note: it's OK to postpone the increment to here; if the
-            // `queue_send` exits before this runs, the message didn't get sent,
-            // so the ID wasn't used.
-            id += 1.0;
+            if let Some(cfp) = &current_filepath {
+                let url_pathbuf = path_to_url("/fw/fsc", &connection_id.to_string(), cfp);
+                queue_send!(to_websocket_tx.send(EditorMessage {
+                    id,
+                    message: EditorMessageContents::CurrentFile(url_pathbuf)
+                }), 'task);
+                // Note: it's OK to postpone the increment to here; if the
+                // `queue_send` exits before this runs, the message didn't get sent,
+                // so the ID wasn't used.
+                id += 1.0;
+            };
 
             // Create a queue for HTTP requests fo communicate with this task.
             let (from_http_tx, mut from_http_rx) = mpsc::channel(10);
@@ -446,62 +443,77 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                         }
                                     };
                                     if is_modify {
-                                        if debounced_event.event.paths.len() != 1 || debounced_event.event.paths[0] != current_filepath {
-                                            warn!("TODO: Modification to different file.")
+                                        if debounced_event.event.paths.len() != 1 ||
+                                            current_filepath.as_ref().map_or(false, |cfp| cfp != &debounced_event.event.paths[0])
+                                        {
+                                            warn!("Modification to different file {}.", debounced_event.event.paths[0].to_string_lossy());
                                         } else {
-                                            // Since the parents are identical, send an
-                                            // update. First, read the modified file.
-                                            let mut file_contents = String::new();
-                                            let read_ret = match File::open(&current_filepath).await {
-                                                Ok(fc) => fc,
-                                                Err(_err) => {
-                                                    // We can't open the file -- it's been
-                                                    // moved or deleted. Close the file.
-                                                    queue_send!(to_websocket_tx.send(EditorMessage {
-                                                        id,
-                                                        message: EditorMessageContents::Closed
-                                                    }));
-                                                    id += 1.0;
-                                                    continue;
+                                            let cfp = current_filepath.as_ref().unwrap();
+                                            let result = 'process: {
+                                                // Since the parents are identical, send an
+                                                // update. First, read the modified file.
+                                                let mut file_contents = String::new();
+                                                let read_ret = match File::open(&cfp).await {
+                                                    Ok(fc) => fc,
+                                                    Err(_err) => {
+                                                        // We can't open the file -- it's been
+                                                        // moved or deleted. Close the file.
+                                                        break 'process Err(());
+                                                    }
                                                 }
-                                            }
-                                            .read_to_string(&mut file_contents)
-                                            .await;
+                                                .read_to_string(&mut file_contents)
+                                                .await;
 
-                                            // Close the file if it can't be read as
-                                            // Unicode text.
-                                            if read_ret.is_err() {
-                                                queue_send!(to_websocket_tx.send(EditorMessage {
-                                                    id,
-                                                    message: EditorMessageContents::Closed
-                                                }));
+                                                // Close the file if it can't be read as
+                                                // Unicode text.
+                                                if read_ret.is_err() {
+                                                    error!("Unable to read '{}': {}", cfp.to_string_lossy(), read_ret.unwrap_err());
+                                                    break 'process Err(());
+                                                }
+
+                                                // Translate the file.
+                                                let (translation_results_string, _path_to_toc) =
+                                                source_to_codechat_for_web_string(&file_contents, cfp, false);
+                                                if let TranslationResultsString::CodeChat(cc) = translation_results_string {
+                                                    let Some(current_filepath_str) = cfp.to_str() else {
+                                                        error!("Unable to convert path {cfp:?} to string.");
+                                                        break 'process Err(());
+                                                    };
+                                                    // Send the new contents.
+                                                    Ok(EditorMessage {
+                                                            id,
+                                                            message: EditorMessageContents::Update(UpdateMessageContents {
+                                                                file_path: current_filepath_str.to_string(),
+                                                                contents: Some(cc),
+                                                                cursor_position: None,
+                                                                scroll_position: None,
+                                                            }),
+                                                        })
+                                                } else {
+                                                    break 'process Err(());
+                                                }
+                                            };
+                                            if let Ok(editor_message) = result {
+                                                queue_send!(to_websocket_tx.send(editor_message));
                                                 id += 1.0;
-                                            }
-
-                                            // Translate the file.
-                                            let (translation_results_string, _path_to_toc) =
-                                            source_to_codechat_for_web_string(&file_contents, &current_filepath, false);
-                                            if let TranslationResultsString::CodeChat(cc) = translation_results_string {
-                                                // Send the new contents
-                                                queue_send!(to_websocket_tx.send(EditorMessage {
-                                                        id,
-                                                        message: EditorMessageContents::Update(UpdateMessageContents {
-                                                            file_path: current_filepath_str.clone(),
-                                                            contents: Some(cc),
-                                                            cursor_position: None,
-                                                            scroll_position: None,
-                                                        }),
-                                                    }));
-                                                    id += 1.0;
-
                                             } else {
-                                                // Close the file -- it's not CodeChat
-                                                // anymore.
+                                                // We can't open the file -- it's been
+                                                // moved or deleted. Close the file.
                                                 queue_send!(to_websocket_tx.send(EditorMessage {
                                                     id,
                                                     message: EditorMessageContents::Closed
                                                 }));
                                                 id += 1.0;
+
+                                                // Unwatch it.
+                                                if let Err(err) = debounced_watcher.unwatch(cfp) {
+                                                    error!(
+                                                        "Unable to unwatch file '{}': {err}.",
+                                                        cfp.to_string_lossy()
+                                                    );
+                                                }
+                                                current_filepath = None;
+                                                continue;
                                             }
                                         }
                                     }
@@ -511,7 +523,10 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                     }
 
                     Some(http_request) = from_http_rx.recv() => {
-                        let (simple_http_response, option_update) = make_simple_http_response(&http_request, &current_filepath).await;
+                        // If there's no current file, replace it with an empty file, which will still produce an error.
+                        let empty_path = PathBuf::new();
+                        let cfp = current_filepath.as_ref().unwrap_or(&empty_path);
+                        let (simple_http_response, option_update) = make_simple_http_response(&http_request, cfp).await;
                         if let Some(update) = option_update {
                             // Send the update to the client.
                             queue_send!(to_websocket_tx.send(EditorMessage { id, message: update }));
@@ -525,9 +540,10 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             EditorMessageContents::Update(update_message_contents) => {
                                 let result = 'process: {
                                     // Check that the file path matches the current file. If `canonicalize` fails, then the files don't match.
-                                    if update_message_contents.file_path != current_filepath_str {
+                                    if Some(Path::new(&update_message_contents.file_path).to_path_buf()) != current_filepath {
                                         break 'process Err(format!(
-                                            "Update for file '{}' doesn't match current file '{current_filepath_str}'.", update_message_contents.file_path
+                                            "Update for file '{}' doesn't match current file '{current_filepath:?}'.",
+                                            update_message_contents.file_path
                                         ));
                                     }
                                     // With code or a path, there's nothing to
@@ -550,25 +566,27 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                         }
                                     };
 
-                                    if let Err(err) = debounced_watcher.unwatch(&current_filepath) {
+                                    let cfp = current_filepath.as_ref().unwrap();
+                                    // Unwrap the file, write to it, then rewatch it, in order to avoid a watch notification from this write.
+                                    if let Err(err) = debounced_watcher.unwatch(cfp) {
                                         let msg = format!(
                                             "Unable to unwatch file '{}': {err}.",
-                                            current_filepath.to_string_lossy()
+                                            cfp.to_string_lossy()
                                         );
                                         break 'process Err(msg);
                                     }
                                     // Save this string to a file.
-                                    if let Err(err) = fs::write(current_filepath.as_path(), file_contents).await {
+                                    if let Err(err) = fs::write(cfp.as_path(), file_contents).await {
                                         let msg = format!(
                                             "Unable to save file '{}': {err}.",
-                                            current_filepath.to_string_lossy()
+                                            cfp.to_string_lossy()
                                         );
                                         break 'process Err(msg);
                                     }
-                                    if let Err(err) = debounced_watcher.watch(&current_filepath, RecursiveMode::NonRecursive) {
+                                    if let Err(err) = debounced_watcher.watch(cfp, RecursiveMode::NonRecursive) {
                                         let msg = format!(
                                             "Unable to watch file '{}': {err}.",
-                                            current_filepath.to_string_lossy()
+                                            cfp.to_string_lossy()
                                         );
                                         break 'process Err(msg);
                                     }
@@ -580,27 +598,25 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             EditorMessageContents::CurrentFile(url_string) => {
                                 let result = match url_to_path(&url_string, FILEWATCHER_PATH_PREFIX) {
                                     Err(err) => Err(err),
-                                    Ok(file_path) => 'err_exit: {
+                                    Ok(ref file_path) => 'err_exit: {
                                         // We finally have the desired path! First,
                                         // unwatch the old path.
-                                        if let Err(err) = debounced_watcher.unwatch(&current_filepath) {
-                                            break 'err_exit Err(format!(
-                                                "Unable to unwatch file '{}': {err}.",
-                                                current_filepath.to_string_lossy()
-                                            ));
-                                        }
-                                        // Update to the new path.
-                                        current_filepath = file_path;
-                                        current_filepath_str = match current_filepath.to_str() {
-                                            Some(v) => v.to_string(),
-                                            None => break 'err_exit Err(format!("Unable to convert path {current_filepath:?} to string."))
+                                        if let Some(cfp) = &current_filepath {
+                                            if let Err(err) = debounced_watcher.unwatch(cfp) {
+                                                break 'err_exit Err(format!(
+                                                    "Unable to unwatch file '{}': {err}.",
+                                                    cfp.to_string_lossy()
+                                                ));
+                                            }
                                         };
+                                        // Update to the new path.
+                                        current_filepath = Some(file_path.to_path_buf());
 
                                         // Watch the new file.
-                                        if let Err(err) = debounced_watcher.watch(&current_filepath, RecursiveMode::NonRecursive) {
+                                        if let Err(err) = debounced_watcher.watch(file_path, RecursiveMode::NonRecursive) {
                                             break 'err_exit Err(format!(
                                                 "Unable to watch file '{}': {err}.",
-                                                current_filepath.to_string_lossy()
+                                                file_path.to_string_lossy()
                                             ));
                                         }
 

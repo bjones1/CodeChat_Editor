@@ -241,8 +241,8 @@ The app needs build support because of complexity:
 - After building a release for a platform, client/server binaries must be copied
   to the VSCode extension, then a release published for that platform.
 
-So, this project contains Rust code to automate this process. It's currently in
-`main.rs`.
+So, this project contains Rust code to automate this process -- see the
+[builder](../builder/Cargo.toml).
 
 ## Future work
 
