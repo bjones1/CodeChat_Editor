@@ -19,6 +19,8 @@ CodeChat Editor. If not, see
 # Changelog
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
+  - No changes.
+- v0.1.4, 2024-Dec-19:
   - Added support for [Mermaid](https://mermaid.js.org/).
   - Fixed MathJax packaging.
   - Resize large images to fit in browser.
