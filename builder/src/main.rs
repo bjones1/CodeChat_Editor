@@ -21,7 +21,7 @@
 // creates:
 //
 // 1.  Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
-// 2.  Run `dist init` and accept the defaults.
+// 2.  Run `dist init` and accept the defaults, then run `dist generate`.
 // 3.  Review changes to `./release.yaml`, reapplying hand edits.
 // 4.  Revert the changes to `server/dist-workspace.toml`.
 // 5.  Test
@@ -114,43 +114,20 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
     }
 }
 
-/// Copy the provided file `src` to `dest`, unless `dest` already exists. TODO:
-/// check metadata to see if the files are the same. It avoids comparing bytes,
-/// to help with performance.
-fn quick_copy_file<P: AsRef<Path> + std::fmt::Display>(
-    src: P,
-    dest: P,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // This is a bit simplistic -- it doesn't check dates/sizes/etc. Better
-    // would be to compare metadata.
-    if !dest.as_ref().try_exists().unwrap() {
-        // Create the appropriate directories if needed. Ignore errors for
-        // simplicity; the copy will produce errors if necessary.
-        let _ = fs::create_dir_all(dest.as_ref().parent().unwrap());
-        if let Err(err) = fs::copy(&src, &dest) {
-            return Err(format!("Error copy from {src} to {dest}: {err}").into());
-        }
-    }
-    Ok(())
-}
-
 /// Quickly synchronize the `src` directory with the `dest` directory, by
 /// copying files and removing anything in `dest` not in `src`. It uses OS
-/// programs (`robocopy`/`rsync`) to accomplish this. Following `rsync`
-/// conventions, if `src` is `foo/bar` and `dest` is `one/two`, then this copies
-/// files and directories in `foo/bar` to `one/two/bar`.
-fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P) -> Result<(), Box<dyn std::error::Error>> {
+/// programs (`robocopy`/`rsync`) to accomplish this. Very important: the `src`
+/// **must** end with a `/`, otherwise the Windows and Linux copies aren't
+/// identical.
+fn quick_copy_dir<P: AsRef<OsStr>>(
+    src: P,
+    dest: P,
+    files: Option<P>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    assert!(src.as_ref().to_string_lossy().ends_with('/'));
     let mut copy_process;
-    if cfg!(windows) {
-        // Robocopy copies the contents of the source directory, not the source
-        // directory itself. So, append the final path of the source directory
-        // to the destination directory.
-        let mut robo_dest = Path::new(&dest).to_path_buf();
-        robo_dest.push(
-            Path::new(&src)
-                .file_name()
-                .expect("Cannot get parent directory."),
-        );
+    #[cfg(windows)]
+    {
         // From `robocopy /?`:
         //
         // /MIR MIRror a directory tree (equivalent to /E plus /PURGE).
@@ -170,24 +147,50 @@ fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P) -> Result<(), Box<dyn std::e
         // /NS : No Size - don't log file sizes.
         //
         // /NC : No Class - don't log file classes.
-        //
-        // Robocopy copies the contents of the source directory, not the source
-        // directory itself. So, append the final path of the source directory
-        // to the destination directory.
         copy_process = Command::new("robocopy");
         copy_process
             .args([
                 "/MIR", "/MT", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/NS", "/NC",
             ])
-            .arg(src)
-            .arg(robo_dest);
-    } else {
-        copy_process = Command::new("rsync");
-        copy_process
-            .args(["--archive", "--delete"])
-            .arg(src)
-            .arg(dest);
-    };
+            .arg(&src)
+            .arg(&dest);
+        // Robocopy expects the files to copy after the dest.
+        if let Some(files_) = &files {
+            copy_process.arg(files_);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        // Create the dest directory, since old CI OSes don't support
+        // `rsync --mkpath`.
+        run_script(
+            "mkdir",
+            &["-p", dest.as_ref().to_str().unwrap()],
+            "./",
+            true,
+        )?;
+        let mut tmp;
+        let src_combined = match files.as_ref() {
+            Some(files_) => {
+                tmp = src.as_ref().to_os_string();
+                tmp.push(files_);
+                tmp.as_os_str()
+            }
+            None => src.as_ref(),
+        };
+
+        // Use bash to perform globbing, since rsync doesn't do this.
+        copy_process = Command::new("bash");
+        copy_process.args([
+            "-c",
+            format!(
+                "rsync --archive --delete {} {}",
+                &src_combined.to_str().unwrap(),
+                &dest.as_ref().to_str().unwrap()
+            )
+            .as_str(),
+        ]);
+    }
 
     // Print the command, in case this produces and error or takes a while.
     println!("{:#?}", &copy_process);
@@ -255,19 +258,21 @@ fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
 
     // Copy across the parts of MathJax that are needed, since bundling it is
     // difficult.
-    quick_copy_dir("../client/node_modules/mathjax/", "../client/static")?;
     quick_copy_dir(
-        "../client/node_modules/mathjax-modern-font/chtml",
-        "../client/static/mathjax-modern-font",
+        "../client/node_modules/mathjax/",
+        "../client/static/mathjax",
+        None,
+    )?;
+    quick_copy_dir(
+        "../client/node_modules/mathjax-modern-font/chtml/",
+        "../client/static/mathjax-modern-font/chtml",
+        None,
     )?;
     // Copy over the graphviz files needed.
-    quick_copy_file(
-        "../client/node_modules/graphviz-webcomponent/dist/renderer.min.js",
-        "../client/static/graphviz-webcomponent/renderer.min.js",
-    )?;
-    quick_copy_file(
-        "../client/node_modules/graphviz-webcomponent/dist/renderer.min.js.map",
-        "../client/static/graphviz-webcomponent/renderer.min.js.map",
+    quick_copy_dir(
+        "../client/node_modules/graphviz-webcomponent/dist/",
+        "../client/static/graphviz-webcomponent",
+        Some("renderer.min.js*"),
     )?;
 
     Ok(())
@@ -295,6 +300,7 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     // Simply display outdated dependencies, but don't considert them an error.
     run_script("npm", &["outdated"], "../client", false)?;
     run_script("npm", &["outdated"], "../extensions/VSCode", false)?;
+    run_cmd!("cargo outdated;")?;
     Ok(())
 }
 
@@ -353,18 +359,13 @@ fn run_postrelease(target: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     let src_name = format!("codechat-editor-server-{target}");
     quick_copy_dir(
-        format!("target/distrib/{src_name}").as_str(),
-        "../extensions/VSCode",
+        format!("target/distrib/{src_name}/").as_str(),
+        "../extensions/VSCode/server",
+        None,
     )?;
-    let src = &format!("../extensions/VSCode/{src_name}");
-    if let Err(err) = fs::rename(src, server_dir) {
-        return Err(format!("Error renaming {src} to {server_dir}: {err}").into());
-    }
-    // Per `vsce publish --help`, the `--pat` flag "defaults to `VSCE_PAT`
-    // environment variable".
     run_script(
         "npx",
-        &["vsce", "publish", "--target", vsce_target],
+        &["vsce", "package", "--target", vsce_target],
         "../extensions/VSCode",
         true,
     )?;
