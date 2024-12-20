@@ -13,7 +13,8 @@
 5.  Open `http://localhost:8080` in your browser.
 6.  Open the file `README.md`.
 
-Use `./bt` tool's options update all libraries (`updated`), run all tests (`check`), and more.
+Use `./bt` tool's options update all libraries (`updated`), run all tests
+(`check`), and more.
 
 ## <a id="vision"></a>Vision
 
