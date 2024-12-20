@@ -8,10 +8,12 @@
 3.  [Install NPM](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
     (the Node.js package manager).
 4.  In the `server/` directory:
-    1.  Run `cargo run -- install`.
-    2.  Run `cargo run -- build`.
+    1.  Run `./bt install --dev`.
+    2.  Run `./bt build`.
 5.  Open `http://localhost:8080` in your browser.
 6.  Open the file `README.md`.
+
+Use `./bt` tool's options update all libraries (`updated`), run all tests (`check`), and more.
 
 ## <a id="vision"></a>Vision
 
