@@ -16,7 +16,6 @@
 /// # `test.rs` -- Unit tests for the webserver
 // ## Imports
 use std::{
-    env::{current_dir, set_current_dir},
     path::{PathBuf, MAIN_SEPARATOR_STR},
     thread::{self, sleep},
     time::Duration,
@@ -96,26 +95,22 @@ fn test_path_to_url() {
 fn test_other_path() {
     let (temp_dir, test_dir) = prep_test_dir!();
 
-    let old_dir = current_dir().unwrap();
-    set_current_dir(&test_dir).unwrap();
-
     // Start the server.
+    let test_dir1 = test_dir.clone();
     let handle = thread::spawn(move || {
         get_server()
             .args(["--port", "8083", "start"])
+            .current_dir(&test_dir1)
             .assert()
             .success();
     });
     sleep(Duration::from_millis(1000));
     get_server()
         .args(["--port", "8083", "stop"])
+        .current_dir(&test_dir)
         .assert()
         .success();
     handle.join().unwrap();
-
-    // Restore the original directory, so the temporary directory can be
-    // removed.
-    set_current_dir(&old_dir).unwrap();
 
     // Report any errors produced when removing the temporary directory.
     temp_dir.close().unwrap();
