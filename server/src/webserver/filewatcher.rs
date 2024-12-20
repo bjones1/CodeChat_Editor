@@ -444,7 +444,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     };
                                     if is_modify {
                                         if debounced_event.event.paths.len() != 1 ||
-                                            current_filepath.as_ref().map_or(false, |cfp| cfp != &debounced_event.event.paths[0])
+                                            current_filepath.as_ref().map_or(true, |cfp| cfp != &debounced_event.event.paths[0])
                                         {
                                             warn!("Modification to different file {}.", debounced_event.event.paths[0].to_string_lossy());
                                         } else {
