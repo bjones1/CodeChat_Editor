@@ -56,7 +56,7 @@ enum Commands {
     Install {
         /// True to install developer-only dependencies.
         #[arg(short, long, default_value_t = false)]
-        dev: bool
+        dev: bool,
     },
     /// Update all dependencies.
     Update,
