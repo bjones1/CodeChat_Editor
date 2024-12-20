@@ -20,6 +20,7 @@
 //
 // Standard library
 use indoc::indoc;
+use lazy_static::lazy_static;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -29,6 +30,7 @@ use std::sync::Arc;
 use chrono::Local;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
+use tokio::runtime::Runtime;
 use tokio::sync::Mutex;
 use tokio_postgres::{Client, NoTls};
 
@@ -110,6 +112,16 @@ holds a `tokio_postgres::Client` for database operations.
 pub struct EventCapture {
     db_client: Arc<Mutex<Client>>,
 }
+
+// lazy_static! {
+//     pub static ref GLOBAL_EVENT_CAPTURE: Arc<EventCapture> = {
+//         // Create a synchronous runtime for the async initialization
+//         let rt = Runtime::new().expect("Failed to create tokio runtime");
+//         let capture = rt.block_on(EventCapture::new("config.json"))
+//             .expect("Failed to initialize EventCapture");
+//         Arc::new(capture)
+//     };
+// }
 
 /*
     ## The EventCapture Implementation
