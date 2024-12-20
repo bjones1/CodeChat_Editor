@@ -53,7 +53,11 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Install all dependencies.
-    Install,
+    Install {
+        /// True to install developer-only dependencies.
+        #[arg(short, long, default_value_t = false)]
+        dev: bool
+    },
     /// Update all dependencies.
     Update,
     /// Run lints and compile.
@@ -278,7 +282,7 @@ fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_install() -> Result<(), Box<dyn std::error::Error>> {
+fn run_install(dev: bool) -> Result<(), Box<dyn std::error::Error>> {
     run_script("npm", &["install"], "../client", true)?;
     patch_client_npm()?;
     run_script("npm", &["install"], "../extensions/VSCode", true)?;
@@ -286,6 +290,12 @@ fn run_install() -> Result<(), Box<dyn std::error::Error>> {
         cargo fetch --manifest-path=../builder/Cargo.toml;
         cargo fetch;
     )?;
+    if dev {
+        run_cmd!(
+            cargo install --locked cargo-outdated;
+            cargo install --locked cargo-dist;
+        )?;
+    }
     Ok(())
 }
 
@@ -300,7 +310,7 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     // Simply display outdated dependencies, but don't considert them an error.
     run_script("npm", &["outdated"], "../client", false)?;
     run_script("npm", &["outdated"], "../extensions/VSCode", false)?;
-    run_cmd!("cargo outdated;")?;
+    run_cmd!(cargo outdated;)?;
     Ok(())
 }
 
@@ -338,7 +348,7 @@ fn run_build() -> Result<(), Box<dyn std::error::Error>> {
 fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
-    run_install()?;
+    run_install(false)?;
     run_script("npm", &["run", "dist"], "../client", true)?;
     Ok(())
 }
@@ -380,7 +390,7 @@ fn run_postrelease(target: &str) -> Result<(), Box<dyn std::error::Error>> {
 impl Cli {
     fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
-            Commands::Install => run_install(),
+            Commands::Install { dev } => run_install(*dev),
             Commands::Update => run_update(),
             Commands::Check => run_check(),
             Commands::Build => run_build(),
