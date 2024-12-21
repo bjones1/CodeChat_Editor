@@ -310,7 +310,10 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     // Simply display outdated dependencies, but don't considert them an error.
     run_script("npm", &["outdated"], "../client", false)?;
     run_script("npm", &["outdated"], "../extensions/VSCode", false)?;
-    run_cmd!(cargo outdated;)?;
+    run_cmd!(
+        cargo outdated --manifest-path=../builder/Cargo.toml;
+        cargo outdated;
+    )?;
     Ok(())
 }
 
