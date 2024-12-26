@@ -21,37 +21,103 @@
 // Standard library
 use indoc::indoc;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 // Third-party
+use async_once_cell::OnceCell;
 use chrono::Local;
+use dirs::config_dir;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio_postgres::{Client, NoTls};
+use uuid::Uuid;
+
+pub static GLOBAL_EVENT_CAPTURE: OnceCell<Arc<EventCapture>> = OnceCell::new();
+
+pub async fn get_event_capture() -> Arc<EventCapture> {
+    GLOBAL_EVENT_CAPTURE
+        .get_or_init(async {
+            let capture = EventCapture::new("config.json")
+                .await
+                .expect("Failed to initialize EventCapture");
+            Arc::new(capture)
+        })
+        .await
+        .clone()
+}
 
 // Local
+
+/// Returns the path where the identifier file is stored.
+fn get_uuid_file_path() -> Result<PathBuf, io::Error> {
+    let mut config_path = config_dir().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "Could not find configuration directory",
+        )
+    })?;
+    config_path.push("vsc_extension");
+    config_path.push("uuid.txt");
+    Ok(config_path)
+}
+
+/// Creates a new UUID and writes it to the file if it does not already exist.
+fn create_uuid() -> Result<(), io::Error> {
+    let path = self::get_uuid_file_path()?;
+
+    // Check if the file already exists
+    if path.exists() {
+        return Ok(()); // UUID already exists, no need to create
+    }
+
+    // Generate a new UUID
+    let new_uuid = Uuid::new_v4().to_string();
+
+    // Ensure the parent directory exists
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Write the new UUID to the file
+    let mut file = fs::File::create(&path)?;
+    file.write_all(new_uuid.as_bytes())?;
+    Ok(())
+}
+
+/// Retrieves the UUID from the file. If the file does not exist, it creates one.
+pub fn get_uuid() -> Result<String, io::Error> {
+    let path = get_uuid_file_path()?;
+
+    // If the file does not exist, create it
+    if !path.exists() {
+        self::create_uuid()?;
+    }
+
+    // Read and return the UUID
+    let uuid = fs::read_to_string(&path)?;
+    Ok(uuid.trim().to_string())
+}
 
 /* ## The Event Structure:
 
    The `Event` struct represents an event to be stored in the database.
 
-   Fields: - `user_id`: The ID of the user associated with the event. -
+   Fields: -
    `event_type`: The type of event (e.g., "keystroke", "file_open"). - `data`:
    Optional additional data associated with the event.
 
    ### Example
 
-   let event = Event { user_id: "user123".to_string(), event_type:
-   "keystroke".to_string(), data: Some("Pressed key A".to_string()), };
+   let event = Event {event_type:"keystroke".to_string(), data: Some("Pressed key A".to_string()), };
 */
 
 #[derive(Deserialize, Debug)]
 pub struct Event {
-    pub user_id: String,
-    pub event_type: String,
+    pub event_type: EventType, // Use the EventType enum
     pub data: Option<String>,
 }
 
@@ -95,7 +161,6 @@ holds a `tokio_postgres::Client` for database operations.
 
  // Create an event
  let event = Event {
-     user_id: "user123".to_string(),
      event_type: "keystroke".to_string(),
      data: Some("Pressed key A".to_string()),
  };
@@ -109,6 +174,31 @@ holds a `tokio_postgres::Client` for database operations.
 
 pub struct EventCapture {
     db_client: Arc<Mutex<Client>>,
+}
+
+// Define a globally available EventType enum
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EventType {
+    KeyStroke,
+    FileOpen,
+    FileSave,
+    ApplicationStart,
+    ApplicationExit,
+    System,
+}
+
+impl EventType {
+    /// Convert the EventType enum to a string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EventType::KeyStroke => "KeyStroke",
+            EventType::FileOpen => "FileOpen",
+            EventType::FileSave => "FileSave",
+            EventType::ApplicationStart => "ApplicationStart",
+            EventType::ApplicationExit => "ApplicationExit",
+            EventType::System => "System Event",
+        }
+    }
 }
 
 /*
@@ -181,7 +271,6 @@ impl EventCapture {
            let event_capture = EventCapture::new("config.json").await?;
 
            let event = Event {
-               user_id: "user123".to_string(),
                event_type: "keystroke".to_string(),
                data: Some("Pressed key A".to_string()),
            };
@@ -201,6 +290,15 @@ impl EventCapture {
             VALUES ($1, $2, $3, $4)
         "};
 
+        // Retrieve the UUID, creating it if necessary
+        let uuid = match get_uuid() {
+            Ok(uuid) => uuid,
+            Err(err) => {
+                error!("Error obtaining UUID: {:?}", err);
+                String::new() // Provide a fallback value, e.g., an empty string
+            }
+        };
+
         // Acquire a lock on the database client for thread-safe access
         let client = self.db_client.lock().await;
 
@@ -209,8 +307,8 @@ impl EventCapture {
             .execute(
                 stmt,
                 &[
-                    &event.user_id,
-                    &event.event_type,
+                    &uuid,
+                    &event.event_type.as_str(),
                     &formatted_time,
                     &event.data,
                 ],
@@ -232,7 +330,7 @@ CREATE TABLE events ( id SERIAL PRIMARY KEY, user_id TEXT NOT NULL,
 event_type TEXT NOT NULL, timestamp TEXT NOT NULL, data TEXT );
 
 - **`id SERIAL PRIMARY KEY`**: Auto-incrementing primary key.
-- **`user_id TEXT NOT NULL`**: The ID of the user associated with the event.
+- **`user_id TEXT NOT NULL`**: The ID of the user associated with the event (UUID).
 - **`event_type TEXT NOT NULL`**: The type of event.
 - **`timestamp TEXT NOT NULL`**: The timestamp of the event.
 - **`data TEXT`**: Optional additional data associated with the event.
