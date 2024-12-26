@@ -436,6 +436,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "005f97d2f6ec6956e08b103a6a74dd89da602edcbe3a59379992176fe47e32e5"
 
 [[package]]
+name = "async-once-cell"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4288f83726785267c6f2ef073a3d83dc3f9b81464e9f99898240cced85fce35a"
+
+[[package]]
 name = "async-trait"
 version = "0.1.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -672,6 +678,7 @@ dependencies = [
  "assert_cmd",
  "assert_fs",
  "assertables",
+ "async-once-cell",
  "async-trait",
  "bytes",
  "chrono",

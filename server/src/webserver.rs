@@ -71,6 +71,8 @@ use vscode::{
 };
 
 // ### Local
+use crate::capture::get_event_capture;
+use crate::capture::Event;
 use crate::capture::EventCapture;
 use crate::processing::{
     source_to_codechat_for_web_string, CodeChatForWeb, TranslationResultsString,
@@ -1074,6 +1076,17 @@ async fn client_websocket(
 // ## Webserver core
 #[actix_web::main]
 pub async fn main(port: u16) -> std::io::Result<()> {
+    // Initialize EventCapture
+    let event_capture = get_event_capture().await;
+
+    // Example usage
+    let event = Event {
+        user_id: "admin".to_string(),
+        event_type: "system".to_string(),
+        data: Some("Server Started".to_string()),
+    };
+
+    event_capture.insert_event(event).await?;
     run_server(port).await
 }
 
