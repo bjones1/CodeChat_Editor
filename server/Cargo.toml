@@ -75,6 +75,8 @@ config = "0.13"
 pest = "2.7.14"
 pest_derive = "2.7.14"
 normalize-line-endings = "0.3.0"
+uuid = { version = "1", features = ["v4"] }
+dirs = "5.0.1"
 
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]

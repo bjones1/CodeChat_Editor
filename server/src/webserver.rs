@@ -1081,7 +1081,6 @@ pub async fn main(port: u16) -> std::io::Result<()> {
 
     // Example usage
     let event = Event {
-        user_id: "admin".to_string(),
         event_type: "system".to_string(),
         data: Some("Server Started".to_string()),
     };
