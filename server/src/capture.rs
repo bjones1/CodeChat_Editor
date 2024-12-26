@@ -60,17 +60,6 @@ pub async fn get_event_capture() -> Arc<EventCapture> {
         .clone()
 }
 
-pub async fn init_event_capture() -> Arc<EventCapture> {
-    GLOBAL_EVENT_CAPTURE
-        .get_or_init(async {
-            let capture = EventCapture::new("config.json")
-                .await
-                .expect("Failed to initialize EventCapture");
-            Arc::new(capture)
-        })
-        .await
-        .clone()
-}
 // Local
 
 /* ## The Event Structure:
