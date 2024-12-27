@@ -19,7 +19,7 @@ CodeChat Editor. If not, see
 # Changelog
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
-  - No changes.
+  - Improvements to the build tool.
 - v0.1.5, 2024-Dec-21
   - Improvements to the build tool and tests.
   - Fixed filewatcher bugs.
