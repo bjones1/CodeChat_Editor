@@ -200,7 +200,9 @@ fn quick_copy_dir<P: AsRef<OsStr>>(
     println!("{:#?}", &copy_process);
 
     // Check for errors.
-    let exit_status = copy_process.status().map_err(|err| -> String { format!("Error running copy process: {err}") })?;
+    let exit_status = copy_process
+        .status()
+        .map_err(|err| -> String { format!("Error running copy process: {err}") })?;
     let exit_code = exit_status
         .code()
         .expect("Copy process terminated by signal");
@@ -288,9 +290,12 @@ fn run_install(dev: bool) -> Result<(), Box<dyn std::error::Error>> {
         cargo fetch;
     )?;
     if dev {
+        // If the dist install reports an error, perhaps it's already installed.
+        if run_cmd!(cargo install --locked cargo-dist;).is_err() {
+            run_cmd!(dist --version;)?;
+        }
         run_cmd!(
             cargo install --locked cargo-outdated;
-            cargo install --locked cargo-dist;
             cargo install cargo-sort;
         )?;
     }
@@ -322,9 +327,10 @@ fn run_check() -> Result<(), Box<dyn std::error::Error>> {
         cargo clippy --all-targets -- -D warnings;
         cargo fmt --check;
         cargo sort --check;
-        cargo clippy --all-targets --manifest-path=../builder/Cargo.toml -- -D warnings;
-        cargo fmt --check --manifest-path=../builder/Cargo.toml;
-        cargo sort --check --manifest-path=../builder/Cargo.toml;
+        cd ../builder;
+        cargo clippy --all-targets -- -D warnings;
+        cargo fmt --check;
+        cargo sort --check;
     )?;
     run_build()?;
     // Verify that compiling for release produces no errors.
