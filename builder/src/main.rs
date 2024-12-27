@@ -351,7 +351,7 @@ fn run_build() -> Result<(), Box<dyn std::error::Error>> {
 fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
-    run_install(false)?;
+    run_install(true)?;
     run_script("npm", &["run", "dist"], "../client", true)?;
     Ok(())
 }
