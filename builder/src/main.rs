@@ -321,15 +321,36 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_check() -> Result<(), Box<dyn std::error::Error>> {
+    // On Windows, `cargo sort --check` fails since it default to LF, not CRLF,
+    // line endings. Work around this by changing this setting only on Windows.
+    // See the
+    // [cargo sort config docs](https://github.com/DevinR528/cargo-sort?tab=readme-ov-file#config)
+    // and the
+    // [related issue](https://github.com/DevinR528/cargo-sort/issues/85).
+    //
+    // However, this still fails: `cargo sort` uses
+    // [inconsistent line endings](https://github.com/DevinR528/cargo-sort/issues/86).
+    /***
+    #[cfg(windows)]
+    {
+        fs::write("tomlfmt.toml", "crlf = true")
+            .map_err(|err| -> String { format!("Unable to write tomlfmt.toml: {err}") })?;
+    }
+     */
     // The `-D warnings` flag causes clippy to return a non-zero exit status if
     // it issues warnings.
     run_cmd!(
         cargo clippy --all-targets -- -D warnings;
         cargo fmt --check;
+        cargo clippy --all-targets --manifest-path=../builder/Cargo.toml -- -D warnings;
+        cargo fmt --check --manifest-path=../builder/Cargo.toml;
+    )?;
+    // `cargo sort` produces false positives under Windows. Ignore for now. See
+    // the above comments. It also doesn't support the
+    #[cfg(not(windows))]
+    run_cmd!(
         cargo sort --check;
         cd ../builder;
-        cargo clippy --all-targets -- -D warnings;
-        cargo fmt --check;
         cargo sort --check;
     )?;
     run_build()?;
