@@ -135,9 +135,12 @@ double accurate_g(
     //
     // Compute the International Gravity Formula (IGF):\
     // $IGF = 9.780327 (1 + 0.0053024 \\sin^2 \\phi – 0.0000058 \\sin^2 2\\phi)$
-    double IGF = 9.780327 * (1 + 0.0053024 * pow(sin(degrees_latitude), 2) - 0.0000058 * pow(sin(2 * degrees_latitude), 2));
+    double IGF = 9.780327 * (
+        1 + 0.0053024 * pow(sin(degrees_latitude), 2)
+        - 0.0000058 * pow(sin(2 * degrees_latitude), 2)
+    );
     // Compute the Free Air Correction (FAC):\
-    // $FAC = -3.086 x 10^{-6} h$
+    // $FAC = -3.086 \\cdot 10^{-6} h$
     double FAC = -3.086E-6 * height_meters;
     // $g = IGF + FAC$
     return IGF + FAC;
@@ -205,11 +208,17 @@ double accurate_g(
 //   CodeChat Editor likewise produces a lot of messy syntax; consider pasting
 //   text only, then reformatting as necessary.
 //
-// ### Highlighting bug
+// ### Commenting out code
 //
-// The directions in
-// [this issue](https://github.com/bjones1/CodeChat_Editor/issues/27) provide a
-// manual edit which enables formatting of highlighted items in a doc block.
+// Many developers comment out code while testing, or to save a snippet of code
+// for later use. When using the CodeChat Editor, **ensure these comments aren't
+// interpreted as a doc block**. Otherwise, this commented out code will be
+// interpreted as Markdown then rewritten, which almost certainly corrupts the
+// code. To avoid this, append extra characters immediately after the opening
+// comment delimiter: for example, use `///` or `/**` in C or C++, `##` in
+// Python, etc. See also the example at the end of this file, which includes an
+// improved alternative to commenting out code using preprocessor directives for
+// C/C++.
 //
 // ## Example structure
 //
@@ -250,5 +259,18 @@ class BlinkLed {
 
 // ## Code
 int main(int argc, char* argv[]) {
+    // Here's an example of commenting code out when using the CodeChat Editor:
+    /**
+     *  foo();
+     */
+    // However, when using C/C++, macros provide a nestable way to comment out
+    // code that may contain block comments (which aren't nestable in
+    // standardized C/C++):
+    #if 0
+    /* This block comment doesn't end the commented-out code. */
+    foo();
+    #endif
+
     return 0;
+
 }
