@@ -15,6 +15,8 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // # `c.pest` - Pest parser definition for the C language
+//
+// ## Comments
 doc_block = _{ inline_comment | block_comment }
 
 // Per the
@@ -29,21 +31,14 @@ white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
 // [C standard, section 6.4.9](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
 // defines inline and block comments.
 //
-// ## Inline comments
+// ### Inline comments
 inline_comment_delims  = _{ inline_comment_delim_0 }
 inline_comment_delim_0 =  { "//" }
 inline_comment_delim_1 =  { unused }
 inline_comment_delim_2 =  { unused }
-// Per the
-// [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
-// if a line of code ends with a backslash, it continues on the next line. This
-// is a logical line; treat it as a single line. Therefore, consider a
-// backslash-newline (or anything that's not a newline) a part of the current
-// logical line.
-logical_line_char   = _{ ("\\" ~ NEWLINE) | not_newline }
-inline_comment_char = _{ logical_line_char }
+inline_comment_char =    _{ not_newline }
 
-// ## Block comments
+// ### Block comments
 block_comment                 =  { block_comment_0 }
 block_comment_opening_delim_0 =  { "/*" }
 block_comment_opening_delim_1 =  { unused }
@@ -52,7 +47,34 @@ block_comment_closing_delim_0 =  { "*/" }
 block_comment_closing_delim_1 =  { unused }
 block_comment_closing_delim_2 =  { unused }
 
-// ## Code blocks
+// ## Code
+//
+// Per the
+// [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
+// if a line of code ends with a backslash, it continues on the next line. This
+// is a logical line; treat it as a single line. Therefore, consider a
+// backslash-newline (or anything that's not a newline) a part of the current
+// logical line. Note that this parser doesn't apply this rule to comments
+// (which, per the spec, it should) for several reasons:
+//
+// 1.  Comments continued onto another line don't look like a comment; this
+//     would confuse most developers.
+// 2.  The backslash-newline in a comment creates a
+//     [hard line break](https://spec.commonmark.org/0.31.2/#hard-line-breaks)
+//     in Markdown, which means inserting a hard line break this way in an
+//     inline comment requires the next line to omit the inline comment
+//     delimiters. For example: 
+//
+//     ```C
+//     // This is a hard line break\
+//     followed by a comment which must not include the // inline comment
+//     // delimiter on the line after the line break, but which must
+//     include them on following lines.
+//     ```
+// 3.  The CodeChat Editor web-to-code function produces incorrect results in
+//     this case, adding a comment delimiter when it shouldn't. To fix this, it
+//     would have to look for a backslash newline only in C/C++-like languages.
+logical_line_char   = _{ ("\\" ~ NEWLINE) | not_newline }
 code_line_token = _{ logical_line_char }
 
 // ## Dedenter
