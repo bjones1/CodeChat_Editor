@@ -20,6 +20,7 @@ CodeChat Editor. If not, see
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
   - Improvements to the build tool.
+  - Corrections to the C parser.
 - v0.1.5, 2024-Dec-21
   - Improvements to the build tool and tests.
   - Fixed filewatcher bugs.
