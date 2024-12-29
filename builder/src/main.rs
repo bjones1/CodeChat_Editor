@@ -60,8 +60,8 @@ enum Commands {
     },
     /// Update all dependencies.
     Update,
-    /// Run lints and compile.
-    Check,
+    /// Run lints and tests.
+    Test,
     /// Build everything.
     Build,
     /// Steps to run before `cargo dist build`.
@@ -320,7 +320,7 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_check() -> Result<(), Box<dyn std::error::Error>> {
+fn run_test() -> Result<(), Box<dyn std::error::Error>> {
     // On Windows, `cargo sort --check` fails since it default to LF, not CRLF,
     // line endings. Work around this by changing this setting only on Windows.
     // See the
@@ -422,7 +422,7 @@ impl Cli {
         match &self.command {
             Commands::Install { dev } => run_install(*dev),
             Commands::Update => run_update(),
-            Commands::Check => run_check(),
+            Commands::Test => run_test(),
             Commands::Build => run_build(),
             Commands::Prerelease => run_prerelease(),
             Commands::Postrelease { target, .. } => run_postrelease(target),
