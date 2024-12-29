@@ -35,6 +35,7 @@ use std::{ffi::OsStr, fs, path::Path, process::Command};
 use clap::{Parser, Subcommand};
 use cmd_lib::run_cmd;
 use current_platform::CURRENT_PLATFORM;
+use regex::Regex;
 
 // ### Local
 //
@@ -64,6 +65,11 @@ enum Commands {
     Test,
     /// Build everything.
     Build,
+    /// Change the version for the client, server, and extensions.
+    ChangeVersion {
+        /// The new version number, such as "0.1.1".
+        new_version: String,
+    },
     /// Steps to run before `cargo dist build`.
     Prerelease,
     /// Steps to run after `cargo dist build`. This builds and publishes a
@@ -228,6 +234,29 @@ fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(
     Ok(())
 }
 
+fn search_and_replace_file<
+    P: AsRef<Path> + std::fmt::Display,
+    S1: AsRef<str> + std::fmt::Display,
+    S2: AsRef<str>,
+>(
+    path: P,
+    search_regex: S1,
+    replace_string: S2,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file_contents = fs::read_to_string(&path)
+        .map_err(|err| -> String { format!("Unable to open file {path} for reading: {err}") })?;
+    let re = Regex::new(search_regex.as_ref())
+        .map_err(|err| -> String { format!("Error in search regex {search_regex}: {err}") })?;
+    let file_contents_replaced = re.replace(&file_contents, replace_string.as_ref());
+    assert_ne!(
+        file_contents, file_contents_replaced,
+        "No replacements made."
+    );
+    fs::write(&path, file_contents_replaced.as_bytes())
+        .map_err(|err| -> String { format!("Error writing to {path}: {err}") })?;
+    Ok(())
+}
+
 // ## Core routines
 //
 // These functions simplify common build-focused development tasks and support
@@ -375,6 +404,27 @@ fn run_build() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn run_change_version(new_version: &String) -> Result<(), Box<dyn std::error::Error>> {
+    let replacement_string = format!("${{1}}{new_version}${{2}}");
+    search_and_replace_file(
+        "Cargo.toml",
+        r#"(\r?\nversion = ")[\d.]+("\r?\n)"#,
+        &replacement_string,
+    )?;
+    let json_search_regex = r#"(\r?\n    "version": ")[\d.]+(",\r?\n)"#;
+    search_and_replace_file(
+        "../client/package.json",
+        json_search_regex,
+        &replacement_string,
+    )?;
+    search_and_replace_file(
+        "../extensions/VSCode/package.json",
+        json_search_regex,
+        &replacement_string,
+    )?;
+    Ok(())
+}
+
 fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
@@ -424,6 +474,7 @@ impl Cli {
             Commands::Update => run_update(),
             Commands::Test => run_test(),
             Commands::Build => run_build(),
+            Commands::ChangeVersion { new_version } => run_change_version(new_version),
             Commands::Prerelease => run_prerelease(),
             Commands::Postrelease { target, .. } => run_postrelease(target),
         }

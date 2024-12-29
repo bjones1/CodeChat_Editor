@@ -26,3 +26,4 @@ edition = "2021"
 clap = { version = "4.5.19", features = ["derive"] }
 cmd_lib = "1.9.5"
 current_platform = "0.2.0"
+regex = "1.11.1"
