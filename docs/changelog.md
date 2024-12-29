@@ -19,9 +19,11 @@ CodeChat Editor. If not, see
 # Changelog
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
+  - No changes.
+- v0.1.6, 2024-Dec-29:
   - Improvements to the build tool.
   - Corrections to the C parser.
-- v0.1.5, 2024-Dec-21
+- v0.1.5, 2024-Dec-21:
   - Improvements to the build tool and tests.
   - Fixed filewatcher bugs.
 - v0.1.4, 2024-Dec-19:
@@ -45,7 +47,7 @@ CodeChat Editor. If not, see
   - Fix errors saving mathematics in Markdown-only files.
   - Improve spellchecking coverage.
   - Fix data loss when the CodeChat Editor Client is not visible.
-- v0.1.1, 2024-Nov-04
+- v0.1.1, 2024-Nov-04:
   - Added basic theme support; used a theme similar to Sphinx's Alabaster.
   - Added support for printing.
   - Added a user manual, improved documentation.
@@ -56,7 +58,7 @@ CodeChat Editor. If not, see
   - Added support for Kotlin.
   - Updates to the build system.
   - Cross-platform fixes.
-- v0.1.0, 2024-Oct-16
+- v0.1.0, 2024-Oct-16:
   - Initial release, with binaries for Windows only. Built with manually-patched
     CodeMirror per
     [this issue](https://github.com/bjones1/CodeChat_Editor/issues/27).
