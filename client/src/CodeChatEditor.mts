@@ -162,6 +162,7 @@ export const page_init = () => {
             "navigate",
             on_navigate,
         );
+        document.addEventListener("click", on_click);
 
         window.CodeChatEditor = {
             open_lp,
@@ -476,12 +477,56 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
     // Intercept this navigation so we can save the document first.
     navigateEvent.intercept();
     console.log("CodeChat Editor: saving document before navigation.");
+    save_then_navigate(new URL(navigateEvent.destination.url));
+};
+
+// This is able to intercept clicks on links that the Navigation API doesn't,
+// specifically those that TinyMCE generates (since they're always set to open
+// in a new tab).
+const on_click = (event: MouseEvent) => {
+    // TinyMCE by default tries to open all links in a new tab. Look for and fix
+    // these.
+    if (
+        event.target instanceof HTMLAnchorElement &&
+        event.target.target === "_blank"
+    ) {
+        // Get the URL from the link.
+        const url = event.target.href;
+
+        // If it's to a CodeChat Editor file, then load it as such.
+        if (event.target.origin === window.location.origin) {
+            // Ignore the "new tab" target, which doesn't make sense when there
+            // is a 1:1 relationship between the active IDE file and the file
+            // being edited in the CodeChat Editor. If two tabs are open, which
+            // is the current file for the IDE?
+            event.preventDefault();
+            save_then_navigate(new URL(url));
+        } else {
+            // This is navigation to some external link. Let that proceed
+            // without interruption in a pure browser environment. However,
+            // VSCode will block navigation, since it's cross-origin (the root
+            // iframe has no URL, in contrast with the localhost URL of the
+            // CodeChat Editor Server). In this case, ask the Server to open the
+            // requested link.
+            if (window.location.pathname.startsWith("/vsc")) {
+                event.preventDefault();
+                parent.parent.postMessage(url, "*");
+            }
+        }
+
+        // Do something with the URL, e.g., open it in a new tab with additional
+        // logic
+    }
+};
+// Save the current document, then navigate to the provided URL, which must be a
+// reference to another CodeChat Editor document.
+const save_then_navigate = (codeChatEditorUrl: URL) => {
     on_save(true).then((_value) => {
         // Avoid recursion!
         /// @ts-ignore
         navigation.removeEventListener("navigate", on_navigate);
         parent.window.CodeChatEditorFramework.webSocketComm.current_file(
-            new URL(navigateEvent.destination.url),
+            codeChatEditorUrl,
         );
     });
 };
