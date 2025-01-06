@@ -194,6 +194,14 @@ pub async fn vscode_ide_websocket(
                             <!DOCTYPE html>
                             <html>
                                 <head>
+                                <script>
+                                    window.addEventListener("message", (event) => {{
+                                        if (event.origin !== "http://127.0.0.1:8080") {{
+                                            return;
+                                        }}
+                                        window.open(event.data, "_blank");
+                                    }});
+                                </script>
                                 </head>
                                 <body style="margin: 0px; padding: 0px; overflow: hidden">
                                     <iframe src="http://{IP_ADDRESS}:{port}/vsc/cf/{connection_id_task}" style="width: 100%; height: 100vh; border: none"></iframe>
