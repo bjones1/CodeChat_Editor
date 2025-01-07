@@ -194,14 +194,6 @@ pub async fn vscode_ide_websocket(
                             <!DOCTYPE html>
                             <html>
                                 <head>
-                                <script>
-                                    window.addEventListener("message", (event) => {{
-                                        if (event.origin !== "http://127.0.0.1:8080") {{
-                                            return;
-                                        }}
-                                        window.open(event.data, "_blank");
-                                    }});
-                                </script>
                                 </head>
                                 <body style="margin: 0px; padding: 0px; overflow: hidden">
                                     <iframe src="http://{IP_ADDRESS}:{port}/vsc/cf/{connection_id_task}" style="width: 100%; height: 100vh; border: none"></iframe>
@@ -302,6 +294,7 @@ pub async fn vscode_ide_websocket(
                         match ide_message.message {
                             // Handle messages that the IDE must not send.
                             EditorMessageContents::Opened(_) |
+                            EditorMessageContents::OpenUrl(_) |
                             EditorMessageContents::LoadFile(_) |
                             EditorMessageContents::ClientHtml(_) => {
                                 let msg = "IDE must not send this message.";
@@ -449,6 +442,17 @@ pub async fn vscode_ide_websocket(
                             EditorMessageContents::Result(_) => {
                                 debug!("Forwarding it to the IDE.");
                                 queue_send!(to_ide_tx.send(client_message))
+                            },
+
+                            // Open a web browser when requested.
+                            EditorMessageContents::OpenUrl(url) => {
+                                if let Err(err) = open::that_detached(&url) {
+                                    let msg = format!("Unable to open web browser to URL {url}: {err}");
+                                    error!("{msg}");
+                                    send_response(&to_client_tx, message.id, Err(msg)).await;
+                                } else {
+                                    send_response(&to_client_tx, message.id, Ok(ResultOkTypes::Void)).await;
+                                }
                             },
 
                             // Handle the `Update` message.
