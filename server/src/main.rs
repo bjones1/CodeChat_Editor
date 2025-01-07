@@ -20,7 +20,7 @@
 use std::{
     env,
     io::Read,
-    process::{Command, Stdio},
+    process::{Child, Command, Stdio},
     time::SystemTime,
 };
 
@@ -93,41 +93,8 @@ impl Cli {
                 webserver::main(self.port).unwrap();
             }
             Commands::Start => {
-                println!("Starting server in background...");
-                let current_exe = match env::current_exe() {
-                    Ok(exe) => exe,
-                    Err(e) => return Err(format!("Failed to get current executable: {e}").into()),
-                };
-                #[cfg(not(debug_assertions))]
-                let mut cmd = Command::new(&current_exe);
-                #[cfg(debug_assertions)]
-                let mut cmd;
-                #[cfg(debug_assertions)]
-                match self.test_mode {
-                    None => cmd = Command::new(&current_exe),
-                    Some(TestMode::NotFound) => cmd = Command::new("nonexistent-command"),
-                    Some(TestMode::Sleep) => {
-                        cmd = Command::new(&current_exe);
-                        cmd.args(["--test-mode", "sleep"]);
-                    }
-                }
-                let mut process = match cmd
-                    .args(["--port", &self.port.to_string(), "serve", "--log", "off"])
-                    // Subtle: the default of `stdout(Stdio::inherit())` causes
-                    // a parent process to block, since the child process
-                    // inherits the parent's stdout. So, use the pipes to avoid
-                    // blocking.
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                {
-                    Ok(process) => process,
-                    Err(e) => {
-                        return Err(format!("Failed to start server: {e}").into());
-                    }
-                };
                 // Poll the server to ensure it starts.
+                let mut process: Option<Child> = None;
                 let now = SystemTime::now();
                 loop {
                     // Look for a ping/pong response from the server.
@@ -152,22 +119,68 @@ impl Cli {
                         }
                     }
 
-                    // Check if the server has exited or failed to start.
-                    match process.try_wait() {
-                        Ok(Some(status)) => {
-                            let mut stdout_buf = String::new();
-                            let mut stderr_buf = String::new();
-                            let stdout = process.stdout.as_mut().unwrap();
-                            let stderr = process.stderr.as_mut().unwrap();
-                            stdout.read_to_string(&mut stdout_buf).unwrap();
-                            stderr.read_to_string(&mut stderr_buf).unwrap();
-                            return Err(format!(
-                                "Server failed to start: {status:?}\n{stdout_buf}\n{stderr_buf}"
-                            )
-                            .into());
+                    match process {
+                        // If the process isn't started, then do so. We wait to here to start the process, in case the server was already running; in this case, the ping above will see the running server then exit.
+                        None => {
+                            println!("Starting server in background...");
+                            let current_exe = match env::current_exe() {
+                                Ok(exe) => exe,
+                                Err(e) => {
+                                    return Err(
+                                        format!("Failed to get current executable: {e}").into()
+                                    )
+                                }
+                            };
+                            #[cfg(not(debug_assertions))]
+                            let mut cmd = Command::new(&current_exe);
+                            #[cfg(debug_assertions)]
+                            let mut cmd;
+                            #[cfg(debug_assertions)]
+                            match self.test_mode {
+                                None => cmd = Command::new(&current_exe),
+                                Some(TestMode::NotFound) => {
+                                    cmd = Command::new("nonexistent-command")
+                                }
+                                Some(TestMode::Sleep) => {
+                                    cmd = Command::new(&current_exe);
+                                    cmd.args(["--test-mode", "sleep"]);
+                                }
+                            }
+                            process = match cmd
+                                .args(["--port", &self.port.to_string(), "serve", "--log", "off"])
+                                // Subtle: the default of `stdout(Stdio::inherit())` causes
+                                // a parent process to block, since the child process
+                                // inherits the parent's stdout. So, use the pipes to avoid
+                                // blocking.
+                                .stdin(Stdio::null())
+                                .stdout(Stdio::piped())
+                                .stderr(Stdio::piped())
+                                .spawn()
+                            {
+                                Ok(process) => Some(process),
+                                Err(e) => {
+                                    return Err(format!("Failed to start server: {e}").into());
+                                }
+                            };
                         }
-                        Ok(None) => {}
-                        Err(e) => return Err(format!("Error starting server: {e}").into()),
+
+                        // Check if the server has exited or failed to start.
+                        Some(ref mut child) => match child.try_wait() {
+                            Ok(Some(status)) => {
+                                let mut stdout_buf = String::new();
+                                let mut stderr_buf = String::new();
+                                let stdout = child.stdout.as_mut().unwrap();
+                                let stderr = child.stderr.as_mut().unwrap();
+                                stdout.read_to_string(&mut stdout_buf).unwrap();
+                                stderr.read_to_string(&mut stderr_buf).unwrap();
+                                return Err(format!(
+                                        "Server failed to start: {status:?}\n{stdout_buf}\n{stderr_buf}"
+                                    )
+                                    .into());
+                            }
+                            Ok(None) => {}
+                            Err(e) => return Err(format!("Error starting server: {e}").into()),
+                        },
                     }
                     // Wait a bit before trying again.
                     std::thread::sleep(std::time::Duration::from_millis(50));
