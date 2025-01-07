@@ -25,6 +25,7 @@
 // ### Node.js packages
 import assert from "assert";
 import child_process from "node:child_process";
+import process from "node:process";
 
 // ### Third-party packages
 import escape from "escape-html";
@@ -44,6 +45,9 @@ enum CodeChatEditorClientLocation {
 const MAX_MESSAGE_LENGTH = 200;
 // The timeout for a websocket `Response`.
 const RESPONSE_TIMEOUT = 15000;
+
+// True on Windows, false on OS X / Linux.
+const is_windows = process.platform === "win32";
 
 // These globals are truly global: only one is needed for this entire plugin.
 let websocket: WebSocket | undefined;
@@ -395,7 +399,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                             case "Update": {
                                 const current_update =
                                     value as UpdateMessageContents;
-                                const doc = get_document(current_update.file_path);
+                                const doc = get_document(
+                                    current_update.file_path
+                                );
                                 if (doc === undefined) {
                                     send_result(id, {
                                         Err: "No open document for this file.",
@@ -457,7 +463,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 // Report if this was an error.
                                 const result_contents = value as MessageResult;
                                 if ("Err" in result_contents) {
-                                    const msg = `Error in message ${id}: ${result_contents.Err}.`;
+                                    const msg = `Error in message ${id}: ${result_contents.Err}`;
                                     console.log(msg);
                                     // Warning: Calling `show_error` shuts down
                                     // the client. Do this deliberately, since
@@ -473,7 +479,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 // Look through all open documents to see if we
                                 // have the requested file.
                                 const doc = get_document(load_file);
-                                const load_file_result = doc === undefined ? null : doc.getText();
+                                const load_file_result =
+                                    doc === undefined ? null : doc.getText();
                                 send_result(id, {
                                     Ok: {
                                         LoadFile: load_file_result,
@@ -511,7 +518,7 @@ export const activate = (context: vscode.ExtensionContext) => {
             }
         )
     );
-}
+};
 
 // On deactivation, close everything down.
 export const deactivate = async () => {
@@ -519,7 +526,7 @@ export const deactivate = async () => {
     await stop_client();
     webview_panel?.dispose();
     console.log("CodeChat extension: deactivated.");
-}
+};
 
 // ## Supporting functions
 //
@@ -606,18 +613,16 @@ const start_render = () => {
             }
         }, 300);
     }
-}
+};
 
 const current_file = () => {
     // Only send a new current file is there's a change.
     const ate = vscode.window.activeTextEditor;
     if (can_render() && ate !== current_editor) {
         current_editor = ate;
-        send_message(
-            {
-                CurrentFile: ate!.document.fileName,
-            },
-        );
+        send_message({
+            CurrentFile: ate!.document.fileName,
+        });
     }
 };
 
@@ -648,7 +653,7 @@ const stop_client = async () => {
         );
     }
     current_editor = undefined;
-}
+};
 
 // Provide an error message in the panel if possible.
 const show_error = (message: string) => {
@@ -667,7 +672,7 @@ const show_error = (message: string) => {
             message + "\nSee https://github.com/bjones1/CodeChat_Editor."
         );
     }
-}
+};
 
 // Only render if the window and editor are active, we have a valid render
 // client, and the webview is visible.
@@ -676,14 +681,33 @@ const can_render = () => {
         vscode.window.activeTextEditor !== undefined &&
         websocket !== undefined &&
         (codechat_client_location === CodeChatEditorClientLocation.browser ||
-            (webview_panel !== undefined))
+            webview_panel !== undefined)
     );
-}
+};
 
 const get_document = (file_path: string) => {
     // Look through all open documents to see if we have the requested file.
     for (const doc of vscode.workspace.textDocuments) {
-        if (doc.fileName === file_path) {
+        // Make the possibly incorrect assumption that only Windows filesystems
+        // are case-insensitive; I don't know how to easily determine the
+        // case-sensitivity of the current filesystem without extra probing code
+        // (write a file in mixed case, try to open it in another mixed case.)
+        // Per
+        // [How to Work with Different Filesystems](https://nodejs.org/en/learn/manipulating-files/working-with-different-filesystems#filesystem-behavior),
+        // "Be wary of inferring filesystem behavior from `process.platform`.
+        // For example, do not assume that because your program is running on
+        // Darwin that you are therefore working on a case-insensitive
+        // filesystem (HFS+), as the user may be using a case-sensitive
+        // filesystem (HFSX)."
+        //
+        // The same article
+        // [recommends](https://nodejs.org/en/learn/manipulating-files/working-with-different-filesystems#be-prepared-for-slight-differences-in-comparison-functions)
+        // using `toUpperCase` for case-insensitive filename comparisons.
+        if (
+            (!is_windows && doc.fileName === file_path) ||
+            (is_windows &&
+                doc.fileName.toUpperCase() === file_path.toUpperCase())
+        ) {
             return doc;
         }
     }
@@ -755,4 +779,4 @@ const run_server = (args: string[]) => {
             stderr += chunk.toString();
         });
     });
-}
+};
