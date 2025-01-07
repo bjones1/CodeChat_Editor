@@ -487,16 +487,8 @@ pub async fn filesystem_endpoint(
     app_state: &web::Data<AppState>,
 ) -> HttpResponse {
     let (connection_id, file_path) = request_path.into_inner();
-    let file_path = match PathBuf::from_str(&file_path) {
-        // For Windows, use `absolute` to switch to Windows path separators.
-        Ok(v) => match path::absolute(&v) {
-            Ok(v) => v,
-            Err(err) => {
-                let msg = format!("Error: unable to resolve absolute path {file_path}: {err}.");
-                error!("{msg}");
-                return html_not_found(&msg);
-            }
-        },
+    let file_path = match try_canonicalize(&file_path) {
+        Ok(v) => v,
         Err(err) => {
             let msg = format!("Error: unable to convert path {file_path}: {err}.");
             error!("{msg}");
@@ -1214,31 +1206,37 @@ fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, St
                             // with a drive letter.
                             #[cfg(not(target_os = "windows"))]
                             let path_str = "/".to_string() + &path_str;
-                            match PathBuf::from_str(&path_str) {
-                                Err(err) => Err(format!(
-                                    "Error: unable to parse file path {path_str_encoded}: {err}."
-                                )),
-                                Ok(path_buf) => match path_buf.canonicalize() {
-                                    // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
-                                    // fails if the path doesn't exist. For
-                                    // unsaved files, this is expected;
-                                    // therefore, use
-                                    // [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html)
-                                    // on error, since it doesn't require the
-                                    // path to exist.
-                                    Err(_) => match path::absolute(&*path_buf) {
-                                        Err(err) => Err(format!(
-                                            "Unable to make {path_buf:?} absolute: {err}"
-                                        )),
-                                        Ok(p) => Ok(p),
-                                    },
-                                    Ok(p) => Ok(PathBuf::from(simplified(&p))),
-                                },
-                            }
+                            try_canonicalize(&path_str)
                         }
                     }
                 }
             }
+        },
+    }
+}
+
+// Given a string representing a file, transform it into a `PathBuf`. Correct it as much as possible:
+//
+// 1. Convert Linux path separators to this platform's path separators.
+// 2. If the file exists and if this is Windows, correct case based on the actual file's naming (even though the filesystem is case-insensitive; this makes comparisons in the TypeScript simpler).
+fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
+    match PathBuf::from_str(file_path) {
+        Err(err) => Err(format!(
+            "Error: unable to parse file path {file_path}: {err}."
+        )),
+        Ok(path_buf) => match path_buf.canonicalize() {
+            // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
+            // fails if the path doesn't exist. For
+            // unsaved files, this is expected;
+            // therefore, use
+            // [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html)
+            // on error, since it doesn't require the
+            // path to exist.
+            Err(_) => match path::absolute(&path_buf) {
+                Err(err) => Err(format!("Unable to make {path_buf:?} absolute: {err}")),
+                Ok(p) => Ok(p),
+            },
+            Ok(p) => Ok(PathBuf::from(simplified(&p))),
         },
     }
 }

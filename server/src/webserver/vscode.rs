@@ -1092,7 +1092,7 @@ mod test {
         // translated.
         //
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
-        let file_path = format!("{}/test.py", test_dir.to_str().unwrap());
+        let file_path = test_dir.join("test.py").to_string_lossy().to_string();
         send_message(
             &mut ws_client,
             &EditorMessage {
@@ -1335,8 +1335,10 @@ mod test {
         let join_handle = thread::spawn(move || {
             assert_eq!(
                 minreq::get(format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}/test.py",
-                    test_dir_thread.to_str().unwrap()
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}/{}",
+                    test_dir_thread.to_str().unwrap(),
+                    // On Windows, send incorrect case for this file; the server should correct it.
+                    if cfg!(windows) { "Test.py" } else { "test.py" }
                 ))
                 .send()
                 .unwrap()
