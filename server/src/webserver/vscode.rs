@@ -18,11 +18,7 @@
 // ## Imports
 //
 // ### Standard library
-use std::{
-    cmp::min,
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{cmp::min, collections::HashMap, path::PathBuf};
 
 // ### Third-party
 use actix_web::{
@@ -48,8 +44,8 @@ use crate::{
     queue_send,
     webserver::{
         escape_html, filesystem_endpoint, html_wrapper, make_simple_http_response, path_to_url,
-        text_file_to_response, url_to_path, ProcessingTaskHttpRequest, ResultOkTypes,
-        UpdateMessageContents, INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
+        text_file_to_response, try_canonicalize, url_to_path, ProcessingTaskHttpRequest,
+        ResultOkTypes, UpdateMessageContents, INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
     },
 };
 
@@ -159,16 +155,17 @@ pub async fn vscode_ide_websocket(
             debug!("VSCode processing task started.");
 
             // Get the first message sent by the IDE.
-            let Some(message): std::option::Option<EditorMessage> = from_ide_rx.recv().await else {
+            let Some(first_message): std::option::Option<EditorMessage> = from_ide_rx.recv().await
+            else {
                 error!("{}", "IDE websocket received no data.");
                 break 'task;
             };
 
             // Make sure it's the `Opened` message.
-            let EditorMessageContents::Opened(ide_type) = message.message else {
-                let msg = format!("Unexpected message {message:?}");
+            let EditorMessageContents::Opened(ide_type) = first_message.message else {
+                let msg = format!("Unexpected message {first_message:?}");
                 error!("{msg}");
-                send_response(&to_ide_tx, message.id, Err(msg)).await;
+                send_response(&to_ide_tx, first_message.id, Err(msg)).await;
 
                 // Send a `Closed` message to shut down the websocket.
                 queue_send!(to_ide_tx.send(EditorMessage { id: 0.0, message: EditorMessageContents::Closed}), 'task);
@@ -183,9 +180,9 @@ pub async fn vscode_ide_websocket(
                         // Send a response (successful) to the `Opened` message.
                         debug!(
                             "Sending response = OK to IDE Opened message, id {}.",
-                            message.id
+                            first_message.id
                         );
-                        send_response(&to_ide_tx, message.id, Ok(ResultOkTypes::Void)).await;
+                        send_response(&to_ide_tx, first_message.id, Ok(ResultOkTypes::Void)).await;
 
                         // Send the HTML for the internal browser.
                         let port = app_state_task.port;
@@ -250,7 +247,7 @@ pub async fn vscode_ide_websocket(
                         )) {
                             let msg = format!("Unable to open web browser: {err}");
                             error!("{msg}");
-                            send_response(&to_ide_tx, message.id, Err(msg)).await;
+                            send_response(&to_ide_tx, first_message.id, Err(msg)).await;
 
                             // Send a `Closed` message.
                             queue_send!(to_ide_tx.send(EditorMessage{
@@ -260,14 +257,14 @@ pub async fn vscode_ide_websocket(
                             break 'task;
                         }
                         // Send a response (successful) to the `Opened` message.
-                        send_response(&to_ide_tx, message.id, Ok(ResultOkTypes::Void)).await;
+                        send_response(&to_ide_tx, first_message.id, Ok(ResultOkTypes::Void)).await;
                     }
                 }
                 _ => {
                     // This is the wrong IDE type. Report then error.
                     let msg = format!("Invalid IDE type: {ide_type:?}");
                     error!("{msg}");
-                    send_response(&to_ide_tx, message.id, Err(msg)).await;
+                    send_response(&to_ide_tx, first_message.id, Err(msg)).await;
 
                     // Close the connection.
                     queue_send!(to_ide_tx.send(EditorMessage { id: 0.0, message: EditorMessageContents::Closed}), 'task);
@@ -371,25 +368,40 @@ pub async fn vscode_ide_websocket(
 
                             // Handle the `Update` message.
                             EditorMessageContents::Update(update) => {
-                                if let Some(contents) = &update.contents {
-                                // Translate the file.
-                                let (translation_results_string, _path_to_toc) =
-                                source_to_codechat_for_web_string(&contents.source.doc, &current_file, false);
-                                if let TranslationResultsString::CodeChat(cc) = translation_results_string {
-                                    // Send the new contents
-                                    debug!("Sending translated contents to Client.");
-                                    queue_send!(to_client_tx.send(EditorMessage {
-                                            id: ide_message.id,
-                                            message: EditorMessageContents::Update(UpdateMessageContents {
-                                                file_path: update.file_path,
-                                                contents: Some(cc),
-                                                cursor_position: None,
-                                                scroll_position: None,
-                                            }),
-                                        }));
-                                    } else {
-                                        error!("Error translating source to CodeChat.");
+                                // Normalize the provided file name.
+                                let result = match try_canonicalize(&update.file_path) {
+                                    Err(err) => Err(err),
+                                    Ok(clean_file_path) => {
+                                        match &update.contents {
+                                            None => Err("TODO: support for updates without contents.".to_string()),
+                                            Some(contents) => {
+                                                // Translate the file.
+                                                let (translation_results_string, _path_to_toc) =
+                                                source_to_codechat_for_web_string(&contents.source.doc, &current_file, false);
+                                                if let TranslationResultsString::CodeChat(cc) = translation_results_string {
+                                                    // Send the new contents
+                                                    debug!("Sending translated contents to Client.");
+                                                    queue_send!(to_client_tx.send(EditorMessage {
+                                                        id: ide_message.id,
+                                                        message: EditorMessageContents::Update(UpdateMessageContents {
+                                                            file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                                                            contents: Some(cc),
+                                                            cursor_position: None,
+                                                            scroll_position: None,
+                                                        }),
+                                                    }));
+                                                    Ok(ResultOkTypes::Void)
+                                                } else {
+                                                    Err("Error translating source to CodeChat.".to_string())
+                                                }
+                                            }
+                                        }
                                     }
+                                };
+                                // If there's an error, then report it; otherwise, the message is passed to the Client, which will provide the result.
+                                if let Err(err) = &result {
+                                    error!("{err}");
+                                    send_response(&to_ide_tx, ide_message.id, result).await;
                                 }
                             }
 
@@ -397,13 +409,24 @@ pub async fn vscode_ide_websocket(
                             // then pass it to the Client.
                             EditorMessageContents::CurrentFile(file_path) => {
                                 debug!("Translating and forwarding it to the Client.");
-                                queue_send!(to_client_tx.send(EditorMessage {
-                                    id: ide_message.id,
-                                    message: EditorMessageContents::CurrentFile(
-                                        path_to_url("/vsc/fs", &connection_id_task, Path::new(&file_path))
-                                    )
-                                }));
-                                current_file = file_path.into();
+                                match try_canonicalize(&file_path) {
+                                    Ok(clean_file_path) => {
+                                        queue_send!(to_client_tx.send(EditorMessage {
+                                            id: ide_message.id,
+                                            message: EditorMessageContents::CurrentFile(
+                                                path_to_url("/vsc/fs", &connection_id_task, &clean_file_path)
+                                            )
+                                        }));
+                                        current_file = file_path.into();
+                                    }
+                                    Err(err) => {
+                                        let msg = format!(
+                                            "Unable to canonicalize file name {}: {err}", &file_path
+                                        );
+                                        error!("{msg}");
+                                        send_response(&to_client_tx, ide_message.id, Err(msg)).await;
+                                    }
+                                }
                             }
                         }
                     },
@@ -449,9 +472,9 @@ pub async fn vscode_ide_websocket(
                                 if let Err(err) = open::that_detached(&url) {
                                     let msg = format!("Unable to open web browser to URL {url}: {err}");
                                     error!("{msg}");
-                                    send_response(&to_client_tx, message.id, Err(msg)).await;
+                                    send_response(&to_client_tx, client_message.id, Err(msg)).await;
                                 } else {
-                                    send_response(&to_client_tx, message.id, Ok(ResultOkTypes::Void)).await;
+                                    send_response(&to_client_tx, client_message.id, Ok(ResultOkTypes::Void)).await;
                                 }
                             },
 
@@ -480,15 +503,27 @@ pub async fn vscode_ide_websocket(
                                         }
                                     },
                                 };
-                                queue_send!(to_ide_tx.send(EditorMessage {
-                                    id: client_message.id,
-                                    message: EditorMessageContents::Update(UpdateMessageContents {
-                                        file_path: update_message_contents.file_path,
-                                        contents: codechat_for_web,
-                                        cursor_position: update_message_contents.cursor_position,
-                                        scroll_position: update_message_contents.scroll_position,
-                                    })
-                                }));
+                                match try_canonicalize(&update_message_contents.file_path) {
+                                    Err(err) => {
+                                        let msg = format!(
+                                            "Unable to canonicalize file name {}: {err}", &update_message_contents.file_path
+                                        );
+                                        error!("{msg}");
+                                        send_response(&to_client_tx, client_message.id, Err(msg)).await;
+                                        continue;
+                                    }
+                                    Ok(clean_file_path) => {
+                                        queue_send!(to_ide_tx.send(EditorMessage {
+                                            id: client_message.id,
+                                            message: EditorMessageContents::Update(UpdateMessageContents {
+                                                file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                                                contents: codechat_for_web,
+                                                cursor_position: update_message_contents.cursor_position,
+                                                scroll_position: update_message_contents.scroll_position,
+                                            })
+                                        }));
+                                    }
+                                }
                             },
 
                             // Update the current file; translate it to a URL
@@ -1211,7 +1246,7 @@ mod test {
         open_client(&mut ws_ide).await;
 
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
-        let file_path = "foo.py".to_string();
+        let file_path = temp_dir.path().join("foo.py").to_string_lossy().to_string();
         send_message(
             &mut ws_client,
             &EditorMessage {
