@@ -642,14 +642,14 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                 break;
                             }
 
-                            EditorMessageContents::Opened(_) | EditorMessageContents::ClientHtml(_) | EditorMessageContents::RequestClose => {
+                            EditorMessageContents::Opened(_) |
+                            EditorMessageContents::OpenUrl(_) |
+                            EditorMessageContents::LoadFile(_) |
+                            EditorMessageContents::ClientHtml(_) |
+                            EditorMessageContents::RequestClose => {
                                 let msg = format!("Client sent unsupported message type {m:?}");
                                 error!("{msg}");
                                 send_response(&to_websocket_tx, m.id, Err(msg)).await;
-                            }
-
-                            other => {
-                                warn!("Unhandled message {other:?}");
                             }
                         }
                     }

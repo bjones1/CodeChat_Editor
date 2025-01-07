@@ -83,7 +83,6 @@ use filewatcher::{
 // ## Data structures
 //
 // ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
-//
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
 #[derive(Debug)]
 struct WebsocketQueues {
@@ -151,6 +150,12 @@ enum EditorMessageContents {
     /// Request the Client to save any unsaved data then close. Valid
     /// destinations: Client.
     RequestClose,
+
+    // ### This message may only be sent by the Client to the Server.
+    /// Open the provided URL in a web browser. This is used from within
+    /// plugins/extensions (such as VSCode), where the Client is prohibited from
+    /// opening a new browser tab/window.
+    OpenUrl(String),
 
     // #### These messages may only be sent by the Server.
     /// Ask the IDE if the provided file is loaded. If so, the IDE should
@@ -276,8 +281,6 @@ macro_rules! queue_send {
 }
 
 /// ## Globals
-///
-///
 ///
 /// The IP address on which the server listens for incoming connections.
 pub const IP_ADDRESS: &str = "127.0.0.1";
@@ -1206,8 +1209,9 @@ fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, St
                             Err(format!("Error: unable to decode URL {url_string}: {err}."))
                         }
                         Ok(path_str) => {
-                            // On non-Windows systems, the path should start with a `/`.
-                            // Windows paths should already start with a drive letter.
+                            // On non-Windows systems, the path should start
+                            // with a `/`. Windows paths should already start
+                            // with a drive letter.
                             #[cfg(not(target_os = "windows"))]
                             let path_str = "/".to_string() + &path_str;
                             match PathBuf::from_str(&path_str) {
@@ -1216,11 +1220,12 @@ fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, St
                                 )),
                                 Ok(path_buf) => match path_buf.canonicalize() {
                                     // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
-                                    // fails if the path doesn't exist. For unsaved
-                                    // files, this is expected; therefore, use
+                                    // fails if the path doesn't exist. For
+                                    // unsaved files, this is expected;
+                                    // therefore, use
                                     // [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html)
-                                    // on error, since it doesn't require the path
-                                    // to exist.
+                                    // on error, since it doesn't require the
+                                    // path to exist.
                                     Err(_) => match path::absolute(&*path_buf) {
                                         Err(err) => Err(format!(
                                             "Unable to make {path_buf:?} absolute: {err}"

@@ -48,9 +48,9 @@ type ResultType = { Ok: "Void" } | { Err: string };
 interface EditorMessageContents {
     Update?: UpdateMessageContents;
     CurrentFile?: string;
-    Load?: string;
-    Result?: ResultType;
     RequestClose?: null;
+    OpenUrl?: string,
+    Result?: ResultType;
 }
 
 // The max length of a message to show in the console.

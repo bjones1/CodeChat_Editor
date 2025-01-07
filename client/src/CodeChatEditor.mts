@@ -510,12 +510,11 @@ const on_click = (event: MouseEvent) => {
             // requested link.
             if (window.location.pathname.startsWith("/vsc")) {
                 event.preventDefault();
-                parent.parent.postMessage(url, "*");
+                parent.window.CodeChatEditorFramework.webSocketComm.send_message(
+                    { OpenUrl: url },
+                );
             }
         }
-
-        // Do something with the URL, e.g., open it in a new tab with additional
-        // logic
     }
 };
 // Save the current document, then navigate to the provided URL, which must be a
