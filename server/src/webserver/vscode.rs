@@ -673,9 +673,11 @@ mod test {
     use actix_rt::task::JoinHandle;
     use assert_fs::TempDir;
     use assertables::{assert_ends_with, assert_starts_with};
+    use dunce::simplified;
     use futures_util::{SinkExt, StreamExt};
     use lazy_static::lazy_static;
     use minreq;
+    use path_slash::PathExt;
     use tokio::{
         io::{AsyncRead, AsyncWrite},
         net::TcpStream,
@@ -927,14 +929,17 @@ mod test {
         let (temp_dir, test_dir, mut ws_ide, _) = prep_test!(connection_id).await;
         open_client(&mut ws_ide).await;
 
+        let file_path = test_dir.join("none.py");
+        let file_path_str = file_path.to_slash().unwrap().to_string();
+
         // Do this is a thread, since the request generates a message that
         // requires a response in order to complete.
-        let test_dir_thread = test_dir.clone();
+        let file_path_str_thread = file_path_str.clone();
         let join_handle = thread::spawn(move || {
             assert_eq!(
                 minreq::get(format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}/none.py",
-                    test_dir_thread.to_str().unwrap()
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    file_path_str_thread
                 ))
                 .send()
                 .unwrap()
@@ -950,10 +955,7 @@ mod test {
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
         // Compare these as strings -- we want to ensure the path separator is
         // correct for the current platform.
-        assert_eq!(
-            test_dir.join("none.py").to_str().unwrap().to_string(),
-            msg.to_string_lossy()
-        );
+        assert_eq!(file_path.to_string_lossy(), msg.to_string_lossy());
         assert_eq!(em.id, 3.0);
 
         // Reply to the `LoadFile` message -- the file isn't present.
@@ -984,16 +986,13 @@ mod test {
         open_client(&mut ws_ide).await;
 
         // Message ids: IDE - 4->7, Server - 3, Client - 2.
-        let file_path = test_dir
-            .join("only-in-ide.py")
-            .to_str()
-            .unwrap()
-            .to_string();
+        let file_path = test_dir.join("only-in-ide.py");
+        let file_path_str = file_path.to_str().unwrap().to_string();
         send_message(
             &mut ws_ide,
             &EditorMessage {
                 id: 4.0,
-                message: EditorMessageContents::CurrentFile(file_path.clone()),
+                message: EditorMessageContents::CurrentFile(file_path_str.clone()),
             },
         )
         .await;
@@ -1026,12 +1025,12 @@ mod test {
         );
 
         // The Client should send a GET request for this file.
-        let test_dir_thread = test_dir.clone();
+        let file_path_thread = file_path.clone();
         let join_handle = thread::spawn(move || {
             assert_eq!(
                 minreq::get(format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}/only-in-ide.py",
-                    test_dir_thread.to_str().unwrap()
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    file_path_thread.to_slash().unwrap()
                 ))
                 .send()
                 .unwrap()
@@ -1072,7 +1071,7 @@ mod test {
             EditorMessage {
                 id: 6.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path,
+                    file_path: file_path_str.clone(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1128,28 +1127,22 @@ mod test {
         // translated.
         //
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
-        let file_path = test_dir.join("test.py").to_string_lossy().to_string();
+        let file_path = test_dir.join("test.py");
+        let file_path_str = file_path.to_str().unwrap().to_string();
         send_message(
             &mut ws_client,
             &EditorMessage {
                 id: 2.0,
                 message: EditorMessageContents::CurrentFile(format!(
                     "http://localhost:8080/vsc/fs/{connection_id}/{}",
-                    &file_path
+                    &file_path.to_slash().unwrap()
                 )),
             },
         )
         .await;
         let em = read_message(&mut ws_ide).await;
         let cf = cast!(em.message, EditorMessageContents::CurrentFile);
-        assert_eq!(
-            path::absolute(Path::new(&cf)).unwrap(),
-            path::absolute(Path::new(&format!(
-                "{}/test.py",
-                test_dir.to_str().unwrap()
-            )))
-            .unwrap()
-        );
+        assert_eq!(path::absolute(Path::new(&cf)).unwrap(), file_path);
         assert_eq!(em.id, 2.0);
 
         send_message(
@@ -1176,7 +1169,7 @@ mod test {
             &EditorMessage {
                 id: 4.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: file_path.clone(),
+                    file_path: file_path_str.clone(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1197,7 +1190,7 @@ mod test {
             EditorMessage {
                 id: 4.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path,
+                    file_path: file_path_str.clone(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1325,14 +1318,15 @@ mod test {
         open_client(&mut ws_ide).await;
 
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
-        let file_path = test_dir.join("test.py").to_str().unwrap().to_string();
+        let file_path_temp = fs::canonicalize(test_dir.join("test.py")).unwrap();
+        let file_path = simplified(&file_path_temp);
         send_message(
             &mut ws_client,
             &EditorMessage {
                 id: 2.0,
                 message: EditorMessageContents::CurrentFile(format!(
                     "http://localhost:8080/vsc/fs/{connection_id}/{}",
-                    &file_path
+                    &file_path.to_slash().unwrap()
                 )),
             },
         )
@@ -1340,14 +1334,7 @@ mod test {
 
         let em = read_message(&mut ws_ide).await;
         let cf = cast!(em.message, EditorMessageContents::CurrentFile);
-        assert_eq!(
-            fs::canonicalize(Path::new(&cf)).unwrap(),
-            fs::canonicalize(Path::new(&format!(
-                "{}/test.py",
-                test_dir.to_str().unwrap()
-            )))
-            .unwrap()
-        );
+        assert_eq!(cf, file_path.to_str().unwrap().to_string());
         assert_eq!(em.id, 2.0);
 
         send_message(
@@ -1372,7 +1359,7 @@ mod test {
             assert_eq!(
                 minreq::get(format!(
                     "http://localhost:8080/vsc/fs/{connection_id}/{}/{}",
-                    test_dir_thread.to_str().unwrap(),
+                    test_dir_thread.to_slash().unwrap(),
                     // On Windows, send incorrect case for this file; the server should correct it.
                     if cfg!(windows) { "Test.py" } else { "test.py" }
                 ))
@@ -1388,10 +1375,7 @@ mod test {
         // Message ids: IDE - 4, Server - 3->6, Client - 5.
         let em = read_message(&mut ws_ide).await;
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
-        assert_eq!(
-            fs::canonicalize(&msg).unwrap(),
-            fs::canonicalize(test_dir.join("test.py")).unwrap()
-        );
+        assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
         assert_eq!(em.id, 3.0);
 
         // Reply to the `LoadFile` message: the IDE doesn't have the file.
@@ -1413,7 +1397,7 @@ mod test {
             EditorMessage {
                 id: 6.0,
                 message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path,
+                    file_path: file_path.to_str().unwrap().to_string(),
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
