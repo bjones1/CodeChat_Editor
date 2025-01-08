@@ -665,7 +665,7 @@ mod test {
     use std::{
         fs,
         io::Error,
-        path::{self, Path, PathBuf, MAIN_SEPARATOR_STR},
+        path::{self, Path, PathBuf},
         thread,
         time::{Duration, SystemTime},
     };
@@ -951,7 +951,7 @@ mod test {
         // Compare these as strings -- we want to ensure the path separator is
         // correct for the current platform.
         assert_eq!(
-            format!("{}{MAIN_SEPARATOR_STR}none.py", test_dir.to_str().unwrap()),
+            test_dir.join("none.py").to_str().unwrap().to_string(),
             msg.to_string_lossy()
         );
         assert_eq!(em.id, 3.0);
@@ -984,10 +984,11 @@ mod test {
         open_client(&mut ws_ide).await;
 
         // Message ids: IDE - 4->7, Server - 3, Client - 2.
-        let file_path = format!(
-            "{}{MAIN_SEPARATOR_STR}only-in-ide.py",
-            test_dir.to_str().unwrap()
-        );
+        let file_path = test_dir
+            .join("only-in-ide.py")
+            .to_str()
+            .unwrap()
+            .to_string();
         send_message(
             &mut ws_ide,
             &EditorMessage {
@@ -1242,11 +1243,11 @@ mod test {
     #[actix_web::test]
     async fn test_vscode_ide_websocket6() {
         let connection_id = "test-connection-id6";
-        let (temp_dir, _, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+        let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
         open_client(&mut ws_ide).await;
 
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
-        let file_path = temp_dir.path().join("foo.py").to_string_lossy().to_string();
+        let file_path = test_dir.join("foo.py").to_string_lossy().to_string();
         send_message(
             &mut ws_client,
             &EditorMessage {
@@ -1324,7 +1325,7 @@ mod test {
         open_client(&mut ws_ide).await;
 
         // Message ids: IDE - 4, Server - 3, Client - 2->5.
-        let file_path = format!("{}{MAIN_SEPARATOR_STR}test.py", test_dir.to_str().unwrap());
+        let file_path = test_dir.join("test.py").to_str().unwrap().to_string();
         send_message(
             &mut ws_client,
             &EditorMessage {
@@ -1388,8 +1389,8 @@ mod test {
         let em = read_message(&mut ws_ide).await;
         let msg = cast!(em.message, EditorMessageContents::LoadFile);
         assert_eq!(
-            path::absolute(Path::new(&msg)).unwrap(),
-            path::absolute(format!("{}/test.py", test_dir.to_str().unwrap())).unwrap()
+            fs::canonicalize(&msg).unwrap(),
+            fs::canonicalize(test_dir.join("test.py")).unwrap()
         );
         assert_eq!(em.id, 3.0);
 
