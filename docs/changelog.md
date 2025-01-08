@@ -19,8 +19,11 @@ CodeChat Editor. If not, see
 # Changelog
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
+  - No changes.
+- v0.1.7, 2025-Jan-08:
   - Fixed hyperlink navigation.
   - Fixed case-insensitive filename handling bugs.
+  - Improve filename handling in tests.
 - v0.1.6, 2024-Dec-29:
   - Improvements to the build tool.
   - Corrections to the C parser.
