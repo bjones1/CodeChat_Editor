@@ -16,9 +16,8 @@
 //
 // # `extension.ts` - The CodeChat Editor Visual Studio Code extension
 //
-// This extension creates a webview (see `activation/deactivation`\_), then uses
-// a websocket connection to the CodeChat Editor Server and Client to render
-// editor text in that webview.
+// This extension creates a webview, then uses a websocket connection to the
+// CodeChat Editor Server and Client to render editor text in that webview.
 //
 // ## Imports
 //
@@ -237,7 +236,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 // column.
                                 viewColumn: vscode.ViewColumn.Beside,
                             },
-                            // See WebViewOptions\_.
+                            // See
+                            // [WebViewOptions](https://code.visualstudio.com/api/references/vscode-api#WebviewOptions).
                             {
                                 enableScripts: true,
                                 // Per the
@@ -257,9 +257,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 retainContextWhenHidden: true,
                             }
                         );
-                        // TODO: do I need to dispose of this and the following
-                        // event handlers? I'm assuming that it will be done
-                        // automatically when the object is disposed.
                         webview_panel.onDidDispose(async () => {
                             // Shut down the render client when the webview
                             // panel closes.
