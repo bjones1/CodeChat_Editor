@@ -29,7 +29,7 @@
 // ## Imports
 //
 // ### Standard library
-use std::{ffi::OsStr, fs, path::Path, process::Command};
+use std::{ffi::OsStr, fs, io, path::Path, process::Command};
 
 // ### Third-party
 use clap::{Parser, Subcommand};
@@ -104,7 +104,7 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
     // True to report errors based on the process' exit code; false to ignore
     // the code.
     check_exit_code: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> io::Result<()> {
     let mut process;
     if cfg!(windows) {
         process = Command::new("cmd");
@@ -120,7 +120,10 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
     if exit_code == Some(0) || (exit_code.is_some() && !check_exit_code) {
         Ok(())
     } else {
-        Err("npm exit code indicates failure".into())
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            "npm exit code indicates failure.",
+        ))
     }
 }
 
@@ -129,11 +132,7 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
 /// programs (`robocopy`/`rsync`) to accomplish this. Very important: the `src`
 /// **must** end with a `/`, otherwise the Windows and Linux copies aren't
 /// identical.
-fn quick_copy_dir<P: AsRef<OsStr>>(
-    src: P,
-    dest: P,
-    files: Option<P>,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P, files: Option<P>) -> io::Result<()> {
     assert!(src.as_ref().to_string_lossy().ends_with('/'));
     let mut copy_process;
     #[cfg(windows)]
@@ -206,29 +205,26 @@ fn quick_copy_dir<P: AsRef<OsStr>>(
     println!("{:#?}", &copy_process);
 
     // Check for errors.
-    let exit_status = copy_process
-        .status()
-        .map_err(|err| -> String { format!("Error running copy process: {err}") })?;
-    let exit_code = exit_status
+    let exit_code = copy_process
+        .status()?
         .code()
         .expect("Copy process terminated by signal");
     // Per
     // [these docs](https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/return-codes-used-robocopy-utility),
     // check the return code.
     if cfg!(windows) && exit_code >= 8 || !cfg!(windows) && exit_code != 0 {
-        Err(format!("Copy process return code {exit_code} indicates failure.").into())
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Copy process return code {exit_code} indicates failure."),
+        ))
     } else {
         Ok(())
     }
 }
 
-fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(
-    path: P,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(path: P) -> io::Result<()> {
     if Path::new(path.as_ref()).try_exists().unwrap() {
-        if let Err(err) = fs::remove_dir_all(path.as_ref()) {
-            return Err(format!("Error removing directory tree {path}: {err}").into());
-        }
+        fs::remove_dir_all(path.as_ref())?;
     }
 
     Ok(())
@@ -242,19 +238,20 @@ fn search_and_replace_file<
     path: P,
     search_regex: S1,
     replace_string: S2,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let file_contents = fs::read_to_string(&path)
-        .map_err(|err| -> String { format!("Unable to open file {path} for reading: {err}") })?;
-    let re = Regex::new(search_regex.as_ref())
-        .map_err(|err| -> String { format!("Error in search regex {search_regex}: {err}") })?;
+) -> io::Result<()> {
+    let file_contents = fs::read_to_string(&path)?;
+    let re = Regex::new(search_regex.as_ref()).map_err(|err| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format!("Error in search regex {search_regex}: {err}"),
+        )
+    })?;
     let file_contents_replaced = re.replace(&file_contents, replace_string.as_ref());
     assert_ne!(
         file_contents, file_contents_replaced,
         "No replacements made."
     );
     fs::write(&path, file_contents_replaced.as_bytes())
-        .map_err(|err| -> String { format!("Error writing to {path}: {err}") })?;
-    Ok(())
 }
 
 // ## Core routines
@@ -262,7 +259,7 @@ fn search_and_replace_file<
 // These functions simplify common build-focused development tasks and support
 // CI builds.
 /// After updating files in the client's Node files, perform some fix-ups.
-fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
+fn patch_client_npm() -> io::Result<()> {
     // Apply a the fixes described in
     // [issue 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
     //
@@ -310,7 +307,7 @@ fn patch_client_npm() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_install(dev: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn run_install(dev: bool) -> io::Result<()> {
     run_script("npm", &["install"], "../client", true)?;
     patch_client_npm()?;
     run_script("npm", &["install"], "../extensions/VSCode", true)?;
@@ -331,7 +328,7 @@ fn run_install(dev: bool) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_update() -> Result<(), Box<dyn std::error::Error>> {
+fn run_update() -> io::Result<()> {
     run_script("npm", &["update"], "../client", true)?;
     patch_client_npm()?;
     run_script("npm", &["update"], "../extensions/VSCode", true)?;
@@ -349,7 +346,7 @@ fn run_update() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_test() -> Result<(), Box<dyn std::error::Error>> {
+fn run_test() -> io::Result<()> {
     // On Windows, `cargo sort --check` fails since it default to LF, not CRLF,
     // line endings. Work around this by changing this setting only on Windows.
     // See the
@@ -392,7 +389,7 @@ fn run_test() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_build() -> Result<(), Box<dyn std::error::Error>> {
+fn run_build() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
     run_script("npm", &["run", "build"], "../client", true)?;
@@ -404,7 +401,7 @@ fn run_build() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_change_version(new_version: &String) -> Result<(), Box<dyn std::error::Error>> {
+fn run_change_version(new_version: &String) -> io::Result<()> {
     let replacement_string = format!("${{1}}{new_version}${{2}}");
     search_and_replace_file(
         "Cargo.toml",
@@ -425,7 +422,7 @@ fn run_change_version(new_version: &String) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
+fn run_prerelease() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
     run_install(true)?;
@@ -433,7 +430,7 @@ fn run_prerelease() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_postrelease(target: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn run_postrelease(target: &str) -> io::Result<()> {
     let server_dir = "../extensions/VSCode/server";
     // Only clean the `server/` directory if it exists.
     remove_dir_all_if_exists(server_dir)?;
@@ -468,7 +465,7 @@ fn run_postrelease(target: &str) -> Result<(), Box<dyn std::error::Error>> {
 // The following code implements the command-line interface for the CodeChat
 // Editor.
 impl Cli {
-    fn run(self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run(self) -> io::Result<()> {
         match &self.command {
             Commands::Install { dev } => run_install(*dev),
             Commands::Update => run_update(),
@@ -481,7 +478,7 @@ impl Cli {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> io::Result<()> {
     let cli = Cli::parse();
     cli.run()?;
 
