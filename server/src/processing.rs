@@ -150,11 +150,12 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     // named `toc.md`.
     let mut path_to_toc = PathBuf::new();
     let mut current_dir = file_path.to_path_buf();
+    // Drop the last element (the current file name) from the search.
+    current_dir.pop();
     loop {
         let mut project_file = current_dir.clone();
         project_file.push("toc.md");
         if project_file.is_file() {
-            path_to_toc.pop();
             path_to_toc.push("toc.md");
             return Some(path_to_toc);
         }
