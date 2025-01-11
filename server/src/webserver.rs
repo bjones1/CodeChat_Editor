@@ -1176,43 +1176,34 @@ async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: Messa
 
 fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, String> {
     // Convert this URL back to a file path.
-    match Url::parse(url_string) {
-        Err(err) => Err(format!("Error: unable to parse URL {url_string}: {err}")),
-        Ok(url) => match url.path_segments() {
-            None => Err(format!("Error: URL {url} cannot be a base.")),
-            Some(path_segments) => {
-                // Make sure the path segments start with the `expected_prefix`.
-                let path_segments_vec: Vec<_> = path_segments.collect();
-                let prefix_equal = expected_prefix
-                    .iter()
-                    .zip(&path_segments_vec)
-                    .all(|(a, b)| a == b);
-                // The URL should have at least the expected prefix plus one
-                // more element (the connection ID).
-                if path_segments_vec.len() < expected_prefix.len() + 1 || !prefix_equal {
-                    Err(format!("Error: URL {url} has incorrect prefix."))
-                } else {
-                    // Strip these first three segments; the remainder is a file
-                    // path.
-                    let path_str_encoded =
-                        path_segments_vec[expected_prefix.len() + 1..].join(MAIN_SEPARATOR_STR);
-                    match urlencoding::decode(&path_str_encoded) {
-                        Err(err) => {
-                            Err(format!("Error: unable to decode URL {url_string}: {err}."))
-                        }
-                        Ok(path_str) => {
-                            // On non-Windows systems, the path should start
-                            // with a `/`. Windows paths should already start
-                            // with a drive letter.
-                            #[cfg(not(target_os = "windows"))]
-                            let path_str = "/".to_string() + &path_str;
-                            try_canonicalize(&path_str)
-                        }
-                    }
-                }
-            }
-        },
+    let url = Url::parse(url_string)
+        .map_err(|e| format!("Error: unable to parse URL {url_string}: {e}"))?;
+    let path_segments_vec: Vec<_> = url
+        .path_segments()
+        .ok_or_else(|| format!("Error: URL {url} cannot be a base."))?
+        .collect();
+
+    // Make sure the path segments start with the `expected_prefix`.
+    let prefix_equal = expected_prefix
+        .iter()
+        .zip(&path_segments_vec)
+        .all(|(a, b)| a == b);
+    // The URL should have at least the expected prefix plus one
+    // more element (the connection ID).
+    if path_segments_vec.len() < expected_prefix.len() + 1 || !prefix_equal {
+        return Err(format!("Error: URL {url} has incorrect prefix."));
     }
+    // Strip these first three segments; the remainder is a file
+    // path.
+    let path_str_encoded = path_segments_vec[expected_prefix.len() + 1..].join(MAIN_SEPARATOR_STR);
+    let path_str = urlencoding::decode(&path_str_encoded)
+        .map_err(|e| format!("Error: unable to decode URL {url_string}: {e}."))?;
+    // On non-Windows systems, the path should start
+    // with a `/`. Windows paths should already start
+    // with a drive letter.
+    #[cfg(not(target_os = "windows"))]
+    let path_str = "/".to_string() + &path_str;
+    try_canonicalize(&path_str)
 }
 
 // Given a string representing a file, transform it into a `PathBuf`. Correct it as much as possible:
