@@ -486,11 +486,16 @@ pub async fn filesystem_endpoint(
     req: &HttpRequest,
     app_state: &web::Data<AppState>,
 ) -> HttpResponse {
-    let (connection_id, file_path) = request_path.into_inner();
-    let file_path = match try_canonicalize(&file_path) {
+    let (connection_id, request_file_path) = request_path.into_inner();
+    // On Windows, backslashes in the `request_file_path` will be treated as
+    // path separators; however, HTTP does not treat them as path separators.
+    // Therefore, re-encode them to prevent inconsistency between the way HTTP
+    // and this program interpret file paths.
+    let fixed_file_path = request_file_path.replace("\\", "%5C");
+    let file_path = match try_canonicalize(&fixed_file_path) {
         Ok(v) => v,
         Err(err) => {
-            let msg = format!("Error: unable to convert path {file_path}: {err}.");
+            let msg = format!("Error: unable to convert path {request_file_path}: {err}.");
             error!("{msg}");
             return html_not_found(&msg);
         }

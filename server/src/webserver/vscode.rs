@@ -398,7 +398,9 @@ pub async fn vscode_ide_websocket(
                                         }
                                     }
                                 };
-                                // If there's an error, then report it; otherwise, the message is passed to the Client, which will provide the result.
+                                // If there's an error, then report it;
+                                // otherwise, the message is passed to the
+                                // Client, which will provide the result.
                                 if let Err(err) = &result {
                                     error!("{err}");
                                     send_response(&to_ide_tx, ide_message.id, result).await;
@@ -977,6 +979,60 @@ mod test {
         temp_dir.close().unwrap();
     }
 
+    // Fetch a file that exists, but using backslashes. This should still fail,
+    // even on Windows.
+    #[actix_web::test]
+    async fn test_vscode_ide_websocket3a() {
+        let connection_id = "test-connection-id3a";
+        let (temp_dir, test_dir, mut ws_ide, _) = prep_test!(connection_id).await;
+        open_client(&mut ws_ide).await;
+
+        let file_path = test_dir.join("test.py");
+        let file_path_str = file_path.to_str().unwrap().to_string();
+
+        // Do this is a thread, since the request generates a message that
+        // requires a response in order to complete.
+        let file_path_str_thread = file_path_str.clone();
+        let join_handle = thread::spawn(move || {
+            assert_eq!(
+                minreq::get(format!(
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    file_path_str_thread
+                ))
+                .send()
+                .unwrap()
+                .status_code,
+                404
+            )
+        });
+
+        // The HTTP request produces a `LoadFile` message.
+        //
+        // Message ids: IDE - 4, Server - 3->6, Client - 2.
+        let em = read_message(&mut ws_ide).await;
+        cast!(em.message, EditorMessageContents::LoadFile);
+        // Skip comparing the file names, due to the backslash encoding.
+        assert_eq!(em.id, 3.0);
+
+        // Reply to the `LoadFile` message -- the file isn't present.
+        send_message(
+            &mut ws_ide,
+            &EditorMessage {
+                id: 3.0,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+            },
+        )
+        .await;
+
+        // This should cause the HTTP request to complete by receiving the
+        // response (file not found).
+        join_handle.join().unwrap();
+
+        check_logger_errors(0);
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
     // Send a `CurrentFile` message with a file to edit that exists only in the
     // IDE.
     #[actix_web::test]
@@ -1360,7 +1416,8 @@ mod test {
                 minreq::get(format!(
                     "http://localhost:8080/vsc/fs/{connection_id}/{}/{}",
                     test_dir_thread.to_slash().unwrap(),
-                    // On Windows, send incorrect case for this file; the server should correct it.
+                    // On Windows, send incorrect case for this file; the server
+                    // should correct it.
                     if cfg!(windows) { "Test.py" } else { "test.py" }
                 ))
                 .send()
