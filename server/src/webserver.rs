@@ -1174,8 +1174,18 @@ async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: Messa
     }
 }
 
-fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, String> {
-    // Convert this URL back to a file path.
+// Convert a URL referring to a file in the filesystem into the path to that
+// file.
+fn url_to_path(
+    // The URL for the file.
+    url_string: &str,
+    // An array of URL path segments; the URL must start with these. They will
+    // be dropped from the resulting file's path.
+    expected_prefix: &[&str],
+    // Output: the resulting path to the file, or a string explaining why an
+    // error occurred during conversion.
+) -> Result<PathBuf, String> {
+    // Parse to a URL, then split it to path segments.
     let url = Url::parse(url_string)
         .map_err(|e| format!("Error: unable to parse URL {url_string}: {e}"))?;
     let path_segments_vec: Vec<_> = url
@@ -1188,28 +1198,45 @@ fn url_to_path(url_string: &str, expected_prefix: &[&str]) -> Result<PathBuf, St
         .iter()
         .zip(&path_segments_vec)
         .all(|(a, b)| a == b);
-    // The URL should have at least the expected prefix plus one
-    // more element (the connection ID).
+    // The URL should have at least the expected prefix plus one more element
+    // (the connection ID).
     if path_segments_vec.len() < expected_prefix.len() + 1 || !prefix_equal {
         return Err(format!("Error: URL {url} has incorrect prefix."));
     }
-    // Strip these first three segments; the remainder is a file
-    // path.
-    let path_str_encoded = path_segments_vec[expected_prefix.len() + 1..].join(MAIN_SEPARATOR_STR);
-    let path_str = urlencoding::decode(&path_str_encoded)
-        .map_err(|e| format!("Error: unable to decode URL {url_string}: {e}."))?;
-    // On non-Windows systems, the path should start
-    // with a `/`. Windows paths should already start
-    // with a drive letter.
+
+    // Strip the expected prefix; the remainder is a file path.
+    let path_segments_suffix = path_segments_vec[expected_prefix.len() + 1..].to_vec();
+
+    // URL decode each segment; however, re-encode the `\`, since this isn't a
+    // valid path separator in a URL but is incorrectly treated as such on
+    // Windows.
+    let path_segments_suffix_decoded = path_segments_suffix
+        .iter()
+        .map(|path_segment| {
+            urlencoding::decode(path_segment)
+                .map_err(|e| format!("Error: unable to decode URL {url_string}: {e}."))
+                .map(|path_seg| path_seg.replace("\\", "%5C"))
+        })
+        .collect::<Result<Vec<String>, String>>()?;
+
+    // Join the segments into a path.
+    let path_str = path_segments_suffix_decoded.join(MAIN_SEPARATOR_STR);
+
+    // On non-Windows systems, the path should start with a `/`. Windows paths
+    // should already start with a drive letter.
     #[cfg(not(target_os = "windows"))]
     let path_str = "/".to_string() + &path_str;
+
     try_canonicalize(&path_str)
 }
 
-// Given a string representing a file, transform it into a `PathBuf`. Correct it as much as possible:
+// Given a string representing a file, transform it into a `PathBuf`. Correct it
+// as much as possible:
 //
-// 1. Convert Linux path separators to this platform's path separators.
-// 2. If the file exists and if this is Windows, correct case based on the actual file's naming (even though the filesystem is case-insensitive; this makes comparisons in the TypeScript simpler).
+// 1.  Convert Linux path separators to this platform's path separators.
+// 2.  If the file exists and if this is Windows, correct case based on the
+//     actual file's naming (even though the filesystem is case-insensitive;
+//     this makes comparisons in the TypeScript simpler).
 fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
     match PathBuf::from_str(file_path) {
         Err(err) => Err(format!(
@@ -1217,12 +1244,10 @@ fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
         )),
         Ok(path_buf) => match path_buf.canonicalize() {
             // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
-            // fails if the path doesn't exist. For
-            // unsaved files, this is expected;
-            // therefore, use
+            // fails if the path doesn't exist. For unsaved files, this is
+            // expected; therefore, use
             // [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html)
-            // on error, since it doesn't require the
-            // path to exist.
+            // on error, since it doesn't require the path to exist.
             Err(_) => match path::absolute(&path_buf) {
                 Err(err) => Err(format!("Unable to make {path_buf:?} absolute: {err}")),
                 Ok(p) => Ok(p),

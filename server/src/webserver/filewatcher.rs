@@ -816,7 +816,7 @@ mod tests {
         send_response(&ide_tx_queue, id, Ok(ResultOkTypes::Void)).await;
 
         // 2.  After fetching the file, we should get an update.
-        let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_string_lossy());
+        let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_slash().unwrap());
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
@@ -855,7 +855,7 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string();
-        let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_string_lossy());
+        let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_slash().unwrap());
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
