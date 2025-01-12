@@ -56,6 +56,21 @@ fn test_url_to_path() {
         ),))
     );
 
+    // Test a path with a backslash in it.
+    assert_eq!(
+        url_to_path(
+            &format!(
+                "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{}foo%5Cbar.py",
+                if cfg!(windows) { "C:/" } else { "" }
+            ),
+            FILEWATCHER_PATH_PREFIX
+        ),
+        Ok(PathBuf::from(format!(
+            "{}foo%5Cbar.py",
+            if cfg!(windows) { "C:\\" } else { "/" }
+        ),))
+    );
+
     // Test an actual path.
     let test_dir_str = test_dir.to_str().unwrap();
     assert_eq!(
