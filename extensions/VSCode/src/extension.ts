@@ -433,14 +433,20 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 const current_file = value as string;
                                 vscode.workspace
                                     .openTextDocument(current_file)
-                                    .then((document) => {
-                                        ignore_active_editor_change = true;
-                                        vscode.window.showTextDocument(
-                                            document,
-                                            current_editor?.viewColumn
-                                        );
-                                        send_result(id);
-                                    });
+                                    .then(
+                                        (document) => {
+                                            ignore_active_editor_change = true;
+                                            vscode.window.showTextDocument(
+                                                document,
+                                                current_editor?.viewColumn
+                                            );
+                                            send_result(id);
+                                        },
+                                        (reason) =>
+                                            send_result(id, {
+                                                Err: `Error: unable to open file ${current_file}: ${reason}`,
+                                            })
+                                    );
                                 break;
                             }
 

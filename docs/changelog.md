@@ -19,6 +19,7 @@ CodeChat Editor. If not, see
 # Changelog
 
 - [Github master](https://github.com/bjones1/CodeChat_Editor):
+  - Correctly handle file not found in VSCode.
   - Correct filename handling on Windows.
 - v0.1.7, 2025-Jan-08:
   - Fixed hyperlink navigation.
