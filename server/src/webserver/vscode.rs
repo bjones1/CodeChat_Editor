@@ -988,7 +988,9 @@ mod test {
         open_client(&mut ws_ide).await;
 
         let file_path = test_dir.join("test.py");
-        let file_path_str = file_path.to_str().unwrap().to_string();
+        // Force the path separator to be Window-style for this test, even on
+        // non-Windows platforms.
+        let file_path_str = file_path.to_str().unwrap().to_string().replace("/", "\\");
 
         // Do this is a thread, since the request generates a message that
         // requires a response in order to complete.
