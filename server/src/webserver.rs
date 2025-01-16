@@ -506,9 +506,8 @@ pub async fn filesystem_endpoint(
         web::Query<HashMap<String, String>>,
         actix_web::error::QueryPayloadError,
     > = web::Query::<HashMap<String, String>>::from_query(req.query_string());
-    let is_toc = query_params.map_or(false, |query| {
-        query.get("mode").map_or(false, |mode| mode == "toc")
-    });
+    let is_toc =
+        query_params.is_ok_and(|query| query.get("mode").is_some_and(|mode| mode == "toc"));
     let is_test_mode = get_test_mode(req);
 
     // Create a one-shot channel used by the processing task to provide a
@@ -623,7 +622,7 @@ async fn text_file_to_response(
     // (only in the IDE).
     let is_current = match file_path.canonicalize() {
         Ok(fp) => simplified(&fp) == current_filepath,
-        Err(_) => path::absolute(file_path).map_or(false, |fp| fp == current_filepath),
+        Err(_) => path::absolute(file_path).is_ok_and(|fp| fp == current_filepath),
     };
     let (simple_http_response, option_codechat_for_web) = serve_file(
         file_path,
