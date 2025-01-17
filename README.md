@@ -9,7 +9,7 @@ software development process.
 ## Installation
 
 Install the
-[CodeChat Editor extension for Visual Studio code](extensions/VSCode/contents.md).
+[CodeChat Editor extension for Visual Studio code](extensions/VSCode/README.md).
 For developers, see [building from source](docs/design.md).
 
 ## Structure
