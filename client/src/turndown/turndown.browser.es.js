@@ -77,32 +77,51 @@ function has (node, tagNames) {
 
 function Node (node, options) {
   node.isBlock = isBlock(node);
-  node.isCode = node.nodeName === 'CODE' || node.parentNode.isCode;
+  node.isCode = node.nodeName === 'CODE' || node.nodeName === 'WC-MERMAID' || node.parentNode.isCode;
   node.isBlank = isBlank(node);
   node.flankingWhitespace = flankingWhitespace(node, options);
-  // When true, this node will be rendered as pure Markdown; false indicates it will be rendered using HTML. A value of true can indicate either that the source HTML can be perfectly captured as Markdown, or that the source HTML will be approximated as Markdown by discarding some HTML attributes (options.renderAsPure === true). Note that the value computed below is an initial estimate, which may be updated by a rule's `pureAttributes` property.
+  // When true, this node will be rendered as pure Markdown; false indicates it
+  // will be rendered using HTML. A value of true can indicate either that the
+  // source HTML can be perfectly captured as Markdown, or that the source HTML
+  // will be approximated as Markdown by discarding some HTML attributes
+  // (options.renderAsPure === true). Note that the value computed below is an
+  // initial estimate, which may be updated by a rule's `pureAttributes`
+  // property.
   node.renderAsPure = options.renderAsPure || node.attributes === undefined || node.attributes.length === 0;
-  // Given a dict of attributes that an HTML element may contain and still be convertable to pure Markdown, update the `node.renderAsPure` attribute. The keys of the dict define allowable attributes; the values define the value allowed for that key. If the value is `undefined`, then any value is allowed for the given key.
+  // Given a dict of attributes that an HTML element may contain and still be
+  // convertable to pure Markdown, update the `node.renderAsPure` attribute. The
+  // keys of the dict define allowable attributes; the values define the value
+  // allowed for that key. If the value is `undefined`, then any value is
+  // allowed for the given key.
   node.addPureAttributes = (d) => {
-    // Only perform this check if the node isn't pure and there's something to check. Note that `d.length` is always `undefined` (JavaScript is fun).
+    // Only perform this check if the node isn't pure and there's something to
+    // check. Note that `d.length` is always `undefined` (JavaScript is fun).
     if (!node.renderAsPure && Object.keys(d).length) {
-      // Check to see how many of the allowed attributes match the actual attributes.
+      // Check to see how many of the allowed attributes match the actual
+      // attributes.
       let allowedLength = 0;
       for (const [key, value] of Object.entries(d)) {
         if (key in node.attributes && (value === undefined || node.attributes[key].value === value)) {
           ++allowedLength;
         }
       }
-      // If the lengths are equal, then every attribute matched with an allowed attribute: this node is representable in pure Markdown.
+      // If the lengths are equal, then every attribute matched with an allowed
+      // attribute: this node is representable in pure Markdown.
       if (node.attributes.length === allowedLength) {
         node.renderAsPure = true;
       }
     }
   };
 
-  // Provide a means to escape HTML to confirm to Markdown's requirements. This happens only inside preformatted code blocks, where `collapseWhitespace` avoids removing newlines.
-  node.cleanOuterHTML = () => node.outerHTML.replace(/\n/g, '&#10;').replace(/\r/g, '&#13;');
-  // Output the provided string if `node.renderAsPure`; otherwise, output `node.outerHTML`.
+  // Provide a means to escape HTML to conform to Markdown's requirements:
+  // inside raw HTML, one
+  // [end condition](https://spec.commonmark.org/0.31.2/#html-blocks) is a blank
+  // line (two consecutive newlines). To avoid this, escape newline pairs. Note:
+  // this is a bit conservative, since some tags end only with a closing tag,
+  // not on a newline.
+  node.cleanOuterHTML = () => node.outerHTML.replace(/\n\n/g, '\n&#10;').replace(/\r\r/g, '\r&#13;').replace(/\n\r\n\r/g, '\n\r&#10;&#13;').replace(/\r\n\r\n/g, '\r\n&#13;&#10;');
+  // Output the provided string if `node.renderAsPure`; otherwise, output
+  // `node.outerHTML`.
   node.ifPure = (str) => node.renderAsPure ? str : node.cleanOuterHTML();
   return node
 }
@@ -174,13 +193,100 @@ function isFlankedByWhitespace (side, node, options) {
   return isFlanked
 }
 
+/*!
+ * word-wrap <https://github.com/jonschlinkert/word-wrap>
+ *
+ * Copyright (c) 2014-2023, Jon Schlinkert.
+ * Released under the MIT License.
+ */
+
+function trimEnd(str) {
+  let lastCharPos = str.length - 1;
+  let lastChar = str[lastCharPos];
+  while(lastChar === ' ' || lastChar === '\t') {
+    lastChar = str[--lastCharPos];
+  }
+  return str.substring(0, lastCharPos + 1);
+}
+
+function trimTabAndSpaces(str) {
+  const lines = str.split('\n');
+  const trimmedLines = lines.map((line) => trimEnd(line));
+  return trimmedLines.join('\n');
+}
+
+var wordWrap = function(str, options) {
+  options = options || {};
+  if (str == null) {
+    return str;
+  }
+
+  var width = options.width || 50;
+  var indent = (typeof options.indent === 'string')
+    ? options.indent
+    : '  ';
+
+  var newline = options.newline || '\n' + indent;
+  var escape = typeof options.escape === 'function'
+    ? options.escape
+    : identity;
+
+  var regexString = '.{1,' + width + '}';
+  if (options.cut !== true) {
+    regexString += '([\\s\u200B]+|$)|[^\\s\u200B]+?([\\s\u200B]+|$)';
+  }
+
+  var re = new RegExp(regexString, 'g');
+  var lines = str.match(re) || [];
+  var result = indent + lines.map(function(line) {
+    if (line.slice(-1) === '\n') {
+      line = line.slice(0, line.length - 1);
+    }
+    return escape(line);
+  }).join(newline);
+
+  if (options.trim === true) {
+    result = trimTabAndSpaces(result);
+  }
+  return result;
+};
+
+function identity(str) {
+  return str;
+}
+
+// Determine the approximate left indent. It will be incorrect for list items
+// whose numbers are over two digits.
+const approxLeftIndent = (node) => {
+  let leftIndent = 0;
+  while (node) {
+    if (node.nodeName === 'BLOCKQUOTE') {
+      leftIndent += 2;
+    } else if (node.nodeName === 'UL' || node.nodeName === 'OL') {
+      leftIndent += 4;
+    }
+    node = node.parentNode;
+  }
+  return leftIndent
+};
+
+// Wrap the provided text if so requested by the options.
+const wrapContent = (content, node, options) => {
+  if (!options.wordWrap.length) {
+    return content
+  }
+  const [wordWrapColumn, wordWrapMinWidth] = options.wordWrap;
+  const wrapWidth = Math.max(wordWrapColumn - approxLeftIndent(node), wordWrapMinWidth);
+  return wordWrap(content, {width: wrapWidth, indent: '', trim: true})
+};
+
 var rules = {};
 
 rules.paragraph = {
   filter: 'p',
 
-  replacement: function (content) {
-    return '\n\n' + content + '\n\n'
+  replacement: function (content, node, options) {
+    return '\n\n' + wrapContent(content, node, options) + '\n\n'
   }
 };
 
@@ -196,10 +302,15 @@ rules.heading = {
   filter: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
 
   replacement: function (content, node, options) {
+    content = wrapContent(content, node, options);
     var hLevel = Number(node.nodeName.charAt(1));
 
     if (options.headingStyle === 'setext' && hLevel < 3) {
-      var underline = repeat((hLevel === 1 ? '=' : '-'), content.length);
+      // Split the contents into lines, then find the longest line length.
+      const splitContent = content.split(/\r\n|\n|\r/);
+      // From [SO](https://stackoverflow.com/a/43304999/16038919).
+      const maxLineLength = Math.max(...(splitContent.map(el => el.length)));
+      var underline = repeat((hLevel === 1 ? '=' : '-'), maxLineLength);
       return (
         '\n\n' + content + '\n' + underline + '\n\n'
       )
@@ -212,7 +323,8 @@ rules.heading = {
 rules.blockquote = {
   filter: 'blockquote',
 
-  replacement: function (content) {
+  replacement: function (content, node, options) {
+    content = wrapContent(content, node, options);
     content = content.replace(/^\n+|\n+$/g, '');
     content = content.replace(/^/gm, '> ');
     return '\n\n' + content + '\n\n'
@@ -222,7 +334,9 @@ rules.blockquote = {
 rules.list = {
   filter: ['ul', 'ol'],
   pureAttributes: function (node, options) {
-    // When rendering in faithful mode, check that all children are `<li>` elements that can be faithfully rendered. If not, this must be rendered as HTML.
+    // When rendering in faithful mode, check that all children are `<li>`
+    // elements that can be faithfully rendered. If not, this must be rendered
+    // as HTML.
     if (!options.renderAsPure) {
       var childrenPure = Array.prototype.reduce.call(node.childNodes,
         (previousValue, currentValue) =>
@@ -231,7 +345,8 @@ rules.list = {
           (new Node(currentValue, options)).renderAsPure, true
       );
       if (!childrenPure) {
-        // If any of the children must be rendered as HTML, then this node must also be rendered as HTML.
+        // If any of the children must be rendered as HTML, then this node must
+        // also be rendered as HTML.
         node.renderAsPure = false;
         return
       }
@@ -268,15 +383,50 @@ rules.listItem = {
       const suffix = '.';
       const padding = (digits > spaces ? digits + 1 : spaces + 1) + suffix.length; // increase padding if beyond 99
       prefix = (itemNumber + suffix).padEnd(padding);
-      content = content.replace(/\n/gm, '\n  '.padEnd(1 + padding));
+      // Indent all non-blank lines.
+      content = content.replace(/\n(.+)/gm, '\n  '.padEnd(1 + padding) + '$1');
     } else {
       prefix = options.bulletListMarker + ' '.padEnd(1 + spaces);
-      content = content.replace(/\n/gm, '\n  '.padEnd(3 + spaces)); // indent
+      // Indent all non-blank lines.
+      content = content.replace(/\n(.+)/gm, '\n  '.padEnd(3 + spaces) + '$1');
     }
     return (
-      prefix + content + (node.nextSibling && !/\n$/.test(content) ? '\n' : '')
+      prefix + content + (node.nextSibling && !content.endsWith('\n\n') ? '\n' : '')
     )
   }
+};
+
+// Determine if a code block is pure. It accepts the following structure:
+//
+// ```HTML
+// <pre>
+//   <code (optional) class="language-xxx">code contents, including newlines</code>
+//   ...then 0 or more of either:
+//   <br>   <-- this is translated to a newline
+//   <code>more code</code>
+// </pre>
+// ```
+let codeBlockPureAttributes = (node, options, isFenced) => {
+  // Check the purity of the child block(s) which contain the code.
+  node.renderAsPure = options.renderAsPure || (node.childNodes.length > 0 && Array.prototype.reduce.call(node.childNodes, (accumulator, childNode) => {
+    const cn = new Node(childNode, options);
+    // All previous siblings are pure and...
+    return accumulator && (
+      // ... it's either a `br` (which cannot have children) ...
+      (cn.nodeName === 'BR' && cn.attributes.length === 0) ||
+      // ... or a `code` element which has ...
+      (cn.nodeName === 'CODE' &&
+        // ... no attributes or (for a fenced code block) a class attribute
+        // containing a language name...
+        (cn.attributes.length === 0 || (isFenced && cn.attributes.length === 1 && cn.className.match(/language-(\S+)/))) &&
+        // ... only one child...
+        cn.childNodes.length === 1 &&
+        // ... containing text, ...
+        cn.firstChild.nodeType === 3
+      )
+    )
+    // ... then this node and its subtree are pure.
+  }, true));
 };
 
 rules.indentedCodeBlock = {
@@ -289,14 +439,7 @@ rules.indentedCodeBlock = {
     )
   },
 
-  pureAttributes: function (node, options) {
-    // Check the purity of the child block(s) which contain the code.
-    node.renderAsPure = options.renderAsPure || (node.renderAsPure && (
-      // There's only one child (the code element), and it's pure.
-      new Node(node.firstChild, options)).renderAsPure && node.childNodes.length === 1 &&
-      // There's only one child of this code element, and it's text.
-      node.firstChild.childNodes.length === 1 && node.firstChild.firstChild.nodeType === 3);
-  },
+  pureAttributes: (node, options) => codeBlockPureAttributes(node, options, false),
 
   replacement: function (content, node, options) {
     return (
@@ -317,26 +460,14 @@ rules.fencedCodeBlock = {
     )
   },
 
-  pureAttributes: function (node, options) {
-    // Check the purity of the child code element.
-    var firstChild = new Node(node.firstChild, options);
-    var className = firstChild.getAttribute('class') || '';
-    var language = (className.match(/language-(\S+)/) || [null, ''])[1];
-    // Allow the matched classname as pure Markdown. Compare using the `className` attribute, since the `class` attribute returns an object, not an easily-comparable string.
-    if (language) {
-      firstChild.renderAsPure = firstChild.renderAsPure || firstChild.className === `language-${language}`;
-    }
-    node.renderAsPure = options.renderAsPure || (node.renderAsPure &&
-      // There's only one child (the code element), and it's pure.
-      firstChild.renderAsPure && node.childNodes.length === 1 &&
-      // There's only one child of this code element, and it's text.
-      node.firstChild.childNodes.length === 1 && node.firstChild.firstChild.nodeType === 3);
-  },
+  pureAttributes: (node, options) => codeBlockPureAttributes(node, options, true),
 
   replacement: function (content, node, options) {
     var className = node.firstChild.getAttribute('class') || '';
     var language = (className.match(/language-(\S+)/) || [null, ''])[1];
-    var code = node.firstChild.textContent;
+    // In the HTML, combine the text inside `code` tags while translating `br`
+    // tags to a newline.
+    var code = Array.prototype.reduce.call(node.childNodes, (accumulator, childNode) => accumulator + (childNode.tagName === 'BR' ? '\n' : childNode.textContent), '');
 
     var fenceChar = options.fence.charAt(0);
     var fenceSize = 3;
@@ -641,7 +772,7 @@ function collapseWhitespace (options) {
   var isBlock = options.isBlock;
   var isVoid = options.isVoid;
   var isPre = options.isPre || function (node) {
-    return node.nodeName === 'PRE'
+    return node.nodeName === 'PRE' || node.nodeName === 'WC-MERMAID'
   };
   var renderAsPure = options.renderAsPure;
 
@@ -890,25 +1021,27 @@ var escapes = [
   [/^>/g, '\\>'],
   [/_/g, '\\_'],
   [/^(\d+)\. /g, '$1\\. '],
-  // Per [section 6.6 of the CommonMark spec](https://spec.commonmark.org/0.30/#raw-html),
-  // Raw HTML, CommonMark recognizes and passes through HTML-like tags and
-  // their contents. Therefore, Turndown needs to escape text that would parse
-  // as an HTML-like tag. This regex recognizes these tags and escapes them by
+  // Per
+  // [section 6.6 of the CommonMark spec](https://spec.commonmark.org/0.30/#raw-html),
+  // Raw HTML, CommonMark recognizes and passes through HTML-like tags and their
+  // contents. Therefore, Turndown needs to escape text that would parse as an
+  // HTML-like tag. This regex recognizes these tags and escapes them by
   // inserting a leading backslash.
   [new RegExp(HTMLTAG, 'g'), '\\$&'],
-  // Likewise, [section 4.6 of the CommonMark spec](https://spec.commonmark.org/0.30/#html-blocks),
+  // Likewise,
+  // [section 4.6 of the CommonMark spec](https://spec.commonmark.org/0.30/#html-blocks),
   // HTML blocks, requires the same treatment.
   //
   // This regex was copied from `commonmark.js/lib/blocks.js`, the
   // `reHtmlBlockOpen` variable. We only need regexps for patterns not matched
   // by the previous pattern, so this doesn't need all expressions there.
   //
-  // TODO: this is too aggressive; it should only recognize this pattern at
-  // the beginning of a line of CommonnMark source; these will recognize the
-  // pattern at the beginning of any inline or block markup. The approach I
-  // tried was to put this in `commonmark-rules.js` for the `paragraph` and
-  // `heading` rules (the only block beginning-of-line rules). However, text
-  // outside a paragraph/heading doesn't get escaped in this case.
+  // TODO: this is too aggressive; it should only recognize this pattern at the
+  // beginning of a line of CommonnMark source; these will recognize the pattern
+  // at the beginning of any inline or block markup. The approach I tried was to
+  // put this in `commonmark-rules.js` for the `paragraph` and `heading` rules
+  // (the only block beginning-of-line rules). However, text outside a
+  // paragraph/heading doesn't get escaped in this case.
   [/^<(?:script|pre|textarea|style)(?:\s|>|$)/i, '\\$&'],
   [/^<[/]?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[123456]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|section|source|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul)(?:\s|[/]?[>]|$)/i, '\\$&']
 ];
@@ -929,8 +1062,16 @@ function TurndownService (options) {
     linkReferenceStyle: 'full',
     br: '  ',
     preformattedCode: false,
-    // Should the output be pure (pure Markdown, with no HTML blocks; this discards any HTML input that can't be represented in "pure" Markdown) or faithful (any input HTML that can't be exactly duplicated using Markdwon remains HTML is the resulting output)? This is `false` by default, following the original author's design.
+    // Should the output be pure (pure Markdown, with no HTML blocks; this
+    // discards any HTML input that can't be represented in "pure" Markdown) or
+    // faithful (any input HTML that can't be exactly duplicated using Markdwon
+    // remains HTML is the resulting output)? This is `false` by default,
+    // following the original author's design.
     renderAsPure: true,
+    // An array of \[word wrap column, minimum word wrap width\] indicates that
+    // the output should be word wrapped based on these parameters; otherwise,
+    // en empty list indicates no wrapping.
+    wordWrap: [],
     blankReplacement: function (content, node) {
       return node.isBlock ? '\n\n' : ''
     },
@@ -938,7 +1079,8 @@ function TurndownService (options) {
       return node.isBlock ? '\n\n' + node.outerHTML + '\n\n' : node.outerHTML
     },
     defaultReplacement: function (content, node, options) {
-      // A hack: for faithful output, always produce the HTML, rather than the content. To get this, tell the node it's impure.
+      // A hack: for faithful output, always produce the HTML, rather than the
+      // content. To get this, tell the node it's impure.
       node.renderAsPure = options.renderAsPure;
       return node.isBlock ? '\n\n' + node.ifPure(content) + '\n\n' : node.ifPure(content)
     }
@@ -967,6 +1109,40 @@ TurndownService.prototype = {
 
     var output = process.call(this, new RootNode(input, this.options));
     return postProcess.call(this, output)
+  },
+
+  /**
+   * Like `turndown`, but functions like an iterator, so that the HTML to convert
+   * is delivered in a sequnce of calls this method, then a single call to `last`.
+   * @public
+   * @param {String|HTMLElement} input The string or DOM node to convert
+   * @returns A Markdown representation of the input
+   * @type String
+   */
+
+  next: function (input) {
+    if (!canConvert(input)) {
+      throw new TypeError(
+        input + ' is not a string, or an element/document/fragment node.'
+      )
+    }
+
+    if (input === '') return ''
+
+    var output = process.call(this, new RootNode(input, this.options));
+    return cleanEmptyLines(output)
+  },
+
+  /**
+   * See `next`; this finalizes the Markdown output produced by call to `next`.
+   * @public
+   * @param {String|HTMLElement} input The string or DOM node to convert
+   * @returns A Markdown representation of the input
+   * @type String
+   */
+
+  last: function (input) {
+    this.turndown(input);
   },
 
   /**
@@ -1043,6 +1219,11 @@ TurndownService.prototype = {
   }
 };
 
+// These HTML elements are considered block nodes, as opposed to inline nodes. It's based on the Commonmark spec's selection of [HTML blocks](https://spec.commonmark.org/0.31.2/#html-blocks).
+const blockNodeNames = new Set([
+  'PRE', 'SCRIPT', 'STYLE', 'TEXTAREA', 'ADDRESS', 'ARTICLE', 'ASIDE', 'BASE', 'BASEFONT', 'BLOCKQUOTE', 'BODY', 'CAPTION', 'CENTER', 'COL', 'COLGROUP', 'DD', 'DETAILS', 'DIALOG', 'DIR', 'DIV', 'DL', 'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'FRAME', 'FRAMESET', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEAD', 'HEADER', 'HR', 'HTML', 'IFRAME', 'LEGEND', 'LI', 'LINK', 'MAIN', 'MENU', 'MENUITEM', 'NAV', 'NOFRAMES', 'OL', 'OPTGROUP', 'OPTION', 'P', 'PARAM', 'SEARCH', 'SECTION', 'SUMMARY', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TITLE', 'TR', 'TRACK', 'UL'
+]);
+
 /**
  * Reduces a DOM node down to its Markdown string equivalent
  * @private
@@ -1053,35 +1234,57 @@ TurndownService.prototype = {
 
 function process (parentNode) {
   var self = this;
-  // Note that the root node passed to Turndown isn't translated -- only its children, since the root node is simply a container (a div or body tag) of items to translate. Only the root node's `renderAsPure` attribute is undefined; treat it as pure, since we never translate this node.
+  const isLi = parentNode.nodeName === 'LI';
+  // Note that the root node passed to Turndown isn't translated -- only its
+  // children, since the root node is simply a container (a div or body tag) of
+  // items to translate. Only the root node's `renderAsPure` attribute is
+  // undefined; treat it as pure, since we never translate this node.
   if (parentNode.renderAsPure || parentNode.renderAsPure === undefined) {
-    return reduce.call(parentNode.childNodes, function (output, node) {
+    const output = reduce.call(parentNode.childNodes, function (output, node) {
+      // `output` consists of [output so far, li accumulator]. For non-li nodes, this node's output is added to the output so far. Otherwise, accumulate content for wrapping. Wrap accumulation rules: accumulate any text and non-block node; wrap the accumulator when on a non-accumulating node.
       node = new Node(node, self.options);
 
       var replacement = '';
+      const nodeType = node.nodeType;
       // Is this a text node?
-      if (node.nodeType === 3) {
+      if (nodeType === 3) {
         replacement = node.isCode ? node.nodeValue : self.escape(node.nodeValue);
       // Is this an element node?
-      } else if (node.nodeType === 1) {
+      } else if (nodeType === 1) {
         replacement = replacementForNode.call(self, node);
       // In faithful mode, return the contents for these special cases.
       } else if (!self.options.renderAsPure) {
-        if (node.nodeType === 4) {
+        if (nodeType === 4) {
           replacement = `<!CDATA[[${node.nodeValue}]]>`;
-        } else if (node.nodeType === 7) {
+        } else if (nodeType === 7) {
           replacement = `<?${node.nodeValue}?>`;
-        } else if (node.nodeType === 8) {
+        } else if (nodeType === 8) {
           replacement = `<!--${node.nodeValue}-->`;
-        } else if (node.nodeType === 10) {
+        } else if (nodeType === 10) {
           replacement = `<!${node.nodeValue}>`;
+        } else {
+          console.log(`Error: unexpected node type ${nodeType}.`);
         }
       }
 
-      return join(output, replacement)
-    }, '')
+      if (isLi) {
+        // Is this a non-accumulating node?
+        if (nodeType > 3 || (nodeType === 1 && blockNodeNames.has(node.nodeName))) {
+          // This is a non-accumulating node. Wrap the accumulated content, then clear the accumulator.
+          const wrappedAccumulator = wrapContent(output[1], node, self.options);
+          return [join(join(wrappedAccumulator, output[0]), replacement), '']
+        } else {
+          // This is an accumulating node, so add this to the accumulator.
+          return [output[0], join(output[1], replacement)]
+        }
+      } else {
+        return [join(output[0], replacement), '']
+      }
+    }, ['', '']);
+    return join(output[0], wrapContent(output[1], parentNode, self.options))
   } else {
-    // If the `parentNode` represented itself as raw HTML, that contains all the contents of the child nodes.
+    // If the `parentNode` represented itself as raw HTML, that contains all the
+    // contents of the child nodes.
     return ''
   }
 }
@@ -1102,8 +1305,13 @@ function postProcess (output) {
     }
   });
 
-  return output.replace(/^[\t\r\n]+/, '').replace(/[\t\r\n\s]+$/, '')
+  return cleanEmptyLines(output)
 }
+
+// Remove extraneous newlines/tabs at the beginning and end of lines. This is
+// a postprocessing method to call just before returning the converted Markdown
+// output.
+const cleanEmptyLines = (output) => output.replace(/^[\t\r\n]+/, '').replace(/[\t\r\n\s]+$/, '');
 
 /**
  * Converts an element node to its Markdown equivalent
@@ -1121,7 +1329,9 @@ function replacementForNode (node) {
   if (whitespace.leading || whitespace.trailing) content = content.trim();
   return (
     whitespace.leading +
-    // If this node contains impure content, then it must be replaced with HTML. In this case, the `content` doesn't matter, so it's passed as an empty string.
+    // If this node contains impure content, then it must be replaced with HTML.
+    // In this case, the `content` doesn't matter, so it's passed as an empty
+    // string.
     (node.renderAsPure ? rule.replacement(content, node, this.options) : this.options.defaultReplacement('', node, this.options)) +
     whitespace.trailing
   )
