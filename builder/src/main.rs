@@ -258,32 +258,41 @@ fn search_and_replace_file<
 //
 // These functions simplify common build-focused development tasks and support
 // CI builds.
+/// Apply the provided patch to a file.
+fn patch_file(patch: &str, before_patch: &str, file_path: &str) -> io::Result<()> {
+    let file_path = Path::new(file_path);
+    let file_contents = fs::read_to_string(file_path)?;
+    if !file_contents.contains(patch) {
+        let patch_loc = file_contents
+            .find(before_patch)
+            .expect("Patch location not found.")
+            + before_patch.len();
+        let patched_file_contents = format!(
+            "{}{patch}{}",
+            &file_contents[..patch_loc],
+            &file_contents[patch_loc..]
+        );
+        fs::write(file_path, &patched_file_contents)?;
+    }
+    Ok(())
+}
 /// After updating files in the client's Node files, perform some fix-ups.
 fn patch_client_npm() -> io::Result<()> {
     // Apply a the fixes described in
     // [issue 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
-    //
-    // Insert this line...
-    let patch = "
-        selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)";
-    // After this line.
-    let before_path = "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
-            hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));";
-    // First, see if the patch was applied already.
-    let index_js_path = Path::new("../client/node_modules/@codemirror/view/dist/index.js");
-    let index_js = fs::read_to_string(index_js_path)?;
-    if !index_js.contains(patch) {
-        let patch_loc = index_js
-            .find(before_path)
-            .expect("Patch location not found.")
-            + before_path.len();
-        let patched_index_js = format!(
-            "{}{patch}{}",
-            &index_js[..patch_loc],
-            &index_js[patch_loc..]
-        );
-        fs::write(index_js_path, &patched_index_js)?;
-    }
+    patch_file(
+        "
+        selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)",
+        "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
+            hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));",
+        "../client/node_modules/@codemirror/view/dist/index.js"
+    )?;
+    // In [older releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options), TinyMCE allowed users to change `whitespace_elements`; the whitespace inside these isn't removed by TinyMCE. However, this was removed in v6.0. Therefore, manually patch TinyMCE instead.
+    patch_file(
+        " wc-mermaid",
+        "const whitespaceElementsMap = createLookupTable('whitespace_elements', 'pre script noscript style textarea video audio iframe object code",
+        "../client/node_modules/tinymce/tinymce.js"
+    )?;
 
     // Copy across the parts of MathJax that are needed, since bundling it is
     // difficult.
