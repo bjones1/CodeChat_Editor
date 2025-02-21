@@ -39,6 +39,7 @@ jobs:
           node-version: 20
       - name: Run tests
         run: |
+          rustup update
           cd server
           ./bt install --dev
           ./bt test
