@@ -24,7 +24,7 @@
         "@typescript-eslint/eslint-plugin": "^8",
         "@typescript-eslint/parser": "^8",
         "chai": "^5",
-        "esbuild": "^0.24",
+        "esbuild": "^0.25",
         "eslint": "^9",
         "eslint-config-prettier": "^10",
         "eslint-plugin-import": "^2",
