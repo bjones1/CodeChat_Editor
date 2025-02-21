@@ -570,3 +570,17 @@ Therefore, we use only arrow functions for this codebase.
 
 Other than that, follow the [MDN style
 guide](https://developer.mozilla.org/en-US/docs/MDN/Writing_guidelines/Writing_style_guide/Code_style_guide/JavaScript).
+
+Misc
+----
+
+Eventaully, provide a read-only mode with possible auth (restrict who can view)
+using JWTs; see [one
+approach](https://auth0.com/blog/build-an-api-in-rust-with-jwt-authentication-using-actix-web/).
+
+A better approach to make macros accessible where they're defined, instead of at
+the crate root: see
+[SO](https://stackoverflow.com/questions/26731243/how-do-i-use-a-macro-across-module-files/67140319#67140319).
+
+When using VSCode with Rust, set `"rust-analyzer.cargo.targetDir": true`. See
+[this issue](https://github.com/rust-lang/rust-analyzer/issues/17807).
