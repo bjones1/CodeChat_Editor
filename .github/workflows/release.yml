@@ -76,6 +76,7 @@ jobs:
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         run: |
+          rustup update
           cd server
           dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
           echo "dist ran successfully"
@@ -143,6 +144,7 @@ jobs:
           ${{ matrix.packages_install }}
       - name: Build artifacts
         run: |
+          rustup update
           cd server
           ./bt prerelease
           # Actually do builds and make zips and whatnot
