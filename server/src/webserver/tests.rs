@@ -16,7 +16,7 @@
 /// # `test.rs` -- Unit tests for the webserver
 // ## Imports
 use std::{
-    path::{PathBuf, MAIN_SEPARATOR_STR},
+    path::{MAIN_SEPARATOR_STR, PathBuf},
     thread::{self, sleep},
     time::Duration,
 };

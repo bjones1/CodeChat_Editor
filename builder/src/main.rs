@@ -291,7 +291,7 @@ fn patch_client_npm() -> io::Result<()> {
     patch_file(
         " wc-mermaid",
         "const whitespaceElementsMap = createLookupTable('whitespace_elements', 'pre script noscript style textarea video audio iframe object code",
-        "../client/node_modules/tinymce/tinymce.js"
+        "../client/node_modules/tinymce/tinymce.js",
     )?;
 
     // Copy across the parts of MathJax that are needed, since bundling it is

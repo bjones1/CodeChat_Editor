@@ -22,8 +22,9 @@ use std::{cmp::min, collections::HashMap, path::PathBuf};
 
 // ### Third-party
 use actix_web::{
+    HttpRequest, HttpResponse,
     error::{Error, ErrorBadRequest},
-    get, web, HttpRequest, HttpResponse,
+    get, web,
 };
 use indoc::formatdoc;
 use log::{debug, error, warn};
@@ -32,20 +33,21 @@ use tokio::{select, sync::mpsc};
 
 // ### Local
 use super::{
-    client_websocket, get_client_framework, send_response, AppState, EditorMessage,
-    EditorMessageContents, IdeType, WebsocketQueues, IP_ADDRESS,
+    AppState, EditorMessage, EditorMessageContents, IP_ADDRESS, IdeType, WebsocketQueues,
+    client_websocket, get_client_framework, send_response,
 };
 use crate::{
     oneshot_send,
     processing::{
-        codechat_for_web_to_source, source_to_codechat_for_web_string, CodeChatForWeb, CodeMirror,
-        TranslationResultsString,
+        CodeChatForWeb, CodeMirror, TranslationResultsString, codechat_for_web_to_source,
+        source_to_codechat_for_web_string,
     },
     queue_send,
     webserver::{
-        escape_html, filesystem_endpoint, html_wrapper, make_simple_http_response, path_to_url,
-        text_file_to_response, try_canonicalize, url_to_path, ProcessingTaskHttpRequest,
-        ResultOkTypes, UpdateMessageContents, INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
+        INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT, ProcessingTaskHttpRequest, ResultOkTypes,
+        UpdateMessageContents, escape_html, filesystem_endpoint, html_wrapper,
+        make_simple_http_response, path_to_url, text_file_to_response, try_canonicalize,
+        url_to_path,
     },
 };
 
@@ -108,32 +110,36 @@ pub async fn vscode_ide_websocket(
     // connections.
     let (from_ide_tx, mut from_ide_rx) = mpsc::channel(10);
     let (to_ide_tx, to_ide_rx) = mpsc::channel(10);
-    assert!(app_state
-        .vscode_ide_queues
-        .lock()
-        .unwrap()
-        .insert(
-            connection_id_str.clone(),
-            WebsocketQueues {
-                from_websocket_tx: from_ide_tx,
-                to_websocket_rx: to_ide_rx,
-            },
-        )
-        .is_none());
+    assert!(
+        app_state
+            .vscode_ide_queues
+            .lock()
+            .unwrap()
+            .insert(
+                connection_id_str.clone(),
+                WebsocketQueues {
+                    from_websocket_tx: from_ide_tx,
+                    to_websocket_rx: to_ide_rx,
+                },
+            )
+            .is_none()
+    );
     let (from_client_tx, mut from_client_rx) = mpsc::channel(10);
     let (to_client_tx, to_client_rx) = mpsc::channel(10);
-    assert!(app_state
-        .vscode_client_queues
-        .lock()
-        .unwrap()
-        .insert(
-            connection_id_str.clone(),
-            WebsocketQueues {
-                from_websocket_tx: from_client_tx,
-                to_websocket_rx: to_client_rx,
-            },
-        )
-        .is_none());
+    assert!(
+        app_state
+            .vscode_client_queues
+            .lock()
+            .unwrap()
+            .insert(
+                connection_id_str.clone(),
+                WebsocketQueues {
+                    from_websocket_tx: from_client_tx,
+                    to_websocket_rx: to_client_rx,
+                },
+            )
+            .is_none()
+    );
     app_state
         .vscode_connection_id
         .lock()
@@ -568,7 +574,9 @@ pub async fn vscode_ide_websocket(
                 .remove(&connection_id_task)
                 .is_none()
             {
-                error!("Unable to remove connection ID {connection_id_task} from processing task queue.");
+                error!(
+                    "Unable to remove connection ID {connection_id_task} from processing task queue."
+                );
             }
             if app_state_task
                 .vscode_client_queues
@@ -687,13 +695,12 @@ mod test {
         time::sleep,
     };
     use tokio_tungstenite::{
-        connect_async,
+        MaybeTlsStream, WebSocketStream, connect_async,
         tungstenite::{http::StatusCode, protocol::Message},
-        MaybeTlsStream, WebSocketStream,
     };
 
     use super::super::{
-        run_server, tests::IP_PORT, EditorMessage, EditorMessageContents, IdeType, IP_ADDRESS,
+        EditorMessage, EditorMessageContents, IP_ADDRESS, IdeType, run_server, tests::IP_PORT,
     };
     use crate::{
         cast,

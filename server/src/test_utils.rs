@@ -24,12 +24,12 @@
 //
 // ### Standard library
 use std::env;
-use std::path::PathBuf;
 use std::path::MAIN_SEPARATOR_STR;
+use std::path::PathBuf;
 
 // ### Third-party
-use assert_fs::fixture::PathCopy;
 use assert_fs::TempDir;
+use assert_fs::fixture::PathCopy;
 use assertables::assert_le;
 use log::Level;
 
@@ -44,7 +44,7 @@ use crate::testing_logger;
 // Some(Animal(cat))\`.
 #[macro_export]
 macro_rules! cast {
-    ($target: expr, $pat: path) => {{
+    ($target: expr_2021, $pat: path) => {{
         // The if let exploits recent Rust compiler's smart pattern matching.
         // Contrary to other solutions like
         // `into_variant`` and friends, this one macro covers all ownership usage like`

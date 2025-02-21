@@ -49,8 +49,8 @@ use std::sync::Arc;
 
 // ### Local
 use super::{
-    pest_parser, BlockCommentDelim, CodeDocBlock, HeredocDelim, LanguageLexer, NewlineSupport,
-    SpecialCase, StringDelimiterSpec,
+    BlockCommentDelim, CodeDocBlock, HeredocDelim, LanguageLexer, NewlineSupport, SpecialCase,
+    StringDelimiterSpec, pest_parser,
 };
 
 // ## Helper functions

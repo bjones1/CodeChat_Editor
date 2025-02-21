@@ -758,19 +758,22 @@ pub fn source_lexer(
         #[cfg(feature = "lexer_explain")]
         println!(
             "Searching the following source_code using the pattern {:?}:\n'{}'\n\nThe current code block is '{}'\n",
-            language_lexer_compiled.next_token, &source_code[source_code_unlexed_index..], &source_code[current_code_block_index..source_code_unlexed_index]
+            language_lexer_compiled.next_token,
+            &source_code[source_code_unlexed_index..],
+            &source_code[current_code_block_index..source_code_unlexed_index]
         );
         // #### Find the next token
         //
         // Look for the next special case. Per the earlier discussion, this
         // assumes that the text immediately preceding `source_code` was plain
         // code.
-        if let Some(classify_match) = language_lexer_compiled
+        match language_lexer_compiled
             .next_token
             .captures(&source_code[source_code_unlexed_index..])
         {
-            // Find the first group in the regex that matched.
-            let matching_group_index = classify_match
+            Some(classify_match) => {
+                // Find the first group in the regex that matched.
+                let matching_group_index = classify_match
                 .iter()
                 // Group 0 is the entire match, which is always true. Skip this
                 // group.
@@ -779,23 +782,24 @@ pub fn source_lexer(
                 .unwrap()
                 // Correct the resulting group index, since we skipped group 0.
                 + 1;
-            let matching_group_str = &classify_match[matching_group_index];
+                let matching_group_str = &classify_match[matching_group_index];
 
-            // Move everything preceding this match from `source_code` to the
-            // current code block, since per the assumptions this is code.
-            source_code_unlexed_index += classify_match.get(matching_group_index).unwrap().start();
+                // Move everything preceding this match from `source_code` to the
+                // current code block, since per the assumptions this is code.
+                source_code_unlexed_index +=
+                    classify_match.get(matching_group_index).unwrap().start();
 
-            #[cfg(feature = "lexer_explain")]
-            println!(
-                "Matched the string {} in group {}. The current_code_block is now\n'{}'\n",
-                matching_group_str,
-                matching_group_index,
-                &source_code[current_code_block_index..source_code_unlexed_index]
-            );
+                #[cfg(feature = "lexer_explain")]
+                println!(
+                    "Matched the string {} in group {}. The current_code_block is now\n'{}'\n",
+                    matching_group_str,
+                    matching_group_index,
+                    &source_code[current_code_block_index..source_code_unlexed_index]
+                );
 
-            // This helper function moves code from unlexed source code to the
-            // current code block based on the provided regex.
-            let mut append_code =
+                // This helper function moves code from unlexed source code to the
+                // current code block based on the provided regex.
+                let mut append_code =
                                    // The regex; code up to the end of this
                                    // match will be appended to the current code
                                    // block.
@@ -825,76 +829,76 @@ pub fn source_lexer(
 
             };
 
-            // In the map, index 0 refers to group 1 (since group 0 matches are
-            // skipped). Adjust the index for this.
-            match &language_lexer_compiled.map[matching_group_index - 1] {
-                // #### Inline comment
-                RegexDelimType::InlineComment => {
-                    // **First**, find the end of this comment: a newline.
-                    let end_of_comment_rel_index =
-                        source_code[source_code_unlexed_index..].find('\n');
+                // In the map, index 0 refers to group 1 (since group 0 matches are
+                // skipped). Adjust the index for this.
+                match &language_lexer_compiled.map[matching_group_index - 1] {
+                    // #### Inline comment
+                    RegexDelimType::InlineComment => {
+                        // **First**, find the end of this comment: a newline.
+                        let end_of_comment_rel_index =
+                            source_code[source_code_unlexed_index..].find('\n');
 
-                    // Assign `full_comment` to contain the entire comment
-                    // (excluding the inline comment delimiter) until the
-                    // newline which ends the comment.
-                    let full_comment_start_index =
-                        source_code_unlexed_index + matching_group_str.len();
+                        // Assign `full_comment` to contain the entire comment
+                        // (excluding the inline comment delimiter) until the
+                        // newline which ends the comment.
+                        let full_comment_start_index =
+                            source_code_unlexed_index + matching_group_str.len();
 
-                    // The current code block contains preceding code (which
-                    // might be multiple lines) until the inline comment
-                    // delimiter. Split this on newlines, grouping all the lines
-                    // before the last line into `code_lines_before_comment`
-                    // (which is all code), and everything else (from the
-                    // beginning of the last line to where the inline comment
-                    // delimiter appears) into `comment_line_prefix`. For
-                    // example, consider the fragment `a = 1\nb = 2 // Doc`.
-                    // After processing,
-                    // `code_lines_before_comment == "a = 1\n"` and
-                    // `comment_line_prefix == "b = 2 "`.
-                    let current_code_block =
-                        &source_code[current_code_block_index..source_code_unlexed_index];
-                    let comment_line_prefix = current_code_block.rsplit('\n').next().unwrap();
-                    let code_lines_before_comment =
-                        &current_code_block[..current_code_block.len() - comment_line_prefix.len()];
+                        // The current code block contains preceding code (which
+                        // might be multiple lines) until the inline comment
+                        // delimiter. Split this on newlines, grouping all the lines
+                        // before the last line into `code_lines_before_comment`
+                        // (which is all code), and everything else (from the
+                        // beginning of the last line to where the inline comment
+                        // delimiter appears) into `comment_line_prefix`. For
+                        // example, consider the fragment `a = 1\nb = 2 // Doc`.
+                        // After processing,
+                        // `code_lines_before_comment == "a = 1\n"` and
+                        // `comment_line_prefix == "b = 2 "`.
+                        let current_code_block =
+                            &source_code[current_code_block_index..source_code_unlexed_index];
+                        let comment_line_prefix = current_code_block.rsplit('\n').next().unwrap();
+                        let code_lines_before_comment = &current_code_block
+                            [..current_code_block.len() - comment_line_prefix.len()];
 
-                    // Move to the next block of source code to be lexed. No
-                    // matching newline means we're at the end of the file, so
-                    // the comment is all the remaining `source_code`.
-                    source_code_unlexed_index = if let Some(index) = end_of_comment_rel_index {
-                        // Note that `index` is the index of the newline; add 1
-                        // to include that newline in the comment.
-                        source_code_unlexed_index + index + 1
-                    } else {
-                        source_code.len()
-                    };
-                    let full_comment =
-                        &source_code[full_comment_start_index..source_code_unlexed_index];
+                        // Move to the next block of source code to be lexed. No
+                        // matching newline means we're at the end of the file, so
+                        // the comment is all the remaining `source_code`.
+                        source_code_unlexed_index = if let Some(index) = end_of_comment_rel_index {
+                            // Note that `index` is the index of the newline; add 1
+                            // to include that newline in the comment.
+                            source_code_unlexed_index + index + 1
+                        } else {
+                            source_code.len()
+                        };
+                        let full_comment =
+                            &source_code[full_comment_start_index..source_code_unlexed_index];
 
-                    #[cfg(feature = "lexer_explain")]
-                    println!(
-                        "This is an inline comment. Source code before the line containing this comment is:\n'{}'\n\
+                        #[cfg(feature = "lexer_explain")]
+                        println!(
+                            "This is an inline comment. Source code before the line containing this comment is:\n'{}'\n\
                         The text preceding this comment is: '{}'.\n\
                         The comment is: '{}'\n",
-                        code_lines_before_comment, comment_line_prefix, full_comment
-                    );
+                            code_lines_before_comment, comment_line_prefix, full_comment
+                        );
 
-                    // **Next**, determine if this comment is a doc block.
-                    // Criteria for doc blocks for an inline comment:
-                    //
-                    // 1.  All characters preceding the comment on the line
-                    //     containing the comment must be whitespace.
-                    // 2.  Either:
-                    //     1.  The inline comment delimiter is immediately
-                    //         followed by a space, or
-                    //     2.  the inline comment delimiter is followed by a
-                    //         newline or the end of the file.
-                    //
-                    // With this last line located, apply the doc block
-                    // criteria.
-                    let ws_only = WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix);
-                    let has_space_after_comment = full_comment.starts_with(' ');
-                    // Criteria 1 -- the whitespace matched.
-                    if ws_only &&
+                        // **Next**, determine if this comment is a doc block.
+                        // Criteria for doc blocks for an inline comment:
+                        //
+                        // 1.  All characters preceding the comment on the line
+                        //     containing the comment must be whitespace.
+                        // 2.  Either:
+                        //     1.  The inline comment delimiter is immediately
+                        //         followed by a space, or
+                        //     2.  the inline comment delimiter is followed by a
+                        //         newline or the end of the file.
+                        //
+                        // With this last line located, apply the doc block
+                        // criteria.
+                        let ws_only = WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix);
+                        let has_space_after_comment = full_comment.starts_with(' ');
+                        // Criteria 1 -- the whitespace matched.
+                        if ws_only &&
                         // TODO: generalize this to specific lines that are
                         // never doc blocks.
                         full_comment != " prettier-ignore\n"
@@ -906,132 +910,139 @@ pub fn source_lexer(
                             // Criteria 2.2b -- end of file means the comment is
                             // empty.
                             full_comment.is_empty())
-                        )
-                    {
-                        // This is a doc block. Transition from the preceding
-                        // code block to this doc block.
-                        append_code_doc_block("", "", code_lines_before_comment);
+                        ) {
+                            // This is a doc block. Transition from the preceding
+                            // code block to this doc block.
+                            append_code_doc_block("", "", code_lines_before_comment);
 
-                        // Add this doc block by pushing the array \[whitespace
-                        // before the inline comment, inline comment contents,
-                        // inline comment delimiter\]. Since it's a doc block,
-                        // then `comment_line_prefix` contains the whitespace
-                        // before this comment and `matching_group_string`
-                        // contains the inline comment delimiter. For the
-                        // contents, omit the leading space if it's there (this
-                        // might be just a newline or an EOF).
-                        let contents = &full_comment[if has_space_after_comment { 1 } else { 0 }..];
-                        append_code_doc_block(comment_line_prefix, matching_group_str, contents);
+                            // Add this doc block by pushing the array \[whitespace
+                            // before the inline comment, inline comment contents,
+                            // inline comment delimiter\]. Since it's a doc block,
+                            // then `comment_line_prefix` contains the whitespace
+                            // before this comment and `matching_group_string`
+                            // contains the inline comment delimiter. For the
+                            // contents, omit the leading space if it's there (this
+                            // might be just a newline or an EOF).
+                            let contents =
+                                &full_comment[if has_space_after_comment { 1 } else { 0 }..];
+                            append_code_doc_block(
+                                comment_line_prefix,
+                                matching_group_str,
+                                contents,
+                            );
 
-                        #[cfg(feature = "lexer_explain")]
-                        println!(
-                            "This is a doc block. Possibly added the preceding code block\n\
+                            #[cfg(feature = "lexer_explain")]
+                            println!(
+                                "This is a doc block. Possibly added the preceding code block\n\
                             '{}'.\n\
                             Added a doc block with indent = '{}', delimiter = '{}', and contents =\n\
                             '{}'.\n",
-                            current_code_block, comment_line_prefix, matching_group_str, contents
-                        );
+                                current_code_block,
+                                comment_line_prefix,
+                                matching_group_str,
+                                contents
+                            );
 
-                        // We've now stored the current code block (which was
-                        // classified as a doc block) in `classified_lines`.
-                        // Make the current code block empty by moving its index
-                        // up to the unlexed code.
-                        current_code_block_index = source_code_unlexed_index;
-                    } else {
-                        // This comment is not a doc block; instead, treat it as
-                        // code. This code is already in the current code block,
-                        // so we're done.
+                            // We've now stored the current code block (which was
+                            // classified as a doc block) in `classified_lines`.
+                            // Make the current code block empty by moving its index
+                            // up to the unlexed code.
+                            current_code_block_index = source_code_unlexed_index;
+                        } else {
+                            // This comment is not a doc block; instead, treat it as
+                            // code. This code is already in the current code block,
+                            // so we're done.
+                        }
                     }
-                }
 
-                // #### Block comment
-                RegexDelimType::BlockComment(comment_delim_regex) => 'block_comment: {
-                    #[cfg(feature = "lexer_explain")]
-                    println!("Block Comment Found.");
+                    // #### Block comment
+                    RegexDelimType::BlockComment(comment_delim_regex) => 'block_comment: {
+                        #[cfg(feature = "lexer_explain")]
+                        println!("Block Comment Found.");
 
-                    // Determine the location of the beginning of this block
-                    // comment's content.
-                    let mut comment_start_index =
-                        source_code_unlexed_index + matching_group_str.len();
+                        // Determine the location of the beginning of this block
+                        // comment's content.
+                        let mut comment_start_index =
+                            source_code_unlexed_index + matching_group_str.len();
 
-                    #[cfg(feature = "lexer_explain")]
-                    println!(
-                        "The opening delimiter is '{}', and the closing delimiter regex is '{}'.",
-                        matching_group_str, comment_delim_regex
-                    );
-
-                    // For nested comments, only treat the innermost comment as
-                    // a potential doc block; everything else is treated as
-                    // code. The rationale:
-                    //
-                    // 1.  Typically, nested comments are used to comment out a
-                    //     block of code, which may already contain "real"
-                    //     comments (as opposed to commented-out code).
-                    //     Therefore, we assume that only these innermost
-                    //     comments are true comments, while everything else is
-                    //     code. I can't think of any reason to nest true
-                    //     comments. Assuming a legitimate use for nested
-                    //     comments, what criteria would distinguish a nested
-                    //     comment from a commented-out code block?
-                    // 2.  The CodeChat Editor data structures don't support
-                    //     nested doc blocks. So, while we might be able to
-                    //     correctly parse nested comments as doc blocks, the
-                    //     code that transforms these back to code would remove
-                    //     the nesting.
-                    // 3.  We lack criteria that would distinguish a nested doc
-                    //     block from commented-out code.
-                    //
-                    // With these assumptions, we need to know if the current
-                    // comment is the innermost or not. If the last block
-                    // comment delimiter encountered was an opening comment, and
-                    // the current block comment delimiter is a closing block
-                    // comment, then this is an innermost comment which could be
-                    // a doc block. Otherwise, treat the text as a code block.
-                    let mut last_delimiter_was_opening = true;
-                    // To correctly handle nested block comments, we must avoid
-                    // any other parsing (recognizing strings/heredocs, in
-                    // particular) until we leave the nested comment block.
-                    // Therefore, keep track of the nesting depth; when this
-                    // returns to 0, we've found outermost closing block comment
-                    // delimiter, and can return to normal parsing. At this
-                    // point in the code, we've found one opening block comment
-                    // delimiter, so the nesting depth starts at 1.
-                    let mut nesting_depth = 1;
-                    let mut loop_count = 0;
-                    // Loop until we've outside all nested block comments.
-                    while nesting_depth != 0 && loop_count < 10 {
-                        loop_count += 1;
-                        // Get the index of the next block comment delimiter.
                         #[cfg(feature = "lexer_explain")]
                         println!(
-                            "Looking for a block comment delimiter in '{}'.",
-                            &source_code[comment_start_index
-                                ..min(comment_start_index + 30, source_code.len())]
+                            "The opening delimiter is '{}', and the closing delimiter regex is '{}'.",
+                            matching_group_str, comment_delim_regex
                         );
-                        let delimiter_captures_wrapped =
-                            comment_delim_regex.captures(&source_code[comment_start_index..]);
-                        if delimiter_captures_wrapped.is_none() {
+
+                        // For nested comments, only treat the innermost comment as
+                        // a potential doc block; everything else is treated as
+                        // code. The rationale:
+                        //
+                        // 1.  Typically, nested comments are used to comment out a
+                        //     block of code, which may already contain "real"
+                        //     comments (as opposed to commented-out code).
+                        //     Therefore, we assume that only these innermost
+                        //     comments are true comments, while everything else is
+                        //     code. I can't think of any reason to nest true
+                        //     comments. Assuming a legitimate use for nested
+                        //     comments, what criteria would distinguish a nested
+                        //     comment from a commented-out code block?
+                        // 2.  The CodeChat Editor data structures don't support
+                        //     nested doc blocks. So, while we might be able to
+                        //     correctly parse nested comments as doc blocks, the
+                        //     code that transforms these back to code would remove
+                        //     the nesting.
+                        // 3.  We lack criteria that would distinguish a nested doc
+                        //     block from commented-out code.
+                        //
+                        // With these assumptions, we need to know if the current
+                        // comment is the innermost or not. If the last block
+                        // comment delimiter encountered was an opening comment, and
+                        // the current block comment delimiter is a closing block
+                        // comment, then this is an innermost comment which could be
+                        // a doc block. Otherwise, treat the text as a code block.
+                        let mut last_delimiter_was_opening = true;
+                        // To correctly handle nested block comments, we must avoid
+                        // any other parsing (recognizing strings/heredocs, in
+                        // particular) until we leave the nested comment block.
+                        // Therefore, keep track of the nesting depth; when this
+                        // returns to 0, we've found outermost closing block comment
+                        // delimiter, and can return to normal parsing. At this
+                        // point in the code, we've found one opening block comment
+                        // delimiter, so the nesting depth starts at 1.
+                        let mut nesting_depth = 1;
+                        let mut loop_count = 0;
+                        // Loop until we've outside all nested block comments.
+                        while nesting_depth != 0 && loop_count < 10 {
+                            loop_count += 1;
+                            // Get the index of the next block comment delimiter.
                             #[cfg(feature = "lexer_explain")]
-                            println!("The closing comment delimiter wasn't found.");
-                            // If there's no closing delimiter, this is not a
-                            // doc block; it's a syntax error. The safe route is
-                            // to assume the rest of the contents are code,
-                            // which this program won't edit; it does edit
-                            // comments by cleaning up HTML tags, word-wrapping,
-                            // etc. which would be a disaster if this was
-                            // applied to code.
-                            source_code_unlexed_index = source_code.len();
-                            // Exit the block comment processing code here.
-                            break 'block_comment;
-                        }
-                        let delimiter_captures = delimiter_captures_wrapped.unwrap();
-                        // Sanity check:
-                        assert!(
-                            // either this language doesn't support nested
-                            // comments, so only the overall match group (a
-                            // closing block comment delimiter) was captured,
-                            // or...
-                            delimiter_captures.len() == 1
+                            println!(
+                                "Looking for a block comment delimiter in '{}'.",
+                                &source_code[comment_start_index
+                                    ..min(comment_start_index + 30, source_code.len())]
+                            );
+                            let delimiter_captures_wrapped =
+                                comment_delim_regex.captures(&source_code[comment_start_index..]);
+                            if delimiter_captures_wrapped.is_none() {
+                                #[cfg(feature = "lexer_explain")]
+                                println!("The closing comment delimiter wasn't found.");
+                                // If there's no closing delimiter, this is not a
+                                // doc block; it's a syntax error. The safe route is
+                                // to assume the rest of the contents are code,
+                                // which this program won't edit; it does edit
+                                // comments by cleaning up HTML tags, word-wrapping,
+                                // etc. which would be a disaster if this was
+                                // applied to code.
+                                source_code_unlexed_index = source_code.len();
+                                // Exit the block comment processing code here.
+                                break 'block_comment;
+                            }
+                            let delimiter_captures = delimiter_captures_wrapped.unwrap();
+                            // Sanity check:
+                            assert!(
+                                // either this language doesn't support nested
+                                // comments, so only the overall match group (a
+                                // closing block comment delimiter) was captured,
+                                // or...
+                                delimiter_captures.len() == 1
                                     // ...for languages that support nested
                                     // comments, there are two capture groups
                                     // (in addition to capture group 0, the
@@ -1045,356 +1056,364 @@ pub fn source_lexer(
                                             && delimiter_captures.get(2).is_none())
                                             || (delimiter_captures.get(1).is_none()
                                                 && delimiter_captures.get(2).is_some())))
-                        );
-                        // Is this an opening comment delimiter?
-                        if let Some(opening_delimiter) = delimiter_captures.get(1) {
-                            // Yes.
-                            last_delimiter_was_opening = true;
-                            nesting_depth += 1;
-                            // Mark all previous text as code, then continue the
-                            // loop.
-                            #[cfg(feature = "lexer_explain")]
-                            println!(
-                                "opening_delimiter.start() = {}, opening_delimiter.len() = {}",
-                                opening_delimiter.start(),
-                                opening_delimiter.len()
                             );
-                            source_code_unlexed_index +=
-                                comment_start_index + opening_delimiter.start();
-                            comment_start_index =
-                                source_code_unlexed_index + opening_delimiter.len();
-                            #[cfg(feature = "lexer_explain")]
-                            println!(
-                                "Found a nested opening block comment delimiter. Nesting depth: {}",
-                                &nesting_depth
-                            );
-                            continue;
-                        } else {
-                            // This is a closing comment delimiter.
-                            nesting_depth -= 1;
-                            assert!(nesting_depth >= 0);
-                            let closing_delimiter_match = if delimiter_captures.len() == 3 {
-                                delimiter_captures.get(2).unwrap()
-                            } else {
-                                delimiter_captures.get(0).unwrap()
-                            };
-
-                            // If `last_delimiter_was_opening` was false, then
-                            // mark this text as code and continue the loop.
-                            if !last_delimiter_was_opening {
-                                source_code_unlexed_index += comment_start_index
-                                    + closing_delimiter_match.start()
-                                    + closing_delimiter_match.len();
-                                last_delimiter_was_opening = false;
+                            // Is this an opening comment delimiter?
+                            if let Some(opening_delimiter) = delimiter_captures.get(1) {
+                                // Yes.
+                                last_delimiter_was_opening = true;
+                                nesting_depth += 1;
+                                // Mark all previous text as code, then continue the
+                                // loop.
                                 #[cfg(feature = "lexer_explain")]
-                                println!("Found a non-innermost closing block comment delimiter. Nesting depth: {}", &nesting_depth);
+                                println!(
+                                    "opening_delimiter.start() = {}, opening_delimiter.len() = {}",
+                                    opening_delimiter.start(),
+                                    opening_delimiter.len()
+                                );
+                                source_code_unlexed_index +=
+                                    comment_start_index + opening_delimiter.start();
+                                comment_start_index =
+                                    source_code_unlexed_index + opening_delimiter.len();
+                                #[cfg(feature = "lexer_explain")]
+                                println!(
+                                    "Found a nested opening block comment delimiter. Nesting depth: {}",
+                                    &nesting_depth
+                                );
                                 continue;
-                            }
-
-                            // Otherwise, this is a potential doc block: it's an
-                            // innermost nested block comment. See if this
-                            // qualifies as a doc block.
-                            let closing_delimiter_start_index =
-                                closing_delimiter_match.start() + comment_start_index;
-                            let closing_delimiter_end_index =
-                                closing_delimiter_match.end() + comment_start_index;
-
-                            // Capture the body of the comment -- everything but
-                            // the opening and closing delimiters.
-                            let comment_body =
-                                &source_code[comment_start_index..closing_delimiter_start_index];
-
-                            #[cfg(feature = "lexer_explain")]
-                            println!(
-                                "The comment body is\n\
-                            '{}'.\n\
-                            The closing delimiter is '{}'.",
-                                comment_body,
-                                closing_delimiter_match.as_str()
-                            );
-                            // Find the first \\n after the closing delimiter.
-                            // If there is a newline after the closing
-                            // delimiter, set
-                            // `newline_or_eof_after_closing_delimiter_index` to
-                            // the index of the first newline after the closing
-                            // delimiter else set it to the end of the file.
-                            let newline_or_eof_after_closing_delimiter_index =
-                                match source_code[closing_delimiter_end_index..].find('\n') {
-                                    // The + 1 includes the newline in the
-                                    // resulting index.
-                                    Some(index) => index + closing_delimiter_end_index + 1,
-                                    None => source_code.len(),
+                            } else {
+                                // This is a closing comment delimiter.
+                                nesting_depth -= 1;
+                                assert!(nesting_depth >= 0);
+                                let closing_delimiter_match = if delimiter_captures.len() == 3 {
+                                    delimiter_captures.get(2).unwrap()
+                                } else {
+                                    delimiter_captures.get(0).unwrap()
                                 };
 
-                            // Capture the line which begins after the closing
-                            // delimiter and ends at the next newline/EOF.
-                            let post_closing_delimiter_line = &source_code
-                                [closing_delimiter_end_index
-                                    ..newline_or_eof_after_closing_delimiter_index];
+                                // If `last_delimiter_was_opening` was false, then
+                                // mark this text as code and continue the loop.
+                                if !last_delimiter_was_opening {
+                                    source_code_unlexed_index += comment_start_index
+                                        + closing_delimiter_match.start()
+                                        + closing_delimiter_match.len();
+                                    last_delimiter_was_opening = false;
+                                    #[cfg(feature = "lexer_explain")]
+                                    println!(
+                                        "Found a non-innermost closing block comment delimiter. Nesting depth: {}",
+                                        &nesting_depth
+                                    );
+                                    continue;
+                                }
 
-                            #[cfg(feature = "lexer_explain")]
-                            println!(
-                                "The post-comment line is '{}'.",
-                                post_closing_delimiter_line
-                            );
+                                // Otherwise, this is a potential doc block: it's an
+                                // innermost nested block comment. See if this
+                                // qualifies as a doc block.
+                                let closing_delimiter_start_index =
+                                    closing_delimiter_match.start() + comment_start_index;
+                                let closing_delimiter_end_index =
+                                    closing_delimiter_match.end() + comment_start_index;
 
-                            // Set the `current_code_block` to contain preceding
-                            // code (which might be multiple lines) until the
-                            // block comment delimiter. Split this on newlines,
-                            // grouping all the lines before the last line into
-                            // `code_lines_before_comment` (which is all code),
-                            // and everything else (from the beginning of the
-                            // last line to where the block comment delimiter
-                            // appears) into `comment_line_prefix`. For example,
-                            // consider the fragment:
-                            // `a = 1\nb = 2 /* comment */`. After processing,
-                            // `code_lines_before_comment` will be "`a = 1\n`"
-                            // and `comment_line_prefix` will be "`b = 2` ".
-                            let current_code_block =
-                                &source_code[current_code_block_index..source_code_unlexed_index];
-                            let comment_line_prefix =
-                                current_code_block.rsplit('\n').next().unwrap();
-                            let code_lines_before_comment = &current_code_block
-                                [..current_code_block.len() - comment_line_prefix.len()];
+                                // Capture the body of the comment -- everything but
+                                // the opening and closing delimiters.
+                                let comment_body = &source_code
+                                    [comment_start_index..closing_delimiter_start_index];
 
-                            // Move to the next block of source code to be
-                            // lexed.
-                            source_code_unlexed_index =
-                                newline_or_eof_after_closing_delimiter_index;
+                                #[cfg(feature = "lexer_explain")]
+                                println!(
+                                    "The comment body is\n\
+                            '{}'.\n\
+                            The closing delimiter is '{}'.",
+                                    comment_body,
+                                    closing_delimiter_match.as_str()
+                                );
+                                // Find the first \\n after the closing delimiter.
+                                // If there is a newline after the closing
+                                // delimiter, set
+                                // `newline_or_eof_after_closing_delimiter_index` to
+                                // the index of the first newline after the closing
+                                // delimiter else set it to the end of the file.
+                                let newline_or_eof_after_closing_delimiter_index =
+                                    match source_code[closing_delimiter_end_index..].find('\n') {
+                                        // The + 1 includes the newline in the
+                                        // resulting index.
+                                        Some(index) => index + closing_delimiter_end_index + 1,
+                                        None => source_code.len(),
+                                    };
 
-                            #[cfg(feature = "lexer_explain")]
-                            println!(
-                                "current_code_block is '{}'\n\
+                                // Capture the line which begins after the closing
+                                // delimiter and ends at the next newline/EOF.
+                                let post_closing_delimiter_line = &source_code
+                                    [closing_delimiter_end_index
+                                        ..newline_or_eof_after_closing_delimiter_index];
+
+                                #[cfg(feature = "lexer_explain")]
+                                println!(
+                                    "The post-comment line is '{}'.",
+                                    post_closing_delimiter_line
+                                );
+
+                                // Set the `current_code_block` to contain preceding
+                                // code (which might be multiple lines) until the
+                                // block comment delimiter. Split this on newlines,
+                                // grouping all the lines before the last line into
+                                // `code_lines_before_comment` (which is all code),
+                                // and everything else (from the beginning of the
+                                // last line to where the block comment delimiter
+                                // appears) into `comment_line_prefix`. For example,
+                                // consider the fragment:
+                                // `a = 1\nb = 2 /* comment */`. After processing,
+                                // `code_lines_before_comment` will be "`a = 1\n`"
+                                // and `comment_line_prefix` will be "`b = 2` ".
+                                let current_code_block = &source_code
+                                    [current_code_block_index..source_code_unlexed_index];
+                                let comment_line_prefix =
+                                    current_code_block.rsplit('\n').next().unwrap();
+                                let code_lines_before_comment = &current_code_block
+                                    [..current_code_block.len() - comment_line_prefix.len()];
+
+                                // Move to the next block of source code to be
+                                // lexed.
+                                source_code_unlexed_index =
+                                    newline_or_eof_after_closing_delimiter_index;
+
+                                #[cfg(feature = "lexer_explain")]
+                                println!(
+                                    "current_code_block is '{}'\n\
                             comment_line_prefix is '{}'\n\
                             code_lines_before_comment is '{}'",
-                                current_code_block, comment_line_prefix, code_lines_before_comment
-                            );
+                                    current_code_block,
+                                    comment_line_prefix,
+                                    code_lines_before_comment
+                                );
 
-                            // Next, determine if this is a doc block. Criteria
-                            // for doc blocks for a block comment:
-                            //
-                            // 1.  Must have a space or newline after the
-                            //     opening delimiter.
-                            // 2.  Must not have anything besides whitespace
-                            //     before the opening comment delimiter on the
-                            //     same line. This whitespace becomes the
-                            //     indent.
-                            // 3.  Must not have anything besides whitespace
-                            //     after the closing comment delimiter on the
-                            //     same line. This whitespace is included, as if
-                            //     it were inside the block comment. Rationale:
-                            //     this avoids deleting text (or, in this case,
-                            //     whitespace); moving that whitespace around
-                            //     seems like a better alternative than deleting
-                            //     it.
-                            if (comment_body.starts_with(' ') || comment_body.starts_with('\n'))
-                                && WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix)
-                                && WHITESPACE_ONLY_REGEX.is_match(post_closing_delimiter_line)
-                            {
-                                // Put the `code_lines_before_comment` into the
-                                // code block.
-                                append_code_doc_block("", "", code_lines_before_comment);
-
-                                // If there's a space at the end of the comment
-                                // body, remove it; also remove the initial
-                                // space/newline at the beginning of the comment
-                                // body.
+                                // Next, determine if this is a doc block. Criteria
+                                // for doc blocks for a block comment:
                                 //
-                                // This `unwrap()` is always safe, since we know
-                                // that `comment_body` starts with a space or
-                                // newline.
-                                let last_char = comment_body.chars().last().unwrap();
-                                let ends_with_space = last_char == ' ' &&
+                                // 1.  Must have a space or newline after the
+                                //     opening delimiter.
+                                // 2.  Must not have anything besides whitespace
+                                //     before the opening comment delimiter on the
+                                //     same line. This whitespace becomes the
+                                //     indent.
+                                // 3.  Must not have anything besides whitespace
+                                //     after the closing comment delimiter on the
+                                //     same line. This whitespace is included, as if
+                                //     it were inside the block comment. Rationale:
+                                //     this avoids deleting text (or, in this case,
+                                //     whitespace); moving that whitespace around
+                                //     seems like a better alternative than deleting
+                                //     it.
+                                if (comment_body.starts_with(' ') || comment_body.starts_with('\n'))
+                                    && WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix)
+                                    && WHITESPACE_ONLY_REGEX.is_match(post_closing_delimiter_line)
+                                {
+                                    // Put the `code_lines_before_comment` into the
+                                    // code block.
+                                    append_code_doc_block("", "", code_lines_before_comment);
+
+                                    // If there's a space at the end of the comment
+                                    // body, remove it; also remove the initial
+                                    // space/newline at the beginning of the comment
+                                    // body.
+                                    //
+                                    // This `unwrap()` is always safe, since we know
+                                    // that `comment_body` starts with a space or
+                                    // newline.
+                                    let last_char = comment_body.chars().last().unwrap();
+                                    let ends_with_space = last_char == ' ' &&
                                     // Don't remove a space at the end of the
                                     // comment body when it's also the space at
                                     // the beginning of the comment body
                                     // (meaning it's a single-character comment
                                     // body).
                                     comment_body.len() > 1;
-                                let trimmed_comment_body = &comment_body
-                                    [1..comment_body.len() - if ends_with_space { 1 } else { 0 }];
-                                // The contents of the doc block are the trimmed
-                                // comment body plus any whitespace after the
-                                // closing comment delimiter.
-                                let contents = &(trimmed_comment_body.to_string()
-                                    + post_closing_delimiter_line);
-                                // The indent is the whitespace before the
-                                // opening comment delimiter.
-                                let indent = comment_line_prefix;
-                                // The opening comment delimiter was captured in
-                                // the initial match.
-                                let delimiter = matching_group_str;
+                                    let trimmed_comment_body = &comment_body[1..comment_body.len()
+                                        - if ends_with_space { 1 } else { 0 }];
+                                    // The contents of the doc block are the trimmed
+                                    // comment body plus any whitespace after the
+                                    // closing comment delimiter.
+                                    let contents = &(trimmed_comment_body.to_string()
+                                        + post_closing_delimiter_line);
+                                    // The indent is the whitespace before the
+                                    // opening comment delimiter.
+                                    let indent = comment_line_prefix;
+                                    // The opening comment delimiter was captured in
+                                    // the initial match.
+                                    let delimiter = matching_group_str;
 
-                                // #### Block comment indentation processing
-                                //
-                                // There are several cases:
-                                //
-                                // - A single line: `/* comment */`. No special
-                                //   handling needed.
-                                // - Multiple lines, in two styles.
-                                //   - Each line of the comment is not
-                                //     consistently whitespace-indented. No
-                                //     special handling needed. For example:
-                                //
-                                //     ```C
-                                //     /* This is
-                                //       not
-                                //        consistently indented. */
-                                //     ```
-                                //
-                                //   - Each line of the comment is consistently
-                                //     whitespace-indented; for example:
-                                //
-                                //     ```C
-                                //     /* This is
-                                //        consistently indented. */
-                                //     ```
-                                //
-                                //     Consistently indented means the first
-                                //     non-whitespace character on a line aligns
-                                //     with, but never comes before, the
-                                //     comment's start. Another example:
-                                //
-                                //     ```C
-                                //     /* This is
-                                //        correct
-                                //
-                                //        indentation.
-                                //      */
-                                //     ```
-                                //
-                                //     Note that the third (blank) line doesn't
-                                //     have an indent; since that line consists
-                                //     only of whitespace, this is OK. Likewise,
-                                //     the last line (containing the closing
-                                //     comment delimiter of `*/`) consists only
-                                //     of whitespace after the comment
-                                //     delimiters are removed.
-                                //
-                                // Determine if this comment is indented.
-                                //
-                                // Determine the starting column of the indent
-                                // (assuming this block comment has a valid
-                                // indent). The +1 represents the space after
-                                // the opening delimiter.
-                                let indent_column = indent.len() + delimiter.len() + 1;
-                                let split_contents: Vec<&str> =
-                                    contents.split_inclusive('\n').collect();
-                                // We need at least two lines of comment
-                                // contents to look for an indent. This is just
-                                // a first guess at `is_indented`, not the final
-                                // value.
-                                let mut is_indented = split_contents.len() > 1;
-                                if is_indented {
-                                    // Ignore the first line, since the indent
-                                    // and delimiter have already been split out
-                                    // for that line.
-                                    for line in &split_contents[1..] {
-                                        let this_line_indent = if line.len() < indent_column {
-                                            line
-                                        } else {
-                                            &line[..indent_column]
-                                        };
-                                        if !WHITESPACE_ONLY_REGEX.is_match(this_line_indent) {
-                                            is_indented = false;
-                                            break;
+                                    // #### Block comment indentation processing
+                                    //
+                                    // There are several cases:
+                                    //
+                                    // - A single line: `/* comment */`. No special
+                                    //   handling needed.
+                                    // - Multiple lines, in two styles.
+                                    //   - Each line of the comment is not
+                                    //     consistently whitespace-indented. No
+                                    //     special handling needed. For example:
+                                    //
+                                    //     ```C
+                                    //     /* This is
+                                    //       not
+                                    //        consistently indented. */
+                                    //     ```
+                                    //
+                                    //   - Each line of the comment is consistently
+                                    //     whitespace-indented; for example:
+                                    //
+                                    //     ```C
+                                    //     /* This is
+                                    //        consistently indented. */
+                                    //     ```
+                                    //
+                                    //     Consistently indented means the first
+                                    //     non-whitespace character on a line aligns
+                                    //     with, but never comes before, the
+                                    //     comment's start. Another example:
+                                    //
+                                    //     ```C
+                                    //     /* This is
+                                    //        correct
+                                    //
+                                    //        indentation.
+                                    //      */
+                                    //     ```
+                                    //
+                                    //     Note that the third (blank) line doesn't
+                                    //     have an indent; since that line consists
+                                    //     only of whitespace, this is OK. Likewise,
+                                    //     the last line (containing the closing
+                                    //     comment delimiter of `*/`) consists only
+                                    //     of whitespace after the comment
+                                    //     delimiters are removed.
+                                    //
+                                    // Determine if this comment is indented.
+                                    //
+                                    // Determine the starting column of the indent
+                                    // (assuming this block comment has a valid
+                                    // indent). The +1 represents the space after
+                                    // the opening delimiter.
+                                    let indent_column = indent.len() + delimiter.len() + 1;
+                                    let split_contents: Vec<&str> =
+                                        contents.split_inclusive('\n').collect();
+                                    // We need at least two lines of comment
+                                    // contents to look for an indent. This is just
+                                    // a first guess at `is_indented`, not the final
+                                    // value.
+                                    let mut is_indented = split_contents.len() > 1;
+                                    if is_indented {
+                                        // Ignore the first line, since the indent
+                                        // and delimiter have already been split out
+                                        // for that line.
+                                        for line in &split_contents[1..] {
+                                            let this_line_indent = if line.len() < indent_column {
+                                                line
+                                            } else {
+                                                &line[..indent_column]
+                                            };
+                                            if !WHITESPACE_ONLY_REGEX.is_match(this_line_indent) {
+                                                is_indented = false;
+                                                break;
+                                            }
                                         }
                                     }
-                                }
 
-                                // If the comment was indented, dedent it;
-                                // otherwise, leave it unchanged.
-                                let mut buf = String::new();
-                                let dedented_contents = if is_indented {
-                                    // If this is indented, then the first line
-                                    // must exist.
-                                    buf += split_contents[0];
-                                    for line in &split_contents[1..] {
-                                        // Remove the indent, unless this line
-                                        // didn't have an indent (just whitespace).
-                                        buf += if line.len() < indent_column {
-                                            // Tricky case: in the middle of a comment,
-                                            // every line always ends with a newline;
-                                            // if there's not enough whitespace to
-                                            // remove the indent, then replace that
-                                            // with just a newline. At the end of a
-                                            // comment which is the last line of a
-                                            // file, a lack of whitespace shouldn't be
-                                            // replaced with a newline, since it's not
-                                            // there in the original.
-                                            if line.ends_with('\n') {
-                                                "\n"
+                                    // If the comment was indented, dedent it;
+                                    // otherwise, leave it unchanged.
+                                    let mut buf = String::new();
+                                    let dedented_contents = if is_indented {
+                                        // If this is indented, then the first line
+                                        // must exist.
+                                        buf += split_contents[0];
+                                        for line in &split_contents[1..] {
+                                            // Remove the indent, unless this line
+                                            // didn't have an indent (just whitespace).
+                                            buf += if line.len() < indent_column {
+                                                // Tricky case: in the middle of a comment,
+                                                // every line always ends with a newline;
+                                                // if there's not enough whitespace to
+                                                // remove the indent, then replace that
+                                                // with just a newline. At the end of a
+                                                // comment which is the last line of a
+                                                // file, a lack of whitespace shouldn't be
+                                                // replaced with a newline, since it's not
+                                                // there in the original.
+                                                if line.ends_with('\n') { "\n" } else { "" }
                                             } else {
-                                                ""
-                                            }
-                                        } else {
-                                            &line[indent_column..]
-                                        };
-                                    }
-                                    &buf
+                                                &line[indent_column..]
+                                            };
+                                        }
+                                        &buf
+                                    } else {
+                                        contents
+                                    };
+
+                                    // Add this doc block:
+                                    append_code_doc_block(indent, delimiter, dedented_contents);
+
+                                    // print the doc block
+                                    #[cfg(feature = "lexer_explain")]
+                                    println!(
+                                        "Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.",
+                                        &comment_line_prefix, matching_group_str, contents
+                                    );
+
+                                    // advance `current_code_block_index` to
+                                    // `source_code_unlexed_index`, since we've
+                                    // moved everything in the current code block
+                                    // into the `classified_source`.
+                                    current_code_block_index = source_code_unlexed_index;
+                                    // Likewise, move the `comment_start_index` up,
+                                    // since everything before
+                                    // `source_code_unlexed_index` has been
+                                    // classified.
+                                    comment_start_index = source_code_unlexed_index;
                                 } else {
-                                    contents
-                                };
-
-                                // Add this doc block:
-                                append_code_doc_block(indent, delimiter, dedented_contents);
-
-                                // print the doc block
-                                #[cfg(feature = "lexer_explain")]
-                                println!("Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.", &comment_line_prefix, matching_group_str, contents);
-
-                                // advance `current_code_block_index` to
-                                // `source_code_unlexed_index`, since we've
-                                // moved everything in the current code block
-                                // into the `classified_source`.
-                                current_code_block_index = source_code_unlexed_index;
-                                // Likewise, move the `comment_start_index` up,
-                                // since everything before
-                                // `source_code_unlexed_index` has been
-                                // classified.
-                                comment_start_index = source_code_unlexed_index;
-                            } else {
-                                // Nothing to do -- the comment was simply added
-                                // to the current code block already.
+                                    // Nothing to do -- the comment was simply added
+                                    // to the current code block already.
+                                }
                             }
                         }
                     }
-                }
 
-                // #### String-like syntax
-                RegexDelimType::String(closing_regex) => {
-                    #[cfg(feature = "lexer_explain")]
-                    print!("This is a string. ");
-                    append_code(closing_regex)
-                }
+                    // #### String-like syntax
+                    RegexDelimType::String(closing_regex) => {
+                        #[cfg(feature = "lexer_explain")]
+                        print!("This is a string. ");
+                        append_code(closing_regex)
+                    }
 
-                RegexDelimType::TemplateLiteral => {
-                    #[cfg(feature = "lexer_explain")]
-                    print!("This is a template literal. ");
-                    append_code(&TEMPLATE_LITERAL_CLOSING_REGEX);
-                }
+                    RegexDelimType::TemplateLiteral => {
+                        #[cfg(feature = "lexer_explain")]
+                        print!("This is a template literal. ");
+                        append_code(&TEMPLATE_LITERAL_CLOSING_REGEX);
+                    }
 
-                RegexDelimType::Heredoc(stop_prefix, stop_suffix) => {
-                    #[cfg(feature = "lexer_explain")]
-                    print!("This is a heredoc. ");
+                    RegexDelimType::Heredoc(stop_prefix, stop_suffix) => {
+                        #[cfg(feature = "lexer_explain")]
+                        print!("This is a heredoc. ");
 
-                    // Get the string from the source code which (along with the
-                    // stop prefix/suffix) defines the end of the heredoc.
-                    let heredoc_string = &classify_match[language_lexer_compiled.map.len() + 1];
-                    // Make a regex from it.
-                    let closing_regex = Regex::new(
-                        &(stop_prefix.to_owned() + &regex::escape(heredoc_string) + stop_suffix),
-                    )
-                    .unwrap();
-                    // Use this to find the end of the heredoc and add that to
-                    // `current_source_code`.
-                    append_code(&closing_regex);
+                        // Get the string from the source code which (along with the
+                        // stop prefix/suffix) defines the end of the heredoc.
+                        let heredoc_string = &classify_match[language_lexer_compiled.map.len() + 1];
+                        // Make a regex from it.
+                        let closing_regex = Regex::new(
+                            &(stop_prefix.to_owned()
+                                + &regex::escape(heredoc_string)
+                                + stop_suffix),
+                        )
+                        .unwrap();
+                        // Use this to find the end of the heredoc and add that to
+                        // `current_source_code`.
+                        append_code(&closing_regex);
+                    }
                 }
             }
-        } else {
-            // There's no match, so the rest of the source code belongs in the
-            // current code block.
-            source_code_unlexed_index = source_code.len();
+            _ => {
+                // There's no match, so the rest of the source code belongs in the
+                // current code block.
+                source_code_unlexed_index = source_code.len();
+            }
         }
     }
 

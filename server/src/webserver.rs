@@ -26,7 +26,7 @@ mod vscode;
 use std::{
     collections::{HashMap, HashSet},
     env, fs,
-    path::{self, Path, PathBuf, MAIN_SEPARATOR_STR},
+    path::{self, MAIN_SEPARATOR_STR, Path, PathBuf},
     str::FromStr,
     sync::{Arc, Mutex},
     time::Duration,
@@ -35,11 +35,12 @@ use std::{
 // ### Third-party
 use actix_files;
 use actix_web::{
+    App, HttpRequest, HttpResponse, HttpServer,
     dev::{ServerHandle, ServiceFactory, ServiceRequest},
     error::Error,
     get,
     http::header::ContentType,
-    web, App, HttpRequest, HttpResponse, HttpServer,
+    web,
 };
 use actix_ws::AggregatedMessage;
 use bytes::Bytes;
@@ -47,7 +48,7 @@ use dunce::simplified;
 use futures_util::StreamExt;
 use indoc::{formatdoc, indoc};
 use lazy_static::lazy_static;
-use log::{error, info, warn, LevelFilter};
+use log::{LevelFilter, error, info, warn};
 use log4rs;
 use mime::Mime;
 use mime_guess;
@@ -73,7 +74,7 @@ use vscode::{
 // ### Local
 //use crate::capture::EventCapture;
 use crate::processing::{
-    source_to_codechat_for_web_string, CodeChatForWeb, TranslationResultsString,
+    CodeChatForWeb, TranslationResultsString, source_to_codechat_for_web_string,
 };
 use filewatcher::{
     filewatcher_browser_endpoint, filewatcher_client_endpoint, filewatcher_root_fs_redirect,
@@ -256,13 +257,13 @@ pub struct AppState {
 #[macro_export]
 macro_rules! oneshot_send {
     // Provide two options: `break` or `break 'label`.
-    ($tx: expr) => {
+    ($tx: expr_2021) => {
         if let Err(err) = $tx {
             error!("Unable to enqueue: {err:?}");
             break;
         }
     };
-    ($tx: expr, $label: tt) => {
+    ($tx: expr_2021, $label: tt) => {
         if let Err(err) = $tx {
             error!("Unable to enqueue: {err:?}");
             break $label;
@@ -272,10 +273,10 @@ macro_rules! oneshot_send {
 
 #[macro_export]
 macro_rules! queue_send {
-    ($tx: expr) => {
+    ($tx: expr_2021) => {
         $crate::oneshot_send!($tx.await)
     };
-    ($tx: expr, $label: tt) => {
+    ($tx: expr_2021, $label: tt) => {
         $crate::oneshot_send!($tx.await, $label)
     };
 }
@@ -435,7 +436,7 @@ fn get_client_framework(
         Err(err) => {
             return Err(format!(
                 "Unable to encode websocket URL for {ide_path}, id {connection_id}: {err}"
-            ))
+            ));
         }
     };
     let codechat_editor_framework_js = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap();
@@ -711,7 +712,7 @@ async fn serve_file(
         }
         // Report a lexer error.
         TranslationResultsString::Err(err_string) => {
-            return (SimpleHttpResponse::Err(err_string), None)
+            return (SimpleHttpResponse::Err(err_string), None);
         }
         // This is a CodeChat file. The following code wraps the CodeChat for
         // web results in a CodeChat Editor Client webpage.

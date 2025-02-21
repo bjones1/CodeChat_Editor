@@ -23,7 +23,7 @@
 authors = ["Bryan A. Jones", "Peter Loux"]
 categories = ["development-tools", "text-editors"]
 description = "A programmer's word processor."
-edition = "2021"
+edition = "2024"
 keywords = ["literate programming"]
 license = "GPL-3.0-only"
 name = "codechat-editor-server"

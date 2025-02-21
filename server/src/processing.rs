@@ -34,13 +34,13 @@ use std::path::PathBuf;
 
 // ### Third-party
 use lazy_static::lazy_static;
-use pulldown_cmark::{html, Options, Parser};
+use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::lexer::LEXERS;
 // ### Local
-use crate::lexer::{source_lexer, CodeDocBlock, DocBlock, LanguageLexerCompiled};
+use crate::lexer::{CodeDocBlock, DocBlock, LanguageLexerCompiled, source_lexer};
 
 // ## Data structures
 //
@@ -293,7 +293,7 @@ fn code_doc_block_vec_to_source(
                             return Err(format!(
                                 "Unknown comment opening delimiter '{}'.",
                                 doc_block.delimiter
-                            ))
+                            ));
                         }
                     };
 
@@ -401,16 +401,17 @@ pub fn source_to_codechat_for_web(
                 return TranslationResults::Err(format!(
                     "<p>Unknown lexer type {}.</p>",
                     &lexer_name
-                ))
+                ));
             }
         }
     } else {
         // Otherwise, look up the lexer by the file's extension.
-        if let Some(llc) = LEXERS.map_ext_to_lexer_vec.get(file_ext) {
-            llc.first().unwrap()
-        } else {
-            // The file type is unknown; treat it as plain text.
-            return TranslationResults::Unknown;
+        match LEXERS.map_ext_to_lexer_vec.get(file_ext) {
+            Some(llc) => llc.first().unwrap(),
+            _ => {
+                // The file type is unknown; treat it as plain text.
+                return TranslationResults::Unknown;
+            }
         }
     };
 
@@ -787,10 +788,10 @@ mod tests {
 
     use predicates::prelude::predicate::str;
 
-    use super::{find_path_to_toc, TranslationResults};
     use super::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
+    use super::{TranslationResults, find_path_to_toc};
     use crate::lexer::{
-        compile_lexers, supported_languages::get_language_lexer_vec, CodeDocBlock, DocBlock,
+        CodeDocBlock, DocBlock, compile_lexers, supported_languages::get_language_lexer_vec,
     };
     use crate::processing::{
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,

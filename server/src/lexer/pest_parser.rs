@@ -45,22 +45,24 @@ macro_rules! make_parse_to_code_doc_blocks {
                 &String::from_iter(normalize_line_endings::normalized(input.chars()));
             let pairs = match <$parser>::parse(Rule::file, normalized_input) {
                 Ok(pairs) => pairs,
-                Err(e) =>
-                    panic!("Parse error: {e:#?}")
+                Err(e) => panic!("Parse error: {e:#?}"),
             }
-                // The first (and only) element is the `file` token.
-                .next()
-                .unwrap()
-                // Return the contents of this token (code and doc block
-                // tokens).
-                .into_inner();
+            // The first (and only) element is the `file` token.
+            .next()
+            .unwrap()
+            // Return the contents of this token (code and doc block
+            // tokens).
+            .into_inner();
             // For debugging, print out the parse tree.
             //println!("{:#?}", pairs);
             // The last token is the `EOI` token.
             assert_eq!(pairs.clone().last().unwrap().as_rule(), Rule::EOI);
             // Transform these tokens into code and doc blocks; ignore the last
             // token (EOI).
-            pairs.rev().skip(1).rev()
+            pairs
+                .rev()
+                .skip(1)
+                .rev()
                 .map(|block| match block.as_rule() {
                     Rule::inline_comment => {
                         // Gather all tokens in the inline comment.
@@ -70,29 +72,35 @@ macro_rules! make_parse_to_code_doc_blocks {
                         let whitespace = whitespace_pair.as_str();
                         let inline_comment_delim = inline_comment.next().unwrap();
                         // Combine the text of all the inline comments.
-                        let comment = &mut inline_comment.fold(String::new(), |mut acc, inline_comment_body| {
-                            assert_eq!(inline_comment_body.as_rule(), Rule::inline_comment_line);
-                            let s = inline_comment_body.as_str();
-                            let inner = &mut inline_comment_body.into_inner();
-                            // See the notes on inline comments in
-                            // [c.pest](pest/c.pest) for the expected structure
-                            // of the `inline_comment_body`.
-                            let contents = if let Some(inline_comment_contents) = inner.next() {
-                                // For comments which contains contents, include
-                                // that.
-                                inline_comment_contents.as_str()
-                            } else {
-                                // For comments which are just a newline, include
-                                // that.
-                                s
-                            };
-                            assert!(inner.next().is_none());
+                        let comment = &mut inline_comment.fold(
+                            String::new(),
+                            |mut acc, inline_comment_body| {
+                                assert_eq!(
+                                    inline_comment_body.as_rule(),
+                                    Rule::inline_comment_line
+                                );
+                                let s = inline_comment_body.as_str();
+                                let inner = &mut inline_comment_body.into_inner();
+                                // See the notes on inline comments in
+                                // [c.pest](pest/c.pest) for the expected structure
+                                // of the `inline_comment_body`.
+                                let contents = if let Some(inline_comment_contents) = inner.next() {
+                                    // For comments which contains contents, include
+                                    // that.
+                                    inline_comment_contents.as_str()
+                                } else {
+                                    // For comments which are just a newline, include
+                                    // that.
+                                    s
+                                };
+                                assert!(inner.next().is_none());
 
-                            // Add this string (the raw newline, or the comment
-                            // contents) to the accumulator.
-                            acc.push_str(contents);
-                            acc
-                        });
+                                // Add this string (the raw newline, or the comment
+                                // contents) to the accumulator.
+                                acc.push_str(contents);
+                                acc
+                            },
+                        );
 
                         // Determine which opening delimiter was used.
                         let _delimiter_index = match inline_comment_delim.as_rule() {
@@ -124,19 +132,22 @@ macro_rules! make_parse_to_code_doc_blocks {
                         let block_comment_pre = block_comment_pre_pair.as_str();
                         let comment_pair = block_comment.next().unwrap();
                         assert!(
-                            comment_pair.as_rule() == Rule::contents_0 ||
-                            comment_pair.as_rule() == Rule::contents_1 ||
-                            comment_pair.as_rule() == Rule::contents_2
+                            comment_pair.as_rule() == Rule::contents_0
+                                || comment_pair.as_rule() == Rule::contents_1
+                                || comment_pair.as_rule() == Rule::contents_2
                         );
                         let comment = comment_pair.as_str();
                         let optional_space_pair = block_comment.next().unwrap();
                         assert_eq!(optional_space_pair.as_rule(), Rule::optional_space);
                         let optional_space = optional_space_pair.as_str();
-                        let block_comment_closing_delim_rule = block_comment.next().unwrap().as_rule();
+                        let block_comment_closing_delim_rule =
+                            block_comment.next().unwrap().as_rule();
                         assert!(
-                            block_comment_closing_delim_rule == Rule::block_comment_closing_delim_0 ||
-                            block_comment_closing_delim_rule == Rule::block_comment_closing_delim_1 ||
-                            block_comment_closing_delim_rule == Rule::block_comment_closing_delim_2
+                            block_comment_closing_delim_rule == Rule::block_comment_closing_delim_0
+                                || block_comment_closing_delim_rule
+                                    == Rule::block_comment_closing_delim_1
+                                || block_comment_closing_delim_rule
+                                    == Rule::block_comment_closing_delim_2
                         );
                         let post_whitespace_pair = block_comment.next().unwrap();
                         assert_eq!(post_whitespace_pair.as_rule(), Rule::white_space);
@@ -145,7 +156,10 @@ macro_rules! make_parse_to_code_doc_blocks {
                         // is exactly what we want. Otherwise, use the newline
                         // provided by the `block_comment_ending` token.
                         let block_comment_ending_pair = block_comment.next().unwrap();
-                        assert_eq!(block_comment_ending_pair.as_rule(), Rule::block_comment_ending);
+                        assert_eq!(
+                            block_comment_ending_pair.as_rule(),
+                            Rule::block_comment_ending
+                        );
                         let block_comment_ending = block_comment_ending_pair.as_str();
                         assert!(block_comment.next().is_none());
 

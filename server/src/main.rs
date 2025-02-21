@@ -128,7 +128,7 @@ impl Cli {
                                 Err(e) => {
                                     return Err(
                                         format!("Failed to get current executable: {e}").into()
-                                    )
+                                    );
                                 }
                             };
                             #[cfg(not(debug_assertions))]
@@ -174,9 +174,9 @@ impl Cli {
                                 stdout.read_to_string(&mut stdout_buf).unwrap();
                                 stderr.read_to_string(&mut stderr_buf).unwrap();
                                 return Err(format!(
-                                        "Server failed to start: {status:?}\n{stdout_buf}\n{stderr_buf}"
-                                    )
-                                    .into());
+                                    "Server failed to start: {status:?}\n{stdout_buf}\n{stderr_buf}"
+                                )
+                                .into());
                             }
                             Ok(None) => {}
                             Err(e) => return Err(format!("Error starting server: {e}").into()),

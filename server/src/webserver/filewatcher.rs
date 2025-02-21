@@ -24,19 +24,19 @@ use std::{
 
 // ### Third-party
 use actix_web::{
+    HttpRequest, HttpResponse, Responder,
     error::Error,
     get,
     http::header::{self, ContentType},
-    web, HttpRequest, HttpResponse, Responder,
+    web,
 };
 use dunce::simplified;
 use indoc::formatdoc;
 use lazy_static::lazy_static;
 use log::{error, info, warn};
 use notify_debouncer_full::{
-    new_debouncer,
+    DebounceEventResult, new_debouncer,
     notify::{EventKind, RecursiveMode},
-    DebounceEventResult,
 };
 use regex::Regex;
 use tokio::{
@@ -52,19 +52,19 @@ use win_partitions::win_api::get_logical_drive;
 
 // ### Local
 use super::{
+    AppState, EditorMessage, EditorMessageContents, UpdateMessageContents, WebsocketQueues,
     client_websocket, escape_html, get_client_framework, get_connection_id, html_not_found,
-    html_wrapper, path_display, send_response, AppState, EditorMessage, EditorMessageContents,
-    UpdateMessageContents, WebsocketQueues,
+    html_wrapper, path_display, send_response,
 };
 use crate::{
     oneshot_send,
     processing::{
-        codechat_for_web_to_source, source_to_codechat_for_web_string, TranslationResultsString,
+        TranslationResultsString, codechat_for_web_to_source, source_to_codechat_for_web_string,
     },
     queue_send,
     webserver::{
-        filesystem_endpoint, get_test_mode, make_simple_http_response, path_to_url, url_to_path,
-        ResultOkTypes,
+        ResultOkTypes, filesystem_endpoint, get_test_mode, make_simple_http_response, path_to_url,
+        url_to_path,
     },
 };
 
@@ -131,7 +131,7 @@ async fn filewatcher_browser_endpoint(
         Err(err) => {
             return html_not_found(&format!(
                 "<p>The requested path <code>{fixed_path}</code> is not valid: {err}.</p>"
-            ))
+            ));
         }
     };
     if canon_path.is_dir() {
@@ -200,7 +200,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             return html_not_found(&format!(
                 "<p>Unable to list the directory {}: {err}/</p>",
                 path_display(dir_path)
-            ))
+            ));
         }
     };
 
@@ -217,7 +217,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
                             return html_not_found(&format!(
                                 "<p>Unable to determine the type of {}: {err}.",
                                 path_display(&dir_entry.path()),
-                            ))
+                            ));
                         }
                     };
                     if file_type.is_file() {
@@ -231,7 +231,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
                 }
             }
             Err(err) => {
-                return html_not_found(&format!("<p>Unable to read file in directory: {err}."))
+                return html_not_found(&format!("<p>Unable to read file in directory: {err}."));
             }
         };
     }
@@ -253,7 +253,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             Err(err) => {
                 return html_not_found(&format!(
                     "<p>Unable to decode directory name '{err:?}' as UTF-8."
-                ))
+                ));
             }
         };
         let encoded_dir = urlencoding::encode(&dir_name);
@@ -280,7 +280,9 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         let file_name = match file.file_name().into_string() {
             Ok(v) => v,
             Err(err) => {
-                return html_not_found(&format!("<p>Unable to decode file name {err:?} as UTF-8.",))
+                return html_not_found(
+                    &format!("<p>Unable to decode file name {err:?} as UTF-8.",),
+                );
             }
         };
         let encoded_file = urlencoding::encode(&file_name);
@@ -709,9 +711,10 @@ mod tests {
 
     use actix_http::Request;
     use actix_web::{
+        App,
         body::BoxBody,
         dev::{Service, ServiceResponse},
-        test, web, App,
+        test, web,
     };
     use assertables::assert_starts_with;
     use dunce::simplified;
@@ -720,17 +723,17 @@ mod tests {
     use url::Url;
 
     use super::{
-        super::{configure_app, make_app_data, WebsocketQueues},
-        send_response, AppState, EditorMessage, EditorMessageContents, UpdateMessageContents,
+        super::{WebsocketQueues, configure_app, make_app_data},
+        AppState, EditorMessage, EditorMessageContents, UpdateMessageContents, send_response,
     };
     use crate::{
         cast, prep_test_dir,
         processing::{
-            source_to_codechat_for_web, CodeChatForWeb, CodeMirror, SourceFileMetadata,
-            TranslationResults,
+            CodeChatForWeb, CodeMirror, SourceFileMetadata, TranslationResults,
+            source_to_codechat_for_web,
         },
         test_utils::{check_logger_errors, configure_testing_logger},
-        webserver::{tests::IP_PORT, IdeType, ResultOkTypes},
+        webserver::{IdeType, ResultOkTypes, tests::IP_PORT},
     };
 
     async fn get_websocket_queues(
@@ -738,7 +741,7 @@ mod tests {
         test_dir: &Path,
     ) -> (
         WebsocketQueues,
-        impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error>,
+        impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error> + use<>,
     ) {
         let app_data = make_app_data(IP_PORT);
         let app = test::init_service(configure_app(App::new(), &app_data)).await;
@@ -777,7 +780,7 @@ mod tests {
     }
 
     macro_rules! get_message_as {
-        ($client_rx: expr, $cast_type: ty) => {{
+        ($client_rx: expr_2021, $cast_type: ty) => {{
             let m = get_message(&mut $client_rx).await;
             (m.id, cast!(m.message, $cast_type))
         }};
