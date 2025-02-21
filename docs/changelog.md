@@ -21,7 +21,7 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
-*   v0.1.10, 2025-Feb-20: 
+*   v0.1.10, 2025-Feb-20:
     *   Update to the 2024 editing of Rust.
     *   Update dependencies.
     *   Update source formatting using current CodeChat Editor.
