@@ -21,6 +21,10 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.10, 2025-Feb-20: 
+    *   Update to the 2024 editing of Rust.
+    *   Update dependencies.
+    *   Update source formatting using current CodeChat Editor.
 *   v0.1.9, 2025-Jan-20:
     *   Correct word wrapping inside Mermaid diagrams.
     *   Correct translation after adding newlines to code blocks in the Editor.
