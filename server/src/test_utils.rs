@@ -14,13 +14,15 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// # `test_utils.rs` -- Reusable routines for testing
+/// `test_utils.rs` -- Reusable routines for testing
+/// ================================================
 ///
 /// Placing this file in the `tests/` directory prevents me from importing it
 /// outside that directory tree; the desire was to import this for unit tests in
 /// the `src/` directory tree. So, it's instead placed here, then conditionally
 /// imported in `lib.rs`.
-// ## Imports
+// Imports
+// -------
 //
 // ### Standard library
 use std::env;
@@ -36,21 +38,21 @@ use log::Level;
 // ### Local
 use crate::testing_logger;
 
-// ## Macros
+// Macros
+// ------
 //
-// Extract a known enum variant or fail. More concise than the alternative
-// (`if let``, or` let
-// else`). From [SO](https://stackoverflow.com/a/69324393). The macro does not handle nested pattern like`
-// Some(Animal(cat))\`.
+// Extract a known enum variant or fail. More concise than the alternative (`if
+// let``, or` let else`). From [SO](https://stackoverflow.com/a/69324393). The
+// macro does not handle nested pattern like` Some(Animal(cat))\`.
 #[macro_export]
 macro_rules! cast {
     ($target: expr_2021, $pat: path) => {{
         // The if let exploits recent Rust compiler's smart pattern matching.
-        // Contrary to other solutions like
-        // `into_variant`` and friends, this one macro covers all ownership usage like`
-        // self``, `&self`` and `&mut self``. On the other hand`
-        // {into,as,as_mut}\_{variant}\`\` solution usually needs 3 \* N method
-        // definitions where N is the number of variants.
+        // Contrary to other solutions like `into_variant`` and friends, this
+        // one macro covers all ownership usage like` self``, `&self`` and `&mut
+        // self``. On the other hand` {into,as,as\_mut}\_{variant}\`\` solution
+        // usually needs 3 \* N method definitions where N is the number of
+        // variants.
         if let $pat(a) = $target {
             a
         } else {
@@ -87,7 +89,8 @@ macro_rules! prep_test_dir {
     }};
 }
 
-// ## Code
+// Code
+// ----
 //
 // Use the `tests/fixtures` path (relative to the root of this Rust project) to
 // store files for testing. A subdirectory tree, named by the module path then
@@ -111,8 +114,9 @@ pub fn _prep_test_dir(
     // Switch from `::` to a filesystem path separator.
     let test_path = &test_path.replace("::", MAIN_SEPARATOR_STR);
 
-    // First, get the project root directory, based on the
-    // [location of the cargo.toml file](https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates).
+    // First, get the project root directory, based on the [location of the
+    // cargo.toml
+    // file](https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates).
     let root_dir = &env::var("CARGO_MANIFEST_DIR")
         .expect("Environment variable CARGO_MANIFEST_DIR not defined.");
     let mut source_path = PathBuf::from(root_dir);
@@ -127,7 +131,7 @@ pub fn _prep_test_dir(
     source_path.pop();
 
     // For debugging, append
-    // [.into_persistent()](https://docs.rs/assert_fs/latest/assert_fs/fixture/struct.TempDir.html#method.into_persistent).
+    // [.into\_persistent()](https://docs.rs/assert_fs/latest/assert_fs/fixture/struct.TempDir.html#method.into_persistent).
     let temp_dir = TempDir::new().unwrap();
     // Create a temporary directory, then copy everything needed for this test
     // to it. Since the `patterns` parameter is a glob, append `/**` to the

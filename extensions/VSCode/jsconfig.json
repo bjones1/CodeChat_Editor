@@ -14,12 +14,14 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// `jsconfig.json` is a configuration file that controls the behavior of ???
+// `jsconfig.json` -- JavaScript configuration
+// ===========================================
 {
     "compilerOptions": {
         "module": "NodeNext",
         "target": "es6",
-        "checkJs": true, /* Typecheck .js files. */
+        // Typecheck `.js` files.
+        "checkJs": true,
         "lib": [
             "es6"
         ]

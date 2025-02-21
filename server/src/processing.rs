@@ -14,8 +14,11 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// # `processing.rs` -- Transform source code to its web-editable equivalent and back
-// ## Imports
+/// `processing.rs` -- Transform source code to its web-editable equivalent and
+/// back
+/// ===========================================================================
+// Imports
+// -------
 //
 // ### Standard library
 //
@@ -42,9 +45,11 @@ use crate::lexer::LEXERS;
 // ### Local
 use crate::lexer::{CodeDocBlock, DocBlock, LanguageLexerCompiled, source_lexer};
 
-// ## Data structures
+// Data structures
+// ---------------
 //
-// ### Translation between a local (traditional) source file and its web-editable, client-side representation
+// ### Translation between a local (traditional) source file and its web-editable,
+// client-side representation
 //
 // There are three ways that a source file is represented:
 //
@@ -132,7 +137,8 @@ pub enum TranslationResultsString {
 
 // On save, the process is CodeChatForWeb -> Vec\<CodeDocBlocks> -> source code.
 //
-// ## Globals
+// Globals
+// -------
 lazy_static! {
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
@@ -143,7 +149,8 @@ lazy_static! {
 
 const DOC_BLOCK_SEPARATOR_STRING: &str = "\n<CodeChatEditor-separator/>\n\n";
 
-// ## Determine if the provided file is part of a project.
+// Determine if the provided file is part of a project.
+// ----------------------------------------------------
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     // To determine if this source code is part of a project, look for a project
     // file by searching the current directory, then all its parents, for a file
@@ -166,9 +173,10 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     }
 }
 
-// ## Transform `CodeChatForWeb` to source code
-/// This function takes in a source file in web-editable format
-/// (the `CodeChatForWeb` struct) and transforms it into source code.
+// Transform `CodeChatForWeb` to source code
+// -----------------------------------------
+/// This function takes in a source file in web-editable format (the
+/// `CodeChatForWeb` struct) and transforms it into source code.
 pub fn codechat_for_web_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
     codechat_for_web: &CodeChatForWeb,
@@ -270,8 +278,8 @@ fn code_doc_block_vec_to_source(
                     // `split_inclusive` becomes an empty list, not `[""]`. Note
                     // that this mirrors what Python's
                     // [splitlines](https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-                    // does, and is also the subject of a
-                    // [Rust bug report](https://github.com/rust-lang/rust/issues/111457).
+                    // does, and is also the subject of a [Rust bug
+                    // report](https://github.com/rust-lang/rust/issues/111457).
                     let lines: Vec<_> = doc_block.contents.split_inclusive('\n').collect();
                     let lines_fixed = if lines.is_empty() { vec![""] } else { lines };
                     for content_line in lines_fixed {
@@ -347,12 +355,12 @@ fn code_doc_block_vec_to_source(
                             );
                         // Since this isn't a first line:
                         } else {
-                            // - If this line is just a newline, include just
-                            //   the newline.
+                            // *   If this line is just a newline, include just
+                            //     the newline.
                             if *content_line == "\n" {
                                 append_doc_block("", "", "\n");
-                            // - Otherwise, include spaces in place of the
-                            //   delimiter.
+                            // *   Otherwise, include spaces in place of the
+                            //     delimiter.
                             } else {
                                 append_doc_block(
                                     &doc_block.indent,
@@ -376,7 +384,8 @@ fn code_doc_block_vec_to_source(
     Ok(file_contents)
 }
 
-// ## Transform from source code to `CodeChatForWeb`
+// Transform from source code to `CodeChatForWeb`
+// ----------------------------------------------
 //
 // Given the contents of a file, classify it and (for CodeChat Editor files)
 // convert it to the `CodeChatForWeb` format.
@@ -445,8 +454,8 @@ pub fn source_to_codechat_for_web(
             // Combine all the doc blocks into a single string, separated by a
             // delimiter. Transform this to markdown, then split the transformed
             // content back into the doc blocks they came from. This is
-            // necessary to allow
-            // [link reference definitions](https://spec.commonmark.org/0.31.2/#link-reference-definitions)
+            // necessary to allow [link reference
+            // definitions](https://spec.commonmark.org/0.31.2/#link-reference-definitions)
             // between doc blocks to work; for example, `[Link][1]` in one doc
             // block, then `[1]: http:/foo.org` in another doc block requires
             // both to be in the same Markdown document to translate correctly.
@@ -575,59 +584,61 @@ fn markdown_to_html(markdown: &str) -> String {
 // load/save, then do some accesses during those processes.
 //
 // Top-level data structures: a file HashSet<PathBuf, FileAnchor> and an id
-// HashMap<id, {Anchor, HashSet<referring_id>}>. Some FileAnchors in the file
+// HashMap<id, {Anchor, HashSet<referring\_id>}>. Some FileAnchors in the file
 // HashSet are also in a pending load list.
 //
-// - To update a file:
-//   - Remove the old file from the file HasHMap. Add an empty FileAnchor to the
-//     file HashMap.
-//   - For each id, see if that id already exists.
-//     - If the id exists: if it refers to an id in the old FileAnchor, replace
-//       it with the new one. If not, need to perform resolution on this id (we
-//       have a non-unique id; how to fix?).
-//     - If the id doesn't exist: create a new one.
-//   - For each hyperlink, see if that id already exists.
-//     - If so, upsert the referring id. Check the metadata on the id to make
-//       sure that data is current. If not, add this to the pending hyperlinks
-//       list. If the file is missing, delete it from the cache.
-//     - If not, create a new entry in the id HashSet and add the referring id
-//       to the HashSet. Add the file to a pending hyperlinks list.
-//   - When the file is processed:
-//     - Look for all entries in the pending file list that refer to the current
-//       file and resolve these. Start another task to load in all pending
-//       files.
-//     - Look at the old file; remove each id that's still in the id HashMap. If
-//       the id was in the HashMap and it also was a Hyperlink, remove that from
-//       the HashSet.
-// - To remove a file from the HashMap:
-//   - Remove it from the file HashMap.
-//   - For each hyperlink, remove it from the HashSet of referring links (if
-//     that id still exists).
-//   - For each id, remove it from the id HashMap.
-// - To add a file from the HashSet:
-//   - Perform an update with an empty FileAnchor.
+// *   To update a file:
+//     *   Remove the old file from the file HasHMap. Add an empty FileAnchor to
+//         the file HashMap.
+//     *   For each id, see if that id already exists.
+//         *   If the id exists: if it refers to an id in the old FileAnchor,
+//             replace it with the new one. If not, need to perform resolution
+//             on this id (we have a non-unique id; how to fix?).
+//         *   If the id doesn't exist: create a new one.
+//     *   For each hyperlink, see if that id already exists.
+//         *   If so, upsert the referring id. Check the metadata on the id to
+//             make sure that data is current. If not, add this to the pending
+//             hyperlinks list. If the file is missing, delete it from the
+//             cache.
+//         *   If not, create a new entry in the id HashSet and add the
+//             referring id to the HashSet. Add the file to a pending hyperlinks
+//             list.
+//     *   When the file is processed:
+//         *   Look for all entries in the pending file list that refer to the
+//             current file and resolve these. Start another task to load in all
+//             pending files.
+//         *   Look at the old file; remove each id that's still in the id
+//             HashMap. If the id was in the HashMap and it also was a
+//             Hyperlink, remove that from the HashSet.
+// *   To remove a file from the HashMap:
+//     *   Remove it from the file HashMap.
+//     *   For each hyperlink, remove it from the HashSet of referring links (if
+//         that id still exists).
+//     *   For each id, remove it from the id HashMap.
+// *   To add a file from the HashSet:
+//     *   Perform an update with an empty FileAnchor.
 //
 // Pending hyperlinks list: for each hyperlink,
 //
-// - check if the id is now current in the cache. If so, add the referring id to
-//   the HashSet then move to the next hyperlink.
-// - check if the file is now current in the cache. If not, load the file and
-//   update the cache, then go to step 1.
-// - The id was not found, even in the expected file. Add the hyperlink to a
-//   broken links set?
+// *   check if the id is now current in the cache. If so, add the referring id
+//     to the HashSet then move to the next hyperlink.
+// *   check if the file is now current in the cache. If not, load the file and
+//     update the cache, then go to step 1.
+// *   The id was not found, even in the expected file. Add the hyperlink to a
+//     broken links set?
 //
 // Global operations:
 //
-// - Scan all files, then perform add/upsert/removes based on differences with
-//   the cache.
+// *   Scan all files, then perform add/upsert/removes based on differences with
+//     the cache.
 //
 // Functions:
 //
-// - Upsert an Anchor.
-// - Upsert a Hyperlink.
-// - Upsert a file.
-// - Remove a file.
-/*
+// *   Upsert an Anchor.
+// *   Upsert a Hyperlink.
+// *   Upsert a file.
+// *   Remove a file.
+/*x
 /// There are two types of files that can serve as an anchor: these are file
 /// anchor targets.
 enum FileAnchor {
@@ -781,7 +792,8 @@ fn html_analyze(
 }
 */
 
-// ## Tests
+// Tests
+// -----
 #[cfg(test)]
 mod tests {
     use std::{path::PathBuf, str::FromStr};
@@ -1332,9 +1344,9 @@ mod tests {
 
         // Trigger special cases:
         //
-        // - An empty doc block at the beginning of the file.
-        // - A doc block in the middle of the file
-        // - A doc block with no trailing newline at the end of the file.
+        // *   An empty doc block at the beginning of the file.
+        // *   A doc block in the middle of the file
+        // *   A doc block with no trailing newline at the end of the file.
         assert_eq!(
             source_to_codechat_for_web("//\n\n//\n\n//", &"cpp".to_string(), false, false),
             TranslationResults::CodeChat(build_codechat_for_web(

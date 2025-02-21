@@ -14,7 +14,8 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `main.rs` -- Entrypoint for the CodeChat Editor Builder
+// `main.rs` -- Entrypoint for the CodeChat Editor Builder
+// =======================================================
 //
 // This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
 // of the release process. To update the `./release.yaml` file this tool
@@ -26,7 +27,8 @@
 // 4.  Revert the changes to `server/dist-workspace.toml`.
 // 5.  Test
 //
-// ## Imports
+// Imports
+// -------
 //
 // ### Standard library
 use std::{ffi::OsStr, fs, io, path::Path, process::Command};
@@ -41,7 +43,8 @@ use regex::Regex;
 //
 // None
 //
-// ## Data structures
+// Data structures
+// ---------------
 //
 // The following defines the command-line interface for the CodeChat Editor.
 #[derive(Parser)]
@@ -87,7 +90,8 @@ enum Commands {
     },
 }
 
-// ## Code
+// Code
+// ----
 //
 // ### Utilities
 //
@@ -170,8 +174,8 @@ fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P, files: Option<P>) -> io::Res
     }
     #[cfg(not(windows))]
     {
-        // Create the dest directory, since old CI OSes don't support
-        // `rsync --mkpath`.
+        // Create the dest directory, since old CI OSes don't support `rsync
+        // --mkpath`.
         run_script(
             "mkdir",
             &["-p", dest.as_ref().to_str().unwrap()],
@@ -209,8 +213,8 @@ fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P, files: Option<P>) -> io::Res
         .status()?
         .code()
         .expect("Copy process terminated by signal");
-    // Per
-    // [these docs](https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/return-codes-used-robocopy-utility),
+    // Per [these
+    // docs](https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/return-codes-used-robocopy-utility),
     // check the return code.
     if cfg!(windows) && exit_code >= 8 || !cfg!(windows) && exit_code != 0 {
         Err(io::Error::new(
@@ -254,7 +258,8 @@ fn search_and_replace_file<
     fs::write(&path, file_contents_replaced.as_bytes())
 }
 
-// ## Core routines
+// Core routines
+// -------------
 //
 // These functions simplify common build-focused development tasks and support
 // CI builds.
@@ -278,8 +283,8 @@ fn patch_file(patch: &str, before_patch: &str, file_path: &str) -> io::Result<()
 }
 /// After updating files in the client's Node files, perform some fix-ups.
 fn patch_client_npm() -> io::Result<()> {
-    // Apply a the fixes described in
-    // [issue 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
+    // Apply a the fixes described in [issue
+    // 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
     patch_file(
         "
         selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)",
@@ -287,7 +292,11 @@ fn patch_client_npm() -> io::Result<()> {
             hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));",
         "../client/node_modules/@codemirror/view/dist/index.js"
     )?;
-    // In [older releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options), TinyMCE allowed users to change `whitespace_elements`; the whitespace inside these isn't removed by TinyMCE. However, this was removed in v6.0. Therefore, manually patch TinyMCE instead.
+    // In [older
+    // releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options),
+    // TinyMCE allowed users to change `whitespace_elements`; the whitespace
+    // inside these isn't removed by TinyMCE. However, this was removed in v6.0.
+    // Therefore, manually patch TinyMCE instead.
     patch_file(
         " wc-mermaid",
         "const whitespaceElementsMap = createLookupTable('whitespace_elements', 'pre script noscript style textarea video audio iframe object code",
@@ -358,13 +367,13 @@ fn run_update() -> io::Result<()> {
 fn run_test() -> io::Result<()> {
     // On Windows, `cargo sort --check` fails since it default to LF, not CRLF,
     // line endings. Work around this by changing this setting only on Windows.
-    // See the
-    // [cargo sort config docs](https://github.com/DevinR528/cargo-sort?tab=readme-ov-file#config)
-    // and the
-    // [related issue](https://github.com/DevinR528/cargo-sort/issues/85).
+    // See the [cargo sort config
+    // docs](https://github.com/DevinR528/cargo-sort?tab=readme-ov-file#config)
+    // and the [related
+    // issue](https://github.com/DevinR528/cargo-sort/issues/85).
     //
-    // However, this still fails: `cargo sort` uses
-    // [inconsistent line endings](https://github.com/DevinR528/cargo-sort/issues/86).
+    // However, this still fails: `cargo sort` uses [inconsistent line
+    // endings](https://github.com/DevinR528/cargo-sort/issues/86).
     /***
     #[cfg(windows)]
     {
@@ -469,7 +478,8 @@ fn run_postrelease(target: &str) -> io::Result<()> {
     Ok(())
 }
 
-// ## CLI implementation
+// CLI implementation
+// ------------------
 //
 // The following code implements the command-line interface for the CodeChat
 // Editor.

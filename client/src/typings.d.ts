@@ -14,7 +14,8 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `typing.d.ts` -- Global type definitions
+// `typing.d.ts` -- Global type definitions
+// ========================================
 //
 // The server passes this to the client to load a file. See
 // [LexedSourceFile](../../server/src/webserver.rs#LexedSourceFile).

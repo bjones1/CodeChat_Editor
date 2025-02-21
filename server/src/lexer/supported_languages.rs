@@ -14,12 +14,14 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// # `supported_languages.rs` - Provide lexer info for all supported languages
+/// `supported_languages.rs` - Provide lexer info for all supported languages
+/// =========================================================================
 ///
 /// This file contains a data structure which describes all supported languages;
 /// the [lexer](../lexer.rs) uses this lex a given language.
 ///
-/// ## Lexer implementation
+/// Lexer implementation
+/// --------------------
 ///
 /// Ordering matters: all these delimiters end up in a large regex separated by
 /// an or operator. The regex or operator matches from left to right. So, longer
@@ -42,7 +44,8 @@
 /// strings. In this case, they would be `'She'` and `'s here.'`. While this
 /// doesn't parse the string correctly, it does correctly identify where
 /// comments can't be, which is all that the lexer needs to do.
-// ## Imports
+// Imports
+// -------
 //
 // ### Standard library
 use std::sync::Arc;
@@ -53,7 +56,8 @@ use super::{
     StringDelimiterSpec, pest_parser,
 };
 
-// ## Helper functions
+// Helper functions
+// ----------------
 //
 // These functions simplify the syntax needed to create a `LanguageLexer`.
 #[allow(clippy::too_many_arguments)]
@@ -118,7 +122,8 @@ fn make_block_comment_delim(opening: &str, closing: &str, is_nestable: bool) -> 
     }
 }
 
-// ## Define lexers for each supported language.
+// Define lexers for each supported language.
+// ------------------------------------------
 pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
     vec![
         // ### Linux shell scripts
@@ -143,11 +148,11 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             "c_cpp",
             // Unusual extensions:
             //
-            // - The `.ino` extension is for Arduino source files.
-            // - The `.pest` extension is for
-            //   [Pest grammars](https://docs.rs/pest/latest/pest/#grammar).
-            //   TODO: Pest doesn't support line continuations and allows
-            //   multiline strings, so this is a inaccurate.
+            // *   The `.ino` extension is for Arduino source files.
+            // *   The `.pest` extension is for [Pest
+            //     grammars](https://docs.rs/pest/latest/pest/#grammar). TODO:
+            //     Pest doesn't support line continuations and allows multiline
+            //     strings, so this is a inaccurate.
             &["c", "cc", "cpp", "h", "hh", "hpp", "ino", "pest"],
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
@@ -159,8 +164,9 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // Note: the C/C++ support expects C++11 or newer. Don't worry about
             // supporting C or older C++ using another lexer entry, since the
             // raw string syntax in C++11 and newer is IMHO so rare we won't
-            // encounter it in older code. See the C++
-            // [string literals docs for the reasoning behind the start body regex.](https://en.cppreference.com/w/cpp/language/string_literal)
+            // encounter it in older code. See the C++ [string literals docs for
+            // the reasoning behind the start body
+            // regex.](https://en.cppreference.com/w/cpp/language/string_literal)
             make_heredoc_delim("R\"", "[^()\\\\[[:space:]]]*", "(", ")", "\""),
             SpecialCase::None,
             Some(pest_parser::c::parse_to_code_doc_blocks),
@@ -169,18 +175,18 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         make_language_lexer(
             "csharp",
             &["cs"],
-            // See
-            // [6.3.3 Comments](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#633-comments).
-            // Also provide support for
-            // [documentation comments](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/documentation-comments).
+            // See [6.3.3
+            // Comments](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#633-comments).
+            // Also provide support for [documentation
+            // comments](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/documentation-comments).
             &["//", "///"],
             &[
                 make_block_comment_delim("/*", "*/", false),
                 make_block_comment_delim("/**", "*/", false),
             ],
             &[make_string_delimiter_spec(
-                // See
-                // [6.4.5.6 String literals](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals).
+                // See [6.4.5.6 String
+                // literals](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals).
                 "\"",
                 "\\",
                 NewlineSupport::None,
@@ -207,9 +213,9 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         make_language_lexer(
             "golang",
             &["go"],
-            // See
-            // [The Go Programming Language Specification](https://go.dev/ref/spec)
-            // on [Comments](https://go.dev/ref/spec#Comments).
+            // See [The Go Programming Language
+            // Specification](https://go.dev/ref/spec) on
+            // [Comments](https://go.dev/ref/spec#Comments).
             &[],
             &[make_block_comment_delim("/*", "*/", false)],
             // See [String literals](https://go.dev/ref/spec#String_literals).
@@ -239,16 +245,17 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         make_language_lexer(
             "java",
             &["java", "kt"],
-            // See the
-            // [Java Language Specification, Java SE 19 edition](https://docs.oracle.com/javase/specs/jls/se19/html/index.html),
-            // [§3.7. Comments](https://docs.oracle.com/javase/specs/jls/se19/html/jls-3.html#jls-3.7).
+            // See the [Java Language Specification, Java SE 19
+            // edition](https://docs.oracle.com/javase/specs/jls/se19/html/index.html),
+            // [§3.7.
+            // Comments](https://docs.oracle.com/javase/specs/jls/se19/html/jls-3.html#jls-3.7).
             // The end of this section notes that <q>comments do not occur
             // within character literals, string literals, or text blocks,</q>
             // which describes the approach of this lexer nicely.
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
-            // See
-            // [§3.10.5. String Literals](https://docs.oracle.com/javase/specs/jls/se19/html/jls-3.html#jls-3.10.5).
+            // See [§3.10.5. String
+            // Literals](https://docs.oracle.com/javase/specs/jls/se19/html/jls-3.html#jls-3.10.5).
             &[
                 make_string_delimiter_spec(
                     "\"",
@@ -258,8 +265,8 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
                     // and before the matching closing "."</q>
                     NewlineSupport::None,
                 ),
-                // See
-                // [§3.10.6. Text Blocks](https://docs.oracle.com/javase/specs/jls/se19/html/jls-3.html#jls-3.10.6).
+                // See [§3.10.6. Text
+                // Blocks](https://docs.oracle.com/javase/specs/jls/se19/html/jls-3.html#jls-3.10.6).
                 make_string_delimiter_spec("\"\"\"", "\\", NewlineSupport::Unescaped),
             ],
             None,
@@ -271,19 +278,19 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             "javascript",
             &[
                 "js", "mjs",
-                // Note that
-                // [Qt's QML language](https://doc.qt.io/qt-6/qtqml-syntax-basics.html)
-                // is basically JSON with some embedded JavaScript. Treat it as
+                // Note that [Qt's QML
+                // language](https://doc.qt.io/qt-6/qtqml-syntax-basics.html) is
+                // basically JSON with some embedded JavaScript. Treat it as
                 // JavaScript, since those rules include template literals.
                 "qml",
             ],
-            // See
-            // [§12.4 Comments](https://262.ecma-international.org/13.0/#sec-comments)
+            // See [§12.4
+            // Comments](https://262.ecma-international.org/13.0/#sec-comments)
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
             &[
-                // See
-                // [§12.8.4 String Literals](https://262.ecma-international.org/13.0/#prod-StringLiteral).
+                // See [§12.8.4 String
+                // Literals](https://262.ecma-international.org/13.0/#prod-StringLiteral).
                 make_string_delimiter_spec("\"", "\\", NewlineSupport::Escaped),
                 make_string_delimiter_spec("'", "\\", NewlineSupport::Escaped),
             ],
@@ -309,15 +316,16 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         make_language_lexer(
             "matlab",
             &["m"],
-            // See the
-            // [MATLAB docs on comments](https://www.mathworks.com/help/matlab/matlab_prog/comments.html).
+            // See the [MATLAB docs on
+            // comments](https://www.mathworks.com/help/matlab/matlab_prog/comments.html).
             // Block comments are a special case, so they're not included here.
             &["%", "..."],
             &[],
-            // Per the
-            // [MATLAB docs](https://www.mathworks.com/help/matlab/matlab_prog/represent-text-with-character-and-string-arrays.html),
+            // Per the [MATLAB
+            // docs](https://www.mathworks.com/help/matlab/matlab_prog/represent-text-with-character-and-string-arrays.html),
             // there are two types of strings. Although MATLAB supports
-            // [standard escape sequences](https://www.mathworks.com/help/matlab/matlab_prog/matlab-operators-and-special-characters.html#bvg44q6)
+            // [standard escape
+            // sequences](https://www.mathworks.com/help/matlab/matlab_prog/matlab-operators-and-special-characters.html#bvg44q6)
             // (scroll to the bottom of the page), these don't affect quotes;
             // instead, doubled quotes are used to insert a single quote. See
             // [string delimiter doubling](#string_delimiter_doubling).
@@ -337,8 +345,8 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             &[],
             &[
                 // Note that raw strings still allow escaping the single/double
-                // quote. See the
-                // [language reference](https://docs.python.org/3/reference/lexical_analysis.html#literals).
+                // quote. See the [language
+                // reference](https://docs.python.org/3/reference/lexical_analysis.html#literals).
                 make_string_delimiter_spec("\"\"\"", "\\", NewlineSupport::Unescaped),
                 make_string_delimiter_spec("'''", "\\", NewlineSupport::Unescaped),
                 make_string_delimiter_spec("\"", "\\", NewlineSupport::Escaped),
@@ -371,10 +379,11 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             &["sql"],
             // See
             // [Wikipedia](https://en.wikipedia.org/wiki/SQL_syntax#Comments).
-            // The
-            // [SQL specification isn't free](https://en.wikipedia.org/wiki/SQL#Standardization_history),
+            // The [SQL specification isn't
+            // free](https://en.wikipedia.org/wiki/SQL#Standardization_history),
             // sadly. Oracle publishes their flavor of the 2016 spec; see
-            // [Comments within SQL statements](https://docs.oracle.com/database/121/SQLRF/sql_elements006.htm#SQLRF51099).
+            // [Comments within SQL
+            // statements](https://docs.oracle.com/database/121/SQLRF/sql_elements006.htm#SQLRF51099).
             // Postgresql defines
             // [comments](https://www.postgresql.org/docs/15/sql-syntax-lexical.html#SQL-SYNTAX-COMMENTS)
             // as well.
@@ -382,11 +391,11 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             &[make_block_comment_delim("/*", "*/", false)],
             &[
                 // SQL standard strings allow newlines and don't provide an
-                // escape character. This language uses
-                // [string delimiter doubling](#string_delimiter_doubling).
-                // Unfortunately, each variant of SQL also supports their custom
-                // definition of strings; these must be handled by
-                // vendor-specific flavors of this basic lexer definition.
+                // escape character. This language uses [string delimiter
+                // doubling](#string_delimiter_doubling). Unfortunately, each
+                // variant of SQL also supports their custom definition of
+                // strings; these must be handled by vendor-specific flavors of
+                // this basic lexer definition.
                 make_string_delimiter_spec("'", "", NewlineSupport::Unescaped),
             ],
             None,
@@ -401,8 +410,8 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // [comments](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/thebasics#Comments).
             &["//"],
             &[make_block_comment_delim("/*", "*/", true)],
-            // See
-            // [Strings and Characters](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters).
+            // See [Strings and
+            // Characters](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters).
             &[
                 // Technically, this would include optional whitespace after the
                 // triple quotes then a newlines then end with a newline before
@@ -411,14 +420,14 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
                 make_string_delimiter_spec("\"\"\"", "\\", NewlineSupport::Unescaped),
                 make_string_delimiter_spec("\"", "\\", NewlineSupport::None),
             ],
-            // Swift supports
-            // [extended string delimiters](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters#Extended-String-Delimiters)
+            // Swift supports [extended string
+            // delimiters](https://docs.swift.org/swift-book/documentation/the-swift-programming-language/stringsandcharacters#Extended-String-Delimiters)
             // in both string literal and multiline string flavors. Since this
             // parser only supports a single heredoc type, we ignore the string
-            // literal flavor. This is a bug: consider the string
-            // `#"Not a comment "/*"#`. This would parse as a code block
-            // containing just `#`, then the string `"Not a comment "` then a
-            // comment starting with `/*"#`.
+            // literal flavor. This is a bug: consider the string `#"Not a
+            // comment "/*"#`. This would parse as a code block containing just
+            // `#`, then the string `"Not a comment "` then a comment starting
+            // with `/*"#`.
             make_heredoc_delim("", "#+", "\"\"\"", "\"\"\"", ""),
             SpecialCase::None,
             None,
@@ -468,8 +477,8 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             &["--"],
             &[make_block_comment_delim("/*", "*/", false)],
             // Per section 15.7 of the standard, strings may not contain
-            // newlines. This language uses
-            // [string delimiter doubling](#string_delimiter_doubling).
+            // newlines. This language uses [string delimiter
+            // doubling](#string_delimiter_doubling).
             &[make_string_delimiter_spec("\"", "", NewlineSupport::None)],
             None,
             SpecialCase::None,
@@ -516,19 +525,19 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             &["#"],
             &[],
             &[
-                // See
-                // [double-quoted style](https://yaml.org/spec/1.2.2/#double-quoted-style).
+                // See [double-quoted
+                // style](https://yaml.org/spec/1.2.2/#double-quoted-style).
                 // Something I don't understand and will probably ignore:
                 // "Single- and double-quoted scalars are restricted to a single
                 // line when contained inside an implicit key."
                 make_string_delimiter_spec("\"", "\\", NewlineSupport::Unescaped),
-                // See
-                // [single-quoted style](https://yaml.org/spec/1.2.2/#single-quoted-style).
+                // See [single-quoted
+                // style](https://yaml.org/spec/1.2.2/#single-quoted-style).
                 // Single-quoted strings escape a single quote by repeating it
                 // twice: `'That''s unusual.'` Rather than try to parse this,
-                // treat it as two back-to-back strings: `'That'` and
-                // `'s unusual.'` We don't care about getting the correct value
-                // for strings; the only purpose is to avoid interpreting string
+                // treat it as two back-to-back strings: `'That'` and `'s
+                // unusual.'` We don't care about getting the correct value for
+                // strings; the only purpose is to avoid interpreting string
                 // contents as inline or block comments.
                 make_string_delimiter_spec("'", "", NewlineSupport::Unescaped),
             ],

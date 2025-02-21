@@ -15,6 +15,7 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `.prettierrc.json5` - Prettier configuration
+// ============================================
 {
     tabWidth: 4,
 }

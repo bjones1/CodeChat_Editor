@@ -14,12 +14,14 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `CodeChatEditor-test.mts` -- Tests for the CodeChat Editor client
+// `CodeChatEditor-test.mts` -- Tests for the CodeChat Editor client
+// =================================================================
 //
 // To run tests, add a `?test` to any web page served by the CodeChat Editor
 // server.
 //
-// ## Imports
+// Imports
+// -------
 //
 // I can't get Mocha to work with ESBuild, so I import it using a script tag.
 import { assert } from "chai";
@@ -33,7 +35,8 @@ export { page_init };
 // Provide convenient access to all functions tested here.
 const { codechat_html_to_markdown } = exportedForTesting;
 
-// ## Tests
+// Tests
+// -----
 //
 // <a id="CodeChatEditor_test"></a>Defining this global variable signals the
 // CodeChat Editor to [run tests](CodeChatEditor.mts#CodeChatEditor_test).

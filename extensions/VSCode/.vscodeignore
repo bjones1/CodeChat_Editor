@@ -16,8 +16,11 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# # `vscodeignore` - Files not to package
-# See https://code.visualstudio.com/api/working-with-extensions/publishing-extension#.vscodeignore.
+# `vscodeignore` - Files not to package
+# =====================================
+#
+# See
+# [Using .vscodeignore](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#using-.vscodeignore).
 #
 # Omit all TypeScript source.
 src/**
@@ -25,7 +28,8 @@ src/**
 # Omit VSCode config.
 .vscode/**
 
-# Omit target-specific binaries. (Comment out when publishing for a specific target.)
+# Omit target-specific binaries. (Comment out when publishing for a specific
+# target.)
 #server/**
 
 # Misc files not needed in a package.

@@ -16,9 +16,11 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# # `Cargo.toml` -- Rust build/package management config for the server
+# `Cargo.toml` -- Rust build/package management config for the server
+# ===================================================================
 #
-# ## General package configurations
+# General package configurations
+# ------------------------------
 [package]
 authors = ["Bryan A. Jones", "Peter Loux"]
 categories = ["development-tools", "text-editors"]
@@ -35,7 +37,8 @@ version = "0.1.9"
 [lib]
 name = "code_chat_editor"
 
-# ## Dependencies
+# Dependencies
+# ------------
 [dependencies]
 actix-files = "0.6"
 actix-rt = "2.9.0"
@@ -70,7 +73,8 @@ tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
 url = "2.5.2"
 urlencoding = "2"
 
-# [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
+# [Windows-only
+# dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"
 
@@ -89,7 +93,8 @@ tokio-tungstenite = "0.26"
 #actix = { path = "../../actix/actix" }
 #actix-rt = { path = "../../actix-net/actix-rt" }
 
-# ## Release
+# Release
+# -------
 #
 # Specify release-only features for pulldown. See the
 # [docs](https://docs.rs/crate/pulldown-cmark/latest).
@@ -98,7 +103,8 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-# ## Features
+# Features
+# --------
 #
 # See the [docs](https://doc.rust-lang.org/cargo/reference/features.html).
 [features]
@@ -110,7 +116,8 @@ lexer_explain = []
 # Avoid a lint about tarpaulin.
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
 
-# ## Distribution
+# Distribution
+# ------------
 #
 # This uses [cargo dist](https://opensource.axo.dev/cargo-dist) to build
 # binaries across multiple platforms using github's CI/CD.

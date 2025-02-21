@@ -14,7 +14,9 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `tinymce-webpack.ts` -- integrate and configure the TinyMCE editor for use with the CodeChat Editor
+// `tinymce-webpack.ts` -- integrate and configure the TinyMCE editor for use
+// with the CodeChat Editor
+// ==========================================================================
 //
 // Import TinyMCE.
 import {
@@ -89,15 +91,15 @@ export const init = async (
             // The imports above apply the skins; don't try to dynamically load
             // the skin's CSS.
             skin: false,
-            // Enable the
-            // [browser-supplied spellchecker](https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck),
+            // Enable the [browser-supplied
+            // spellchecker](https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck),
             // since TinyMCE's spellchecker is a premium feature.
             browser_spellcheck: true,
-            // Put more buttons on the
-            // [quick toolbar](https://www.tiny.cloud/docs/tinymce/6/quickbars/)
-            // that appears when text is selected. TODO: add a button for code
-            // format (can't find this one -- it's only on the
-            // [list of menu items](https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items)
+            // Put more buttons on the [quick
+            // toolbar](https://www.tiny.cloud/docs/tinymce/6/quickbars/) that
+            // appears when text is selected. TODO: add a button for code format
+            // (can't find this one -- it's only on the [list of menu
+            // items](https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items)
             // as `codeformat`).
             quickbars_selection_toolbar:
                 "align | bold italic underline | quicklink h2 h3 blockquote",
@@ -110,18 +112,18 @@ export const init = async (
             // When true, this still prevents hyperlinks to anchors on the
             // current page from working correctly. There's an onClick handler
             // that prevents links in the current page from working -- need to
-            // look into this. See also
-            // [a related GitHub issue](https://github.com/tinymce/tinymce/issues/3836).
+            // look into this. See also [a related GitHub
+            // issue](https://github.com/tinymce/tinymce/issues/3836).
             //readonly: true  // Per the comment above, this is commented out.
             // TODO: Notes on this setting.
             relative_urls: true,
-            // This combines the
-            // [default TinyMCE toolbar buttons](https://www.tiny.cloud/blog/tinymce-toolbar/)
-            // with a few more from plugins. I like the default, so this is
-            // currently disabled.
+            // This combines the [default TinyMCE toolbar
+            // buttons](https://www.tiny.cloud/blog/tinymce-toolbar/) with a few
+            // more from plugins. I like the default, so this is currently
+            // disabled.
             //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
-            // See
-            // [License key](https://www.tiny.cloud/docs/tinymce/latest/license-key).
+            // See [License
+            // key](https://www.tiny.cloud/docs/tinymce/latest/license-key).
             license_key: "gpl",
 
             // Settings for plugins

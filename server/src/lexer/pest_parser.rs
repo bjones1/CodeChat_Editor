@@ -13,8 +13,12 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-// # `pest_parser.rs` -- Lex source code into code and doc blocks
-// ## Imports
+//
+// `pest_parser.rs` -- Lex source code into code and doc blocks
+// ============================================================
+//
+// Imports
+// -------
 //
 // ### Standard library
 //
@@ -27,12 +31,13 @@
 // ### Local
 //
 // None.
-//
-/// ## Parser generator
-/// This macro generates a parser function that converts the provided string into
-/// a series of code and doc blocks. I'd prefer to use traits, but don't see a
-/// way to pass the `Rule` types as a usable. (Using `RuleType` means we can't
-/// access `Rule::file`, etc.)
+/// Parser generator
+/// ----------------
+///
+/// This macro generates a parser function that converts the provided string
+/// into a series of code and doc blocks. I'd prefer to use traits, but don't
+/// see a way to pass the `Rule` types as a usable. (Using `RuleType` means we
+/// can't access `Rule::file`, etc.)
 #[macro_export]
 macro_rules! make_parse_to_code_doc_blocks {
     ($parser: ty) => {
@@ -50,8 +55,7 @@ macro_rules! make_parse_to_code_doc_blocks {
             // The first (and only) element is the `file` token.
             .next()
             .unwrap()
-            // Return the contents of this token (code and doc block
-            // tokens).
+            // Return the contents of this token (code and doc block tokens).
             .into_inner();
             // For debugging, print out the parse tree.
             //println!("{:#?}", pairs);
@@ -82,21 +86,21 @@ macro_rules! make_parse_to_code_doc_blocks {
                                 let s = inline_comment_body.as_str();
                                 let inner = &mut inline_comment_body.into_inner();
                                 // See the notes on inline comments in
-                                // [c.pest](pest/c.pest) for the expected structure
-                                // of the `inline_comment_body`.
+                                // [c.pest](pest/c.pest) for the expected
+                                // structure of the `inline_comment_body`.
                                 let contents = if let Some(inline_comment_contents) = inner.next() {
-                                    // For comments which contains contents, include
-                                    // that.
+                                    // For comments which contains contents,
+                                    // include that.
                                     inline_comment_contents.as_str()
                                 } else {
-                                    // For comments which are just a newline, include
-                                    // that.
+                                    // For comments which are just a newline,
+                                    // include that.
                                     s
                                 };
                                 assert!(inner.next().is_none());
 
-                                // Add this string (the raw newline, or the comment
-                                // contents) to the accumulator.
+                                // Add this string (the raw newline, or the
+                                // comment contents) to the accumulator.
                                 acc.push_str(contents);
                                 acc
                             },
@@ -246,7 +250,8 @@ macro_rules! make_parse_block_comment {
     };
 }
 
-// ## Parsers
+// Parsers
+// -------
 //
 // Each parser is kept in a separate module to avoid name conflicts, since Pest
 // generates a `Rule` enum for each grammar.
@@ -274,7 +279,8 @@ pub mod python {
     make_parse_block_comment!(ThisParser);
 }
 
-// ## Tests
+// Tests
+// -----
 #[cfg(test)]
 mod test {
     use indoc::indoc;

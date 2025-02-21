@@ -14,7 +14,8 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `HashReader.mts` -- post-process esbuild output
+// `HashReader.mts` -- post-process esbuild output
+// ===============================================
 //
 // This script reads the output produced by esbuild to determine the location of
 // the bundled files, which have hashes in their file names. It writes these

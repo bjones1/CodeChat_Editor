@@ -13,8 +13,10 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// # `main.rs` -- Entrypoint for the CodeChat Editor Server
-// ## Imports
+/// `main.rs` -- Entrypoint for the CodeChat Editor Server
+/// ======================================================
+// Imports
+// -------
 //
 // ### Standard library
 use std::{
@@ -33,7 +35,8 @@ use log::LevelFilter;
 // ### Local
 use code_chat_editor::webserver::{self, IP_ADDRESS};
 
-// ## Data structures
+// Data structures
+// ---------------
 //
 // ### Command-line interface
 //
@@ -75,7 +78,8 @@ enum Commands {
     Stop,
 }
 
-// ## Code
+// Code
+// ----
 //
 // The following code implements the command-line interface for the CodeChat
 // Editor.
@@ -120,7 +124,10 @@ impl Cli {
                     }
 
                     match process {
-                        // If the process isn't started, then do so. We wait to here to start the process, in case the server was already running; in this case, the ping above will see the running server then exit.
+                        // If the process isn't started, then do so. We wait to
+                        // here to start the process, in case the server was
+                        // already running; in this case, the ping above will
+                        // see the running server then exit.
                         None => {
                             println!("Starting server in background...");
                             let current_exe = match env::current_exe() {
@@ -148,10 +155,11 @@ impl Cli {
                             }
                             process = match cmd
                                 .args(["--port", &self.port.to_string(), "serve", "--log", "off"])
-                                // Subtle: the default of `stdout(Stdio::inherit())` causes
-                                // a parent process to block, since the child process
-                                // inherits the parent's stdout. So, use the pipes to avoid
-                                // blocking.
+                                // Subtle: the default of
+                                // `stdout(Stdio::inherit())` causes a parent
+                                // process to block, since the child process
+                                // inherits the parent's stdout. So, use the
+                                // pipes to avoid blocking.
                                 .stdin(Stdio::null())
                                 .stdout(Stdio::piped())
                                 .stderr(Stdio::piped())

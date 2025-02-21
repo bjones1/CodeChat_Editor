@@ -14,7 +14,8 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `CodeMirror-integration.mts` -- integrate CodeMirror into the CodeChat Editor
+// `CodeMirror-integration.mts` -- integrate CodeMirror into the CodeChat Editor
+// =============================================================================
 //
 // This file assumes the server has parsed the source. For example given the
 // following original Python source code:
@@ -44,7 +45,8 @@
 //     contents are focused, apply the TinyMCE instance to those contents.
 // 5.  Define a set of StateEffects to add/update/etc. doc blocks.
 //
-// ## Imports
+// Imports
+// -------
 //
 // ### Third-party
 import { basicSetup } from "codemirror";
@@ -80,7 +82,8 @@ import { Editor, init, tinymce } from "./tinymce-config.mjs";
 // ### Local
 import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
 
-// ## Globals
+// Globals
+// -------
 let current_view: EditorView;
 let tinymce_singleton: Editor | undefined;
 let ignore_next_dirty = false;
@@ -91,7 +94,8 @@ declare global {
     }
 }
 
-// ## Doc blocks in CodeMirror
+// Doc blocks in CodeMirror
+// ------------------------
 //
 // The goal: given a [Range](https://codemirror.net/docs/ref/#state.Range) of
 // lines containing a doc block (a delimiter, indent, and contents) residing at
@@ -360,8 +364,9 @@ class DocBlockWidget extends WidgetType {
     }
 
     ignoreEvent(event: Event) {
-        // Avoid handling other events, since this causes
-        // [weird problems with event routing](https://discuss.codemirror.net/t/how-to-get-focusin-events-on-a-custom-widget-decoration/6792).
+        // Avoid handling other events, since this causes [weird problems with
+        // event
+        // routing](https://discuss.codemirror.net/t/how-to-get-focusin-events-on-a-custom-widget-decoration/6792).
         if (event.type === "focusin" || event.type === "input") {
             return false;
         } else {
@@ -389,8 +394,8 @@ class DocBlockWidget extends WidgetType {
     }
 }
 
-// Typeset the provided node; taken from the
-// [MathJax docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
+// Typeset the provided node; taken from the [MathJax
+// docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
 export const mathJaxTypeset = (node: HTMLElement) => {
     window.MathJax.typesetPromise([node]).catch((err: any) =>
         console.log("Typeset failed: " + err.message),
@@ -632,7 +637,8 @@ const DocBlockPlugin = ViewPlugin.fromClass(
     },
 );
 
-// ## UI
+// UI
+// --
 //
 // Allow only spaces and delete/backspaces when editing the indent of a doc
 // block.
@@ -653,16 +659,16 @@ const doc_block_indent_on_before_input = (event_: Event) => {
 };
 
 // There doesn't seem to be any tracking of a dirty/clean flag built into
-// CodeMirror v6 (although
-// [v5 does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've
-// found is a
-// [forum post](https://discuss.codemirror.net/t/codemirror-6-proper-way-to-listen-for-changes/2395/11)
+// CodeMirror v6 (although [v5
+// does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've found
+// is a [forum
+// post](https://discuss.codemirror.net/t/codemirror-6-proper-way-to-listen-for-changes/2395/11)
 // showing code to do this, which I use below.
 //
 // How this works: the
 // [EditorView.updateListener](https://codemirror.net/docs/ref/#codemirror) is a
-// [Facet](https://codemirror.net/docs/ref/#state.Facet) with an
-// [of function](https://codemirror.net/docs/ref/#state.Facet.of) that creates a
+// [Facet](https://codemirror.net/docs/ref/#state.Facet) with an [of
+// function](https://codemirror.net/docs/ref/#state.Facet.of) that creates a
 // CodeMirror extension.
 const autosaveExtension = EditorView.updateListener.of(
     // CodeMirror passes this function a

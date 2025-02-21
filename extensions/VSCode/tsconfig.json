@@ -14,6 +14,8 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
+// tsconfig.json -- TypeScript configuration
+// =========================================
 {
 	"compilerOptions": {
 		"module": "nodenext",

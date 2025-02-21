@@ -1,4 +1,5 @@
-// # `style_guide.cpp` - Literate programming using the CodeChat Editor
+// `style_guide.cpp` - Literate programming using the CodeChat Editor
+// ==================================================================
 //
 // This document, written as a C++ source file, primarily demonstrates the use
 // of the CodeChat Editor in literate programming. It should be viewed using the
@@ -20,7 +21,8 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// ## Introduction
+// Introduction
+// ------------
 //
 // This document provides a style guide for literate programming using the
 // CodeChat Editor. For basic use, see the [user manual](../README.md).
@@ -39,12 +41,13 @@ const char* CODE_BLOCK =
   // doc blocks with differing indents cannot be combined.
 /* Doc blocks may use either inline comments (`//` in C++) or block comments
    (like this comment). Doc blocks with differing delimiters cannot be combined. */
-// Doc blocks are interpreted using Markdown
-// (specifically, [CommonMark](https://commonmark.org/)), enabling the use of
-// headings, _emphasis_, **strong emphasis**, `monospaced fonts`, and much more;
-// see a [brief overview of Markdown](https://commonmark.org/help/).
+// Doc blocks are interpreted using Markdown (specifically, 
+// [CommonMark](https://commonmark.org/)), enabling the use of headings,
+// *emphasis*, **strong emphasis**, `monospaced fonts`, and much more; see a
+// [brief overview of Markdown](https://commonmark.org/help/).
 //
-// ## Approach
+// Approach
+// --------
 //
 // Viewing a program as a document defines the heart of the literate programming
 // paradigm. A program/document -- constructed as a series of code blocks and
@@ -70,23 +73,24 @@ const char* CODE_BLOCK =
 // sense?​ Update your overall approach based on what you discover. Get another
 // person to review what you wrote, then implement their ideas and suggestions.
 //
-// ## <a id="organization"></a>Organization
+// <a id="organization"></a>Organization
+// -------------------------------------
 //
 // The program should use headings to appropriately organize the contents. Near
 // the top of the file, include a single level-1 heading, providing the title of
-// the file; per the HTML spec, there should be
-// [only one level-1 heading](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Heading_Elements#avoid_using_multiple_h1_elements_on_one_page).
+// the file; per the HTML spec, there should be [only one level-1
+// heading](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Heading_Elements#avoid_using_multiple_h1_elements_on_one_page).
 // For source files, include the file name at the beginning of the title, in a
 // monospaced font.
 //
-// Following the title, include additional heading levels;
-// [don't skip levels](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Heading_Elements#navigation),
+// Following the title, include additional heading levels; [don't skip
+// levels](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Heading_Elements#navigation),
 // e.g. by placing a level-3 heading immediately following a level-1 heading.
-// Use headings to provide a natural outline of your program. The
-// [end of this document](#org-style) provides the recommended organizational
-// style.
+// Use headings to provide a natural outline of your program. The [end of this
+// document](#org-style) provides the recommended organizational style.
 //
-// ## Location
+// Location
+// --------
 //
 // In general, place documentation before the corresponding code. For example:
 //
@@ -105,7 +109,8 @@ class LedBlinker {
     );
 };
 
-// ## Use of mathematics
+// Use of mathematics
+// ------------------
 //
 // Formulas should be placed near code that implements them, along with good
 // explanations of the equations used. For example:
@@ -120,17 +125,18 @@ double accurate_g(
     // Height above sea level, in meters.
     double height_meters
 ) {
-    // This text comes from the
-    // [SensorsOne Local Gravity Calculator](https://www.sensorsone.com/local-gravity-calculator/).
-    // For more detail, see
-    // [Theoretical Gravity](https://en.wikipedia.org/wiki/Theoretical_gravity).
+    // This text comes from the [SensorsOne Local Gravity
+    // Calculator](https://www.sensorsone.com/local-gravity-calculator/). For
+    // more detail, see [Theoretical
+    // Gravity](https://en.wikipedia.org/wiki/Theoretical_gravity).
     //
-    // The formulas used by this function are based on
-    // the [International Gravity Formula IGF) 1980](https://en.wikipedia.org/wiki/Normal_gravity_formula#International_gravity_formula_1980) from
-    // the parameters of
-    // the [Geodetic Reference System 1980 (GRS80)](https://en.wikipedia.org/wiki/GRS_80),
-    // which determines the gravity from the position of latitude, and
-    // the [Free Air Correction (FAC)](https://en.wikipedia.org/wiki/Gravity_of_Earth#Free_air_correction)
+    // The formulas used by this function are based on the [International
+    // Gravity Formula IGF)
+    // 1980](https://en.wikipedia.org/wiki/Normal_gravity_formula#International_gravity_formula_1980) 
+    // from the parameters of the [Geodetic Reference System 1980
+    // (GRS80)](https://en.wikipedia.org/wiki/GRS_80), which determines the
+    // gravity from the position of latitude, and the [Free Air Correction
+    // (FAC)](https://en.wikipedia.org/wiki/Gravity_of_Earth#Free_air_correction)
     // which corrects for height above and below mean sea level in free air.
     //
     // Compute the International Gravity Formula (IGF):\
@@ -146,67 +152,70 @@ double accurate_g(
     return IGF + FAC;
     // Symbols:
     //
-    // - $g$ = Theoretical local gravity, in $m/s^2$.
-    // - $\\phi$ = Latitude, in decimal degrees.
-    // - $h$ = Height relative to sea level, in $m$.
+    // *   $g$ = Theoretical local gravity, in $m/s^2$.
+    // *   $\\phi$ = Latitude, in decimal degrees.
+    // *   $h$ = Height relative to sea level, in $m$.
 }
 
-// ## Excellence in code
+// Excellence in code
+// ------------------
 //
 // Literate programming should be accompanied by excellence in authoring code.
 // Specifically:
 //
-// - Use meaningful, descriptive names for variables, classes, functions, etc.
-//   Doc blocks should only supply what
-//   [self-documenting code](https://en.wikipedia.org/wiki/Self-documenting_code)
-//   cannot -- design choices, purpose, etc.
-// - Be consistent; preferably, use a
-//   [code formatter](https://en.wikipedia.org/wiki/Prettyprint#Programming_code_formatting)
-//   to ensure this consistency.
-// - Employ [DRY](https://en.wikipedia.org/wiki/Don%27t_repeat_yourself)
-//   principles.
-// - Address warnings, not only errors; preferably, use
-//   a [linter](<https://en.wikipedia.org/wiki/Lint_(software)>).
-// - Write automated tests; employ
-//   [test-driven development](https://en.wikipedia.org/wiki/Test-driven_development).
+// *   Use meaningful, descriptive names for variables, classes, functions, etc.
+//     Doc blocks should only supply what [self-documenting
+//     code](https://en.wikipedia.org/wiki/Self-documenting_code) cannot --
+//     design choices, purpose, etc.
+// *   Be consistent; preferably, use a [code
+//     formatter](https://en.wikipedia.org/wiki/Prettyprint#Programming_code_formatting)
+//     to ensure this consistency.
+// *   Employ [DRY](https://en.wikipedia.org/wiki/Don%27t_repeat_yourself)
+//     principles.
+// *   Address warnings, not only errors; preferably, use a 
+//     [linter](https://en.wikipedia.org/wiki/Lint_\(software\)).
+// *   Write automated tests; employ [test-driven
+//     development](https://en.wikipedia.org/wiki/Test-driven_development).
 //
-// ## Editor configuration
+// Editor configuration
+// --------------------
 //
 // Properly configuring the text editor used with the CodeChat Editor
 // significantly improves the authoring process. Recommended settings:
 //
-// - Enable word wrap:
-//   [vscode](https://learn.microsoft.com/en-us/visualstudio/ide/reference/how-to-manage-word-wrap-in-the-editor?view=vs-2022)
-// - Use spaces, not tabs​, for indentation:
-//   [vscode](https://code.visualstudio.com/docs/editor/codebasics#_indentation)
-// - Enable auto-save:
-//   [vscode](https://code.visualstudio.com/docs/editor/codebasics#_save-auto-save)
-// - Auto-reload enabled​: default in vscode
-// - On save, remove trailing whitespace​:
-//   [vscode](https://stackoverflow.com/a/53663494/16038919)
-// - Use a spell checker:
-//   [vscode](https://marketplace.visualstudio.com/items?itemName=streetsidesoftware.code-spell-checker)
-// - On a big monitor, place your IDE side by side with the CodeChat Editor.
+// *   Enable word wrap:
+//     [vscode](https://learn.microsoft.com/en-us/visualstudio/ide/reference/how-to-manage-word-wrap-in-the-editor?view=vs-2022)
+// *   Use spaces, not tabs​, for indentation:
+//     [vscode](https://code.visualstudio.com/docs/editor/codebasics#_indentation)
+// *   Enable auto-save:
+//     [vscode](https://code.visualstudio.com/docs/editor/codebasics#_save-auto-save)
+// *   Auto-reload enabled​: default in vscode
+// *   On save, remove trailing whitespace​:
+//     [vscode](https://stackoverflow.com/a/53663494/16038919)
+// *   Use a spell checker:
+//     [vscode](https://marketplace.visualstudio.com/items?itemName=streetsidesoftware.code-spell-checker)
+// *   On a big monitor, place your IDE side by side with the CodeChat Editor.
 //
-// ## Common problems
+// Common problems
+// ---------------
 //
-// - Don't drag and drop an image into the Editor – this creates a mess.
-//   Instead, save all images to a file, then use an SVG or PNG image for
-//   text/line art​ or a JPEG image for photos​. The Markdown syntax to insert
-//   an image is `![Alt text](https://url.to/image.svg)`.
-// - Indent your comments to match the indentation of nearby code; don't
-//   purposelessly vary the comment indentation.
-// - Avoid inserting a one-line empty code block (a blank line) between
-//   paragraphs in a doc block; instead, use a single doc block to store
-//   multiple paragraphs.
-// - Use minimal formatting. Markdown is a simple, rather limited syntax;
-//   however, it is very easy to use and read. While the CodeChat Editor will
-//   happily replace simple Markdown constructs with verbose HTML to accomplish
-//   the formatting you specify, avoid the resulting
-//   <span style="color: #e03e2d;">messy syntax</span> produced by this process.
-//   Pasting from an HTML source (such as Word or a web page) directly to the
-//   CodeChat Editor likewise produces a lot of messy syntax; consider pasting
-//   text only, then reformatting as necessary.
+// *   Don't drag and drop an image into the Editor – this creates a mess.
+//     Instead, save all images to a file, then use an SVG or PNG image for
+//     text/line art​ or a JPEG image for photos​. The Markdown syntax to insert
+//     an image is `![Alt text](https://url.to/image.svg)`.
+// *   Indent your comments to match the indentation of nearby code; don't
+//     purposelessly vary the comment indentation.
+// *   Avoid inserting a one-line empty code block (a blank line) between
+//     paragraphs in a doc block; instead, use a single doc block to store
+//     multiple paragraphs.
+// *   Use minimal formatting. Markdown is a simple, rather limited syntax;
+//     however, it is very easy to use and read. While the CodeChat Editor will
+//     happily replace simple Markdown constructs with verbose HTML to
+//     accomplish the formatting you specify, avoid the resulting <span
+//     style="color: #e03e2d;">messy syntax</span> produced by this process.
+//     Pasting from an HTML source (such as Word or a web page) directly to the
+//     CodeChat Editor likewise produces a lot of messy syntax; consider pasting
+//     text only, then reformatting as necessary.
 //
 // ### Commenting out code
 //
@@ -220,16 +229,18 @@ double accurate_g(
 // improved alternative to commenting out code using preprocessor directives for
 // C/C++.
 //
-// ## Example structure
+// Example structure
+// -----------------
 //
 // As discussed in [organization](#organization), the remainder of this document
 // presents the preferred use of headings to organize source code.
 //
-// ## <a id="org-style"></a>Includes
+// <a id="org-style"></a>Includes
+// ------------------------------
 //
 // Include files (in Python, imports; Rust, use statements; JavaScript,
-// require/import, etc.) should be organized by category; for example,
-// [PEP 8](https://peps.python.org/pep-0008/#imports) recommends the following
+// require/import, etc.) should be organized by category; for example, [PEP
+// 8](https://peps.python.org/pep-0008/#imports) recommends the following
 // categories:
 //
 // ### Standard library
@@ -244,20 +255,24 @@ double accurate_g(
 // Note: This is a fictitious file, here for example only.
 #include <style_guide.hpp>
 
-// ## Global variables/constants
+// Global variables/constants
+// --------------------------
 //
 // Use units when describing physical quantities. For example, this gives the
 // acceleration due to gravity in $m/s^2$.
 const double accel_m_s2 = 9.8067;
 
-// ## Macros
+// Macros
+// ------
 #define LED1 (LATB16)
 
-// ## Structures/classes
+// Structures/classes
+// ------------------
 class BlinkLed {
 };
 
-// ## Code
+// Code
+// ----
 int main(int argc, char* argv[]) {
     // Here's an example of commenting code out when using the CodeChat Editor:
     /**

@@ -16,7 +16,8 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# # `Cargo.toml` -- Rust build/package management config for the builder
+# `Cargo.toml` -- Rust build/package management config for the builder
+# ====================================================================
 [package]
 name = "builder"
 version = "0.1.0"

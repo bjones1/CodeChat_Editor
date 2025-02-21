@@ -16,7 +16,8 @@
    the CodeChat Editor. If not, see
    [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 
-   # `CodeChatEditorProject.css` -- Styles for the CodeChat Editor for projects */
+   `CodeChatEditorProject.css` -- Styles for the CodeChat Editor for projects
+   ========================================================================== */
 :root {
     --sidebar-width: 15rem;
 }
@@ -25,7 +26,8 @@ body {
     overflow: hidden;
 }
 
-/* TODO: This is a overly simple, non-responsive layout to create a sidebar containing the table of contents. Fix. */
+/* TODO: This is a overly simple, non-responsive layout to create a sidebar
+   containing the table of contents. Fix. */
 #CodeChat-sidebar {
     width: var(--sidebar-width);
     height: calc(100vh - 2 * var(--body-padding));

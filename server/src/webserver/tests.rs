@@ -13,8 +13,10 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// # `test.rs` -- Unit tests for the webserver
-// ## Imports
+/// `test.rs` -- Unit tests for the webserver
+/// =========================================
+// Imports
+// -------
 use std::{
     path::{MAIN_SEPARATOR_STR, PathBuf},
     thread::{self, sleep},
@@ -27,16 +29,19 @@ use assertables::{assert_ends_with, assert_starts_with};
 use super::{filewatcher::FILEWATCHER_PATH_PREFIX, path_to_url, url_to_path};
 use crate::prep_test_dir;
 
-// ## Constants
+// Constants
+// ---------
 /// The default port on which the server listens for incoming connections.
 pub const IP_PORT: u16 = 8080;
 
-// ## Support functions
+// Support functions
+// -----------------
 fn get_server() -> Command {
     Command::cargo_bin("codechat-editor-server").unwrap()
 }
 
-// ## Tests
+// Tests
+// -----
 #[test]
 fn test_url_to_path() {
     let (temp_dir, test_dir) = prep_test_dir!();

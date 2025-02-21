@@ -1,6 +1,8 @@
-// # `cli.rs` - Test the CLI interface
+// `cli.rs` - Test the CLI interface
+// =================================
 //
-// ## Imports
+// Imports
+// -------
 //
 // ### Standard library
 //
@@ -15,12 +17,14 @@ use predicates::{prelude::predicate, str::contains};
 use code_chat_editor::webserver::IP_ADDRESS;
 use tokio::task::spawn_blocking;
 
-// ## Support functions
+// Support functions
+// -----------------
 fn get_server() -> Command {
     Command::cargo_bin("codechat-editor-server").unwrap()
 }
 
-// ## Tests
+// Tests
+// -----
 #[test]
 fn test_start_not_found() {
     let mut cmd = get_server();

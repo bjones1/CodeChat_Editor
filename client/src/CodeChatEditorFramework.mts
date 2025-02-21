@@ -14,7 +14,8 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `CodeChatEditorFramework.mts` -- the CodeChat Editor Client Framework
+// `CodeChatEditorFramework.mts` -- the CodeChat Editor Client Framework
+// =====================================================================
 //
 // This maintains a websocket connection between the CodeChat Editor Server. The
 // accompanying HTML is a full-screen iframe, allowing the Framework to change
@@ -22,14 +23,16 @@
 // to report navigation events to as a websocket message when the iframe's
 // location changes.
 //
-// ## Imports
+// Imports
+// -------
 //
 // ### JavaScript/TypeScript
 //
 // #### Third-party
 import ReconnectingWebSocket from "./ReconnectingWebSocket.cjs";
 
-// ## Websocket
+// Websocket
+// ---------
 //
 // This code communicates with the CodeChat Editor Server via its websocket
 // interface.
@@ -311,9 +314,9 @@ let testMode = false;
 // Load the dynamic content into the static page.
 export const page_init = (
     // The pathname for the websocket to use. The remainder of the URL is
-    // derived from the hosting page's URL. See the
-    // [Location docs](https://developer.mozilla.org/en-US/docs/Web/API/Location)
-    // for a nice, interactive definition of the components of a URL.
+    // derived from the hosting page's URL. See the [Location
+    // docs](https://developer.mozilla.org/en-US/docs/Web/API/Location) for a
+    // nice, interactive definition of the components of a URL.
     ws_pathname: string,
     // Test mode flag
     testMode_: boolean,

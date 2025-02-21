@@ -14,12 +14,14 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `extension.ts` - The CodeChat Editor Visual Studio Code extension
+// `extension.ts` - The CodeChat Editor Visual Studio Code extension
+// =================================================================
 //
 // This extension creates a webview, then uses a websocket connection to the
 // CodeChat Editor Server and Client to render editor text in that webview.
 //
-// ## Imports
+// Imports
+// -------
 //
 // ### Node.js packages
 import assert from "assert";
@@ -35,7 +37,8 @@ import { WebSocket } from "ws";
 //
 // None.
 //
-// ## Globals
+// Globals
+// -------
 enum CodeChatEditorClientLocation {
     html,
     browser,
@@ -135,7 +138,8 @@ interface JointMessage {
     message: JointMessageContents;
 }
 
-// ## Activation/deactivation
+// Activation/deactivation
+// -----------------------
 //
 // This is invoked when the extension is activated. It either creates a new
 // CodeChat Editor Server instance or reveals the currently running one.
@@ -154,8 +158,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                     subscribed = true;
 
                     // Render when the text is changed by listening for the
-                    // correct
-                    // `event <https://code.visualstudio.com/docs/extensionAPI/vscode-api#Event>`\_.
+                    // correct `event
+                    // <https://code.visualstudio.com/docs/extensionAPI/vscode-api#Event>`\_.
                     context.subscriptions.push(
                         vscode.workspace.onDidChangeTextDocument((event) => {
                             // VSCode sends empty change events -- ignore these.
@@ -325,8 +329,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                         show_error(
                             `Error communicating with the CodeChat Editor Server: ${err.message}. Re-run the CodeChat Editor extension to restart it.`
                         );
-                        // The close event will be
-                        // [emitted next](https://nodejs.org/api/net.html#net_event_error_1);
+                        // The close event will be [emitted
+                        // next](https://nodejs.org/api/net.html#net_event_error_1);
                         // that will handle cleanup.
                     });
 
@@ -335,8 +339,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                             "CodeChat Editor extension: closing websocket connection."
                         );
                         // If there was an error, the event handler above
-                        // already provided the message. Note: the
-                        // [parameter hadError](https://nodejs.org/api/net.html#net_event_close_1)
+                        // already provided the message. Note: the [parameter
+                        // hadError](https://nodejs.org/api/net.html#net_event_close_1)
                         // only applies to transmission errors, not to any other
                         // errors which trigger the error callback. Therefore,
                         // I'm using the `was_error` flag instead to catch
@@ -458,7 +462,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     const { timer_id, callback } =
                                         pending_messages[id];
                                     clearTimeout(timer_id);
-                                    // eslint-disable-next-line n/no-callback-literal
+                                    // eslint-disable-next-line
+                                    // n/no-callback-literal
                                     callback(true);
                                     delete pending_messages[id];
                                 }
@@ -531,7 +536,8 @@ export const deactivate = async () => {
     console.log("CodeChat extension: deactivated.");
 };
 
-// ## Supporting functions
+// Supporting functions
+// --------------------
 //
 // Send a message expecting a result to the server.
 const send_message = (
@@ -695,8 +701,8 @@ const get_document = (file_path: string) => {
         // are case-insensitive; I don't know how to easily determine the
         // case-sensitivity of the current filesystem without extra probing code
         // (write a file in mixed case, try to open it in another mixed case.)
-        // Per
-        // [How to Work with Different Filesystems](https://nodejs.org/en/learn/manipulating-files/working-with-different-filesystems#filesystem-behavior),
+        // Per [How to Work with Different
+        // Filesystems](https://nodejs.org/en/learn/manipulating-files/working-with-different-filesystems#filesystem-behavior),
         // "Be wary of inferring filesystem behavior from `process.platform`.
         // For example, do not assume that because your program is running on
         // Darwin that you are therefore working on a case-insensitive

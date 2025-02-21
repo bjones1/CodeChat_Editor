@@ -13,14 +13,17 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// # `webserver.rs` -- Serve CodeChat Editor Client webpages
-// ## Submodules
+/// `webserver.rs` -- Serve CodeChat Editor Client webpages
+/// =======================================================
+// Submodules
+// ----------
 mod filewatcher;
 #[cfg(test)]
 pub mod tests;
 mod vscode;
 
-// ## Imports
+// Imports
+// -------
 //
 // ### Standard library
 use std::{
@@ -81,9 +84,11 @@ use filewatcher::{
     filewatcher_websocket,
 };
 
-// ## Data structures
+// Data structures
+// ---------------
 //
-// ### Data structures supporting a websocket connection between the IDE, this server, and the CodeChat Editor Client
+// ### Data structures supporting a websocket connection between the IDE, this
+// server, and the CodeChat Editor Client
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
 #[derive(Debug)]
 struct WebsocketQueues {
@@ -252,7 +257,8 @@ pub struct AppState {
     vscode_connection_id: Arc<Mutex<HashSet<String>>>,
 }
 
-// ## Macros
+// Macros
+// ------
 /// Create a macro to report an error when enqueueing an item.
 #[macro_export]
 macro_rules! oneshot_send {
@@ -281,7 +287,8 @@ macro_rules! queue_send {
     };
 }
 
-/// ## Globals
+/// Globals
+/// -------
 ///
 /// The IP address on which the server listens for incoming connections.
 pub const IP_ADDRESS: &str = "127.0.0.1";
@@ -361,7 +368,8 @@ lazy_static! {
 
 }
 
-// ## Webserver functionality
+// Webserver functionality
+// -----------------------
 #[get("/ping")]
 async fn ping() -> HttpResponse {
     HttpResponse::Ok().body("pong")
@@ -812,7 +820,8 @@ async fn serve_file(
     )
 }
 
-/// ## Websockets
+/// Websockets
+/// ----------
 ///
 /// Each CodeChat Editor IDE instance pairs with a CodeChat Editor Client
 /// through the CodeChat Editor Server. Together, these form a joint editor,
@@ -870,8 +879,9 @@ async fn client_websocket(
         //         sent), the Client closes the websocket. The rest of this
         //         sequence is covered in the next case.
         // 2.  Either websocket is closed. In this case, the other websocket
-        //     should be immediately closed; there's no longer the opportunity
-        //     to perform a more controlled shutdown (see the first case).
+        //     should be immediately closed; there's no longer the
+        //     opportunity to perform a more controlled shutdown (see the
+        //     first case).
         //     1.  The websocket which closed enqueues a `Closed` message for
         //         the other websocket.
         //     2.  When the other websocket receives this message, it closes.
@@ -1074,7 +1084,8 @@ async fn client_websocket(
     Ok(response)
 }
 
-// ## Webserver core
+// Webserver core
+// --------------
 #[actix_web::main]
 pub async fn main(port: u16) -> std::io::Result<()> {
     run_server(port).await
@@ -1115,7 +1126,7 @@ pub fn configure_logger(level: LevelFilter) {
 }
 
 // Quoting the [docs](https://actix.rs/docs/application#shared-mutable-state),
-// "To achieve _globally_ shared state, it must be created **outside** of the
+// "To achieve *globally* shared state, it must be created **outside** of the
 // closure passed to `HttpServer::new` and moved/cloned in." Putting this code
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
@@ -1164,7 +1175,8 @@ where
         .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
 }
 
-// ## Utilities
+// Utilities
+// ---------
 //
 // Send a response to the client after processing a message from the client.
 async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: MessageResult) {

@@ -1,25 +1,30 @@
-# The CodeChat Editor
+The CodeChat Editor
+===================
 
-## User documentation
+User documentation
+------------------
 
 1.  [The CodeChat Editor manual](README.md)
-2.  [The CodeChat Editor extension for Visual Studio Code manual](extensions/VSCode/README.md)
+2.  [The CodeChat Editor extension for Visual Studio Code
+    manual](extensions/VSCode/README.md)
 3.  [Literate programming using the CodeChat Editor](docs/style_guide.cpp)
 
-## Design
+Design
+------
 
 1.  [CodeChat Editor Design](docs/design.md)
 2.  [Implementation](docs/implementation.md)
 
-## Implementation
+Implementation
+--------------
 
 1.  Server
     1.  [main.rs](server/src/main.rs)
     2.  [lib.rs](server/src/lib.rs)
     3.  [lexer.rs](server/src/lexer.rs)
         1.  [Lexer walkthrough](server/src/lexer/lexer-walkthrough.md)
-        2.  [supported_languages.rs](server/src/lexer/supported_languages.rs)
-        3.  [pest_parser.rs](server/src/lexer/pest_parser.rs)
+        2.  [supported\_languages.rs](server/src/lexer/supported_languages.rs)
+        3.  [pest\_parser.rs](server/src/lexer/pest_parser.rs)
             1.  [Parser design](server/src/lexer/pest/parser_design.md)
             2.  [shared.pest](server/src/lexer/pest/shared.pest)
             3.  [c.pest](server/src/lexer/pest/c.pest)
@@ -30,7 +35,7 @@
         3.  [log4rs.yml](server/log4rs.yml)
     5.  [processing.rs](server/src/processing.rs)
     6.  Tests
-        1.  [test_utils.rs](server/src/test_utils.rs)
+        1.  [test\_utils.rs](server/src/test_utils.rs)
         2.  Lexer [tests.rs](server/src/lexer/tests.rs)
         3.  Webserver [tests.rs](server/src/webserver/tests.rs)
         4.  [cli.rs](server/tests/cli.rs)
@@ -46,10 +51,10 @@
             5.  [Mermaid](client/src/wc-mermaid/developer.md)
             6.  [typings.d.ts](client/src/typings.d.ts)
     2.  Styles
-        1.  [CodeChatEditor.css](client/static/css/CodeChatEditor.css)
-        2.  [CodeChatEditorProject.css](client/static/css/CodeChatEditorProject.css)
+        1.  [CodeChatEditor.css](client/src/css/CodeChatEditor.css)
+        2.  [CodeChatEditorProject.css](client/src/css/CodeChatEditorProject.css)
         3.  Themes
-            1.  [light.css](client/static/css/themes/light.css)
+            1.  [light.css](client/src/css/themes/light.css)
     3.  Tests
         1.  [CodeChatEditor-test.mts](client/src/CodeChatEditor-test.mts)
             1.  [Run tests](server/src/lib.rs?test)
@@ -84,17 +89,20 @@
         2.  [dist-workspace.toml](server/dist-workspace.toml) - cargo-dist
             configuration
 
-## Misc
+Misc
+----
 
-- <a href="new-project-template/README.md" target="_blank" rel="noopener">New
-  project template</a>
-- [Table of contents](toc.md)
-- [Changelog](docs/CHANGELOG.md)
-- [Index](docs/index.md)
+*   <a href="new-project-template/README.md" target="_blank" rel="noopener">New
+    project template</a>
+*   [Table of contents](toc.md)
+*   [Changelog](docs/CHANGELOG.md)
+*   [Index](docs/index.md)
 
-## Notes
+Notes
+-----
 
-- <a id="auto-title"></a>TODO: all links here should be auto-titled and
-  autogenerate the page-local TOC.
+*   <a id="auto-title"></a>TODO: all links here should be auto-titled and
+    autogenerate the page-local TOC.
 
-## [License](LICENSE.md)
+[License](LICENSE.md)
+---------------------

@@ -14,7 +14,9 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// # `EditorComponents.mts` -- Custom HTML tags which provide authoring support for the CodeChat Editor
+// `EditorComponents.mts` -- Custom HTML tags which provide authoring support
+// for the CodeChat Editor
+// ==========================================================================
 //
 // Create a combined editor/renderer component. It's not currently used, since
 // TinyMCE doesn't allow the editor to be focused.

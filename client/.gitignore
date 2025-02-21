@@ -16,7 +16,8 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# # `.gitignore` -- files for Git to ignore
+# `.gitignore` -- files for Git to ignore
+# =======================================
 #
 # NPM
 node_modules/

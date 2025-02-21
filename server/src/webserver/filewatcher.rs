@@ -13,8 +13,10 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// # `filewatcher.rs` -- Implement the File Watcher "IDE"
-// ## Imports
+/// `filewatcher.rs` -- Implement the File Watcher "IDE"
+/// ====================================================
+// Imports
+// -------
 //
 // ### Standard library
 use std::{
@@ -68,7 +70,8 @@ use crate::{
     },
 };
 
-// ## Globals
+// Globals
+// -------
 lazy_static! {
     /// Matches a bare drive letter. Only needed on Windows.
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
@@ -76,7 +79,8 @@ lazy_static! {
 
 pub const FILEWATCHER_PATH_PREFIX: &[&str] = &["fw", "fsc"];
 
-/// ## File browser endpoints
+/// File browser endpoints
+/// ----------------------
 ///
 /// The file browser provides a very crude interface, allowing a user to select
 /// a file from the local filesystem for editing. Long term, this should be
@@ -398,8 +402,8 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                     message: EditorMessageContents::CurrentFile(url_pathbuf)
                 }), 'task);
                 // Note: it's OK to postpone the increment to here; if the
-                // `queue_send` exits before this runs, the message didn't get sent,
-                // so the ID wasn't used.
+                // `queue_send` exits before this runs, the message didn't get
+                // sent, so the ID wasn't used.
                 id += 1.0;
             };
 
@@ -432,7 +436,8 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                             Ok(debounced_event_vec) => {
                                 for debounced_event in debounced_event_vec {
                                     let is_modify = match debounced_event.event.kind {
-                                        // On OS X, we get a `Create` event when a file is modified.
+                                        // On OS X, we get a `Create` event when a
+                                        // file is modified.
                                         EventKind::Create(_create_kind) => true,
                                         // On Windows, the `_modify_kind` is `Any`;
                                         // therefore; ignore it rather than trying
@@ -525,7 +530,8 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                     }
 
                     Some(http_request) = from_http_rx.recv() => {
-                        // If there's no current file, replace it with an empty file, which will still produce an error.
+                        // If there's no current file, replace it with an empty
+                        // file, which will still produce an error.
                         let empty_path = PathBuf::new();
                         let cfp = current_filepath.as_ref().unwrap_or(&empty_path);
                         let (simple_http_response, option_update) = make_simple_http_response(&http_request, cfp).await;
@@ -541,7 +547,9 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         match m.message {
                             EditorMessageContents::Update(update_message_contents) => {
                                 let result = 'process: {
-                                    // Check that the file path matches the current file. If `canonicalize` fails, then the files don't match.
+                                    // Check that the file path matches the
+                                    // current file. If `canonicalize` fails,
+                                    // then the files don't match.
                                     if Some(Path::new(&update_message_contents.file_path).to_path_buf()) != current_filepath {
                                         break 'process Err(format!(
                                             "Update for file '{}' doesn't match current file '{current_filepath:?}'.",
@@ -569,7 +577,9 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                     };
 
                                     let cfp = current_filepath.as_ref().unwrap();
-                                    // Unwrap the file, write to it, then rewatch it, in order to avoid a watch notification from this write.
+                                    // Unwrap the file, write to it, then
+                                    // rewatch it, in order to avoid a watch
+                                    // notification from this write.
                                     if let Err(err) = debounced_watcher.unwatch(cfp) {
                                         let msg = format!(
                                             "Unable to unwatch file '{}': {err}.",
@@ -699,7 +709,8 @@ pub async fn filewatcher_websocket(
     .await
 }
 
-// ## Tests
+// Tests
+// -----
 #[cfg(test)]
 mod tests {
     use std::{

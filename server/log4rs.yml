@@ -16,7 +16,8 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# # `log4rs.yml` - configure logging
+# `log4rs.yml` - configure logging
+# ================================
 #
 # This file configures log4rs for this application.
 appenders:

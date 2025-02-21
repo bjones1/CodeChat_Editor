@@ -16,7 +16,8 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# # .prettierignore -- files for Prettier to ignore
+# `.prettierignore` -- files for Prettier to ignore
+# =================================================
 #
 # NPM
 client/node_modules/

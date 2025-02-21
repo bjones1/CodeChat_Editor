@@ -11,7 +11,8 @@
 // details.
 //
 // You should have received a copy of the GNU General Public License along with
-// the CodeChat Editor. If not, see[http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+// the CodeChat Editor. If not,
+// see[http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `CodeChatEditor.mts` -- the CodeChat Editor Client
 // ==================================================
@@ -55,8 +56,8 @@ import {
 } from "./CodeMirror-integration.mjs";
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
-// This must be imported*after* the previous setup import, so it's placed here, instead of in the
-// third-party category above.
+// This must be imported*after* the previous setup import, so it's placed here,
+// instead of in the third-party category above.
 import "graphviz-webcomponent";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
 
@@ -66,7 +67,9 @@ import "./css/CodeChatEditor.css";
 // Data structures
 // ---------------
 //
-// <a id="EditorMode"></a>Define all possible editor modes; these are passed as a[query string](https://en.wikipedia.org/wiki/Query_string) (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
+// <a id="EditorMode"></a>Define all possible editor modes; these are passed as
+// a[query string](https://en.wikipedia.org/wiki/Query_string)
+// (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
 enum EditorMode {
     // Display the source code using CodeChat, but disallow editing.
     view,
@@ -79,7 +82,8 @@ enum EditorMode {
     raw,
 }
 
-// Since this is experimental, TypeScript doesn't define it. See the[docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
+// Since this is experimental, TypeScript doesn't define it. See
+// the[docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
 interface NavigateEvent extends Event {
     canIntercept: boolean;
     destination: any;
@@ -120,7 +124,8 @@ let autosaveEnabled = true;
 
 // Store the lexer info for the currently-loaded language.
 //
-// <a id="current_metadata"></a>This mirrors the data provided by the server -- see[SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
+// <a id="current_metadata"></a>This mirrors the data provided by the server --
+// see[SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
 let current_metadata: {
     mode: string;
 };
@@ -130,7 +135,8 @@ let is_dirty = false;
 
 // ### Markdown to HTML conversion
 //
-// Instantiate[turndown](https://github.com/mixmark-io/turndown) for HTML to Markdown conversion
+// Instantiate[turndown](https://github.com/mixmark-io/turndown) for HTML to
+// Markdown conversion
 const turndownService = new TurndownService({
     br: "\\",
     codeBlockStyle: "fenced",
@@ -138,7 +144,9 @@ const turndownService = new TurndownService({
     wordWrap: [80, 40],
 });
 
-// Add the plugins from[turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm) to enable conversions for tables, task lists, and strikethroughs.
+// Add the plugins
+// from[turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm)
+// to enable conversions for tables, task lists, and strikethroughs.
 turndownService.use(gfm);
 
 // Page initialization
@@ -172,7 +180,8 @@ export const set_is_dirty = (value: boolean = true) => {
     is_dirty = value;
 };
 
-// This is copied from[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
+// This is copied
+// from[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
 const on_dom_content_loaded = (on_load_func: () => void) => {
     if (document.readyState === "loading") {
         // Loading hasn't finished yet.
@@ -204,14 +213,20 @@ const _open_lp = async (
     // associated metadata. See[`AllSource`](#AllSource).
     all_source: CodeChatForWeb,
 ) => {
-    // Use[URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams) to parse out the search parameters of this window's URL.
+    // Use[URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
+    // to parse out the search parameters of this window's URL.
     const urlParams = new URLSearchParams(window.location.search);
-    // Get the mode from the page's query parameters. Default to edit using the[nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator). This works, but TypeScript marks it as an error. Ignore this error by
-    // including the[@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
+    // Get the mode from the page's query parameters. Default to edit using
+    // the[nullish coalescing
+    // operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
+    // This works, but TypeScript marks it as an error. Ignore this error by
+    // including the[@ts-ignore
+    // directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
     /// @ts-ignore
     const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
 
-    // Get the<code><a href="#current_metadata">current_metadata</a></code> from the provided`all_source` struct and store it as a global variable.
+    // Get the<code><a href="#current_metadata">current_metadata</a></code> from
+    // the provided`all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
     const codechat_body = document.getElementById(
@@ -222,22 +237,31 @@ const _open_lp = async (
     clearAutosaveTimer();
     // Before calling any MathJax, make sure it's fully loaded.
     await window.MathJax.startup.promise;
-    // Per the[docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content), "If you modify the page to remove content that contains typeset
+    // Per
+    // the[docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
+    // "If you modify the page to remove content that contains typeset
     // mathematics, you will need to tell MathJax about that so that it knows
     // the typeset math that you are removing is no longer on the page."
     window.MathJax.typesetClear(codechat_body);
     if (is_doc_only()) {
         if (tinymce.activeEditor === null) {
-            // Special case: a CodeChat Editor document's HTML is stored in`source.doc`. We don't need the CodeMirror editor at all; instead, treat it
-            // like a single doc block contents div.
+            // Special case: a CodeChat Editor document's HTML is stored
+            // in`source.doc`. We don't need the CodeMirror editor at all;
+            // instead, treat it like a single doc block contents div.
             codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
             await init({
                 selector: ".CodeChat-doc-contents",
                 // In the doc-only mode, add autosave functionality. While there
-                // is an[autosave plugin](https://www.tiny.cloud/docs/tinymce/6/autosave/), this autosave functionality is completely different from
-                // the autosave provided here. Per[handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events), this is how to create a TinyMCE event handler.
+                // is an[autosave
+                // plugin](https://www.tiny.cloud/docs/tinymce/6/autosave/),
+                // this autosave functionality is completely different from the
+                // autosave provided here. Per[handling editor
+                // events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
+                // this is how to create a TinyMCE event handler.
                 setup: (editor: Editor) => {
-                    // The[editor core events list](https://www.tiny.cloud/docs/tinymce/6/events/#editor-core-events) includes the`Dirty` event.
+                    // The[editor core events
+                    // list](https://www.tiny.cloud/docs/tinymce/6/events/#editor-core-events)
+                    // includes the`Dirty` event.
                     editor.on("Dirty", (_event: Event) => {
                         is_dirty = true;
                         startAutosaveTimer();
@@ -246,7 +270,9 @@ const _open_lp = async (
             });
             tinymce.activeEditor!.focus();
         } else {
-            // Save and restore cursor/scroll location after an update per the[docs](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.dom.bookmarkmanager). However, this doesn't seem to work for the cursor location.
+            // Save and restore cursor/scroll location after an update per
+            // the[docs](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.dom.bookmarkmanager).
+            // However, this doesn't seem to work for the cursor location.
             // Perhaps when TinyMCE normalizes the document, this gets lost?
             const bm = tinymce.activeEditor!.selection.getBookmark();
             tinymce.activeEditor!.setContent(source.doc);
@@ -258,7 +284,10 @@ const _open_lp = async (
     }
     autosaveEnabled = true;
 
-    // <a id="CodeChatEditor_test"></a>If tests should be run, then the[following global variable](CodeChatEditor-test.mts#CodeChatEditor_test) is function that runs them.
+    // <a id="CodeChatEditor_test"></a>If tests should be run, then
+    // the[following global
+    // variable](CodeChatEditor-test.mts#CodeChatEditor_test) is function that
+    // runs them.
     if (typeof window.CodeChatEditor_test === "function") {
         window.CodeChatEditor_test();
     }
@@ -303,7 +332,8 @@ const save_lp = async () => {
     return update;
 };
 
-// Per[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples), here's the least bad way to choose between the control key and the command
+// Per[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
+// here's the least bad way to choose between the control key and the command
 // key.
 const os_is_osx =
     navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
@@ -315,8 +345,8 @@ const on_save = async (only_if_dirty: boolean = false) => {
     if (only_if_dirty && !is_dirty) {
         return;
     }
-    // <a id="save"></a>Save the provided contents back to the filesystem, by sending an update
-    // message over the websocket.
+    // <a id="save"></a>Save the provided contents back to the filesystem, by
+    // sending an update message over the websocket.
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
     console.log("Sent Update - saving document.");
     await new Promise(async (resolve) => {
@@ -374,7 +404,10 @@ const clearAutosaveTimer = () => {
 // current document before navigating.
 const on_navigate = (navigateEvent: NavigateEvent) => {
     if (
-        // Some of this was copied from[Modern client-side routing: the Navigation API](https://developer.chrome.com/docs/web-platform/navigation-api/#deciding_how_to_handle_a_navigation). If we're navigating within the document, ignore this.
+        // Some of this was copied from[Modern client-side routing: the
+        // Navigation
+        // API](https://developer.chrome.com/docs/web-platform/navigation-api/#deciding_how_to_handle_a_navigation).
+        // If we're navigating within the document, ignore this.
         navigateEvent.hashChange ||
         // If this is a download, let the browser perform the download.
         navigateEvent.downloadRequest ||
@@ -391,7 +424,8 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
         return;
     }
 
-    // If the IDE initiated this navigation via a`CurrentFile` message, then allow it.
+    // If the IDE initiated this navigation via a`CurrentFile` message, then
+    // allow it.
     if (window.CodeChatEditor.allow_navigation) {
         // We don't need to reset this flag, since this window will be reloaded.
         return;
@@ -456,7 +490,8 @@ const save_then_navigate = (codeChatEditorUrl: URL) => {
 // Testing
 // -------
 //
-// A great and simple idea taken from[SO](https://stackoverflow.com/a/54116079): wrap all testing exports in a single variable. This avoids namespace
+// A great and simple idea taken from[SO](https://stackoverflow.com/a/54116079):
+// wrap all testing exports in a single variable. This avoids namespace
 // pollution, since only one name is exported, and it's clearly marked for
 // testing only. Test code still gets access to everything it needs.
 export const exportedForTesting = {

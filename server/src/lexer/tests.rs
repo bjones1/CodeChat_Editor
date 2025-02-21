@@ -14,14 +14,17 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// # `test.rs` -- Unit tests for the lexer
-// ## Imports
+/// `test.rs` -- Unit tests for the lexer
+/// =====================================
+// Imports
+// -------
 use super::supported_languages::get_language_lexer_vec;
 use super::{CodeDocBlock, DocBlock, compile_lexers, source_lexer};
 use crate::test_utils::stringit;
 use indoc::indoc;
 
-// ## Utilities
+// Utilities
+// ---------
 //
 // Provide a compact way to create a `CodeDocBlock`.
 fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {

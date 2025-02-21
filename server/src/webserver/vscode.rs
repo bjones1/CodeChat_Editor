@@ -14,8 +14,11 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// # `vscode.rs` -- Implement server-side functionality for the Visual Studio Code IDE
-// ## Imports
+/// `vscode.rs` -- Implement server-side functionality for the Visual Studio
+/// Code IDE
+/// ========================================================================
+// Imports
+// -------
 //
 // ### Standard library
 use std::{cmp::min, collections::HashMap, path::PathBuf};
@@ -51,12 +54,14 @@ use crate::{
     },
 };
 
-// ## Globals
+// Globals
+// -------
 const VSCODE_PATH_PREFIX: &[&str] = &["vsc", "fs"];
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH: usize = 200;
 
-// ## Code
+// Code
+// ----
 //
 // This is the processing task for the Visual Studio Code IDE. It handles all
 // the core logic to moving data between the IDE and the client.
@@ -152,8 +157,8 @@ pub async fn vscode_ide_websocket(
 
     // Start the processing task.
     actix_rt::spawn(async move {
-        // Use a
-        // [labeled block expression](https://doc.rust-lang.org/reference/expressions/loop-expr.html#labelled-block-expressions)
+        // Use a [labeled block
+        // expression](https://doc.rust-lang.org/reference/expressions/loop-expr.html#labelled-block-expressions)
         // to provide a way to exit the current task.
         'task: {
             let mut current_file = PathBuf::new();
@@ -669,7 +674,8 @@ async fn serve_vscode_fs(
     filesystem_endpoint(request_path, &req, &app_state).await
 }
 
-// ## Tests
+// Tests
+// -----
 #[cfg(test)]
 mod test {
     use std::{

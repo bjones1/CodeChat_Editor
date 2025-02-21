@@ -16,7 +16,9 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# `dist-workspace.toml' - Configure [cargo-dist](https://opensource.axo.dev/cargo-dist/)
+# `dist-workspace.toml` - Configure
+# [cargo-dist](https://opensource.axo.dev/cargo-dist/)
+# ====================================================
 [workspace]
 members = ["cargo:."]
 
@@ -24,7 +26,8 @@ members = ["cargo:."]
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
 cargo-dist-version = "0.28.0"
-# Extra static files to include in each App (path relative to this Cargo.toml's dir)
+# Extra static files to include in each App (path relative to this Cargo.toml's
+# dir)
 include = ["log4rs.yml", "hashLocations.json", "../client/static"]
 # The installers to generate for each app
 installers = []
