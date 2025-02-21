@@ -37,3 +37,4 @@ targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-
 ci = "github"
 # Skip checking whether the specified configuration files are up to date
 allow-dirty = ["ci"]
+pr-run-mode = "upload"
