@@ -21,6 +21,11 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.11, 2025-Feb-27:
+    *   Fixed data corruption while editing math: typeset math, instead of LaTeX
+        source, was saved to the source file. Now, math is untypeset during
+        edits, then retypeset afterwards.
+    *   Correctly handle webview shutdown in VSCode extension.
 *   v0.1.10, 2025-Feb-20:
     *   Update to the 2024 editing of Rust.
     *   Update dependencies.
