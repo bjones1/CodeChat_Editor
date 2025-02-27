@@ -53,6 +53,7 @@ import {
     CodeMirror_load,
     CodeMirror_save,
     mathJaxTypeset,
+    mathJaxUnTypeset,
 } from "./CodeMirror-integration.mjs";
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
@@ -301,11 +302,7 @@ const save_lp = async () => {
         const codechat_body = document.getElementById(
             "CodeChat-body",
         ) as HTMLDivElement;
-        window.MathJax.startup.document
-            .getMathItemsWithin(codechat_body)
-            .forEach((item: any) => {
-                item.removeFromDocument(true);
-            });
+        mathJaxUnTypeset(codechat_body);
         // To save a document only, simply get the HTML from the only Tiny MCE
         // div.
         tinymce.activeEditor!.save();
@@ -316,7 +313,7 @@ const save_lp = async () => {
         mathJaxTypeset(codechat_body);
     } else {
         source = CodeMirror_save();
-        await codechat_html_to_markdown(source);
+        codechat_html_to_markdown(source);
     }
 
     let update: UpdateMessageContents = {
@@ -332,7 +329,8 @@ const save_lp = async () => {
     return update;
 };
 
-// Per[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
+// Per
+// [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
 // here's the least bad way to choose between the control key and the command
 // key.
 const os_is_osx =
@@ -357,7 +355,7 @@ const on_save = async (only_if_dirty: boolean = false) => {
     is_dirty = false;
 };
 
-const codechat_html_to_markdown = async (source: any) => {
+const codechat_html_to_markdown = (source: any) => {
     const entries = source.doc_blocks.entries();
     for (const [index, doc_block] of entries) {
         const wordWrapMargin = Math.max(

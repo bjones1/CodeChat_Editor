@@ -351,13 +351,13 @@ class DocBlockWidget extends WidgetType {
         // Handle both cases.
         const [contents_div, is_tinymce] = get_contents(dom);
         if (is_tinymce) {
-            tinymce_singleton!.setContent(this.contents);
             ignore_next_dirty = true;
+            tinymce_singleton!.setContent(this.contents);
             tinymce_singleton!.save();
         } else {
             contents_div.innerHTML = this.contents;
+            mathJaxTypeset(contents_div);
         }
-        mathJaxTypeset(contents_div);
 
         // Indicate the update was successful.
         return true;
@@ -380,12 +380,8 @@ class DocBlockWidget extends WidgetType {
     destroy(dom: HTMLElement): void {
         // If this is the TinyMCE editor, save it.
         const [contents_div, is_tinymce] = get_contents(dom);
-        // Revert the typeset math to its original form.
-        window.MathJax.startup.document
-            .getMathItemsWithin(contents_div)
-            .forEach((item: any) => {
-                item.removeFromDocument(true);
-            });
+        // Forget about any typeset math in this node.
+        window.MathJax.typesetClear([contents_div]);
         if (is_tinymce) {
             const codechat_body = document.getElementById("CodeChat-body")!;
             const tinymce_div = document.getElementById("TinyMCE-inst")!;
@@ -396,11 +392,27 @@ class DocBlockWidget extends WidgetType {
 
 // Typeset the provided node; taken from the [MathJax
 // docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
-export const mathJaxTypeset = (node: HTMLElement) => {
-    window.MathJax.typesetPromise([node]).catch((err: any) =>
-        console.log("Typeset failed: " + err.message),
-    );
+export const mathJaxTypeset = async (
+    // The node to typeset.
+    node: HTMLElement,
+    // An optional function to run when the typeset finishes.
+    afterTypesetFunc: () => void = () => {}) => {
+    try {
+        await window.MathJax.typesetPromise([node]);
+        afterTypesetFunc();
+    } catch(err: any) {
+        console.log("Typeset failed: " + err.message);
+    }
 };
+
+// Transform a typeset node back to the original (untypeset) text.
+export const mathJaxUnTypeset = (node: HTMLElement) => {
+    window.MathJax.startup.document
+    .getMathItemsWithin(node)
+    .forEach((item: any) => {
+        item.removeFromDocument(true);
+    });
+}
 
 // Given a doc block div element, return the contents div and if TinyMCE is
 // attached to that div.
@@ -412,10 +424,12 @@ const get_contents = (element: HTMLElement): [HTMLDivElement, boolean] => {
 
 // Determine if the element which generated the provided event was in a doc
 // block or not. If not, return false; if so, return the doc block div.
-const event_is_in_doc_block = (event: Event): boolean | HTMLDivElement => {
-    const target = event.target as HTMLElement;
+const element_is_in_doc_block = (target: EventTarget | null): boolean | HTMLDivElement => {
+    if (target === null) {
+        return false;
+    }
     // Look for either a CodeMirror ancestor or a CodeChat doc block ancestor.
-    const ancestor = target.closest(".cm-line, .CodeChat-doc");
+    const ancestor = (target as HTMLElement).closest(".cm-line, .CodeChat-doc");
     // If it's a doc block, then tell Code Mirror not to handle this event.
     if (ancestor?.classList.contains("CodeChat-doc")) {
         return ancestor as HTMLDivElement;
@@ -442,12 +456,6 @@ const on_dirty = (
     const indent = indent_div.innerHTML;
     const delimiter = indent_div.getAttribute("data-delimiter")!;
     const [contents_div, is_tinymce] = get_contents(target);
-    // Revert the typeset math to its original form.
-    window.MathJax.startup.document
-        .getMathItemsWithin(contents_div)
-        .forEach((item: any) => {
-            item.removeFromDocument(true);
-        });
     tinymce_singleton!.save();
     const content = is_tinymce
         ? tinymce_singleton!.getContent()
@@ -464,8 +472,6 @@ const on_dirty = (
 
     current_view.dispatch({ effects });
 
-    // Re-typeset.
-    mathJaxTypeset(contents_div);
     return false;
 };
 
@@ -480,8 +486,8 @@ const DocBlockPlugin = ViewPlugin.fromClass(
             // so it can be edited. A simpler alternative is to do this in the
             // update() method above, but this is VERY slow, since update is
             // called frequently.
-            focusin: (event: Event, view: EditorView) => {
-                const target_or_false = event_is_in_doc_block(event);
+            focusin: (event: FocusEvent, view: EditorView) => {
+                const target_or_false = element_is_in_doc_block(event.target);
                 if (!target_or_false) {
                     return false;
                 }
@@ -514,7 +520,11 @@ const DocBlockPlugin = ViewPlugin.fromClass(
 
                 // See if this is already a TinyMCE instance; if not, move it
                 // here.
-                if (!is_tinymce) {
+                if (is_tinymce) {
+                    ignore_next_dirty = true;
+                    mathJaxUnTypeset(contents_div);
+                    ignore_next_dirty = false;
+                } else {
                     // Wait until the focus event completes; this causes the
                     // cursor position (the selection) to be set in the
                     // contenteditable div. Then, save that location.
@@ -591,8 +601,15 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                         // Move TinyMCE to the new location, then remove the old
                         // div it will replace.
                         target.insertBefore(tinymce_div, null);
-                        tinymce_singleton!.setContent(contents_div.innerHTML);
+                        // TinyMCE edits booger MathJax. Also, the math is
+                        // uneditable. So, translate it back to its untypeset
+                        // form. When editing is done, it will be re-rendered.
+                        mathJaxUnTypeset(contents_div);
+
+                        // Setting the content makes TinyMCE consider it dirty
+                        // -- ignore this "dirty" event.
                         ignore_next_dirty = true;
+                        tinymce_singleton!.setContent(contents_div.innerHTML);
                         tinymce_singleton!.save();
                         contents_div.remove();
 
@@ -833,6 +850,27 @@ export const CodeMirror_load = async (
                     }
                     on_dirty(target_or_false);
                 });
+                // When leaving a TinyMCE block, retypeset the math. (It's
+                // untypeset when entering the block, to avoid editing
+                // problems.)
+                editor.on("focusout", (event: any) => {
+                    const target_or_false = event.target;
+                    if (target_or_false == null) {
+                        return false;
+                    }
+                    if (!tinymce_singleton!.isDirty()) {
+                        ignore_next_dirty = true;
+                    }
+                    // When switching from one doc block to another, the MathJax
+                    // typeset finishes after the new doc block has been
+                    // updated. To prevent saving the "dirty" content from
+                    // typesetting, wait until this finishes to clear the
+                    // `ignore_next_dirty` flag.
+                    mathJaxTypeset(target_or_false, () => {
+                        tinymce_singleton!.save();
+                        ignore_next_dirty = false;
+                    });
+                })
             },
         })
     )[0];
