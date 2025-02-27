@@ -88,6 +88,8 @@ let ignore_text_document_change = false;
 // True to ignore the next active editor change event, since a `CurrentFile`
 // message from the Client caused this change.
 let ignore_active_editor_change = false;
+// True to not report the next error.
+let quiet_next_error = false;
 
 // ### Message types
 //
@@ -267,8 +269,11 @@ export const activate = (context: vscode.ExtensionContext) => {
                             console.log(
                                 "CodeChat Editor extension: shut down webview."
                             );
-                            await stop_client();
+                            // Closing the webview abruptly closes the Client,
+                            // which produces an error. Don't report it.
+                            quiet_next_error = true;
                             webview_panel = undefined;
+                            await stop_client();
                         });
 
                         // Render when the webview panel is shown.
@@ -666,6 +671,10 @@ const stop_client = async () => {
 
 // Provide an error message in the panel if possible.
 const show_error = (message: string) => {
+    if (quiet_next_error) {
+        quiet_next_error = false;
+        return;
+    }
     if (webview_panel !== undefined) {
         // If the panel was displaying other content, reset it for errors.
         if (
