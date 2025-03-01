@@ -27,7 +27,7 @@ Changelog
         edits, then retypeset afterwards.
     *   Correctly handle webview shutdown in VSCode extension.
 *   v0.1.10, 2025-Feb-20:
-    *   Update to the 2024 editing of Rust.
+    *   Update to the 2024 edition of Rust.
     *   Update dependencies.
     *   Update source formatting using current CodeChat Editor.
 *   v0.1.9, 2025-Jan-20:
