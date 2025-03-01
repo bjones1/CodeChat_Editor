@@ -86,6 +86,8 @@ import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
 // -------
 let current_view: EditorView;
 let tinymce_singleton: Editor | undefined;
+// When true, don't update on the next call to `on_dirty`. See that function for
+// more info.
 let ignore_next_dirty = false;
 
 declare global {
@@ -437,7 +439,23 @@ const element_is_in_doc_block = (target: EventTarget | null): boolean | HTMLDivE
     return false;
 };
 
-// Called when a doc block is dirty.
+// Called when a doc block is dirty...
+//
+// ...but it's more complicated than that. TinyMCE keeps track of a [dirty
+// flag](https://www.tiny.cloud/docs/tinymce/latest/apis/tinymce.editor/#isDirty),
+// but some dirty events it reports shouldn't be saved:
+//
+// 1.  When the existing TinyMCE instance is updated with new text on a redraw,
+//     the resulting dirty flag should be ignored.
+// 2.  When the existing TinyMCE instance is focused, existing math should be
+//     untypeset, then the dirty ignored.
+// 3.  When MathJax typesets math on a TinyMCE focus out event, the dirty flag
+//     gets set. This should be ignored. However, typesetting is an async
+//     operation, so we assume it's OK to await the typeset completion, then
+//     clear the `ignore_next_dirty flag`. This will lead to nasty bugs at some
+//     point.
+// 4.  When an HTML doc block is assigned to the TinyMCE instance for editing,
+//     the dirty flag is set. This must be ignored.
 const on_dirty = (
     // The div that's dirty. It must be a child of the doc block div.
     event_target: HTMLElement,
@@ -523,6 +541,9 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                 if (is_tinymce) {
                     ignore_next_dirty = true;
                     mathJaxUnTypeset(contents_div);
+                    // If there was no math to untypeset, then `on_dirty` wasn't
+                    // called, but we should no longer ignore the next dirty
+                    // flag.
                     ignore_next_dirty = false;
                 } else {
                     // Wait until the focus event completes; this causes the
@@ -858,14 +879,17 @@ export const CodeMirror_load = async (
                     if (target_or_false == null) {
                         return false;
                     }
-                    if (!tinymce_singleton!.isDirty()) {
-                        ignore_next_dirty = true;
+                    // If the editor is dirty, save it first before we possibly
+                    // modify it.
+                    if (tinymce_singleton!.isDirty()) {
+                        tinymce_singleton!.save();
                     }
                     // When switching from one doc block to another, the MathJax
                     // typeset finishes after the new doc block has been
                     // updated. To prevent saving the "dirty" content from
                     // typesetting, wait until this finishes to clear the
                     // `ignore_next_dirty` flag.
+                    ignore_next_dirty = true;
                     mathJaxTypeset(target_or_false, () => {
                         tinymce_singleton!.save();
                         ignore_next_dirty = false;
