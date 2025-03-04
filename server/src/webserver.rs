@@ -634,65 +634,10 @@ async fn text_file_to_response(
 ) -> (
     // The response to send back to the HTTP endpoint.
     SimpleHttpResponse,
-    // If this file is currently being edited, this is the body of an `Update`
-    // message to send.
-    Option<EditorMessageContents>,
-) {
-    // Compare these files, since both have been canonicalized by
-    // `try_canonical`.
-    let is_current = file_path == current_filepath;
-    let (simple_http_response, option_codechat_for_web) = serve_file(
-        file_path,
-        file_contents,
-        http_request.is_toc,
-        is_current,
-        http_request.is_test_mode,
-    )
-    .await;
-    let Some(file_path) = file_path.to_str() else {
-        let msg = format!("Error: unable to convert path {file_path:?} to a string.");
-        error!("{msg}");
-        return (SimpleHttpResponse::Err(msg), None);
-    };
-    // If this file is editable and is the main file, send an `Update`. The
-    // `simple_http_response` contains the Client.
-    (
-        simple_http_response,
-        option_codechat_for_web.map(|codechat_for_web| {
-            EditorMessageContents::Update(UpdateMessageContents {
-                file_path: file_path.to_string(),
-                contents: Some(codechat_for_web),
-                cursor_position: None,
-                scroll_position: None,
-            })
-        }),
-    )
-}
-
-// Determine the appropriate HTTP response for the provided text file.
-async fn serve_file(
-    // The absolute path to this file.
-    file_path: &Path,
-    // Its contents.
-    file_contents: &str,
-    // True if this is a table of contents file.
-    is_toc: bool,
-    // True if this file is currently being edited by the Client.
-    is_current_file: bool,
-    // True if running unit tests.
-    is_test_mode: bool,
-) -> (
-    // The HTTP response, based on the file:
-    //
-    // *   The raw file
-    // *   An error message
-    // *   A TOC
-    // *   A Client, with or without the project sidebar.
-    SimpleHttpResponse,
-    // If the response is a Client, also return the appropriate `CodeChatForWeb`
+    // If the response is a Client, also return the appropriate `Updae`
     // data to populate the Client with the parsed `file_contents`. In all other
     // cases, return None.
-    Option<CodeChatForWeb>,
+    Option<EditorMessageContents>,
 ) {
     // Provided info from the HTTP request, determine the following parameters.
     let Some(raw_dir) = file_path.parent() else {
@@ -718,7 +663,11 @@ async fn serve_file(
     let name = escape_html(&file_name.to_string_lossy());
 
     // Get the locations for bundled files.
-    let js_test_suffix = if is_test_mode { "-test" } else { "" };
+    let js_test_suffix = if http_request.is_test_mode {
+        "-test"
+    } else {
+        ""
+    };
     let Some(codechat_editor_js) =
         BUNDLED_FILES_MAP.get(&format!("CodeChatEditor{js_test_suffix}.js"))
     else {
@@ -753,9 +702,11 @@ async fn serve_file(
         "#
     );
 
-    // See if this is a CodeChat Editor file.
-    let (translation_results_string, path_to_toc) = if is_current_file || is_toc {
-        source_to_codechat_for_web_string(file_contents, file_path, is_toc)
+    // Compare these files, since both have been canonicalized by
+    // `try_canonical`.
+    let is_current_file = file_path == current_filepath;
+    let (translation_results_string, path_to_toc) = if is_current_file || http_request.is_toc {
+        source_to_codechat_for_web_string(file_contents, file_path, http_request.is_toc)
     } else {
         // If this isn't the current file, then don't parse it.
         (TranslationResultsString::Unknown, None)
@@ -827,7 +778,7 @@ async fn serve_file(
     };
 
     // Add testing mode scripts if requested.
-    let testing_src = if is_test_mode {
+    let testing_src = if http_request.is_test_mode {
         r#"
         <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
         <script src="https://unpkg.com/mocha/mocha.js"></script>
@@ -836,6 +787,11 @@ async fn serve_file(
         ""
     };
 
+    let Some(file_path) = file_path.to_str() else {
+        let msg = format!("Error: unable to convert path {file_path:?} to a string.");
+        error!("{msg}");
+        return (SimpleHttpResponse::Err(msg), None);
+    };
     // Build and return the webpage.
     (
         SimpleHttpResponse::Ok(formatdoc!(
@@ -873,7 +829,14 @@ async fn serve_file(
                 </body>
             </html>"#
         )),
-        Some(codechat_for_web),
+        // If this file is editable and is the main file, send an `Update`. The
+        // `simple_http_response` contains the Client.
+        Some(EditorMessageContents::Update(UpdateMessageContents {
+            file_path: file_path.to_string(),
+            contents: Some(codechat_for_web),
+            cursor_position: None,
+            scroll_position: None,
+        })),
     )
 }
 
