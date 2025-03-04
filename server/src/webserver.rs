@@ -88,6 +88,7 @@ use filewatcher::{
 // ---------------
 //
 // ### Data structures supporting a websocket connection between the IDE, this
+//
 // server, and the CodeChat Editor Client
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
 #[derive(Debug)]
@@ -447,7 +448,10 @@ fn get_client_framework(
             ));
         }
     };
-    let codechat_editor_framework_js = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap();
+    let Some(codechat_editor_framework_js) = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js")
+    else {
+        return Err("Unable to get CodeChatEditorFramework.js.".to_string());
+    };
 
     // Build and return the webpage.
     Ok(formatdoc!(
@@ -612,12 +616,20 @@ async fn make_simple_http_response(
     }
 }
 
+// Given a text file, determine the appropriate HTTP response: a Client, or the
+// file contents itself (if it's not editable by the Client). If responding with
+// a Client, also return an Update message which will provided the contents for
+// the Client.
 async fn text_file_to_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
-    // Path to the file currently being edited.
+    // Path to the file currently being edited. This path should be cleaned by
+    // `try_canonicalize`.
     current_filepath: &Path,
+    // Path to this text file. This path should be cleaned by
+    // `try_canonicalize`.
     file_path: &Path,
+    // Contents of this text file.
     file_contents: &str,
 ) -> (
     // The response to send back to the HTTP endpoint.
@@ -657,27 +669,73 @@ async fn text_file_to_response(
     )
 }
 
+// Determine the appropriate HTTP response for the provided text file.
 async fn serve_file(
+    // The absolute path to this file.
     file_path: &Path,
+    // Its contents.
     file_contents: &str,
+    // True if this is a table of contents file.
     is_toc: bool,
+    // True if this file is currently being edited by the Client.
     is_current_file: bool,
+    // True if running unit tests.
     is_test_mode: bool,
-) -> (SimpleHttpResponse, Option<CodeChatForWeb>) {
+) -> (
+    // The HTTP response, based on the file:
+    //
+    // *   The raw file
+    // *   An error message
+    // *   A TOC
+    // *   A Client, with or without the project sidebar.
+    SimpleHttpResponse,
+    // If the response is a Client, also return the appropriate `CodeChatForWeb`
+    // data to populate the Client with the parsed `file_contents`. In all other
+    // cases, return None.
+    Option<CodeChatForWeb>,
+) {
     // Provided info from the HTTP request, determine the following parameters.
-    let raw_dir = file_path.parent().unwrap();
+    let Some(raw_dir) = file_path.parent() else {
+        return (
+            SimpleHttpResponse::Err(format!(
+                "Path {} has no parent.",
+                file_path.to_string_lossy()
+            )),
+            None,
+        );
+    };
     // Use a lossy conversion, since this is UI display, not filesystem access.
     let dir = path_display(raw_dir);
-    let name = escape_html(&file_path.file_name().unwrap().to_string_lossy());
+    let Some(file_name) = file_path.file_name() else {
+        return (
+            SimpleHttpResponse::Err(format!(
+                "Path {} has no final component.",
+                file_path.to_string_lossy()
+            )),
+            None,
+        );
+    };
+    let name = escape_html(&file_name.to_string_lossy());
 
     // Get the locations for bundled files.
     let js_test_suffix = if is_test_mode { "-test" } else { "" };
-    let codechat_editor_js = BUNDLED_FILES_MAP
-        .get(&format!("CodeChatEditor{js_test_suffix}.js"))
-        .unwrap();
-    let codehat_editor_css = BUNDLED_FILES_MAP
-        .get(&format!("CodeChatEditor{js_test_suffix}.css"))
-        .unwrap();
+    let Some(codechat_editor_js) =
+        BUNDLED_FILES_MAP.get(&format!("CodeChatEditor{js_test_suffix}.js"))
+    else {
+        return (
+            SimpleHttpResponse::Err(format!("CodeChatEditor{js_test_suffix}.js not found")),
+            None,
+        );
+    };
+    let Some(codehat_editor_css) =
+        BUNDLED_FILES_MAP.get(&format!("CodeChatEditor{js_test_suffix}.css"))
+    else {
+        return (
+            SimpleHttpResponse::Err(format!("CodeChatEditor{js_test_suffix}.css not found")),
+            None,
+        );
+    };
+
     let mathjax_tags = indoc!(
         r#"
         <script>
@@ -751,15 +809,18 @@ async fn serve_file(
     // For project files, add in the sidebar. Convert this from a Windows path
     // to a Posix path if necessary.
     let (sidebar_iframe, sidebar_css) = if is_project {
+        let Some(css) = BUNDLED_FILES_MAP.get("CodeChatEditorProject.css") else {
+            return (
+                SimpleHttpResponse::Err(format!("CodeChatEditor{js_test_suffix}.js not found")),
+                None,
+            );
+        };
         (
             format!(
                 r#"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"#,
                 path_to_toc.unwrap().to_slash_lossy()
             ),
-            format!(
-                r#"<link rel="stylesheet" href="/{}">"#,
-                BUNDLED_FILES_MAP.get("CodeChatEditorProject.css").unwrap()
-            ),
+            format!(r#"<link rel="stylesheet" href="/{}">"#, css),
         )
     } else {
         ("".to_string(), "".to_string())

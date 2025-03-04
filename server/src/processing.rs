@@ -534,7 +534,12 @@ pub fn source_to_codechat_for_web_string(
     file_path: &Path,
     // True if this file is a TOC.
     is_toc: bool,
-) -> (TranslationResultsString, Option<PathBuf>) {
+) -> (
+    // The resulting translation.
+    TranslationResultsString,
+    // Path to the TOC, if found; otherwise, None.
+    Option<PathBuf>,
+) {
     // Determine the file's extension, in order to look up a lexer.
     let ext = &file_path
         .extension()
