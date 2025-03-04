@@ -626,13 +626,9 @@ async fn text_file_to_response(
     // message to send.
     Option<EditorMessageContents>,
 ) {
-    // Compare using the canonical path first, then the absolute path if this
-    // fails. This is necessary because the file may not exist on the filesystem
-    // (only in the IDE).
-    let is_current = match file_path.canonicalize() {
-        Ok(fp) => simplified(&fp) == current_filepath,
-        Err(_) => path::absolute(file_path).is_ok_and(|fp| fp == current_filepath),
-    };
+    // Compare these files, since both have been canonicalized by
+    // `try_canonical`.
+    let is_current = file_path == current_filepath;
     let (simple_http_response, option_codechat_for_web) = serve_file(
         file_path,
         file_contents,
@@ -1260,16 +1256,27 @@ fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
             "Error: unable to parse file path {file_path}: {err}."
         )),
         Ok(path_buf) => match path_buf.canonicalize() {
+            Ok(p) => Ok(PathBuf::from(simplified(&p))),
             // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
             // fails if the path doesn't exist. For unsaved files, this is
-            // expected; therefore, use
-            // [absolute](https://doc.rust-lang.org/stable/std/path/fn.absolute.html)
-            // on error, since it doesn't require the path to exist.
-            Err(_) => match path::absolute(&path_buf) {
-                Err(err) => Err(format!("Unable to make {path_buf:?} absolute: {err}")),
-                Ok(p) => Ok(p),
-            },
-            Ok(p) => Ok(PathBuf::from(simplified(&p))),
+            // expected; in this case, we can't correct case based on the actual
+            // file's naming. If the path isn't already absolute, don't make it
+            // absolute, since a newly-created, unsaved file (in at least
+            // VSCode) doesn't have specific path/location in the filesystem;
+            // assuming a path by making it absolute causes the IDE to not
+            // recognize the file name with this assume absolute location. On
+            // the other hand, if the path is already absolute, then call
+            // `absolute` to clean up forward vs. backward slashes.
+            Err(_) => {
+                if path_buf.is_absolute() {
+                    match path::absolute(&path_buf) {
+                        Err(err) => Err(format!("Unable to make {path_buf:?} absolute: {err}")),
+                        Ok(p) => Ok(p),
+                    }
+                } else {
+                    Ok(path_buf)
+                }
+            }
         },
     }
 }
