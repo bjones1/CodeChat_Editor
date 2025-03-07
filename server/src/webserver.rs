@@ -322,6 +322,23 @@ const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
 /// assuming an average of 1 message/second.)
 const MESSAGE_ID_INCREMENT: f64 = 3.0;
 
+const MATHJAX_TAGS: &str = indoc!(
+    r#"
+    <script>
+        MathJax = {
+            // See the [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
+            chtml: {
+                fontURL: "/static/mathjax-modern-font/chtml/woff",
+            },
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']]
+            },
+        };
+    </script>
+    <script defer src="/static/mathjax/tex-chtml.js"></script>
+    "#
+);
+
 lazy_static! {
 
     // Define the location of the root path, which contains `static/`,
@@ -366,6 +383,9 @@ lazy_static! {
         let hmm: HashMap<String, String> = serde_json::from_str(&json).unwrap();
         hmm
     };
+
+    static ref CODECHAT_EDITOR_FRAMEWORK_JS: String = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap().to_string();
+    static ref CODECHAT_EDITOR_PROJECT_CSS: String = BUNDLED_FILES_MAP.get("CodeChatEditorProject.css").unwrap().to_string();
 
 }
 
@@ -448,10 +468,6 @@ fn get_client_framework(
             ));
         }
     };
-    let Some(codechat_editor_framework_js) = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js")
-    else {
-        return Err("Unable to get CodeChatEditorFramework.js.".to_string());
-    };
 
     // Build and return the webpage.
     Ok(formatdoc!(
@@ -463,7 +479,7 @@ fn get_client_framework(
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>The CodeChat Editor</title>
                 <script type="module">
-                    import {{ page_init }} from "/{codechat_editor_framework_js}"
+                    import {{ page_init }} from "/{}"
                     page_init({ws_url}, {is_test_mode})
                 </script>
             </head>
@@ -484,7 +500,8 @@ fn get_client_framework(
                 >
                 </iframe>
             </body>
-        </html>"#
+        </html>"#,
+        *CODECHAT_EDITOR_FRAMEWORK_JS
     ))
 }
 
@@ -634,23 +651,12 @@ async fn text_file_to_response(
 ) -> (
     // The response to send back to the HTTP endpoint.
     SimpleHttpResponse,
-    // If the response is a Client, also return the appropriate `Updae`
+    // If the response is a Client, also return the appropriate `Update`
     // data to populate the Client with the parsed `file_contents`. In all other
     // cases, return None.
     Option<EditorMessageContents>,
 ) {
-    // Provided info from the HTTP request, determine the following parameters.
-    let Some(raw_dir) = file_path.parent() else {
-        return (
-            SimpleHttpResponse::Err(format!(
-                "Path {} has no parent.",
-                file_path.to_string_lossy()
-            )),
-            None,
-        );
-    };
     // Use a lossy conversion, since this is UI display, not filesystem access.
-    let dir = path_display(raw_dir);
     let Some(file_name) = file_path.file_name() else {
         return (
             SimpleHttpResponse::Err(format!(
@@ -685,23 +691,6 @@ async fn text_file_to_response(
         );
     };
 
-    let mathjax_tags = indoc!(
-        r#"
-        <script>
-            MathJax = {
-                // See the [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
-                chtml: {
-                    fontURL: "/static/mathjax-modern-font/chtml/woff",
-                },
-                tex: {
-                    inlineMath: [['$', '$'], ['\\(', '\\)']]
-                },
-            };
-        </script>
-        <script defer src="/static/mathjax/tex-chtml.js"></script>
-        "#
-    );
-
     // Compare these files, since both have been canonicalized by
     // `try_canonical`.
     let is_current_file = file_path == current_filepath;
@@ -711,7 +700,6 @@ async fn text_file_to_response(
         // If this isn't the current file, then don't parse it.
         (TranslationResultsString::Unknown, None)
     };
-    let is_project = path_to_toc.is_some();
     let codechat_for_web = match translation_results_string {
         // The file type is unknown. Serve it raw.
         TranslationResultsString::Unknown => {
@@ -742,7 +730,7 @@ async fn text_file_to_response(
                             <meta charset="UTF-8">
                             <meta name="viewport" content="width=device-width, initial-scale=1">
                             <title>{name} - The CodeChat Editor</title>
-                            {mathjax_tags}
+                            {MATHJAX_TAGS}
                             <link rel="stylesheet" href="/{codehat_editor_css}">
                         </head>
                         <body class="CodeChat-theme-light">
@@ -757,21 +745,19 @@ async fn text_file_to_response(
         }
     };
 
+    let is_project = path_to_toc.is_some();
     // For project files, add in the sidebar. Convert this from a Windows path
     // to a Posix path if necessary.
     let (sidebar_iframe, sidebar_css) = if is_project {
-        let Some(css) = BUNDLED_FILES_MAP.get("CodeChatEditorProject.css") else {
-            return (
-                SimpleHttpResponse::Err(format!("CodeChatEditor{js_test_suffix}.js not found")),
-                None,
-            );
-        };
         (
             format!(
                 r#"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"#,
                 path_to_toc.unwrap().to_slash_lossy()
             ),
-            format!(r#"<link rel="stylesheet" href="/{}">"#, css),
+            format!(
+                r#"<link rel="stylesheet" href="/{}">"#,
+                *CODECHAT_EDITOR_PROJECT_CSS
+            ),
         )
     } else {
         ("".to_string(), "".to_string())
@@ -787,6 +773,17 @@ async fn text_file_to_response(
         ""
     };
 
+    // Provided info from the HTTP request, determine the following parameters.
+    let Some(raw_dir) = file_path.parent() else {
+        return (
+            SimpleHttpResponse::Err(format!(
+                "Path {} has no parent.",
+                file_path.to_string_lossy()
+            )),
+            None,
+        );
+    };
+    let dir = path_display(raw_dir);
     let Some(file_path) = file_path.to_str() else {
         let msg = format!("Error: unable to convert path {file_path:?} to a string.");
         error!("{msg}");
@@ -802,7 +799,7 @@ async fn text_file_to_response(
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1">
                     <title>{name} - The CodeChat Editor</title>
-                    {mathjax_tags}
+                    {MATHJAX_TAGS}
                     <script type="module">
                         import {{ page_init }} from "/{codechat_editor_js}"
                         page_init()
@@ -1112,6 +1109,7 @@ pub async fn main(port: u16) -> std::io::Result<()> {
 }
 
 pub async fn run_server(port: u16) -> std::io::Result<()> {
+    
     // Connect to the Capture Database
     //let _event_capture = EventCapture::new("config.json").await?;
 
