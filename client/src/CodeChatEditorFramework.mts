@@ -144,15 +144,11 @@ class WebSocketComm {
                         // completed before updating the editable contents.
                         if (this.onloading) {
                             root_iframe!.onload = () => {
-                                root_iframe!.contentWindow!.CodeChatEditor.open_lp(
-                                    contents,
-                                );
+                                set_content(contents);
                                 this.onloading = false;
                             };
                         } else {
-                            root_iframe!.contentWindow!.CodeChatEditor.open_lp(
-                                contents,
-                            );
+                            set_content(contents);
                         }
                     } else {
                         // TODO: handle scroll/cursor updates.
@@ -167,7 +163,7 @@ class WebSocketComm {
                     const current_file = value as string;
                     // If the page is still loading, then don't save. Otherwise,
                     // save the editor contents if necessary.
-                    let cce = root_iframe?.contentWindow?.CodeChatEditor;
+                    let cce = get_client();
                     let promise =
                         cce !== undefined
                             ? cce.on_save(true)
@@ -304,6 +300,23 @@ class WebSocketComm {
         this.ws.send(JSON.stringify(jm));
     };
 }
+
+// Return the `CodeChatEditor` object if the `root_iframe` contains the Client; otherwise, this is `undefined`.
+const get_client = () => root_iframe?.contentWindow?.CodeChatEditor;
+
+// Assign content to either the Client (if it's loaded) or the webpage (if not) in the `root_iframe`.
+const set_content = (contents: CodeChatForWeb) => {
+    let client = get_client();
+    if (client === undefined) {
+        let cw = root_iframe!.contentWindow!;
+        cw.document.open();
+        cw.document.write(contents.source.doc);
+        cw.document.close();
+    } else {
+        root_iframe!.contentWindow!.CodeChatEditor.open_lp(
+            contents);
+    }
+};
 
 // The iframe element which composes this page.
 let root_iframe: HTMLIFrameElement | undefined;
