@@ -1109,7 +1109,6 @@ pub async fn main(port: u16) -> std::io::Result<()> {
 }
 
 pub async fn run_server(port: u16) -> std::io::Result<()> {
-    
     // Connect to the Capture Database
     //let _event_capture = EventCapture::new("config.json").await?;
 
