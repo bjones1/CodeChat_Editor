@@ -1,6 +1,6 @@
 {
     "name": "codechat-editor-client",
-    "version": "0.1.11",
+    "version": "0.1.12",
     "description": "The CodeChat Editor Client, part of a web-based literate programming editor (the CodeChat Editor).",
     "homepage": "https://github.com/bjones1/CodeChat_Editor",
     "type": "module",
@@ -51,6 +51,7 @@
         "mathjax": "^4.0.0-beta.7",
         "mathjax-modern-font": "4.0.0-beta.7",
         "mermaid": "^11",
+        "npm-check-updates": "^17.1.15",
         "tinymce": "^7"
     },
     "repository": {

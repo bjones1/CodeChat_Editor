@@ -21,6 +21,9 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.12, 2025-Mar-08:
+    *   Fixed error when creating a new document in VSCode.
+    *   Fixed error when updating a non-CodeChat Editor document in VSCode.
 *   v0.1.11, 2025-Feb-27:
     *   Fixed data corruption while editing math: typeset math, instead of LaTeX
         source, was saved to the source file. Now, math is untypeset during
