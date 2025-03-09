@@ -42,7 +42,7 @@ use actix_web::{
     dev::{ServerHandle, ServiceFactory, ServiceRequest},
     error::Error,
     get,
-    http::header::ContentType,
+    http::header::{ContentType, DispositionType},
     web,
 };
 use actix_ws::AggregatedMessage;
@@ -70,9 +70,6 @@ use tokio::{
     time::sleep,
 };
 use url::Url;
-use vscode::{
-    serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
-};
 
 // ### Local
 //use crate::capture::EventCapture;
@@ -82,6 +79,9 @@ use crate::processing::{
 use filewatcher::{
     filewatcher_browser_endpoint, filewatcher_client_endpoint, filewatcher_root_fs_redirect,
     filewatcher_websocket,
+};
+use vscode::{
+    serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
 };
 
 // Data structures
@@ -585,7 +585,14 @@ pub async fn filesystem_endpoint(
             }
             SimpleHttpResponse::Bin(path) => {
                 match actix_files::NamedFile::open_async(&path).await {
-                    Ok(v) => v.into_response(req),
+                    Ok(mut v) => {
+                        if path.extension().is_some_and(|ext| ext == "pdf") {
+                            let mut cd = v.content_disposition().clone();
+                            cd.disposition = DispositionType::Inline;
+                            v = v.set_content_disposition(cd);
+                        }
+                        v.into_response(req)
+                    }
                     Err(err) => html_not_found(&format!("<p>Error opening file {path:?}: {err}.",)),
                 }
             }
