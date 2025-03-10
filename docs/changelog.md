@@ -21,6 +21,9 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.13, 2025-Mar-10:
+    *   Show PDFs in the browser, instead of downloading them.
+    *   Update to new release of Actix framework.
 *   v0.1.12, 2025-Mar-08:
     *   Fixed error when creating a new document in VSCode.
     *   Fixed error when updating a non-CodeChat Editor document in VSCode.
