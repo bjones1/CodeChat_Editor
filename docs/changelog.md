@@ -21,6 +21,9 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.14, 2025-Mar-13:
+    *   Correct translation of leading slash in Linux/OS X paths to/from a URL.
+        This fixes rewrites of URL in Markdown to long relative paths.
 *   v0.1.13, 2025-Mar-10:
     *   Show PDFs in the browser, instead of downloading them.
     *   Update to new release of Actix framework.
