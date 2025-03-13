@@ -414,7 +414,8 @@ pub async fn vscode_ide_websocket(
                                                                 file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
                                                                 contents: Some(CodeChatForWeb {
                                                                     metadata: SourceFileMetadata {
-                                                                        // Since this is raw data, `mode` doesn't matter.
+                                                                        // Since this is raw data, `mode` doesn't
+                                                                        // matter.
                                                                         mode: "".to_string()
                                                                     },
                                                                     source: CodeMirror {
@@ -739,7 +740,7 @@ mod test {
         cast,
         processing::{CodeChatForWeb, CodeMirror, SourceFileMetadata},
         test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
-        webserver::{ResultOkTypes, UpdateMessageContents},
+        webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
     };
 
     lazy_static! {
@@ -972,7 +973,7 @@ mod test {
         open_client(&mut ws_ide).await;
 
         let file_path = test_dir.join("none.py");
-        let file_path_str = file_path.to_slash().unwrap().to_string();
+        let file_path_str = drop_leading_slash(&file_path.to_slash().unwrap()).to_string();
 
         // Do this is a thread, since the request generates a message that
         // requires a response in order to complete.
@@ -1128,7 +1129,7 @@ mod test {
             assert_eq!(
                 minreq::get(format!(
                     "http://localhost:8080/vsc/fs/{connection_id}/{}",
-                    file_path_thread.to_slash().unwrap()
+                    drop_leading_slash(&file_path_thread.to_slash().unwrap())
                 ))
                 .send()
                 .unwrap()

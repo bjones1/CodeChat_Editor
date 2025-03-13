@@ -520,8 +520,16 @@ pub async fn filesystem_endpoint(
     // On Windows, backslashes in the `request_file_path` will be treated as
     // path separators; however, HTTP does not treat them as path separators.
     // Therefore, re-encode them to prevent inconsistency between the way HTTP
-    // and this program interpret file paths.
+    // and this program interpret file paths. On OS X/Linux, the path starts
+    // with a leading slash, which gets absorbed into the URL to prevent a URL
+    // such as "/fw/fsc/1//foo/bar/...". Restore it here.
+    #[cfg(target_os = "windows")]
     let fixed_file_path = request_file_path.replace("\\", "%5C");
+    // On OS X/Linux, the path starts with a leading slash, which gets absorbed
+    // into the URL to prevent a URL such as "/fw/fsc/1//foo/bar/...". Restore
+    // it here.
+    #[cfg(not(target_os = "windows"))]
+    let fixed_file_path = format!("/{request_file_path}");
     let file_path = match try_canonicalize(&fixed_file_path) {
         Ok(v) => v,
         Err(err) => {
@@ -658,9 +666,9 @@ async fn text_file_to_response(
 ) -> (
     // The response to send back to the HTTP endpoint.
     SimpleHttpResponse,
-    // If the response is a Client, also return the appropriate `Update`
-    // data to populate the Client with the parsed `file_contents`. In all other
-    // cases, return None.
+    // If the response is a Client, also return the appropriate `Update` data to
+    // populate the Client with the parsed `file_contents`. In all other cases,
+    // return None.
     Option<EditorMessageContents>,
 ) {
     // Use a lossy conversion, since this is UI display, not filesystem access.
@@ -1322,7 +1330,22 @@ fn path_to_url(prefix: &str, connection_id: &str, file_path: &Path) -> String {
         // Then put it all back together.
         .collect::<Vec<_>>()
         .join("/");
-    format!("{prefix}/{connection_id}/{pathname}")
+    // On Windows, path names start with a drive letter. On Linux/OS X, they
+    // start with a forward slash -- don't put a double forward slash in the
+    // resulting path.
+    format!("{prefix}/{connection_id}/{}", drop_leading_slash(&pathname))
+}
+
+// Given a string (which is probably a pathname), drop the leading slash if it's
+// present.
+fn drop_leading_slash(path_: &str) -> &str {
+    if path_.starts_with("/") {
+        let mut chars = path_.chars();
+        chars.next();
+        chars.as_str()
+    } else {
+        path_
+    }
 }
 
 // Given a `Path`, transform it into a displayable HTML string (with any

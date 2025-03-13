@@ -744,7 +744,7 @@ mod tests {
             source_to_codechat_for_web,
         },
         test_utils::{check_logger_errors, configure_testing_logger},
-        webserver::{IdeType, ResultOkTypes, tests::IP_PORT},
+        webserver::{IdeType, ResultOkTypes, drop_leading_slash, tests::IP_PORT},
     };
 
     async fn get_websocket_queues(
@@ -822,15 +822,21 @@ mod tests {
             .unwrap()
             .map(|s| urlencoding::decode(s).unwrap())
             .collect();
-        let url_path = PathBuf::from_str(&url_segs[3..].join("/"))
-            .unwrap()
-            .canonicalize()
-            .unwrap();
+        let mut url_path = if cfg!(windows) {
+            PathBuf::new()
+        } else {
+            PathBuf::from_str("/").unwrap()
+        };
+        url_path.push(PathBuf::from_str(&url_segs[3..].join("/")).unwrap());
+        let url_path = url_path.canonicalize().unwrap();
         assert_eq!(url_path, test_path);
         send_response(&ide_tx_queue, id, Ok(ResultOkTypes::Void)).await;
 
         // 2.  After fetching the file, we should get an update.
-        let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_slash().unwrap());
+        let uri = format!(
+            "/fw/fsc/1/{}/test.py",
+            drop_leading_slash(&test_dir.to_slash().unwrap())
+        );
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
@@ -869,7 +875,10 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string();
-        let uri = format!("/fw/fsc/1/{}/test.py", test_dir.to_slash().unwrap());
+        let uri = format!(
+            "/fw/fsc/1/{}/test.py",
+            drop_leading_slash(&test_dir.to_slash().unwrap())
+        );
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
@@ -1050,7 +1059,7 @@ mod tests {
         new_file_path.push("test1.py");
         let new_uri = format!(
             "http://localhost/fw/fsc/1/{}",
-            urlencoding::encode(&new_file_path.to_slash().unwrap())
+            drop_leading_slash(&urlencoding::encode(&new_file_path.to_slash().unwrap()))
         );
         ide_tx_queue
             .send(EditorMessage {

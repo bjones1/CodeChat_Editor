@@ -24,7 +24,7 @@ use std::{
 };
 
 use assert_cmd::Command;
-use assertables::{assert_ends_with, assert_starts_with};
+use assertables::{assert_ends_with, assert_not_contains, assert_starts_with};
 
 use super::{filewatcher::FILEWATCHER_PATH_PREFIX, path_to_url, url_to_path};
 use crate::prep_test_dir;
@@ -106,6 +106,8 @@ fn test_path_to_url() {
     let url = path_to_url("/a/b", "conn1", &file_path);
     assert_starts_with!(url, "/a/b/conn1/");
     assert_ends_with!(url, "test_path_to_url/test%20spaces.py");
+    // There shouldn't be a double forward slash in the name.
+    assert_not_contains!(url, "//");
     // Report any errors produced when removing the temporary directory.
     temp_dir.close().unwrap();
 }
