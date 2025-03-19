@@ -19,6 +19,34 @@ CodeChat Editor. If not, see
 Implementation
 ==============
 
+### System architecture
+
+<graphviz-graph graph="digraph {
+    bgcolor = transparent;
+    compound = true;
+    node [shape = box];
+    subgraph cluster_text_editor {
+        label = &quot;Text editor/IDE&quot;
+        source_code [label = &quot;Source\ncode&quot;, style = dashed];
+        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];
+    }
+    subgraph cluster_server {
+        label = <CodeChat Editor Server>;
+        websocket_server [label = &quot;Websocket\nserver&quot;];
+        web_server [label = &quot;Web\nserver&quot;];
+    }
+    subgraph cluster_client_framework {
+        label = &quot;CodeChat Editor Client framework&quot;
+        subgraph cluster_client {
+            label = &quot;CodeChat Editor Client\n(Editor/Viewer/Simple Viewer)&quot;
+            rendered_code [label = &quot;Rendered code&quot;, style = dashed];
+        }
+    }
+    CodeChat_plugin -> websocket_server [label = &quot;websocket&quot;, dir = both];
+    websocket_server -> rendered_code [label = &quot;websocket&quot;, dir = both, lhead = cluster_client_framework];
+    web_server -> rendered_code [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client ];
+    }"></graphviz-graph>
+
 <a id="an-implementation"></a>Architecture
 ------------------------------------------
 
@@ -149,7 +177,7 @@ editor-overlay filesystem.
     the change is from no file to the current file), or a link is followed in
     the Client's iframe:\
     ![Load
-    diagram](https://www.plantuml.com/plantuml/svg/hLBRJiCm37tlL_XnVO0Fw0EQD40W9fXs-O2mkX0fJKBY8ktlYTVGahQQEeayjBdOvnmVU-b9E6fgbTdmbqTfXIPuldz8pZjqt-YIgvMIg2aJwXmDoeZIGoKLPd2-kBcB8GMi6kV2vZ4yBdRafFueO2Fe4qm5jP3wrfxoa6LiWAfY5fJcsDIyaHvAwUYK0Q_u7E2PfO23BGNri4UZAJpx59hNKDGMlJNQu-BjXIDGbzaGF8r1vJ46fDMcIPFL7hRhHD5bDQob0utU5_2qts_0uLU3dXP3m3Qeqx0E-X81bkqcqoT4_WZUyuyokSX9MtFk_U-9kuIb9F7EbaJOli1EVMJvWnSZyiciUTqTUpLehZB6PX3MF5TzOwrn52ZRwgLEPscMsMESDfbDsuq86AcVqqkTISoRffZb_sK87lQHJ6teIgclHcF-3wAWSgO-x_p94zPHf2wpzijokr5acTVFOZfK3BeCdwPMFm00)
+    diagram](https://www.plantuml.com/plantuml/svg/hLBDpjCm4BpdAVRO7E01Se1F-W21gA1gMkucte2HOnjxGzMtnpzHGfo8X8eUqiJUdPcTdIT7p5BVoSBuVz48mnJ1XpTlPzyrsbzePqVFKg2YWibO3L8pxg0L4Wk81ozU3IKLFFVM-fTt_l9GanNgMmKdHjz1jz0neLwQU-cxjF5GxT05N3Tz5rw40ouitGk8ltJjuGDB1LV36KsmZLRahrq63R0GTKPdj79u-FmnLA3YHGQUrQ1qE1JCfysQrgQzde-Peh-f2LecqEHz1UylbnDO_DcZeqCEc8f63KUlRoR01Bj9Jms1VmAV-FFEEEIghMNS_V0LjeHS4FiQBKcmqu2Z-e7bJxnKKQvsxTlkqgjikL9h4rEmprNN6wCjUSeqlL3pBEqoUucJceDfzPB08mqvtThCpBnLYct_Do5Ys7EPIjC_Ilsa5PR_GHIqLdVnpTqTOJU8LBn8po1tZAANEMOHcEBnW86n-WSsj3ETUSmsA8Hxc25LG2qwuy6-2BoXBOkjh488wslBRZEHZyxcBNpoZxwJlm40)
 *   If the current file's contents in the IDE are edited:\
     ![Edit
     diagram](https://www.plantuml.com/plantuml/svg/XT1DQiCm40NWlKunItlH2tXH36vBInCI_7C09NeE0cNaIEFa-ed1OCVaPp_l6zxBe-WW_T6flwzl-lYa2k6Ca57J6Ir8AWcM3nanBhJtB629gT9EQAqjKsiTo4Q2iQ9t3ef6OA0APy7oXeABkBVOosklw4C0ouzr4zgKA_BjpANnVDxfjwwt573g4ILP9Xw-6XEnynoVDc2Zfb-t6JCgbudDVwfoi1c6lW80)
@@ -533,34 +561,6 @@ Babel-style imports.
 TODO: GUIs using TinyMCE. See the [how-to
 guide](https://www.tiny.cloud/docs/tinymce/6/dialog-components/#panel-components).
 
-### System architecture
-
-<graphviz-graph graph="digraph {
-    bgcolor = transparent;
-    compound = true;
-    node [shape = box];
-    subgraph cluster_text_editor {
-        label = &quot;Text editor/IDE&quot;
-        source_code [label = &quot;Source\ncode&quot;, style = dashed];
-        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];
-    }
-    subgraph cluster_server {
-        label = <CodeChat Editor Server>;
-        websocket_server [label = &quot;Websocket\nserver&quot;];
-        web_server [label = &quot;Web\nserver&quot;];
-    }
-    subgraph cluster_client_framework {
-        label = &quot;CodeChat Editor Client framework&quot;
-        subgraph cluster_client {
-            label = &quot;CodeChat Editor Client&quot;
-            rendered_code [label = &quot;Rendered code&quot;, style = dashed];
-        }
-    }
-    CodeChat_plugin -> websocket_server [label = &quot;websocket&quot;, dir = both];
-    websocket_server -> rendered_code [label = &quot;websocket&quot;, dir = both, lhead = cluster_client_framework];
-    web_server -> rendered_code [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client ];
-    }"></graphviz-graph>
-
 Code style
 ----------
 
@@ -574,7 +574,7 @@ guide](https://developer.mozilla.org/en-US/docs/MDN/Writing_guidelines/Writing_s
 Misc
 ----
 
-Eventaully, provide a read-only mode with possible auth (restrict who can view)
+Eventually, provide a read-only mode with possible auth (restrict who can view)
 using JWTs; see [one
 approach](https://auth0.com/blog/build-an-api-in-rust-with-jwt-authentication-using-actix-web/).
 
