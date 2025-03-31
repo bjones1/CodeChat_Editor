@@ -571,6 +571,23 @@ Therefore, we use only arrow functions for this codebase.
 Other than that, follow the [MDN style
 guide](https://developer.mozilla.org/en-US/docs/MDN/Writing_guidelines/Writing_style_guide/Code_style_guide/JavaScript).
 
+Client modes
+------------
+
+The CodeChat Editor client supports four modes:
+
+*   Edit:
+    *   Document only: just TinyMCE to edit a pure Markdown file.
+    *   Usual: the usual CodeMirror + TinyMCE editor
+*   View:
+    *   For a ReadTheDocs / browsing experience: clicking on links navigates to
+        them immediately, instead of bringing up a context menu. Still use
+        CodeMirror for syntax highlighting, collapsing, etc.
+*   <a id="Client-simple-viewer"></a>Simple viewer:
+    *   For text or binary files that aren't supported by the editor. In project
+        mode, this displays the TOC on the left and the file contents in the
+        main area; otherwise, it's only the main area. See: \<gather here>.
+
 Misc
 ----
 

@@ -50,7 +50,7 @@ type ResultType = { Ok: "Void" } | { Err: string };
 
 interface EditorMessageContents {
     Update?: UpdateMessageContents;
-    CurrentFile?: string;
+    CurrentFile?: [string, boolean?];
     RequestClose?: null;
     OpenUrl?: string,
     Result?: ResultType;
@@ -160,7 +160,8 @@ class WebSocketComm {
                     break;
 
                 case "CurrentFile":
-                    const current_file = value as string;
+                    // Note that we can ignore `value[1]` (if the file is text or binary); the server only sends text files here.
+                    const current_file = value[0] as string;
                     // If the page is still loading, then don't save. Otherwise,
                     // save the editor contents if necessary.
                     let cce = get_client();
@@ -274,7 +275,7 @@ class WebSocketComm {
     current_file = (url: URL) => {
         // If this points to the Server, then tell the IDE to load a new file.
         if (url.host === window.location.host) {
-            this.send_message({ CurrentFile: url.toString() }, () => {
+            this.send_message({ CurrentFile: [url.toString(), undefined] }, () => {
                 this.set_root_iframe_src(url.toString());
             });
         } else {
@@ -308,7 +309,8 @@ const get_client = () => root_iframe?.contentWindow?.CodeChatEditor;
 const set_content = (contents: CodeChatForWeb) => {
     let client = get_client();
     if (client === undefined) {
-        let cw = root_iframe!.contentWindow!;
+        // See if this is the [simple viewer](#Client-simple-viewer). Otherwise, it's just the bare document to replace.
+        const cw = (root_iframe!.contentDocument?.getElementById("CodeChat-contents") as HTMLIFrameElement | undefined)?.contentWindow ?? root_iframe!.contentWindow!;
         cw.document.open();
         cw.document.write(contents.source.doc);
         cw.document.close();

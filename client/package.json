@@ -6,12 +6,8 @@
     "type": "module",
     "scripts": {
         "test": "echo \"Error: no test specified\" && exit 1",
-        "build": "run-script-os",
-        "build:win32": "node_modules\\.bin\\esbuild src/HashReader.mts --outdir=. --platform=node --format=esm && node_modules\\.bin\\esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts src/css/CodeChatEditorProject.css src/css/CodeChatEditor.css --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting --metafile=meta.json --entry-names=[dir]/[name]-[hash] && node HashReader.js && tsc -noEmit",
-        "build:default": "node_modules/.bin/esbuild src/HashReader.mts --outdir=. --platform=node --format=esm && node_modules/.bin/esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts src/css/CodeChatEditorProject.css src/css/CodeChatEditor.css --bundle --outdir=./static/bundled --sourcemap --format=esm --splitting --metafile=meta.json --entry-names=[dir]/[name]-[hash] && node HashReader.js && tsc -noEmit",
-        "dist": "run-script-os",
-        "dist:win32": "node_modules\\.bin\\esbuild src/HashReader.mts --outdir=. --platform=node --format=esm && node_modules\\.bin\\esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts src/css/CodeChatEditorProject.css src/css/CodeChatEditor.css --bundle --outdir=./static/bundled --minify --format=esm --splitting --metafile=meta.json --entry-names=[dir]/[name]-[hash] && node HashReader.js && tsc -noEmit",
-        "dist:default": "node_modules/.bin/esbuild src/HashReader.mts --outdir=. --platform=node --format=esm && node_modules/.bin/esbuild src/CodeChatEditorFramework.mts src/CodeChatEditor.mts src/CodeChatEditor-test.mts src/css/CodeChatEditorProject.css src/css/CodeChatEditor.css --bundle --outdir=./static/bundled --minify --format=esm --splitting --metafile=meta.json --entry-names=[dir]/[name]-[hash] && node HashReader.js && tsc -noEmit"
+        "build": "cargo run --manifest-path=../builder/Cargo.toml client-build",
+        "dist": "cargo run --manifest-path=../builder/Cargo.toml client-build --dist"
     },
     "keywords": [],
     "author": "Bryan A. Jones",
@@ -29,7 +25,6 @@
         "eslint-config-prettier": "^10",
         "eslint-plugin-import": "^2",
         "eslint-plugin-prettier": "^5",
-        "run-script-os": "^1",
         "typescript": "^5"
     },
     "dependencies": {
@@ -52,6 +47,7 @@
         "mathjax-modern-font": "4.0.0-beta.7",
         "mermaid": "^11",
         "npm-check-updates": "^17.1.15",
+        "pdfjs-dist": "^5",
         "tinymce": "^7"
     },
     "repository": {

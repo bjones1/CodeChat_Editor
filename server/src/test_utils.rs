@@ -46,6 +46,7 @@ use crate::testing_logger;
 // macro does not handle nested pattern like` Some(Animal(cat))\`.
 #[macro_export]
 macro_rules! cast {
+    // For an enum containing a single value (the typical case).
     ($target: expr_2021, $pat: path) => {{
         // The if let exploits recent Rust compiler's smart pattern matching.
         // Contrary to other solutions like `into_variant`` and friends, this
@@ -55,9 +56,19 @@ macro_rules! cast {
         // variants.
         if let $pat(a) = $target {
             a
-        } else {
+        }
+        else {
             // If the variant and value mismatch, the macro will simply panic
             // and report the expected pattern.
+            panic!("mismatch variant when cast to {}", stringify!($pat));
+        }
+    }};
+    // For an enum containing multiple values, return a tuple. I can't figure out how to automatically do this; for now, the caller must provide the correct number of tuple parameters.
+    ($target: expr_2021, $pat: path, $( $tup: ident),*) => {{
+        if let $pat($($tup,)*) = $target {
+            ($($tup,)*)
+        }
+        else {
             panic!("mismatch variant when cast to {}", stringify!($pat));
         }
     }};

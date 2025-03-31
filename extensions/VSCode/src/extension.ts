@@ -30,7 +30,7 @@ import process from "node:process";
 
 // ### Third-party packages
 import escape from "escape-html";
-import vscode from "vscode";
+import vscode, { commands, ViewColumn } from "vscode";
 import { WebSocket } from "ws";
 
 // ### Local packages
@@ -127,7 +127,7 @@ interface MessageResult {
 
 interface JointMessageContents {
     Update?: UpdateMessageContents;
-    CurrentFile?: string | undefined;
+    CurrentFile?: [string, boolean?];
     Opened?: IdeType;
     RequestClose?: null;
     LoadFile?: string;
@@ -439,23 +439,46 @@ export const activate = (context: vscode.ExtensionContext) => {
                             }
 
                             case "CurrentFile": {
-                                const current_file = value as string;
-                                vscode.workspace
-                                    .openTextDocument(current_file)
-                                    .then(
-                                        (document) => {
-                                            ignore_active_editor_change = true;
-                                            vscode.window.showTextDocument(
-                                                document,
-                                                current_editor?.viewColumn
+                                const current_file = value[0] as string;
+                                const is_text = value[1] as boolean | undefined;
+                                if (is_text) {
+                                    vscode.workspace
+                                        .openTextDocument(current_file)
+                                        .then(
+                                            (document) => {
+                                                ignore_active_editor_change =
+                                                    true;
+                                                vscode.window.showTextDocument(
+                                                    document,
+                                                    current_editor?.viewColumn
+                                                );
+                                                send_result(id);
+                                            },
+                                            (reason) =>
+                                                send_result(id, {
+                                                    Err: `Error: unable to open file ${current_file}: ${reason}`,
+                                                })
+                                        );
+                                } else {
+                                    // TODO: open using a custom document editor. See [openCustomDocument](https://code.visualstudio.com/api/references/vscode-api#CustomEditorProvider.openCustomDocument), which can evidently be called [indirectly](https://stackoverflow.com/a/65101181/4374935). See also [Built-in Commands](https://code.visualstudio.com/api/references/commands).
+                                    // For now, simply respond with an OK, since the following doesn't work.
+                                    if (false) {
+                                        commands
+                                            .executeCommand(
+                                                "vscode.open",
+                                                vscode.Uri.file(current_file),
+                                                { viewColumn: current_editor?.viewColumn }
+                                            )
+                                            .then(
+                                                () => send_result(id),
+                                                (reason) =>
+                                                    send_result(id, {
+                                                        Err: `Error: unable to open file ${current_file}: ${reason}`,
+                                                    })
                                             );
-                                            send_result(id);
-                                        },
-                                        (reason) =>
-                                            send_result(id, {
-                                                Err: `Error: unable to open file ${current_file}: ${reason}`,
-                                            })
-                                    );
+                                    }
+                                    send_result(id);
+                                }
                                 break;
                             }
 
@@ -635,7 +658,7 @@ const current_file = () => {
     if (can_render() && ate !== current_editor) {
         current_editor = ate;
         send_message({
-            CurrentFile: ate!.document.fileName,
+            CurrentFile: [ate!.document.fileName, undefined],
         });
     }
 };

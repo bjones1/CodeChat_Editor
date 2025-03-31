@@ -422,7 +422,7 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
         return;
     }
 
-    // If the IDE initiated this navigation via a`CurrentFile` message, then
+    // If the IDE initiated this navigation via a `CurrentFile` message, then
     // allow it.
     if (window.CodeChatEditor.allow_navigation) {
         // We don't need to reset this flag, since this window will be reloaded.

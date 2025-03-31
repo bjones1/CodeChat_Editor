@@ -17,12 +17,31 @@
    [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 
    `CodeChatEditorProject.css` -- Styles for the CodeChat Editor for projects
-   ========================================================================== */
+   ==========================================================================
+
+   This is used only to store a reused variable value. See the [CSS
+   docs](https://drafts.csswg.org/css-variables/). */
 :root {
     --sidebar-width: 15rem;
+    --body-padding: 0.2rem;
+}
+
+/* See [box sizing](https://css-tricks.com/box-sizing/) for the following
+   technique to use `border-box` sizing. */
+html {
+    box-sizing: border-box;
+}
+
+*,
+*:before,
+*:after {
+    box-sizing: inherit;
 }
 
 body {
+    /* For box model simplicity, switch the padding and margin. */
+    padding: var(--body-padding);
+    margin: 0px;
     overflow: hidden;
 }
 

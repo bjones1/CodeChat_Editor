@@ -76,6 +76,7 @@ pub struct CodeChatForWeb {
 /// of comment delimiters?
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct SourceFileMetadata {
+    /// The lexer used to transforms source code into code and doc blocks and vice versa.
     pub mode: String,
 }
 
@@ -107,14 +108,14 @@ pub type CodeMirrorDocBlocks = Vec<(
 /// Editor format.
 #[derive(Debug, PartialEq)]
 pub enum TranslationResults {
-    // This file is unknown to and therefore not supported by the CodeChat
+    /// This file is unknown to and therefore not supported by the CodeChat
     // Editor.
     Unknown,
-    // This is a CodeChat Editor file but it contains errors that prevent its
-    // translation. The string contains the error message.
+    /// This is a CodeChat Editor file but it contains errors that prevent its
+    /// translation. The string contains the error message.
     Err(String),
-    // A CodeChat Editor file; the struct contains the file's contents
-    // translated to CodeMirror.
+    /// A CodeChat Editor file; the struct contains the file's contents
+    /// translated to CodeMirror.
     CodeChat(CodeChatForWeb),
 }
 
@@ -122,16 +123,18 @@ pub enum TranslationResults {
 /// rendering of the CodeChat Editor format.
 #[derive(Debug, PartialEq)]
 pub enum TranslationResultsString {
-    // This file is unknown to and therefore not supported by the CodeChat
-    // Editor.
+    /// This is a binary file; it must be viewed raw or using the simple viewer.
+    Binary,
+    /// This file is unknown to the CodeChat
+    /// Editor. It must be viewed raw or using the simple viewer.
     Unknown,
-    // This is a CodeChat Editor file but it contains errors that prevent its
-    // translation. The string contains the error message.
+    /// This is a CodeChat Editor file but it contains errors that prevent its
+    /// translation. The string contains the error message.
     Err(String),
-    // A CodeChat Editor file; the struct contains the file's contents
-    // translated to CodeMirror.
+    /// A CodeChat Editor file; the struct contains the file's contents
+    /// translated to CodeMirror.
     CodeChat(CodeChatForWeb),
-    // The table of contents file, translated to HTML.
+    /// The table of contents file, translated to HTML.
     Toc(String),
 }
 

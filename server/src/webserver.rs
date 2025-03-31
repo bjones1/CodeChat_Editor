@@ -28,7 +28,7 @@ mod vscode;
 // ### Standard library
 use std::{
     collections::{HashMap, HashSet},
-    env, fs,
+    env, fs, io,
     path::{self, MAIN_SEPARATOR_STR, Path, PathBuf},
     str::FromStr,
     sync::{Arc, Mutex},
@@ -74,7 +74,7 @@ use url::Url;
 // ### Local
 //use crate::capture::EventCapture;
 use crate::processing::{
-    CodeChatForWeb, TranslationResultsString, source_to_codechat_for_web_string,
+    CodeChatForWeb, TranslationResultsString, find_path_to_toc, source_to_codechat_for_web_string,
 };
 use filewatcher::{
     filewatcher_browser_endpoint, filewatcher_client_endpoint, filewatcher_root_fs_redirect,
@@ -102,14 +102,26 @@ struct WebsocketQueues {
 /// for it. This is used to send a response to the HTTP task to an HTTP request
 /// made to that task. Send: String, response
 struct ProcessingTaskHttpRequest {
+    /// The URL provided by this request.
+    url: String,
     /// The path of the file requested.
     file_path: PathBuf,
-    /// True if this file is a TOC.
-    is_toc: bool,
+    /// Flags for this file: none, TOC, raw.
+    flags: ProcessingTaskHttpRequestFlags,
     /// True if test mode is enabled.
     is_test_mode: bool,
     /// A queue to send the response back to the HTTP task.
     response_queue: oneshot::Sender<SimpleHttpResponse>,
+}
+
+#[derive(Debug, PartialEq)]
+enum ProcessingTaskHttpRequestFlags {
+    // No flags provided.
+    None,
+    // This file is a TOC.
+    Toc,
+    /// This should be sent as the raw file.
+    Raw,
 }
 
 /// Since an `HttpResponse` doesn't implement `Send`, use this as a proxy to
@@ -118,14 +130,32 @@ struct ProcessingTaskHttpRequest {
 enum SimpleHttpResponse {
     /// Return a 200 with the provided string as the HTML body.
     Ok(String),
-    /// Return an error (400 status code) with the provided string as the HTML
-    /// body.
-    Err(String),
+    /// Return an error as the HTML body.
+    Err(SimpleHttpResponseError),
     /// Serve the raw file content, using the provided content type.
     Raw(String, Mime),
     /// The file contents are not UTF-8; serve it from the filesystem path
     /// provided.
     Bin(PathBuf),
+}
+
+// List all the possible errors when responding to an HTTP request. See [The
+// definitive guide to error handling in
+// Rust](https://www.howtocodeit.com/articles/the-definitive-guide-to-rust-error-handling).
+#[derive(Debug, thiserror::Error)]
+enum SimpleHttpResponseError {
+    #[error("Error opening file")]
+    Io(#[from] io::Error),
+    #[error("Project path {0:?} has no final component.")]
+    ProjectPathShort(PathBuf),
+    #[error("Path {0:?} cannot be translated to a string.")]
+    PathNotString(PathBuf),
+    #[error("Path {0:?} is not a project.")]
+    PathNotProject(PathBuf),
+    #[error("Bundled file {0} not found.")]
+    BundledFileNotFound(String),
+    #[error("Lexer error: {0}.")]
+    LexerError(String),
 }
 
 /// Define the data structure used to pass data between the CodeChat Editor
@@ -148,7 +178,12 @@ enum EditorMessageContents {
     /// destinations: IDE, Client.
     Update(UpdateMessageContents),
     /// Specify the current file to edit. Valid destinations: IDE, Client.
-    CurrentFile(String),
+    CurrentFile(
+        // A path/URL to this file.
+        String,
+        // True if the file is text; False if it's binary; None if the file's type hasn't been determined. This is only used by the IDE, which needs to know whether it's opening a text file or a binary file. When sending this message, the IDE and Client can both send `None`; the Server will determine the value if needed.
+        Option<bool>,
+    ),
 
     // #### These messages may only be sent by the IDE.
     /// This is the first message sent when the IDE starts up. It may only be
@@ -544,9 +579,22 @@ pub async fn filesystem_endpoint(
         web::Query<HashMap<String, String>>,
         actix_web::error::QueryPayloadError,
     > = web::Query::<HashMap<String, String>>::from_query(req.query_string());
-    let is_toc =
-        query_params.is_ok_and(|query| query.get("mode").is_some_and(|mode| mode == "toc"));
+    let is_toc = query_params
+        .as_ref()
+        .is_ok_and(|query| query.get("mode").is_some_and(|mode| mode == "toc"));
+    let is_raw = query_params
+        .as_ref()
+        .is_ok_and(|query| query.get("raw").is_some());
     let is_test_mode = get_test_mode(req);
+    let flags = if is_toc {
+        // Both flags should never be set.
+        assert!(!is_raw);
+        ProcessingTaskHttpRequestFlags::Toc
+    } else if is_raw {
+        ProcessingTaskHttpRequestFlags::Raw
+    } else {
+        ProcessingTaskHttpRequestFlags::None
+    };
 
     // Create a one-shot channel used by the processing task to provide a
     // response to this request.
@@ -569,8 +617,9 @@ pub async fn filesystem_endpoint(
     // Send it the request.
     if let Err(err) = processing_tx
         .send(ProcessingTaskHttpRequest {
+            url: req.path().to_string(),
             file_path,
-            is_toc,
+            flags,
             is_test_mode,
             response_queue: tx,
         })
@@ -587,7 +636,7 @@ pub async fn filesystem_endpoint(
             SimpleHttpResponse::Ok(body) => HttpResponse::Ok()
                 .content_type(ContentType::html())
                 .body(body),
-            SimpleHttpResponse::Err(body) => html_not_found(&body),
+            SimpleHttpResponse::Err(body) => html_not_found(&format!("{}", body)),
             SimpleHttpResponse::Raw(body, content_type) => {
                 HttpResponse::Ok().content_type(content_type).body(body)
             }
@@ -616,6 +665,8 @@ async fn make_simple_http_response(
     http_request: &ProcessingTaskHttpRequest,
     // Path to the file currently being edited.
     current_filepath: &Path,
+    // True to use the PDF.js viewer for this file.
+    use_pdf_js: bool,
 ) -> (
     // The response to send back to the HTTP endpoint.
     SimpleHttpResponse,
@@ -629,22 +680,33 @@ async fn make_simple_http_response(
     // Read the file
     match File::open(file_path).await {
         Err(err) => (
-            SimpleHttpResponse::Err(format!("<p>Error opening file {file_path:?}: {err}.")),
+            SimpleHttpResponse::Err(SimpleHttpResponseError::Io(err)),
             None,
         ),
         Ok(mut fc) => {
-            let mut file_contents = String::new();
-            match fc.read_to_string(&mut file_contents).await {
-                // If this is a binary file (meaning we can't read the contents
-                // as UTF-8), just serve it raw; assume this is an
-                // image/video/etc.
-                Err(_) => (SimpleHttpResponse::Bin(file_path.clone()), None),
-                Ok(_) => {
-                    text_file_to_response(http_request, current_filepath, file_path, &file_contents)
-                        .await
-                }
-            }
+            let file_contents = try_read_as_text(&mut fc).await;
+            // <a id="binary-file-sniffer"></a>If this is a binary file (meaning we can't read the contents
+            // as UTF-8), send the contents as none to signal this isn't a
+            // text file.
+            file_to_response(
+                http_request,
+                current_filepath,
+                file_contents.as_deref(),
+                use_pdf_js,
+            )
+            .await
         }
+    }
+}
+
+// Determine if the provided file is text or binary. If text, return it as a Unicode string. If binary, return None.
+async fn try_read_as_text(file: &mut File) -> Option<String> {
+    let mut file_contents = String::new();
+    // TODO: this is a rather crude way to detect if a file is binary. It's probably slow for large file (the [underlying code](https://github.com/tokio-rs/tokio/blob/master/tokio/src/io/util/read_to_string.rs#L57) looks like it reads the entire file to memory, then converts that to UTF-8). Find a heuristic sniffer instead, such as [libmagic](https://docs.rs/magic/0.13.0-alpha.3/magic/).
+    if file.read_to_string(&mut file_contents).await.is_ok() {
+        Some(file_contents)
+    } else {
+        None
     }
 }
 
@@ -652,17 +714,16 @@ async fn make_simple_http_response(
 // file contents itself (if it's not editable by the Client). If responding with
 // a Client, also return an Update message which will provided the contents for
 // the Client.
-async fn text_file_to_response(
+async fn file_to_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
     // Path to the file currently being edited. This path should be cleaned by
     // `try_canonicalize`.
     current_filepath: &Path,
-    // Path to this text file. This path should be cleaned by
-    // `try_canonicalize`.
-    file_path: &Path,
-    // Contents of this text file.
-    file_contents: &str,
+    // Contents of this file, if it's text; None if it was binary data.
+    file_contents: Option<&str>,
+    // True to use the PDF.js viewer for this file.
+    use_pdf_js: bool,
 ) -> (
     // The response to send back to the HTTP endpoint.
     SimpleHttpResponse,
@@ -672,11 +733,11 @@ async fn text_file_to_response(
     Option<EditorMessageContents>,
 ) {
     // Use a lossy conversion, since this is UI display, not filesystem access.
+    let file_path = &http_request.file_path;
     let Some(file_name) = file_path.file_name() else {
         return (
-            SimpleHttpResponse::Err(format!(
-                "Path {} has no final component.",
-                file_path.to_string_lossy()
+            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
+                file_path.to_path_buf(),
             )),
             None,
         );
@@ -689,19 +750,21 @@ async fn text_file_to_response(
     } else {
         ""
     };
-    let Some(codechat_editor_js) =
-        BUNDLED_FILES_MAP.get(&format!("CodeChatEditor{js_test_suffix}.js"))
-    else {
+    let codechat_editor_js_name = format!("CodeChatEditor{js_test_suffix}.js");
+    let Some(codechat_editor_js) = BUNDLED_FILES_MAP.get(&codechat_editor_js_name) else {
         return (
-            SimpleHttpResponse::Err(format!("CodeChatEditor{js_test_suffix}.js not found")),
+            SimpleHttpResponse::Err(SimpleHttpResponseError::BundledFileNotFound(
+                codechat_editor_js_name,
+            )),
             None,
         );
     };
-    let Some(codehat_editor_css) =
-        BUNDLED_FILES_MAP.get(&format!("CodeChatEditor{js_test_suffix}.css"))
-    else {
+    let codechat_editor_css_name = format!("CodeChatEditor{js_test_suffix}.css");
+    let Some(codehat_editor_css) = BUNDLED_FILES_MAP.get(&codechat_editor_css_name) else {
         return (
-            SimpleHttpResponse::Err(format!("CodeChatEditor{js_test_suffix}.css not found")),
+            SimpleHttpResponse::Err(SimpleHttpResponseError::BundledFileNotFound(
+                codechat_editor_css_name,
+            )),
             None,
         );
     };
@@ -709,18 +772,83 @@ async fn text_file_to_response(
     // Compare these files, since both have been canonicalized by
     // `try_canonical`.
     let is_current_file = file_path == current_filepath;
-    let (translation_results_string, path_to_toc) = if is_current_file || http_request.is_toc {
-        source_to_codechat_for_web_string(file_contents, file_path, http_request.is_toc)
+    let is_toc = http_request.flags == ProcessingTaskHttpRequestFlags::Toc;
+    let (translation_results_string, path_to_toc) = if let Some(file_contents_text) = file_contents
+    {
+        if is_current_file || is_toc {
+            source_to_codechat_for_web_string(file_contents_text, file_path, is_toc)
+        } else {
+            // If this isn't the current file, then don't parse it.
+            (TranslationResultsString::Unknown, None)
+        }
     } else {
-        // If this isn't the current file, then don't parse it.
-        (TranslationResultsString::Unknown, None)
+        (
+            TranslationResultsString::Binary,
+            find_path_to_toc(file_path),
+        )
     };
+    let is_project = path_to_toc.is_some();
+    // For project files, add in the sidebar. Convert this from a Windows path
+    // to a Posix path if necessary.
+    let (sidebar_iframe, sidebar_css) = if is_project {
+        (
+            format!(
+                r#"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"#,
+                path_to_toc.unwrap().to_slash_lossy()
+            ),
+            format!(
+                r#"<link rel="stylesheet" href="/{}">"#,
+                *CODECHAT_EDITOR_PROJECT_CSS
+            ),
+        )
+    } else {
+        ("".to_string(), "".to_string())
+    };
+
+    // Do we need to respond with a [simple viewer](#Client-simple-viewer)?
+    if (translation_results_string == TranslationResultsString::Binary
+        || translation_results_string == TranslationResultsString::Unknown)
+        && is_project
+        && is_current_file
+        && http_request.flags != ProcessingTaskHttpRequestFlags::Raw
+    {
+        let Some(file_name) = file_name.to_str() else {
+            return (
+                SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(PathBuf::from(
+                    file_name,
+                ))),
+                None,
+            );
+        };
+        return (
+            make_simple_viewer(
+                http_request,
+                &if use_pdf_js {
+                    // For the [PDF.js viewer](#pdf.js), pass the file to view as the query parameter.
+                    format!(
+                        r#"<iframe src="/static/pdfjs-main.html?{}" style="height: 100vh; border: 0px" id="CodeChat-contents"></iframe>"#,
+                        http_request.url
+                    )
+                } else {
+                    format!(
+                        r#"<iframe src="{file_name}?raw" style="height: 100vh" id="CodeChat-contents"></iframe>"#
+                    )
+                },
+            ),
+            None,
+        );
+    }
+
     let codechat_for_web = match translation_results_string {
+        // The file type is binary. Ask the HTTP server to serve it raw.
+        TranslationResultsString::Binary => return
+            (SimpleHttpResponse::Bin(file_path.to_path_buf()), None)
+        ,
         // The file type is unknown. Serve it raw.
         TranslationResultsString::Unknown => {
             return (
                 SimpleHttpResponse::Raw(
-                    file_contents.to_string(),
+                    file_contents.unwrap().to_string(),
                     mime_guess::from_path(file_path).first_or_text_plain(),
                 ),
                 None,
@@ -728,7 +856,7 @@ async fn text_file_to_response(
         }
         // Report a lexer error.
         TranslationResultsString::Err(err_string) => {
-            return (SimpleHttpResponse::Err(err_string), None);
+            return (SimpleHttpResponse::Err(SimpleHttpResponseError::LexerError(err_string)), None);
         }
         // This is a CodeChat file. The following code wraps the CodeChat for
         // web results in a CodeChat Editor Client webpage.
@@ -760,24 +888,6 @@ async fn text_file_to_response(
         }
     };
 
-    let is_project = path_to_toc.is_some();
-    // For project files, add in the sidebar. Convert this from a Windows path
-    // to a Posix path if necessary.
-    let (sidebar_iframe, sidebar_css) = if is_project {
-        (
-            format!(
-                r#"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"#,
-                path_to_toc.unwrap().to_slash_lossy()
-            ),
-            format!(
-                r#"<link rel="stylesheet" href="/{}">"#,
-                *CODECHAT_EDITOR_PROJECT_CSS
-            ),
-        )
-    } else {
-        ("".to_string(), "".to_string())
-    };
-
     // Add testing mode scripts if requested.
     let testing_src = if http_request.is_test_mode {
         r#"
@@ -791,18 +901,20 @@ async fn text_file_to_response(
     // Provided info from the HTTP request, determine the following parameters.
     let Some(raw_dir) = file_path.parent() else {
         return (
-            SimpleHttpResponse::Err(format!(
-                "Path {} has no parent.",
-                file_path.to_string_lossy()
+            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
+                file_path.to_path_buf(),
             )),
             None,
         );
     };
     let dir = path_display(raw_dir);
     let Some(file_path) = file_path.to_str() else {
-        let msg = format!("Error: unable to convert path {file_path:?} to a string.");
-        error!("{msg}");
-        return (SimpleHttpResponse::Err(msg), None);
+        return (
+            SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
+                file_path.to_path_buf(),
+            )),
+            None,
+        );
     };
     // Build and return the webpage.
     (
@@ -849,6 +961,82 @@ async fn text_file_to_response(
             cursor_position: None,
             scroll_position: None,
         })),
+    )
+}
+
+// Create a [Client Simple Viewer](#Client-simple-viewer) (which shows just the
+// TOC, then whatever HTML is provided). This is useful to show images/videos,
+// unsupported text files, error messages, etc. when inside a project.
+fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> SimpleHttpResponse {
+    // Use a lossy conversion, since this is UI display, not filesystem access.
+    let file_path = &http_request.file_path;
+    let Some(file_name) = file_path.file_name() else {
+        return SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
+            file_path.to_path_buf(),
+        ));
+    };
+    let Some(file_name) = file_name.to_str() else {
+        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
+            file_path.to_path_buf(),
+        ));
+    };
+    let file_name = escape_html(file_name);
+
+    let Some(path_to_toc) = find_path_to_toc(file_path) else {
+        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotProject(
+            file_path.to_path_buf(),
+        ));
+    };
+    let Some(path_to_toc) = path_to_toc.to_str() else {
+        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
+            path_to_toc.to_path_buf(),
+        ));
+    };
+    let path_to_toc = escape_html(path_to_toc);
+
+    SimpleHttpResponse::Ok(
+        // The JavaScript is a stripped-down version of [on\_navigate from
+        // CodeChatEditor.mts](../../client/src/CodeChatEditor.mts).
+        formatdoc!(
+            r#"
+                <!DOCTYPE html>
+                <html lang="en">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1">
+                        <title>{file_name} - The CodeChat Editor</title>
+                        <script>
+                            const on_navigate = (navigateEvent) => {{
+                                if (navigateEvent.hashChange ||
+                                    navigateEvent.downloadRequest ||
+                                    navigateEvent.formData ||
+                                    !navigateEvent.canIntercept
+                                ) {{
+                                    return;
+                                }}
+                                navigateEvent.intercept();
+                                navigation.removeEventListener("navigate", on_navigate);
+                                parent.window.CodeChatEditorFramework.webSocketComm.current_file(new URL(navigateEvent.destination.url));
+                            }};
+
+                            const on_load_func = () => {{
+                                document.getElementById("CodeChat-sidebar").contentWindow.navigation.addEventListener("navigate", on_navigate);
+                            }};
+                            if (document.readyState === "loading") {{
+                                document.addEventListener("DOMContentLoaded", on_load_func);
+                            }} else {{
+                                on_load_func();
+                            }}
+                        </script>
+                        <link rel="stylesheet" href="/{}">
+                    </head>
+                    <body class="CodeChat-theme-light">
+                        <iframe src="{path_to_toc}?mode=toc" id="CodeChat-sidebar"></iframe>
+                        {html}
+                    </body>
+                </html>"#,
+            *CODECHAT_EDITOR_PROJECT_CSS
+        ),
     )
 }
 

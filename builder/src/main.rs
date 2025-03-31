@@ -31,12 +31,18 @@
 // -------
 //
 // ### Standard library
-use std::{ffi::OsStr, fs, io, path::Path, process::Command};
+use std::{
+    ffi::OsStr,
+    fs, io,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 // ### Third-party
 use clap::{Parser, Subcommand};
 use cmd_lib::run_cmd;
 use current_platform::CURRENT_PLATFORM;
+use path_slash::PathBufExt;
 use regex::Regex;
 
 // ### Local
@@ -68,6 +74,12 @@ enum Commands {
     Test,
     /// Build everything.
     Build,
+    /// Build the Client.
+    ClientBuild {
+        /// True to build for distribution, instead of development.
+        #[arg(short, long, default_value_t = false)]
+        dist: bool,
+    },
     /// Change the version for the client, server, and extensions.
     ChangeVersion {
         /// The new version number, such as "0.1.1".
@@ -98,17 +110,18 @@ enum Commands {
 // These functions are called by the build support functions.
 /// On Windows, scripts must be run from a shell; on Linux and OS X, scripts are
 /// directly executable. This function runs a script regardless of OS.
-fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
+fn run_script<T: AsRef<Path>, A: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
     // The script to run.
     script: T,
     // Arguments to pass.
-    args: &[T],
+    args: &[A],
     // The directory to run the script in.
     dir: P,
     // True to report errors based on the process' exit code; false to ignore
     // the code.
     check_exit_code: bool,
 ) -> io::Result<()> {
+    let script = OsStr::new(script.as_ref());
     let mut process;
     if cfg!(windows) {
         process = Command::new("cmd");
@@ -136,9 +149,11 @@ fn run_script<T: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Display>(
 /// programs (`robocopy`/`rsync`) to accomplish this. Very important: the `src`
 /// **must** end with a `/`, otherwise the Windows and Linux copies aren't
 /// identical.
-fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P, files: Option<P>) -> io::Result<()> {
+fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Result<()> {
     assert!(src.as_ref().to_string_lossy().ends_with('/'));
     let mut copy_process;
+    let src = OsStr::new(src.as_ref());
+    let dest = OsStr::new(dest.as_ref());
     #[cfg(windows)]
     {
         // From `robocopy /?`:
@@ -165,31 +180,26 @@ fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P, files: Option<P>) -> io::Res
             .args([
                 "/MIR", "/MT", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/NS", "/NC",
             ])
-            .arg(&src)
-            .arg(&dest);
+            .arg(src)
+            .arg(dest);
         // Robocopy expects the files to copy after the dest.
         if let Some(files_) = &files {
-            copy_process.arg(files_);
+            copy_process.arg(OsStr::new(files_.as_ref()));
         }
     }
     #[cfg(not(windows))]
     {
         // Create the dest directory, since old CI OSes don't support `rsync
         // --mkpath`.
-        run_script(
-            "mkdir",
-            &["-p", dest.as_ref().to_str().unwrap()],
-            "./",
-            true,
-        )?;
+        run_script("mkdir", &["-p", dest.to_str().unwrap()], "./", true)?;
         let mut tmp;
         let src_combined = match files.as_ref() {
             Some(files_) => {
-                tmp = src.as_ref().to_os_string();
-                tmp.push(files_);
+                tmp = src.to_os_string();
+                tmp.push(OsStr::new(files_.as_ref()));
                 tmp.as_os_str()
             }
-            None => src.as_ref(),
+            None => src,
         };
 
         // Use bash to perform globbing, since rsync doesn't do this.
@@ -199,7 +209,7 @@ fn quick_copy_dir<P: AsRef<OsStr>>(src: P, dest: P, files: Option<P>) -> io::Res
             format!(
                 "rsync --archive --delete {} {}",
                 &src_combined.to_str().unwrap(),
-                &dest.as_ref().to_str().unwrap()
+                &dest.to_str().unwrap()
             )
             .as_str(),
         ]);
@@ -410,11 +420,87 @@ fn run_test() -> io::Result<()> {
 fn run_build() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
-    run_script("npm", &["run", "build"], "../client", true)?;
+    run_client_build(false)?;
     run_script("npm", &["run", "compile"], "../extensions/VSCode", true)?;
     run_cmd!(
         cargo build --manifest-path=../builder/Cargo.toml;
         cargo build;
+    )?;
+    Ok(())
+}
+
+// Build the NPM Client.
+fn run_client_build(
+    // True to build for distribution, not development.
+    dist: bool,
+) -> io::Result<()> {
+    let esbuild = PathBuf::from_slash("node_modules/.bin/esbuild");
+    let distflag = if dist { "--minify" } else { "--sourcemap" };
+    // This makes the program work from either the `server/` or `client/` directories.
+    let rel_path = "../client";
+
+    // The main build for the Client.
+    run_script(
+        &esbuild,
+        &[
+            "src/CodeChatEditorFramework.mts",
+            "src/CodeChatEditor.mts",
+            "src/CodeChatEditor-test.mts",
+            "src/css/CodeChatEditorProject.css",
+            "src/css/CodeChatEditor.css",
+            "--bundle",
+            "--outdir=./static/bundled",
+            distflag,
+            "--format=esm",
+            "--splitting",
+            "--metafile=meta.json",
+            "--entry-names=[dir]/[name]-[hash]",
+        ],
+        rel_path,
+        true,
+    )?;
+    // <a id="#pdf.js></a>The PDF viewer for use with VSCode. Built it separately, since it's loaded apart from the rest of the Client.
+    run_script(
+        &esbuild,
+        &[
+            "src/pdf.js/viewer.mjs",
+            "node_modules/pdfjs-dist/build/pdf.worker.mjs",
+            "--bundle",
+            "--outdir=./static/bundled",
+            distflag,
+            "--format=esm",
+            "--loader:.png=dataurl",
+            "--loader:.svg=dataurl",
+            "--loader:.gif=dataurl",
+        ],
+        rel_path,
+        true,
+    )?;
+    // Copy over the cmap (color map?) files, which the bundler doesn't handle.
+    quick_copy_dir(
+        format!("{rel_path}/node_modules/pdfjs-dist/cmaps/"),
+        format!("{rel_path}/static/bundled/node_modules/pdfjs-dist/cmaps/"),
+        None,
+    )?;
+    // The HashReader isn't bundled; instead, it's used to translate the JSON metafile produced by the main esbuild run to the simpler format used by the CodeChat Editor. TODO: rewrite this in Rust.
+    run_script(
+        &esbuild,
+        &[
+            "src/HashReader.mts",
+            "--outdir=.",
+            "--platform=node",
+            "--format=esm",
+        ],
+        rel_path,
+        true,
+    )?;
+    run_script("node", &["HashReader.js"], rel_path, true)?;
+    // Finally, check the TypeScript with the (slow) TypeScript compiler.
+    run_script(
+        PathBuf::from_slash("node_modules/.bin/tsc"),
+        &["-noEmit"],
+        rel_path,
+        true,
     )?;
     Ok(())
 }
@@ -490,6 +576,7 @@ impl Cli {
             Commands::Update => run_update(),
             Commands::Test => run_test(),
             Commands::Build => run_build(),
+            Commands::ClientBuild { dist } => run_client_build(*dist),
             Commands::ChangeVersion { new_version } => run_change_version(new_version),
             Commands::Prerelease => run_prerelease(),
             Commands::Postrelease { target, .. } => run_postrelease(target),

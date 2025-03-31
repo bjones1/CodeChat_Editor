@@ -21,7 +21,7 @@
 // -------
 //
 // ### Standard library
-use std::{cmp::min, collections::HashMap, path::PathBuf};
+use std::{cmp::min, collections::HashMap, ffi::OsStr, path::PathBuf};
 
 // ### Third-party
 use actix_web::{
@@ -32,7 +32,7 @@ use actix_web::{
 use indoc::formatdoc;
 use log::{debug, error, warn};
 use open;
-use tokio::{select, sync::mpsc};
+use tokio::{fs::File, select, sync::mpsc};
 
 // ### Local
 use super::{
@@ -48,9 +48,8 @@ use crate::{
     queue_send,
     webserver::{
         INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT, ProcessingTaskHttpRequest, ResultOkTypes,
-        UpdateMessageContents, escape_html, filesystem_endpoint, html_wrapper,
-        make_simple_http_response, path_to_url, text_file_to_response, try_canonicalize,
-        url_to_path,
+        UpdateMessageContents, escape_html, file_to_response, filesystem_endpoint, html_wrapper,
+        make_simple_http_response, path_to_url, try_canonicalize, try_read_as_text, url_to_path,
     },
 };
 
@@ -357,15 +356,16 @@ pub async fn vscode_ide_websocket(
                                     }
                                 };
 
-                                // Process the file contents.
+                                // Process the file contents. Since VSCode doesn't have a PDF viewer, determine if this is a PDF file. (TODO: look at the magic number also -- "%PDF").
+                                let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
                                 let (simple_http_response, option_update) = match file_contents_option {
                                     Some(file_contents) =>
-                                        text_file_to_response(&http_request, &current_file, &http_request.file_path, file_contents).await,
+                                        file_to_response(&http_request, &current_file, Some(file_contents), use_pdf_js).await,
                                     None => {
                                         // The file wasn't available in the IDE.
                                         // Look for it in the filesystem.
                                         debug!("Sending HTTP response.");
-                                        make_simple_http_response(&http_request, &current_file).await
+                                        make_simple_http_response(&http_request, &current_file, use_pdf_js).await
                                     }
                                 };
                                 if let Some(update) = option_update {
@@ -404,6 +404,8 @@ pub async fn vscode_ide_websocket(
                                                         }));
                                                         Ok(ResultOkTypes::Void)
                                                     }
+                                                    // TODO
+                                                    TranslationResultsString::Binary => Err("TODO".to_string()),
                                                     TranslationResultsString::Err(err) => Err(format!("Error translating source to CodeChat: {err}").to_string()),
                                                     TranslationResultsString::Unknown => {
                                                         // Send the new raw contents.
@@ -448,14 +450,14 @@ pub async fn vscode_ide_websocket(
 
                             // Update the current file; translate it to a URL
                             // then pass it to the Client.
-                            EditorMessageContents::CurrentFile(file_path) => {
+                            EditorMessageContents::CurrentFile(file_path, _is_text) => {
                                 debug!("Translating and forwarding it to the Client.");
                                 match try_canonicalize(&file_path) {
                                     Ok(clean_file_path) => {
                                         queue_send!(to_client_tx.send(EditorMessage {
                                             id: ide_message.id,
                                             message: EditorMessageContents::CurrentFile(
-                                                path_to_url("/vsc/fs", &connection_id_task, &clean_file_path)
+                                                path_to_url("/vsc/fs", &connection_id_task, &clean_file_path), Some(true)
                                             )
                                         }));
                                         current_file = file_path.into();
@@ -569,7 +571,7 @@ pub async fn vscode_ide_websocket(
 
                             // Update the current file; translate it to a URL
                             // then pass it to the IDE.
-                            EditorMessageContents::CurrentFile(url_string) => {
+                            EditorMessageContents::CurrentFile(url_string, _is_text) => {
                                 debug!("Forwarding translated path to IDE.");
                                 let result = match url_to_path(&url_string, VSCODE_PATH_PREFIX) {
                                     Err(err) => Err(format!("Unable to convert URL to path: {err}")),
@@ -577,9 +579,15 @@ pub async fn vscode_ide_websocket(
                                         match file_path.to_str() {
                                             None => Err("Unable to convert path to string.".to_string()),
                                             Some(file_path_string) => {
+                                                // Use a [binary file sniffer](#binary-file-sniffer) to determine if the file is text or binary.
+                                                let is_text = if let Ok(mut fc) = File::open(&file_path).await {
+                                                    try_read_as_text(&mut fc).await.is_some()
+                                                } else {
+                                                    false
+                                                };
                                                 queue_send!(to_ide_tx.send(EditorMessage {
                                                     id: client_message.id,
-                                                    message: EditorMessageContents::CurrentFile(file_path_string.to_string())
+                                                    message: EditorMessageContents::CurrentFile(file_path_string.to_string(), Some(is_text))
                                                 }));
                                                 current_file = file_path;
                                                 Ok(())
@@ -1091,7 +1099,7 @@ mod test {
             &mut ws_ide,
             &EditorMessage {
                 id: 4.0,
-                message: EditorMessageContents::CurrentFile(file_path_str.clone()),
+                message: EditorMessageContents::CurrentFile(file_path_str.clone(), None),
             },
         )
         .await;
@@ -1100,7 +1108,13 @@ mod test {
         let em = read_message(&mut ws_client).await;
         assert_eq!(em.id, 4.0);
         assert_ends_with!(
-            cast!(&em.message, EditorMessageContents::CurrentFile),
+            cast!(
+                &em.message,
+                EditorMessageContents::CurrentFile,
+                file_name,
+                is_text
+            )
+            .0,
             "/only-in-ide.py"
         );
 
@@ -1232,16 +1246,26 @@ mod test {
             &mut ws_client,
             &EditorMessage {
                 id: 2.0,
-                message: EditorMessageContents::CurrentFile(format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
-                    &file_path.to_slash().unwrap()
-                )),
+                message: EditorMessageContents::CurrentFile(
+                    format!(
+                        "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                        &file_path.to_slash().unwrap(),
+                    ),
+                    None,
+                ),
             },
         )
         .await;
         let em = read_message(&mut ws_ide).await;
-        let cf = cast!(em.message, EditorMessageContents::CurrentFile);
+        let (cf, is_text) = cast!(
+            em.message,
+            EditorMessageContents::CurrentFile,
+            file_name,
+            is_text
+        );
         assert_eq!(path::absolute(Path::new(&cf)).unwrap(), file_path);
+        // Since the file doesn't exist, it's classified as binary by default.
+        assert_eq!(is_text, Some(false));
         assert_eq!(em.id, 2.0);
 
         send_message(
@@ -1423,16 +1447,24 @@ mod test {
             &mut ws_client,
             &EditorMessage {
                 id: 2.0,
-                message: EditorMessageContents::CurrentFile(format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
-                    &file_path.to_slash().unwrap()
-                )),
+                message: EditorMessageContents::CurrentFile(
+                    format!(
+                        "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                        &file_path.to_slash().unwrap()
+                    ),
+                    None,
+                ),
             },
         )
         .await;
 
         let em = read_message(&mut ws_ide).await;
-        let cf = cast!(em.message, EditorMessageContents::CurrentFile);
+        let (cf, _) = cast!(
+            em.message,
+            EditorMessageContents::CurrentFile,
+            file_name,
+            is_text
+        );
         assert_eq!(cf, file_path.to_str().unwrap().to_string());
         assert_eq!(em.id, 2.0);
 

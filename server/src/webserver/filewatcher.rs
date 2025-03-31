@@ -399,7 +399,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                 let url_pathbuf = path_to_url("/fw/fsc", &connection_id.to_string(), cfp);
                 queue_send!(to_websocket_tx.send(EditorMessage {
                     id,
-                    message: EditorMessageContents::CurrentFile(url_pathbuf)
+                    message: EditorMessageContents::CurrentFile(url_pathbuf, None)
                 }), 'task);
                 // Note: it's OK to postpone the increment to here; if the
                 // `queue_send` exits before this runs, the message didn't get
@@ -534,7 +534,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         // file, which will still produce an error.
                         let empty_path = PathBuf::new();
                         let cfp = current_filepath.as_ref().unwrap_or(&empty_path);
-                        let (simple_http_response, option_update) = make_simple_http_response(&http_request, cfp).await;
+                        let (simple_http_response, option_update) = make_simple_http_response(&http_request, cfp, false).await;
                         if let Some(update) = option_update {
                             // Send the update to the client.
                             queue_send!(to_websocket_tx.send(EditorMessage { id, message: update }));
@@ -607,7 +607,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                                 send_response(&to_websocket_tx, m.id, result).await;
                             }
 
-                            EditorMessageContents::CurrentFile(url_string) => {
+                            EditorMessageContents::CurrentFile(url_string, _is_text) => {
                                 let result = match url_to_path(&url_string, FILEWATCHER_PATH_PREFIX) {
                                     Err(err) => Err(err),
                                     Ok(ref file_path) => 'err_exit: {
@@ -795,6 +795,10 @@ mod tests {
             let m = get_message(&mut $client_rx).await;
             (m.id, cast!(m.message, $cast_type))
         }};
+        ($client_rx: expr_2021, $cast_type: ty, $( $tup: ident),*) => {{
+            let m = get_message(&mut $client_rx).await;
+            (m.id, cast!(m.message, $cast_type, $($tup),*))
+        }};
     }
 
     #[actix_web::test]
@@ -807,8 +811,14 @@ mod tests {
 
         // The initial web request for the Client framework produces a
         // `CurrentFile`.
-        let (id, url_string) = get_message_as!(client_rx, EditorMessageContents::CurrentFile);
+        let (id, (url_string, is_text)) = get_message_as!(
+            client_rx,
+            EditorMessageContents::CurrentFile,
+            file_name,
+            is_text
+        );
         assert_eq!(id, 0.0);
+        assert_eq!(is_text, None);
 
         // Compute the path this message should contain.
         let mut test_path = test_dir.clone();
@@ -864,7 +874,12 @@ mod tests {
 
         // The initial web request for the Client framework produces a
         // `CurrentFile`.
-        let (id, _) = get_message_as!(client_rx, EditorMessageContents::CurrentFile);
+        let (id, (..)) = get_message_as!(
+            client_rx,
+            EditorMessageContents::CurrentFile,
+            file_name,
+            is_text
+        );
         assert_eq!(id, 0.0);
         send_response(&ide_tx_queue, 0.0, Ok(ResultOkTypes::Void)).await;
 
@@ -1064,7 +1079,7 @@ mod tests {
         ide_tx_queue
             .send(EditorMessage {
                 id: 7.0,
-                message: EditorMessageContents::CurrentFile(new_uri.clone()),
+                message: EditorMessageContents::CurrentFile(new_uri.clone(), None),
             })
             .await
             .unwrap();
