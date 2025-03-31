@@ -21,6 +21,9 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.15, 2025-Mar-31:
+    *   Correctly view binary files (images, PDFs, etc.) within a project.
+    *   Include support for viewing PDF files in VSCode.
 *   v0.1.14, 2025-Mar-13:
     *   Correct translation of leading slash in Linux/OS X paths to/from a URL.
         This fixes rewrites of URL in Markdown to long relative paths.
