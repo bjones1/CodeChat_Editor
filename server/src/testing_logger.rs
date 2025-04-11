@@ -140,7 +140,7 @@ static TEST_LOGGER: TestingLogger = TestingLogger {};
 pub fn setup() {
     FIRST_TEST.call_once(|| {
         log::set_logger(&TEST_LOGGER)
-            .map(|()| log::set_max_level(LevelFilter::Trace))
+            .map(|()| log::set_max_level(LevelFilter::Debug))
             .unwrap();
     });
     LOG_RECORDS.with(|records| {

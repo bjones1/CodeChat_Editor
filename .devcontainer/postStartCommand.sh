@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 
 cd server
-cargo run
+# TODO: this doesn't open a file from the codespace, unfortunately.
+cargo run -- start ../README.md

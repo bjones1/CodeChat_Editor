@@ -396,7 +396,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
             // Provide it a file to open.
             let mut id: f64 = 0.0;
             if let Some(cfp) = &current_filepath {
-                let url_pathbuf = path_to_url("/fw/fsc", &connection_id.to_string(), cfp);
+                let url_pathbuf = path_to_url("/fw/fsc", Some(&connection_id.to_string()), cfp);
                 queue_send!(to_websocket_tx.send(EditorMessage {
                     id,
                     message: EditorMessageContents::CurrentFile(url_pathbuf, None)

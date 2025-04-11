@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `test.rs` -- Unit tests for the webserver
-/// =========================================
+/// `test.rs` -- Unit tests for the vscode interface
+/// ================================================
 // Imports
 // -------
 use std::{
@@ -103,7 +103,7 @@ fn test_path_to_url() {
 
     let mut file_path = test_dir.clone();
     file_path.push("test spaces.py");
-    let url = path_to_url("/a/b", "conn1", &file_path);
+    let url = path_to_url("/a/b", Some("conn1"), &file_path);
     assert_starts_with!(url, "/a/b/conn1/");
     assert_ends_with!(url, "test_path_to_url/test%20spaces.py");
     // There shouldn't be a double forward slash in the name.

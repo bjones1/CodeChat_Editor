@@ -13,11 +13,10 @@ To build from source
 4.  In the `server/` directory:
     1.  Run `./bt install --dev`.
     2.  Run `./bt build`.
-5.  Open `http://localhost:8080` in your browser.
-6.  Open the file `README.md`.
+    3.  Run `cargo run -- start ../README.md`.
 
-Use `./bt` tool's options update all libraries (`updated`), run all tests
-(`check`), and more.
+Use `./bt` tool's options update all libraries (`update`), run all tests
+(`test`), and more.
 
 <a id="vision"></a>Vision
 -------------------------

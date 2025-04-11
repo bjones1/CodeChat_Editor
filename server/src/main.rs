@@ -20,8 +20,9 @@
 //
 // ### Standard library
 use std::{
-    env,
-    io::Read,
+    env, fs,
+    io::{self, Read},
+    path::PathBuf,
     process::{Child, Command, Stdio},
     time::SystemTime,
 };
@@ -33,7 +34,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 // ### Local
-use code_chat_editor::webserver::{self, IP_ADDRESS};
+use code_chat_editor::webserver::{self, GetServerUrlError, IP_ADDRESS, path_to_url};
 
 // Data structures
 // ---------------
@@ -73,7 +74,10 @@ enum Commands {
         log: Option<LevelFilter>,
     },
     /// Start the webserver in a child process then exit.
-    Start,
+    Start {
+        /// Open a web browser, showing the provided file or directory.
+        open: Option<PathBuf>,
+    },
     /// Stop the webserver child process.
     Stop,
 }
@@ -96,7 +100,7 @@ impl Cli {
                 webserver::configure_logger(log.unwrap_or(LevelFilter::Info));
                 webserver::main(self.port).unwrap();
             }
-            Commands::Start => {
+            Commands::Start { open } => {
                 // Poll the server to ensure it starts.
                 let mut process: Option<Child> = None;
                 let now = SystemTime::now();
@@ -111,6 +115,15 @@ impl Cli {
                             let body = response.as_str().unwrap_or("Non-text body");
                             if status_code == 200 && body == "pong" {
                                 println!("Server started.");
+                                // Open a web browser if requested.
+                                if let Some(open_path) = open {
+                                    let address = get_server_url(self.port)?;
+                                    let open_path = fs::canonicalize(open_path)?;
+                                    let open_path =
+                                        path_to_url(&format!("{address}/fw/fsb"), None, &open_path);
+                                    open::that_detached(&open_path)?;
+                                }
+
                                 return Ok(());
                             } else {
                                 eprintln!(
@@ -119,7 +132,17 @@ impl Cli {
                             }
                         }
                         Err(err) => {
-                            eprintln!("Failed to start server: {err}");
+                            // Use this to skip the print from a nested if statement.
+                            'err_print: {
+                                // Ignore a connection refused error.
+                                if let minreq::Error::IoError(io_error) = &err {
+                                    if io_error.kind() == io::ErrorKind::ConnectionRefused {
+                                        break 'err_print;
+                                    }
+                                }
+                                eprintln!("Failed to connect to server: {err}");
+                                break 'err_print;
+                            }
                         }
                     }
 
@@ -240,6 +263,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     cli.run()?;
 
     Ok(())
+}
+
+#[tokio::main]
+async fn get_server_url(port: u16) -> Result<String, GetServerUrlError> {
+    return code_chat_editor::webserver::get_server_url(port).await;
 }
 
 #[cfg(test)]

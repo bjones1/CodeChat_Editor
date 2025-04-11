@@ -61,6 +61,7 @@ use serde_json;
 use tokio::{
     fs::File,
     io::AsyncReadExt,
+    process::Command,
     select,
     sync::{
         mpsc::{Receiver, Sender},
@@ -1506,7 +1507,7 @@ fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
 }
 
 // Given a file path, convert it to a URL, encoding as necessary.
-fn path_to_url(prefix: &str, connection_id: &str, file_path: &Path) -> String {
+pub fn path_to_url(prefix: &str, connection_id: Option<&str>, file_path: &Path) -> String {
     // First, convert the path to use forward slashes.
     let pathname = simplified(file_path)
         .to_slash()
@@ -1521,7 +1522,12 @@ fn path_to_url(prefix: &str, connection_id: &str, file_path: &Path) -> String {
     // On Windows, path names start with a drive letter. On Linux/OS X, they
     // start with a forward slash -- don't put a double forward slash in the
     // resulting path.
-    format!("{prefix}/{connection_id}/{}", drop_leading_slash(&pathname))
+    let pathname = drop_leading_slash(&pathname);
+    if let Some(connection_id) = connection_id {
+        format!("{prefix}/{connection_id}/{pathname}")
+    } else {
+        format!("{prefix}/{pathname}")
+    }
 }
 
 // Given a string (which is probably a pathname), drop the leading slash if it's
@@ -1574,4 +1580,45 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+// This lists all errors produced by calling `get_server_url`. TODO: rework and re-think the overall error framework. How should I group errors?
+#[derive(Debug, thiserror::Error)]
+pub enum GetServerUrlError {
+    #[error("Expected environment variable not found.")]
+    Io(#[from] env::VarError),
+    #[error("Error running process.")]
+    Process(#[from] std::io::Error),
+    #[error("Process exit status {0:?} indicates error.")]
+    NonZeroExitStatus(Option<i32>),
+}
+
+// Determine the URL for this server; supports running locally and in a GitHub Codespace.
+pub async fn get_server_url(port: u16) -> Result<String, GetServerUrlError> {
+    // This is always true in a GitHub Codespace per the [docs](https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace#list-of-default-environment-variables).
+    if env::var("CODESPACES") == Ok("true".to_string()) {
+        let codespace_name = env::var("CODESPACE_NAME")?;
+        let codespace_domain = env::var("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN")?;
+        // Use the GitHub CLI to [forward this port](https://docs.github.com/en/codespaces/developing-in-a-codespace/using-github-codespaces-with-github-cli#modify-ports-in-a-codespace).
+        let status = Command::new("gh")
+            .args([
+                "codespace",
+                "ports",
+                "visibility",
+                &format!("{port}:public"),
+                "-c",
+                &codespace_name,
+            ])
+            .status()
+            .await?;
+        if !status.success() {
+            Err(GetServerUrlError::NonZeroExitStatus(status.code()))
+        } else {
+            Ok(format!(
+                "https://{codespace_name}-{port}.{codespace_domain}"
+            ))
+        }
+    } else {
+        Ok(format!("http://{IP_ADDRESS}:{port}"))
+    }
 }

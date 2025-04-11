@@ -4,7 +4,6 @@
     "name": "Rust",
     // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
     "image": "mcr.microsoft.com/devcontainers/rust:1-1-bullseye",
-
     // Use 'mounts' to make the cargo cache persistent in a Docker Volume.
     // "mounts": [
     // 	{
@@ -13,21 +12,33 @@
     // 		"type": "volume"
     // 	}
     // ]
-
     // Features to add to the dev container. More info: https://containers.dev/features.
-    "features": { "ghcr.io/devcontainers/features/node": "18" },
-
-    // Use 'forwardPorts' to make a list of ports inside the container available locally.
-    "forwardPorts": [8080],
-
-    // Use 'postCreateCommand' to run commands after the container is created.
-    "postCreateCommand": "sh ./.devcontainer/postCreateCommand.sh",
-
-    "postStartCommand": "sh ./.devcontainer/postStartCommand.sh"
-
+    "features": {
+        // Install Node.js.
+        "ghcr.io/devcontainers/features/node:latest": {},
+        // Add the GitHub CLI as a feature (to support the CodeChat Editor).
+        "ghcr.io/devcontainers/features/github-cli:1": {}
+    },
+    // Run this script after the container is created.
+    "postCreateCommand": "./.devcontainer/postCreateCommand.sh",
+    // Run this script each time the container is started.
+    "postStartCommand": "./.devcontainer/postStartCommand.sh",
     // Configure tool-specific properties.
-    // "customizations": {},
-
+    "customizations": {
+        "codespaces": {
+            "openFiles": [
+                "README.md"
+            ]
+        },
+        "vscode": {
+            "settings": {
+                "CodeChatEditor.Server.Command": "/workspaces/CodeChat_Editor/server/target/debug/codechat-editor-server"
+            },
+            "extensions": [
+                "codechat.codechat-editor-client"
+            ]
+        }
+    }
     // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
     // "remoteUser": "root"
 }

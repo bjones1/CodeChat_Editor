@@ -15,7 +15,7 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// # `Capture.rs` -- Capture CodeChat Editor Events
 // ## Submodules
-
+//
 // ## Imports
 //
 // Standard library
