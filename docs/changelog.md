@@ -21,6 +21,10 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.16, 2025-Apr-11:
+    *   Fix to allow running inside a GitHub Codespace.
+    *   Add: new command-line option to open a file/directory --
+        `codechat-editor-server start [filename/diretory]`.
 *   v0.1.15, 2025-Mar-31:
     *   Correctly view binary files (images, PDFs, etc.) within a project.
     *   Include support for viewing PDF files in VSCode.
