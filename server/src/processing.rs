@@ -48,8 +48,7 @@ use crate::lexer::{CodeDocBlock, DocBlock, LanguageLexerCompiled, source_lexer};
 // Data structures
 // ---------------
 //
-// ### Translation between a local (traditional) source file and its web-editable,
-// client-side representation
+// ### Translation between a local (traditional) source file and its web-editable, client-side representation
 //
 // There are three ways that a source file is represented:
 //
@@ -76,7 +75,8 @@ pub struct CodeChatForWeb {
 /// of comment delimiters?
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct SourceFileMetadata {
-    /// The lexer used to transforms source code into code and doc blocks and vice versa.
+    /// The lexer used to transforms source code into code and doc blocks and
+    /// vice versa.
     pub mode: String,
 }
 
@@ -125,8 +125,8 @@ pub enum TranslationResults {
 pub enum TranslationResultsString {
     /// This is a binary file; it must be viewed raw or using the simple viewer.
     Binary,
-    /// This file is unknown to the CodeChat
-    /// Editor. It must be viewed raw or using the simple viewer.
+    /// This file is unknown to the CodeChat Editor. It must be viewed raw or
+    /// using the simple viewer.
     Unknown,
     /// This is a CodeChat Editor file but it contains errors that prevent its
     /// translation. The string contains the error message.
@@ -145,12 +145,52 @@ pub enum TranslationResultsString {
 lazy_static! {
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
-    /// Match the doc block separator string translated from Markdown to HTML as
-    /// itself, or when inside a fenced code block.
-    static ref DOC_BLOCK_SEPARATOR_STRING_REGEX: Regex = Regex::new("<CodeChatEditor-separator/>\n|&lt;CodeChatEditor-separator/&gt;\n").unwrap();
+    /// <a id="fence-mending-start"></a>If this matches, it means an
+    /// unterminated fenced code block. This should be replaced with the
+    /// `</code></pre>` terminator.
+    static ref DOC_BLOCK_SEPARATOR_BROKEN_FENCE: Regex = Regex::new(concat!(
+        // Allow the `.` wildcard to match newlines.
+        "(?s)",
+        // The first `<CodeChatEditor-fence>` will be munged when a fenced code
+        // block isn't closed.
+        "&lt;CodeChatEditor-fence&gt;\n",
+        // Non-greedy wildcard -- match the first separator, so we don't munch
+        // multiple `DOC_BLOCK_SEPARATOR_STRING`s in one replacement.
+        ".*?",
+        "<CodeChatEditor-separator/>\n")).unwrap();
 }
 
-const DOC_BLOCK_SEPARATOR_STRING: &str = "\n<CodeChatEditor-separator/>\n\n";
+// Use this as a way to end unterminated fenced code blocks. If a fenced block
+// isn't terminated, then the HTML tag is ignored, meaning the line of `---` or
+// `~~~` characters stop it. If the fenced block is terminated, then the HTML
+// tags prevent starting a code block and can be removed. Note that this only
+// supports fenced code blocks with an opening code fence of 23 characters or
+// less (which should cover most cases). To allow more, we'd need to know the
+// length of the opening code fence, which is hard to find.
+const DOC_BLOCK_SEPARATOR_STRING: &str = r#"
+<CodeChatEditor-fence>
+```````````````````````
+<CodeChatEditor-fence>
+~~~~~~~~~~~~~~~~~~~~~~~
+</CodeChatEditor-fence>
+<CodeChatEditor-separator/>
+
+"#;
+
+// After converting Markdown to HTML, this can be used to split doc blocks
+// apart.
+const DOC_BLOCK_SEPARATOR_SPLIT_STRING: &str = "<CodeChatEditor-separator/>\n";
+// Correctly terminated fenced code blocks produce this, which can be removed
+// from the HTML produced by Markdown conversion.
+const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
+```````````````````````
+<CodeChatEditor-fence>
+~~~~~~~~~~~~~~~~~~~~~~~
+</CodeChatEditor-fence>
+"#;
+// The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex.
+const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str = "</code></pre>\n<CodeChatEditor-separator/>\n";
+// <a id="fence-mending-end"></a>
 
 // Determine if the provided file is part of a project.
 // ----------------------------------------------------
@@ -478,14 +518,20 @@ pub fn source_to_codechat_for_web(
                 // string.
                 .collect::<Vec<_>>()
                 .join(DOC_BLOCK_SEPARATOR_STRING);
+
+            // Convert the Markdown to HTML.
             let html = markdown_to_html(&doc_contents);
-            // Now that we have HTML, process it. TODO.
+
+            // <a id="fence-mending-start"></a>Break it back into doc blocks:
             //
-            // After processing by Markdown, the doc block separator string may
-            // be (mostly) unchanged; however, if there's an unterminated fenced
-            // code block, then HTML entities replaces angle brackets. Match on
-            // either case.
-            let mut doc_block_contents_iter = DOC_BLOCK_SEPARATOR_STRING_REGEX.split(&html);
+            // 1.  Mend broken fences.
+            let html = DOC_BLOCK_SEPARATOR_BROKEN_FENCE
+                .replace_all(&html, DOC_BLOCK_SEPARATOR_MENDED_FENCE);
+            // 2.  Remove good fences.
+            let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
+            // 3.  Split on the separator.
+            let mut doc_block_contents_iter = html.split(DOC_BLOCK_SEPARATOR_SPLIT_STRING);
+            // <a id="fence-mending-end"></a>
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             for code_or_doc_block in code_doc_block_arr {
@@ -1367,6 +1413,18 @@ mod tests {
                 ]
             ))
         );
+        assert_eq!(
+            source_to_codechat_for_web("// ~~~\n\n//\n\n//", &"cpp".to_string(), false, false),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "c_cpp",
+                "\n\n\n\n",
+                vec![
+                    build_codemirror_doc_block(0, 0, "", "//", "<pre><code>\n</code></pre>\n"),
+                    build_codemirror_doc_block(2, 2, "", "//", ""),
+                    build_codemirror_doc_block(4, 4, "", "//", "")
+                ]
+            ))
+        );
 
         // Test Unicode characters in code.
         assert_eq!(
@@ -1388,15 +1446,70 @@ mod tests {
             ))
         );
 
-        // Test a fenced code block that's unterminated.
+        // Test a fenced code block that's unterminated. See [fence
+        // mending](#fence-mending).
         assert_eq!(
-            source_to_codechat_for_web("/* ```\n*/\n//", &"cpp".to_string(), false, false),
+            source_to_codechat_for_web("/* ``` foo\n*/\n// Test", &"cpp".to_string(), false, false),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "c_cpp",
+                "\n\n\n",
+                vec![
+                    build_codemirror_doc_block(
+                        0,
+                        1,
+                        "",
+                        "/*",
+                        "<pre><code class=\"language-foo\">\n\n</code></pre>\n"
+                    ),
+                    build_codemirror_doc_block(2, 2, "", "//", "<p>Test</p>\n"),
+                ]
+            ))
+        );
+        // Test the other code fence character (the tilde).
+        assert_eq!(
+            source_to_codechat_for_web(
+                "/* ~~~~~~~ foo\n*/\n// Test",
+                &"cpp".to_string(),
+                false,
+                false
+            ),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "c_cpp",
+                "\n\n\n",
+                vec![
+                    build_codemirror_doc_block(
+                        0,
+                        1,
+                        "",
+                        "/*",
+                        "<pre><code class=\"language-foo\">\n\n</code></pre>\n"
+                    ),
+                    build_codemirror_doc_block(2, 2, "", "//", "<p>Test</p>\n"),
+                ]
+            ))
+        );
+        // Test multiple unterminated fenced code blocks.
+        assert_eq!(
+            source_to_codechat_for_web("// ```\n // ~~~", &"cpp".to_string(), false, false),
             TranslationResults::CodeChat(build_codechat_for_web(
                 "c_cpp",
                 "\n\n",
                 vec![
-                    build_codemirror_doc_block(0, 1, "", "/*", "<pre><code>\n\n"),
-                    build_codemirror_doc_block(2, 2, "", "//", "\n</code></pre>\n"),
+                    build_codemirror_doc_block(0, 0, "", "//", "<pre><code>\n</code></pre>\n"),
+                    build_codemirror_doc_block(1, 1, " ", "//", "<pre><code></code></pre>\n"),
+                ]
+            ))
+        );
+
+        // Test an unterminated HTML block.
+        assert_eq!(
+            source_to_codechat_for_web("// <foo>\n // Test", &"cpp".to_string(), false, false),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "c_cpp",
+                "\n\n",
+                vec![
+                    build_codemirror_doc_block(0, 0, "", "//", "<foo>\n"),
+                    build_codemirror_doc_block(1, 1, " ", "//", "<p>Test</p>\n"),
                 ]
             ))
         );
