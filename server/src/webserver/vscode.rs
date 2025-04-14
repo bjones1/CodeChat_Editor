@@ -369,7 +369,10 @@ pub async fn vscode_ide_websocket(
                                     }
                                 };
 
-                                // Process the file contents. Since VSCode doesn't have a PDF viewer, determine if this is a PDF file. (TODO: look at the magic number also -- "%PDF").
+                                // Process the file contents. Since VSCode
+                                // doesn't have a PDF viewer, determine if this
+                                // is a PDF file. (TODO: look at the magic
+                                // number also -- "%PDF").
                                 let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
                                 let (simple_http_response, option_update) = match file_contents_option {
                                     Some(file_contents) =>
@@ -525,6 +528,9 @@ pub async fn vscode_ide_websocket(
 
                             // Open a web browser when requested.
                             EditorMessageContents::OpenUrl(url) => {
+                                // This doesn't work in Codespaces. TODO: send
+                                // this back to the VSCode window, then call
+                                // `vscode.env.openExternal(vscode.Uri.parse(url))`.
                                 if let Err(err) = open::that_detached(&url) {
                                     let msg = format!("Unable to open web browser to URL {url}: {err}");
                                     error!("{msg}");
@@ -592,7 +598,9 @@ pub async fn vscode_ide_websocket(
                                         match file_path.to_str() {
                                             None => Err("Unable to convert path to string.".to_string()),
                                             Some(file_path_string) => {
-                                                // Use a [binary file sniffer](#binary-file-sniffer) to determine if the file is text or binary.
+                                                // Use a [binary file
+                                                // sniffer](#binary-file-sniffer) to
+                                                // determine if the file is text or binary.
                                                 let is_text = if let Ok(mut fc) = File::open(&file_path).await {
                                                     try_read_as_text(&mut fc).await.is_some()
                                                 } else {

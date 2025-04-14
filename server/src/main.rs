@@ -115,7 +115,9 @@ impl Cli {
                             let body = response.as_str().unwrap_or("Non-text body");
                             if status_code == 200 && body == "pong" {
                                 println!("Server started.");
-                                // Open a web browser if requested.
+                                // Open a web browser if requested. TODO: show
+                                // an error if running in a Codespace, since
+                                // this doesn't work.
                                 if let Some(open_path) = open {
                                     let address = get_server_url(self.port)?;
                                     let open_path = fs::canonicalize(open_path)?;
@@ -132,7 +134,8 @@ impl Cli {
                             }
                         }
                         Err(err) => {
-                            // Use this to skip the print from a nested if statement.
+                            // Use this to skip the print from a nested if
+                            // statement.
                             'err_print: {
                                 // Ignore a connection refused error.
                                 if let minreq::Error::IoError(io_error) = &err {
@@ -141,7 +144,6 @@ impl Cli {
                                     }
                                 }
                                 eprintln!("Failed to connect to server: {err}");
-                                break 'err_print;
                             }
                         }
                     }
