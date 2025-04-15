@@ -302,10 +302,11 @@ rules.heading = {
   filter: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
 
   replacement: function (content, node, options) {
-    content = wrapContent(content, node, options);
     var hLevel = Number(node.nodeName.charAt(1));
 
     if (options.headingStyle === 'setext' && hLevel < 3) {
+      // Only wrap setext headings -- atx heading don't work wrapped.
+      content = wrapContent(content, node, options);
       // Split the contents into lines, then find the longest line length.
       const splitContent = content.split(/\r\n|\n|\r/);
       // From [SO](https://stackoverflow.com/a/43304999/16038919).
