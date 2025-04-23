@@ -69,7 +69,9 @@ files. Therefore, the overall strategy is:
     Components](https://developer.mozilla.org/en-US/docs/Web/Web_Components)
     which implement custom tags which only need local information. For example,
     a GraphViz custom tag renders graphs based on a description of the graph
-    inside the tag.
+    inside the tag. Likewise, MathJax interprets anything in matching math
+    delimiters ($...$, for example), then transforms it back to text before
+    saving.
 *   On save, the client sends its text back to the server, which de-transforms
     custom tags which depend on information from other pages. If de-transforms
     disagree with the provided text, then re-load the updated text after the
@@ -132,16 +134,16 @@ On save:
 
 #### HTML to Markdown transformation
 
-Currently, Turndown translates HTML to Markdown, then Prettier word-wraps the
-result. This has several problems:
+Currently, Turndown translates HTML to Markdown and word-wraps the result. This
+has several problems:
 
 *   There are several bugs/open issues in Turndown; however, this package is no
-    longer maintained.
+    longer maintained. I have a fork with fixes -- see the
+    [turndown](https://github.com/bjones1/turndown) and
+    [turndown-plugin-gfm](https://github.com/bjones1/turndown-plugin-gfm).
 *   Turndown doesn't have a good way to deal with raw HTML intermingled with
     Markdown; since raw HTML can change the meaning of HTML through styles, this
     is hard to avoid. But it still produces ugly results.
-*   Prettier translates setext-style headings to ATX headings, which I don't
-    like.
 *   Because both packages are written in Javascript, they run in the browser.
     However, we need to run processing at the HTML level on the server first,
     requiring some round trips between client and sever in the future.
@@ -312,6 +314,25 @@ The app needs build support because of complexity:
 
 So, this project contains Rust code to automate this process -- see the
 [builder](../builder/Cargo.toml).
+
+Misc topics
+-----------
+
+### <a id="Client-simple-viewer"></a>CodeChat Editor Client Simple Viewer
+
+When in project mode, the CodeChat Editor cannot edit some files --
+miscellaneous text files, unsupported languages, images, video, etc. The simple
+viewer displays (without allowing editing) these files as raw text in the
+browser, though wrapped in the appropriate project structure (with a TOC on the
+left). For the Visual Studio Code extension, the simple viewer also provides
+support for viewing PDFs (which VSCode's built-in web browser doesn't support).
+
+### Broken fences (Markdown challenges)
+
+All Markdown blocks are termined by a blank line followed by unindented content,
+except for fenced code blocks. To ensure that doc blocks containing and opening
+fence but no matching closing fence are properly closed (instead of affecting
+the remainder of the doc blocks), 
 
 Future work
 -----------
