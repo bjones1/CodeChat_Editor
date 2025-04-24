@@ -160,22 +160,38 @@ lazy_static! {
         "<CodeChatEditor-separator/>\n")).unwrap();
 }
 
-// Use this as a way to end unterminated fenced code blocks. If a fenced block
-// isn't terminated, then the HTML tag is ignored, meaning the line of `---` or
-// `~~~` characters stop it. If the fenced block is terminated, then the HTML
-// tags prevent starting a code block and can be removed. Note that this only
-// supports fenced code blocks with an opening code fence of 23 characters or
-// less (which should cover most cases). To allow more, we'd need to know the
-// length of the opening code fence, which is hard to find.
-const DOC_BLOCK_SEPARATOR_STRING: &str = r#"
+// Use this as a way to end unterminated fenced code blocks and specific types
+// of HTML blocks. (The remaining types of HTML blocks are terminated by a blank
+// line, which this also provides.)
+const DOC_BLOCK_SEPARATOR_STRING: &str = concat!(
+    // If an HTML block with specific start conditions (see the [section 4.6 of
+    // the commonmark spec](https://spec.commonmark.org/0.31.2/#html-blocks),
+    // items 1-5) doesn't have a matching end condition, provide one here.
+    // Otherwise, hide these end conditions inside a raw HTML block, so that it
+    // doesn't get processed by the Markdown parser. Note that this only
+    // supports fenced code blocks with an opening code fence of 23 characters
+    // or less (which should cover most cases). To allow more, we'd need to know
+    // the length of the opening code fence, which is hard to find. Since
+    // CommonMark doesn't care if there are multiple HTML start conditions,
+    // abuse this by not closing the fence until the very end of this string.
+    r#"
 <CodeChatEditor-fence>
+</pre></script></style></textarea>-->?>]]>
+"#,
+    // Likewise, if there's an unterminated fenced code block with \`\`\`
+    // characters, then provide the ending fence here. Otherwise, hide the
+    // ending fence inside a raw HTML block as before.
+    r#"<CodeChatEditor-fence>
 ```````````````````````
-<CodeChatEditor-fence>
+"#,
+    // Repeat for the other style of fenced code block.
+    r#"<CodeChatEditor-fence>
 ~~~~~~~~~~~~~~~~~~~~~~~
 </CodeChatEditor-fence>
 <CodeChatEditor-separator/>
 
-"#;
+"#
+);
 
 // After converting Markdown to HTML, this can be used to split doc blocks
 // apart.
@@ -183,6 +199,8 @@ const DOC_BLOCK_SEPARATOR_SPLIT_STRING: &str = "<CodeChatEditor-separator/>\n";
 // Correctly terminated fenced code blocks produce this, which can be removed
 // from the HTML produced by Markdown conversion.
 const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
+</pre></script></style></textarea>-->?>]]>
+<CodeChatEditor-fence>
 ```````````````````````
 <CodeChatEditor-fence>
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -1513,6 +1531,19 @@ mod tests {
                 ]
             ))
         );
+
+        // Test an unterminated `<pre>` block. Ensure that markdown after this is still parsed.
+        assert_eq!(
+            source_to_codechat_for_web("// <pre>\n // *Test*", &"cpp".to_string(), false, false),
+            TranslationResults::CodeChat(build_codechat_for_web(
+                "c_cpp",
+                "\n\n",
+                vec![
+                    build_codemirror_doc_block(0, 0, "", "//", "<pre>\n\n"),
+                    build_codemirror_doc_block(1, 1, " ", "//", "<p><em>Test</em></p>\n"),
+                ]
+            ))
+        );
     }
 
     #[test]
@@ -1523,8 +1554,7 @@ mod tests {
         let fp = find_path_to_toc(&test_dir.join("1/foo.py"));
         assert_eq!(fp, Some(PathBuf::from_str("toc.md").unwrap()));
 
-        // Test 2: no TOC. (We assume all temp directory parents lack a TOC as
-        // well.)
+        // Test 2: no TOC. (We assume all temp directory parents lack a TOC as well.)
         let fp = find_path_to_toc(&test_dir.join("2/foo.py"));
         assert_eq!(fp, None);
 
