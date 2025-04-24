@@ -194,7 +194,7 @@ enum EditorMessageContents {
     /// destinations: Client.
     RequestClose,
 
-    // ### This message may only be sent by the Client to the Server.
+    // #### This message may only be sent by the Client to the Server.
     /// Open the provided URL in a web browser. This is used from within
     /// plugins/extensions (such as VSCode), where the Client is prohibited from
     /// opening a new browser tab/window.

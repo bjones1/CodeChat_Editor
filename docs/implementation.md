@@ -147,6 +147,8 @@ has several problems:
 *   Because both packages are written in Javascript, they run in the browser.
     However, we need to run processing at the HTML level on the server first,
     requiring some round trips between client and sever in the future.
+    Therefore, the next step is to switch to the Rust `htmd` crate, then port
+    fixes from Turndown to that.
 
 To build Turndown, simply execute `npm run build` or `npm run test`.
 
@@ -173,29 +175,91 @@ editor-overlay filesystem.
 #### Network interfaces between the Client, Server, and IDE
 
 *   The startup phase loads the Client framework into a browser:\
-    ![Startup
-    diagram](https://www.plantuml.com/plantuml/svg/PP3HIiOW583lVOfpwIwY-u4ng62ZHR7P0rYUOkJKZcUDthwPiVh_tOZ8vtS-RH8RucLsGYaOV_OHb1BTpIrSNC68z8bKmqD4ZrPs5lLNn4gKyqniO0q3fiMn79ac_xRHTmVYsatekUNPxLIhxti814z3NvtFEmfpNww0PmfhGW9PbF1APiOrqFk9CB_1XH05_8x-Rs-rVWJ2ZmKJoyl4XgUNaW7mrrtkxNIAmIVSSMlOL0Az5Sssv0_y1W00)
+    <wc-mermaid>
+    sequenceDiagram
+    participant IDE
+    participant Server
+    participant Client
+    note over IDE, Client: Startup
+    IDE -&gt;&gt; Server: Opened(IdeType)
+    Server -&gt;&gt; IDE: Result(String: OK)
+    Server -&gt;&gt; IDE: ClientHtml(String: HTML or URL)
+    IDE -&gt;&gt; Server: Result(String: OK)
+    note over IDE, Client: Open browser (Client framework HTML or URL)
+    loop
+    Client -&gt; Server: HTTP request(/static URL)
+    Server -&gt; Client: HTTP response(/static data)
+    end
+    </wc-mermaid>
 *   If the current file in the IDE changes (including the initial startup, when
     the change is from no file to the current file), or a link is followed in
     the Client's iframe:\
-    ![Load
-    diagram](https://www.plantuml.com/plantuml/svg/hLBDpjCm4BpdAVRO7E01Se1F-W21gA1gMkucte2HOnjxGzMtnpzHGfo8X8eUqiJUdPcTdIT7p5BVoSBuVz48mnJ1XpTlPzyrsbzePqVFKg2YWibO3L8pxg0L4Wk81ozU3IKLFFVM-fTt_l9GanNgMmKdHjz1jz0neLwQU-cxjF5GxT05N3Tz5rw40ouitGk8ltJjuGDB1LV36KsmZLRahrq63R0GTKPdj79u-FmnLA3YHGQUrQ1qE1JCfysQrgQzde-Peh-f2LecqEHz1UylbnDO_DcZeqCEc8f63KUlRoR01Bj9Jms1VmAV-FFEEEIghMNS_V0LjeHS4FiQBKcmqu2Z-e7bJxnKKQvsxTlkqgjikL9h4rEmprNN6wCjUSeqlL3pBEqoUucJceDfzPB08mqvtThCpBnLYct_Do5Ys7EPIjC_Ilsa5PR_GHIqLdVnpTqTOJU8LBn8po1tZAANEMOHcEBnW86n-WSsj3ETUSmsA8Hxc25LG2qwuy6-2BoXBOkjh488wslBRZEHZyxcBNpoZxwJlm40)
+    <wc-mermaid>
+    sequenceDiagram
+    participant IDE
+    participant Server
+    participant Client
+    alt IDE loads file
+    IDE -&gt;&gt; Client: CurrentFile(String: Path of main.py)
+    opt If Client document is dirty
+    Client -&gt;&gt; IDE: Update(String: contents of main.py)
+    IDE -&gt;&gt; Client: Response(OK)
+    end
+    Client -&gt;&gt; IDE: Response(OK)
+    else Client loads file
+    Client -&gt;&gt; IDE: CurrentFile(String: URL of main.py)
+    IDE -&gt;&gt; Client: Response(OK)
+    end
+    Client -&gt;&gt; Server: HTTP request(URL of main.py)
+    Server -&gt;&gt; IDE: LoadFile(String: path to main.py)
+    IDE -&gt;&gt; Server: Response(LoadFile(String: file contents of main.py))
+    alt main.py is editable
+    Server -&gt;&gt; Client: HTTP response(contents of Client)
+    Server -&gt;&gt; Client: Update(String: contents of main.py)
+    Client -&gt;&gt; Server: Response(OK)
+    loop
+    Client -&gt;&gt; Server: HTTP request(URL of supporting file in main.py)
+    Server -&gt;&gt; IDE: LoadFile(String: path of supporting file)
+    alt Supporting file in IDE
+    IDE -&gt;&gt; Server: Response(LoadFile(contents of supporting file)
+    Server -&gt;&gt; Client: HTTP response(contents of supporting file)
+    else Supporting file not in IDE
+    IDE -&gt;&gt; Server: Response(LoadFile(None))
+    Server -&gt;&gt; Client: HTTP response(contents of supporting file from
+    filesystem)
+    end
+    end
+    else main.py not editable and not a project
+    Server -&gt;&gt; Client: HTTP response(contents of main.py)
+    else main.py not editable and is a project
+    Server -&gt;&gt; Client: HTTP response(contents of Client Simple Viewer)
+    Client -&gt;&gt; Server: HTTP request (URL?raw of main.py)
+    Server -&gt;&gt; Client: HTTP response(contents of main.py)
+    end
+    </wc-mermaid>
 *   If the current file's contents in the IDE are edited:\
-    ![Edit
-    diagram](https://www.plantuml.com/plantuml/svg/XT1DQiCm40NWlKunItlH2tXH36vBInCI_7C09NeE0cNaIEFa-ed1OCVaPp_l6zxBe-WW_T6flwzl-lYa2k6Ca57J6Ir8AWcM3nanBhJtB629gT9EQAqjKsiTo4Q2iQ9t3ef6OA0APy7oXeABkBVOosklw4C0ouzr4zgKA_BjpANnVDxfjwwt573g4ILP9Xw-6XEnynoVDc2Zfb-t6JCgbudDVwfoi1c6lW80)
+    <wc-mermaid>
+    sequenceDiagram
+    participant IDE
+    participant Server
+    participant Client
+    IDE -&gt;&gt; Server: Update(String: new text contents)
+    alt Main file is editable
+    Server -&gt;&gt; Client: Update(String: new Client contents)
+    else Main file is not editable
+    Server -&gt;&gt; Client: Update(String: new text contents)
+    end
+    Client -&gt;&gt; IDE: Response(String: OK)<br>
+    </wc-mermaid>
 *   If the current file's contents in the Client are edited, the Client sends
     the IDE an `Update` with the revised contents.
 *   When the PC goes to sleep then wakes up, the IDE client and the Editor
     client both reconnect to the websocket URL containing their assigned ID.
 *   If the Editor client or the IDE client are closed, they close their
-    websocket, which send a `Close` message to the other websocket, causes it to
-    also close and ending the session.
+    websocket, which sends a `Close` message to the other websocket, causes it
+    to also close and ending the session.
 *   If the server is stopped (or crashes), both clients shut down after several
     reconnect retries.
-
-Note: to edit these diagrams, paste the URL into the [PlantUML web
-server](https://www.plantuml.com/plantuml/uml), click Decode URL, edit, then
-copy and paste the SVG URL back to this file.
 
 #### Message IDs
 
@@ -211,6 +275,8 @@ in JavaScript) has a 53-bit mantissa, meaning IDs won't wrap around for a very
 long time.
 
 #### Architecture
+
+**Reviewed to here**
 
 Clients always come in pairs: one IDE client is always paired with one CodeChat
 Editor client. The server uses a set of queues to decouple websocket protocol
@@ -303,6 +369,31 @@ Simplest IDE integration:
 More complex IDE integration: everything that the simple IDE does, plus the
 ability to toggle between the IDE's editor and the CodeChat Editor.
 
+### Improved IDE interface
+
+To improve the IDE interface, switch from websockets to calling the Server
+directly through a native interface. For example, [NAPI-RS](https://napi.rs/)
+provide a way to call Rust from Node.js; [JNI](https://docs.rs/jni/latest/jni/)
+allows calling Rust from Java.
+
+### Efficent websocket communication
+
+When an edit occurs, it's best to send only changed data, rather than the whole
+file. The diff crate provides easy access to determining a diff. The idea:
+
+1.  In the server, save the current file contents. Ignore diffing if the file
+    name changes.
+2.  When moving from IDE to client:
+    1.  Code: diff the string containing code, then diff each doc block's
+        contents. The new code string is now an array of insert(start, stop,
+        string)/delete(start, stop) instructions.
+    2.  Doc blocks: the format is \[ \[index, start?, end?, comment?,
+        \[insert/delete instructions\] \].
+3.  From client to IDE:
+    1.  I'd like to do something similar. WASM, perhaps? Then recover changes on
+        the server. If there's any way to mark doc blocks as dirty, that might
+        help.
+
 Build system
 ------------
 
@@ -329,10 +420,15 @@ support for viewing PDFs (which VSCode's built-in web browser doesn't support).
 
 ### Broken fences (Markdown challenges)
 
-All Markdown blocks are termined by a blank line followed by unindented content,
-except for fenced code blocks. To ensure that doc blocks containing and opening
-fence but no matching closing fence are properly closed (instead of affecting
-the remainder of the doc blocks), 
+ All Markdown blocks are termined by a blank line followed by unindented
+content, except for fenced code blocks and some types of HTML blocks. To ensure
+that doc blocks containing an opening fence but no matching closing fence, or a
+start HTML tag but no closing tag, are properly closed (instead of affecting the
+remainder of the doc blocks), the editor injects closing tags and fences after
+each doc block, then reapirs them (if needed, due to a missing closing fence) or
+removed them. This means that some HTML tags won't be properly closed, since the
+closing tags are removed from the HTML. This is fixed by later HTML processing
+steps (currently, by TinyMCE), which properly closes tags.
 
 Future work
 -----------
@@ -342,7 +438,7 @@ Future work
 *   While the TOC file must be placed in the root of the project, it will be
     served alongside pages served from subdirectories. Therefore, place this in
     an iframe to avoid regenerating it for every page.
-*   The TOC is just HTML. Numbered sections are expressed as nested ordered
+*   The TOC is just Markdown. Numbered sections are expressed as nested ordered
     lists, with links to each section inside these lists.
 *   All numbering is stored internally as a number, instead of the
     corresponding marker (I, II, III, etc.). This allows styles to customize
@@ -455,7 +551,7 @@ Options:
 *   Path to linked file
 *   Depth of numbering
 
-#### Example
+#### Example of non-editable text
 
 <div class="CodeChat-toc mceNonEditable" data-codechat-path="static/css/CodeChatEditor.css" data-codechat-depth=""><p>asdf</p></div>
 
@@ -490,27 +586,24 @@ with descriptions of each setting.
 *   Tabs vs spaces; newline type
 *   Substitutions
 
-### <a id="core-developmnt-priorities"></a>Core development priorities
+<a id="core-developmnt-priorities"></a>Core development priorities
+------------------------------------------------------------------
 
 1.  Bug fixes
 2.  Book support
 
 ### <a id="next-steps"></a>Next steps
 
-1.  Refactor the webserver to pull out the processing step (converting source
-    code to code/doc blocks). Run this in a separate thread -- see the [Tokio
-    docs](https://docs.rs/tokio/latest/tokio/#cpu-bound-tasks-and-blocking-code)
-    on how to await a task running in another thread.
-2.  Implement caching for all anchors/headings.
-3.  Implement author support: TOC, auto-titled links.
-4.  Implement a good GUI for inserting hyperlinks.
-5.  Better support for template literals.
-6.  Decide how to handle nested block comments.
-7.  Define the architecture for IDE extensions/plug-ins. Goal: minimize
+1.  Implement caching for all anchors/headings.
+2.  Implement author support: TOC, auto-titled links.
+3.  Implement a good GUI for inserting hyperlinks.
+4.  Better support for template literals.
+5.  Decide how to handle nested block comments.
+6.  Define the architecture for IDE extensions/plug-ins. Goal: minimize
     extension/plug-in complexity.
-8.  Define desired UI behavior. Priority: auto-reload; dirty document detection;
+7.  Define desired UI behavior. Priority: auto-reload; dirty document detection;
     auto-backup.
-9.  Propose visual styling, dark mode, etc.
+8.  Propose visual styling, dark mode, etc.
 
 ### To do
 
@@ -575,11 +668,7 @@ Note: to edit these diagrams, use an [HTML entity
 encoder/decoder](https://mothereff.in/html-entities) and a Graphviz editor such
 as [Edotor](https://edotor.net/).
 
-However, esbuild's code splitting doesn't work with dynamic imports -- the
-splitter always picks Node-style default imports, while the Ace editor expects
-Babel-style imports.
-
-TODO: GUIs using TinyMCE. See the [how-to
+TODO: GUIs using TinyMCE. See the [how-to
 guide](https://www.tiny.cloud/docs/tinymce/6/dialog-components/#panel-components).
 
 Code style
