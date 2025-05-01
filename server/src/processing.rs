@@ -30,12 +30,19 @@ use std::io;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 */
-use std::cmp::max;
-use std::ffi::OsStr;
-use std::path::Path;
-use std::path::PathBuf;
+use std::{
+    cmp::max,
+    ffi::OsStr,
+    ops::Range,
+    path::{Path, PathBuf},
+};
 
 // ### Third-party
+use imara_diff::{
+    Algorithm, diff,
+    intern::{InternedInput, TokenSource},
+    sources::{Lines, lines_with_terminator},
+};
 use lazy_static::lazy_static;
 use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
@@ -103,6 +110,18 @@ pub type CodeMirrorDocBlocks = Vec<(
     // contents
     String,
 )>;
+
+/// Define a simple diff container, based on
+/// [CodeMirror](https://codemirror.net/docs/ref/#state.ChangeSpec).
+#[derive(Debug, PartialEq)]
+pub struct ChangeSpec {
+    /// The index of the start of the change.
+    pub from: usize,
+    /// The index of the end of the change; defined for deletions and replacements.
+    pub to: Option<usize>,
+    /// The text to insert/replace; an empty string indicates deletion.
+    pub insert: String,
+}
 
 /// This enum contains the results of translating a source file to the CodeChat
 /// Editor format.
@@ -210,8 +229,8 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str = "</code></pre>\n<CodeChatEditor-separator/>\n";
 // <a class="fence-mending-end"></a>
 
-// Determine if the provided file is part of a project.
-// ----------------------------------------------------
+// Determine if the provided file is part of a project
+// ---------------------------------------------------
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     // To determine if this source code is part of a project, look for a project
     // file by searching the current directory, then all its parents, for a file
@@ -652,12 +671,72 @@ fn markdown_to_html(markdown: &str) -> String {
     html_output
 }
 
+/// ### Diff support
+/// Create a wrapper for a string that includes newlines in the interned (tokenized) guts.
+//#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct StrWithNewlines<'a>(&'a str);
+
+/// Copied from `imara_diff::sources` but modified to use `StrWithNewlines` instead of `str`.
+impl<'a> TokenSource for StrWithNewlines<'a> {
+    type Token = &'a str;
+
+    type Tokenizer = Lines<'a, true>;
+
+    fn tokenize(&self) -> Self::Tokenizer {
+        lines_with_terminator(self.0)
+    }
+
+    fn estimate_tokens(&self) -> u32 {
+        lines_with_terminator(self.0).estimate_tokens()
+    }
+}
+
+fn diff_to_change_spec(before: &str, after: &str) -> Vec<ChangeSpec> {
+    let mut change_spec: Vec<ChangeSpec> = Vec::new();
+    let mut prev_before_start = 0;
+    let mut prev_before_start_chars = 0;
+    let input = InternedInput::new(StrWithNewlines(before), StrWithNewlines(after));
+    let sink = |before: Range<u32>, after: Range<u32>| {
+        let count_before_chars = |lines: Range<u32>| {
+            input.before[lines.start as usize..lines.end as usize]
+                .iter()
+                .map(|&line| input.interner[line].chars().count())
+                .sum::<usize>()
+        };
+        // Sum characters between the last change and this change.
+        prev_before_start_chars += count_before_chars(prev_before_start..before.start);
+        prev_before_start = before.start;
+        // Get the characters in the hunk after this change.
+        let hunk_after: Vec<_> = input.after[after.start as usize..after.end as usize]
+            .iter()
+            .map(|&line| input.interner[line])
+            .collect();
+        let before_chars = count_before_chars(before.start..before.end);
+        change_spec.push(ChangeSpec {
+            from: prev_before_start_chars,
+            to: if before_chars != 0 {
+                Some(prev_before_start_chars + before_chars)
+            } else {
+                None
+            },
+            insert: if hunk_after.is_empty() {
+                "".to_string()
+            } else {
+                hunk_after.into_iter().collect()
+            },
+        })
+    };
+
+    diff(Algorithm::Histogram, &input, sink);
+    change_spec
+}
+
 // Goal: make it easy to update the data structure. We update on every
 // load/save, then do some accesses during those processes.
 //
 // Top-level data structures: a file HashSet<PathBuf, FileAnchor> and an id
 // HashMap<id, {Anchor, HashSet<referring\_id>}>. Some FileAnchors in the file
-// HashSet are also in a pending load list.
+// HashSet are also in a pending load list..
 //
 // *   To update a file:
 //     *   Remove the old file from the file HasHMap. Add an empty FileAnchor to
@@ -872,14 +951,14 @@ mod tests {
 
     use predicates::prelude::predicate::str;
 
-    use super::{CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
+    use super::{ChangeSpec, CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
     use super::{TranslationResults, find_path_to_toc};
     use crate::lexer::{
         CodeDocBlock, DocBlock, compile_lexers, supported_languages::get_language_lexer_vec,
     };
     use crate::processing::{
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
-        source_to_codechat_for_web,
+        diff_to_change_spec, source_to_codechat_for_web,
     };
     use crate::test_utils::stringit;
 
@@ -1532,7 +1611,8 @@ mod tests {
             ))
         );
 
-        // Test an unterminated `<pre>` block. Ensure that markdown after this is still parsed.
+        // Test an unterminated `<pre>` block. Ensure that markdown after this
+        // is still parsed.
         assert_eq!(
             source_to_codechat_for_web("// <pre>\n // *Test*", &"cpp".to_string(), false, false),
             TranslationResults::CodeChat(build_codechat_for_web(
@@ -1554,7 +1634,8 @@ mod tests {
         let fp = find_path_to_toc(&test_dir.join("1/foo.py"));
         assert_eq!(fp, Some(PathBuf::from_str("toc.md").unwrap()));
 
-        // Test 2: no TOC. (We assume all temp directory parents lack a TOC as well.)
+        // Test 2: no TOC. (We assume all temp directory parents lack a TOC as
+        // well.)
         let fp = find_path_to_toc(&test_dir.join("2/foo.py"));
         assert_eq!(fp, None);
 
@@ -1564,5 +1645,128 @@ mod tests {
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
+    }
+
+    #[test]
+    fn test_diff_1() {
+        let test_diff = |before: &str, after: &str, expected_change_spec: &[ChangeSpec]| {
+            let mut before = before.to_string();
+            let after = after.to_string();
+            let diff = diff_to_change_spec(&before, &after);
+            assert_eq!(diff.len(), 1);
+            let change_spec = &diff[0];
+            // Convert from a character index to a byte index. If the index is past the end of the string, report the length of the string.
+            let from_index = before.char_indices().nth(change_spec.from).unwrap_or((before.len(), 'x')).0;
+            if let Some(to) = change_spec.to {
+                let to_index = before.char_indices().nth(to).unwrap_or((before.len(), 'x')).0;
+                before.replace_range(from_index..to_index, &change_spec.insert);
+            } else {
+                before.insert_str(change_spec.from, &change_spec.insert);
+            };
+            assert_eq!(before, after);
+            assert_eq!(diff, expected_change_spec);
+        };
+
+        // Insert at beginning.
+        test_diff(
+            "1\n234\n56",
+            "aa\n1\n234\n56",
+            &[ChangeSpec {
+                from: 0,
+                to: None,
+                insert: "aa\n".to_string(),
+            }],
+        );
+
+        // Replace at beginning.
+        test_diff(
+            "1\n234\n56",
+            "aa\n234\n56",
+            &[ChangeSpec {
+                from: 0,
+                to: Some(2),
+                insert: "aa\n".to_string(),
+            }],
+        );
+
+        // Delete at beginning.
+        test_diff(
+            "1\n234\n56",
+            "234\n56",
+            &[ChangeSpec {
+                from: 0,
+                to: Some(2),
+                insert: "".to_string(),
+            }],
+        );
+
+        // Repeat, but in middle.
+        test_diff(
+            "1\n234\n56",
+            "1\naa\n234\n56",
+            &[ChangeSpec {
+                from: 2,
+                to: None,
+                insert: "aa\n".to_string(),
+            }],
+        );
+        test_diff(
+            "1\n234\n56",
+            "1\naa\n56",
+            &[ChangeSpec {
+                from: 2,
+                to: Some(6),
+                insert: "aa\n".to_string(),
+            }],
+        );
+        test_diff(
+            "1\n234\n56",
+            "1\n56",
+            &[ChangeSpec {
+                from: 2,
+                to: Some(6),
+                insert: "".to_string(),
+            }],
+        );
+
+        // Repeat, but at end.
+        test_diff(
+            "1\n234\n56",
+            "1\n234\n56\naa",
+            &[ChangeSpec {
+                from: 6,
+                to: Some(8),
+                insert: "56\naa".to_string(),
+            }],
+        );
+        test_diff(
+            "1\n234\n56",
+            "1\n234\naa",
+            &[ChangeSpec {
+                from: 6,
+                to: Some(8),
+                insert: "aa".to_string(),
+            }],
+        );
+        test_diff(
+            "1\n234\n56",
+            "1\n234\n",
+            &[ChangeSpec {
+                from: 6,
+                to: Some(8),
+                insert: "".to_string(),
+            }],
+        );
+
+        // Test with unicode.
+        test_diff(
+            "①\n②③④\n⑤⑥",
+            "①\n❷❸\n⑤⑥",
+            &[ChangeSpec {
+                from: 2,
+                to: Some(6),
+                insert: "❷❸\n".to_string(),
+            }],
+        );
     }
 }
