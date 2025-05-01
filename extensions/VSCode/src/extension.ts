@@ -460,8 +460,15 @@ export const activate = (context: vscode.ExtensionContext) => {
                                                 })
                                         );
                                 } else {
-                                    // TODO: open using a custom document editor. See [openCustomDocument](https://code.visualstudio.com/api/references/vscode-api#CustomEditorProvider.openCustomDocument), which can evidently be called [indirectly](https://stackoverflow.com/a/65101181/4374935). See also [Built-in Commands](https://code.visualstudio.com/api/references/commands).
-                                    // For now, simply respond with an OK, since the following doesn't work.
+                                    // TODO: open using a custom document
+                                    // editor. See
+                                    // [openCustomDocument](https://code.visualstudio.com/api/references/vscode-api#CustomEditorProvider.openCustomDocument),
+                                    // which can evidently be called
+                                    // [indirectly](https://stackoverflow.com/a/65101181/4374935).
+                                    // See also [Built-in
+                                    // Commands](https://code.visualstudio.com/api/references/commands).
+                                    // For now, simply respond with an OK, since
+                                    // the following doesn't work.
                                     if (false) {
                                         commands
                                             .executeCommand(
