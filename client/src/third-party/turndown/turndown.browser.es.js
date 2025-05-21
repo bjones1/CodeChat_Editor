@@ -1143,7 +1143,7 @@ TurndownService.prototype = {
    */
 
   last: function (input) {
-    this.turndown(input);
+    return this.turndown(input)
   },
 
   /**
