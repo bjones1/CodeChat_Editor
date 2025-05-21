@@ -34,6 +34,7 @@ import vscode, { commands, ViewColumn } from "vscode";
 import { WebSocket } from "ws";
 
 // ### Local packages
+import { EditorMessage, EditorMessageContents, MessageResult, UpdateMessageContents } from "../../../client/src/shared_types.mjs";
 //
 // None.
 //
@@ -91,54 +92,6 @@ let ignore_active_editor_change = false;
 // True to not report the next error.
 let quiet_next_error = false;
 
-// ### Message types
-//
-// These mirror the same definitions in the Rust webserver, so that the two can
-// exchange messages.
-interface IdeType {
-    VSCode: boolean;
-}
-
-interface CodeMirror {
-    doc: string;
-    doc_blocks: [];
-}
-
-interface CodeChatForWeb {
-    metadata: { mode: "" };
-    source: CodeMirror;
-}
-
-interface UpdateMessageContents {
-    file_path: string;
-    contents: CodeChatForWeb | undefined;
-    cursor_position: number | undefined;
-    scroll_position: number | undefined;
-}
-
-interface ResultOkTypes {
-    LoadFile: string | null;
-}
-
-interface MessageResult {
-    Ok?: "Void" | ResultOkTypes;
-    Err?: string;
-}
-
-interface JointMessageContents {
-    Update?: UpdateMessageContents;
-    CurrentFile?: [string, boolean?];
-    Opened?: IdeType;
-    RequestClose?: null;
-    LoadFile?: string;
-    ClientHtml?: string;
-    Result?: MessageResult;
-}
-
-interface JointMessage {
-    id: number;
-    message: JointMessageContents;
-}
 
 // Activation/deactivation
 // -----------------------
@@ -175,8 +128,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 return;
                             }
                             console.log(
-                                `CodeChat Editor extension: text changed - ${
-                                    event.reason
+                                `CodeChat Editor extension: text changed - ${event.reason
                                 }, ${JSON.stringify(
                                     event.contentChanges
                                 ).substring(0, MAX_MESSAGE_LENGTH)}.`
@@ -387,7 +339,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                         // Parse the data into a message.
                         const { id, message } = JSON.parse(
                             data.toString()
-                        ) as JointMessage;
+                        ) as EditorMessage;
                         console.log(
                             `CodeChat Editor extension: Received data id = ${id}, message = ${JSON.stringify(
                                 message
@@ -422,6 +374,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     // `TextEditor.edit` must be made to the
                                     // active editor only.
                                     const wse = new vscode.WorkspaceEdit();
+                                    assert("Plain" in current_update.contents.source.doc);
                                     wse.replace(
                                         doc.uri,
                                         new vscode.Range(
@@ -430,7 +383,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             doc.lineCount,
                                             0
                                         ),
-                                        current_update.contents.source.doc
+                                        current_update.contents.source.doc.Plain
                                     );
                                     vscode.workspace.applyEdit(wse);
                                 }
@@ -576,12 +529,12 @@ export const deactivate = async () => {
 //
 // Send a message expecting a result to the server.
 const send_message = (
-    message: JointMessageContents,
+    message: EditorMessageContents,
     callback: (succeeded: boolean) => void = (_) => 0
 ) => {
     const id = message_id;
     message_id += 3;
-    const jm: JointMessage = {
+    const jm: EditorMessage = {
         id,
         message,
     };
@@ -612,7 +565,7 @@ const report_server_timeout = (message_id: number) => {
 const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
     // We can't simply call `send_message` because that function expects a
     // result message back from the server.
-    const jm: JointMessage = {
+    const jm: EditorMessage = {
         id,
         message: {
             Result: result,
@@ -646,7 +599,7 @@ const start_render = () => {
                         contents: {
                             metadata: { mode: "" },
                             source: {
-                                doc: ate.document.getText(),
+                                doc: { Plain: ate.document.getText() },
                                 doc_blocks: [],
                             },
                         },

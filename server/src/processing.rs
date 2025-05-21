@@ -1,3 +1,5 @@
+// C:\Users\bj147\Documents\git\CodeChat_Editor\server\target\debug\codechat-editor-server.exe
+
 /// Copyright (C) 2023 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -31,8 +33,10 @@ use std::ops::Deref;
 use std::rc::{Rc, Weak};
 */
 use std::{
+    borrow::Cow,
     cmp::max,
     ffi::OsStr,
+    hash::{Hash, Hasher},
     ops::Range,
     path::{Path, PathBuf},
 };
@@ -92,35 +96,69 @@ pub struct SourceFileMetadata {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CodeMirror {
     /// The document being edited.
-    pub doc: String,
+    pub doc: DiffableSource,
     /// Doc blocks
-    pub doc_blocks: CodeMirrorDocBlocks,
+    pub doc_blocks: Vec<CodeMirrorDocBlock>,
+}
+
+/// This allows defining a source file as either a plain string or a series of diffs
+/// to apply to the current source.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum DiffableSource {
+    /// The source code, in a single string.
+    Plain(String),
+    /// The source code, as a series of diffs to apply to the current source.
+    Diff(Vec<StringChangeSpec>),
 }
 
 /// This defines a doc block for CodeMirror.
-pub type CodeMirrorDocBlocks = Vec<(
+#[derive(Clone, Debug, PartialEq)]
+pub struct CodeMirrorDocBlock {
     // From -- the starting character this doc block is anchored to.
-    usize,
+    pub from: usize,
     // To -- the ending character this doc block is anchored to.
-    usize,
+    pub to: usize,
     // Indent.
-    String,
-    // delimiter
-    String,
-    // contents
-    String,
-)>;
+    pub indent: String,
+    // Delimiter.
+    pub delimiter: String,
+    // Contents.
+    pub contents: String,
+}
+
+struct CodeMirrorDocBlocksDiff {
+    /// From -- the starting character this doc block is anchored to.
+    from: usize,
+    /// To -- the ending character this doc block is anchored to.
+    to: usize,
+    /// Indent, or None if unchanged.
+    indent: Option<String>,
+    /// Delimiter.
+    delimiter: String,
+    /// Contents. TODO: this should be a diff, not a string.
+    contents: String,
+}
 
 /// Define a simple diff container, based on
 /// [CodeMirror](https://codemirror.net/docs/ref/#state.ChangeSpec).
-#[derive(Debug, PartialEq)]
-pub struct ChangeSpec {
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct StringChangeSpec {
     /// The index of the start of the change.
     pub from: usize,
     /// The index of the end of the change; defined for deletions and replacements.
     pub to: Option<usize>,
     /// The text to insert/replace; an empty string indicates deletion.
     pub insert: String,
+}
+
+/// Define a diff container for a CodeMirrorDocBlocks.
+pub struct CodeMirrorDocBlocksChangeSpec {
+    /// The index of the start of the change.
+    pub from: usize,
+    /// The index of the end of the change; defined for deletions and replacements.
+    pub to: Option<usize>,
+    /// The doc blocks to insert/replace; an empty vector indicates deletion.
+    pub insert: Vec<CodeMirrorDocBlock>,
 }
 
 /// This enum contains the results of translating a source file to the CodeChat
@@ -229,6 +267,56 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str = "</code></pre>\n<CodeChatEditor-separator/>\n";
 // <a class="fence-mending-end"></a>
 
+// Serialization for `CodeMirrorDocBlock`
+// --------------------------------------
+#[derive(Serialize, Deserialize)]
+struct CodeMirrorDocBlockTuple<'a>(
+    // from
+    usize,
+    // to
+    usize,
+    // indent
+    Cow<'a, str>,
+    // delimiter
+    Cow<'a, str>,
+    // contents
+    Cow<'a, str>,
+);
+
+// Convert the struct to a tuple, then serialize the tuple. This makes the resulting JSON more compact.
+impl Serialize for CodeMirrorDocBlock {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let tuple = CodeMirrorDocBlockTuple(
+            self.from,
+            self.to,
+            Cow::from(&self.indent),
+            Cow::from(&self.delimiter),
+            Cow::from(&self.contents),
+        );
+        tuple.serialize(serializer)
+    }
+}
+
+// Deserialize the tuple, then convert it to a struct.
+impl<'de> Deserialize<'de> for CodeMirrorDocBlock {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let tuple = CodeMirrorDocBlockTuple::deserialize(deserializer)?;
+        Ok(CodeMirrorDocBlock {
+            from: tuple.0,
+            to: tuple.1,
+            indent: tuple.2.into_owned(),
+            delimiter: tuple.3.into_owned(),
+            contents: tuple.4.into_owned(),
+        })
+    }
+}
+
 // Determine if the provided file is part of a project
 // ---------------------------------------------------
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
@@ -280,7 +368,13 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     let doc_blocks = &code_mirror.doc_blocks;
     // A CodeMirror "document" is really source code. Convert it from UTF-8
     // bytes to an array of characters, which is indexable by character.
-    let code: Vec<char> = code_mirror.doc.chars().collect();
+    let code: Vec<char> = if let DiffableSource::Plain(source) = &code_mirror.doc {
+        source
+    } else {
+        panic!("CodeMirror doc is not a plain string");
+    }
+    .chars()
+    .collect();
     let mut code_doc_block_arr: Vec<CodeDocBlock> = Vec::new();
     // Keep track of the to index of the previous doc block. Since we haven't
     // processed any doc blocks, start at 0.
@@ -290,7 +384,7 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     // by the doc block.
     for codemirror_doc_block in doc_blocks {
         // Append the code block, unless it's empty.
-        let code_contents = &code[code_index..codemirror_doc_block.0];
+        let code_contents = &code[code_index..codemirror_doc_block.from];
         if !code_contents.is_empty() {
             // Convert back from a character array to a string.
             let s: String = code_contents.iter().collect();
@@ -298,12 +392,12 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
         }
         // Append the doc block.
         code_doc_block_arr.push(CodeDocBlock::DocBlock(DocBlock {
-            indent: codemirror_doc_block.2.to_string(),
-            delimiter: codemirror_doc_block.3.to_string(),
-            contents: codemirror_doc_block.4.to_string(),
+            indent: codemirror_doc_block.indent.to_string(),
+            delimiter: codemirror_doc_block.delimiter.to_string(),
+            contents: codemirror_doc_block.contents.to_string(),
             lines: 0,
         }));
-        code_index = codemirror_doc_block.1 + 1;
+        code_index = codemirror_doc_block.to + 1;
     }
 
     // See if there's a code block after the last doc block.
@@ -515,7 +609,7 @@ pub fn source_to_codechat_for_web(
             let html = markdown_to_html(file_contents);
             // TODO: process the HTML.
             CodeMirror {
-                doc: html,
+                doc: DiffableSource::Plain(html),
                 doc_blocks: vec![],
             }
         } else {
@@ -524,7 +618,7 @@ pub fn source_to_codechat_for_web(
             // Create an initially-empty struct; the source code will be
             // translated to this.
             let mut code_mirror = CodeMirror {
-                doc: "".to_string(),
+                doc: DiffableSource::Plain("".to_string()),
                 doc_blocks: Vec::new(),
             };
 
@@ -572,33 +666,36 @@ pub fn source_to_codechat_for_web(
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             for code_or_doc_block in code_doc_block_arr {
+                let DiffableSource::Plain(ref mut source) = code_mirror.doc else {
+                    panic!("CodeMirror doc is not a plain string");
+                };
                 match code_or_doc_block {
-                    CodeDocBlock::CodeBlock(code_string) => code_mirror.doc.push_str(&code_string),
+                    CodeDocBlock::CodeBlock(code_string) => source.push_str(&code_string),
                     CodeDocBlock::DocBlock(doc_block) => {
                         // Create the doc block.
                         //
                         // Get the length of the string in characters (not
                         // bytes, which is what `len()` returns).
-                        let len = code_mirror.doc.chars().count();
-                        code_mirror.doc_blocks.push((
+                        let len = source.chars().count();
+                        code_mirror.doc_blocks.push(CodeMirrorDocBlock {
                             // From
-                            len,
+                            from: len,
                             // To. Make this one line short, which allows
                             // CodeMirror to correctly handle inserts at the
                             // first character of the following code block. Note
                             // that the last doc block could be zero length, so
                             // handle this case.
-                            len + max(doc_block.lines, 1) - 1,
-                            doc_block.indent.to_string(),
-                            doc_block.delimiter.to_string(),
+                            to: len + max(doc_block.lines, 1) - 1,
+                            indent: doc_block.indent.to_string(),
+                            delimiter: doc_block.delimiter.to_string(),
                             // Used the markdown-translated replacement for this
                             // doc block, rather than the original string.
-                            doc_block_contents_iter.next().unwrap().to_string(),
-                        ));
+                            contents: doc_block_contents_iter.next().unwrap().to_string(),
+                        });
                         // Append newlines to the document; the doc block will
                         // replace these in the editor. This keeps the line
                         // numbering of non-doc blocks correct.
-                        code_mirror.doc.push_str(&"\n".repeat(doc_block.lines));
+                        source.push_str(&"\n".repeat(doc_block.lines));
                     }
                 }
             }
@@ -645,7 +742,11 @@ pub fn source_to_codechat_for_web_string(
                     // For the table of contents sidebar, which is pure
                     // markdown, just return the resulting HTML, rather than the
                     // editable CodeChat for web format.
-                    TranslationResultsString::Toc(codechat_for_web.source.doc)
+                    if let DiffableSource::Plain(source) = codechat_for_web.source.doc {
+                        TranslationResultsString::Toc(source)
+                    } else {
+                        panic!("CodeMirror doc is not a plain string");
+                    }
                 } else {
                     TranslationResultsString::CodeChat(codechat_for_web)
                 }
@@ -691,8 +792,9 @@ impl<'a> TokenSource for StrWithNewlines<'a> {
     }
 }
 
-fn diff_to_change_spec(before: &str, after: &str) -> Vec<ChangeSpec> {
-    let mut change_spec: Vec<ChangeSpec> = Vec::new();
+/// Given two strings, return a list of changes between them.
+fn diff_to_change_spec(before: &str, after: &str) -> Vec<StringChangeSpec> {
+    let mut change_spec: Vec<StringChangeSpec> = Vec::new();
     let mut prev_before_start = 0;
     let mut prev_before_start_chars = 0;
     let input = InternedInput::new(StrWithNewlines(before), StrWithNewlines(after));
@@ -712,7 +814,7 @@ fn diff_to_change_spec(before: &str, after: &str) -> Vec<ChangeSpec> {
             .map(|&line| input.interner[line])
             .collect();
         let before_chars = count_before_chars(before.start..before.end);
-        change_spec.push(ChangeSpec {
+        change_spec.push(StringChangeSpec {
             from: prev_before_start_chars,
             to: if before_chars != 0 {
                 Some(prev_before_start_chars + before_chars)
@@ -730,6 +832,64 @@ fn diff_to_change_spec(before: &str, after: &str) -> Vec<ChangeSpec> {
     diff(Algorithm::Histogram, &input, sink);
     change_spec
 }
+
+/// Create a wrapper for a string that includes newlines in the interned (tokenized) guts.
+struct CodeMirrorDockBlocksStruct<'a>(&'a Vec<CodeMirrorDocBlock>);
+
+struct CodeMirrorDocBlockStruct<'a>(&'a CodeMirrorDocBlock);
+
+/// Only hash the contents, since that's all we care about for the diff.
+impl Hash for CodeMirrorDocBlockStruct<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.contents.hash(state);
+    }
+}
+
+impl PartialEq for CodeMirrorDocBlockStruct<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.contents == other.0.contents
+    }
+}
+
+impl Eq for CodeMirrorDocBlockStruct<'_> {}
+
+/*
+/// Only compare the contents of two doc blocks; later, we'll compare the other fields as well.
+impl<'a> TokenSource for CodeMirrorDockBlocksStruct<'a> {
+    type Token = &'a CodeMirrorDocBlockStruct<'a>;
+
+    //type Tokenizer = Map<Iter<'a, CodeMirrorDocBlock>, fn(&'a CodeMirrorDocBlock) -> &'a CodeMirrorDocBlockStruct<'a>>;
+    type Tokenizer = Iter<'a, CodeMirrorDocBlockStruct<'a>>;
+
+    // Ignore the other fields; just use the contents for tokenizing.
+    fn tokenize(&self) -> Self::Tokenizer {
+            self.0.iter()
+        }
+
+    fn estimate_tokens(&self) -> u32 {
+        self.0.len() as u32
+    }
+}
+
+/// Given two `CodeMirrorDocBlocks`, return a list of changes between them.
+fn diff_code_mirror_doc_blocks(
+    before: &CodeMirrorDocBlocks,
+    after: &CodeMirrorDocBlocks,
+) -> Vec<StringChangeSpec> {
+    // Convert the doc blocks to strings, then diff them.
+    let before_str = before
+        .iter()
+        .map(|(_, _, _, _, contents)| contents)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let after_str = after
+        .iter()
+        .map(|(_, _, _, _, contents)| contents)
+        .collect::<Vec<_>>()
+        .join("\n");
+    diff_to_change_spec(&before_str, &after_str)
+}
+*/
 
 // Goal: make it easy to update the data structure. We update on every
 // load/save, then do some accesses during those processes.
@@ -951,24 +1111,27 @@ mod tests {
 
     use predicates::prelude::predicate::str;
 
-    use super::{ChangeSpec, CodeChatForWeb, CodeMirror, CodeMirrorDocBlocks, SourceFileMetadata};
-    use super::{TranslationResults, find_path_to_toc};
-    use crate::lexer::{
-        CodeDocBlock, DocBlock, compile_lexers, supported_languages::get_language_lexer_vec,
+    use super::{
+        CodeChatForWeb, CodeMirror, CodeMirrorDocBlock, DiffableSource, SourceFileMetadata,
+        StringChangeSpec, TranslationResults, find_path_to_toc,
     };
-    use crate::processing::{
-        code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
-        diff_to_change_spec, source_to_codechat_for_web,
+    use crate::{
+        lexer::{
+            CodeDocBlock, DocBlock, compile_lexers, supported_languages::get_language_lexer_vec,
+        },
+        prep_test_dir,
+        processing::{
+            code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks,
+            codechat_for_web_to_source, diff_to_change_spec, source_to_codechat_for_web,
+        },
+        test_utils::stringit,
     };
-    use crate::test_utils::stringit;
-
-    use crate::prep_test_dir;
 
     // ### Utilities
     fn build_codechat_for_web(
         mode: &str,
         doc: &str,
-        doc_blocks: CodeMirrorDocBlocks,
+        doc_blocks: Vec<CodeMirrorDocBlock>,
     ) -> CodeChatForWeb {
         // Wrap the provided parameters in the necessary data structures.
         CodeChatForWeb {
@@ -976,7 +1139,7 @@ mod tests {
                 mode: mode.to_string(),
             },
             source: CodeMirror {
-                doc: doc.to_string(),
+                doc: DiffableSource::Plain(doc.to_string()),
                 doc_blocks,
             },
         }
@@ -990,14 +1153,14 @@ mod tests {
         indent: &str,
         delimiter: &str,
         contents: &str,
-    ) -> (usize, usize, String, String, String) {
-        (
-            start,
-            end,
-            indent.to_string(),
-            delimiter.to_string(),
-            contents.to_string(),
-        )
+    ) -> CodeMirrorDocBlock {
+        CodeMirrorDocBlock {
+            from: start,
+            to: end,
+            indent: indent.to_string(),
+            delimiter: delimiter.to_string(),
+            contents: contents.to_string(),
+        }
     }
 
     fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {
@@ -1013,7 +1176,7 @@ mod tests {
         CodeDocBlock::CodeBlock(contents.to_string())
     }
 
-    fn run_test(mode: &str, doc: &str, doc_blocks: CodeMirrorDocBlocks) -> Vec<CodeDocBlock> {
+    fn run_test(mode: &str, doc: &str, doc_blocks: Vec<CodeMirrorDocBlock>) -> Vec<CodeDocBlock> {
         let codechat_for_web = build_codechat_for_web(mode, doc, doc_blocks);
         code_mirror_to_code_doc_blocks(&codechat_for_web.source)
     }
@@ -1649,16 +1812,24 @@ mod tests {
 
     #[test]
     fn test_diff_1() {
-        let test_diff = |before: &str, after: &str, expected_change_spec: &[ChangeSpec]| {
+        let test_diff = |before: &str, after: &str, expected_change_spec: &[StringChangeSpec]| {
             let mut before = before.to_string();
             let after = after.to_string();
             let diff = diff_to_change_spec(&before, &after);
             assert_eq!(diff.len(), 1);
             let change_spec = &diff[0];
             // Convert from a character index to a byte index. If the index is past the end of the string, report the length of the string.
-            let from_index = before.char_indices().nth(change_spec.from).unwrap_or((before.len(), 'x')).0;
+            let from_index = before
+                .char_indices()
+                .nth(change_spec.from)
+                .unwrap_or((before.len(), 'x'))
+                .0;
             if let Some(to) = change_spec.to {
-                let to_index = before.char_indices().nth(to).unwrap_or((before.len(), 'x')).0;
+                let to_index = before
+                    .char_indices()
+                    .nth(to)
+                    .unwrap_or((before.len(), 'x'))
+                    .0;
                 before.replace_range(from_index..to_index, &change_spec.insert);
             } else {
                 before.insert_str(change_spec.from, &change_spec.insert);
@@ -1671,7 +1842,7 @@ mod tests {
         test_diff(
             "1\n234\n56",
             "aa\n1\n234\n56",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 0,
                 to: None,
                 insert: "aa\n".to_string(),
@@ -1682,7 +1853,7 @@ mod tests {
         test_diff(
             "1\n234\n56",
             "aa\n234\n56",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 0,
                 to: Some(2),
                 insert: "aa\n".to_string(),
@@ -1693,7 +1864,7 @@ mod tests {
         test_diff(
             "1\n234\n56",
             "234\n56",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 0,
                 to: Some(2),
                 insert: "".to_string(),
@@ -1704,7 +1875,7 @@ mod tests {
         test_diff(
             "1\n234\n56",
             "1\naa\n234\n56",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 2,
                 to: None,
                 insert: "aa\n".to_string(),
@@ -1713,7 +1884,7 @@ mod tests {
         test_diff(
             "1\n234\n56",
             "1\naa\n56",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 2,
                 to: Some(6),
                 insert: "aa\n".to_string(),
@@ -1722,7 +1893,7 @@ mod tests {
         test_diff(
             "1\n234\n56",
             "1\n56",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 2,
                 to: Some(6),
                 insert: "".to_string(),
@@ -1733,7 +1904,7 @@ mod tests {
         test_diff(
             "1\n234\n56",
             "1\n234\n56\naa",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 6,
                 to: Some(8),
                 insert: "56\naa".to_string(),
@@ -1742,7 +1913,7 @@ mod tests {
         test_diff(
             "1\n234\n56",
             "1\n234\naa",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 6,
                 to: Some(8),
                 insert: "aa".to_string(),
@@ -1751,7 +1922,7 @@ mod tests {
         test_diff(
             "1\n234\n56",
             "1\n234\n",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 6,
                 to: Some(8),
                 insert: "".to_string(),
@@ -1762,7 +1933,7 @@ mod tests {
         test_diff(
             "①\n②③④\n⑤⑥",
             "①\n❷❸\n⑤⑥",
-            &[ChangeSpec {
+            &[StringChangeSpec {
                 from: 2,
                 to: Some(6),
                 insert: "❷❸\n".to_string(),

@@ -29,7 +29,17 @@
 // ### JavaScript/TypeScript
 //
 // #### Third-party
-import ReconnectingWebSocket from "./ReconnectingWebSocket.cjs";
+import ReconnectingWebSocket from "./third-party/ReconnectingWebSocket.cjs";
+
+// #### Local
+import { assert } from "./assert.mjs";
+import {
+    CodeChatForWeb,
+    EditorMessage,
+    EditorMessageContents,
+    MessageResult,
+    UpdateMessageContents,
+} from "./shared_types.mjs";
 
 // Websocket
 // ---------
@@ -37,25 +47,6 @@ import ReconnectingWebSocket from "./ReconnectingWebSocket.cjs";
 // This code communicates with the CodeChat Editor Server via its websocket
 // interface.
 //
-// ### Message types
-//
-// These mirror the same definitions in the Rust webserver, so that the two can
-// exchange messages.
-interface EditorMessage {
-    id: number;
-    message: EditorMessageContents;
-}
-
-type ResultType = { Ok: "Void" } | { Err: string };
-
-interface EditorMessageContents {
-    Update?: UpdateMessageContents;
-    CurrentFile?: [string, boolean?];
-    RequestClose?: null;
-    OpenUrl?: string,
-    Result?: ResultType;
-}
-
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH = 200;
 // The timeout for a websocket `Response`.
@@ -115,7 +106,9 @@ class WebSocketComm {
             // dictionary representing a `JointMessage`.
             const joint_message = JSON.parse(event.data) as EditorMessage;
             const { id: id, message: message } = joint_message;
-            console.log(`Received data id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`);
+            console.log(
+                `Received data id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
+            );
             console.assert(id !== undefined);
             console.assert(message !== undefined);
             const keys = Object.keys(message);
@@ -131,7 +124,9 @@ class WebSocketComm {
                     // Check or update the `current_filename`.
                     if (this.current_filename === undefined) {
                         this.current_filename = current_update.file_path;
-                    } else if (current_update.file_path !== this.current_filename) {
+                    } else if (
+                        current_update.file_path !== this.current_filename
+                    ) {
                         const msg = `Ignoring update for ${current_update.file_path} because it's not the current file ${this.current_filename}.`;
                         console.log(msg);
                         this.send_result(id, msg);
@@ -207,7 +202,7 @@ class WebSocketComm {
                     }
 
                     // Report if this was an error.
-                    const result_contents = value as ResultType;
+                    const result_contents = value as MessageResult;
                     if ("Err" in result_contents) {
                         console.log(
                             `Error in message ${id}: ${result_contents.Err}.`,
@@ -254,7 +249,7 @@ class WebSocketComm {
         const id = this.ws_id;
         this.ws_id += 3;
         // Add in the current filename to the message, if it's an `Update`.
-        if (message.Update !== undefined) {
+        if ("Update" in message) {
             console.assert(this.current_filename !== undefined);
             message.Update.file_path = this.current_filename!;
         }
@@ -267,7 +262,11 @@ class WebSocketComm {
         };
         this.ws.send(JSON.stringify(jm));
         this.pending_messages[id] = {
-            timer_id: window.setTimeout(this.report_server_timeout, RESPONSE_TIMEOUT, id),
+            timer_id: window.setTimeout(
+                this.report_server_timeout,
+                RESPONSE_TIMEOUT,
+                id,
+            ),
             callback,
         };
     };
@@ -275,9 +274,12 @@ class WebSocketComm {
     current_file = (url: URL) => {
         // If this points to the Server, then tell the IDE to load a new file.
         if (url.host === window.location.host) {
-            this.send_message({ CurrentFile: [url.toString(), undefined] }, () => {
-                this.set_root_iframe_src(url.toString());
-            });
+            this.send_message(
+                { CurrentFile: [url.toString(), undefined] },
+                () => {
+                    this.set_root_iframe_src(url.toString());
+                },
+            );
         } else {
             this.set_root_iframe_src(url.toString());
         }
@@ -291,7 +293,9 @@ class WebSocketComm {
         const message: EditorMessageContents = {
             Result: result === null ? { Ok: "Void" } : { Err: result },
         };
-        console.log(`Sending result id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`);
+        console.log(
+            `Sending result id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
+        );
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
         const jm: EditorMessage = {
@@ -310,13 +314,18 @@ const set_content = (contents: CodeChatForWeb) => {
     let client = get_client();
     if (client === undefined) {
         // See if this is the [simple viewer](#Client-simple-viewer). Otherwise, it's just the bare document to replace.
-        const cw = (root_iframe!.contentDocument?.getElementById("CodeChat-contents") as HTMLIFrameElement | undefined)?.contentWindow ?? root_iframe!.contentWindow!;
+        const cw =
+            (
+                root_iframe!.contentDocument?.getElementById(
+                    "CodeChat-contents",
+                ) as HTMLIFrameElement | undefined
+            )?.contentWindow ?? root_iframe!.contentWindow!;
         cw.document.open();
-        cw.document.write(contents.source.doc);
+        assert("Plain" in contents.source.doc);
+        cw.document.write(contents.source.doc.Plain);
         cw.document.close();
     } else {
-        root_iframe!.contentWindow!.CodeChatEditor.open_lp(
-            contents);
+        root_iframe!.contentWindow!.CodeChatEditor.open_lp(contents);
     }
 };
 

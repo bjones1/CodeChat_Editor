@@ -47,7 +47,7 @@ use super::{
 use crate::{
     oneshot_send,
     processing::{
-        CodeChatForWeb, CodeMirror, SourceFileMetadata, TranslationResultsString,
+        CodeChatForWeb, CodeMirror, DiffableSource, SourceFileMetadata, TranslationResultsString,
         codechat_for_web_to_source, source_to_codechat_for_web_string,
     },
     queue_send,
@@ -402,53 +402,58 @@ pub async fn vscode_ide_websocket(
                                         match &update.contents {
                                             None => Err("TODO: support for updates without contents.".to_string()),
                                             Some(contents) => {
-                                                // Translate the file.
-                                                let (translation_results_string, _path_to_toc) =
-                                                source_to_codechat_for_web_string(&contents.source.doc, &current_file, false);
-                                                match translation_results_string {
-                                                    TranslationResultsString::CodeChat(cc) => {
-                                                        // Send the new translated contents.
-                                                        debug!("Sending translated contents to Client.");
-                                                        queue_send!(to_client_tx.send(EditorMessage {
-                                                            id: ide_message.id,
-                                                            message: EditorMessageContents::Update(UpdateMessageContents {
-                                                                file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                                                contents: Some(cc),
-                                                                cursor_position: None,
-                                                                scroll_position: None,
-                                                            }),
-                                                        }));
-                                                        Ok(ResultOkTypes::Void)
-                                                    }
-                                                    // TODO
-                                                    TranslationResultsString::Binary => Err("TODO".to_string()),
-                                                    TranslationResultsString::Err(err) => Err(format!("Error translating source to CodeChat: {err}").to_string()),
-                                                    TranslationResultsString::Unknown => {
-                                                        // Send the new raw contents.
-                                                        debug!("Sending translated contents to Client.");
-                                                        queue_send!(to_client_tx.send(EditorMessage {
-                                                            id: ide_message.id,
-                                                            message: EditorMessageContents::Update(UpdateMessageContents {
-                                                                file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                                                contents: Some(CodeChatForWeb {
-                                                                    metadata: SourceFileMetadata {
-                                                                        // Since this is raw data, `mode` doesn't
-                                                                        // matter.
-                                                                        mode: "".to_string()
-                                                                    },
-                                                                    source: CodeMirror {
-                                                                        doc: contents.source.doc.clone(),
-                                                                        doc_blocks: vec![]
-                                                                    }
-                                                                }),
-                                                                cursor_position: None,
-                                                                scroll_position: None,
-                                                            }),
-                                                        }));
-                                                        Ok(ResultOkTypes::Void)
-                                                    },
-                                                    TranslationResultsString::Toc(_) => {
-                                                        Err("Error: source incorrectly recognized as a TOC.".to_string())
+                                                match &contents.source.doc {
+                                                    DiffableSource::Diff(_diff) => Err("TODO: support for updates with diffable sources.".to_string()),
+                                                    DiffableSource::Plain(source) => {
+                                                        // Translate the file.
+                                                        let (translation_results_string, _path_to_toc) =
+                                                        source_to_codechat_for_web_string(source, &current_file, false);
+                                                        match translation_results_string {
+                                                            TranslationResultsString::CodeChat(cc) => {
+                                                                // Send the new translated contents.
+                                                                debug!("Sending translated contents to Client.");
+                                                                queue_send!(to_client_tx.send(EditorMessage {
+                                                                    id: ide_message.id,
+                                                                    message: EditorMessageContents::Update(UpdateMessageContents {
+                                                                        file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                                                                        contents: Some(cc),
+                                                                        cursor_position: None,
+                                                                        scroll_position: None,
+                                                                    }),
+                                                                }));
+                                                                Ok(ResultOkTypes::Void)
+                                                            }
+                                                            // TODO
+                                                            TranslationResultsString::Binary => Err("TODO".to_string()),
+                                                            TranslationResultsString::Err(err) => Err(format!("Error translating source to CodeChat: {err}").to_string()),
+                                                            TranslationResultsString::Unknown => {
+                                                                // Send the new raw contents.
+                                                                debug!("Sending translated contents to Client.");
+                                                                queue_send!(to_client_tx.send(EditorMessage {
+                                                                    id: ide_message.id,
+                                                                    message: EditorMessageContents::Update(UpdateMessageContents {
+                                                                        file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                                                                        contents: Some(CodeChatForWeb {
+                                                                            metadata: SourceFileMetadata {
+                                                                                // Since this is raw data, `mode` doesn't
+                                                                                // matter.
+                                                                                mode: "".to_string()
+                                                                            },
+                                                                            source: CodeMirror {
+                                                                                doc: contents.source.doc.clone(),
+                                                                                doc_blocks: vec![]
+                                                                            }
+                                                                        }),
+                                                                        cursor_position: None,
+                                                                        scroll_position: None,
+                                                                    }),
+                                                                }));
+                                                                Ok(ResultOkTypes::Void)
+                                                            },
+                                                            TranslationResultsString::Toc(_) => {
+                                                                Err("Error: source incorrectly recognized as a TOC.".to_string())
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -551,7 +556,7 @@ pub async fn vscode_ide_websocket(
                                         Ok(result) => Some(CodeChatForWeb {
                                             metadata: cfw.metadata,
                                             source: CodeMirror {
-                                                doc: result,
+                                                doc: DiffableSource::Plain(result),
                                                 doc_blocks: vec![],
                                             },
                                         }),

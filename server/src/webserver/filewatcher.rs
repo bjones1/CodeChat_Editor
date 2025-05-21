@@ -740,7 +740,7 @@ mod tests {
     use crate::{
         cast, prep_test_dir,
         processing::{
-            CodeChatForWeb, CodeMirror, SourceFileMetadata, TranslationResults,
+            CodeChatForWeb, CodeMirror, DiffableSource, SourceFileMetadata, TranslationResults,
             source_to_codechat_for_web,
         },
         test_utils::{check_logger_errors, configure_testing_logger},
@@ -947,7 +947,7 @@ mod tests {
                             mode: "".to_string(),
                         },
                         source: CodeMirror {
-                            doc: "".to_string(),
+                            doc: DiffableSource::Plain("".to_string()),
                             doc_blocks: vec![],
                         },
                     }),
@@ -977,7 +977,7 @@ mod tests {
                             mode: "nope".to_string(),
                         },
                         source: CodeMirror {
-                            doc: "testing".to_string(),
+                            doc: DiffableSource::Plain("testing".to_string()),
                             doc_blocks: vec![],
                         },
                     }),
@@ -1008,7 +1008,7 @@ mod tests {
                             mode: "python".to_string(),
                         },
                         source: CodeMirror {
-                            doc: "testing()".to_string(),
+                            doc: DiffableSource::Plain("testing()".to_string()),
                             doc_blocks: vec![],
                         },
                     }),
@@ -1043,7 +1043,7 @@ mod tests {
                             mode: "python".to_string(),
                         },
                         source: CodeMirror {
-                            doc: "testing()123".to_string(),
+                            doc: DiffableSource::Plain("testing()123".to_string()),
                             doc_blocks: vec![],
                         },
                     }),

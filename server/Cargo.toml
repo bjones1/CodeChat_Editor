@@ -49,6 +49,7 @@ chrono = "0.4"
 clap = { version = "4.5.19", features = ["derive"] }
 dunce = "1.0.5"
 futures-util = "0.3.29"
+imara-diff = { version = "0.1.8", features = [] }
 indoc = "2.0.5"
 lazy_static = "1"
 log = "0.4"

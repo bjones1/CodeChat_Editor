@@ -49,7 +49,9 @@ use super::super::{
 };
 use crate::{
     cast,
-    processing::{CodeChatForWeb, CodeMirror, SourceFileMetadata},
+    processing::{
+        CodeChatForWeb, CodeMirror, CodeMirrorDocBlock, DiffableSource, SourceFileMetadata,
+    },
     test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
     webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
 };
@@ -499,14 +501,14 @@ async fn test_vscode_ide_websocket8() {
                         mode: "python".to_string(),
                     },
                     source: CodeMirror {
-                        doc: "\n".to_string(),
-                        doc_blocks: vec![(
-                            0,
-                            0,
-                            "".to_string(),
-                            "#".to_string(),
-                            "<p>testing</p>\n".to_string()
-                        )],
+                        doc: DiffableSource::Plain("\n".to_string()),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 0,
+                            to: 0,
+                            indent: "".to_string(),
+                            delimiter: "#".to_string(),
+                            contents: "<p>testing</p>\n".to_string()
+                        }],
                     },
                 }),
                 cursor_position: None,
@@ -607,7 +609,7 @@ async fn test_vscode_ide_websocket7() {
                         mode: "python".to_string(),
                     },
                     source: CodeMirror {
-                        doc: "# more".to_string(),
+                        doc: DiffableSource::Plain("# more".to_string()),
                         doc_blocks: vec![],
                     },
                 }),
@@ -628,14 +630,14 @@ async fn test_vscode_ide_websocket7() {
                         mode: "python".to_string(),
                     },
                     source: CodeMirror {
-                        doc: "\n".to_string(),
-                        doc_blocks: vec![(
-                            0,
-                            0,
-                            "".to_string(),
-                            "#".to_string(),
-                            "<p>more</p>\n".to_string()
-                        )],
+                        doc: DiffableSource::Plain("\n".to_string()),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 0,
+                            to: 0,
+                            indent: "".to_string(),
+                            delimiter: "#".to_string(),
+                            contents: "<p>more</p>\n".to_string()
+                        }],
                     },
                 }),
                 cursor_position: None,
@@ -684,14 +686,14 @@ async fn test_vscode_ide_websocket6() {
                         mode: "python".to_string(),
                     },
                     source: CodeMirror {
-                        doc: "\n".to_string(),
-                        doc_blocks: vec![(
-                            0,
-                            0,
-                            "".to_string(),
-                            "#".to_string(),
-                            "less\n".to_string(),
-                        )],
+                        doc: DiffableSource::Plain("\n".to_string()),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 0,
+                            to: 0,
+                            indent: "".to_string(),
+                            delimiter: "#".to_string(),
+                            contents: "less\n".to_string(),
+                        }],
                     },
                 }),
                 cursor_position: None,
@@ -711,7 +713,7 @@ async fn test_vscode_ide_websocket6() {
                         mode: "python".to_string(),
                     },
                     source: CodeMirror {
-                        doc: "# less\n".to_string(),
+                        doc: DiffableSource::Plain("# less\n".to_string()),
                         doc_blocks: vec![],
                     },
                 }),
@@ -844,14 +846,14 @@ async fn test_vscode_ide_websocket4() {
                         mode: "python".to_string(),
                     },
                     source: CodeMirror {
-                        doc: "\n".to_string(),
-                        doc_blocks: vec![(
-                            0,
-                            0,
-                            "".to_string(),
-                            "#".to_string(),
-                            "<p>test.py</p>\n".to_string()
-                        )],
+                        doc: DiffableSource::Plain("\n".to_string()),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 0,
+                            to: 0,
+                            indent: "".to_string(),
+                            delimiter: "#".to_string(),
+                            contents: "<p>test.py</p>\n".to_string()
+                        }],
                     },
                 }),
                 cursor_position: None,

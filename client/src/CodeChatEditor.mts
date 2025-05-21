@@ -44,11 +44,12 @@
 // ### JavaScript/TypeScript
 //
 // #### Third-party
-import TurndownService from "./turndown/turndown.browser.es.js";
-import { gfm } from "./turndown/turndown-plugin-gfm.browser.es.js";
-import "./wc-mermaid/wc-mermaid";
+import TurndownService from "./third-party/turndown/turndown.browser.es.js";
+import { gfm } from "./third-party/turndown/turndown-plugin-gfm.browser.es.js";
+import "./third-party/wc-mermaid/wc-mermaid";
 
 // #### Local
+import { assert } from "./assert.mjs";
 import {
     CodeMirror_load,
     CodeMirror_save,
@@ -61,6 +62,11 @@ import "./graphviz-webcomponent-setup.mts";
 // instead of in the third-party category above.
 import "graphviz-webcomponent";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
+import {
+    CodeChatForWeb,
+    DiffableSource,
+    UpdateMessageContents,
+} from "./shared_types.mjs";
 
 // ### CSS
 import "./css/CodeChatEditor.css";
@@ -230,6 +236,7 @@ const _open_lp = async (
     // the provided`all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
+    assert("Plain" in source.doc);
     const codechat_body = document.getElementById(
         "CodeChat-body",
     ) as HTMLDivElement;
@@ -249,7 +256,7 @@ const _open_lp = async (
             // Special case: a CodeChat Editor document's HTML is stored
             // in`source.doc`. We don't need the CodeMirror editor at all;
             // instead, treat it like a single doc block contents div.
-            codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc}</div>`;
+            codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc.Plain}</div>`;
             await init({
                 selector: ".CodeChat-doc-contents",
                 // In the doc-only mode, add autosave functionality. While there
@@ -276,7 +283,7 @@ const _open_lp = async (
             // However, this doesn't seem to work for the cursor location.
             // Perhaps when TinyMCE normalizes the document, this gets lost?
             const bm = tinymce.activeEditor!.selection.getBookmark();
-            tinymce.activeEditor!.setContent(source.doc);
+            tinymce.activeEditor!.setContent(source.doc.Plain);
             tinymce.activeEditor!.selection.moveToBookmark(bm);
         }
         mathJaxTypeset(codechat_body);
@@ -294,7 +301,7 @@ const _open_lp = async (
     }
 };
 
-const save_lp = async () => {
+const save_lp = () => {
     /// @ts-expect-error
     let source: CodeChatForWeb["source"] = {};
     if (is_doc_only()) {
@@ -307,13 +314,15 @@ const save_lp = async () => {
         // div.
         tinymce.activeEditor!.save();
         const html = tinymce.activeEditor!.getContent();
-        source.doc = turndownService.turndown(html);
+        source.doc = {
+            Plain: turndownService.turndown(html)
+        };
         source.doc_blocks = [];
         // Retypeset all math after saving the document.
         mathJaxTypeset(codechat_body);
     } else {
         source = CodeMirror_save();
-        codechat_html_to_markdown(source);
+        codechat_html_to_markdown(source.doc_blocks);
     }
 
     let update: UpdateMessageContents = {
@@ -348,27 +357,27 @@ const on_save = async (only_if_dirty: boolean = false) => {
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
     console.log("Sent Update - saving document.");
     await new Promise(async (resolve) => {
-        webSocketComm.send_message({ Update: await save_lp() }, () =>
+        webSocketComm.send_message({ Update: save_lp() }, () =>
             resolve(0),
         );
     });
     is_dirty = false;
 };
 
-const codechat_html_to_markdown = (source: any) => {
-    const entries = source.doc_blocks.entries();
+const codechat_html_to_markdown = (doc_blocks: CodeChatForWeb["source"]["doc_blocks"]) => {
+    const entries = doc_blocks.entries();
     for (const [index, doc_block] of entries) {
         const wordWrapMargin = Math.max(
             40,
             80 - doc_block[3].length - doc_block[2].length - 1,
         );
-        turndownService.options['wordWrap'] = [wordWrapMargin, 40];
+        turndownService.options["wordWrap"] = [wordWrapMargin, 40];
         doc_block[4] =
-            (index == entries.length - 1
+            (index == doc_blocks.length - 1
                 ? turndownService.last(doc_block[4])
                 : turndownService.next(doc_block[4])) + "\n";
     }
-    turndownService.options['wordWrap'] = [80, 40];
+    turndownService.options["wordWrap"] = [80, 40];
 };
 
 // ### Autosave feature

@@ -463,7 +463,7 @@ fn run_client_build(
     run_script(
         &esbuild,
         &[
-            "src/pdf.js/viewer.mjs",
+            "src/third-party/pdf.js/viewer.mjs",
             "node_modules/pdfjs-dist/build/pdf.worker.mjs",
             "--bundle",
             "--outdir=./static/bundled",

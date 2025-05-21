@@ -29,11 +29,11 @@ body.CodeChat-theme-light {
        use transparency to avoid hiding things behind the text (such as the
        selection). */
     .cm-line {
-        background-color: #EEE7;
+        background-color: #eee7;
     }
 
     .cm-activeLine {
-        background-color: #CCC7;
+        background-color: #ccc7;
     }
 
     /* The settings below are copied from the Sphinx Alabaster theme. */
@@ -50,10 +50,10 @@ body.CodeChat-theme-light {
 
         font-family: Georgia, serif;
         font-size: 15px;
-        color: #3E4349;
+        color: #3e4349;
 
         hr {
-            border: 1px solid #B1B4B6;
+            border: 1px solid #b1b4b6;
         }
 
         img {
@@ -61,48 +61,73 @@ body.CodeChat-theme-light {
         }
 
         a {
-            color: #004B6B;
+            color: #004b6b;
             text-decoration: underline;
         }
 
         a:hover {
-            color: #6D4100;
+            color: #6d4100;
             text-decoration: underline;
         }
 
-        h1, h2, h3, h4, h5, h6 {
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
             font-family: Georgia, serif;
             font-weight: normal;
             margin: 30px 0px 10px 0px;
             padding: 0;
         }
 
-        h1 { margin-top: 0; padding-top: 0; font-size: 240%; }
-        h2 { font-size: 180%; }
-        h3 { font-size: 150%; }
-        h4 { font-size: 130%; }
-        h5 { font-size: 100%; }
-        h6 { font-size: 100%; }
+        h1 {
+            margin-top: 0;
+            padding-top: 0;
+            font-size: 240%;
+        }
+        h2 {
+            font-size: 180%;
+        }
+        h3 {
+            font-size: 150%;
+        }
+        h4 {
+            font-size: 130%;
+        }
+        h5 {
+            font-size: 100%;
+        }
+        h6 {
+            font-size: 100%;
+        }
 
-        pre, tt, code {
-            font-family: 'Consolas', 'Menlo', 'DejaVu Sans Mono', 'Bitstream Vera Sans Mono', monospace;
+        pre,
+        tt,
+        code {
+            font-family:
+                "Consolas", "Menlo", "DejaVu Sans Mono",
+                "Bitstream Vera Sans Mono", monospace;
             font-size: 0.9em;
         }
 
-        ul, ol {
+        ul,
+        ol {
             /* Matches the 30px from the narrow-screen "li > ul" selector below */
             margin: 10px 0 10px 30px;
             padding: 0;
         }
 
         pre {
-            background: #EEE;
+            background: #eee;
             padding: 7px 30px;
             margin: 15px 0px;
             line-height: 1.3em;
         }
 
-        tt, code {
+        tt,
+        code {
             background-color: #ecf0f3;
             color: #222;
             /* padding: 1px 2px; */
@@ -113,65 +138,67 @@ body.CodeChat-theme-light {
     div.CodeChat-TOC {
         font-family: Georgia, serif;
         font-size: 15px;
-        color: #3E4349;
+        color: #3e4349;
 
         /* Make lists more compact. */
         ol {
-           /* Provide approximately enough space for two digits. */
-           padding-inline-start: 1.5rem;
+            /* Provide approximately enough space for two digits. */
+            padding-inline-start: 1.5rem;
         }
 
         a {
-           color: #444;
-           text-decoration: none;
-           border-bottom: 1px dotted #999;
+            color: #444;
+            text-decoration: none;
+            border-bottom: 1px dotted #999;
         }
 
         a:hover {
-           border-bottom: 1px solid #999;
+            border-bottom: 1px solid #999;
         }
 
-        h3, h4 {
-           font-family: Georgia, serif;
-           color: #444;
-           font-size: 24px;
-           font-weight: normal;
-           margin: 0 0 5px 0;
-           padding: 0;
+        h3,
+        h4 {
+            font-family: Georgia, serif;
+            color: #444;
+            font-size: 24px;
+            font-weight: normal;
+            margin: 0 0 5px 0;
+            padding: 0;
         }
 
         h4 {
-           font-size: 20px;
+            font-size: 20px;
         }
 
         h3 a {
-           color: #444;
+            color: #444;
         }
 
-        h3 a, a:hover {
-           border: none;
+        h3 a,
+        a:hover {
+            border: none;
         }
 
         p {
-           color: #555;
-           margin: 10px 0;
+            color: #555;
+            margin: 10px 0;
         }
 
         ul {
-           margin: 10px 0;
-           padding-inline-start: 1rem;
-           color: #000;
+            margin: 10px 0;
+            padding-inline-start: 1rem;
+            color: #000;
         }
 
         hr {
-           border: none;
-           height: 1px;
-           color: #AAA;
-           background: #AAA;
+            border: none;
+            height: 1px;
+            color: #aaa;
+            background: #aaa;
 
-           text-align: left;
-           margin-left: 0;
-           width: 50%;
+            text-align: left;
+            margin-left: 0;
+            width: 50%;
         }
     }
 }

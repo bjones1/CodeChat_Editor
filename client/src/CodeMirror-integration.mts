@@ -66,7 +66,9 @@ import {
     StateField,
     StateEffect,
     EditorSelection,
+    Text,
     Transaction,
+    EditorStateConfig,
 } from "@codemirror/state";
 import { cpp } from "@codemirror/lang-cpp";
 import { css } from "@codemirror/lang-css";
@@ -81,6 +83,8 @@ import { Editor, init, tinymce } from "./tinymce-config.mjs";
 
 // ### Local
 import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
+import { CodeChatForWeb, DocBlockJSON } from "./shared_types.mjs";
+import { assert } from "./assert.mjs";
 
 // Globals
 // -------
@@ -398,11 +402,12 @@ export const mathJaxTypeset = async (
     // The node to typeset.
     node: HTMLElement,
     // An optional function to run when the typeset finishes.
-    afterTypesetFunc: () => void = () => {}) => {
+    afterTypesetFunc: () => void = () => { },
+) => {
     try {
         await window.MathJax.typesetPromise([node]);
         afterTypesetFunc();
-    } catch(err: any) {
+    } catch (err: any) {
         console.log("Typeset failed: " + err.message);
     }
 };
@@ -410,11 +415,11 @@ export const mathJaxTypeset = async (
 // Transform a typeset node back to the original (untypeset) text.
 export const mathJaxUnTypeset = (node: HTMLElement) => {
     window.MathJax.startup.document
-    .getMathItemsWithin(node)
-    .forEach((item: any) => {
-        item.removeFromDocument(true);
-    });
-}
+        .getMathItemsWithin(node)
+        .forEach((item: any) => {
+            item.removeFromDocument(true);
+        });
+};
 
 // Given a doc block div element, return the contents div and if TinyMCE is
 // attached to that div.
@@ -426,7 +431,9 @@ const get_contents = (element: HTMLElement): [HTMLDivElement, boolean] => {
 
 // Determine if the element which generated the provided event was in a doc
 // block or not. If not, return false; if so, return the doc block div.
-const element_is_in_doc_block = (target: EventTarget | null): boolean | HTMLDivElement => {
+const element_is_in_doc_block = (
+    target: EventTarget | null,
+): boolean | HTMLDivElement => {
     if (target === null) {
         return false;
     }
@@ -495,8 +502,8 @@ const on_dirty = (
 
 const DocBlockPlugin = ViewPlugin.fromClass(
     class {
-        constructor(view: EditorView) {}
-        update(update: ViewUpdate) {}
+        constructor(view: EditorView) { }
+        update(update: ViewUpdate) { }
     },
     {
         eventHandlers: {
@@ -569,7 +576,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                             // containing div.
                             for (
                                 let current_node = sel.anchorNode,
-                                    is_first = true;
+                                is_first = true;
                                 // Continue until we find the div which contains
                                 // the doc block contents: either it's not an
                                 // element (such as a div), ...
@@ -579,7 +586,7 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                                     "CodeChat-doc-contents",
                                 );
                                 current_node = current_node.parentNode!,
-                                    is_first = false
+                                is_first = false
                             ) {
                                 // Store the index of this node in its' parent
                                 // list of child nodes/children. Use
@@ -651,15 +658,15 @@ const DocBlockPlugin = ViewPlugin.fromClass(
                                 ;
                                 selection_path.length;
                                 selection_node =
-                                    // As before, use the more-consistent
-                                    // `children` except for the last element,
-                                    // where we might be selecting a `text`
-                                    // node.
-                                    (
-                                        selection_path.length > 1
-                                            ? selection_node.children
-                                            : selection_node.childNodes
-                                    )[selection_path.shift()!]! as HTMLElement
+                                // As before, use the more-consistent
+                                // `children` except for the last element,
+                                // where we might be selecting a `text`
+                                // node.
+                                (
+                                    selection_path.length > 1
+                                        ? selection_node.children
+                                        : selection_node.childNodes
+                                )[selection_path.shift()!]! as HTMLElement
                             );
                             // Use that to set the selection.
                             tinymce_singleton!.selection.setCursorLocation(
@@ -746,18 +753,19 @@ export const CodeMirror_load = async (
     // The div to place the loaded document in.
     codechat_body: HTMLDivElement,
     // The document to load.
-    source: any,
+    source: CodeChatForWeb["source"],
     // The name of the lexer to use.
     lexer_name: string,
     // Additional extensions.
     extensions: Array<Extension>,
 ) => {
-    // This is the first parameter in the call to
-    // [EditorState.fromJSON](https://codemirror.net/docs/ref/#state.EditorState^fromJSON).
-    // While the type of this parameter is `any`, it is probably instead an
-    // [EditorState](https://codemirror.net/docs/ref/#state.EditorState), which
-    // requires a defined selection. Define it here.
-    source.selection = EditorSelection.single(0).toJSON();
+    assert("Plain" in source.doc);
+    // Although the [docs](https://codemirror.net/docs/ref/#state.EditorState^fromJSON) specify a [EditorStateConfig](https://codemirror.net/docs/ref/#state.EditorStateConfig) which contains `doc` and `selection`, the implementation requires these to be present in the `json` (first) argument. Therefore:
+    const editor_state_json = {
+        doc: source.doc.Plain,
+        selection: EditorSelection.single(0).toJSON(),
+        doc_blocks: source.doc_blocks,
+    };
     // Save the current scroll position, to prevent the view from scrolling back
     // to the top after an update/reload.
     let scrollSnapshot;
@@ -840,7 +848,7 @@ export const CodeMirror_load = async (
             break;
     }
     const state = EditorState.fromJSON(
-        source,
+        editor_state_json,
         {
             extensions: [
                 DocBlockPlugin,
@@ -894,17 +902,18 @@ export const CodeMirror_load = async (
                         tinymce_singleton!.save();
                         ignore_next_dirty = false;
                     });
-                })
+                });
             },
         })
     )[0];
 };
 
 // Return the JSON data to save from the current CodeMirror-based document.
-export const CodeMirror_save = () => {
+export const CodeMirror_save = (): CodeChatForWeb["source"] => {
     // This is the data to write — the source code. First, transform the HTML
     // back into code and doc blocks.
-    let source = current_view.state.toJSON(CodeMirror_JSON_fields);
+    const source = current_view.state.toJSON(CodeMirror_JSON_fields);
+    source.doc = {Plain: source.doc};
     delete source.selection;
 
     return source;

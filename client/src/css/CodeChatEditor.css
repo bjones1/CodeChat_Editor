@@ -29,7 +29,7 @@
    --------------
 
    Eventually, this will be a user-configurable setting. */
-@import url('themes/light.css');
+@import url("themes/light.css");
 
 /* Styles for the entire page layout
    ---------------------------------
@@ -174,7 +174,9 @@ body {
 }
 
 /* Provide nicer defaults for tables. */
-.CodeChat-doc-contents table, .CodeChat-doc-contents th, .CodeChat-doc-contents td {
+.CodeChat-doc-contents table,
+.CodeChat-doc-contents th,
+.CodeChat-doc-contents td {
     border-collapse: collapse;
     padding-left: 4px;
     padding-right: 4px;

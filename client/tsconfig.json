@@ -33,11 +33,7 @@
         "moduleResolution": "nodenext",
         "outDir": "out",
         "rootDir": "src",
-        "strict": true,
+        "strict": true
     },
-    "exclude": [
-        "node_modules",
-        "static",
-        "HashReader.js"
-    ]
+    "exclude": ["node_modules", "static", "HashReader.js"]
 }
