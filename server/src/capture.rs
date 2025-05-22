@@ -128,8 +128,7 @@ impl EventCapture {
 
     pub async fn new<P: AsRef<Path>>(config_path: P) -> Result<Self, io::Error> {
         // Read the configuration file
-        let config_content =
-            fs::read_to_string(config_path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let config_content = fs::read_to_string(config_path).map_err(io::Error::other)?;
         let config: Config = serde_json::from_str(&config_content)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
@@ -216,7 +215,7 @@ impl EventCapture {
                 ],
             )
             .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
 
         info!("Event inserted into database: {:?}", event);
 
