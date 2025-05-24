@@ -377,12 +377,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     assert("Plain" in current_update.contents.source.doc);
                                     wse.replace(
                                         doc.uri,
-                                        new vscode.Range(
+                                        doc.validateRange(new vscode.Range(
                                             0,
                                             0,
                                             doc.lineCount,
                                             0
-                                        ),
+                                        )),
                                         current_update.contents.source.doc.Plain
                                     );
                                     vscode.workspace.applyEdit(wse);

@@ -16,7 +16,7 @@
         "CodeChat Editor",
         "Visual Studio Code extension"
     ],
-    "main": "out/extension.js",
+    "main": "out/extensions/VSCode/src/extension.js",
     "contributes": {
         "configuration": {
             "title": "CodeChat Editor",
