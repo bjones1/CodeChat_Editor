@@ -37,6 +37,15 @@ version = "0.1.17"
 [lib]
 name = "code_chat_editor"
 
+# Features
+# --------
+#
+# See the [docs](https://doc.rust-lang.org/cargo/reference/features.html).
+[features]
+# Uncomment this to show an explanation of the lexing process.
+#default = ["lexer_explain"]
+lexer_explain = []
+
 # Dependencies
 # ------------
 [dependencies]
@@ -105,19 +114,6 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-# Features
-# --------
-#
-# See the [docs](https://doc.rust-lang.org/cargo/reference/features.html).
-[features]
-# Uncomment this to show an explanation of the lexing process.
-#default = ["lexer_explain"]
-lexer_explain = []
-
-[lints.rust]
-# Avoid a lint about tarpaulin.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
-
 # Distribution
 # ------------
 #
@@ -128,3 +124,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+[lints.rust]
+# Avoid a lint about tarpaulin.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
