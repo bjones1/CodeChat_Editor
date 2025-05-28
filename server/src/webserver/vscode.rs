@@ -41,8 +41,8 @@ use tokio::{fs::File, select, sync::mpsc};
 
 // ### Local
 use super::{
-    AppState, EditorMessage, EditorMessageContents, IP_ADDRESS, IdeType, WebsocketQueues,
-    client_websocket, get_client_framework, send_response,
+    AppState, EditorMessage, EditorMessageContents, IdeType, WebsocketQueues, client_websocket,
+    get_client_framework, send_response,
 };
 use crate::{
     oneshot_send,
@@ -192,6 +192,15 @@ pub async fn vscode_ide_websocket(
             // Ensure the IDE type (VSCode) is correct.
             match ide_type {
                 IdeType::VSCode(is_self_hosted) => {
+                    // Get the address for the server.
+                    let port = app_state_task.port;
+                    let address = match get_server_url(port).await {
+                        Ok(address) => address,
+                        Err(err) => {
+                            error!("{err:?}");
+                            break 'task;
+                        }
+                    };
                     if is_self_hosted {
                         // Send a response (successful) to the `Opened` message.
                         debug!(
@@ -201,14 +210,6 @@ pub async fn vscode_ide_websocket(
                         send_response(&to_ide_tx, first_message.id, Ok(ResultOkTypes::Void)).await;
 
                         // Send the HTML for the internal browser.
-                        let port = app_state_task.port;
-                        let address = match get_server_url(port).await {
-                            Ok(address) => address,
-                            Err(err) => {
-                                error!("{err:?}");
-                                break 'task;
-                            }
-                        };
                         let client_html = formatdoc!(
                             r#"
                             <!DOCTYPE html>
@@ -264,10 +265,9 @@ pub async fn vscode_ide_websocket(
                         };
                     } else {
                         // Open the Client in an external browser.
-                        if let Err(err) = open::that_detached(format!(
-                            "http://{IP_ADDRESS}:{}/vsc/cf/{connection_id_task}",
-                            app_state_task.port
-                        )) {
+                        if let Err(err) =
+                            open::that_detached(format!("{address}/vsc/cf/{connection_id_task}"))
+                        {
                             let msg = format!("Unable to open web browser: {err}");
                             error!("{msg}");
                             send_response(&to_ide_tx, first_message.id, Err(msg)).await;
