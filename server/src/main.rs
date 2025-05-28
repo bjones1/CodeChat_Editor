@@ -117,7 +117,7 @@ impl Cli {
                                 println!("Server started.");
                                 // Open a web browser if requested. TODO: show
                                 // an error if running in a Codespace, since
-                                // this doesn't work.
+                                // this doesn't work. See https://github.com/Byron/open-rs/issues/108 -- if `open` used `$BROWSER` (following Pyhton), it should work.
                                 if let Some(open_path) = open {
                                     let address = get_server_url(self.port)?;
                                     let open_path = fs::canonicalize(open_path)?;
