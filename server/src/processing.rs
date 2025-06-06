@@ -808,19 +808,19 @@ fn markdown_to_html(markdown: &str) -> String {
 // *   The `CodeMirrorDocBlock` is a structure, with several fields. In
 //     particular, the contents is usually the largest element; the indent can
 //     also be large.
-// *   It should handle the following common cases well: 
+// *   It should handle the following common cases well:
 //     1.  An update of a code block. This causes the from and to field of all
 //         following doc blocks to change, without changing the other fields.
 //     2.  An update to the contents of a doc block. For large doc blocks, this
 //         is more efficiently stored as a diff rather than the full doc block
 //         text.
-//     3.  Inserting or deleting a doc block. 
+//     3.  Inserting or deleting a doc block.
 //
 // The diff algorithm simply looks for equality between elements contained in
 // the before and after vectors provided it. However, this requires something
 // more fine-grained: the ability to track changes to the `contents` as a first
 // priority (common cases 2, 3), then fix up non-`contents` field (common case
-// 1). 
+// 1).
 //
 // #### Overall approach
 //
@@ -988,7 +988,7 @@ fn diff_code_mirror_doc_blocks<'a>(
             // common case (a minor edit to the text of a doc block). If not,
             // the replace is a bit less efficient than the insert/delete, but
             // still correct.
-            if before_index < before_range.end - 1 {
+            if before_index < before_range.end {
                 let before_val = &before[before_index as usize];
                 insert.push(CodeMirrorDocBlockDiff {
                     from: after_val.from,
