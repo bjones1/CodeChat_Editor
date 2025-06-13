@@ -37,7 +37,7 @@ use crate::{
     processing::{
         CodeMirrorDocBlockDiff, CodeMirrorDocBlocksDiff, code_doc_block_vec_to_source,
         code_mirror_to_code_doc_blocks, codechat_for_web_to_source, diff_code_mirror_doc_blocks,
-        diff_to_change_spec, source_to_codechat_for_web,
+        diff_str, source_to_codechat_for_web,
     },
     test_utils::stringit,
 };
@@ -718,31 +718,42 @@ fn test_find_path_to_toc_1() {
     temp_dir.close().unwrap();
 }
 
-#[test]
-fn test_diff_1() {
-    let test_diff = |before: &str, after: &str, expected_change_spec: &[StringDiff]| {
-        let mut before = before.to_string();
-        let after = after.to_string();
-        let diff = diff_to_change_spec(&before, &after);
-        assert_eq!(diff.len(), 1);
-        let change_spec = &diff[0];
+fn apply_str_diff(before: &str, diffs: &[StringDiff]) -> String {
+    let mut before = before.to_string();
+    // Walk from the last diff to the first.
+    for diff in diffs.iter().rev() {
         // Convert from a character index to a byte index. If the index is
         // past the end of the string, report the length of the string.
         let from_index = before
             .char_indices()
-            .nth(change_spec.from)
+            .nth(diff.from)
             .unwrap_or((before.len(), 'x'))
             .0;
-        if let Some(to) = change_spec.to {
+        if let Some(to) = diff.to {
             let to_index = before
                 .char_indices()
                 .nth(to)
                 .unwrap_or((before.len(), 'x'))
                 .0;
-            before.replace_range(from_index..to_index, &change_spec.insert);
+            before.replace_range(from_index..to_index, &diff.insert);
         } else {
-            before.insert_str(change_spec.from, &change_spec.insert);
+            before.insert_str(diff.from, &diff.insert);
         };
+    }
+    before
+}
+
+// Option 1: implement separate JS and Rust. Pro: simple. Con: how to test? Duplicate them. But eventually I want to send diffs back, so I'll have to implement both sides. Let's do this later. Also, I'm a bit concerned about performance -- probably have to translate strings between the two platforms. Per https://rustwasm.github.io/wasm-bindgen/reference/types/string.html, this means a decode/encode and copy each direction, which is not exciting.
+//
+// Option 2: implement partly in Rust then use in JS. Pro: easier to test. Con: Complex.
+
+#[test]
+fn test_diff_1() {
+    let test_diff = |before: &str, after: &str, expected_change_spec: &[StringDiff]| {
+        let after = after.to_string();
+        let diff = diff_str(&before, &after);
+        let before = apply_str_diff(before, &diff);
+        assert_eq!(diff.len(), 1);
         assert_eq!(before, after);
         assert_eq!(diff, expected_change_spec);
     };
@@ -1050,31 +1061,33 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 1,
-            to: Some(2),
-            insert: vec![CodeMirrorDocBlockDiff {
-                from: 11,
-                to: 12,
-                indent: None,
-                delimiter: "#",
-                contents: vec![]
-            }]
-        }, CodeMirrorDocBlocksDiff {
-            from: 2,
-            to: None,
-            insert: vec![CodeMirrorDocBlockDiff {
-                from: 12,
-                to: 13,
-                indent: Some(""),
-                delimiter: "#",
-                contents: vec![StringDiff {
-                    from: 0,
-                    to: None,
-                    insert: "test".to_string()
+        vec![
+            CodeMirrorDocBlocksDiff {
+                from: 1,
+                to: Some(2),
+                insert: vec![CodeMirrorDocBlockDiff {
+                    from: 11,
+                    to: 12,
+                    indent: None,
+                    delimiter: "#",
+                    contents: vec![]
                 }]
-            }]
-        }
+            },
+            CodeMirrorDocBlocksDiff {
+                from: 2,
+                to: None,
+                insert: vec![CodeMirrorDocBlockDiff {
+                    from: 12,
+                    to: 13,
+                    indent: Some(""),
+                    delimiter: "#",
+                    contents: vec![StringDiff {
+                        from: 0,
+                        to: None,
+                        insert: "test".to_string()
+                    }]
+                }]
+            }
         ]
     );
 

@@ -89,16 +89,16 @@ export type DiffableSource =
       }
     | {
           /// The source code, as a series of diffs to apply to the current source.
-          Diff: [ChangeSpec];
+          Diff: [StringDiff];
       };
 
-export type ChangeSpec = {
+export type StringDiff = {
     /// The index of the start of the change.
-    from: Number;
+    from: number;
     /// The index of the end of the change; defined for deletions and replacements.
-    to: Number | undefined;
+    to: number | undefined;
     /// The text to insert/replace; an empty string indicates deletion.
-    insert: String;
+    insert: string;
 };
 
 // How a doc block is stored using CodeMirror.

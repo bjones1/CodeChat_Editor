@@ -56,7 +56,6 @@ import {
     DecorationSet,
     ViewUpdate,
     ViewPlugin,
-    keymap,
     WidgetType,
 } from "@codemirror/view";
 import {
@@ -66,9 +65,7 @@ import {
     StateField,
     StateEffect,
     EditorSelection,
-    Text,
     Transaction,
-    EditorStateConfig,
 } from "@codemirror/state";
 import { cpp } from "@codemirror/lang-cpp";
 import { css } from "@codemirror/lang-css";
@@ -166,20 +163,6 @@ const docBlockField = StateField.define<DecorationSet>({
 
             // Perform an update to a doc block.
             else if (effect.is(updateDocBlock)) {
-                // The view provides only the to value (the position); use this
-                // to find the from value for the doc block to update.
-                const from = effect.value.pos;
-                let to;
-                doc_blocks.between(
-                    from,
-                    from,
-                    (_from: number, _to: number, doc_block: Decoration) => {
-                        to = _to;
-                        // Assume that there's only one doc block for this
-                        // range: stop looking for any others.
-                        return false;
-                    },
-                );
                 // Remove the old doc block and create a new one to replace it.
                 // (Recall that this is the functional approach required by
                 // CodeMirror -- state is immutable.)
@@ -187,8 +170,8 @@ const docBlockField = StateField.define<DecorationSet>({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
                     filter: (from, to, doc_block) => false,
-                    filterFrom: from,
-                    filterTo: to,
+                    filterFrom: effect.value.from,
+                    filterTo: effect.value.to,
                     // This adds the replacement doc block with updated
                     // indent/delimiter/content.
                     add: [
@@ -201,10 +184,8 @@ const docBlockField = StateField.define<DecorationSet>({
                             ),
                             block: true,
                         }).range(
-                            from,
-                            // We know that the to value will always be found;
-                            // make TypeScript happy.
-                            to as unknown as number,
+                            effect.value.from,
+                            effect.value.to,
                         ),
                     ],
                 });
@@ -277,19 +258,20 @@ export const addDocBlock = StateEffect.define<{
     }),
 });
 
-// Define an update. Note that we have only a position (the only data a view can
-// gather), rather than a from/to.
+// Define an update.
 export const updateDocBlock = StateEffect.define<{
-    pos: number;
+    from: number;
+    to: number;
     indent: string;
     delimiter: string;
     content: string;
     dom: HTMLDivElement;
 }>({
-    map: ({ pos, indent, delimiter, content, dom }, change: ChangeDesc) => ({
+    map: ({ from, to, indent, delimiter, content, dom }, change: ChangeDesc) => ({
         // Update the position of this doc block due to the transaction's
         // changes.
-        pos: change.mapPos(pos),
+        from: change.mapPos(from),
+        to: change.mapPos(to),
         indent,
         delimiter,
         content,
@@ -476,7 +458,21 @@ const on_dirty = (
         ".CodeChat-doc",
     )! as HTMLDivElement;
     // Send an update to the state field associated with this DOM element.
-    const pos = current_view.posAtDOM(target);
+    //
+    // We can only get the position (the `from`) value for the doc block. Use this to find the `to` value for the doc block.
+    const from = current_view.posAtDOM(target);
+    let to = -1;
+    current_view.state.field(docBlockField).between(
+        from,
+        from,
+        (_from: number, _to: number, doc_block: Decoration) => {
+            to = _to;
+            // Assume that there's only one doc block for this
+            // range: stop looking for any others.
+            return false;
+        },
+    );
+
     const indent_div = target.childNodes[0] as HTMLDivElement;
     const indent = indent_div.innerHTML;
     const delimiter = indent_div.getAttribute("data-delimiter")!;
@@ -487,7 +483,8 @@ const on_dirty = (
         : contents_div.innerHTML;
     let effects: StateEffect<unknown>[] = [
         updateDocBlock.of({
-            pos,
+            from,
+            to,
             indent,
             delimiter,
             content,
@@ -759,153 +756,157 @@ export const CodeMirror_load = async (
     // Additional extensions.
     extensions: Array<Extension>,
 ) => {
-    assert("Plain" in source.doc);
-    // Although the [docs](https://codemirror.net/docs/ref/#state.EditorState^fromJSON) specify a [EditorStateConfig](https://codemirror.net/docs/ref/#state.EditorStateConfig) which contains `doc` and `selection`, the implementation requires these to be present in the `json` (first) argument. Therefore:
-    const editor_state_json = {
-        doc: source.doc.Plain,
-        selection: EditorSelection.single(0).toJSON(),
-        doc_blocks: source.doc_blocks,
-    };
-    // Save the current scroll position, to prevent the view from scrolling back
-    // to the top after an update/reload.
-    let scrollSnapshot;
-    if (current_view !== undefined) {
-        scrollSnapshot = current_view.scrollSnapshot();
-        // For reloads, we need to remove previous instances; otherwise, Bad
-        // Things happen.
-        tinymce.remove();
-    }
+    if ("Plain" in source.doc) {
+        // Although the [docs](https://codemirror.net/docs/ref/#state.EditorState^fromJSON) specify a [EditorStateConfig](https://codemirror.net/docs/ref/#state.EditorStateConfig) which contains `doc` and `selection`, the implementation requires these to be present in the `json` (first) argument. Therefore:
+        const editor_state_json = {
+            doc: source.doc.Plain,
+            selection: EditorSelection.single(0).toJSON(),
+            doc_blocks: source.doc_blocks,
+        };
+        // Save the current scroll position, to prevent the view from scrolling back
+        // to the top after an update/reload.
+        let scrollSnapshot;
+        if (current_view !== undefined) {
+            scrollSnapshot = current_view.scrollSnapshot();
+            // For reloads, we need to remove previous instances; otherwise, Bad
+            // Things happen.
+            tinymce.remove();
+        }
 
-    codechat_body.innerHTML =
-        '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents" spellcheck="true"></div>';
-    let parser;
-    // TODO: dynamically load the parser.
-    switch (lexer_name) {
-        // Languages with a parser
-        case "sh":
-            parser = cpp();
-            break;
-        case "c_cpp":
-            parser = cpp();
-            break;
-        case "csharp":
-            parser = javascript();
-            break;
-        case "css":
-            parser = css();
-            break;
-        case "golang":
-            parser = go();
-            break;
-        case "html":
-            parser = html();
-            break;
-        case "java":
-            parser = java();
-            break;
-        case "javascript":
-            parser = javascript();
-            break;
-        case "python":
-            parser = python();
-            break;
-        case "rust":
-            parser = rust();
-            break;
-        case "typescript":
-            parser = javascript({ typescript: true });
-            break;
+        codechat_body.innerHTML =
+            '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents" spellcheck="true"></div>';
+        let parser;
+        // TODO: dynamically load the parser.
+        switch (lexer_name) {
+            // Languages with a parser
+            case "sh":
+                parser = cpp();
+                break;
+            case "c_cpp":
+                parser = cpp();
+                break;
+            case "csharp":
+                parser = javascript();
+                break;
+            case "css":
+                parser = css();
+                break;
+            case "golang":
+                parser = go();
+                break;
+            case "html":
+                parser = html();
+                break;
+            case "java":
+                parser = java();
+                break;
+            case "javascript":
+                parser = javascript();
+                break;
+            case "python":
+                parser = python();
+                break;
+            case "rust":
+                parser = rust();
+                break;
+            case "typescript":
+                parser = javascript({ typescript: true });
+                break;
 
-        // Languages without a parser.
-        case "json5":
-            parser = json();
-            break;
-        case "matlab":
-            parser = python();
-            break;
-        case "sql":
-            parser = python();
-            break;
-        case "swift":
-            parser = python();
-            break;
-        case "toml":
-            parser = json();
-            break;
-        case "vhdl":
-            parser = cpp();
-            break;
-        case "verilog":
-            parser = cpp();
-            break;
-        case "v":
-            parser = javascript();
-            break;
+            // Languages without a parser.
+            case "json5":
+                parser = json();
+                break;
+            case "matlab":
+                parser = python();
+                break;
+            case "sql":
+                parser = python();
+                break;
+            case "swift":
+                parser = python();
+                break;
+            case "toml":
+                parser = json();
+                break;
+            case "vhdl":
+                parser = cpp();
+                break;
+            case "verilog":
+                parser = cpp();
+                break;
+            case "v":
+                parser = javascript();
+                break;
 
-        default:
-            parser = javascript();
-            console.log(`Unknown lexer name ${lexer_name}`);
-            break;
-    }
-    const state = EditorState.fromJSON(
-        editor_state_json,
-        {
-            extensions: [
-                DocBlockPlugin,
-                parser,
-                basicSetup,
-                EditorView.lineWrapping,
-                autosaveExtension,
-                ...extensions,
-            ],
-        },
-        CodeMirror_JSON_fields,
-    );
-    current_view = new EditorView({
-        parent: codechat_body.childNodes[0] as HTMLDivElement,
-        state,
-        scrollTo: scrollSnapshot,
-    });
-    tinymce_singleton = (
-        await init({
-            selector: "#TinyMCE-inst",
-            setup: (editor: Editor) => {
-                editor.on("Dirty", (event: any) => {
-                    // Get the div TinyMCE stores edits in. TODO: find
-                    // documentation for this.
-                    const target_or_false = event.target?.bodyElement;
-                    if (target_or_false == null) {
-                        return false;
-                    }
-                    on_dirty(target_or_false);
-                });
-                // When leaving a TinyMCE block, retypeset the math. (It's
-                // untypeset when entering the block, to avoid editing
-                // problems.)
-                editor.on("focusout", (event: any) => {
-                    const target_or_false = event.target;
-                    if (target_or_false == null) {
-                        return false;
-                    }
-                    // If the editor is dirty, save it first before we possibly
-                    // modify it.
-                    if (tinymce_singleton!.isDirty()) {
-                        tinymce_singleton!.save();
-                    }
-                    // When switching from one doc block to another, the MathJax
-                    // typeset finishes after the new doc block has been
-                    // updated. To prevent saving the "dirty" content from
-                    // typesetting, wait until this finishes to clear the
-                    // `ignore_next_dirty` flag.
-                    ignore_next_dirty = true;
-                    mathJaxTypeset(target_or_false, () => {
-                        tinymce_singleton!.save();
-                        ignore_next_dirty = false;
-                    });
-                });
+            default:
+                parser = javascript();
+                console.log(`Unknown lexer name ${lexer_name}`);
+                break;
+        }
+        const state = EditorState.fromJSON(
+            editor_state_json,
+            {
+                extensions: [
+                    DocBlockPlugin,
+                    parser,
+                    basicSetup,
+                    EditorView.lineWrapping,
+                    autosaveExtension,
+                    ...extensions,
+                ],
             },
-        })
-    )[0];
+            CodeMirror_JSON_fields,
+        );
+        current_view = new EditorView({
+            parent: codechat_body.childNodes[0] as HTMLDivElement,
+            state,
+            scrollTo: scrollSnapshot,
+        });
+        tinymce_singleton = (
+            await init({
+                selector: "#TinyMCE-inst",
+                setup: (editor: Editor) => {
+                    editor.on("Dirty", (event: any) => {
+                        // Get the div TinyMCE stores edits in. TODO: find
+                        // documentation for this.
+                        const target_or_false = event.target?.bodyElement;
+                        if (target_or_false == null) {
+                            return false;
+                        }
+                        on_dirty(target_or_false);
+                    });
+                    // When leaving a TinyMCE block, retypeset the math. (It's
+                    // untypeset when entering the block, to avoid editing
+                    // problems.)
+                    editor.on("focusout", (event: any) => {
+                        const target_or_false = event.target;
+                        if (target_or_false == null) {
+                            return false;
+                        }
+                        // If the editor is dirty, save it first before we possibly
+                        // modify it.
+                        if (tinymce_singleton!.isDirty()) {
+                            tinymce_singleton!.save();
+                        }
+                        // When switching from one doc block to another, the MathJax
+                        // typeset finishes after the new doc block has been
+                        // updated. To prevent saving the "dirty" content from
+                        // typesetting, wait until this finishes to clear the
+                        // `ignore_next_dirty` flag.
+                        ignore_next_dirty = true;
+                        mathJaxTypeset(target_or_false, () => {
+                            tinymce_singleton!.save();
+                            ignore_next_dirty = false;
+                        });
+                    });
+                },
+            })
+        )[0];
+    } else {
+        // This contains a diff, instead of plain text. Apply the diff.
+        current_view.dispatch(...[{ changes: source.doc.Diff }]);
+    }
 };
 
 // Return the JSON data to save from the current CodeMirror-based document.
@@ -913,7 +914,7 @@ export const CodeMirror_save = (): CodeChatForWeb["source"] => {
     // This is the data to write — the source code. First, transform the HTML
     // back into code and doc blocks.
     const source = current_view.state.toJSON(CodeMirror_JSON_fields);
-    source.doc = {Plain: source.doc};
+    source.doc = { Plain: source.doc };
     delete source.selection;
 
     return source;

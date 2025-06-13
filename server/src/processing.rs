@@ -835,7 +835,7 @@ fn markdown_to_html(markdown: &str) -> String {
 //
 // #### String diff
 /// Given two strings, return a list of changes between them.
-fn diff_to_change_spec(before: &str, after: &str) -> Vec<StringDiff> {
+fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
     let mut change_spec: Vec<StringDiff> = Vec::new();
     // The previous value of `before.start` and the character index
     // corresponding to `before.start`.
@@ -951,7 +951,7 @@ fn diff_code_mirror_doc_blocks<'a>(
                             Some(&prev_after_range_start_val.indent)
                         },
                         delimiter: &prev_after_range_start_val.delimiter,
-                        contents: diff_to_change_spec(
+                        contents: diff_str(
                             &prev_after_range_start_val.contents,
                             &prev_after_range_start_val.contents,
                         ),
@@ -999,7 +999,7 @@ fn diff_code_mirror_doc_blocks<'a>(
                         Some(&after_val.indent)
                     },
                     delimiter: &after_val.delimiter,
-                    contents: diff_to_change_spec(&before_val.contents, &after_val.contents),
+                    contents: diff_str(&before_val.contents, &after_val.contents),
                 });
                 before_index += 1;
             } else {
@@ -1009,7 +1009,7 @@ fn diff_code_mirror_doc_blocks<'a>(
                     to: after_val.to,
                     indent: Some(&after_val.indent),
                     delimiter: &after_val.delimiter,
-                    contents: diff_to_change_spec("", &after_val.contents),
+                    contents: diff_str("", &after_val.contents),
                 });
             }
         }
