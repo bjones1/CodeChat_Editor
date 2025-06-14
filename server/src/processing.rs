@@ -79,7 +79,13 @@ use crate::lexer::{CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CodeChatForWeb {
     pub metadata: SourceFileMetadata,
-    pub source: CodeMirror,
+    pub source: CodeMirrorDiffable,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum CodeMirrorDiffable {
+    Plain(CodeMirror),
+    Diff(CodeMirrorDiff),
 }
 
 /// <a id="SourceFileMetadata"></a>Metadata about a source file sent along with
@@ -100,19 +106,16 @@ type CodeMirrorDocBlockVec = Vec<CodeMirrorDocBlock>;
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CodeMirror {
     /// The document being edited.
-    pub doc: DiffableSource,
-    /// Doc blocks
+    pub doc: String,
     pub doc_blocks: CodeMirrorDocBlockVec,
 }
 
-/// This allows defining a source file as either a plain string or a series of
-/// diffs to apply to the current source.
+/// A diff of the `CodeMirror` struct.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum DiffableSource {
-    /// The source code, in a single string.
-    Plain(String),
-    /// The source code, as a series of diffs to apply to the current source.
-    Diff(Vec<StringDiff>),
+pub struct CodeMirrorDiff {
+    /// A diff of the document being edited.
+    pub doc: StringDiff,
+    pub doc_blocks: Vec<CodeMirrorDocBlockDiff>,
 }
 
 /// This defines a doc block for CodeMirror.
@@ -131,8 +134,8 @@ pub struct CodeMirrorDocBlock {
 }
 
 /// Store the difference between the previous and current `CodeMirrorDocBlock`s.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct CodeMirrorDocBlockDiff<'a> {
+#[derive(Clone, Debug, PartialEq)]
+pub struct CodeMirrorDocBlockDiff {
     /// From -- the starting character this doc block is anchored to. In the
     /// JSON encoding, there's little gain from making this an `Option`, since
     /// `undefined` takes more characters than most line numbers.
@@ -142,9 +145,9 @@ pub struct CodeMirrorDocBlockDiff<'a> {
     pub to: usize,
     /// Indent, or None if unchanged. Since the indent may be many characters,
     /// use an `Option` here.
-    pub indent: Option<&'a str>,
+    pub indent: Option<String>,
     /// Delimiter. Again, this is usually too short to merit an `Option`.
-    pub delimiter: &'a str,
+    pub delimiter: String,
     /// Contents, as a diff of the previous contents.
     pub contents: Vec<StringDiff>,
 }
@@ -167,14 +170,14 @@ pub struct StringDiff {
 /// Store one element of the difference between previous and current
 /// `CodeMirrorDocBlockVec`s.
 #[derive(Clone, Debug, Serialize, PartialEq)]
-pub struct CodeMirrorDocBlocksDiff<'a> {
+pub struct CodeMirrorDocBlocksDiff {
     /// The index of the start of the change.
     pub from: usize,
     /// The index of the end of the change; defined for deletions and
     /// replacements.
     pub to: Option<usize>,
     /// The doc blocks to insert/replace; an empty vector indicates deletion.
-    pub insert: Vec<CodeMirrorDocBlockDiff<'a>>,
+    pub insert: Vec<CodeMirrorDocBlockDiff>,
 }
 
 /// This enum contains the results of translating a source file to the CodeChat
@@ -334,6 +337,55 @@ impl<'de> Deserialize<'de> for CodeMirrorDocBlock {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+struct CodeMirrorDocBlockDiffTuple<'a>(
+    // from
+    usize,
+    // to
+    usize,
+    // indent
+    Option<Cow<'a, str>>,
+    // delimiter
+    Cow<'a, str>,
+    // contents
+    Vec<StringDiff>,
+);
+
+// Convert the struct to a tuple, then serialize the tuple. This makes the
+// resulting JSON more compact.
+impl Serialize for CodeMirrorDocBlockDiff {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let tuple = CodeMirrorDocBlockDiffTuple(
+            self.from,
+            self.to,
+            self.indent.as_ref().map(Cow::from),
+            Cow::from(&self.delimiter),
+            self.contents.clone(),
+        );
+        tuple.serialize(serializer)
+    }
+}
+
+// Deserialize the tuple, then convert it to a struct.
+impl<'de> Deserialize<'de> for CodeMirrorDocBlockDiff {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let tuple = CodeMirrorDocBlockDiffTuple::deserialize(deserializer)?;
+        Ok(CodeMirrorDocBlockDiff {
+            from: tuple.0,
+            to: tuple.1,
+            indent: tuple.2.map(|s| s.into_owned()),
+            delimiter: tuple.3.into_owned(),
+            contents: tuple.4,
+        })
+    }
+}
+
 // Determine if the provided file is part of a project
 // ---------------------------------------------------
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
@@ -376,7 +428,10 @@ pub fn codechat_for_web_to_source(
     };
 
     // Convert from `CodeMirror` to a `SortaCodeDocBlocks`.
-    let code_doc_block_vec = code_mirror_to_code_doc_blocks(&codechat_for_web.source);
+    let CodeMirrorDiffable::Plain(ref code_mirror) = codechat_for_web.source else {
+        panic!("No diff!");
+    };
+    let code_doc_block_vec = code_mirror_to_code_doc_blocks(code_mirror);
     code_doc_block_vec_to_source(&code_doc_block_vec, lexer)
 }
 
@@ -385,13 +440,7 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     let doc_blocks = &code_mirror.doc_blocks;
     // A CodeMirror "document" is really source code. Convert it from UTF-8
     // bytes to an array of characters, which is indexable by character.
-    let code: Vec<char> = if let DiffableSource::Plain(source) = &code_mirror.doc {
-        source
-    } else {
-        panic!("CodeMirror doc is not a plain string");
-    }
-    .chars()
-    .collect();
+    let code: Vec<char> = code_mirror.doc.chars().collect();
     let mut code_doc_block_arr: Vec<CodeDocBlock> = Vec::new();
     // Keep track of the to index of the previous doc block. Since we haven't
     // processed any doc blocks, start at 0.
@@ -625,17 +674,17 @@ pub fn source_to_codechat_for_web(
             // Document-only files are easy: just encode the contents.
             let html = markdown_to_html(file_contents);
             // TODO: process the HTML.
-            CodeMirror {
-                doc: DiffableSource::Plain(html),
+            CodeMirrorDiffable::Plain(CodeMirror {
+                doc: html,
                 doc_blocks: vec![],
-            }
+            })
         } else {
             // This is a source file.
             //
             // Create an initially-empty struct; the source code will be
             // translated to this.
             let mut code_mirror = CodeMirror {
-                doc: DiffableSource::Plain("".to_string()),
+                doc: "".to_string(),
                 doc_blocks: Vec::new(),
             };
 
@@ -683,9 +732,7 @@ pub fn source_to_codechat_for_web(
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             for code_or_doc_block in code_doc_block_arr {
-                let DiffableSource::Plain(ref mut source) = code_mirror.doc else {
-                    panic!("CodeMirror doc is not a plain string");
-                };
+                let source = &mut code_mirror.doc;
                 match code_or_doc_block {
                     CodeDocBlock::CodeBlock(code_string) => source.push_str(&code_string),
                     CodeDocBlock::DocBlock(doc_block) => {
@@ -716,7 +763,7 @@ pub fn source_to_codechat_for_web(
                     }
                 }
             }
-            code_mirror
+            CodeMirrorDiffable::Plain(code_mirror)
         },
     };
 
@@ -759,11 +806,10 @@ pub fn source_to_codechat_for_web_string(
                     // For the table of contents sidebar, which is pure
                     // markdown, just return the resulting HTML, rather than the
                     // editable CodeChat for web format.
-                    if let DiffableSource::Plain(source) = codechat_for_web.source.doc {
-                        TranslationResultsString::Toc(source)
-                    } else {
-                        panic!("CodeMirror doc is not a plain string");
-                    }
+                    let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
+                        panic!("No diff!");
+                    };
+                    TranslationResultsString::Toc(plain.doc)
                 } else {
                     TranslationResultsString::CodeChat(codechat_for_web)
                 }
@@ -901,10 +947,10 @@ impl<'a> TokenSource for CodeMirrorDocBlocksStruct<'a> {
 }
 
 /// Given two `CodeMirrorDocBlocks`, return a list of changes between them.
-fn diff_code_mirror_doc_blocks<'a>(
+fn diff_code_mirror_doc_blocks(
     before: &CodeMirrorDocBlockVec,
-    after: &'a CodeMirrorDocBlockVec,
-) -> Vec<CodeMirrorDocBlocksDiff<'a>> {
+    after: &CodeMirrorDocBlockVec,
+) -> Vec<CodeMirrorDocBlocksDiff> {
     let input = InternedInput::new(
         CodeMirrorDocBlocksStruct(before),
         CodeMirrorDocBlocksStruct(after),
@@ -948,9 +994,9 @@ fn diff_code_mirror_doc_blocks<'a>(
                         {
                             None
                         } else {
-                            Some(&prev_after_range_start_val.indent)
+                            Some(prev_after_range_start_val.indent.clone())
                         },
-                        delimiter: &prev_after_range_start_val.delimiter,
+                        delimiter: prev_after_range_start_val.delimiter.clone(),
                         contents: diff_str(
                             &prev_after_range_start_val.contents,
                             &prev_after_range_start_val.contents,
@@ -996,9 +1042,9 @@ fn diff_code_mirror_doc_blocks<'a>(
                     indent: if before_val.indent == after_val.indent {
                         None
                     } else {
-                        Some(&after_val.indent)
+                        Some(after_val.indent.clone())
                     },
-                    delimiter: &after_val.delimiter,
+                    delimiter: after_val.delimiter.clone(),
                     contents: diff_str(&before_val.contents, &after_val.contents),
                 });
                 before_index += 1;
@@ -1007,8 +1053,8 @@ fn diff_code_mirror_doc_blocks<'a>(
                 insert.push(CodeMirrorDocBlockDiff {
                     from: after_val.from,
                     to: after_val.to,
-                    indent: Some(&after_val.indent),
-                    delimiter: &after_val.delimiter,
+                    indent: Some(after_val.indent.clone()),
+                    delimiter: after_val.delimiter.clone(),
                     contents: diff_str("", &after_val.contents),
                 });
             }

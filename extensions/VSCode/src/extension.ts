@@ -374,7 +374,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     // `TextEditor.edit` must be made to the
                                     // active editor only.
                                     const wse = new vscode.WorkspaceEdit();
-                                    assert("Plain" in current_update.contents.source.doc);
+                                    assert("Plain" in current_update.contents.source);
                                     wse.replace(
                                         doc.uri,
                                         doc.validateRange(new vscode.Range(
@@ -383,7 +383,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             doc.lineCount,
                                             0
                                         )),
-                                        current_update.contents.source.doc.Plain
+                                        current_update.contents.source.Plain.doc
                                     );
                                     vscode.workspace.applyEdit(wse);
                                 }
@@ -599,8 +599,10 @@ const start_render = () => {
                         contents: {
                             metadata: { mode: "" },
                             source: {
-                                doc: { Plain: ate.document.getText() },
-                                doc_blocks: [],
+                                Plain : {
+                                    doc: ate.document.getText(),
+                                    doc_blocks: [],
+                                }
                             },
                         },
                         cursor_position: undefined,

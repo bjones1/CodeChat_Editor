@@ -80,7 +80,7 @@ import { Editor, init, tinymce } from "./tinymce-config.mjs";
 
 // ### Local
 import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
-import { CodeChatForWeb, DocBlockJSON } from "./shared_types.mjs";
+import { CodeChatForWeb, CodeMirrorDiffable, CodeMirrorDocBlockJson } from "./shared_types.mjs";
 import { assert } from "./assert.mjs";
 
 // Globals
@@ -219,7 +219,7 @@ const docBlockField = StateField.define<DecorationSet>({
     // [fromJSON](https://codemirror.net/docs/ref/#state.StateField^define^config.fromJSON).
     fromJSON: (json: any, state: EditorState) =>
         Decoration.set(
-            json.map(([from, to, indent, delimiter, contents]: DocBlockJSON) =>
+            json.map(([from, to, indent, delimiter, contents]: CodeMirrorDocBlockJson) =>
                 Decoration.replace({
                     widget: new DocBlockWidget(
                         indent,
@@ -457,10 +457,10 @@ const on_dirty = (
     const target = (event_target as HTMLDivElement).closest(
         ".CodeChat-doc",
     )! as HTMLDivElement;
-    // Send an update to the state field associated with this DOM element.
-    //
-    // We can only get the position (the `from`) value for the doc block. Use this to find the `to` value for the doc block.
+
+    // We can only get the position (the `from` value) for the doc block. Use this to find the `to` value for the doc block.
     const from = current_view.posAtDOM(target);
+    // Set this to an invalid value; it should always be updated below.
     let to = -1;
     current_view.state.field(docBlockField).between(
         from,
@@ -473,6 +473,7 @@ const on_dirty = (
         },
     );
 
+    // Send an update to the state field associated with this DOM element.
     const indent_div = target.childNodes[0] as HTMLDivElement;
     const indent = indent_div.innerHTML;
     const delimiter = indent_div.getAttribute("data-delimiter")!;
@@ -756,12 +757,12 @@ export const CodeMirror_load = async (
     // Additional extensions.
     extensions: Array<Extension>,
 ) => {
-    if ("Plain" in source.doc) {
+    if ("Plain" in source) {
         // Although the [docs](https://codemirror.net/docs/ref/#state.EditorState^fromJSON) specify a [EditorStateConfig](https://codemirror.net/docs/ref/#state.EditorStateConfig) which contains `doc` and `selection`, the implementation requires these to be present in the `json` (first) argument. Therefore:
         const editor_state_json = {
-            doc: source.doc.Plain,
+            doc: source.Plain.doc,
             selection: EditorSelection.single(0).toJSON(),
-            doc_blocks: source.doc_blocks,
+            doc_blocks: source.Plain.doc_blocks,
         };
         // Save the current scroll position, to prevent the view from scrolling back
         // to the top after an update/reload.
@@ -904,13 +905,26 @@ export const CodeMirror_load = async (
             })
         )[0];
     } else {
-        // This contains a diff, instead of plain text. Apply the diff.
-        current_view.dispatch(...[{ changes: source.doc.Diff }]);
+        // This contains a diff, instead of plain text. Apply the text diff.
+        current_view.dispatch(...[{ changes: source.Diff.doc }]);
+        // Build the struct for doc block updates.
+        /*let effects: StateEffect<unknown>[] = source.doc_blocks.
+            [
+            updateDocBlock.of({
+                from,
+                to,
+                indent,
+                delimiter,
+                content,
+                dom: target,
+            }),
+    ];*/
+
     }
 };
 
 // Return the JSON data to save from the current CodeMirror-based document.
-export const CodeMirror_save = (): CodeChatForWeb["source"] => {
+export const CodeMirror_save = (): CodeMirrorDiffable => {
     // This is the data to write — the source code. First, transform the HTML
     // back into code and doc blocks.
     const source = current_view.state.toJSON(CodeMirror_JSON_fields);

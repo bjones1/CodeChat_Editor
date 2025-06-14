@@ -26,7 +26,7 @@
 // I can't get Mocha to work with ESBuild, so I import it using a script tag.
 import { assert } from "chai";
 import { exportedForTesting, page_init } from "./CodeChatEditor.mjs";
-import { DocBlockJSON } from "./shared_types.mjs";
+import { CodeMirrorDocBlockJson } from "./shared_types.mjs";
 
 // Re-export everything that [CodeChatEditor.mts](CodeChatEditor.mts) exports.
 // Otherwise, including [CodeChatEditor.mts](CodeChatEditor.mts) elsewhere would
@@ -65,19 +65,19 @@ window.CodeChatEditor_test = () => {
     suite("CodeChatEditor.mts", function () {
         suite("codechat_html_to_markdown", function () {
             test("Translate an empty comment", async function () {
-                const db: [DocBlockJSON] = [[0, 0, "", "//", ""]];
+                const db: [CodeMirrorDocBlockJson] = [[0, 0, "", "//", ""]];
                 codechat_html_to_markdown(db);
                 assert.deepEqual(db, [[0, 0, "", "//", "\n"]]);
             });
 
             test("Translate non-breaking space", async function () {
-                const db: [DocBlockJSON] = [[0, 0, "", "//", "&nbsp;"]];
+                const db: [CodeMirrorDocBlockJson] = [[0, 0, "", "//", "&nbsp;"]];
                 codechat_html_to_markdown(db);
                 assert.deepEqual(db, [[0, 0, "", "//", "\n"]]);
             });
 
             test("Translate two empty comments", async function () {
-                const db: DocBlockJSON[] = [
+                const db: CodeMirrorDocBlockJson[] = [
                     [0, 0, "", "//", ""],
                     [2, 2, "", "//", ""],
                 ];
@@ -92,7 +92,7 @@ window.CodeChatEditor_test = () => {
             });
 
             test("Translate unclosed HTML", async function () {
-                const db: DocBlockJSON[] = [
+                const db: CodeMirrorDocBlockJson[] = [
                     [0, 0, "", "//", "<h1><u>A<u></h1>\n"],
                     [2, 2, "", "//", "<h2>Ax</h2>"],
                 ];

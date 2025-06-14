@@ -321,8 +321,8 @@ const set_content = (contents: CodeChatForWeb) => {
                 ) as HTMLIFrameElement | undefined
             )?.contentWindow ?? root_iframe!.contentWindow!;
         cw.document.open();
-        assert("Plain" in contents.source.doc);
-        cw.document.write(contents.source.doc.Plain);
+        assert("Plain" in contents.source);
+        cw.document.write(contents.source.Plain.doc);
         cw.document.close();
     } else {
         root_iframe!.contentWindow!.CodeChatEditor.open_lp(contents);

@@ -28,16 +28,16 @@ use pretty_assertions::assert_eq;
 
 // ### Local
 use super::{
-    CodeChatForWeb, CodeMirror, CodeMirrorDocBlock, DiffableSource, SourceFileMetadata, StringDiff,
+    CodeChatForWeb, CodeMirror, CodeMirrorDocBlock, SourceFileMetadata, StringDiff,
     TranslationResults, find_path_to_toc,
 };
 use crate::{
     lexer::{CodeDocBlock, DocBlock, compile_lexers, supported_languages::get_language_lexer_vec},
     prep_test_dir,
     processing::{
-        CodeMirrorDocBlockDiff, CodeMirrorDocBlocksDiff, code_doc_block_vec_to_source,
-        code_mirror_to_code_doc_blocks, codechat_for_web_to_source, diff_code_mirror_doc_blocks,
-        diff_str, source_to_codechat_for_web,
+        CodeMirrorDiffable, CodeMirrorDocBlockDiff, CodeMirrorDocBlocksDiff,
+        code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
+        diff_code_mirror_doc_blocks, diff_str, source_to_codechat_for_web,
     },
     test_utils::stringit,
 };
@@ -54,10 +54,10 @@ fn build_codechat_for_web(
         metadata: SourceFileMetadata {
             mode: mode.to_string(),
         },
-        source: CodeMirror {
-            doc: DiffableSource::Plain(doc.to_string()),
+        source: CodeMirrorDiffable::Plain(CodeMirror {
+            doc: doc.to_string(),
             doc_blocks,
-        },
+        }),
     }
 }
 
@@ -94,7 +94,10 @@ fn build_code_block(contents: &str) -> CodeDocBlock {
 
 fn run_test(mode: &str, doc: &str, doc_blocks: Vec<CodeMirrorDocBlock>) -> Vec<CodeDocBlock> {
     let codechat_for_web = build_codechat_for_web(mode, doc, doc_blocks);
-    code_mirror_to_code_doc_blocks(&codechat_for_web.source)
+    let CodeMirrorDiffable::Plain(code_mirror) = codechat_for_web.source else {
+        panic!("No diff!");
+    };
+    code_mirror_to_code_doc_blocks(&code_mirror)
 }
 
 // ### Tests for `codechat_for_web_to_source`
@@ -751,7 +754,7 @@ fn apply_str_diff(before: &str, diffs: &[StringDiff]) -> String {
 fn test_diff_1() {
     let test_diff = |before: &str, after: &str, expected_change_spec: &[StringDiff]| {
         let after = after.to_string();
-        let diff = diff_str(&before, &after);
+        let diff = diff_str(before, &after);
         let before = apply_str_diff(before, &diff);
         assert_eq!(diff.len(), 1);
         assert_eq!(before, after);
@@ -888,7 +891,7 @@ fn test_diff_2() {
                 from: 10,
                 to: 12,
                 indent: None,
-                delimiter: "#",
+                delimiter: "#".to_string(),
                 contents: vec![]
             }]
         }]
@@ -905,8 +908,8 @@ fn test_diff_2() {
             insert: vec![CodeMirrorDocBlockDiff {
                 from: 10,
                 to: 11,
-                indent: Some(" "),
-                delimiter: "#",
+                indent: Some(" ".to_string()),
+                delimiter: "#".to_string(),
                 contents: vec![]
             }]
         }]
@@ -924,7 +927,7 @@ fn test_diff_2() {
                 from: 10,
                 to: 11,
                 indent: None,
-                delimiter: "*",
+                delimiter: "*".to_string(),
                 contents: vec![]
             }]
         }]
@@ -942,7 +945,7 @@ fn test_diff_2() {
                 from: 10,
                 to: 11,
                 indent: None,
-                delimiter: "#",
+                delimiter: "#".to_string(),
                 contents: vec![StringDiff {
                     from: 5,
                     to: None,
@@ -967,8 +970,8 @@ fn test_diff_2() {
             insert: vec![CodeMirrorDocBlockDiff {
                 from: 10,
                 to: 11,
-                indent: Some(""),
-                delimiter: "#",
+                indent: Some("".to_string()),
+                delimiter: "#".to_string(),
                 contents: vec![StringDiff {
                     from: 0,
                     to: None,
@@ -996,7 +999,7 @@ fn test_diff_2() {
                     from: 10,
                     to: 11,
                     indent: None,
-                    delimiter: "#",
+                    delimiter: "#".to_string(),
                     contents: vec![]
                 },]
             },
@@ -1006,8 +1009,8 @@ fn test_diff_2() {
                 insert: vec![CodeMirrorDocBlockDiff {
                     from: 11,
                     to: 12,
-                    indent: Some(""),
-                    delimiter: "#",
+                    indent: Some("".to_string()),
+                    delimiter: "#".to_string(),
                     contents: vec![StringDiff {
                         from: 0,
                         to: None,
@@ -1037,8 +1040,8 @@ fn test_diff_2() {
             insert: vec![CodeMirrorDocBlockDiff {
                 from: 11,
                 to: 12,
-                indent: Some(""),
-                delimiter: "#",
+                indent: Some("".to_string()),
+                delimiter: "#".to_string(),
                 contents: vec![StringDiff {
                     from: 0,
                     to: None,
@@ -1069,7 +1072,7 @@ fn test_diff_2() {
                     from: 11,
                     to: 12,
                     indent: None,
-                    delimiter: "#",
+                    delimiter: "#".to_string(),
                     contents: vec![]
                 }]
             },
@@ -1079,8 +1082,8 @@ fn test_diff_2() {
                 insert: vec![CodeMirrorDocBlockDiff {
                     from: 12,
                     to: 13,
-                    indent: Some(""),
-                    delimiter: "#",
+                    indent: Some("".to_string()),
+                    delimiter: "#".to_string(),
                     contents: vec![StringDiff {
                         from: 0,
                         to: None,
@@ -1106,8 +1109,8 @@ fn test_diff_2() {
             insert: vec![CodeMirrorDocBlockDiff {
                 from: 11,
                 to: 12,
-                indent: Some(""),
-                delimiter: "#",
+                indent: Some("".to_string()),
+                delimiter: "#".to_string(),
                 contents: vec![StringDiff {
                     from: 0,
                     to: None,
@@ -1132,8 +1135,8 @@ fn test_diff_2() {
             insert: vec![CodeMirrorDocBlockDiff {
                 from: 11,
                 to: 12,
-                indent: Some(""),
-                delimiter: "#",
+                indent: Some("".to_string()),
+                delimiter: "#".to_string(),
                 contents: vec![StringDiff {
                     from: 0,
                     to: None,

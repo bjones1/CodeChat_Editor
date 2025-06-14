@@ -740,7 +740,7 @@ mod tests {
     use crate::{
         cast, prep_test_dir,
         processing::{
-            CodeChatForWeb, CodeMirror, DiffableSource, SourceFileMetadata, TranslationResults,
+            CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata, TranslationResults,
             source_to_codechat_for_web,
         },
         test_utils::{check_logger_errors, configure_testing_logger},
@@ -946,10 +946,10 @@ mod tests {
                         metadata: SourceFileMetadata {
                             mode: "".to_string(),
                         },
-                        source: CodeMirror {
-                            doc: DiffableSource::Plain("".to_string()),
+                        source: CodeMirrorDiffable::Plain(CodeMirror {
+                            doc: "".to_string(),
                             doc_blocks: vec![],
-                        },
+                        }),
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -976,10 +976,10 @@ mod tests {
                         metadata: SourceFileMetadata {
                             mode: "nope".to_string(),
                         },
-                        source: CodeMirror {
-                            doc: DiffableSource::Plain("testing".to_string()),
+                        source: CodeMirrorDiffable::Plain(CodeMirror {
+                            doc: "testing".to_string(),
                             doc_blocks: vec![],
-                        },
+                        }),
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -1007,10 +1007,10 @@ mod tests {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
                         },
-                        source: CodeMirror {
-                            doc: DiffableSource::Plain("testing()".to_string()),
+                        source: CodeMirrorDiffable::Plain(CodeMirror {
+                            doc: "testing()".to_string(),
                             doc_blocks: vec![],
-                        },
+                        }),
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -1042,10 +1042,10 @@ mod tests {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
                         },
-                        source: CodeMirror {
-                            doc: DiffableSource::Plain("testing()123".to_string()),
+                        source: CodeMirrorDiffable::Plain(CodeMirror {
+                            doc: "testing()123".to_string(),
                             doc_blocks: vec![],
-                        },
+                        }),
                     }),
                     cursor_position: None,
                     scroll_position: None,

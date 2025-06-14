@@ -31,39 +31,39 @@ export type ResultOkTypes = {
 
 export type MessageResult =
     | {
-          Ok: "Void" | ResultOkTypes;
-      }
+        Ok: "Void" | ResultOkTypes;
+    }
     | {
-          Err: string;
-      };
+        Err: string;
+    };
 
 export type EditorMessageContents =
     | {
-          Update: UpdateMessageContents;
-      }
+        Update: UpdateMessageContents;
+    }
     | {
-          CurrentFile: [string, boolean?];
-      }
+        CurrentFile: [string, boolean?];
+    }
     | {
-          Opened: IdeType;
-      }
+        Opened: IdeType;
+    }
     | {
-          RequestClose: null;
-      }
+        RequestClose: null;
+    }
     | {
-          OpenUrl: string;
-      }
+        OpenUrl: string;
+    }
     | {
-          LoadFile: string;
-      }
+        LoadFile: string;
+    }
     | {
-          ClientHtml: string;
-          // Not included, since this is server->server only.
-          //Closed?: null;
-      }
+        ClientHtml: string;
+        // Not included, since this is server->server only.
+        //Closed?: null;
+    }
     | {
-          Result: MessageResult;
-      };
+        Result: MessageResult;
+    };
 
 export type EditorMessage = {
     id: number;
@@ -74,23 +74,28 @@ export type EditorMessage = {
 // [LexedSourceFile](../../server/src/webserver.rs#LexedSourceFile).
 export type CodeChatForWeb = {
     metadata: { mode: string };
-    source: {
-        doc: DiffableSource;
-        doc_blocks: DocBlockJSON[];
-        // Added by CodeMirror; not sent to/from the Server.
-        selection?: any;
-    };
+    source: CodeMirrorDiffable;
 };
 
-export type DiffableSource =
+export type CodeMirrorDiffable =
     | {
-          /// The source code, in a single string.
-          Plain: string;
-      }
+        Plain: CodeMirror;
+    }
     | {
-          /// The source code, as a series of diffs to apply to the current source.
-          Diff: [StringDiff];
-      };
+        Diff: CodeMirrorDiff;
+    };
+
+export type CodeMirror = {
+            doc: string;
+            doc_blocks: CodeMirrorDocBlockJson[];
+            // Added by CodeMirror; not sent to/from the Server.
+            selection?: any;
+}
+
+export type CodeMirrorDiff = {
+            doc: StringDiff;
+            doc_blocks: CodeMirrorDocBlockDiffJson[];
+}
 
 export type StringDiff = {
     /// The index of the start of the change.
@@ -102,7 +107,7 @@ export type StringDiff = {
 };
 
 // How a doc block is stored using CodeMirror.
-export type DocBlockJSON = [
+export type CodeMirrorDocBlockJson = [
     // From
     number,
     // To
@@ -113,6 +118,19 @@ export type DocBlockJSON = [
     string,
     // Contents
     string,
+];
+
+export type CodeMirrorDocBlockDiffJson = [
+    // From
+    number,
+    // To
+    number,
+    // Indent
+    string | undefined,
+    // Delimiter
+    string,
+    // Contents
+    StringDiff[],
 ];
 
 export type UpdateMessageContents = {

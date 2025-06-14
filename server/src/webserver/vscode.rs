@@ -47,8 +47,8 @@ use super::{
 use crate::{
     oneshot_send,
     processing::{
-        CodeChatForWeb, CodeMirror, DiffableSource, SourceFileMetadata, TranslationResultsString,
-        codechat_for_web_to_source, source_to_codechat_for_web_string,
+        CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata,
+        TranslationResultsString, codechat_for_web_to_source, source_to_codechat_for_web_string,
     },
     queue_send,
     webserver::{
@@ -402,12 +402,12 @@ pub async fn vscode_ide_websocket(
                                         match &update.contents {
                                             None => Err("TODO: support for updates without contents.".to_string()),
                                             Some(contents) => {
-                                                match &contents.source.doc {
-                                                    DiffableSource::Diff(_diff) => Err("TODO: support for updates with diffable sources.".to_string()),
-                                                    DiffableSource::Plain(source) => {
+                                                match &contents.source {
+                                                    CodeMirrorDiffable::Diff(_diff) => Err("TODO: support for updates with diffable sources.".to_string()),
+                                                    CodeMirrorDiffable::Plain(code_mirror) => {
                                                         // Translate the file.
                                                         let (translation_results_string, _path_to_toc) =
-                                                        source_to_codechat_for_web_string(source, &current_file, false);
+                                                        source_to_codechat_for_web_string(&code_mirror.doc, &current_file, false);
                                                         match translation_results_string {
                                                             TranslationResultsString::CodeChat(cc) => {
                                                                 // Send the new translated contents.
@@ -439,10 +439,10 @@ pub async fn vscode_ide_websocket(
                                                                                 // matter.
                                                                                 mode: "".to_string()
                                                                             },
-                                                                            source: CodeMirror {
-                                                                                doc: contents.source.doc.clone(),
+                                                                            source: CodeMirrorDiffable::Plain(CodeMirror {
+                                                                                doc: code_mirror.doc.clone(),
                                                                                 doc_blocks: vec![]
-                                                                            }
+                                                                            })
                                                                         }),
                                                                         cursor_position: None,
                                                                         scroll_position: None,
@@ -553,12 +553,13 @@ pub async fn vscode_ide_websocket(
                                     Some(cfw) => match codechat_for_web_to_source(
                                         &cfw)
                                     {
+                                        // TODO: diffable!
                                         Ok(result) => Some(CodeChatForWeb {
                                             metadata: cfw.metadata,
-                                            source: CodeMirror {
-                                                doc: DiffableSource::Plain(result),
+                                            source: CodeMirrorDiffable::Plain(CodeMirror {
+                                                doc: result,
                                                 doc_blocks: vec![],
-                                            },
+                                            }),
                                         }),
                                         Err(message) => {
                                             let msg = format!(

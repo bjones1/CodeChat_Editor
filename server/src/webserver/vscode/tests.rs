@@ -50,7 +50,7 @@ use super::super::{
 use crate::{
     cast,
     processing::{
-        CodeChatForWeb, CodeMirror, CodeMirrorDocBlock, DiffableSource, SourceFileMetadata,
+        CodeChatForWeb, CodeMirror, CodeMirrorDiffable, CodeMirrorDocBlock, SourceFileMetadata,
     },
     test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
     webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
@@ -500,8 +500,8 @@ async fn test_vscode_ide_websocket8() {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
                     },
-                    source: CodeMirror {
-                        doc: DiffableSource::Plain("\n".to_string()),
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "\n".to_string(),
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
                             to: 0,
@@ -509,7 +509,7 @@ async fn test_vscode_ide_websocket8() {
                             delimiter: "#".to_string(),
                             contents: "<p>testing</p>\n".to_string()
                         }],
-                    },
+                    }),
                 }),
                 cursor_position: None,
                 scroll_position: None,
@@ -608,10 +608,10 @@ async fn test_vscode_ide_websocket7() {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
                     },
-                    source: CodeMirror {
-                        doc: DiffableSource::Plain("# more".to_string()),
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "# more".to_string(),
                         doc_blocks: vec![],
-                    },
+                    }),
                 }),
                 cursor_position: None,
                 scroll_position: None,
@@ -629,8 +629,8 @@ async fn test_vscode_ide_websocket7() {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
                     },
-                    source: CodeMirror {
-                        doc: DiffableSource::Plain("\n".to_string()),
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "\n".to_string(),
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
                             to: 0,
@@ -638,7 +638,7 @@ async fn test_vscode_ide_websocket7() {
                             delimiter: "#".to_string(),
                             contents: "<p>more</p>\n".to_string()
                         }],
-                    },
+                    }),
                 }),
                 cursor_position: None,
                 scroll_position: None,
@@ -685,8 +685,8 @@ async fn test_vscode_ide_websocket6() {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
                     },
-                    source: CodeMirror {
-                        doc: DiffableSource::Plain("\n".to_string()),
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "\n".to_string(),
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
                             to: 0,
@@ -694,7 +694,7 @@ async fn test_vscode_ide_websocket6() {
                             delimiter: "#".to_string(),
                             contents: "less\n".to_string(),
                         }],
-                    },
+                    }),
                 }),
                 cursor_position: None,
                 scroll_position: None,
@@ -712,10 +712,10 @@ async fn test_vscode_ide_websocket6() {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
                     },
-                    source: CodeMirror {
-                        doc: DiffableSource::Plain("# less\n".to_string()),
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "# less\n".to_string(),
                         doc_blocks: vec![],
-                    },
+                    }),
                 }),
                 cursor_position: None,
                 scroll_position: None,
@@ -845,8 +845,8 @@ async fn test_vscode_ide_websocket4() {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
                     },
-                    source: CodeMirror {
-                        doc: DiffableSource::Plain("\n".to_string()),
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "\n".to_string(),
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
                             to: 0,
@@ -854,7 +854,7 @@ async fn test_vscode_ide_websocket4() {
                             delimiter: "#".to_string(),
                             contents: "<p>test.py</p>\n".to_string()
                         }],
-                    },
+                    }),
                 }),
                 cursor_position: None,
                 scroll_position: None,

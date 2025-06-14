@@ -64,7 +64,7 @@ import "graphviz-webcomponent";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
 import {
     CodeChatForWeb,
-    DiffableSource,
+    CodeMirrorDocBlockJson,
     UpdateMessageContents,
 } from "./shared_types.mjs";
 
@@ -236,7 +236,7 @@ const _open_lp = async (
     // the provided`all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
-    assert("Plain" in source.doc);
+    assert("Plain" in source);
     const codechat_body = document.getElementById(
         "CodeChat-body",
     ) as HTMLDivElement;
@@ -256,7 +256,7 @@ const _open_lp = async (
             // Special case: a CodeChat Editor document's HTML is stored
             // in`source.doc`. We don't need the CodeMirror editor at all;
             // instead, treat it like a single doc block contents div.
-            codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.doc.Plain}</div>`;
+            codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.Plain.doc}</div>`;
             await init({
                 selector: ".CodeChat-doc-contents",
                 // In the doc-only mode, add autosave functionality. While there
@@ -283,7 +283,7 @@ const _open_lp = async (
             // However, this doesn't seem to work for the cursor location.
             // Perhaps when TinyMCE normalizes the document, this gets lost?
             const bm = tinymce.activeEditor!.selection.getBookmark();
-            tinymce.activeEditor!.setContent(source.doc.Plain);
+            tinymce.activeEditor!.setContent(source.Plain.doc);
             tinymce.activeEditor!.selection.moveToBookmark(bm);
         }
         mathJaxTypeset(codechat_body);
@@ -303,7 +303,7 @@ const _open_lp = async (
 
 const save_lp = () => {
     /// @ts-expect-error
-    let source: CodeChatForWeb["source"] = {};
+    let code_mirror: CodeMirrorDiffable = {};
     if (is_doc_only()) {
         // Untypeset all math before saving the document.
         const codechat_body = document.getElementById(
@@ -314,15 +314,13 @@ const save_lp = () => {
         // div.
         tinymce.activeEditor!.save();
         const html = tinymce.activeEditor!.getContent();
-        source.doc = {
-            Plain: turndownService.turndown(html)
-        };
-        source.doc_blocks = [];
+        code_mirror.doc = turndownService.turndown(html);
+        code_mirror.doc_blocks = [];
         // Retypeset all math after saving the document.
         mathJaxTypeset(codechat_body);
     } else {
-        source = CodeMirror_save();
-        codechat_html_to_markdown(source.doc_blocks);
+        code_mirror = CodeMirror_save();
+        codechat_html_to_markdown(code_mirror.doc_blocks);
     }
 
     let update: UpdateMessageContents = {
@@ -330,7 +328,7 @@ const save_lp = () => {
         file_path: "",
         contents: {
             metadata: current_metadata,
-            source,
+            source: code_mirror,
         },
         scroll_position: undefined,
         cursor_position: undefined,
@@ -364,7 +362,7 @@ const on_save = async (only_if_dirty: boolean = false) => {
     is_dirty = false;
 };
 
-const codechat_html_to_markdown = (doc_blocks: CodeChatForWeb["source"]["doc_blocks"]) => {
+const codechat_html_to_markdown = (doc_blocks: CodeMirrorDocBlockJson[]) => {
     const entries = doc_blocks.entries();
     for (const [index, doc_block] of entries) {
         const wordWrapMargin = Math.max(
