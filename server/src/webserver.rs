@@ -51,8 +51,8 @@ use dunce::simplified;
 use futures_util::StreamExt;
 use indoc::{formatdoc, indoc};
 use lazy_static::lazy_static;
-use log::{LevelFilter, error, info, warn};
-use log4rs;
+use log::{error, info, warn, LevelFilter};
+use log4rs::{self, config::load_config_file};
 use mime::Mime;
 use mime_guess;
 use path_slash::{PathBufExt, PathExt};
@@ -1335,15 +1335,17 @@ pub async fn run_server(port: u16) -> std::io::Result<()> {
     server.await
 }
 
-pub fn configure_logger(level: LevelFilter) {
+pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(debug_assertions))]
     let l4rs = ROOT_PATH.clone();
     #[cfg(debug_assertions)]
     let mut l4rs = ROOT_PATH.clone();
     #[cfg(debug_assertions)]
     l4rs.push("server");
-    log4rs::init_file(l4rs.join("log4rs.yml"), Default::default()).unwrap();
-    log::set_max_level(level);
+    let mut config = load_config_file(l4rs.join("log4rs.yml"), Default::default())?;
+    config.root_mut().set_level(level);
+    log4rs::init_config(config)?;
+    Ok(())
 }
 
 // Quoting the [docs](https://actix.rs/docs/application#shared-mutable-state),
