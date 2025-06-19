@@ -99,7 +99,7 @@ pub struct SourceFileMetadata {
     pub mode: String,
 }
 
-type CodeMirrorDocBlockVec = Vec<CodeMirrorDocBlock>;
+pub type CodeMirrorDocBlockVec = Vec<CodeMirrorDocBlock>;
 
 /// The format used by CodeMirror to serialize/deserialize editor contents.
 /// TODO: Link to JS code where this data structure is defined.
@@ -114,8 +114,8 @@ pub struct CodeMirror {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CodeMirrorDiff {
     /// A diff of the document being edited.
-    pub doc: StringDiff,
-    pub doc_blocks: Vec<CodeMirrorDocBlockDiff>,
+    pub doc: Vec<StringDiff>,
+    pub doc_blocks: Vec<CodeMirrorDocBlocksDiff>,
 }
 
 /// This defines a doc block for CodeMirror.
@@ -169,7 +169,7 @@ pub struct StringDiff {
 
 /// Store one element of the difference between previous and current
 /// `CodeMirrorDocBlockVec`s.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CodeMirrorDocBlocksDiff {
     /// The index of the start of the change.
     pub from: usize,
@@ -382,6 +382,43 @@ impl<'de> Deserialize<'de> for CodeMirrorDocBlockDiff {
             indent: tuple.2.map(|s| s.into_owned()),
             delimiter: tuple.3.into_owned(),
             contents: tuple.4,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct CodeMirrorDocBlocksDiffTuple(
+    // from
+    usize,
+    // to
+    Option<usize>,
+    // insert
+    Vec<CodeMirrorDocBlockDiff>,
+);
+
+// Convert the struct to a tuple, then serialize the tuple. This makes the
+// resulting JSON more compact.
+impl Serialize for CodeMirrorDocBlocksDiff {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let tuple = CodeMirrorDocBlocksDiffTuple(self.from, self.to, self.insert.clone());
+        tuple.serialize(serializer)
+    }
+}
+
+// Deserialize the tuple, then convert it to a struct.
+impl<'de> Deserialize<'de> for CodeMirrorDocBlocksDiff {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let tuple = CodeMirrorDocBlocksDiffTuple::deserialize(deserializer)?;
+        Ok(CodeMirrorDocBlocksDiff {
+            from: tuple.0,
+            to: tuple.1,
+            insert: tuple.2,
         })
     }
 }
@@ -881,7 +918,7 @@ fn markdown_to_html(markdown: &str) -> String {
 //
 // #### String diff
 /// Given two strings, return a list of changes between them.
-fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
+pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
     let mut change_spec: Vec<StringDiff> = Vec::new();
     // The previous value of `before.start` and the character index
     // corresponding to `before.start`.
@@ -947,7 +984,7 @@ impl<'a> TokenSource for CodeMirrorDocBlocksStruct<'a> {
 }
 
 /// Given two `CodeMirrorDocBlocks`, return a list of changes between them.
-fn diff_code_mirror_doc_blocks(
+pub fn diff_code_mirror_doc_blocks(
     before: &CodeMirrorDocBlockVec,
     after: &CodeMirrorDocBlockVec,
 ) -> Vec<CodeMirrorDocBlocksDiff> {

@@ -65,7 +65,9 @@ import { tinymce, init, Editor } from "./tinymce-config.mjs";
 import {
     CodeChatForWeb,
     CodeMirrorDocBlockJson,
+    CodeMirrorDiffable,
     UpdateMessageContents,
+    CodeMirror,
 } from "./shared_types.mjs";
 
 // ### CSS
@@ -303,7 +305,7 @@ const _open_lp = async (
 
 const save_lp = () => {
     /// @ts-expect-error
-    let code_mirror: CodeMirrorDiffable = {};
+    let code_mirror_diffable: CodeMirrorDiffable = {};
     if (is_doc_only()) {
         // Untypeset all math before saving the document.
         const codechat_body = document.getElementById(
@@ -314,13 +316,18 @@ const save_lp = () => {
         // div.
         tinymce.activeEditor!.save();
         const html = tinymce.activeEditor!.getContent();
-        code_mirror.doc = turndownService.turndown(html);
-        code_mirror.doc_blocks = [];
+        (code_mirror_diffable as {
+            Plain: CodeMirror;
+        }).Plain = {
+            doc: turndownService.turndown(html),
+            doc_blocks: []
+        };
         // Retypeset all math after saving the document.
         mathJaxTypeset(codechat_body);
     } else {
-        code_mirror = CodeMirror_save();
-        codechat_html_to_markdown(code_mirror.doc_blocks);
+        code_mirror_diffable = CodeMirror_save();
+        assert("Plain" in code_mirror_diffable);
+        codechat_html_to_markdown(code_mirror_diffable.Plain.doc_blocks);
     }
 
     let update: UpdateMessageContents = {
@@ -328,7 +335,7 @@ const save_lp = () => {
         file_path: "",
         contents: {
             metadata: current_metadata,
-            source: code_mirror,
+            source: code_mirror_diffable,
         },
         scroll_position: undefined,
         cursor_position: undefined,

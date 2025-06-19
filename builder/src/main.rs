@@ -137,10 +137,7 @@ fn run_script<T: AsRef<Path>, A: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Displa
     if exit_code == Some(0) || (exit_code.is_some() && !check_exit_code) {
         Ok(())
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "npm exit code indicates failure.",
-        ))
+        Err(io::Error::other("npm exit code indicates failure."))
     }
 }
 
@@ -227,10 +224,9 @@ fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Resu
     // docs](https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/return-codes-used-robocopy-utility),
     // check the return code.
     if cfg!(windows) && exit_code >= 8 || !cfg!(windows) && exit_code != 0 {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Copy process return code {exit_code} indicates failure."),
-        ))
+        Err(io::Error::other(format!(
+            "Copy process return code {exit_code} indicates failure."
+        )))
     } else {
         Ok(())
     }
@@ -254,12 +250,8 @@ fn search_and_replace_file<
     replace_string: S2,
 ) -> io::Result<()> {
     let file_contents = fs::read_to_string(&path)?;
-    let re = Regex::new(search_regex.as_ref()).map_err(|err| {
-        io::Error::new(
-            io::ErrorKind::Other,
-            format!("Error in search regex {search_regex}: {err}"),
-        )
-    })?;
+    let re = Regex::new(search_regex.as_ref())
+        .map_err(|err| io::Error::other(format!("Error in search regex {search_regex}: {err}")))?;
     let file_contents_replaced = re.replace(&file_contents, replace_string.as_ref());
     assert_ne!(
         file_contents, file_contents_replaced,

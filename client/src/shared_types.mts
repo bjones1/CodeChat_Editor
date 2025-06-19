@@ -93,8 +93,8 @@ export type CodeMirror = {
 }
 
 export type CodeMirrorDiff = {
-            doc: StringDiff;
-            doc_blocks: CodeMirrorDocBlockDiffJson[];
+            doc: StringDiff[];
+            doc_blocks: CodeMirrorDocBlocksDiffJson[];
 }
 
 export type StringDiff = {
@@ -132,6 +132,15 @@ export type CodeMirrorDocBlockDiffJson = [
     // Contents
     StringDiff[],
 ];
+
+export type CodeMirrorDocBlocksDiffJson = [
+    // From
+    number,
+    // To
+    number | undefined,
+    // Insert
+    CodeMirrorDocBlockDiffJson[]
+]
 
 export type UpdateMessageContents = {
     file_path: string;

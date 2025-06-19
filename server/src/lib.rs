@@ -1,4 +1,3 @@
-pub mod capture;
 /// Copyright (C) 2023 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -20,6 +19,7 @@ pub mod capture;
 ///
 /// TODO: Add the ability to use
 /// [plugins](https://zicklag.github.io/rust-tutorials/rust-plugins.html).
+pub mod capture;
 pub mod lexer;
 pub mod processing;
 pub mod webserver;

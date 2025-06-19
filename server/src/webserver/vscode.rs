@@ -47,8 +47,9 @@ use super::{
 use crate::{
     oneshot_send,
     processing::{
-        CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata,
-        TranslationResultsString, codechat_for_web_to_source, source_to_codechat_for_web_string,
+        CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlockVec,
+        SourceFileMetadata, TranslationResultsString, codechat_for_web_to_source,
+        diff_code_mirror_doc_blocks, diff_str, source_to_codechat_for_web_string,
     },
     queue_send,
     webserver::{
@@ -63,7 +64,7 @@ use crate::{
 // -------
 const VSCODE_PATH_PREFIX: &[&str] = &["vsc", "fs"];
 // The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH: usize = 200;
+const MAX_MESSAGE_LENGTH: usize = 300;
 
 // Code
 // ----
@@ -305,6 +306,9 @@ pub async fn vscode_ide_websocket(
 
             // All further messages are handled in the main loop.
             let mut id: f64 = INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT;
+            let mut _source_code = String::new();
+            let mut code_mirror_doc = String::new();
+            let mut code_mirror_doc_blocks: CodeMirrorDocBlockVec = Vec::new();
             loop {
                 select! {
                     // Look for messages from the IDE.
@@ -399,28 +403,50 @@ pub async fn vscode_ide_websocket(
                                 let result = match try_canonicalize(&update.file_path) {
                                     Err(err) => Err(err),
                                     Ok(clean_file_path) => {
-                                        match &update.contents {
+                                        match update.contents {
                                             None => Err("TODO: support for updates without contents.".to_string()),
                                             Some(contents) => {
-                                                match &contents.source {
+                                                match contents.source {
                                                     CodeMirrorDiffable::Diff(_diff) => Err("TODO: support for updates with diffable sources.".to_string()),
                                                     CodeMirrorDiffable::Plain(code_mirror) => {
                                                         // Translate the file.
                                                         let (translation_results_string, _path_to_toc) =
                                                         source_to_codechat_for_web_string(&code_mirror.doc, &current_file, false);
                                                         match translation_results_string {
-                                                            TranslationResultsString::CodeChat(cc) => {
+                                                            TranslationResultsString::CodeChat(ccfw) => {
                                                                 // Send the new translated contents.
                                                                 debug!("Sending translated contents to Client.");
+                                                                // TODO: this is an expensive clone! Try to find a way around this.
+                                                                let CodeMirrorDiffable::Plain(ccfw_source_plain) = ccfw.clone().source else {
+                                                                    error!("{}", "Unexpected diff value.");
+                                                                    break;
+                                                                };
+                                                                // Send a diff if possible.
+                                                                let contents = Some(if clean_file_path == current_file {
+                                                                    let code_mirror_diff = diff_code_mirror_doc_blocks(&code_mirror_doc_blocks, &ccfw_source_plain.doc_blocks);
+                                                                    CodeChatForWeb {
+                                                                        metadata: ccfw.metadata,
+                                                                        source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                                                                            doc: diff_str(&code_mirror_doc, &ccfw_source_plain.doc),
+                                                                            doc_blocks: code_mirror_diff
+                                                                        })
+                                                                    }
+                                                                } else {
+                                                                    ccfw
+                                                                });
                                                                 queue_send!(to_client_tx.send(EditorMessage {
                                                                     id: ide_message.id,
                                                                     message: EditorMessageContents::Update(UpdateMessageContents {
                                                                         file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                                                        contents: Some(cc),
+                                                                        contents,
                                                                         cursor_position: None,
                                                                         scroll_position: None,
                                                                     }),
                                                                 }));
+                                                                // Update to the latest code after computing diffs.
+                                                                _source_code = code_mirror.doc;
+                                                                code_mirror_doc = ccfw_source_plain.doc;
+                                                                code_mirror_doc_blocks = ccfw_source_plain.doc_blocks;
                                                                 Ok(ResultOkTypes::Void)
                                                             }
                                                             // TODO
@@ -554,13 +580,23 @@ pub async fn vscode_ide_websocket(
                                         &cfw)
                                     {
                                         // TODO: diffable!
-                                        Ok(result) => Some(CodeChatForWeb {
-                                            metadata: cfw.metadata,
-                                            source: CodeMirrorDiffable::Plain(CodeMirror {
-                                                doc: result,
-                                                doc_blocks: vec![],
-                                            }),
-                                        }),
+                                        Ok(result) => {
+                                            // TODO: this clone is expensive. Look for a way to avoid this.
+                                            _source_code = result.clone();
+                                            let CodeMirrorDiffable::Plain(cmd) = cfw.source else {
+                                                error!("No diff!");
+                                                break;
+                                            };
+                                            code_mirror_doc = cmd.doc;
+                                            code_mirror_doc_blocks = cmd.doc_blocks;
+                                            Some(CodeChatForWeb {
+                                                metadata: cfw.metadata,
+                                                source: CodeMirrorDiffable::Plain(CodeMirror {
+                                                    doc: result,
+                                                    doc_blocks: vec![],
+                                                }),
+                                            })
+                                        },
                                         Err(message) => {
                                             let msg = format!(
                                                 "Unable to translate to source: {message}"

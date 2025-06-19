@@ -33,6 +33,7 @@ use futures_util::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use minreq;
 use path_slash::PathExt;
+use pretty_assertions::assert_eq;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
@@ -50,7 +51,8 @@ use super::super::{
 use crate::{
     cast,
     processing::{
-        CodeChatForWeb, CodeMirror, CodeMirrorDiffable, CodeMirrorDocBlock, SourceFileMetadata,
+        CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
+        CodeMirrorDocBlockDiff, CodeMirrorDocBlocksDiff, SourceFileMetadata, StringDiff,
     },
     test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
     webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
@@ -629,14 +631,26 @@ async fn test_vscode_ide_websocket7() {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
                     },
-                    source: CodeMirrorDiffable::Plain(CodeMirror {
-                        doc: "\n".to_string(),
-                        doc_blocks: vec![CodeMirrorDocBlock {
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
                             from: 0,
-                            to: 0,
-                            indent: "".to_string(),
-                            delimiter: "#".to_string(),
-                            contents: "<p>more</p>\n".to_string()
+                            to: None,
+                            insert: "\n".to_string()
+                        }],
+                        doc_blocks: vec![CodeMirrorDocBlocksDiff {
+                            from: 0,
+                            to: None,
+                            insert: vec![CodeMirrorDocBlockDiff {
+                                from: 0,
+                                to: 0,
+                                indent: Some("".to_string()),
+                                delimiter: "#".to_string(),
+                                contents: vec![StringDiff {
+                                    from: 0,
+                                    to: None,
+                                    insert: "<p>more</p>\n".to_string()
+                                }]
+                            }]
                         }],
                     }),
                 }),

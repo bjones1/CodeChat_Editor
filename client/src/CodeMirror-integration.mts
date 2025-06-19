@@ -80,7 +80,7 @@ import { Editor, init, tinymce } from "./tinymce-config.mjs";
 
 // ### Local
 import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
-import { CodeChatForWeb, CodeMirrorDiffable, CodeMirrorDocBlockJson } from "./shared_types.mjs";
+import { CodeChatForWeb, CodeMirror, CodeMirrorDiffable, CodeMirrorDocBlockJson } from "./shared_types.mjs";
 import { assert } from "./assert.mjs";
 
 // Globals
@@ -927,9 +927,8 @@ export const CodeMirror_load = async (
 export const CodeMirror_save = (): CodeMirrorDiffable => {
     // This is the data to write — the source code. First, transform the HTML
     // back into code and doc blocks.
-    const source = current_view.state.toJSON(CodeMirror_JSON_fields);
-    source.doc = { Plain: source.doc };
-    delete source.selection;
+    const code_mirror: CodeMirror = current_view.state.toJSON(CodeMirror_JSON_fields);
+    delete code_mirror.selection;
 
-    return source;
+    return { Plain: code_mirror };
 };

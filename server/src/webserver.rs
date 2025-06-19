@@ -51,7 +51,7 @@ use dunce::simplified;
 use futures_util::StreamExt;
 use indoc::{formatdoc, indoc};
 use lazy_static::lazy_static;
-use log::{error, info, warn, LevelFilter};
+use log::{LevelFilter, error, info, warn};
 use log4rs::{self, config::load_config_file};
 use mime::Mime;
 use mime_guess;
@@ -257,8 +257,7 @@ struct UpdateMessageContents {
     /// transition times when the IDE and Client have different files loaded,
     /// guaranteeing to updates are still applied to the correct file.
     file_path: String,
-    /// The contents of this file. TODO: this should be just a string if sent by
-    /// the IDE.
+    /// The contents of this file.
     contents: Option<CodeChatForWeb>,
     /// The current cursor position in the file, where 0 = before the first
     /// character in the file and contents.length() = after the last character

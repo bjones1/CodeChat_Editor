@@ -367,25 +367,32 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     break;
                                 }
                                 if (current_update.contents !== undefined) {
-                                    // This will produce a change event, which
-                                    // we'll ignore.
-                                    ignore_text_document_change = true;
-                                    // Use a workspace edit, since calls to
-                                    // `TextEditor.edit` must be made to the
-                                    // active editor only.
-                                    const wse = new vscode.WorkspaceEdit();
-                                    assert("Plain" in current_update.contents.source);
-                                    wse.replace(
-                                        doc.uri,
-                                        doc.validateRange(new vscode.Range(
-                                            0,
-                                            0,
-                                            doc.lineCount,
-                                            0
-                                        )),
-                                        current_update.contents.source.Plain.doc
-                                    );
-                                    vscode.workspace.applyEdit(wse);
+                                    const source = current_update.contents.source;
+                                    // Is this plain text, or a diff?
+                                    if ("Plain" in source) {
+                                        const new_contents = source.Plain.doc;
+                                        // This will produce a change event, which
+                                        // we'll ignore.
+                                        ignore_text_document_change = true;
+                                        // Use a workspace edit, since calls to
+                                        // `TextEditor.edit` must be made to the
+                                        // active editor only.
+                                        const wse = new vscode.WorkspaceEdit();
+                                        wse.replace(
+                                            doc.uri,
+                                            doc.validateRange(new vscode.Range(
+                                                0,
+                                                0,
+                                                doc.lineCount,
+                                                0
+                                            )),
+                                            new_contents
+                                        );
+                                        vscode.workspace.applyEdit(wse);
+                                    }
+                                } else {
+                                    // TODO handle diffs.
+                                    assert(false);
                                 }
                                 send_result(id);
                                 break;

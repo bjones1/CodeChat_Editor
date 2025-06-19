@@ -97,7 +97,7 @@ assert_fs = "1"
 assertables = "9"
 predicates = "3.1.2"
 pretty_assertions = "1.4.1"
-tokio-tungstenite = "0.26"
+tokio-tungstenite = "0.27"
 
 # #### Use local packages for development
 [patch.crates-io]
