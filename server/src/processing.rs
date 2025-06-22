@@ -161,7 +161,9 @@ pub struct StringDiff {
     /// change.
     pub from: usize,
     /// The index of the end of the change; defined for deletions and
-    /// replacements.
+    /// replacements. See the [skip serializing field docs](https://serde.rs/attr-skip-serializing.html);
+    /// this must be excluded from the JSON output if it's `None` to avoid CodeMirror errors.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<usize>,
     /// The text to insert/replace; an empty string indicates deletion.
     pub insert: String,

@@ -360,12 +360,17 @@ pub async fn vscode_ide_websocket(
                                     break 'task;
                                 };
 
+                                // Take ownership of the result after sending it above (which required owernship).
+                                let EditorMessageContents::Result(result) = ide_message.message else {
+                                    error!("{}", "Not an update.");
+                                    break;
+                                };
                                 // Get the file contents from a `LoadFile`
                                 // result; otherwise, this is None.
                                 let file_contents_option = match result {
                                     Err(err) => {
                                         error!("{err}");
-                                        &None
+                                        None
                                     },
                                     Ok(result_ok) => match result_ok {
                                         ResultOkTypes::Void => panic!("LoadFile result should not be void."),
@@ -379,21 +384,40 @@ pub async fn vscode_ide_websocket(
                                 // number also -- "%PDF").
                                 let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
                                 let (simple_http_response, option_update) = match file_contents_option {
-                                    Some(file_contents) =>
-                                        file_to_response(&http_request, &current_file, Some(file_contents), use_pdf_js).await,
+                                    Some(file_contents) => {
+                                        let ret = file_to_response(&http_request, &current_file, Some(&file_contents), use_pdf_js).await;
+                                        _source_code = file_contents;
+                                        ret
+                                    },
                                     None => {
                                         // The file wasn't available in the IDE.
                                         // Look for it in the filesystem.
-                                        debug!("Sending HTTP response.");
                                         make_simple_http_response(&http_request, &current_file, use_pdf_js).await
                                     }
                                 };
                                 if let Some(update) = option_update {
-                                    // Send the update to the client.
+                                    // Record the CodeMirror contents before sending.
+                                    let EditorMessageContents::Update(ref update_message_contents) = update else {
+                                        error!("Not an update!");
+                                        break;
+                                    };
+                                    let Some(ref tmp) = update_message_contents.contents else {
+                                        error!("None.");
+                                        break;
+                                    };
+                                    let CodeMirrorDiffable::Plain(ref plain) = tmp.source else {
+                                        error!("Not plain!");
+                                        break;
+                                    };
+                                    // TODO: this is expensive -- fix!
+                                    code_mirror_doc = plain.doc.clone();
+                                    code_mirror_doc_blocks = plain.doc_blocks.clone();
+
                                     debug!("Sending Update to Client, id = {id}.");
                                     queue_send!(to_client_tx.send(EditorMessage { id, message: update }));
                                     id += MESSAGE_ID_INCREMENT;
                                 }
+                                debug!("Sending HTTP response.");
                                 oneshot_send!(http_request.response_queue.send(simple_http_response));
                             }
 

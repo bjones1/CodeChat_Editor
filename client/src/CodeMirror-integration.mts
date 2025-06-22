@@ -906,10 +906,15 @@ export const CodeMirror_load = async (
         )[0];
     } else {
         // This contains a diff, instead of plain text. Apply the text diff.
+        console.log(source.Diff.doc);
         current_view.dispatch(...[{ changes: source.Diff.doc }]);
         // Build the struct for doc block updates.
-        /*let effects: StateEffect<unknown>[] = source.doc_blocks.
-            [
+        const effects: StateEffect<unknown>[] = [];
+        const doc_blocks = current_view.state.field(docBlockField);
+        for (const [from, to, insert] of source.Diff.doc_blocks) {
+            // Transform the `from` (and index into x) into an character offset in the document.
+            //doc_blocks[from]
+            /*[
             updateDocBlock.of({
                 from,
                 to,
@@ -918,8 +923,8 @@ export const CodeMirror_load = async (
                 content,
                 dom: target,
             }),
-    ];*/
-
+            ];*/
+        }
     }
 };
 

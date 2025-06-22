@@ -238,7 +238,6 @@ const _open_lp = async (
     // the provided`all_source` struct and store it as a global variable.
     current_metadata = all_source["metadata"];
     const source = all_source["source"];
-    assert("Plain" in source);
     const codechat_body = document.getElementById(
         "CodeChat-body",
     ) as HTMLDivElement;
@@ -254,6 +253,7 @@ const _open_lp = async (
     // the typeset math that you are removing is no longer on the page."
     window.MathJax.typesetClear(codechat_body);
     if (is_doc_only()) {
+        assert("Plain" in source);
         if (tinymce.activeEditor === null) {
             // Special case: a CodeChat Editor document's HTML is stored
             // in`source.doc`. We don't need the CodeMirror editor at all;
