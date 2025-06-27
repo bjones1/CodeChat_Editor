@@ -45,11 +45,7 @@ use std::{
 };
 
 // ### Third-party
-use imara_diff::{
-    Algorithm, diff,
-    intern::{InternedInput, TokenSource},
-    sources::lines_with_terminator,
-};
+use imara_diff::{Algorithm, Diff, Hunk, InternedInput, TokenSource};
 use lazy_static::lazy_static;
 use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
@@ -926,8 +922,10 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
     // corresponding to `before.start`.
     let mut prev_before_start = 0;
     let mut prev_before_start_chars = 0;
-    let input = InternedInput::new(lines_with_terminator(before), lines_with_terminator(after));
-    let sink = |before: Range<u32>, after: Range<u32>| {
+    let input = InternedInput::new(before, after);
+
+    let diff = Diff::compute(Algorithm::Histogram, &input);
+    for hunk in diff.hunks() {
         let count_before_chars = |lines: Range<u32>| {
             input.before[lines.start as usize..lines.end as usize]
                 .iter()
@@ -935,14 +933,14 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
                 .sum::<usize>()
         };
         // Sum characters between the last change and this change.
-        prev_before_start_chars += count_before_chars(prev_before_start..before.start);
-        prev_before_start = before.start;
+        prev_before_start_chars += count_before_chars(prev_before_start..hunk.before.start);
+        prev_before_start = hunk.before.start;
         // Get the characters in the hunk after this change.
-        let hunk_after: Vec<_> = input.after[after.start as usize..after.end as usize]
+        let hunk_after: Vec<_> = input.after[hunk.after.start as usize..hunk.after.end as usize]
             .iter()
             .map(|&line| input.interner[line])
             .collect();
-        let before_chars = count_before_chars(before.start..before.end);
+        let before_chars = count_before_chars(hunk.before.start..hunk.before.end);
         change_spec.push(StringDiff {
             from: prev_before_start_chars,
             to: if before_chars != 0 {
@@ -956,9 +954,8 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
                 hunk_after.into_iter().collect()
             },
         })
-    };
+    }
 
-    diff(Algorithm::Histogram, &input, sink);
     change_spec
 }
 
@@ -995,20 +992,16 @@ pub fn diff_code_mirror_doc_blocks(
         CodeMirrorDocBlocksStruct(after),
     );
     let change_spec: Rc<RefCell<Vec<CodeMirrorDocBlocksDiff>>> = Rc::new(RefCell::new(Vec::new()));
+    let mut prev_before_range_end = 0;
+    let mut prev_after_range_end = 0;
+
     // This compare all fields, not just the `contents`, of two
     // `CodeMirrorDocBlock`s. It should be applied to every entry that the
     // `diff` function sees as equal.
-    let diff_all = |prev_before_range_end: u32,
-                    before_range_start: u32,
-                    prev_after_range_end: u32,
-                    after_range_start: u32| {
-        let mut prev_before_range_end = prev_before_range_end;
-        let mut prev_after_range_end = prev_after_range_end;
-
+    let mut diff_all = |hunk: &Hunk| {
         // First, compare blocks from the previous point until this point. The
         // diff used only compares contents; this checks everything.
-        while prev_before_range_end < before_range_start && prev_after_range_end < after_range_start
-        {
+        while prev_before_range_end < hunk.before.start && prev_after_range_end < hunk.after.start {
             // Note that `input[before/after_range.start]` only returns the
             // `contents` (a `&str`), not the full `CodeMirrorDocBlock` (since
             // we only want to compare strings for the first phase of the diff).
@@ -1047,33 +1040,27 @@ pub fn diff_code_mirror_doc_blocks(
             prev_before_range_end += 1;
             prev_after_range_end += 1;
         }
+        prev_before_range_end = hunk.before.end;
+        prev_after_range_end = hunk.after.end;
     };
 
-    let mut prev_before_range_end = 0;
-    let mut prev_after_range_end = 0;
-    let sink = |before_range: Range<u32>, after_range: Range<u32>| {
-        diff_all(
-            prev_before_range_end,
-            before_range.start,
-            prev_after_range_end,
-            after_range.start,
-        );
+    let diff = Diff::compute(Algorithm::Histogram, &input);
+    for hunk in diff.hunks() {
+        diff_all(&hunk);
         // Update the `prev` values so we start processing immediately after
         // this change.
-        prev_before_range_end = before_range.end;
-        prev_after_range_end = after_range.end;
 
         // Process the insertions and deletions.
-        let mut before_index = before_range.start;
+        let mut before_index = hunk.before.start;
         let mut insert = Vec::new();
         // Values in the `after_index` become either inserts or replacements.
-        for after_index in after_range {
+        for after_index in hunk.after {
             let after_val = &after[after_index as usize];
             // Assume that an insert/delete is a replace; this is the most
             // common case (a minor edit to the text of a doc block). If not,
             // the replace is a bit less efficient than the insert/delete, but
             // still correct.
-            if before_index < before_range.end {
+            if before_index < hunk.before.end {
                 let before_val = &before[before_index as usize];
                 insert.push(CodeMirrorDocBlockDiff {
                     from: after_val.from,
@@ -1101,23 +1088,21 @@ pub fn diff_code_mirror_doc_blocks(
 
         // Now, create a diff from the the `before_range` and the `insert`s.
         change_spec.borrow_mut().push(CodeMirrorDocBlocksDiff {
-            from: before_range.start as usize,
-            to: if before_range.start == before_range.end {
+            from: hunk.before.start as usize,
+            to: if hunk.before.start == hunk.before.end {
                 None
             } else {
-                Some(before_range.end as usize)
+                Some(hunk.before.end as usize)
             },
             insert,
         });
-    };
+    }
 
-    diff(Algorithm::Histogram, &input, sink);
-    diff_all(
-        prev_before_range_end,
-        before.len() as u32,
-        prev_after_range_end,
-        after.len() as u32,
-    );
+    // Process the last hunk. The end of the before and after ranges (0 here) doesn't matter, since it's not used.
+    diff_all(&Hunk {
+        before: (before.len() as u32..0),
+        after: after.len() as u32..0,
+    });
     // Extract the underlying vec from the `Rc<RefCell<>>`.
     take(&mut *change_spec.borrow_mut())
 }
