@@ -66,6 +66,7 @@ import {
     StateEffect,
     EditorSelection,
     Transaction,
+    TransactionSpec,
 } from "@codemirror/state";
 import { cpp } from "@codemirror/lang-cpp";
 import { css } from "@codemirror/lang-css";
@@ -80,7 +81,7 @@ import { Editor, init, tinymce } from "./tinymce-config.mjs";
 
 // ### Local
 import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
-import { CodeChatForWeb, CodeMirror, CodeMirrorDiffable, CodeMirrorDocBlockJson } from "./shared_types.mjs";
+import { CodeChatForWeb, CodeMirror, CodeMirrorDiffable, CodeMirrorDocBlockJson, StringDiff } from "./shared_types.mjs";
 import { assert } from "./assert.mjs";
 
 // Globals
@@ -906,12 +907,36 @@ export const CodeMirror_load = async (
         )[0];
     } else {
         // This contains a diff, instead of plain text. Apply the text diff.
+        console.log("Before");
         console.log(source.Diff.doc);
-        current_view.dispatch(...[{ changes: source.Diff.doc }]);
+        console.log(source.Diff.doc_blocks);
+        console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
+        const transaction = current_view.state.update(...[{ changes: source.Diff.doc }]);
         // Build the struct for doc block updates.
         const effects: StateEffect<unknown>[] = [];
         const doc_blocks = current_view.state.field(docBlockField);
-        for (const [from, to, insert] of source.Diff.doc_blocks) {
+        const transactionSpecs: TransactionSpec[] = [];
+        for (const [from, to, inserts] of source.Diff.doc_blocks) {
+            // Classify this transaction as an insert, update, or delete.
+            if (to === null) {
+                // This is an insert. Add a transaction for each insert.
+                for (let [from_char, to_char, indent, delimiter, contents] of inserts) {
+                    // For an insert, the indent is by definition always changed.
+                    assert(indent !== null);
+                    transactionSpecs.push({effects: addDocBlock.of({
+                        from: from_char, 
+                        to: to_char,
+                        indent,
+                        delimiter,
+                        content: apply_diff_str("", contents)
+                    })});
+                }
+            } else {
+                // This is an update or delete. Match each `insert` to a corresponding delete, which defines an update.
+                for (const insert of inserts) {
+                    
+                }
+            }
             // Transform the `from` (and index into x) into an character offset in the document.
             //doc_blocks[from]
             /*[
@@ -925,8 +950,29 @@ export const CodeMirror_load = async (
             }),
             ];*/
         }
+        // Update the view with these changes to the state.
+        current_view.dispatch(transaction);
+        console.log("After");
+        console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
     }
 };
+
+// Appply a `StringDiff` to the before string to produce the after string.
+const apply_diff_str = (before: string, diffs: StringDiff[]) => {
+    // Walk from the last diff to the first. JavaScript doesn't have reverse iteration AFAIK.
+    let after = before;
+    for (let index = diffs.length; index >= 0; --index) {
+        const {from, to, insert} = diffs[index];
+        if (to === undefined) {
+            // This is an insert.
+            after = after.slice(0, to) + insert + after.slice(to);
+        } else {
+            // This is a replace.
+            after = after.slice(0, from) + insert + after.slice(to);
+        }
+    }
+    return after;
+}
 
 // Return the JSON data to save from the current CodeMirror-based document.
 export const CodeMirror_save = (): CodeMirrorDiffable => {

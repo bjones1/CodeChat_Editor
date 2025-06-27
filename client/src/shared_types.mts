@@ -101,7 +101,7 @@ export type StringDiff = {
     /// The index of the start of the change.
     from: number;
     /// The index of the end of the change; defined for deletions and replacements.
-    to: number | undefined;
+    to?: number;
     /// The text to insert/replace; an empty string indicates deletion.
     insert: string;
 };
@@ -126,7 +126,7 @@ export type CodeMirrorDocBlockDiffJson = [
     // To
     number,
     // Indent
-    string | undefined,
+    string | null,
     // Delimiter
     string,
     // Contents
