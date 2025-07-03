@@ -33,14 +33,11 @@ use std::rc::{Rc, Weak};
 */
 use std::{
     borrow::Cow,
-    cell::RefCell,
     cmp::max,
     ffi::OsStr,
     iter::Map,
-    mem::take,
     ops::Range,
     path::{Path, PathBuf},
-    rc::Rc,
     slice::Iter,
 };
 
@@ -991,14 +988,13 @@ pub fn diff_code_mirror_doc_blocks(
         CodeMirrorDocBlocksStruct(before),
         CodeMirrorDocBlocksStruct(after),
     );
-    let change_spec: Rc<RefCell<Vec<CodeMirrorDocBlocksDiff>>> = Rc::new(RefCell::new(Vec::new()));
     let mut prev_before_range_end = 0;
     let mut prev_after_range_end = 0;
 
     // This compare all fields, not just the `contents`, of two
     // `CodeMirrorDocBlock`s. It should be applied to every entry that the
     // `diff` function sees as equal.
-    let mut diff_all = |hunk: &Hunk| {
+    let mut diff_all = |hunk: &Hunk, change_spec: &mut Vec<CodeMirrorDocBlocksDiff>| {
         // First, compare blocks from the previous point until this point. The
         // diff used only compares contents; this checks everything.
         while prev_before_range_end < hunk.before.start && prev_after_range_end < hunk.after.start {
@@ -1013,9 +1009,9 @@ pub fn diff_code_mirror_doc_blocks(
             // indices to get the full object.
             let prev_before_range_start_val = &before[prev_before_range_end as usize];
             let prev_after_range_start_val = &after[prev_after_range_end as usize];
-            // Second phase: if before and after are different, insert a diff.
+            // Second phase: if before and after are different, insert an update.
             if prev_before_range_start_val != prev_after_range_start_val {
-                change_spec.borrow_mut().push(CodeMirrorDocBlocksDiff {
+                change_spec.push(CodeMirrorDocBlocksDiff {
                     from: prev_before_range_end as usize,
                     to: Some(prev_before_range_end as usize + 1),
                     insert: vec![CodeMirrorDocBlockDiff {
@@ -1044,9 +1040,10 @@ pub fn diff_code_mirror_doc_blocks(
         prev_after_range_end = hunk.after.end;
     };
 
+    let mut change_spec = Vec::new();
     let diff = Diff::compute(Algorithm::Histogram, &input);
     for hunk in diff.hunks() {
-        diff_all(&hunk);
+        diff_all(&hunk, &mut change_spec);
         // Update the `prev` values so we start processing immediately after
         // this change.
 
@@ -1086,8 +1083,8 @@ pub fn diff_code_mirror_doc_blocks(
             }
         }
 
-        // Now, create a diff from the the `before_range` and the `insert`s.
-        change_spec.borrow_mut().push(CodeMirrorDocBlocksDiff {
+        // Now, create a diff from the `before_range` and the `insert`s.
+        change_spec.push(CodeMirrorDocBlocksDiff {
             from: hunk.before.start as usize,
             to: if hunk.before.start == hunk.before.end {
                 None
@@ -1099,12 +1096,14 @@ pub fn diff_code_mirror_doc_blocks(
     }
 
     // Process the last hunk. The end of the before and after ranges (0 here) doesn't matter, since it's not used.
-    diff_all(&Hunk {
-        before: (before.len() as u32..0),
-        after: after.len() as u32..0,
-    });
-    // Extract the underlying vec from the `Rc<RefCell<>>`.
-    take(&mut *change_spec.borrow_mut())
+    diff_all(
+        &Hunk {
+            before: (before.len() as u32..0),
+            after: after.len() as u32..0,
+        },
+        &mut change_spec,
+    );
+    change_spec
 }
 
 // Goal: make it easy to update the data structure. We update on every
