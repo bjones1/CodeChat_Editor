@@ -636,7 +636,7 @@ pub async fn filesystem_endpoint(
             SimpleHttpResponse::Ok(body) => HttpResponse::Ok()
                 .content_type(ContentType::html())
                 .body(body),
-            SimpleHttpResponse::Err(body) => html_not_found(&format!("{}", body)),
+            SimpleHttpResponse::Err(body) => html_not_found(&format!("{body}")),
             SimpleHttpResponse::Raw(body, content_type) => {
                 HttpResponse::Ok().content_type(content_type).body(body)
             }

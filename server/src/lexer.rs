@@ -423,7 +423,7 @@ fn build_lexer_regex(
                     // not the full delimiter).
                     &string_partial_delimiter +
                     // Allow any non-special character,
-                    &format!("([^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
+                    &format!("([^\n{escaped_delimiter}{escaped_escape_char}]|") +
                     // or anything following an escape character (since whatever
                     // it is, it can't be the end of the string).
                     &escaped_escape_char + ".)" +
@@ -432,7 +432,7 @@ fn build_lexer_regex(
                 ")*" +
                 // Now, find the end of the string: a newline or the string
                 // delimiter.
-                &format!("(\n|{})", escaped_delimiter)),
+                &format!("(\n|{escaped_delimiter})")),
             ),
 
             // A bit simpler: this type of string can be terminated by a newline
@@ -447,7 +447,7 @@ fn build_lexer_regex(
                     // not the full delimiter).
                     &string_partial_delimiter +
                     // Allow any non-special character
-                    &format!("([^\n{}{}]|", escaped_delimiter, escaped_escape_char) +
+                    &format!("([^\n{escaped_delimiter}{escaped_escape_char}]|") +
                     // or anything following an escape character except a
                     // newline.
                     &escaped_escape_char + "[^\n])" +
@@ -456,7 +456,7 @@ fn build_lexer_regex(
                 ")*" +
                 // Now, find the end of the string: a newline optionally
                 // preceded by the escape char or the string delimiter.
-                &format!("({}?\n|{})", escaped_escape_char, escaped_delimiter)),
+                &format!("({escaped_escape_char}?\n|{escaped_delimiter})")),
             ),
 
             // Even simpler: look for an unescaped string delimiter.
@@ -473,7 +473,7 @@ fn build_lexer_regex(
                     // not the full delimiter).
                     &string_partial_delimiter +
                     // Allow any non-special character,
-                    &format!("([^{}{}]|", escaped_delimiter, escaped_escape_char) +
+                    &format!("([^{escaped_delimiter}{escaped_escape_char}]|") +
                     // or anything following an escape character (since whatever
                     // it is, it can't be the end of the string).
                     &escaped_escape_char + ".)" +

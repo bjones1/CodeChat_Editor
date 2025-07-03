@@ -302,8 +302,7 @@ async fn test_vscode_ide_websocket3() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:8080/vsc/fs/{connection_id}/{}",
-                file_path_str_thread
+                "http://localhost:8080/vsc/fs/{connection_id}/{file_path_str_thread}",
             ))
             .send()
             .unwrap()
@@ -360,8 +359,7 @@ async fn test_vscode_ide_websocket3a() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:8080/vsc/fs/{connection_id}/{}",
-                file_path_str_thread
+                "http://localhost:8080/vsc/fs/{connection_id}/{file_path_str_thread}",
             ))
             .send()
             .unwrap()

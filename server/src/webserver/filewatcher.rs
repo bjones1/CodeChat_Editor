@@ -177,7 +177,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         let mut drive_html = String::new();
         let logical_drives = match get_logical_drive() {
             Ok(v) => v,
-            Err(err) => return html_not_found(&format!("Unable to list drive letters: {}.", err)),
+            Err(err) => return html_not_found(&format!("Unable to list drive letters: {err}.")),
         };
         for drive_letter in logical_drives {
             drive_html.push_str(&format!(

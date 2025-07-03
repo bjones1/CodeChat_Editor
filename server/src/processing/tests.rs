@@ -469,7 +469,7 @@ fn test_source_to_codechat_for_web_1() {
     let lexer_spec = format!("{}{}", "CodeChat Editor ", "lexer: ");
     assert_eq!(
         source_to_codechat_for_web(
-            &format!("{}unknown", lexer_spec),
+            &format!("{lexer_spec}unknown"),
             &".xxx".to_string(),
             false,
             false,
@@ -486,14 +486,14 @@ fn test_source_to_codechat_for_web_1() {
     // A CodeChat Editor document via lexer specification.
     assert_eq!(
         source_to_codechat_for_web(
-            &format!("{}markdown", lexer_spec),
+            &format!("{lexer_spec}markdown"),
             &"xxx".to_string(),
             false,
             false,
         ),
         TranslationResults::CodeChat(build_codechat_for_web(
             "markdown",
-            &format!("<p>{}markdown</p>\n", lexer_spec),
+            &format!("<p>{lexer_spec}markdown</p>\n"),
             vec![]
         ))
     );

@@ -151,7 +151,7 @@ impl EventCapture {
         // Spawn a task to manage the database connection in the background
         tokio::spawn(async move {
             if let Err(e) = connection.await {
-                error!("Database connection error: [{}]", e);
+                error!("Database connection error: [{e}]");
             }
         });
 
@@ -217,7 +217,7 @@ impl EventCapture {
             .await
             .map_err(io::Error::other)?;
 
-        info!("Event inserted into database: {:?}", event);
+        info!("Event inserted into database: {event:?}");
 
         Ok(())
     }
