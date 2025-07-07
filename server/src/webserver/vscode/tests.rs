@@ -52,7 +52,7 @@ use crate::{
     cast,
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
-        CodeMirrorDocBlockDiff, CodeMirrorDocBlocksDiff, SourceFileMetadata, StringDiff,
+        CodeMirrorDocBlockTransaction, SourceFileMetadata, StringDiff,
     },
     test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
     webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
@@ -635,21 +635,13 @@ async fn test_vscode_ide_websocket7() {
                             to: None,
                             insert: "\n".to_string()
                         }],
-                        doc_blocks: vec![CodeMirrorDocBlocksDiff {
+                        doc_blocks: vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
                             from: 0,
-                            to: None,
-                            insert: vec![CodeMirrorDocBlockDiff {
-                                from: 0,
-                                to: 0,
-                                indent: Some("".to_string()),
-                                delimiter: "#".to_string(),
-                                contents: vec![StringDiff {
-                                    from: 0,
-                                    to: None,
-                                    insert: "<p>more</p>\n".to_string()
-                                }]
-                            }]
-                        }],
+                            to: 0,
+                            indent: "".to_string(),
+                            delimiter: "#".to_string(),
+                            contents: "<p>more</p>\n".to_string()
+                        })]
                     }),
                 }),
                 cursor_position: None,

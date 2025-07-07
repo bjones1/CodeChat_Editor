@@ -16,7 +16,7 @@
         "@types/chai": "^5",
         "@types/js-beautify": "^1",
         "@types/mocha": "^10",
-        "@types/node": "^22",
+        "@types/node": "^24",
         "@typescript-eslint/eslint-plugin": "^8",
         "@typescript-eslint/parser": "^8",
         "chai": "^5",

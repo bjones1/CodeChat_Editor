@@ -167,28 +167,48 @@ const docBlockField = StateField.define<DecorationSet>({
                 // Remove the old doc block and create a new one to replace it.
                 // (Recall that this is the functional approach required by
                 // CodeMirror -- state is immutable.)
+                //
+                // Look for existing data in this effect's range. There should be one and only one result. The value for `to` may not be provided, so don't use it.
+                let prev: Decoration | undefined;
+                let to: number | undefined;
+                doc_blocks.between(effect.value.from, effect.value.from, (from, to_found, value) => {
+                    // For the given `from`, there should be exactly one doc block.
+                    assert(prev === undefined);
+                    assert(effect.value.from == from);
+                    prev = value;
+                    to = to_found;
+                });
+                assert(prev !== undefined, `Can't find:\n${JSON.stringify(effect)}\nData:\n${doc_blocks}`);
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
-                    filter: (from, to, doc_block) => false,
+                    filter: (from, to, value) => false,
                     filterFrom: effect.value.from,
-                    filterTo: effect.value.to,
+                    filterTo: effect.value.to ?? to,
                     // This adds the replacement doc block with updated
                     // indent/delimiter/content.
                     add: [
                         Decoration.replace({
                             widget: new DocBlockWidget(
-                                effect.value.indent,
+                                effect.value.indent ?? prev.spec.widget.indent,
                                 effect.value.delimiter,
-                                effect.value.content,
-                                effect.value.dom,
+                                typeof (effect.value.contents) === "string" ? effect.value.contents : apply_diff_str(prev.spec.widget.contents, effect.value.contents),
+                                effect.value.dom ?? prev.spec.widget.dom,
                             ),
                             block: true,
                         }).range(
-                            effect.value.from,
-                            effect.value.to,
+                            effect.value.from_new ?? effect.value.from,
+                            effect.value.to ?? to,
                         ),
                     ],
+                });
+            }
+
+            else if (effect.is(deleteDocBlock)) {
+                doc_blocks = doc_blocks.update({
+                    filter: (from, to, value) => false,
+                    filterFrom: effect.value.from,
+                    filterTo: effect.value.to,
                 });
             }
         return doc_blocks;
@@ -249,8 +269,8 @@ export const addDocBlock = StateEffect.define<{
     content: string;
 }>({
     map: ({ from, to, indent, delimiter, content }, change: ChangeDesc) => ({
-        // Update the location (from/to) of this doc block due to the
-        // transaction's changes.
+        // Update the location (from/to) of this effect due to the
+        // transaction's changes. See this [thread](https://discuss.codemirror.net/t/mapping-ranges-in-a-decoration/9307/3).
         from: change.mapPos(from),
         to: change.mapPos(to),
         indent,
@@ -259,26 +279,48 @@ export const addDocBlock = StateEffect.define<{
     }),
 });
 
-// Define an update.
-export const updateDocBlock = StateEffect.define<{
+type updateDocBlockType = {
     from: number;
-    to: number;
-    indent: string;
+    from_new?: number;
+    to?: number;
+    indent?: string;
     delimiter: string;
-    content: string;
-    dom: HTMLDivElement;
-}>({
-    map: ({ from, to, indent, delimiter, content, dom }, change: ChangeDesc) => ({
-        // Update the position of this doc block due to the transaction's
-        // changes.
+    contents: string | StringDiff[];
+    dom?: HTMLDivElement;
+};
+
+// Define an update.
+export const updateDocBlock = StateEffect.define<updateDocBlockType>({
+    map: ({ from, from_new: fromNew, to, indent, delimiter, contents, dom }, change: ChangeDesc) => {
+        const ret: updateDocBlockType =
+            ({
+                // Update the position of this doc block due to the transaction's
+                // changes.
+                from: change.mapPos(from),
+                indent,
+                delimiter,
+                contents,
+                dom,
+            });
+        if (to !== undefined) {
+            ret.to = change.mapPos(to);
+        }
+        if (fromNew !== undefined) {
+            ret.from_new = change.mapPos(fromNew);
+        }
+        return ret;
+    }
+});
+
+
+// Delete a doc block.
+export const deleteDocBlock = StateEffect.define<{ from: number, to: number }>({
+    // Returning undefined deletes the block per the [docs](https://codemirror.net/docs/ref/#state.StateEffect^define^spec.map).
+    map: ({ from, to }, change: ChangeDesc) => ({
         from: change.mapPos(from),
         to: change.mapPos(to),
-        indent,
-        delimiter,
-        content,
-        dom,
-    }),
-});
+    })
+})
 
 // Create a [widget](https://codemirror.net/docs/ref/#view.WidgetType) which
 // contains a doc block.
@@ -461,35 +503,21 @@ const on_dirty = (
 
     // We can only get the position (the `from` value) for the doc block. Use this to find the `to` value for the doc block.
     const from = current_view.posAtDOM(target);
-    // Set this to an invalid value; it should always be updated below.
-    let to = -1;
-    current_view.state.field(docBlockField).between(
-        from,
-        from,
-        (_from: number, _to: number, doc_block: Decoration) => {
-            to = _to;
-            // Assume that there's only one doc block for this
-            // range: stop looking for any others.
-            return false;
-        },
-    );
-
     // Send an update to the state field associated with this DOM element.
     const indent_div = target.childNodes[0] as HTMLDivElement;
     const indent = indent_div.innerHTML;
     const delimiter = indent_div.getAttribute("data-delimiter")!;
     const [contents_div, is_tinymce] = get_contents(target);
     tinymce_singleton!.save();
-    const content = is_tinymce
+    const contents = is_tinymce
         ? tinymce_singleton!.getContent()
         : contents_div.innerHTML;
-    let effects: StateEffect<unknown>[] = [
+    let effects: StateEffect<updateDocBlockType>[] = [
         updateDocBlock.of({
             from,
-            to,
             indent,
             delimiter,
-            content,
+            contents,
             dom: target,
         }),
     ];
@@ -911,47 +939,30 @@ export const CodeMirror_load = async (
         console.log(source.Diff.doc);
         console.log(source.Diff.doc_blocks);
         console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
-        const transaction = current_view.state.update(...[{ changes: source.Diff.doc }]);
-        // Build the struct for doc block updates.
-        const effects: StateEffect<unknown>[] = [];
-        const doc_blocks = current_view.state.field(docBlockField);
-        const transactionSpecs: TransactionSpec[] = [];
-        for (const [from, to, inserts] of source.Diff.doc_blocks) {
-            // Classify this transaction as an insert, update, or delete.
-            if (to === null) {
-                // This is an insert. Add a transaction for each insert.
-                for (let [from_char, to_char, indent, delimiter, contents] of inserts) {
-                    // For an insert, the indent is by definition always changed.
-                    assert(indent !== null);
-                    transactionSpecs.push({effects: addDocBlock.of({
-                        from: from_char, 
-                        to: to_char,
-                        indent,
-                        delimiter,
-                        content: apply_diff_str("", contents)
-                    })});
-                }
+        const transactionSpecs: TransactionSpec[] = [{ changes: source.Diff.doc }];
+        for (const transaction of source.Diff.doc_blocks) {
+            if ("Add" in transaction) {
+                const add = transaction.Add;
+                transactionSpecs.push({
+                    effects: addDocBlock.of({
+                        from: add[0],
+                        to: add[1],
+                        indent: add[2],
+                        delimiter: add[3],
+                        content: add[4]
+                    })
+                });
+            } else if ("Update" in transaction) {
+                transactionSpecs.push({ effects: updateDocBlock.of(transaction.Update) });
+            } else if ("Delete" in transaction) {
+                transactionSpecs.push({ effects: deleteDocBlock.of(transaction.Delete) });
             } else {
-                // This is an update or delete. Match each `insert` to a corresponding delete, which defines an update.
-                for (const insert of inserts) {
-                    
-                }
+                assert(false, `Unknown transaction ${transaction}.`);
             }
-            // Transform the `from` (and index into x) into an character offset in the document.
-            //doc_blocks[from]
-            /*[
-            updateDocBlock.of({
-                from,
-                to,
-                indent,
-                delimiter,
-                content,
-                dom: target,
-            }),
-            ];*/
         }
         // Update the view with these changes to the state.
-        current_view.dispatch(transaction);
+        console.log(JSON.stringify(transactionSpecs));
+        current_view.dispatch(...transactionSpecs);
         console.log("After");
         console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
     }
@@ -961,8 +972,8 @@ export const CodeMirror_load = async (
 const apply_diff_str = (before: string, diffs: StringDiff[]) => {
     // Walk from the last diff to the first. JavaScript doesn't have reverse iteration AFAIK.
     let after = before;
-    for (let index = diffs.length; index >= 0; --index) {
-        const {from, to, insert} = diffs[index];
+    for (let index = diffs.length - 1; index >= 0; --index) {
+        const { from, to, insert } = diffs[index];
         if (to === undefined) {
             // This is an insert.
             after = after.slice(0, to) + insert + after.slice(to);

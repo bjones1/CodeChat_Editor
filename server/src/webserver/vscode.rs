@@ -50,6 +50,7 @@ use crate::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlockVec,
         SourceFileMetadata, TranslationResultsString, codechat_for_web_to_source,
         diff_code_mirror_doc_blocks, diff_str, source_to_codechat_for_web_string,
+        sync_code_changes,
     },
     queue_send,
     webserver::{
@@ -447,11 +448,13 @@ pub async fn vscode_ide_websocket(
                                                                 };
                                                                 // Send a diff if possible.
                                                                 let contents = Some(if clean_file_path == current_file {
+                                                                    let doc_diff = diff_str(&code_mirror_doc, &ccfw_source_plain.doc);
+                                                                    sync_code_changes(&doc_diff, &mut code_mirror_doc_blocks);
                                                                     let code_mirror_diff = diff_code_mirror_doc_blocks(&code_mirror_doc_blocks, &ccfw_source_plain.doc_blocks);
                                                                     CodeChatForWeb {
                                                                         metadata: ccfw.metadata,
                                                                         source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                                                                            doc: diff_str(&code_mirror_doc, &ccfw_source_plain.doc),
+                                                                            doc: doc_diff,
                                                                             doc_blocks: code_mirror_diff
                                                                         })
                                                                     }

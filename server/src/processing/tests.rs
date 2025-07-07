@@ -35,9 +35,10 @@ use crate::{
     lexer::{CodeDocBlock, DocBlock, compile_lexers, supported_languages::get_language_lexer_vec},
     prep_test_dir,
     processing::{
-        CodeMirrorDiffable, CodeMirrorDocBlockDiff, CodeMirrorDocBlocksDiff,
-        code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
-        diff_code_mirror_doc_blocks, diff_str, source_to_codechat_for_web,
+        CodeMirrorDiffable, CodeMirrorDocBlockDelete, CodeMirrorDocBlockTransaction,
+        CodeMirrorDocBlockUpdate, code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks,
+        codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
+        source_to_codechat_for_web, sync_code_changes,
     },
     test_utils::stringit,
 };
@@ -884,17 +885,16 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 0,
-            to: Some(1),
-            insert: vec![CodeMirrorDocBlockDiff {
+        vec![CodeMirrorDocBlockTransaction::Update(
+            CodeMirrorDocBlockUpdate {
                 from: 10,
+                from_new: 10,
                 to: 12,
                 indent: None,
                 delimiter: "#".to_string(),
                 contents: vec![]
-            }]
-        }]
+            }
+        )]
     );
 
     let before = vec![build_codemirror_doc_block(10, 11, "", "#", "test")];
@@ -902,17 +902,16 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 0,
-            to: Some(1),
-            insert: vec![CodeMirrorDocBlockDiff {
+        vec![CodeMirrorDocBlockTransaction::Update(
+            CodeMirrorDocBlockUpdate {
                 from: 10,
+                from_new: 10,
                 to: 11,
                 indent: Some(" ".to_string()),
                 delimiter: "#".to_string(),
                 contents: vec![]
-            }]
-        }]
+            }
+        )]
     );
 
     let before = vec![build_codemirror_doc_block(10, 11, "", "#", "test")];
@@ -920,17 +919,16 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 0,
-            to: Some(1),
-            insert: vec![CodeMirrorDocBlockDiff {
+        vec![CodeMirrorDocBlockTransaction::Update(
+            CodeMirrorDocBlockUpdate {
                 from: 10,
+                from_new: 10,
                 to: 11,
                 indent: None,
                 delimiter: "*".to_string(),
                 contents: vec![]
-            }]
-        }]
+            }
+        )]
     );
 
     let before = vec![build_codemirror_doc_block(10, 11, "", "#", "test\n")];
@@ -938,11 +936,10 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 0,
-            to: Some(1),
-            insert: vec![CodeMirrorDocBlockDiff {
+        vec![CodeMirrorDocBlockTransaction::Update(
+            CodeMirrorDocBlockUpdate {
                 from: 10,
+                from_new: 10,
                 to: 11,
                 indent: None,
                 delimiter: "#".to_string(),
@@ -951,8 +948,8 @@ fn test_diff_2() {
                     to: None,
                     insert: "1".to_string()
                 }]
-            }]
-        }]
+            }
+        )]
     );
 
     // Insert at beginning -- contents changed.
@@ -964,21 +961,13 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 0,
-            to: None,
-            insert: vec![CodeMirrorDocBlockDiff {
-                from: 10,
-                to: 11,
-                indent: Some("".to_string()),
-                delimiter: "#".to_string(),
-                contents: vec![StringDiff {
-                    from: 0,
-                    to: None,
-                    insert: "test1".to_string()
-                }]
-            }]
-        }]
+        vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
+            from: 10,
+            to: 11,
+            indent: "".to_string(),
+            delimiter: "#".to_string(),
+            contents: "test1".to_string()
+        })]
     );
 
     // Insert at beginning -- contents unchanged.
@@ -992,36 +981,25 @@ fn test_diff_2() {
         ret,
         // The "dumb" (non-diff) algorithm see this as a replace followed by an insert, not a single insert.
         vec![
-            CodeMirrorDocBlocksDiff {
-                from: 0,
-                to: Some(1),
-                insert: vec![CodeMirrorDocBlockDiff {
-                    from: 10,
-                    to: 11,
-                    indent: None,
-                    delimiter: "#".to_string(),
-                    contents: vec![]
-                },]
-            },
-            CodeMirrorDocBlocksDiff {
-                from: 1,
-                to: None,
-                insert: vec![CodeMirrorDocBlockDiff {
-                    from: 11,
-                    to: 12,
-                    indent: Some("".to_string()),
-                    delimiter: "#".to_string(),
-                    contents: vec![StringDiff {
-                        from: 0,
-                        to: None,
-                        insert: "test".to_string()
-                    }]
-                }]
-            }
+            CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
+                from: 11,
+                from_new: 10,
+                to: 11,
+                indent: None,
+                delimiter: "#".to_string(),
+                contents: vec![]
+            }),
+            CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
+                from: 11,
+                to: 12,
+                indent: "".to_string(),
+                delimiter: "#".to_string(),
+                contents: "test".to_string()
+            })
         ]
     );
 
-    // Insert in middle -- contents changed.
+    // Insert in middle.
     let before = vec![
         build_codemirror_doc_block(10, 11, "", "#", "test1"),
         build_codemirror_doc_block(12, 13, "", "#", "test3"),
@@ -1034,66 +1012,14 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 1,
-            to: None,
-            insert: vec![CodeMirrorDocBlockDiff {
-                from: 11,
-                to: 12,
-                indent: Some("".to_string()),
-                delimiter: "#".to_string(),
-                contents: vec![StringDiff {
-                    from: 0,
-                    to: None,
-                    insert: "test2".to_string()
-                }]
-            }]
-        }]
+        vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
+            from: 11,
+            to: 12,
+            indent: "".to_string(),
+            delimiter: "#".to_string(),
+            contents: "test2".to_string()
+        })]
     );
-
-    // Insert in middle -- contents unchanged.
-    let before = vec![
-        build_codemirror_doc_block(10, 11, "", "#", "test"),
-        build_codemirror_doc_block(12, 13, "", "#", "test"),
-    ];
-    let after = vec![
-        build_codemirror_doc_block(10, 11, "", "#", "test"),
-        build_codemirror_doc_block(11, 12, "", "#", "test"),
-        build_codemirror_doc_block(12, 13, "", "#", "test"),
-    ];
-    let ret = diff_code_mirror_doc_blocks(&before, &after);
-    assert_eq!(
-        ret,
-        vec![
-            CodeMirrorDocBlocksDiff {
-                from: 1,
-                to: Some(2),
-                insert: vec![CodeMirrorDocBlockDiff {
-                    from: 11,
-                    to: 12,
-                    indent: None,
-                    delimiter: "#".to_string(),
-                    contents: vec![]
-                }]
-            },
-            CodeMirrorDocBlocksDiff {
-                from: 2,
-                to: None,
-                insert: vec![CodeMirrorDocBlockDiff {
-                    from: 12,
-                    to: 13,
-                    indent: Some("".to_string()),
-                    delimiter: "#".to_string(),
-                    contents: vec![StringDiff {
-                        from: 0,
-                        to: None,
-                        insert: "test".to_string()
-                    }]
-                }]
-            }
-        ]
-    );
-
     // Insert at end -- contents changed.
     let before = vec![build_codemirror_doc_block(10, 11, "", "#", "test1")];
     let after = vec![
@@ -1103,47 +1029,13 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 1,
-            to: None,
-            insert: vec![CodeMirrorDocBlockDiff {
-                from: 11,
-                to: 12,
-                indent: Some("".to_string()),
-                delimiter: "#".to_string(),
-                contents: vec![StringDiff {
-                    from: 0,
-                    to: None,
-                    insert: "test2".to_string()
-                }]
-            }]
-        }]
-    );
-
-    // Insert at end -- contents unchanged
-    let before = vec![build_codemirror_doc_block(10, 11, "", "#", "test")];
-    let after = vec![
-        build_codemirror_doc_block(10, 11, "", "#", "test"),
-        build_codemirror_doc_block(11, 12, "", "#", "test"),
-    ];
-    let ret = diff_code_mirror_doc_blocks(&before, &after);
-    assert_eq!(
-        ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 1,
-            to: None,
-            insert: vec![CodeMirrorDocBlockDiff {
-                from: 11,
-                to: 12,
-                indent: Some("".to_string()),
-                delimiter: "#".to_string(),
-                contents: vec![StringDiff {
-                    from: 0,
-                    to: None,
-                    insert: "test".to_string()
-                }]
-            }]
-        }]
+        vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
+            from: 11,
+            to: 12,
+            indent: "".to_string(),
+            delimiter: "#".to_string(),
+            contents: "test2".to_string()
+        })]
     );
 
     // Delete at beginning.
@@ -1155,11 +1047,9 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 0,
-            to: Some(1),
-            insert: vec![]
-        }]
+        vec![CodeMirrorDocBlockTransaction::Delete(
+            CodeMirrorDocBlockDelete { from: 10, to: 11 }
+        )]
     );
 
     // Delete in middle.
@@ -1175,11 +1065,9 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 1,
-            to: Some(2),
-            insert: vec![]
-        }]
+        vec![CodeMirrorDocBlockTransaction::Delete(
+            CodeMirrorDocBlockDelete { from: 11, to: 12 }
+        )]
     );
 
     // Delete at end.
@@ -1191,10 +1079,87 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        vec![CodeMirrorDocBlocksDiff {
-            from: 1,
-            to: Some(2),
-            insert: vec![]
-        }]
+        vec![CodeMirrorDocBlockTransaction::Delete(
+            CodeMirrorDocBlockDelete { from: 11, to: 12 }
+        )]
+    );
+}
+
+#[test]
+fn test_diff_3() {
+    // Insert before.
+    let mut doc_blocks = vec![
+        build_codemirror_doc_block(10, 11, "", "#", "test1"),
+        build_codemirror_doc_block(11, 12, "", "#", "test2"),
+    ];
+    let doc_diff = vec![StringDiff {
+        from: 10,
+        to: None,
+        insert: "\n".to_string(),
+    }];
+    sync_code_changes(&doc_diff, &mut doc_blocks);
+    assert_eq!(
+        doc_blocks,
+        vec![
+            build_codemirror_doc_block(11, 12, "", "#", "test1"),
+            build_codemirror_doc_block(12, 13, "", "#", "test2"),
+        ]
+    );
+
+    // Delete before.
+    let mut doc_blocks = vec![
+        build_codemirror_doc_block(10, 11, "", "#", "test1"),
+        build_codemirror_doc_block(11, 12, "", "#", "test2"),
+    ];
+    let doc_diff = vec![StringDiff {
+        from: 10,
+        to: Some(11),
+        insert: "".to_string(),
+    }];
+    sync_code_changes(&doc_diff, &mut doc_blocks);
+    assert_eq!(
+        doc_blocks,
+        vec![
+            build_codemirror_doc_block(9, 10, "", "#", "test1"),
+            build_codemirror_doc_block(10, 11, "", "#", "test2"),
+        ]
+    );
+
+    // Replace before.
+    let mut doc_blocks = vec![
+        build_codemirror_doc_block(10, 11, "", "#", "test1"),
+        build_codemirror_doc_block(11, 12, "", "#", "test2"),
+    ];
+    let doc_diff = vec![StringDiff {
+        from: 10,
+        to: Some(11),
+        insert: "aaa".to_string(),
+    }];
+    sync_code_changes(&doc_diff, &mut doc_blocks);
+    assert_eq!(
+        doc_blocks,
+        vec![
+            build_codemirror_doc_block(12, 13, "", "#", "test1"),
+            build_codemirror_doc_block(13, 14, "", "#", "test2"),
+        ]
+    );
+
+    // Insert after. The other cases (delete, replace) add little; skip them.
+    let mut doc_blocks = vec![
+        build_codemirror_doc_block(10, 11, "", "#", "test1"),
+        build_codemirror_doc_block(11, 12, "", "#", "test2"),
+    ];
+    let doc_diff = vec![StringDiff {
+        from: 13,
+        to: None,
+        insert: "\n".to_string(),
+    }];
+    sync_code_changes(&doc_diff, &mut doc_blocks);
+    assert_eq!(
+        doc_blocks,
+        vec![
+            build_codemirror_doc_block(10, 11, "", "#", "test1"),
+            build_codemirror_doc_block(11, 12, "", "#", "test2"),
+        ]
     );
 }

@@ -78,11 +78,11 @@ export type CodeChatForWeb = {
 };
 
 export type CodeMirrorDiffable =
-    | {
+    {
         Plain: CodeMirror;
     }
     | {
-        Diff: CodeMirrorDiff;
+        Diff: CodeMirrorDiff
     };
 
 export type CodeMirror = {
@@ -94,7 +94,7 @@ export type CodeMirror = {
 
 export type CodeMirrorDiff = {
             doc: StringDiff[];
-            doc_blocks: CodeMirrorDocBlocksDiffJson[];
+            doc_blocks: CodeMirrorDocBlockTransaction[];
 }
 
 export type StringDiff = {
@@ -105,6 +105,14 @@ export type StringDiff = {
     /// The text to insert/replace; an empty string indicates deletion.
     insert: string;
 };
+
+export type CodeMirrorDocBlockTransaction = {
+    Add: CodeMirrorDocBlockJson
+} | {
+    Update: CodeMirrorDocBlockUpdate
+} | {
+    Delete: CodeMirrorDocBlockDelete
+}
 
 // How a doc block is stored using CodeMirror.
 export type CodeMirrorDocBlockJson = [
@@ -120,27 +128,19 @@ export type CodeMirrorDocBlockJson = [
     string,
 ];
 
-export type CodeMirrorDocBlockDiffJson = [
-    // From
-    number,
-    // To
-    number,
-    // Indent
-    string | null,
-    // Delimiter
-    string,
-    // Contents
-    StringDiff[],
-];
+export type CodeMirrorDocBlockUpdate = {
+    from: number;
+    from_new: number;
+    to: number;
+    indent?: string;
+    delimiter: string;
+    contents: StringDiff[];
+};
 
-export type CodeMirrorDocBlocksDiffJson = [
-    // From
-    number,
-    // To
-    number | undefined,
-    // Insert
-    CodeMirrorDocBlockDiffJson[]
-]
+export type CodeMirrorDocBlockDelete = {
+    from: number,
+    to: number
+};
 
 export type UpdateMessageContents = {
     file_path: string;

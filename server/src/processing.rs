@@ -108,7 +108,15 @@ pub struct CodeMirror {
 pub struct CodeMirrorDiff {
     /// A diff of the document being edited.
     pub doc: Vec<StringDiff>,
-    pub doc_blocks: Vec<CodeMirrorDocBlocksDiff>,
+    pub doc_blocks: Vec<CodeMirrorDocBlockTransaction>,
+}
+
+/// A transaction produced by the diff of the `CodeMirror` struct.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum CodeMirrorDocBlockTransaction {
+    Add(CodeMirrorDocBlock),
+    Update(CodeMirrorDocBlockUpdate),
+    Delete(CodeMirrorDocBlockDelete),
 }
 
 /// This defines a doc block for CodeMirror.
@@ -127,22 +135,31 @@ pub struct CodeMirrorDocBlock {
 }
 
 /// Store the difference between the previous and current `CodeMirrorDocBlock`s.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CodeMirrorDocBlockDiff {
-    /// From -- the starting character this doc block is anchored to. In the
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CodeMirrorDocBlockUpdate {
+    /// From -- the starting character this doc block is anchored to before this update. In the
     /// JSON encoding, there's little gain from making this an `Option`, since
     /// `undefined` takes more characters than most line numbers.
     pub from: usize,
+    /// The starting character this doc block is anchored to after this update.
+    pub from_new: usize,
     /// To -- the ending character this doc block is anchored to. Likewise,
     /// avoid using an `Option` here.
     pub to: usize,
     /// Indent, or None if unchanged. Since the indent may be many characters,
     /// use an `Option` here.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub indent: Option<String>,
     /// Delimiter. Again, this is usually too short to merit an `Option`.
     pub delimiter: String,
     /// Contents, as a diff of the previous contents.
     pub contents: Vec<StringDiff>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CodeMirrorDocBlockDelete {
+    pub from: usize,
+    pub to: usize,
 }
 
 /// Store the difference between a previous and current string; this is based on
@@ -160,19 +177,6 @@ pub struct StringDiff {
     pub to: Option<usize>,
     /// The text to insert/replace; an empty string indicates deletion.
     pub insert: String,
-}
-
-/// Store one element of the difference between previous and current
-/// `CodeMirrorDocBlockVec`s.
-#[derive(Clone, Debug, PartialEq)]
-pub struct CodeMirrorDocBlocksDiff {
-    /// The index of the start of the change.
-    pub from: usize,
-    /// The index of the end of the change; defined for deletions and
-    /// replacements.
-    pub to: Option<usize>,
-    /// The doc blocks to insert/replace; an empty vector indicates deletion.
-    pub insert: Vec<CodeMirrorDocBlockDiff>,
 }
 
 /// This enum contains the results of translating a source file to the CodeChat
@@ -328,92 +332,6 @@ impl<'de> Deserialize<'de> for CodeMirrorDocBlock {
             indent: tuple.2.into_owned(),
             delimiter: tuple.3.into_owned(),
             contents: tuple.4.into_owned(),
-        })
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct CodeMirrorDocBlockDiffTuple<'a>(
-    // from
-    usize,
-    // to
-    usize,
-    // indent
-    Option<Cow<'a, str>>,
-    // delimiter
-    Cow<'a, str>,
-    // contents
-    Vec<StringDiff>,
-);
-
-// Convert the struct to a tuple, then serialize the tuple. This makes the
-// resulting JSON more compact.
-impl Serialize for CodeMirrorDocBlockDiff {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let tuple = CodeMirrorDocBlockDiffTuple(
-            self.from,
-            self.to,
-            self.indent.as_ref().map(Cow::from),
-            Cow::from(&self.delimiter),
-            self.contents.clone(),
-        );
-        tuple.serialize(serializer)
-    }
-}
-
-// Deserialize the tuple, then convert it to a struct.
-impl<'de> Deserialize<'de> for CodeMirrorDocBlockDiff {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let tuple = CodeMirrorDocBlockDiffTuple::deserialize(deserializer)?;
-        Ok(CodeMirrorDocBlockDiff {
-            from: tuple.0,
-            to: tuple.1,
-            indent: tuple.2.map(|s| s.into_owned()),
-            delimiter: tuple.3.into_owned(),
-            contents: tuple.4,
-        })
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-struct CodeMirrorDocBlocksDiffTuple(
-    // from
-    usize,
-    // to
-    Option<usize>,
-    // insert
-    Vec<CodeMirrorDocBlockDiff>,
-);
-
-// Convert the struct to a tuple, then serialize the tuple. This makes the
-// resulting JSON more compact.
-impl Serialize for CodeMirrorDocBlocksDiff {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let tuple = CodeMirrorDocBlocksDiffTuple(self.from, self.to, self.insert.clone());
-        tuple.serialize(serializer)
-    }
-}
-
-// Deserialize the tuple, then convert it to a struct.
-impl<'de> Deserialize<'de> for CodeMirrorDocBlocksDiff {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let tuple = CodeMirrorDocBlocksDiffTuple::deserialize(deserializer)?;
-        Ok(CodeMirrorDocBlocksDiff {
-            from: tuple.0,
-            to: tuple.1,
-            insert: tuple.2,
         })
     }
 }
@@ -957,6 +875,36 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
 }
 
 // #### Diff support for `CodeMirrorDocBlockVec`
+/// Line changes: when lines in code blocks are inserted or deleted, CodeMirror automatically updates the lines that doc blocks are anchored to. Perform that same transformation here, so that the doc block updates produced are synced with the doc block updates performed by CodeMirror.
+///
+/// This function takes a list of diffs for the CodeMirror code blocks (a single string, where newlines replace doc block contents) then updates the associated doc blocks, by changing their `from` and `to` values. Inserts before a doc block cause the `from` value to increase by the number of characters inserted, while deletions cause `from`/`to` values to decrease. While deletions may remove entire doc blocks, this routine doesn't handle this case. Instead, it's handled by the doc block diff code.
+pub fn sync_code_changes(doc_diff: &[StringDiff], doc_blocks: &mut CodeMirrorDocBlockVec) {
+    // Walk through the changes to `doc_diff` and the `doc_blocks`, applying changes during the process. End when we've finished updating the doc blocks.
+    //
+    // Keep track of the delta to apply to `from`/`to` values.
+    let mut delta: isize = 0;
+    let mut doc_diff_index = 0;
+    let mut doc_blocks_index = 0;
+    while doc_blocks_index < doc_blocks.len() {
+        // See what the next item to process is.
+        if doc_diff_index < doc_diff.len()
+            && doc_diff[doc_diff_index].from <= doc_blocks[doc_blocks_index].from
+        {
+            // Update the delta based on this diff.
+            let dd = &doc_diff[doc_diff_index];
+            delta += dd.from as isize - dd.to.unwrap_or(dd.from) as isize
+                + dd.insert.chars().count() as isize;
+            doc_diff_index += 1;
+        } else {
+            // Apply the current delta.
+            let db = &mut doc_blocks[doc_blocks_index];
+            db.from = db.from.checked_add_signed(delta).unwrap();
+            db.to = db.to.checked_add_signed(delta).unwrap();
+            doc_blocks_index += 1;
+        }
+    }
+}
+
 /// We can't simply implement traits for `CodeMirrorDocBlockVec`, since it's not
 /// a struct. So, wrap that it in a struct, then implement traits on that
 /// struct.
@@ -983,7 +931,7 @@ impl<'a> TokenSource for CodeMirrorDocBlocksStruct<'a> {
 pub fn diff_code_mirror_doc_blocks(
     before: &CodeMirrorDocBlockVec,
     after: &CodeMirrorDocBlockVec,
-) -> Vec<CodeMirrorDocBlocksDiff> {
+) -> Vec<CodeMirrorDocBlockTransaction> {
     let input = InternedInput::new(
         CodeMirrorDocBlocksStruct(before),
         CodeMirrorDocBlocksStruct(after),
@@ -994,7 +942,7 @@ pub fn diff_code_mirror_doc_blocks(
     // This compare all fields, not just the `contents`, of two
     // `CodeMirrorDocBlock`s. It should be applied to every entry that the
     // `diff` function sees as equal.
-    let mut diff_all = |hunk: &Hunk, change_spec: &mut Vec<CodeMirrorDocBlocksDiff>| {
+    let mut diff_all = |hunk: &Hunk, change_spec: &mut Vec<CodeMirrorDocBlockTransaction>| {
         // First, compare blocks from the previous point until this point. The
         // diff used only compares contents; this checks everything.
         while prev_before_range_end < hunk.before.start && prev_after_range_end < hunk.after.start {
@@ -1011,11 +959,10 @@ pub fn diff_code_mirror_doc_blocks(
             let prev_after_range_start_val = &after[prev_after_range_end as usize];
             // Second phase: if before and after are different, insert an update.
             if prev_before_range_start_val != prev_after_range_start_val {
-                change_spec.push(CodeMirrorDocBlocksDiff {
-                    from: prev_before_range_end as usize,
-                    to: Some(prev_before_range_end as usize + 1),
-                    insert: vec![CodeMirrorDocBlockDiff {
-                        from: prev_after_range_start_val.from,
+                change_spec.push(CodeMirrorDocBlockTransaction::Update(
+                    CodeMirrorDocBlockUpdate {
+                        from: prev_before_range_start_val.from,
+                        from_new: prev_after_range_start_val.from,
                         to: prev_after_range_start_val.to,
                         indent: if prev_before_range_start_val.indent
                             == prev_after_range_start_val.indent
@@ -1029,8 +976,8 @@ pub fn diff_code_mirror_doc_blocks(
                             &prev_after_range_start_val.contents,
                             &prev_after_range_start_val.contents,
                         ),
-                    }],
-                });
+                    },
+                ));
             }
 
             prev_before_range_end += 1;
@@ -1049,7 +996,6 @@ pub fn diff_code_mirror_doc_blocks(
 
         // Process the insertions and deletions.
         let mut before_index = hunk.before.start;
-        let mut insert = Vec::new();
         // Values in the `after_index` become either inserts or replacements.
         for after_index in hunk.after {
             let after_val = &after[after_index as usize];
@@ -1059,40 +1005,41 @@ pub fn diff_code_mirror_doc_blocks(
             // still correct.
             if before_index < hunk.before.end {
                 let before_val = &before[before_index as usize];
-                insert.push(CodeMirrorDocBlockDiff {
-                    from: after_val.from,
-                    to: after_val.to,
-                    indent: if before_val.indent == after_val.indent {
-                        None
-                    } else {
-                        Some(after_val.indent.clone())
+                change_spec.push(CodeMirrorDocBlockTransaction::Update(
+                    CodeMirrorDocBlockUpdate {
+                        from: before_val.from,
+                        from_new: after_val.from,
+                        to: after_val.to,
+                        indent: if before_val.indent == after_val.indent {
+                            None
+                        } else {
+                            Some(after_val.indent.clone())
+                        },
+                        delimiter: after_val.delimiter.clone(),
+                        contents: diff_str(&before_val.contents, &after_val.contents),
                     },
-                    delimiter: after_val.delimiter.clone(),
-                    contents: diff_str(&before_val.contents, &after_val.contents),
-                });
+                ));
                 before_index += 1;
             } else {
                 // Otherwise, this in an insert.
-                insert.push(CodeMirrorDocBlockDiff {
+                change_spec.push(CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
                     from: after_val.from,
                     to: after_val.to,
-                    indent: Some(after_val.indent.clone()),
+                    indent: after_val.indent.clone(),
                     delimiter: after_val.delimiter.clone(),
-                    contents: diff_str("", &after_val.contents),
-                });
+                    contents: after_val.contents.clone(),
+                }));
             }
         }
 
-        // Now, create a diff from the `before_range` and the `insert`s.
-        change_spec.push(CodeMirrorDocBlocksDiff {
-            from: hunk.before.start as usize,
-            to: if hunk.before.start == hunk.before.end {
-                None
-            } else {
-                Some(hunk.before.end as usize)
-            },
-            insert,
-        });
+        if before_index < hunk.before.end {
+            change_spec.push(CodeMirrorDocBlockTransaction::Delete(
+                CodeMirrorDocBlockDelete {
+                    from: before[before_index as usize].from,
+                    to: before[hunk.before.end as usize - 1].to,
+                },
+            ));
+        }
     }
 
     // Process the last hunk. The end of the before and after ranges (0 here) doesn't matter, since it's not used.
