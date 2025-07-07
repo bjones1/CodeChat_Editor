@@ -504,7 +504,7 @@ async fn test_vscode_ide_websocket8() {
                         doc: "\n".to_string(),
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
-                            to: 0,
+                            to: 1,
                             indent: "".to_string(),
                             delimiter: "#".to_string(),
                             contents: "<p>testing</p>\n".to_string()
@@ -637,7 +637,7 @@ async fn test_vscode_ide_websocket7() {
                         }],
                         doc_blocks: vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
                             from: 0,
-                            to: 0,
+                            to: 1,
                             indent: "".to_string(),
                             delimiter: "#".to_string(),
                             contents: "<p>more</p>\n".to_string()
@@ -693,7 +693,7 @@ async fn test_vscode_ide_websocket6() {
                         doc: "\n".to_string(),
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
-                            to: 0,
+                            to: 1,
                             indent: "".to_string(),
                             delimiter: "#".to_string(),
                             contents: "less\n".to_string(),
@@ -853,7 +853,7 @@ async fn test_vscode_ide_websocket4() {
                         doc: "\n".to_string(),
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
-                            to: 0,
+                            to: 1,
                             indent: "".to_string(),
                             delimiter: "#".to_string(),
                             contents: "<p>test.py</p>\n".to_string()

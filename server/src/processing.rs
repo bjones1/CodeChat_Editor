@@ -413,7 +413,7 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
             contents: codemirror_doc_block.contents.to_string(),
             lines: 0,
         }));
-        code_index = codemirror_doc_block.to + 1;
+        code_index = codemirror_doc_block.to;
     }
 
     // See if there's a code block after the last doc block.
@@ -692,14 +692,11 @@ pub fn source_to_codechat_for_web(
                         // bytes, which is what `len()` returns).
                         let len = source.chars().count();
                         code_mirror.doc_blocks.push(CodeMirrorDocBlock {
-                            // From
                             from: len,
-                            // To. Make this one line short, which allows
-                            // CodeMirror to correctly handle inserts at the
-                            // first character of the following code block. Note
+                            // To. Note
                             // that the last doc block could be zero length, so
                             // handle this case.
-                            to: len + max(doc_block.lines, 1) - 1,
+                            to: len + max(doc_block.lines, 1),
                             indent: doc_block.indent.to_string(),
                             delimiter: doc_block.delimiter.to_string(),
                             // Used the markdown-translated replacement for this
@@ -1050,6 +1047,9 @@ pub fn diff_code_mirror_doc_blocks(
         },
         &mut change_spec,
     );
+
+    // Apply the changes in reverse order, so that later from/to ranges don't overlap with earlier ranges during the update.
+    change_spec.reverse();
     change_spec
 }
 

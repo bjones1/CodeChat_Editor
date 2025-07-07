@@ -92,6 +92,12 @@ let tinymce_singleton: Editor | undefined;
 // more info.
 let ignore_next_dirty = false;
 
+// Options used when creating a `Decoration`.
+const decorationOptions = {
+    block: true,
+    inclusiveEnd: false
+};
+
 declare global {
     interface Window {
         MathJax: any;
@@ -156,7 +162,7 @@ const docBlockField = StateField.define<DecorationSet>({
                                 effect.value.content,
                                 null,
                             ),
-                            block: true,
+                            ...decorationOptions
                         }).range(effect.value.from, effect.value.to),
                     ],
                 });
@@ -174,7 +180,7 @@ const docBlockField = StateField.define<DecorationSet>({
                 doc_blocks.between(effect.value.from, effect.value.from, (from, to_found, value) => {
                     // For the given `from`, there should be exactly one doc block.
                     assert(prev === undefined);
-                    assert(effect.value.from == from);
+                    assert(effect.value.from === from, `${effect.value.from} !== ${from}`);
                     prev = value;
                     to = to_found;
                 });
@@ -195,7 +201,7 @@ const docBlockField = StateField.define<DecorationSet>({
                                 typeof (effect.value.contents) === "string" ? effect.value.contents : apply_diff_str(prev.spec.widget.contents, effect.value.contents),
                                 effect.value.dom ?? prev.spec.widget.dom,
                             ),
-                            block: true,
+                            ...decorationOptions
                         }).range(
                             effect.value.from_new ?? effect.value.from,
                             effect.value.to ?? to,
@@ -248,7 +254,7 @@ const docBlockField = StateField.define<DecorationSet>({
                         contents,
                         null,
                     ),
-                    block: true,
+                    ...decorationOptions
                 }).range(from, to),
             ),
         ),
