@@ -71,7 +71,9 @@ window.CodeChatEditor_test = () => {
             });
 
             test("Translate non-breaking space", async function () {
-                const db: [CodeMirrorDocBlockJson] = [[0, 0, "", "//", "&nbsp;"]];
+                const db: [CodeMirrorDocBlockJson] = [
+                    [0, 0, "", "//", "&nbsp;"],
+                ];
                 codechat_html_to_markdown(db);
                 assert.deepEqual(db, [[0, 0, "", "//", "\n"]]);
             });

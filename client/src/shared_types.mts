@@ -78,24 +78,24 @@ export type CodeChatForWeb = {
 };
 
 export type CodeMirrorDiffable =
-    {
+    | {
         Plain: CodeMirror;
     }
     | {
-        Diff: CodeMirrorDiff
+        Diff: CodeMirrorDiff;
     };
 
 export type CodeMirror = {
-            doc: string;
-            doc_blocks: CodeMirrorDocBlockJson[];
-            // Added by CodeMirror; not sent to/from the Server.
-            selection?: any;
-}
+    doc: string;
+    doc_blocks: CodeMirrorDocBlockJson[];
+    // Added by CodeMirror; not sent to/from the Server.
+    selection?: any;
+};
 
 export type CodeMirrorDiff = {
-            doc: StringDiff[];
-            doc_blocks: CodeMirrorDocBlockTransaction[];
-}
+    doc: StringDiff[];
+    doc_blocks: CodeMirrorDocBlockTransaction[];
+};
 
 export type StringDiff = {
     /// The index of the start of the change.
@@ -106,13 +106,16 @@ export type StringDiff = {
     insert: string;
 };
 
-export type CodeMirrorDocBlockTransaction = {
-    Add: CodeMirrorDocBlockJson
-} | {
-    Update: CodeMirrorDocBlockUpdate
-} | {
-    Delete: CodeMirrorDocBlockDelete
-}
+export type CodeMirrorDocBlockTransaction =
+    | {
+        Add: CodeMirrorDocBlockJson;
+    }
+    | {
+        Update: CodeMirrorDocBlockUpdate;
+    }
+    | {
+        Delete: CodeMirrorDocBlockDelete;
+    };
 
 // How a doc block is stored using CodeMirror.
 export type CodeMirrorDocBlockJson = [
@@ -138,8 +141,8 @@ export type CodeMirrorDocBlockUpdate = {
 };
 
 export type CodeMirrorDocBlockDelete = {
-    from: number,
-    to: number
+    from: number;
+    to: number;
 };
 
 export type UpdateMessageContents = {

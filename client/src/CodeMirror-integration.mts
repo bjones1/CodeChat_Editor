@@ -81,7 +81,13 @@ import { Editor, init, tinymce } from "./tinymce-config.mjs";
 
 // ### Local
 import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
-import { CodeChatForWeb, CodeMirror, CodeMirrorDiffable, CodeMirrorDocBlockJson, StringDiff } from "./shared_types.mjs";
+import {
+    CodeChatForWeb,
+    CodeMirror,
+    CodeMirrorDiffable,
+    CodeMirrorDocBlockJson,
+    StringDiff,
+} from "./shared_types.mjs";
 import { assert } from "./assert.mjs";
 
 // Globals
@@ -95,7 +101,7 @@ let ignore_next_dirty = false;
 // Options used when creating a `Decoration`.
 const decorationOptions = {
     block: true,
-    inclusiveEnd: false
+    inclusiveEnd: false,
 };
 
 declare global {
@@ -162,7 +168,7 @@ const docBlockField = StateField.define<DecorationSet>({
                                 effect.value.content,
                                 null,
                             ),
-                            ...decorationOptions
+                            ...decorationOptions,
                         }).range(effect.value.from, effect.value.to),
                     ],
                 });
@@ -177,14 +183,24 @@ const docBlockField = StateField.define<DecorationSet>({
                 // Look for existing data in this effect's range. There should be one and only one result. The value for `to` may not be provided, so don't use it.
                 let prev: Decoration | undefined;
                 let to: number | undefined;
-                doc_blocks.between(effect.value.from, effect.value.from, (from, to_found, value) => {
-                    // For the given `from`, there should be exactly one doc block.
-                    assert(prev === undefined);
-                    assert(effect.value.from === from, `${effect.value.from} !== ${from}`);
-                    prev = value;
-                    to = to_found;
-                });
-                assert(prev !== undefined, `Can't find:\n${JSON.stringify(effect)}\nData:\n${doc_blocks}`);
+                doc_blocks.between(
+                    effect.value.from,
+                    effect.value.from,
+                    (from, to_found, value) => {
+                        // For the given `from`, there should be exactly one doc block.
+                        assert(prev === undefined);
+                        assert(
+                            effect.value.from === from,
+                            `${effect.value.from} !== ${from}`,
+                        );
+                        prev = value;
+                        to = to_found;
+                    },
+                );
+                assert(
+                    prev !== undefined,
+                    `Can't find:\n${JSON.stringify(effect)}\nData:\n${doc_blocks}`,
+                );
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
@@ -198,19 +214,22 @@ const docBlockField = StateField.define<DecorationSet>({
                             widget: new DocBlockWidget(
                                 effect.value.indent ?? prev.spec.widget.indent,
                                 effect.value.delimiter,
-                                typeof (effect.value.contents) === "string" ? effect.value.contents : apply_diff_str(prev.spec.widget.contents, effect.value.contents),
+                                typeof effect.value.contents === "string"
+                                    ? effect.value.contents
+                                    : apply_diff_str(
+                                        prev.spec.widget.contents,
+                                        effect.value.contents,
+                                    ),
                                 effect.value.dom ?? prev.spec.widget.dom,
                             ),
-                            ...decorationOptions
+                            ...decorationOptions,
                         }).range(
                             effect.value.from_new ?? effect.value.from,
                             effect.value.to ?? to,
                         ),
                     ],
                 });
-            }
-
-            else if (effect.is(deleteDocBlock)) {
+            } else if (effect.is(deleteDocBlock)) {
                 doc_blocks = doc_blocks.update({
                     filter: (from, to, value) => false,
                     filterFrom: effect.value.from,
@@ -246,16 +265,23 @@ const docBlockField = StateField.define<DecorationSet>({
     // [fromJSON](https://codemirror.net/docs/ref/#state.StateField^define^config.fromJSON).
     fromJSON: (json: any, state: EditorState) =>
         Decoration.set(
-            json.map(([from, to, indent, delimiter, contents]: CodeMirrorDocBlockJson) =>
-                Decoration.replace({
-                    widget: new DocBlockWidget(
-                        indent,
-                        delimiter,
-                        contents,
-                        null,
-                    ),
-                    ...decorationOptions
-                }).range(from, to),
+            json.map(
+                ([
+                    from,
+                    to,
+                    indent,
+                    delimiter,
+                    contents,
+                ]: CodeMirrorDocBlockJson) =>
+                    Decoration.replace({
+                        widget: new DocBlockWidget(
+                            indent,
+                            delimiter,
+                            contents,
+                            null,
+                        ),
+                        ...decorationOptions,
+                    }).range(from, to),
             ),
         ),
 });
@@ -297,17 +323,19 @@ type updateDocBlockType = {
 
 // Define an update.
 export const updateDocBlock = StateEffect.define<updateDocBlockType>({
-    map: ({ from, from_new: fromNew, to, indent, delimiter, contents, dom }, change: ChangeDesc) => {
-        const ret: updateDocBlockType =
-            ({
-                // Update the position of this doc block due to the transaction's
-                // changes.
-                from: change.mapPos(from),
-                indent,
-                delimiter,
-                contents,
-                dom,
-            });
+    map: (
+        { from, from_new: fromNew, to, indent, delimiter, contents, dom },
+        change: ChangeDesc,
+    ) => {
+        const ret: updateDocBlockType = {
+            // Update the position of this doc block due to the transaction's
+            // changes.
+            from: change.mapPos(from),
+            indent,
+            delimiter,
+            contents,
+            dom,
+        };
         if (to !== undefined) {
             ret.to = change.mapPos(to);
         }
@@ -315,18 +343,17 @@ export const updateDocBlock = StateEffect.define<updateDocBlockType>({
             ret.from_new = change.mapPos(fromNew);
         }
         return ret;
-    }
+    },
 });
 
-
 // Delete a doc block.
-export const deleteDocBlock = StateEffect.define<{ from: number, to: number }>({
+export const deleteDocBlock = StateEffect.define<{ from: number; to: number }>({
     // Returning undefined deletes the block per the [docs](https://codemirror.net/docs/ref/#state.StateEffect^define^spec.map).
     map: ({ from, to }, change: ChangeDesc) => ({
         from: change.mapPos(from),
         to: change.mapPos(to),
-    })
-})
+    }),
+});
 
 // Create a [widget](https://codemirror.net/docs/ref/#view.WidgetType) which
 // contains a doc block.
@@ -945,7 +972,9 @@ export const CodeMirror_load = async (
         console.log(source.Diff.doc);
         console.log(source.Diff.doc_blocks);
         console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
-        const transactionSpecs: TransactionSpec[] = [{ changes: source.Diff.doc }];
+        const transactionSpecs: TransactionSpec[] = [
+            { changes: source.Diff.doc },
+        ];
         for (const transaction of source.Diff.doc_blocks) {
             if ("Add" in transaction) {
                 const add = transaction.Add;
@@ -955,13 +984,17 @@ export const CodeMirror_load = async (
                         to: add[1],
                         indent: add[2],
                         delimiter: add[3],
-                        content: add[4]
-                    })
+                        content: add[4],
+                    }),
                 });
             } else if ("Update" in transaction) {
-                transactionSpecs.push({ effects: updateDocBlock.of(transaction.Update) });
+                transactionSpecs.push({
+                    effects: updateDocBlock.of(transaction.Update),
+                });
             } else if ("Delete" in transaction) {
-                transactionSpecs.push({ effects: deleteDocBlock.of(transaction.Delete) });
+                transactionSpecs.push({
+                    effects: deleteDocBlock.of(transaction.Delete),
+                });
             } else {
                 assert(false, `Unknown transaction ${transaction}.`);
             }
@@ -989,13 +1022,15 @@ const apply_diff_str = (before: string, diffs: StringDiff[]) => {
         }
     }
     return after;
-}
+};
 
 // Return the JSON data to save from the current CodeMirror-based document.
 export const CodeMirror_save = (): CodeMirrorDiffable => {
     // This is the data to write — the source code. First, transform the HTML
     // back into code and doc blocks.
-    const code_mirror: CodeMirror = current_view.state.toJSON(CodeMirror_JSON_fields);
+    const code_mirror: CodeMirror = current_view.state.toJSON(
+        CodeMirror_JSON_fields,
+    );
     delete code_mirror.selection;
 
     return { Plain: code_mirror };
