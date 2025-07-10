@@ -286,7 +286,7 @@ const docBlockField = StateField.define<DecorationSet>({
         ),
 });
 
-const CodeMirror_JSON_fields = { doc_blocks: docBlockField };
+export const CodeMirror_JSON_fields = { doc_blocks: docBlockField };
 
 // Per the [docs](https://codemirror.net/docs/ref/#state.StateEffect^define),
 // "State effects can be used to represent additional effects associated with a
@@ -560,7 +560,7 @@ const on_dirty = (
     return false;
 };
 
-const DocBlockPlugin = ViewPlugin.fromClass(
+export const DocBlockPlugin = ViewPlugin.fromClass(
     class {
         constructor(view: EditorView) { }
         update(update: ViewUpdate) { }
