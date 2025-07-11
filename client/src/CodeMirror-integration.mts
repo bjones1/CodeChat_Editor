@@ -67,6 +67,7 @@ import {
     EditorSelection,
     Transaction,
     TransactionSpec,
+    Annotation,
 } from "@codemirror/state";
 import { cpp } from "@codemirror/lang-cpp";
 import { css } from "@codemirror/lang-css";
@@ -110,6 +111,8 @@ declare global {
     }
 }
 
+const docBlockFreezeAnnotation = Annotation.define<boolean>();
+
 // Doc blocks in CodeMirror
 // ------------------------
 //
@@ -127,7 +130,7 @@ declare global {
 // each element of which contains the required range and the needed HTML in the
 // Decoration -- all the required state. Making it a DecorationSet provides an
 // easy way to store all doc blocks.
-const docBlockField = StateField.define<DecorationSet>({
+export const docBlockField = StateField.define<DecorationSet>({
     // [Create](https://codemirror.net/docs/ref/#state.StateField^define^config.create)
     // the initial value for the field, which is an empty set (no doc blocks).
     // Therefore, simply return an empty DecorationSet (oddly, the type of
@@ -140,11 +143,14 @@ const docBlockField = StateField.define<DecorationSet>({
     // computes a new value for this field from the field's previous value and
     // the provided transaction.
     update(doc_blocks: DecorationSet, tr: Transaction) {
-        // [Map](https://codemirror.net/docs/ref/#state.RangeSet.map) these
-        // changes through the provided transaction, which updates the offsets
-        // of the range so the doc blocks is still anchored to the same location
-        // in the document after this transaction completes.
-        doc_blocks = doc_blocks.map(tr.changes);
+        // If there's a freeze annotation, then ignore the mapping update.
+        if (tr.annotation(docBlockFreezeAnnotation) !== undefined) {
+            // [Map](https://codemirror.net/docs/ref/#state.RangeSet.map) these
+            // changes through the provided transaction, which updates the offsets
+            // of the range so the doc blocks is still anchored to the same location
+            // in the document after this transaction completes.
+            doc_blocks = doc_blocks.map(tr.changes);
+        }
         // See [is](https://codemirror.net/docs/ref/#state.StateEffect.is). Add
         // a doc block, as requested by this effect. TODO: add cases to handle
         // combining two adjacent doc blocks, deleting a doc block, etc.
@@ -199,7 +205,7 @@ const docBlockField = StateField.define<DecorationSet>({
                 );
                 assert(
                     prev !== undefined,
-                    `Can't find:\n${JSON.stringify(effect)}\nData:\n${doc_blocks}`,
+                    `Can't find:\n${effect}\nData:${doc_blocks}`,
                 );
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
@@ -973,7 +979,10 @@ export const CodeMirror_load = async (
         console.log(source.Diff.doc_blocks);
         console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
         const transactionSpecs: TransactionSpec[] = [
-            { changes: source.Diff.doc },
+            {
+                changes: source.Diff.doc,
+                annotations: docBlockFreezeAnnotation.of(true)
+            },
         ];
         for (const transaction of source.Diff.doc_blocks) {
             if ("Add" in transaction) {
@@ -1033,5 +1042,6 @@ export const CodeMirror_save = (): CodeMirrorDiffable => {
     );
     delete code_mirror.selection;
 
+    console.log(code_mirror);
     return { Plain: code_mirror };
 };
