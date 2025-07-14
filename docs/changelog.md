@@ -21,6 +21,8 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.18, 2025-Jul-14:
+    *   Send diffs to the Client, which prevents visual jitter.
 *   v0.1.17, 2025-Apr-14:
     *   Fix heading level 3 and below word wrapping.
     *   Correctly handle unclosed fenced code blocks.
