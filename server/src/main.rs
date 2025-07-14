@@ -198,22 +198,33 @@ impl Cli {
                         }
 
                         // Check if the server has exited or failed to start.
-                        Some(ref mut child) => match child.try_wait() {
-                            Ok(Some(status)) => {
-                                let mut stdout_buf = String::new();
-                                let mut stderr_buf = String::new();
-                                let stdout = child.stdout.as_mut().unwrap();
-                                let stderr = child.stderr.as_mut().unwrap();
-                                stdout.read_to_string(&mut stdout_buf).unwrap();
-                                stderr.read_to_string(&mut stderr_buf).unwrap();
-                                return Err(format!(
-                                    "Server failed to start: {status:?}\n{stdout_buf}\n{stderr_buf}"
-                                )
-                                .into());
+                        Some(ref mut child) => {
+                            match child.try_wait() {
+                                Ok(Some(status)) => {
+                                    let mut stdout_buf = String::new();
+                                    let mut stderr_buf = String::new();
+                                    let stdout = child.stdout.as_mut().unwrap();
+                                    let stderr = child.stderr.as_mut().unwrap();
+                                    stdout.read_to_string(&mut stdout_buf).unwrap();
+                                    stderr.read_to_string(&mut stderr_buf).unwrap();
+                                    if status.success() {
+                                        return Err(format!("Server unexpectedly shut down.\n{stdout_buf}\n{stderr_buf}").into());
+                                    }
+                                    if let Some(code) = status.code() {
+                                        return Err(format!(
+                                            "Server exited with error; exit code is {code}.\n{stdout_buf}\n{stderr_buf}"
+                                        )
+                                        .into());
+                                    }
+                                    return Err(format!(
+                                        "Server terminated by signal.\n{stdout_buf}\n{stderr_buf}"
+                                    )
+                                    .into());
+                                }
+                                Ok(None) => {}
+                                Err(e) => return Err(format!("Error starting server: {e}").into()),
                             }
-                            Ok(None) => {}
-                            Err(e) => return Err(format!("Error starting server: {e}").into()),
-                        },
+                        }
                     }
                     // Wait a bit before trying again.
                     std::thread::sleep(std::time::Duration::from_millis(50));
