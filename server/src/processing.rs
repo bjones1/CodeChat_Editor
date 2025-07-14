@@ -1,5 +1,3 @@
-//C:\Users\bj147\Documents\git\CodeChat_Editor\server\target\debug\codechat-editor-server.exe
-
 // Copyright (C) 2023 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
