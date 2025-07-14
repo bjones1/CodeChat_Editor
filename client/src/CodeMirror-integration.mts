@@ -150,11 +150,6 @@ export const docBlockField = StateField.define<DecorationSet>({
             // of the range so the doc blocks is still anchored to the same location
             // in the document after this transaction completes.
             doc_blocks = doc_blocks.map(tr.changes);
-            console.log("Performed map update.");
-        } else {
-            console.log("Skipped map update.");
-            console.log(doc_blocks);
-            console.log(tr);
         }
         for (let effect of tr.effects)
             // See [is](https://codemirror.net/docs/ref/#state.StateEffect.is). Add
@@ -207,16 +202,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                         to = to_found;
                     },
                 );
-
-                if (
-                    prev === undefined
-
-                ) {
-                    console.log("Can't find:");
-                    console.log(effect);
-                    console.log(doc_blocks);
-                    assert(false);
-                }
+                assert(prev !== undefined);
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
@@ -984,10 +970,7 @@ export const CodeMirror_load = async (
         )[0];
     } else {
         // This contains a diff, instead of plain text. Apply the text diff.
-        console.log("Before");
-        console.log(source.Diff.doc);
-        console.log(source.Diff.doc_blocks);
-        console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
+        //
         // First, apply just the text edits. Use an annotation so that the doc blocks aren't changed; without this, the diff won't work (since from/to values of doc blocks are changed by unfrozen text edits).
         current_view.dispatch(
             {
@@ -1016,10 +999,7 @@ export const CodeMirror_load = async (
             }
         }
         // Update the view with these changes to the state.
-        console.log(stateEffects);
-        current_view.dispatch({effects: stateEffects});
-        console.log("After");
-        console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
+        current_view.dispatch({ effects: stateEffects });
     }
 };
 
@@ -1049,6 +1029,5 @@ export const CodeMirror_save = (): CodeMirrorDiffable => {
     );
     delete code_mirror.selection;
 
-    console.log(code_mirror);
     return { Plain: code_mirror };
 };
