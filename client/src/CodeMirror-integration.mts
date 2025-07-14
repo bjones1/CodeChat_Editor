@@ -208,7 +208,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                     // block in the provided from/to range.
                     filter: (from, to, value) => false,
                     filterFrom: effect.value.from,
-                    filterTo: effect.value.to ?? to,
+                    filterTo: effect.value.from,
                     // This adds the replacement doc block with updated
                     // indent/delimiter/content.
                     add: [
