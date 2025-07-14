@@ -137,9 +137,10 @@ pub struct CodeMirrorDocBlock {
 /// Store the difference between the previous and current `CodeMirrorDocBlock`s.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct CodeMirrorDocBlockUpdate {
-    /// From -- the starting character this doc block is anchored to before this update. In the
-    /// JSON encoding, there's little gain from making this an `Option`, since
-    /// `undefined` takes more characters than most line numbers.
+    /// From -- the starting character this doc block is anchored to before this
+    /// update. In the JSON encoding, there's little gain from making this an
+    /// `Option`, since `undefined` takes more characters than most line
+    /// numbers.
     pub from: usize,
     /// The starting character this doc block is anchored to after this update.
     pub from_new: usize,
@@ -171,8 +172,9 @@ pub struct StringDiff {
     /// change.
     pub from: usize,
     /// The index of the end of the change; defined for deletions and
-    /// replacements. See the [skip serializing field docs](https://serde.rs/attr-skip-serializing.html);
-    /// this must be excluded from the JSON output if it's `None` to avoid CodeMirror errors.
+    /// replacements. See the [skip serializing field
+    /// docs](https://serde.rs/attr-skip-serializing.html); this must be
+    /// excluded from the JSON output if it's `None` to avoid CodeMirror errors.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<usize>,
     /// The text to insert/replace; an empty string indicates deletion.
@@ -693,9 +695,8 @@ pub fn source_to_codechat_for_web(
                         let len = source.chars().count();
                         code_mirror.doc_blocks.push(CodeMirrorDocBlock {
                             from: len,
-                            // To. Note
-                            // that the last doc block could be zero length, so
-                            // handle this case.
+                            // To. Note that the last doc block could be zero
+                            // length, so handle this case.
                             to: len + max(doc_block.lines, 1),
                             indent: doc_block.indent.to_string(),
                             delimiter: doc_block.delimiter.to_string(),
@@ -924,7 +925,8 @@ pub fn diff_code_mirror_doc_blocks(
             // indices to get the full object.
             let prev_before_range_start_val = &before[prev_before_range_end as usize];
             let prev_after_range_start_val = &after[prev_after_range_end as usize];
-            // Second phase: if before and after are different, insert an update.
+            // Second phase: if before and after are different, insert an
+            // update.
             if prev_before_range_start_val != prev_after_range_start_val {
                 change_spec.push(CodeMirrorDocBlockTransaction::Update(
                     CodeMirrorDocBlockUpdate {
@@ -1009,7 +1011,8 @@ pub fn diff_code_mirror_doc_blocks(
         }
     }
 
-    // Process the last hunk. The end of the before and after ranges (0 here) doesn't matter, since it's not used.
+    // Process the last hunk. The end of the before and after ranges (0 here)
+    // doesn't matter, since it's not used.
     diff_all(
         &Hunk {
             before: (before.len() as u32..0),
@@ -1018,7 +1021,8 @@ pub fn diff_code_mirror_doc_blocks(
         &mut change_spec,
     );
 
-    // Apply the changes in reverse order, so that later from/to ranges don't overlap with earlier ranges during the update.
+    // Apply the changes in reverse order, so that later from/to ranges don't
+    // overlap with earlier ranges during the update.
     change_spec.reverse();
     change_spec
 }

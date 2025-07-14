@@ -1,14 +1,14 @@
 // Copyright (C) 2023 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
-// software: you can redistribute it and/or modify it under the terms of the
-// GNU General Public License as published by the Free Software Foundation,
-// either version 3 of the License, or (at your option) any later version.
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
 //
 // The CodeChat Editor is distributed in the hope that it will be useful, but
-// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-// more details.
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
 //
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
@@ -16,6 +16,7 @@
 //
 // `test.rs` - Tests for `processing.rs`
 // =====================================
+//
 // Imports
 // -------
 //
@@ -62,8 +63,7 @@ fn build_codechat_for_web(
     }
 }
 
-// Provide a way to construct one element of the `CodeMirrorDocBlocks`
-// vector.
+// Provide a way to construct one element of the `CodeMirrorDocBlocks` vector.
 fn build_codemirror_doc_block(
     start: usize,
     end: usize,
@@ -104,8 +104,8 @@ fn run_test(mode: &str, doc: &str, doc_blocks: Vec<CodeMirrorDocBlock>) -> Vec<C
 // ### Tests for `codechat_for_web_to_source`
 //
 // Since it just invokes `code_mirror_to_code_doc_blocks` and
-// `code_doc_block_vec_to_source`, both of which have their own set of
-// tests, we just need to do a bit of testing.
+// `code_doc_block_vec_to_source`, both of which have their own set of tests, we
+// just need to do a bit of testing.
 #[test]
 fn test_codechat_for_web_to_source() {
     let codechat_for_web = build_codechat_for_web("python", "", vec![]);
@@ -458,15 +458,15 @@ fn test_code_doc_blocks_to_source_csharp() {
 // ### Tests for `source_to_codechat_for_web`
 #[test]
 fn test_source_to_codechat_for_web_1() {
-    // A file with an unknown extension and no lexer, which is classified as
-    // a text file.
+    // A file with an unknown extension and no lexer, which is classified as a
+    // text file.
     assert_eq!(
         source_to_codechat_for_web("", &".xxx".to_string(), false, false),
         TranslationResults::Unknown
     );
 
-    // A file with an invalid lexer specification. Obscure this, so that
-    // this file can be successfully lexed by the CodeChat editor.
+    // A file with an invalid lexer specification. Obscure this, so that this
+    // file can be successfully lexed by the CodeChat editor.
     let lexer_spec = format!("{}{}", "CodeChat Editor ", "lexer: ");
     assert_eq!(
         source_to_codechat_for_web(
@@ -543,8 +543,8 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
 
-    // A two doc block source file. This also tests references in one block
-    // to a target in another block.
+    // A two doc block source file. This also tests references in one block to a
+    // target in another block.
     assert_eq!(
         source_to_codechat_for_web(
             "// [Link][1]\nlet a = 1;\n/* [1]: http://b.org */",
@@ -686,8 +686,8 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
 
-    // Test an unterminated `<pre>` block. Ensure that markdown after this
-    // is still parsed.
+    // Test an unterminated `<pre>` block. Ensure that markdown after this is
+    // still parsed.
     assert_eq!(
         source_to_codechat_for_web("// <pre>\n // *Test*", &"cpp".to_string(), false, false),
         TranslationResults::CodeChat(build_codechat_for_web(
@@ -726,8 +726,8 @@ fn apply_str_diff(before: &str, diffs: &[StringDiff]) -> String {
     let mut before = before.to_string();
     // Walk from the last diff to the first.
     for diff in diffs.iter().rev() {
-        // Convert from a character index to a byte index. If the index is
-        // past the end of the string, report the length of the string.
+        // Convert from a character index to a byte index. If the index is past
+        // the end of the string, report the length of the string.
         let from_index = before
             .char_indices()
             .nth(diff.from)
@@ -747,9 +747,15 @@ fn apply_str_diff(before: &str, diffs: &[StringDiff]) -> String {
     before
 }
 
-// Option 1: implement separate JS and Rust. Pro: simple. Con: how to test? Duplicate them. But eventually I want to send diffs back, so I'll have to implement both sides. Let's do this later. Also, I'm a bit concerned about performance -- probably have to translate strings between the two platforms. Per https://rustwasm.github.io/wasm-bindgen/reference/types/string.html, this means a decode/encode and copy each direction, which is not exciting.
+// Option 1: implement separate JS and Rust. Pro: simple. Con: how to test?
+// Duplicate them. But eventually I want to send diffs back, so I'll have to
+// implement both sides. Let's do this later. Also, I'm a bit concerned about
+// performance -- probably have to translate strings between the two platforms.
+// Per https://rustwasm.github.io/wasm-bindgen/reference/types/string.html, this
+// means a decode/encode and copy each direction, which is not exciting.
 //
-// Option 2: implement partly in Rust then use in JS. Pro: easier to test. Con: Complex.
+// Option 2: implement partly in Rust then use in JS. Pro: easier to test. Con:
+// Complex.
 
 #[test]
 fn test_diff_1() {
@@ -979,7 +985,8 @@ fn test_diff_2() {
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
-        // The "dumb" (non-diff) algorithm see this as a replace followed by an insert, not a single insert.
+        // The "dumb" (non-diff) algorithm see this as a replace followed by an
+        // insert, not a single insert.
         vec![
             CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
                 from: 11,

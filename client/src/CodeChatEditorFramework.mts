@@ -155,7 +155,8 @@ class WebSocketComm {
                     break;
 
                 case "CurrentFile":
-                    // Note that we can ignore `value[1]` (if the file is text or binary); the server only sends text files here.
+                    // Note that we can ignore `value[1]` (if the file is text
+                    // or binary); the server only sends text files here.
                     const current_file = value[0] as string;
                     // If the page is still loading, then don't save. Otherwise,
                     // save the editor contents if necessary.
@@ -306,14 +307,17 @@ class WebSocketComm {
     };
 }
 
-// Return the `CodeChatEditor` object if the `root_iframe` contains the Client; otherwise, this is `undefined`.
+// Return the `CodeChatEditor` object if the `root_iframe` contains the Client;
+// otherwise, this is `undefined`.
 const get_client = () => root_iframe?.contentWindow?.CodeChatEditor;
 
-// Assign content to either the Client (if it's loaded) or the webpage (if not) in the `root_iframe`.
+// Assign content to either the Client (if it's loaded) or the webpage (if not)
+// in the `root_iframe`.
 const set_content = (contents: CodeChatForWeb) => {
     let client = get_client();
     if (client === undefined) {
-        // See if this is the [simple viewer](#Client-simple-viewer). Otherwise, it's just the bare document to replace.
+        // See if this is the [simple viewer](#Client-simple-viewer). Otherwise,
+        // it's just the bare document to replace.
         const cw =
             (
                 root_iframe!.contentDocument?.getElementById(

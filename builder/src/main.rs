@@ -407,12 +407,14 @@ fn run_build() -> io::Result<()> {
 fn run_client_build(
     // True to build for distribution, not development.
     dist: bool,
-    // True to skip checking for TypeScript errors; false to perform these checks.
+    // True to skip checking for TypeScript errors; false to perform these
+    // checks.
     skip_check_errors: bool,
 ) -> io::Result<()> {
     let esbuild = PathBuf::from_slash("node_modules/.bin/esbuild");
     let distflag = if dist { "--minify" } else { "--sourcemap" };
-    // This makes the program work from either the `server/` or `client/` directories.
+    // This makes the program work from either the `server/` or `client/`
+    // directories.
     let rel_path = "../client";
 
     // The main build for the Client.
@@ -435,7 +437,8 @@ fn run_client_build(
         rel_path,
         true,
     )?;
-    // <a id="#pdf.js></a>The PDF viewer for use with VSCode. Built it separately, since it's loaded apart from the rest of the Client.
+    // <a id="#pdf.js>The PDF viewer for use with VSCode. Built it separately,
+    // since it's loaded apart from the rest of the Client.
     run_script(
         &esbuild,
         &[
@@ -458,7 +461,9 @@ fn run_client_build(
         format!("{rel_path}/static/bundled/node_modules/pdfjs-dist/cmaps/"),
         None,
     )?;
-    // The HashReader isn't bundled; instead, it's used to translate the JSON metafile produced by the main esbuild run to the simpler format used by the CodeChat Editor. TODO: rewrite this in Rust.
+    // The HashReader isn't bundled; instead, it's used to translate the JSON
+    // metafile produced by the main esbuild run to the simpler format used by
+    // the CodeChat Editor. TODO: rewrite this in Rust.
     run_script(
         &esbuild,
         &[

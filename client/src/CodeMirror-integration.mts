@@ -146,9 +146,9 @@ export const docBlockField = StateField.define<DecorationSet>({
         // If there's a freeze annotation, then ignore the mapping update.
         if (tr.annotation(docBlockFreezeAnnotation) === undefined) {
             // [Map](https://codemirror.net/docs/ref/#state.RangeSet.map) these
-            // changes through the provided transaction, which updates the offsets
-            // of the range so the doc blocks is still anchored to the same location
-            // in the document after this transaction completes.
+            // changes through the provided transaction, which updates the
+            // offsets of the range so the doc blocks is still anchored to the
+            // same location in the document after this transaction completes.
             doc_blocks = doc_blocks.map(tr.changes);
         }
         // See [is](https://codemirror.net/docs/ref/#state.StateEffect.is). Add
@@ -185,14 +185,17 @@ export const docBlockField = StateField.define<DecorationSet>({
                 // (Recall that this is the functional approach required by
                 // CodeMirror -- state is immutable.)
                 //
-                // Look for existing data in this effect's range. There should be one and only one result. The value for `to` may not be provided, so don't use it.
+                // Look for existing data in this effect's range. There should
+                // be one and only one result. The value for `to` may not be
+                // provided, so don't use it.
                 let prev: Decoration | undefined;
                 let to: number | undefined;
                 doc_blocks.between(
                     effect.value.from,
                     effect.value.from,
                     (from, to_found, value) => {
-                        // For the given `from`, there should be exactly one doc block.
+                        // For the given `from`, there should be exactly one doc
+                        // block.
                         assert(prev === undefined);
                         assert(
                             effect.value.from === from,
@@ -303,8 +306,9 @@ export const addDocBlock = StateEffect.define<{
     content: string;
 }>({
     map: ({ from, to, indent, delimiter, content }, change: ChangeDesc) => ({
-        // Update the location (from/to) of this effect due to the
-        // transaction's changes. See this [thread](https://discuss.codemirror.net/t/mapping-ranges-in-a-decoration/9307/3).
+        // Update the location (from/to) of this effect due to the transaction's
+        // changes. See this
+        // [thread](https://discuss.codemirror.net/t/mapping-ranges-in-a-decoration/9307/3).
         from: change.mapPos(from),
         to: change.mapPos(to),
         indent,
@@ -350,7 +354,8 @@ export const updateDocBlock = StateEffect.define<updateDocBlockType>({
 
 // Delete a doc block.
 export const deleteDocBlock = StateEffect.define<{ from: number; to: number }>({
-    // Returning undefined deletes the block per the [docs](https://codemirror.net/docs/ref/#state.StateEffect^define^spec.map).
+    // Returning undefined deletes the block per the
+    // [docs](https://codemirror.net/docs/ref/#state.StateEffect^define^spec.map).
     map: ({ from, to }, change: ChangeDesc) => ({
         from: change.mapPos(from),
         to: change.mapPos(to),
@@ -536,7 +541,8 @@ const on_dirty = (
         ".CodeChat-doc",
     )! as HTMLDivElement;
 
-    // We can only get the position (the `from` value) for the doc block. Use this to find the `to` value for the doc block.
+    // We can only get the position (the `from` value) for the doc block. Use
+    // this to find the `to` value for the doc block.
     const from = current_view.posAtDOM(target);
     // Send an update to the state field associated with this DOM element.
     const indent_div = target.childNodes[0] as HTMLDivElement;
@@ -720,10 +726,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                 ;
                                 selection_path.length;
                                 selection_node =
-                                // As before, use the more-consistent
-                                // `children` except for the last element,
-                                // where we might be selecting a `text`
-                                // node.
+                                // As before, use the more-consistent `children`
+                                // except for the last element, where we might
+                                // be selecting a `text` node.
                                 (
                                     selection_path.length > 1
                                         ? selection_node.children
@@ -822,14 +827,19 @@ export const CodeMirror_load = async (
     extensions: Array<Extension>,
 ) => {
     if ("Plain" in source) {
-        // Although the [docs](https://codemirror.net/docs/ref/#state.EditorState^fromJSON) specify a [EditorStateConfig](https://codemirror.net/docs/ref/#state.EditorStateConfig) which contains `doc` and `selection`, the implementation requires these to be present in the `json` (first) argument. Therefore:
+        // Although the
+        // [docs](https://codemirror.net/docs/ref/#state.EditorState^fromJSON)
+        // specify a
+        // [EditorStateConfig](https://codemirror.net/docs/ref/#state.EditorStateConfig)
+        // which contains `doc` and `selection`, the implementation requires
+        // these to be present in the `json` (first) argument. Therefore:
         const editor_state_json = {
             doc: source.Plain.doc,
             selection: EditorSelection.single(0).toJSON(),
             doc_blocks: source.Plain.doc_blocks,
         };
-        // Save the current scroll position, to prevent the view from scrolling back
-        // to the top after an update/reload.
+        // Save the current scroll position, to prevent the view from scrolling
+        // back to the top after an update/reload.
         let scrollSnapshot;
         if (current_view !== undefined) {
             scrollSnapshot = current_view.scrollSnapshot();
@@ -949,16 +959,16 @@ export const CodeMirror_load = async (
                         if (target_or_false == null) {
                             return false;
                         }
-                        // If the editor is dirty, save it first before we possibly
-                        // modify it.
+                        // If the editor is dirty, save it first before we
+                        // possibly modify it.
                         if (tinymce_singleton!.isDirty()) {
                             tinymce_singleton!.save();
                         }
-                        // When switching from one doc block to another, the MathJax
-                        // typeset finishes after the new doc block has been
-                        // updated. To prevent saving the "dirty" content from
-                        // typesetting, wait until this finishes to clear the
-                        // `ignore_next_dirty` flag.
+                        // When switching from one doc block to another, the
+                        // MathJax typeset finishes after the new doc block has
+                        // been updated. To prevent saving the "dirty" content
+                        // from typesetting, wait until this finishes to clear
+                        // the `ignore_next_dirty` flag.
                         ignore_next_dirty = true;
                         mathJaxTypeset(target_or_false, () => {
                             tinymce_singleton!.save();
@@ -971,12 +981,17 @@ export const CodeMirror_load = async (
     } else {
         // This contains a diff, instead of plain text. Apply the text diff.
         //
-        // First, apply just the text edits. Use an annotation so that the doc blocks aren't changed; without this, the diff won't work (since from/to values of doc blocks are changed by unfrozen text edits).
+        // First, apply just the text edits. Use an annotation so that the doc
+        // blocks aren't changed; without this, the diff won't work (since
+        // from/to values of doc blocks are changed by unfrozen text edits).
         current_view.dispatch({
             changes: source.Diff.doc,
             annotations: docBlockFreezeAnnotation.of(true),
         });
-        // Now, apply the diff in a separate transaction. Applying them in the same transaction causes the text edits to modify from/to values in the doc block effects, even when changes to the doc block state is frozen.
+        // Now, apply the diff in a separate transaction. Applying them in the
+        // same transaction causes the text edits to modify from/to values in
+        // the doc block effects, even when changes to the doc block state is
+        // frozen.
         const stateEffects: StateEffect<any>[] = [];
         for (const transaction of source.Diff.doc_blocks) {
             if ("Add" in transaction) {
@@ -1005,7 +1020,8 @@ export const CodeMirror_load = async (
 
 // Appply a `StringDiff` to the before string to produce the after string.
 const apply_diff_str = (before: string, diffs: StringDiff[]) => {
-    // Walk from the last diff to the first. JavaScript doesn't have reverse iteration AFAIK.
+    // Walk from the last diff to the first. JavaScript doesn't have reverse
+    // iteration AFAIK.
     let after = before;
     for (let index = diffs.length - 1; index >= 0; --index) {
         const { from, to, insert } = diffs[index];

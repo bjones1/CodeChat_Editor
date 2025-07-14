@@ -309,15 +309,27 @@ pub async fn vscode_ide_websocket(
             let mut _source_code = String::new();
             let mut code_mirror_doc = String::new();
             let mut code_mirror_doc_blocks: CodeMirrorDocBlockVec = Vec::new();
-            // To send a diff from Server to Client or vice versa, we need to ensure they are in sync:
+            // To send a diff from Server to Client or vice versa, we need to
+            // ensure they are in sync:
             //
-            // 1. IDE update -> Server -> Client or Client update -> Server -> IDE: the Server and Client sync is pending.
-            //    Client response -> Server -> IDE or IDE response -> Server -> Client: the Server and Client are synced.
-            // 2. IDE current file -> Server -> Client or Client current file -> Server -> IDE: Out of sync.
+            // 1.  IDE update -> Server -> Client or Client update -> Server ->
+            //     IDE: the Server and Client sync is pending. Client response
+            //     -> Server -> IDE or IDE response -> Server -> Client: the
+            //     Server and Client are synced.
+            // 2.  IDE current file -> Server -> Client or Client current file
+            //     -> Server -> IDE: Out of sync.
             //
-            // It's only safe to send a diff when the most recent sync is achieved. So, we need to track the ID of the most recent IDE -> Client update or Client -> IDE update, if one is in flight. When complete, mark the connection as synchronized. Since all IDs are unique, we can use a single variable to store the ID.
+            // It's only safe to send a diff when the most recent sync is
+            // achieved. So, we need to track the ID of the most recent IDE ->
+            // Client update or Client -> IDE update, if one is in flight. When
+            // complete, mark the connection as synchronized. Since all IDs are
+            // unique, we can use a single variable to store the ID.
             //
-            // Currently, when the Client sends an update, mark the connection as out of sync, since the update contains not HTML in the doc blocks, but Markdown. When Turndown is moved from JavaScript to Rust, this can be changed, since both sides will have HTML in the doc blocks.
+            // Currently, when the Client sends an update, mark the connection
+            // as out of sync, since the update contains not HTML in the doc
+            // blocks, but Markdown. When Turndown is moved from JavaScript to
+            // Rust, this can be changed, since both sides will have HTML in the
+            // doc blocks.
             let mut sync_id = SyncState::OutOfSync;
             loop {
                 select! {
@@ -360,9 +372,18 @@ pub async fn vscode_ide_websocket(
                                 // which the Server should handle).
                                 if !is_loadfile {
                                     debug!("Forwarding it to the Client.");
-                                    // If this was confirmation from the IDE that it received the latest update, then mark the IDE as synced.
+                                    // If this was confirmation from the IDE
+                                    // that it received the latest update, then
+                                    // mark the IDE as synced.
                                     if sync_id == SyncState::Pending(ide_message.id) {
-                                        // TODO: currently, the Client sends doc blocks as Markdown, not HTML. This means sync won't work, since the IDE sends doc blocks as HTML. Eventually, move the Markdown conversion from the Client (implemented in JavaScript) to the Server (implemented in Rust). After this, we can use the sync results.
+                                        // TODO: currently, the Client sends doc
+                                        // blocks as Markdown, not HTML. This means
+                                        // sync won't work, since the IDE sends doc
+                                        // blocks as HTML. Eventually, move the
+                                        // Markdown conversion from the Client
+                                        // (implemented in JavaScript) to the
+                                        // Server (implemented in Rust). After
+                                        // this, we can use the sync results.
                                         //sync_id = SyncState::InSync;
                                     }
                                     queue_send!(to_client_tx.send(ide_message));
@@ -375,7 +396,8 @@ pub async fn vscode_ide_websocket(
                                     break 'task;
                                 };
 
-                                // Take ownership of the result after sending it above (which required owernship).
+                                // Take ownership of the result after sending it
+                                // above (which required owernship).
                                 let EditorMessageContents::Result(result) = ide_message.message else {
                                     error!("{}", "Not an update.");
                                     break;
@@ -411,7 +433,8 @@ pub async fn vscode_ide_websocket(
                                     }
                                 };
                                 if let Some(update) = option_update {
-                                    // Record the CodeMirror contents before sending.
+                                    // Record the CodeMirror contents before
+                                    // sending.
                                     let EditorMessageContents::Update(ref update_message_contents) = update else {
                                         error!("Not an update!");
                                         break;
@@ -455,12 +478,15 @@ pub async fn vscode_ide_websocket(
                                                             TranslationResultsString::CodeChat(ccfw) => {
                                                                 // Send the new translated contents.
                                                                 debug!("Sending translated contents to Client.");
-                                                                // TODO: this is an expensive clone! Try to find a way around this.
+                                                                // TODO: this is an expensive clone! Try to
+                                                                // find a way around this.
                                                                 let CodeMirrorDiffable::Plain(ccfw_source_plain) = ccfw.clone().source else {
                                                                     error!("{}", "Unexpected diff value.");
                                                                     break;
                                                                 };
-                                                                // Send a diff if possible (only when the Client's contents are synced with the IDE).
+                                                                // Send a diff if possible (only when the
+                                                                // Client's contents are synced with the
+                                                                // IDE).
                                                                 let contents = Some(if sync_id == SyncState::InSync {
                                                                     let doc_diff = diff_str(&code_mirror_doc, &ccfw_source_plain.doc);
                                                                     let code_mirror_diff = diff_code_mirror_doc_blocks(&code_mirror_doc_blocks, &ccfw_source_plain.doc_blocks);
@@ -483,11 +509,13 @@ pub async fn vscode_ide_websocket(
                                                                         scroll_position: None,
                                                                     }),
                                                                 }));
-                                                                // Update to the latest code after computing diffs.
+                                                                // Update to the latest code after
+                                                                // computing diffs.
                                                                 _source_code = code_mirror.doc;
                                                                 code_mirror_doc = ccfw_source_plain.doc;
                                                                 code_mirror_doc_blocks = ccfw_source_plain.doc_blocks;
-                                                                // Mark the Client as unsynced until this is acknowledged.
+                                                                // Mark the Client as unsynced until this
+                                                                // is acknowledged.
                                                                 sync_id = SyncState::Pending(ide_message.id);
                                                                 Ok(ResultOkTypes::Void)
                                                             }
@@ -550,7 +578,8 @@ pub async fn vscode_ide_websocket(
                                             )
                                         }));
                                         current_file = file_path.into();
-                                        // Since this is a new file, mark it as unsynced.
+                                        // Since this is a new file, mark it as
+                                        // unsynced.
                                         sync_id = SyncState::OutOfSync;
                                     }
                                     Err(err) => {
@@ -598,7 +627,9 @@ pub async fn vscode_ide_websocket(
                             EditorMessageContents::Closed |
                             EditorMessageContents::Result(_) => {
                                 debug!("Forwarding it to the IDE.");
-                                // If this result confirms that the Client received the most recent IDE update, then mark the documents as synced.
+                                // If this result confirms that the Client
+                                // received the most recent IDE update, then
+                                // mark the documents as synced.
                                 if sync_id == SyncState::Pending(client_message.id) {
                                     sync_id = SyncState::InSync;
                                 }
@@ -638,7 +669,8 @@ pub async fn vscode_ide_websocket(
                                                 &cfw)
                                             {
                                                 Ok(result) => {
-                                                    // TODO: this clone is expensive. Look for a way to avoid this.
+                                                    // TODO: this clone is expensive. Look for
+                                                    // a way to avoid this.
                                                     _source_code = result.clone();
                                                     let CodeMirrorDiffable::Plain(cmd) = cfw.source else {
                                                         // TODO: support diffable!
@@ -674,7 +706,8 @@ pub async fn vscode_ide_websocket(
                                                 scroll_position: update_message_contents.scroll_position,
                                             })
                                         }));
-                                        // Mark the IDE contents as out of sync until this message is received.
+                                        // Mark the IDE contents as out of sync
+                                        // until this message is received.
                                         sync_id = SyncState::Pending(client_message.id);
                                     }
                                 }
@@ -703,7 +736,8 @@ pub async fn vscode_ide_websocket(
                                                     message: EditorMessageContents::CurrentFile(file_path_string.to_string(), Some(is_text))
                                                 }));
                                                 current_file = file_path;
-                                                // Mark the IDE as out of sync, since this is a new file.
+                                                // Mark the IDE as out of sync, since this
+                                                // is a new file.
                                                 sync_id = SyncState::OutOfSync;
                                                 Ok(())
                                             }

@@ -182,7 +182,11 @@ enum EditorMessageContents {
     CurrentFile(
         // A path/URL to this file.
         String,
-        // True if the file is text; False if it's binary; None if the file's type hasn't been determined. This is only used by the IDE, which needs to know whether it's opening a text file or a binary file. When sending this message, the IDE and Client can both send `None`; the Server will determine the value if needed.
+        // True if the file is text; False if it's binary; None if the file's
+        // type hasn't been determined. This is only used by the IDE, which
+        // needs to know whether it's opening a text file or a binary file. When
+        // sending this message, the IDE and Client can both send `None`; the
+        // Server will determine the value if needed.
         Option<bool>,
     ),
 
@@ -362,9 +366,11 @@ const MESSAGE_ID_INCREMENT: f64 = 3.0;
 pub enum SyncState {
     /// Indicates the Client, IDE, and server's documents are identical.
     InSync,
-    /// An Update message is in flight; the documents are out of sync until the response to the Update is received.
+    /// An Update message is in flight; the documents are out of sync until the
+    /// response to the Update is received.
     Pending(f64),
-    /// A CurrentFile message was sent, guaranteeing that documents are out of sync.
+    /// A CurrentFile message was sent, guaranteeing that documents are out of
+    /// sync.
     OutOfSync,
 }
 
@@ -696,9 +702,9 @@ async fn make_simple_http_response(
         ),
         Ok(mut fc) => {
             let file_contents = try_read_as_text(&mut fc).await;
-            // <a id="binary-file-sniffer"></a>If this is a binary file (meaning we can't read the contents
-            // as UTF-8), send the contents as none to signal this isn't a
-            // text file.
+            // <a id="binary-file-sniffer"></a>If this is a binary file (meaning
+            // we can't read the contents as UTF-8), send the contents as none
+            // to signal this isn't a text file.
             file_to_response(
                 http_request,
                 current_filepath,
@@ -710,10 +716,16 @@ async fn make_simple_http_response(
     }
 }
 
-// Determine if the provided file is text or binary. If text, return it as a Unicode string. If binary, return None.
+// Determine if the provided file is text or binary. If text, return it as a
+// Unicode string. If binary, return None.
 async fn try_read_as_text(file: &mut File) -> Option<String> {
     let mut file_contents = String::new();
-    // TODO: this is a rather crude way to detect if a file is binary. It's probably slow for large file (the [underlying code](https://github.com/tokio-rs/tokio/blob/master/tokio/src/io/util/read_to_string.rs#L57) looks like it reads the entire file to memory, then converts that to UTF-8). Find a heuristic sniffer instead, such as [libmagic](https://docs.rs/magic/0.13.0-alpha.3/magic/).
+    // TODO: this is a rather crude way to detect if a file is binary. It's
+    // probably slow for large file (the [underlying
+    // code](https://github.com/tokio-rs/tokio/blob/master/tokio/src/io/util/read_to_string.rs#L57)
+    // looks like it reads the entire file to memory, then converts that to
+    // UTF-8). Find a heuristic sniffer instead, such as
+    // [libmagic](https://docs.rs/magic/0.13.0-alpha.3/magic/).
     if file.read_to_string(&mut file_contents).await.is_ok() {
         Some(file_contents)
     } else {
@@ -835,7 +847,8 @@ async fn file_to_response(
             make_simple_viewer(
                 http_request,
                 &if use_pdf_js {
-                    // For the [PDF.js viewer](#pdf.js), pass the file to view as the query parameter.
+                    // For the [PDF.js viewer](#pdf.js), pass the file to view
+                    // as the query parameter.
                     format!(
                         r#"<iframe src="/static/pdfjs-main.html?{}" style="height: 100vh; border: 0px" id="CodeChat-contents"></iframe>"#,
                         http_request.url
@@ -1594,7 +1607,8 @@ fn escape_html(unsafe_text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-// This lists all errors produced by calling `get_server_url`. TODO: rework and re-think the overall error framework. How should I group errors?
+// This lists all errors produced by calling `get_server_url`. TODO: rework and
+// re-think the overall error framework. How should I group errors?
 #[derive(Debug, thiserror::Error)]
 pub enum GetServerUrlError {
     #[error("Expected environment variable not found.")]
@@ -1605,13 +1619,16 @@ pub enum GetServerUrlError {
     NonZeroExitStatus(Option<i32>),
 }
 
-// Determine the URL for this server; supports running locally and in a GitHub Codespace.
+// Determine the URL for this server; supports running locally and in a GitHub
+// Codespace.
 pub async fn get_server_url(port: u16) -> Result<String, GetServerUrlError> {
-    // This is always true in a GitHub Codespace per the [docs](https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace#list-of-default-environment-variables).
+    // This is always true in a GitHub Codespace per the
+    // [docs](https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace#list-of-default-environment-variables).
     if env::var("CODESPACES") == Ok("true".to_string()) {
         let codespace_name = env::var("CODESPACE_NAME")?;
         let codespace_domain = env::var("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN")?;
-        // Use the GitHub CLI to [forward this port](https://docs.github.com/en/codespaces/developing-in-a-codespace/using-github-codespaces-with-github-cli#modify-ports-in-a-codespace).
+        // Use the GitHub CLI to [forward this
+        // port](https://docs.github.com/en/codespaces/developing-in-a-codespace/using-github-codespaces-with-github-cli#modify-ports-in-a-codespace).
         let status = Command::new("gh")
             .args([
                 "codespace",

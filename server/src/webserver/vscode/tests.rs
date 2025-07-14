@@ -82,6 +82,7 @@ async fn send_message<S: AsyncRead + AsyncWrite + Unpin>(
 
 // Support functions
 // -----------------
+//
 // Read a message from a websocket.
 async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
     ws_stream: &mut WebSocketStream<S>,
@@ -171,9 +172,9 @@ async fn open_client<S: AsyncRead + AsyncWrite + Unpin>(ws_ide: &mut WebSocketSt
     .await;
 }
 
-// Perform all the setup for testing the Server via IDE and Client
-// websockets. This should be invoked by the `prep_test!` macro; otherwise,
-// test files won't be found.
+// Perform all the setup for testing the Server via IDE and Client websockets.
+// This should be invoked by the `prep_test!` macro; otherwise, test files won't
+// be found.
 async fn _prep_test(
     connection_id: &str,
     test_full_name: &str,
@@ -200,9 +201,9 @@ async fn _prep_test(
     (temp_dir, test_dir, ws_ide, ws_client)
 }
 
-// This calls `_prep_test` with the current function name. It must be a
-// macro, so that it's called with the test function's name; calling it
-// inside `_prep_test` would give the wrong name.
+// This calls `_prep_test` with the current function name. It must be a macro,
+// so that it's called with the test function's name; calling it inside
+// `_prep_test` would give the wrong name.
 macro_rules! prep_test {
     ($connection_id: ident) => {{
         use crate::function_name;
@@ -212,8 +213,9 @@ macro_rules! prep_test {
 
 // Tests
 // -----
-// Test incorrect inputs: two connections with the same ID, sending the
-// wrong first message.
+//
+// Test incorrect inputs: two connections with the same ID, sending the wrong
+// first message.
 #[actix_web::test]
 async fn test_vscode_ide_websocket1() {
     let connection_id = "test-connection-id1";
@@ -229,9 +231,9 @@ async fn test_vscode_ide_websocket1() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     // Note: we can't check the logs, since the server runs in a separate
-    // thread. Changing the logger to log across threads means we get logs
-    // from other tests (which run in parallel by default). The benefit of
-    // running all tests single-threaded plus fixing the logger is low.
+    // thread. Changing the logger to log across threads means we get logs from
+    // other tests (which run in parallel by default). The benefit of running
+    // all tests single-threaded plus fixing the logger is low.
     //
     // Send a message that's not an `Opened` message.
     send_message(
@@ -297,8 +299,8 @@ async fn test_vscode_ide_websocket3() {
     let file_path = test_dir.join("none.py");
     let file_path_str = drop_leading_slash(&file_path.to_slash().unwrap()).to_string();
 
-    // Do this is a thread, since the request generates a message that
-    // requires a response in order to complete.
+    // Do this is a thread, since the request generates a message that requires
+    // a response in order to complete.
     let file_path_str_thread = file_path_str.clone();
     let join_handle = thread::spawn(move || {
         assert_eq!(
@@ -332,8 +334,8 @@ async fn test_vscode_ide_websocket3() {
     )
     .await;
 
-    // This should cause the HTTP request to complete by receiving the
-    // response (file not found).
+    // This should cause the HTTP request to complete by receiving the response
+    // (file not found).
     join_handle.join().unwrap();
 
     check_logger_errors(0);
@@ -341,8 +343,8 @@ async fn test_vscode_ide_websocket3() {
     temp_dir.close().unwrap();
 }
 
-// Fetch a file that exists, but using backslashes. This should still fail,
-// even on Windows.
+// Fetch a file that exists, but using backslashes. This should still fail, even
+// on Windows.
 #[actix_web::test]
 async fn test_vscode_ide_websocket3a() {
     let connection_id = "test-connection-id3a";
@@ -354,8 +356,8 @@ async fn test_vscode_ide_websocket3a() {
     // non-Windows platforms.
     let file_path_str = file_path.to_str().unwrap().to_string().replace("/", "\\");
 
-    // Do this is a thread, since the request generates a message that
-    // requires a response in order to complete.
+    // Do this is a thread, since the request generates a message that requires
+    // a response in order to complete.
     let file_path_str_thread = file_path_str.clone();
     let join_handle = thread::spawn(move || {
         assert_eq!(
@@ -387,8 +389,8 @@ async fn test_vscode_ide_websocket3a() {
     )
     .await;
 
-    // This should cause the HTTP request to complete by receiving the
-    // response (file not found).
+    // This should cause the HTTP request to complete by receiving the response
+    // (file not found).
     join_handle.join().unwrap();
 
     check_logger_errors(0);
@@ -396,8 +398,7 @@ async fn test_vscode_ide_websocket3a() {
     temp_dir.close().unwrap();
 }
 
-// Send a `CurrentFile` message with a file to edit that exists only in the
-// IDE.
+// Send a `CurrentFile` message with a file to edit that exists only in the IDE.
 #[actix_web::test]
 async fn test_vscode_ide_websocket8() {
     let connection_id = "test-connection-id8";
@@ -526,8 +527,8 @@ async fn test_vscode_ide_websocket8() {
     )
     .await;
 
-    // The message, though a result for the `Update` sent by the Server,
-    // will still be echoed back to the IDE.
+    // The message, though a result for the `Update` sent by the Server, will
+    // still be echoed back to the IDE.
     assert_eq!(
         read_message(&mut ws_ide).await,
         EditorMessage {
@@ -548,8 +549,7 @@ async fn test_vscode_ide_websocket7() {
     let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
     open_client(&mut ws_ide).await;
 
-    // Set the current file, so a subsequent `Update` message can be
-    // translated.
+    // Set the current file, so a subsequent `Update` message can be translated.
     //
     // Message ids: IDE - 4, Server - 3, Client - 2->5.
     let file_path = test_dir.join("test.py");
@@ -820,8 +820,8 @@ async fn test_vscode_ide_websocket6() {
     temp_dir.close().unwrap();
 }
 
-// Send a `CurrentFile` message from the Client, requesting a file that
-// exists on disk, but not in the IDE.
+// Send a `CurrentFile` message from the Client, requesting a file that exists
+// on disk, but not in the IDE.
 #[actix_web::test]
 async fn test_vscode_ide_websocket4() {
     let connection_id = "test-connection-id4";
@@ -992,7 +992,8 @@ async fn test_vscode_ide_websocket4a() {
             id: 2.0,
             message: EditorMessageContents::CurrentFile(
                 file_path.to_str().unwrap().to_string(),
-                // `helloworld.pdf` is a text file! (But perhaps should mark all PDFs as binary, regardless?)
+                // `helloworld.pdf` is a text file! (But perhaps should mark all
+                // PDFs as binary, regardless?)
                 Some(true)
             )
         }
@@ -1059,8 +1060,8 @@ async fn test_vscode_ide_websocket4a() {
     temp_dir.close().unwrap();
 }
 
-// Send a `CurrentFile` message from the Client, requesting a PDF that
-// exists on disk, but not in the IDE, inside a project.
+// Send a `CurrentFile` message from the Client, requesting a PDF that exists on
+// disk, but not in the IDE, inside a project.
 #[actix_web::test]
 async fn test_vscode_ide_websocket4b() {
     let connection_id = "test-connection-id4b";
@@ -1092,7 +1093,8 @@ async fn test_vscode_ide_websocket4b() {
             id: 2.0,
             message: EditorMessageContents::CurrentFile(
                 file_path.to_str().unwrap().to_string(),
-                // `helloworld.pdf` is a text file! (But perhaps should mark all PDFs as binary, regardless?)
+                // `helloworld.pdf` is a text file! (But perhaps should mark all
+                // PDFs as binary, regardless?)
                 Some(true)
             )
         }
