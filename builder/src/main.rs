@@ -79,6 +79,9 @@ enum Commands {
         /// True to build for distribution, instead of development.
         #[arg(short, long, default_value_t = false)]
         dist: bool,
+        /// True to skip checks for TypeScript errors in the Client.
+        #[arg(short, long, default_value_t = false)]
+        skip_check_errors: bool,
     },
     /// Change the version for the client, server, and extensions.
     ChangeVersion {
@@ -391,7 +394,7 @@ fn run_test() -> io::Result<()> {
 fn run_build() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
-    run_client_build(false)?;
+    run_client_build(false, false)?;
     run_script("npm", &["run", "compile"], "../extensions/VSCode", true)?;
     run_cmd!(
         cargo build --manifest-path=../builder/Cargo.toml;
@@ -400,10 +403,12 @@ fn run_build() -> io::Result<()> {
     Ok(())
 }
 
-// Build the NPM Client.
+// Build the CodeChat Editor Client.
 fn run_client_build(
     // True to build for distribution, not development.
     dist: bool,
+    // True to skip checking for TypeScript errors; false to perform these checks.
+    skip_check_errors: bool,
 ) -> io::Result<()> {
     let esbuild = PathBuf::from_slash("node_modules/.bin/esbuild");
     let distflag = if dist { "--minify" } else { "--sourcemap" };
@@ -467,12 +472,14 @@ fn run_client_build(
     )?;
     run_script("node", &["HashReader.js"], rel_path, true)?;
     // Finally, check the TypeScript with the (slow) TypeScript compiler.
-    run_script(
-        PathBuf::from_slash("node_modules/.bin/tsc"),
-        &["-noEmit"],
-        rel_path,
-        true,
-    )?;
+    if !skip_check_errors {
+        run_script(
+            PathBuf::from_slash("node_modules/.bin/tsc"),
+            &["-noEmit"],
+            rel_path,
+            true,
+        )?;
+    }
     Ok(())
 }
 
@@ -547,7 +554,10 @@ impl Cli {
             Commands::Update => run_update(),
             Commands::Test => run_test(),
             Commands::Build => run_build(),
-            Commands::ClientBuild { dist } => run_client_build(*dist),
+            Commands::ClientBuild {
+                dist,
+                skip_check_errors,
+            } => run_client_build(*dist, *skip_check_errors),
             Commands::ChangeVersion { new_version } => run_change_version(new_version),
             Commands::Prerelease => run_prerelease(),
             Commands::Postrelease { target, .. } => run_postrelease(target),
