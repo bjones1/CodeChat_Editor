@@ -1031,7 +1031,7 @@ const apply_diff_str = (before: string, diffs: StringDiff[]) => {
         const { from, to, insert } = diffs[index];
         if (to === undefined) {
             // This is an insert.
-            after = after.slice(0, to) + insert + after.slice(to);
+            after = after.slice(0, from) + insert + after.slice(from);
         } else {
             // This is a replace.
             after = after.slice(0, from) + insert + after.slice(to);
