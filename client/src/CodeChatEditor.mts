@@ -316,11 +316,13 @@ const save_lp = () => {
         // div.
         tinymce.activeEditor!.save();
         const html = tinymce.activeEditor!.getContent();
-        (code_mirror_diffable as {
-            Plain: CodeMirror;
-        }).Plain = {
+        (
+            code_mirror_diffable as {
+                Plain: CodeMirror;
+            }
+        ).Plain = {
             doc: turndownService.turndown(html),
-            doc_blocks: []
+            doc_blocks: [],
         };
         // Retypeset all math after saving the document.
         mathJaxTypeset(codechat_body);
@@ -362,9 +364,7 @@ const on_save = async (only_if_dirty: boolean = false) => {
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
     console.log("Sent Update - saving document.");
     await new Promise(async (resolve) => {
-        webSocketComm.send_message({ Update: save_lp() }, () =>
-            resolve(0),
-        );
+        webSocketComm.send_message({ Update: save_lp() }, () => resolve(0));
     });
     is_dirty = false;
 };

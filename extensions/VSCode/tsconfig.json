@@ -17,19 +17,14 @@
 // tsconfig.json -- TypeScript configuration
 // =========================================
 {
-	"compilerOptions": {
-		"module": "nodenext",
-		"target": "es6",
-		"outDir": "out",
-		"sourceMap": true,
-		"strict": true,
-		"rootDirs": ["src", "../../client/src/*"],
-		"allowJs": true
-	},
-	"exclude": [
-		"node_modules",
-		".vscode-test",
-		"out",
-		"server"
-	]
+    "compilerOptions": {
+        "module": "nodenext",
+        "target": "es6",
+        "outDir": "out",
+        "sourceMap": true,
+        "strict": true,
+        "rootDirs": ["src", "../../client/src/*"],
+        "allowJs": true
+    },
+    "exclude": ["node_modules", ".vscode-test", "out", "server"]
 }

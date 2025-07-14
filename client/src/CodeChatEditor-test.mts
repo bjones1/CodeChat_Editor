@@ -26,10 +26,19 @@
 // I can't get Mocha to work with ESBuild, so I import it using a script tag.
 import { assert } from "chai";
 import { EditorView } from "@codemirror/view";
-import { ChangeSpec, EditorState, EditorSelection, MapMode } from "@codemirror/state";
+import {
+    ChangeSpec,
+    EditorState,
+    EditorSelection,
+    MapMode,
+} from "@codemirror/state";
 import { exportedForTesting, page_init } from "./CodeChatEditor.mjs";
 import { CodeMirror, CodeMirrorDocBlockJson } from "./shared_types.mjs";
-import { docBlockField, DocBlockPlugin, CodeMirror_JSON_fields } from "./CodeMirror-integration.mjs";
+import {
+    docBlockField,
+    DocBlockPlugin,
+    CodeMirror_JSON_fields,
+} from "./CodeMirror-integration.mjs";
 
 // Re-export everything that [CodeChatEditor.mts](CodeChatEditor.mts) exports.
 // Otherwise, including [CodeChatEditor.mts](CodeChatEditor.mts) elsewhere would
@@ -117,17 +126,21 @@ window.CodeChatEditor_test = () => {
                 ) as HTMLDivElement;
                 const testing_div = document.createElement("div");
                 testing_div.id = "testing-div";
-                codechat_body.insertBefore(testing_div, codechat_body.firstChild);
+                codechat_body.insertBefore(
+                    testing_div,
+                    codechat_body.firstChild,
+                );
 
                 // Test insert at beginning of doc block.
-                const after_state = run_CodeMirror_test("a\nbcd", [[1, 2, "", "#", "test"]], { from: 1, insert: "\n" });
+                const after_state = run_CodeMirror_test(
+                    "a\nbcd",
+                    [[1, 2, "", "#", "test"]],
+                    { from: 1, insert: "\n" },
+                );
                 console.log(after_state);
                 assert.deepEqual(after_state, {
                     doc: "a\n\nbcd",
-                    doc_blocks:
-                        [
-                            [1, 3, "", "#", "test"]
-                        ]
+                    doc_blocks: [[1, 3, "", "#", "test"]],
                 });
             });
         });
@@ -138,7 +151,11 @@ window.CodeChatEditor_test = () => {
     mocha.run();
 };
 
-const run_CodeMirror_test = (doc: string, doc_blocks: [CodeMirrorDocBlockJson], changes: ChangeSpec): CodeMirror => {
+const run_CodeMirror_test = (
+    doc: string,
+    doc_blocks: [CodeMirrorDocBlockJson],
+    changes: ChangeSpec,
+): CodeMirror => {
     // Create the CodeChat Editor for testing.
     const editor_state_json = {
         doc,
@@ -148,9 +165,7 @@ const run_CodeMirror_test = (doc: string, doc_blocks: [CodeMirrorDocBlockJson], 
     const state = EditorState.fromJSON(
         editor_state_json,
         {
-            extensions: [
-                DocBlockPlugin,
-            ],
+            extensions: [DocBlockPlugin],
         },
         CodeMirror_JSON_fields,
     );
@@ -161,9 +176,9 @@ const run_CodeMirror_test = (doc: string, doc_blocks: [CodeMirrorDocBlockJson], 
 
     // Run a transaction, then extract at the results.
     view.dispatch({ changes });
-    console.log(view.state.field(docBlockField))
+    console.log(view.state.field(docBlockField));
     console.log(MapMode.TrackBefore);
     const after_state = view.state.toJSON(CodeMirror_JSON_fields);
     delete after_state.selection;
     return after_state;
-}
+};

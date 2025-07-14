@@ -151,9 +151,9 @@ export const docBlockField = StateField.define<DecorationSet>({
             // in the document after this transaction completes.
             doc_blocks = doc_blocks.map(tr.changes);
         }
+        // See [is](https://codemirror.net/docs/ref/#state.StateEffect.is). Add
+        // a doc block, as requested by this effect.
         for (let effect of tr.effects)
-            // See [is](https://codemirror.net/docs/ref/#state.StateEffect.is). Add
-            // a doc block, as requested by this effect.
             if (effect.is(addDocBlock)) {
                 // Perform an
                 // [update](https://codemirror.net/docs/ref/#state.RangeSet.update)
@@ -972,24 +972,24 @@ export const CodeMirror_load = async (
         // This contains a diff, instead of plain text. Apply the text diff.
         //
         // First, apply just the text edits. Use an annotation so that the doc blocks aren't changed; without this, the diff won't work (since from/to values of doc blocks are changed by unfrozen text edits).
-        current_view.dispatch(
-            {
-                changes: source.Diff.doc,
-                annotations: docBlockFreezeAnnotation.of(true)
-            },
-        );
+        current_view.dispatch({
+            changes: source.Diff.doc,
+            annotations: docBlockFreezeAnnotation.of(true),
+        });
         // Now, apply the diff in a separate transaction. Applying them in the same transaction causes the text edits to modify from/to values in the doc block effects, even when changes to the doc block state is frozen.
         const stateEffects: StateEffect<any>[] = [];
         for (const transaction of source.Diff.doc_blocks) {
             if ("Add" in transaction) {
                 const add = transaction.Add;
-                stateEffects.push(addDocBlock.of({
-                    from: add[0],
-                    to: add[1],
-                    indent: add[2],
-                    delimiter: add[3],
-                    content: add[4],
-                }));
+                stateEffects.push(
+                    addDocBlock.of({
+                        from: add[0],
+                        to: add[1],
+                        indent: add[2],
+                        delimiter: add[3],
+                        content: add[4],
+                    }),
+                );
             } else if ("Update" in transaction) {
                 stateEffects.push(updateDocBlock.of(transaction.Update));
             } else if ("Delete" in transaction) {
