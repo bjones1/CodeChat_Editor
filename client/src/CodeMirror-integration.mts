@@ -144,17 +144,21 @@ export const docBlockField = StateField.define<DecorationSet>({
     // the provided transaction.
     update(doc_blocks: DecorationSet, tr: Transaction) {
         // If there's a freeze annotation, then ignore the mapping update.
-        if (tr.annotation(docBlockFreezeAnnotation) !== undefined) {
+        if (tr.annotation(docBlockFreezeAnnotation) === undefined) {
             // [Map](https://codemirror.net/docs/ref/#state.RangeSet.map) these
             // changes through the provided transaction, which updates the offsets
             // of the range so the doc blocks is still anchored to the same location
             // in the document after this transaction completes.
             doc_blocks = doc_blocks.map(tr.changes);
+            console.log("Performed map update.");
+        } else {
+            console.log("Skipped map update.");
+            console.log(doc_blocks);
+            console.log(tr);
         }
-        // See [is](https://codemirror.net/docs/ref/#state.StateEffect.is). Add
-        // a doc block, as requested by this effect. TODO: add cases to handle
-        // combining two adjacent doc blocks, deleting a doc block, etc.
         for (let effect of tr.effects)
+            // See [is](https://codemirror.net/docs/ref/#state.StateEffect.is). Add
+            // a doc block, as requested by this effect.
             if (effect.is(addDocBlock)) {
                 // Perform an
                 // [update](https://codemirror.net/docs/ref/#state.RangeSet.update)
@@ -203,10 +207,16 @@ export const docBlockField = StateField.define<DecorationSet>({
                         to = to_found;
                     },
                 );
-                assert(
-                    prev !== undefined,
-                    `Can't find:\n${effect}\nData:${doc_blocks}`,
-                );
+
+                if (
+                    prev === undefined
+
+                ) {
+                    console.log("Can't find:");
+                    console.log(effect);
+                    console.log(doc_blocks);
+                    assert(false);
+                }
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
@@ -978,39 +988,36 @@ export const CodeMirror_load = async (
         console.log(source.Diff.doc);
         console.log(source.Diff.doc_blocks);
         console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
-        const transactionSpecs: TransactionSpec[] = [
+        // First, apply just the text edits. Use an annotation so that the doc blocks aren't changed; without this, the diff won't work (since from/to values of doc blocks are changed by unfrozen text edits).
+        current_view.dispatch(
             {
                 changes: source.Diff.doc,
                 annotations: docBlockFreezeAnnotation.of(true)
             },
-        ];
+        );
+        // Now, apply the diff in a separate transaction. Applying them in the same transaction causes the text edits to modify from/to values in the doc block effects, even when changes to the doc block state is frozen.
+        const stateEffects: StateEffect<any>[] = [];
         for (const transaction of source.Diff.doc_blocks) {
             if ("Add" in transaction) {
                 const add = transaction.Add;
-                transactionSpecs.push({
-                    effects: addDocBlock.of({
-                        from: add[0],
-                        to: add[1],
-                        indent: add[2],
-                        delimiter: add[3],
-                        content: add[4],
-                    }),
-                });
+                stateEffects.push(addDocBlock.of({
+                    from: add[0],
+                    to: add[1],
+                    indent: add[2],
+                    delimiter: add[3],
+                    content: add[4],
+                }));
             } else if ("Update" in transaction) {
-                transactionSpecs.push({
-                    effects: updateDocBlock.of(transaction.Update),
-                });
+                stateEffects.push(updateDocBlock.of(transaction.Update));
             } else if ("Delete" in transaction) {
-                transactionSpecs.push({
-                    effects: deleteDocBlock.of(transaction.Delete),
-                });
+                stateEffects.push(deleteDocBlock.of(transaction.Delete));
             } else {
                 assert(false, `Unknown transaction ${transaction}.`);
             }
         }
         // Update the view with these changes to the state.
-        console.log(JSON.stringify(transactionSpecs));
-        current_view.dispatch(...transactionSpecs);
+        console.log(stateEffects);
+        current_view.dispatch({effects: stateEffects});
         console.log("After");
         console.log(current_view.state.toJSON(CodeMirror_JSON_fields));
     }

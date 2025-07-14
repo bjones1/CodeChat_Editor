@@ -872,36 +872,6 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
 }
 
 // #### Diff support for `CodeMirrorDocBlockVec`
-/// Line changes: when lines in code blocks are inserted or deleted, CodeMirror automatically updates the lines that doc blocks are anchored to. Perform that same transformation here, so that the doc block updates produced are synced with the doc block updates performed by CodeMirror.
-///
-/// This function takes a list of diffs for the CodeMirror code blocks (a single string, where newlines replace doc block contents) then updates the associated doc blocks, by changing their `from` and `to` values. Inserts before a doc block cause the `from` value to increase by the number of characters inserted, while deletions cause `from`/`to` values to decrease. While deletions may remove entire doc blocks, this routine doesn't handle this case. Instead, it's handled by the doc block diff code.
-pub fn sync_code_changes(doc_diff: &[StringDiff], doc_blocks: &mut CodeMirrorDocBlockVec) {
-    // Walk through the changes to `doc_diff` and the `doc_blocks`, applying changes during the process. End when we've finished updating the doc blocks.
-    //
-    // Keep track of the delta to apply to `from`/`to` values.
-    let mut delta: isize = 0;
-    let mut doc_diff_index = 0;
-    let mut doc_blocks_index = 0;
-    while doc_blocks_index < doc_blocks.len() {
-        // See what the next item to process is.
-        if doc_diff_index < doc_diff.len()
-            && doc_diff[doc_diff_index].from <= doc_blocks[doc_blocks_index].from
-        {
-            // Update the delta based on this diff.
-            let dd = &doc_diff[doc_diff_index];
-            delta += dd.from as isize - dd.to.unwrap_or(dd.from) as isize
-                + dd.insert.chars().count() as isize;
-            doc_diff_index += 1;
-        } else {
-            // Apply the current delta.
-            let db = &mut doc_blocks[doc_blocks_index];
-            db.from = db.from.checked_add_signed(delta).unwrap();
-            db.to = db.to.checked_add_signed(delta).unwrap();
-            doc_blocks_index += 1;
-        }
-    }
-}
-
 /// We can't simply implement traits for `CodeMirrorDocBlockVec`, since it's not
 /// a struct. So, wrap that it in a struct, then implement traits on that
 /// struct.

@@ -30,6 +30,7 @@ use assert_fs::TempDir;
 use assertables::{assert_contains, assert_ends_with, assert_starts_with};
 use dunce::simplified;
 use futures_util::{SinkExt, StreamExt};
+use indoc::indoc;
 use lazy_static::lazy_static;
 use minreq;
 use path_slash::PathExt;
@@ -629,20 +630,16 @@ async fn test_vscode_ide_websocket7() {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
                     },
-                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                        doc: vec![StringDiff {
-                            from: 0,
-                            to: None,
-                            insert: "\n".to_string()
-                        }],
-                        doc_blocks: vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "\n".to_string(),
+                        doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
                             to: 1,
                             indent: "".to_string(),
                             delimiter: "#".to_string(),
                             contents: "<p>more</p>\n".to_string()
-                        })]
-                    }),
+                        }]
+                    })
                 }),
                 cursor_position: None,
                 scroll_position: None,
@@ -661,6 +658,82 @@ async fn test_vscode_ide_websocket7() {
         read_message(&mut ws_ide).await,
         EditorMessage {
             id: 4.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // Send a message with an update that produces a diff.
+    //
+    // Message ids: IDE - 7->10, Server - 3, Client - 5.
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 7.0,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: indoc!(
+                            "
+                            # more
+                            code
+                            # most"
+                        )
+                        .to_string(),
+                        doc_blocks: vec![],
+                    }),
+                }),
+                cursor_position: None,
+                scroll_position: None,
+            }),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: 7.0,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 1,
+                            to: None,
+                            insert: "code\n\n".to_string()
+                        }],
+                        doc_blocks: vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
+                            from: 6,
+                            to: 7,
+                            indent: "".to_string(),
+                            delimiter: "#".to_string(),
+                            contents: "<p>most</p>\n".to_string()
+                        })]
+                    }),
+                }),
+                cursor_position: None,
+                scroll_position: None,
+            })
+        }
+    );
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: 7.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: 7.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
         }
     );

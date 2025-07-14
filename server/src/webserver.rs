@@ -351,11 +351,22 @@ const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
     -((1i64 << f64::MANTISSA_DIGITS) - 1) as f64
 };
 /// The increment for a message ID. Since the Client, IDE, and Server all
-/// increment by this same amount but start at different values, this ensure
+/// increment by this same amount but start at different values, this ensures
 /// that message IDs will be unique. (Given a mantissa of 53 bits plus a sign
 /// bit, 2^54 seconds = 574 million years before the message ID wraps around
 /// assuming an average of 1 message/second.)
 const MESSAGE_ID_INCREMENT: f64 = 3.0;
+
+/// Synchronization state between the Client, Server, and IDE.
+#[derive(PartialEq)]
+pub enum SyncState {
+    /// Indicates the Client, IDE, and server's documents are identical.
+    InSync,
+    /// An Update message is in flight; the documents are out of sync until the response to the Update is received.
+    Pending(f64),
+    /// A CurrentFile message was sent, guaranteeing that documents are out of sync.
+    OutOfSync,
+}
 
 const MATHJAX_TAGS: &str = indoc!(
     r#"
