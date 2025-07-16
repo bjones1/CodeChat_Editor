@@ -53,6 +53,8 @@ enum CodeChatEditorClientLocation {
 const MAX_MESSAGE_LENGTH = 200;
 // The timeout for a websocket `Response`.
 const RESPONSE_TIMEOUT = 15000;
+// True to enable additional debug logging.
+const DEBUG_ENABLED = false;
 
 // True on Windows, false on OS X / Linux.
 const is_windows = process.platform === "win32";
@@ -121,22 +123,20 @@ export const activate = (context: vscode.ExtensionContext) => {
                     // <https://code.visualstudio.com/docs/extensionAPI/vscode-api#Event>`\_.
                     context.subscriptions.push(
                         vscode.workspace.onDidChangeTextDocument((event) => {
-                            // VSCode sends empty change events -- ignore these.
-                            if (event.contentChanges.length === 0) {
-                                return;
-                            }
                             // If this change was produced by applying an
-                            // `Update` from the Client, ignore it.
+                            // `Update` from the Client, ignore it. Do this first, in case the update causes no changes to the content, since we still need to set `ignore_text_document_change` to `false`.
                             if (ignore_text_document_change) {
                                 ignore_text_document_change = false;
+                                return;
+                            }
+                            // VSCode sends empty change events -- ignore these.
+                            if (event.contentChanges.length === 0) {
                                 return;
                             }
                             console.log(
                                 `CodeChat Editor extension: text changed - ${
                                     event.reason
-                                }, ${JSON.stringify(
-                                    event.contentChanges,
-                                ).substring(0, MAX_MESSAGE_LENGTH)}.`,
+                                }, ${format_struct(event.contentChanges)}.`,
                             );
                             start_render();
                         }),
@@ -284,7 +284,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                     let was_error: boolean = false;
 
                     websocket.on("error", (err: ErrorEvent) => {
-                        console.log(
+                        console.error(
                             `CodeChat Editor extension: error in Server connection: ${err.message}`,
                         );
                         was_error = true;
@@ -346,9 +346,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             data.toString(),
                         ) as EditorMessage;
                         console.log(
-                            `CodeChat Editor extension: Received data id = ${id}, message = ${JSON.stringify(
-                                message,
-                            ).substring(0, MAX_MESSAGE_LENGTH)}.`,
+                            `CodeChat Editor extension: Received data id = ${id}, message = ${format_struct(message)}.`,
                         );
                         assert(id !== undefined);
                         assert(message !== undefined);
@@ -477,7 +475,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 const result_contents = value as MessageResult;
                                 if ("Err" in result_contents) {
                                     const msg = `Error in message ${id}: ${result_contents.Err}`;
-                                    console.log(msg);
+                                    console.error(msg);
                                     // Warning: Calling `show_error` shuts down
                                     // the client. Do this deliberately, since
                                     // timeouts (missed messages) can cause data
@@ -514,11 +512,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                             }
 
                             default:
-                                console.log(
-                                    `Unhandled message ${key}(${value.substring(
-                                        0,
-                                        MAX_MESSAGE_LENGTH,
-                                    )})`,
+                                console.error(
+                                    `Unhandled message ${key}(${format_struct(value)}`,
                                 );
                                 break;
                         }
@@ -557,9 +552,7 @@ const send_message = (
     };
     assert(websocket);
     console.log(
-        `CodeChat Editor extension: sending message ${JSON.stringify(
-            jm,
-        ).substring(0, MAX_MESSAGE_LENGTH)}.`,
+        `CodeChat Editor extension: sending message ${format_struct(jm)}.`,
     );
     websocket.send(JSON.stringify(jm));
     pending_messages[id] = {
@@ -568,6 +561,9 @@ const send_message = (
     };
 };
 
+// Format a complex data structure as a string when in debug mode.
+const format_struct = (complex_data_structure: any): string => DEBUG_ENABLED ? JSON.stringify(complex_data_structure).substring(0, MAX_MESSAGE_LENGTH) : "";
+
 // Report an error from the server.
 const report_server_timeout = (message_id: number) => {
     // Invoke the callback with an error.
@@ -575,7 +571,7 @@ const report_server_timeout = (message_id: number) => {
 
     // Remove the message from the pending messages and report the error.
     delete pending_messages[message_id];
-    console.log(`Error: server timeout for message id ${message_id}`);
+    console.error(`Error: server timeout for message id ${message_id}`);
 };
 
 // Send a result (a response to a message from the server) back to the server.
@@ -664,7 +660,7 @@ const stop_client = async () => {
         await run_server(["stop"]);
     } catch (err) {
         assert(err instanceof Error);
-        console.log(
+        console.error(
             `CodeChat Editor Client: error on server shutdown - ${err.message}`,
         );
     }
