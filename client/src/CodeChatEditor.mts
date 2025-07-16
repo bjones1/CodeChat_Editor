@@ -51,6 +51,7 @@ import "./third-party/wc-mermaid/wc-mermaid";
 // #### Local
 import { assert } from "./assert.mjs";
 import {
+    apply_diff_str,
     CodeMirror_load,
     CodeMirror_save,
     mathJaxTypeset,
@@ -213,6 +214,9 @@ const is_doc_only = () => {
 const open_lp = async (all_source: CodeChatForWeb) =>
     on_dom_content_loaded(() => _open_lp(all_source));
 
+// Store the HTML sent for CodeChat Editor documents. We can't simply use TinyMCE's [getContent](https://www.tiny.cloud/docs/tinymce/latest/apis/tinymce.editor/#getContent), since this modifies the content based on cleanup rules before returning it -- which causes applying diffs to this unexpectedly modified content to produce incorrect results. This text is the unmodified content sent from the IDE.
+let doc_content = "";
+
 // This function is called on page load to "load" a file. Before this point, the
 // server has already lexed the source file into code and doc blocks; this
 // function transforms the code and doc blocks into HTML and updates the current
@@ -253,12 +257,14 @@ const _open_lp = async (
     // the typeset math that you are removing is no longer on the page."
     window.MathJax.typesetClear(codechat_body);
     if (is_doc_only()) {
-        assert("Plain" in source);
         if (tinymce.activeEditor === null) {
+            // We shouldn't have a diff if the editor hasn't been initialized.
+            assert("Plain" in source);
             // Special case: a CodeChat Editor document's HTML is stored
             // in`source.doc`. We don't need the CodeMirror editor at all;
             // instead, treat it like a single doc block contents div.
-            codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${source.Plain.doc}</div>`;
+            doc_content = source.Plain.doc;
+            codechat_body.innerHTML = `<div class="CodeChat-doc-contents">${doc_content}</div>`;
             await init({
                 selector: ".CodeChat-doc-contents",
                 // In the doc-only mode, add autosave functionality. While there
@@ -285,7 +291,8 @@ const _open_lp = async (
             // However, this doesn't seem to work for the cursor location.
             // Perhaps when TinyMCE normalizes the document, this gets lost?
             const bm = tinymce.activeEditor!.selection.getBookmark();
-            tinymce.activeEditor!.setContent(source.Plain.doc);
+            doc_content = "Plain" in source ? source.Plain.doc : apply_diff_str(doc_content, source.Diff.doc);
+            tinymce.activeEditor!.setContent(doc_content);
             tinymce.activeEditor!.selection.moveToBookmark(bm);
         }
         mathJaxTypeset(codechat_body);
