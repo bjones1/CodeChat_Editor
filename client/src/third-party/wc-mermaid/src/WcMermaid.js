@@ -54,11 +54,16 @@ export class WcMermaid extends HTMLElement {
           const div = document.createElement('div');
           div.id = "graph";
           this.shadowRoot.appendChild(div);
-          const renderResult = await mermaidApi.render(
-            'graph',
-            this.__textContent
-          );
-          div.innerHTML = renderResult.svg;
+          try {
+            const renderResult = await mermaidApi.render(
+              'graph',
+              this.__textContent
+            );
+            div.innerHTML = renderResult.svg;
+          } catch (e) {
+            div.textContent = e.toString();
+            div.innerHTML = `<pre style="color:red; white-space: pre-wrap;">${div.innerHTML}</pre>`
+          }
         }
       } else {
         if (this.shadowRoot) {
