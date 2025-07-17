@@ -431,7 +431,7 @@ lazy_static! {
         #[cfg(debug_assertions)]
         hl.push("server");
         hl.push("hashLocations.json");
-        let json = fs::read_to_string(hl).unwrap();
+        let json = fs::read_to_string(hl.clone()).expect(&format!("Unable to read {}", hl.to_string_lossy()));
         let hmm: HashMap<String, String> = serde_json::from_str(&json).unwrap();
         hmm
     };
@@ -1365,7 +1365,8 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
     let mut l4rs = ROOT_PATH.clone();
     #[cfg(debug_assertions)]
     l4rs.push("server");
-    let mut config = load_config_file(l4rs.join("log4rs.yml"), Default::default())?;
+    let config_file = l4rs.join("log4rs.yml");
+    let mut config = load_config_file(&config_file, Default::default()).expect(&format!("Unable to load config file {}", config_file.to_string_lossy()));
     config.root_mut().set_level(level);
     log4rs::init_config(config)?;
     Ok(())
