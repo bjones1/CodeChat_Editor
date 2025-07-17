@@ -1222,7 +1222,7 @@ TurndownService.prototype = {
 
 // These HTML elements are considered block nodes, as opposed to inline nodes. It's based on the Commonmark spec's selection of [HTML blocks](https://spec.commonmark.org/0.31.2/#html-blocks).
 const blockNodeNames = new Set([
-  'PRE', 'SCRIPT', 'STYLE', 'TEXTAREA', 'ADDRESS', 'ARTICLE', 'ASIDE', 'BASE', 'BASEFONT', 'BLOCKQUOTE', 'BODY', 'CAPTION', 'CENTER', 'COL', 'COLGROUP', 'DD', 'DETAILS', 'DIALOG', 'DIR', 'DIV', 'DL', 'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'FRAME', 'FRAMESET', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEAD', 'HEADER', 'HR', 'HTML', 'IFRAME', 'LEGEND', 'LI', 'LINK', 'MAIN', 'MENU', 'MENUITEM', 'NAV', 'NOFRAMES', 'OL', 'OPTGROUP', 'OPTION', 'P', 'PARAM', 'SEARCH', 'SECTION', 'SUMMARY', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TITLE', 'TR', 'TRACK', 'UL'
+  'PRE', 'SCRIPT', 'STYLE', 'TEXTAREA', 'ADDRESS', 'ARTICLE', 'ASIDE', 'BASE', 'BASEFONT', 'BLOCKQUOTE', 'BODY', 'CAPTION', 'CENTER', 'COL', 'COLGROUP', 'DD', 'DETAILS', 'DIALOG', 'DIR', 'DIV', 'DL', 'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'FRAME', 'FRAMESET', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEAD', 'HEADER', 'HR', 'HTML', 'IFRAME', 'LEGEND', 'LI', 'LINK', 'MAIN', 'MENU', 'MENUITEM', 'NAV', 'NOFRAMES', 'OL', 'OPTGROUP', 'OPTION', 'P', 'PARAM', 'SEARCH', 'SECTION', 'SUMMARY', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TITLE', 'TR', 'TRACK', 'UL', 'WC-MERMAID'
 ]);
 
 /**
@@ -1241,7 +1241,7 @@ function process (parentNode) {
   // items to translate. Only the root node's `renderAsPure` attribute is
   // undefined; treat it as pure, since we never translate this node.
   if (parentNode.renderAsPure || parentNode.renderAsPure === undefined) {
-    const output = reduce.call(parentNode.childNodes, function (output, node) {
+    const output = reduce.call(parentNode.childNodes, function (output, node, currentIndex, nodes) {
       // `output` consists of [output so far, li accumulator]. For non-li nodes, this node's output is added to the output so far. Otherwise, accumulate content for wrapping. Wrap accumulation rules: accumulate any text and non-block node; wrap the accumulator when on a non-accumulating node.
       node = new Node(node, self.options);
 
@@ -1270,10 +1270,15 @@ function process (parentNode) {
 
       if (isLi) {
         // Is this a non-accumulating node?
+        const isLast = currentIndex === nodes.length - 1;
         if (nodeType > 3 || (nodeType === 1 && blockNodeNames.has(node.nodeName))) {
           // This is a non-accumulating node. Wrap the accumulated content, then clear the accumulator.
           const wrappedAccumulator = wrapContent(output[1], node, self.options);
           return [join(join(wrappedAccumulator, output[0]), replacement), '']
+        } else if (nodeType === 3 && isLast) {
+          // This is the last accumulating node in a list. Wrap this plus the accumulated content, then clear the accumulator.
+          const wrappedAccumulator = wrapContent(join(output[1], replacement), node, self.options);
+          return [join(output[0], wrappedAccumulator), '']
         } else {
           // This is an accumulating node, so add this to the accumulator.
           return [output[0], join(output[1], replacement)]
@@ -1282,7 +1287,7 @@ function process (parentNode) {
         return [join(output[0], replacement), '']
       }
     }, ['', '']);
-    return join(output[0], wrapContent(output[1], parentNode, self.options))
+    return join(output[0], output[1])
   } else {
     // If the `parentNode` represented itself as raw HTML, that contains all the
     // contents of the child nodes.

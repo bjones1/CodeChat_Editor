@@ -174,7 +174,8 @@ editor-overlay filesystem.
 
 #### Network interfaces between the Client, Server, and IDE
 
-*   The startup phase loads the Client framework into a browser:\
+*   The startup phase loads the Client framework into a browser:
+
     <wc-mermaid>
     sequenceDiagram
     participant IDE
@@ -191,9 +192,11 @@ editor-overlay filesystem.
     Server -&gt; Client: HTTP response(/static data)
     end
     </wc-mermaid>
+
 *   If the current file in the IDE changes (including the initial startup, when
     the change is from no file to the current file), or a link is followed in
-    the Client's iframe:\
+    the Client's iframe:
+
     <wc-mermaid>
     sequenceDiagram
     participant IDE
@@ -225,8 +228,7 @@ editor-overlay filesystem.
     Server -&gt;&gt; Client: HTTP response(contents of supporting file)
     else Supporting file not in IDE
     IDE -&gt;&gt; Server: Response(LoadFile(None))
-    Server -&gt;&gt; Client: HTTP response(contents of supporting file from
-    filesystem)
+    Server -&gt;&gt; Client: HTTP response(contents of supporting file from filesystem)
     end
     end
     else main.py not editable and not a project
@@ -237,7 +239,9 @@ editor-overlay filesystem.
     Server -&gt;&gt; Client: HTTP response(contents of main.py)
     end
     </wc-mermaid>
-*   If the current file's contents in the IDE are edited:\
+
+*   If the current file's contents in the IDE are edited:
+
     <wc-mermaid>
     sequenceDiagram
     participant IDE
@@ -251,13 +255,17 @@ editor-overlay filesystem.
     end
     Client -&gt;&gt; IDE: Response(String: OK)<br>
     </wc-mermaid>
+
 *   If the current file's contents in the Client are edited, the Client sends
     the IDE an `Update` with the revised contents.
+
 *   When the PC goes to sleep then wakes up, the IDE client and the Editor
     client both reconnect to the websocket URL containing their assigned ID.
+
 *   If the Editor client or the IDE client are closed, they close their
     websocket, which sends a `Close` message to the other websocket, causes it
     to also close and ending the session.
+
 *   If the server is stopped (or crashes), both clients shut down after several
     reconnect retries.
 
