@@ -21,6 +21,12 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.19, 2025-Jul-17: 
+    *   Correctly apply diffs to Client document.
+    *   Avoid deleting adjacent doc blocks.
+    *   Correct error where edits in the IDE were ignored.
+    *   Provide in-browser feedback on Mermaid errors.
+    *   Fix word wrapping in Mermaid diagrams in lists.
 *   v0.1.18, 2025-Jul-14:
     *   Send diffs to the Client, which prevents visual jitter.
 *   v0.1.17, 2025-Apr-14:
