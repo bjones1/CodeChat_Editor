@@ -81,6 +81,9 @@ serde_json = "1"
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
+# Generate TypeScript imports with a suffix of `.js` per the
+# [docs](https://docs.rs/ts-rs/latest/ts_rs/#cargo-features).
+ts-rs = { version = "11.0.1", features = ["serde-compat", "import-esm"] }
 url = "2.5.2"
 urlencoding = "2"
 

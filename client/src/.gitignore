@@ -1,0 +1,5 @@
+# `.gitignore` -- files for Git to ignore
+# =======================================
+rust-types/
+
+# CodeChat Editor lexer: python

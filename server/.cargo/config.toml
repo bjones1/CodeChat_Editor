@@ -4,6 +4,16 @@
 # See the [docs](https://doc.rust-lang.org/cargo/reference/config.html) for this
 # file.
 #
+# ts\_rs config
+# -------------
+#
+# Configure the directory where `ts-rs` places the generated files. See also the
+# [cargo config
+# docs](https://doc.rust-lang.org/cargo/reference/config.html#configuration-format)
+# for environment variable setting.
+[env]
+TS_RS_EXPORT_DIR = { value = "../client/src/rust-types", relative = true }
+
 # Code coverage, the manual way:
 #
 # 1.  Run `cargo install rustfilt` per the [code coverage

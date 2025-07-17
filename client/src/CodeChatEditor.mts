@@ -65,7 +65,7 @@ import "graphviz-webcomponent";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
 import {
     CodeChatForWeb,
-    CodeMirrorDocBlockJson,
+    CodeMirrorDocBlockTuple,
     CodeMirrorDiffable,
     UpdateMessageContents,
     CodeMirror,
@@ -349,8 +349,8 @@ const save_lp = () => {
             metadata: current_metadata,
             source: code_mirror_diffable,
         },
-        scroll_position: undefined,
-        cursor_position: undefined,
+        scroll_position: null,
+        cursor_position: null,
     };
     return update;
 };
@@ -379,7 +379,7 @@ const on_save = async (only_if_dirty: boolean = false) => {
     is_dirty = false;
 };
 
-const codechat_html_to_markdown = (doc_blocks: CodeMirrorDocBlockJson[]) => {
+const codechat_html_to_markdown = (doc_blocks: CodeMirrorDocBlockTuple[]) => {
     const entries = doc_blocks.entries();
     for (const [index, doc_block] of entries) {
         const wordWrapMargin = Math.max(

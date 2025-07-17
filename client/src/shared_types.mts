@@ -20,134 +20,28 @@
 // ### Message types
 //
 // These mirror the same definitions in the Rust webserver, so that the two can
-// exchange messages.
-export type IdeType = {
-    VSCode: boolean;
-};
+// exchange messages. All these files are build by running `cargo test
+// export_bindings`.
+import { EditorMessageContents } from "./rust-types/EditorMessageContents.js";
+import { EditorMessage } from "./rust-types/EditorMessage.js";
+import { CodeChatForWeb } from "./rust-types/CodeChatForWeb.js";
+import { CodeMirrorDiffable } from "./rust-types/CodeMirrorDiffable.js";
+import { CodeMirror } from "./rust-types/CodeMirror.js";
+import { StringDiff } from "./rust-types/StringDiff.js";
+import { CodeMirrorDocBlockTuple } from "./rust-types/CodeMirrorDocBlockTuple.js";
+import { UpdateMessageContents } from "./rust-types/UpdateMessageContents.js";
 
-export type ResultOkTypes = {
-    LoadFile: string | null;
-};
+// Manually define this, since `ts-rs` can't export `webserver.MessageResult`.
+type MessageResult = Extract<EditorMessageContents, { Result: any }>;
 
-export type MessageResult =
-    | {
-          Ok: "Void" | ResultOkTypes;
-      }
-    | {
-          Err: string;
-      };
-
-export type EditorMessageContents =
-    | {
-          Update: UpdateMessageContents;
-      }
-    | {
-          CurrentFile: [string, boolean?];
-      }
-    | {
-          Opened: IdeType;
-      }
-    | {
-          RequestClose: null;
-      }
-    | {
-          OpenUrl: string;
-      }
-    | {
-          LoadFile: string;
-      }
-    | {
-          ClientHtml: string;
-          // Not included, since this is server->server only.
-          //Closed?: null;
-      }
-    | {
-          Result: MessageResult;
-      };
-
-export type EditorMessage = {
-    id: number;
-    message: EditorMessageContents;
-};
-
-// The server passes this to the client to load a file. See
-// [LexedSourceFile](../../server/src/webserver.rs#LexedSourceFile).
-export type CodeChatForWeb = {
-    metadata: { mode: string };
-    source: CodeMirrorDiffable;
-};
-
-export type CodeMirrorDiffable =
-    | {
-          Plain: CodeMirror;
-      }
-    | {
-          Diff: CodeMirrorDiff;
-      };
-
-export type CodeMirror = {
-    doc: string;
-    doc_blocks: CodeMirrorDocBlockJson[];
-    // Added by CodeMirror; not sent to/from the Server.
-    selection?: any;
-};
-
-export type CodeMirrorDiff = {
-    doc: StringDiff[];
-    doc_blocks: CodeMirrorDocBlockTransaction[];
-};
-
-export type StringDiff = {
-    /// The index of the start of the change.
-    from: number;
-    /// The index of the end of the change; defined for deletions and replacements.
-    to?: number;
-    /// The text to insert/replace; an empty string indicates deletion.
-    insert: string;
-};
-
-export type CodeMirrorDocBlockTransaction =
-    | {
-          Add: CodeMirrorDocBlockJson;
-      }
-    | {
-          Update: CodeMirrorDocBlockUpdate;
-      }
-    | {
-          Delete: CodeMirrorDocBlockDelete;
-      };
-
-// How a doc block is stored using CodeMirror.
-export type CodeMirrorDocBlockJson = [
-    // From
-    number,
-    // To
-    number,
-    // Indent
-    string,
-    // Delimiter
-    string,
-    // Contents
-    string,
-];
-
-export type CodeMirrorDocBlockUpdate = {
-    from: number;
-    from_new: number;
-    to: number;
-    indent?: string;
-    delimiter: string;
-    contents: StringDiff[];
-};
-
-export type CodeMirrorDocBlockDelete = {
-    from: number;
-    to: number;
-};
-
-export type UpdateMessageContents = {
-    file_path: string;
-    contents: CodeChatForWeb | undefined;
-    cursor_position: number | undefined;
-    scroll_position: number | undefined;
+export type {
+    EditorMessageContents,
+    CodeMirror,
+    CodeMirrorDocBlockTuple,
+    CodeChatForWeb,
+    StringDiff,
+    CodeMirrorDiffable,
+    UpdateMessageContents,
+    EditorMessage,
+    MessageResult,
 };

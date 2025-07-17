@@ -45,6 +45,7 @@ use lazy_static::lazy_static;
 use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 // ### Local
 use crate::lexer::{CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer};
@@ -67,13 +68,17 @@ use crate::lexer::{CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source
 
 /// <a id="LexedSourceFile"></a>Define the JSON data structure used to represent
 /// a source file in a web-editable format.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub struct CodeChatForWeb {
     pub metadata: SourceFileMetadata,
     pub source: CodeMirrorDiffable,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+/// Provide two options for sending CodeMirror data -- as the full contents
+/// (`Plain`), or as a diff of the existing contents (`Diff`).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 pub enum CodeMirrorDiffable {
     Plain(CodeMirror),
     Diff(CodeMirrorDiff),
@@ -83,7 +88,7 @@ pub enum CodeMirrorDiffable {
 /// it both to and from the client. TODO: currently, this is too simple to
 /// justify a struct. This allows for future growth -- perhaps the valid types
 /// of comment delimiters?
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 pub struct SourceFileMetadata {
     /// The lexer used to transforms source code into code and doc blocks and
     /// vice versa.
@@ -94,7 +99,7 @@ pub type CodeMirrorDocBlockVec = Vec<CodeMirrorDocBlock>;
 
 /// The format used by CodeMirror to serialize/deserialize editor contents.
 /// TODO: Link to JS code where this data structure is defined.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 pub struct CodeMirror {
     /// The document being edited.
     pub doc: String,
@@ -102,7 +107,7 @@ pub struct CodeMirror {
 }
 
 /// A diff of the `CodeMirror` struct.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 pub struct CodeMirrorDiff {
     /// A diff of the document being edited.
     pub doc: Vec<StringDiff>,
@@ -110,7 +115,7 @@ pub struct CodeMirrorDiff {
 }
 
 /// A transaction produced by the diff of the `CodeMirror` struct.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 pub enum CodeMirrorDocBlockTransaction {
     Add(CodeMirrorDocBlock),
     Update(CodeMirrorDocBlockUpdate),
@@ -118,7 +123,10 @@ pub enum CodeMirrorDocBlockTransaction {
 }
 
 /// This defines a doc block for CodeMirror.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, TS)]
+// Serde replaces this struct with a tuple for coding efficiency -- see
+// `CodeMirrorDocBlockTuple`.
+#[ts(as="CodeMirrorDocBlockTuple")]
 pub struct CodeMirrorDocBlock {
     // From -- the starting character this doc block is anchored to.
     pub from: usize,
@@ -133,7 +141,8 @@ pub struct CodeMirrorDocBlock {
 }
 
 /// Store the difference between the previous and current `CodeMirrorDocBlock`s.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(optional_fields)]
 pub struct CodeMirrorDocBlockUpdate {
     /// From -- the starting character this doc block is anchored to before this
     /// update. In the JSON encoding, there's little gain from making this an
@@ -155,7 +164,7 @@ pub struct CodeMirrorDocBlockUpdate {
     pub contents: Vec<StringDiff>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 pub struct CodeMirrorDocBlockDelete {
     pub from: usize,
     pub to: usize,
@@ -164,7 +173,8 @@ pub struct CodeMirrorDocBlockDelete {
 /// Store the difference between a previous and current string; this is based on
 /// [CodeMirror's
 /// ChangeSpec](https://codemirror.net/docs/ref/#state.ChangeSpec).
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export, optional_fields)]
 pub struct StringDiff {
     /// The index into the previous `CodeMirrorDocBlockVec` of the start of the
     /// change.
@@ -287,7 +297,8 @@ const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str = "</code></pre>\n<CodeChatEditor-s
 
 // Serialization for `CodeMirrorDocBlock`
 // --------------------------------------
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, TS)]
+#[ts(export)]
 struct CodeMirrorDocBlockTuple<'a>(
     // from
     usize,

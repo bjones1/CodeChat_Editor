@@ -33,7 +33,7 @@ import {
     MapMode,
 } from "@codemirror/state";
 import { exportedForTesting, page_init } from "./CodeChatEditor.mjs";
-import { CodeMirror, CodeMirrorDocBlockJson } from "./shared_types.mjs";
+import { CodeMirror, CodeMirrorDocBlockTuple } from "./shared_types.mjs";
 import {
     docBlockField,
     DocBlockPlugin,
@@ -77,13 +77,13 @@ window.CodeChatEditor_test = () => {
     suite("CodeChatEditor.mts", function () {
         suite("codechat_html_to_markdown", function () {
             test("Translate an empty comment", async function () {
-                const db: [CodeMirrorDocBlockJson] = [[0, 0, "", "//", ""]];
+                const db: [CodeMirrorDocBlockTuple] = [[0, 0, "", "//", ""]];
                 codechat_html_to_markdown(db);
                 assert.deepEqual(db, [[0, 0, "", "//", "\n"]]);
             });
 
             test("Translate non-breaking space", async function () {
-                const db: [CodeMirrorDocBlockJson] = [
+                const db: [CodeMirrorDocBlockTuple] = [
                     [0, 0, "", "//", "&nbsp;"],
                 ];
                 codechat_html_to_markdown(db);
@@ -91,7 +91,7 @@ window.CodeChatEditor_test = () => {
             });
 
             test("Translate two empty comments", async function () {
-                const db: CodeMirrorDocBlockJson[] = [
+                const db: CodeMirrorDocBlockTuple[] = [
                     [0, 0, "", "//", ""],
                     [2, 2, "", "//", ""],
                 ];
@@ -106,7 +106,7 @@ window.CodeChatEditor_test = () => {
             });
 
             test("Translate unclosed HTML", async function () {
-                const db: CodeMirrorDocBlockJson[] = [
+                const db: CodeMirrorDocBlockTuple[] = [
                     [0, 0, "", "//", "<h1><u>A<u></h1>\n"],
                     [2, 2, "", "//", "<h2>Ax</h2>"],
                 ];
@@ -153,7 +153,7 @@ window.CodeChatEditor_test = () => {
 
 const run_CodeMirror_test = (
     doc: string,
-    doc_blocks: [CodeMirrorDocBlockJson],
+    doc_blocks: [CodeMirrorDocBlockTuple],
     changes: ChangeSpec,
 ): CodeMirror => {
     // Create the CodeChat Editor for testing.

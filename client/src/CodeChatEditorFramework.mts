@@ -250,7 +250,7 @@ class WebSocketComm {
         const id = this.ws_id;
         this.ws_id += 3;
         // Add in the current filename to the message, if it's an `Update`.
-        if ("Update" in message) {
+        if (typeof message == "object" && "Update" in message) {
             console.assert(this.current_filename !== undefined);
             message.Update.file_path = this.current_filename!;
         }
@@ -276,7 +276,7 @@ class WebSocketComm {
         // If this points to the Server, then tell the IDE to load a new file.
         if (url.host === window.location.host) {
             this.send_message(
-                { CurrentFile: [url.toString(), undefined] },
+                { CurrentFile: [url.toString(), null] },
                 () => {
                     this.set_root_iframe_src(url.toString());
                 },

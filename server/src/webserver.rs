@@ -70,6 +70,7 @@ use tokio::{
     task::JoinHandle,
     time::sleep,
 };
+use ts_rs::TS;
 use url::Url;
 
 // ### Local
@@ -161,7 +162,8 @@ enum SimpleHttpResponseError {
 
 /// Define the data structure used to pass data between the CodeChat Editor
 /// Client, the IDE, and the CodeChat Editor Server.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 struct EditorMessage {
     /// A value unique to this message; it's used to report results
     /// (success/failure) back to the sender.
@@ -172,7 +174,8 @@ struct EditorMessage {
 
 /// Define the data structure used to pass data between the CodeChat Editor
 /// Client, the CodeChat Editor IDE extension, and the CodeChat Editor Server.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 enum EditorMessageContents {
     // #### These messages may be sent by either the IDE or the Client.
     /// This sends an update; any missing fields are unchanged. Valid
@@ -225,7 +228,8 @@ enum EditorMessageContents {
     Result(MessageResult),
 }
 
-/// The contents of a `Result` message.
+/// The contents of a `Result` message. We can't export this type, since `ts-rs`
+/// only supports structs and enums.
 type MessageResult = Result<
     // The result of the operation, if successful.
     ResultOkTypes,
@@ -233,7 +237,7 @@ type MessageResult = Result<
     String,
 >;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 enum ResultOkTypes {
     /// Most messages have no result.
     Void,
@@ -243,7 +247,7 @@ enum ResultOkTypes {
 }
 
 /// Specify the type of IDE that this client represents.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 enum IdeType {
     /// True if the CodeChat Editor will be hosted inside VSCode; false means it
     /// should be hosted in an external browser.
@@ -253,7 +257,8 @@ enum IdeType {
 }
 
 /// Contents of the `Update` message.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
 struct UpdateMessageContents {
     /// The filesystem path to this file. This is only used by the IDE to
     /// determine which file to apply Update contents to. The Client stores then

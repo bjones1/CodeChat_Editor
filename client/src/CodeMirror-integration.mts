@@ -86,7 +86,7 @@ import {
     CodeChatForWeb,
     CodeMirror,
     CodeMirrorDiffable,
-    CodeMirrorDocBlockJson,
+    CodeMirrorDocBlockTuple,
     StringDiff,
 } from "./shared_types.mjs";
 import { assert } from "./assert.mjs";
@@ -277,7 +277,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                     indent,
                     delimiter,
                     contents,
-                ]: CodeMirrorDocBlockJson) =>
+                ]: CodeMirrorDocBlockTuple) =>
                     Decoration.replace({
                         widget: new DocBlockWidget(
                             indent,
@@ -1043,7 +1043,7 @@ export const CodeMirror_save = (): CodeMirrorDiffable => {
     const code_mirror: CodeMirror = current_view.state.toJSON(
         CodeMirror_JSON_fields,
     );
-    delete code_mirror.selection;
+    delete (code_mirror as any).selection;
 
     return { Plain: code_mirror };
 };
