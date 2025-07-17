@@ -392,14 +392,15 @@ fn run_test() -> io::Result<()> {
 }
 
 fn run_build() -> io::Result<()> {
+    run_cmd!(
+        cargo build --manifest-path=../builder/Cargo.toml;
+        cargo build;
+        cargo test export_bindings;
+    )?;
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
     run_client_build(false, false)?;
     run_script("npm", &["run", "compile"], "../extensions/VSCode", true)?;
-    run_cmd!(
-        cargo build --manifest-path=../builder/Cargo.toml;
-        cargo build;
-    )?;
     Ok(())
 }
 

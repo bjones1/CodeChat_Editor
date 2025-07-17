@@ -275,12 +275,9 @@ class WebSocketComm {
     current_file = (url: URL) => {
         // If this points to the Server, then tell the IDE to load a new file.
         if (url.host === window.location.host) {
-            this.send_message(
-                { CurrentFile: [url.toString(), null] },
-                () => {
-                    this.set_root_iframe_src(url.toString());
-                },
-            );
+            this.send_message({ CurrentFile: [url.toString(), null] }, () => {
+                this.set_root_iframe_src(url.toString());
+            });
         } else {
             this.set_root_iframe_src(url.toString());
         }

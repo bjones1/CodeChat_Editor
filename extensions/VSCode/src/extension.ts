@@ -369,7 +369,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     });
                                     break;
                                 }
-                                if (current_update.contents !== undefined) {
+                                if (current_update.contents !== null) {
                                     const source =
                                         current_update.contents.source;
                                     // Is this plain text, or a diff?
@@ -624,8 +624,8 @@ const start_render = () => {
                                 },
                             },
                         },
-                        cursor_position: undefined,
-                        scroll_position: undefined,
+                        cursor_position: null,
+                        scroll_position: null,
                     },
                 });
             }
@@ -639,7 +639,7 @@ const current_file = () => {
     if (can_render() && ate !== current_editor) {
         current_editor = ate;
         send_message({
-            CurrentFile: [ate!.document.fileName, undefined],
+            CurrentFile: [ate!.document.fileName, null],
         });
     }
 };

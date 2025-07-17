@@ -30,9 +30,10 @@ import { CodeMirror } from "./rust-types/CodeMirror.js";
 import { StringDiff } from "./rust-types/StringDiff.js";
 import { CodeMirrorDocBlockTuple } from "./rust-types/CodeMirrorDocBlockTuple.js";
 import { UpdateMessageContents } from "./rust-types/UpdateMessageContents.js";
+import { ResultOkTypes } from "./rust-types/ResultOkTypes.js";
 
 // Manually define this, since `ts-rs` can't export `webserver.MessageResult`.
-type MessageResult = Extract<EditorMessageContents, { Result: any }>;
+type MessageResult = { Ok: ResultOkTypes } | { Err: string };
 
 export type {
     EditorMessageContents,
