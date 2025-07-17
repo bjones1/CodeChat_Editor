@@ -562,7 +562,13 @@ const send_message = (
 };
 
 // Format a complex data structure as a string when in debug mode.
-const format_struct = (complex_data_structure: any): string => DEBUG_ENABLED ? JSON.stringify(complex_data_structure).substring(0, MAX_MESSAGE_LENGTH) : "";
+const format_struct = (complex_data_structure: any): string =>
+    DEBUG_ENABLED
+        ? JSON.stringify(complex_data_structure).substring(
+              0,
+              MAX_MESSAGE_LENGTH,
+          )
+        : "";
 
 // Report an error from the server.
 const report_server_timeout = (message_id: number) => {

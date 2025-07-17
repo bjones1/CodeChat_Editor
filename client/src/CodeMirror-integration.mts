@@ -222,9 +222,9 @@ export const docBlockField = StateField.define<DecorationSet>({
                                 typeof effect.value.contents === "string"
                                     ? effect.value.contents
                                     : apply_diff_str(
-                                        prev.spec.widget.contents,
-                                        effect.value.contents,
-                                    ),
+                                          prev.spec.widget.contents,
+                                          effect.value.contents,
+                                      ),
                                 effect.value.dom ?? prev.spec.widget.dom,
                             ),
                             ...decorationOptions,
@@ -467,7 +467,7 @@ export const mathJaxTypeset = async (
     // The node to typeset.
     node: HTMLElement,
     // An optional function to run when the typeset finishes.
-    afterTypesetFunc: () => void = () => { },
+    afterTypesetFunc: () => void = () => {},
 ) => {
     try {
         await window.MathJax.typesetPromise([node]);
@@ -570,8 +570,8 @@ const on_dirty = (
 
 export const DocBlockPlugin = ViewPlugin.fromClass(
     class {
-        constructor(view: EditorView) { }
-        update(update: ViewUpdate) { }
+        constructor(view: EditorView) {}
+        update(update: ViewUpdate) {}
     },
     {
         eventHandlers: {
@@ -644,7 +644,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             // containing div.
                             for (
                                 let current_node = sel.anchorNode,
-                                is_first = true;
+                                    is_first = true;
                                 // Continue until we find the div which contains
                                 // the doc block contents: either it's not an
                                 // element (such as a div), ...
@@ -654,7 +654,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                     "CodeChat-doc-contents",
                                 );
                                 current_node = current_node.parentNode!,
-                                is_first = false
+                                    is_first = false
                             ) {
                                 // Store the index of this node in its' parent
                                 // list of child nodes/children. Use
@@ -726,14 +726,14 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                 ;
                                 selection_path.length;
                                 selection_node =
-                                // As before, use the more-consistent `children`
-                                // except for the last element, where we might
-                                // be selecting a `text` node.
-                                (
-                                    selection_path.length > 1
-                                        ? selection_node.children
-                                        : selection_node.childNodes
-                                )[selection_path.shift()!]! as HTMLElement
+                                    // As before, use the more-consistent `children`
+                                    // except for the last element, where we might
+                                    // be selecting a `text` node.
+                                    (
+                                        selection_path.length > 1
+                                            ? selection_node.children
+                                            : selection_node.childNodes
+                                    )[selection_path.shift()!]! as HTMLElement
                             );
                             // Use that to set the selection.
                             tinymce_singleton!.selection.setCursorLocation(

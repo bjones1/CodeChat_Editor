@@ -31,39 +31,39 @@ export type ResultOkTypes = {
 
 export type MessageResult =
     | {
-        Ok: "Void" | ResultOkTypes;
-    }
+          Ok: "Void" | ResultOkTypes;
+      }
     | {
-        Err: string;
-    };
+          Err: string;
+      };
 
 export type EditorMessageContents =
     | {
-        Update: UpdateMessageContents;
-    }
+          Update: UpdateMessageContents;
+      }
     | {
-        CurrentFile: [string, boolean?];
-    }
+          CurrentFile: [string, boolean?];
+      }
     | {
-        Opened: IdeType;
-    }
+          Opened: IdeType;
+      }
     | {
-        RequestClose: null;
-    }
+          RequestClose: null;
+      }
     | {
-        OpenUrl: string;
-    }
+          OpenUrl: string;
+      }
     | {
-        LoadFile: string;
-    }
+          LoadFile: string;
+      }
     | {
-        ClientHtml: string;
-        // Not included, since this is server->server only.
-        //Closed?: null;
-    }
+          ClientHtml: string;
+          // Not included, since this is server->server only.
+          //Closed?: null;
+      }
     | {
-        Result: MessageResult;
-    };
+          Result: MessageResult;
+      };
 
 export type EditorMessage = {
     id: number;
@@ -79,11 +79,11 @@ export type CodeChatForWeb = {
 
 export type CodeMirrorDiffable =
     | {
-        Plain: CodeMirror;
-    }
+          Plain: CodeMirror;
+      }
     | {
-        Diff: CodeMirrorDiff;
-    };
+          Diff: CodeMirrorDiff;
+      };
 
 export type CodeMirror = {
     doc: string;
@@ -108,14 +108,14 @@ export type StringDiff = {
 
 export type CodeMirrorDocBlockTransaction =
     | {
-        Add: CodeMirrorDocBlockJson;
-    }
+          Add: CodeMirrorDocBlockJson;
+      }
     | {
-        Update: CodeMirrorDocBlockUpdate;
-    }
+          Update: CodeMirrorDocBlockUpdate;
+      }
     | {
-        Delete: CodeMirrorDocBlockDelete;
-    };
+          Delete: CodeMirrorDocBlockDelete;
+      };
 
 // How a doc block is stored using CodeMirror.
 export type CodeMirrorDocBlockJson = [

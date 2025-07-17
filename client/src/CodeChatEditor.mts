@@ -291,7 +291,10 @@ const _open_lp = async (
             // However, this doesn't seem to work for the cursor location.
             // Perhaps when TinyMCE normalizes the document, this gets lost?
             const bm = tinymce.activeEditor!.selection.getBookmark();
-            doc_content = "Plain" in source ? source.Plain.doc : apply_diff_str(doc_content, source.Diff.doc);
+            doc_content =
+                "Plain" in source
+                    ? source.Plain.doc
+                    : apply_diff_str(doc_content, source.Diff.doc);
             tinymce.activeEditor!.setContent(doc_content);
             tinymce.activeEditor!.selection.moveToBookmark(bm);
         }
