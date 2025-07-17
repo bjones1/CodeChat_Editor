@@ -126,7 +126,7 @@ pub enum CodeMirrorDocBlockTransaction {
 #[derive(Clone, Debug, PartialEq, TS)]
 // Serde replaces this struct with a tuple for coding efficiency -- see
 // `CodeMirrorDocBlockTuple`.
-#[ts(as="CodeMirrorDocBlockTuple")]
+#[ts(as = "CodeMirrorDocBlockTuple")]
 pub struct CodeMirrorDocBlock {
     // From -- the starting character this doc block is anchored to.
     pub from: usize,
