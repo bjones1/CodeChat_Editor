@@ -22,6 +22,7 @@ use super::supported_languages::get_language_lexer_vec;
 use super::{CodeDocBlock, DocBlock, compile_lexers, source_lexer};
 use crate::test_utils::stringit;
 use indoc::indoc;
+use pretty_assertions::assert_eq;
 
 // Utilities
 // ---------

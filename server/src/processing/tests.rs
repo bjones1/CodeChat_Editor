@@ -1055,7 +1055,7 @@ fn test_diff_2() {
     assert_eq!(
         ret,
         vec![CodeMirrorDocBlockTransaction::Delete(
-            CodeMirrorDocBlockDelete { from: 10, to: 11 }
+            CodeMirrorDocBlockDelete { from: 10 }
         )]
     );
 
@@ -1073,7 +1073,7 @@ fn test_diff_2() {
     assert_eq!(
         ret,
         vec![CodeMirrorDocBlockTransaction::Delete(
-            CodeMirrorDocBlockDelete { from: 11, to: 12 }
+            CodeMirrorDocBlockDelete { from: 11 }
         )]
     );
 
@@ -1087,7 +1087,7 @@ fn test_diff_2() {
     assert_eq!(
         ret,
         vec![CodeMirrorDocBlockTransaction::Delete(
-            CodeMirrorDocBlockDelete { from: 11, to: 12 }
+            CodeMirrorDocBlockDelete { from: 11 }
         )]
     );
 }

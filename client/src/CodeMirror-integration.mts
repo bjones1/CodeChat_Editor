@@ -194,22 +194,32 @@ export const docBlockField = StateField.define<DecorationSet>({
                     effect.value.from,
                     effect.value.from,
                     (from, to_found, value) => {
-                        // For the given `from`, there should be exactly one doc
-                        // block.
-                        assert(prev === undefined);
-                        assert(
-                            effect.value.from === from,
-                            `${effect.value.from} !== ${from}`,
-                        );
-                        prev = value;
-                        to = to_found;
+                        // Only look for blocks whose from is as specified. `between` will also return blocks whose to matches -- for example, given from = 1, one doc block of [0, 1], and another of [1, 2], *both* will be found; we want only the [1, 2] doc block.
+                        if (effect.value.from === from) {
+                            // For the given `from`, there should be exactly one doc
+                            // block.
+                            if (prev !== undefined) {
+                                console.error({ doc_blocks, effect });
+                                assert(
+                                    false,
+                                    "More than one doc block at one location found.",
+                                );
+                            }
+                            prev = value;
+                            to = to_found;
+
+                            // We could return `false` here to stop the search for efficiency. However, we let it continue in case there are two doc blocks with the same `from` value, so we can at least flag this error.
+                        }
                     },
                 );
-                assert(prev !== undefined);
+                if (prev === undefined) {
+                    console.error({ doc_blocks, effect });
+                    assert(false, "No doc block found.");
+                }
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
-                    filter: (from, to, value) => false,
+                    filter: (from, to, value) => from !== effect.value.from,
                     filterFrom: effect.value.from,
                     filterTo: effect.value.from,
                     // This adds the replacement doc block with updated
@@ -236,9 +246,9 @@ export const docBlockField = StateField.define<DecorationSet>({
                 });
             } else if (effect.is(deleteDocBlock)) {
                 doc_blocks = doc_blocks.update({
-                    filter: (from, to, value) => false,
+                    filter: (from, to, value) => from !== effect.value.from,
                     filterFrom: effect.value.from,
-                    filterTo: effect.value.to,
+                    filterTo: effect.value.from,
                 });
             }
         return doc_blocks;
@@ -353,12 +363,11 @@ export const updateDocBlock = StateEffect.define<updateDocBlockType>({
 });
 
 // Delete a doc block.
-export const deleteDocBlock = StateEffect.define<{ from: number; to: number }>({
+export const deleteDocBlock = StateEffect.define<{ from: number }>({
     // Returning undefined deletes the block per the
     // [docs](https://codemirror.net/docs/ref/#state.StateEffect^define^spec.map).
-    map: ({ from, to }, change: ChangeDesc) => ({
+    map: ({ from }, change: ChangeDesc) => ({
         from: change.mapPos(from),
-        to: change.mapPos(to),
     }),
 });
 

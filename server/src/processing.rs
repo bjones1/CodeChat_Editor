@@ -167,7 +167,6 @@ pub struct CodeMirrorDocBlockUpdate {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 pub struct CodeMirrorDocBlockDelete {
     pub from: usize,
-    pub to: usize,
 }
 
 /// Store the difference between a previous and current string; this is based on
@@ -1014,7 +1013,6 @@ pub fn diff_code_mirror_doc_blocks(
             change_spec.push(CodeMirrorDocBlockTransaction::Delete(
                 CodeMirrorDocBlockDelete {
                     from: before[before_index as usize].from,
-                    to: before[hunk.before.end as usize - 1].to,
                 },
             ));
         }
