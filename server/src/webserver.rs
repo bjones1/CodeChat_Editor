@@ -29,6 +29,7 @@ mod vscode;
 use std::{
     collections::{HashMap, HashSet},
     env, fs, io,
+    net::SocketAddr,
     path::{self, MAIN_SEPARATOR_STR, Path, PathBuf},
     str::FromStr,
     sync::{Arc, Mutex},
@@ -334,10 +335,6 @@ macro_rules! queue_send {
 
 /// Globals
 /// -------
-///
-/// The IP address on which the server listens for incoming connections.
-pub const IP_ADDRESS: &str = "127.0.0.1";
-
 // The timeout for a reply from a websocket. Use a short timeout to speed up
 // unit tests.
 const REPLY_TIMEOUT: Duration = if cfg!(test) {
@@ -1336,27 +1333,26 @@ async fn client_websocket(
 // Webserver core
 // --------------
 #[actix_web::main]
-pub async fn main(port: u16) -> std::io::Result<()> {
-    run_server(port).await
+pub async fn main(addr: &SocketAddr) -> std::io::Result<()> {
+    run_server(addr).await
 }
 
-pub async fn run_server(port: u16) -> std::io::Result<()> {
+pub async fn run_server(addr: &SocketAddr) -> std::io::Result<()> {
     // Connect to the Capture Database
     //let _event_capture = EventCapture::new("config.json").await?;
 
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
-    let app_data = make_app_data(port);
+    let app_data = make_app_data(addr.port());
     let app_data_server = app_data.clone();
-    let server = match HttpServer::new(move || configure_app(App::new(), &app_data_server))
-        .bind((IP_ADDRESS, port))
-    {
-        Ok(server) => server.run(),
-        Err(err) => {
-            error!("Unable to bind to {IP_ADDRESS}:{port} - {err}");
-            return Err(err);
-        }
-    };
+    let server =
+        match HttpServer::new(move || configure_app(App::new(), &app_data_server)).bind(addr) {
+            Ok(server) => server.run(),
+            Err(err) => {
+                error!("Unable to bind to {addr} - {err}");
+                return Err(err);
+            }
+        };
     // Store the server handle in the global state.
     *(app_data.server_handle.lock().unwrap()) = Some(server.handle());
     // Start the server.
@@ -1659,6 +1655,7 @@ pub async fn get_server_url(port: u16) -> Result<String, GetServerUrlError> {
             ))
         }
     } else {
-        Ok(format!("http://{IP_ADDRESS}:{port}"))
+        // We're running locally, so use localhost.
+        Ok(format!("http://127.0.0.1:{port}"))
     }
 }

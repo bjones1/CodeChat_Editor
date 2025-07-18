@@ -14,7 +14,6 @@ use assert_cmd::Command;
 use predicates::{prelude::predicate, str::contains};
 
 // ### Local
-use code_chat_editor::webserver::IP_ADDRESS;
 use tokio::task::spawn_blocking;
 
 // Support functions
@@ -50,7 +49,7 @@ async fn test_start_no_response() {
     // Run a dummy webserver that doesn't respond to the `/stop` endpoint.
     actix_rt::spawn(async move {
         HttpServer::new(App::new)
-            .bind((IP_ADDRESS, 8082))
+            .bind(("127.0.0.1", 8082))
             .unwrap()
             .run()
             .await

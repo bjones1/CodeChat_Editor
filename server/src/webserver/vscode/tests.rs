@@ -20,6 +20,7 @@
 use std::{
     fs::{self, File},
     io::{Error, Read},
+    net::SocketAddr,
     path::{self, Path, PathBuf},
     thread,
     time::{Duration, SystemTime},
@@ -46,9 +47,7 @@ use tokio_tungstenite::{
     tungstenite::{http::StatusCode, protocol::Message},
 };
 
-use super::super::{
-    EditorMessage, EditorMessageContents, IP_ADDRESS, IdeType, run_server, tests::IP_PORT,
-};
+use super::super::{EditorMessage, EditorMessageContents, IdeType, run_server, tests::IP_PORT};
 use crate::{
     cast,
     processing::{
@@ -64,7 +63,7 @@ use crate::{
 lazy_static! {
     // Run a single webserver for all tests.
     static ref WEBSERVER_HANDLE: JoinHandle<Result<(), Error>> =
-        actix_rt::spawn(async move { run_server(IP_PORT).await });
+        actix_rt::spawn(async move { run_server(&SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT)).await });
 }
 
 // Send a message via a websocket.
@@ -109,12 +108,10 @@ async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
 type WebSocketStreamTcp = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 async fn connect_async_server(prefix: &str, connection_id: &str) -> WebSocketStreamTcp {
-    connect_async(format!(
-        "ws://{IP_ADDRESS}:{IP_PORT}{prefix}/{connection_id}",
-    ))
-    .await
-    .expect("Failed to connect")
-    .0
+    connect_async(format!("ws://127.0.0.1:{IP_PORT}{prefix}/{connection_id}",))
+        .await
+        .expect("Failed to connect")
+        .0
 }
 
 async fn connect_async_ide(connection_id: &str) -> WebSocketStreamTcp {
@@ -185,7 +182,7 @@ async fn _prep_test(
     let _ = &*WEBSERVER_HANDLE;
     let now = SystemTime::now();
     while now.elapsed().unwrap().as_millis() < 100 {
-        if minreq::get(format!("http://{IP_ADDRESS}:{IP_PORT}/ping",))
+        if minreq::get(format!("http://127.0.0.1:{IP_PORT}/ping",))
             .send()
             .is_ok()
         {
@@ -223,7 +220,7 @@ async fn test_vscode_ide_websocket1() {
 
     // Start a second connection; verify that it fails.
     let err = connect_async(format!(
-        "ws://{IP_ADDRESS}:{IP_PORT}/vsc/ws-ide/{connection_id}",
+        "ws://127.0.0.1:{IP_PORT}/vsc/ws-ide/{connection_id}",
     ))
     .await
     .expect_err("Should fail to connect");

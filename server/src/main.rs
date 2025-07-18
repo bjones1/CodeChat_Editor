@@ -22,6 +22,8 @@
 use std::{
     env, fs,
     io::{self, Read},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    ops::RangeInclusive,
     path::PathBuf,
     process::{Child, Command, Stdio},
     time::SystemTime,
@@ -34,7 +36,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 // ### Local
-use code_chat_editor::webserver::{self, GetServerUrlError, IP_ADDRESS, path_to_url};
+use code_chat_editor::webserver::{self, GetServerUrlError, path_to_url};
 
 // Data structures
 // ---------------
@@ -48,8 +50,12 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Select the port to use for the server.
-    #[arg(short, long, default_value_t = 8080)]
+    /// The address to serve.
+    #[arg(long, default_value_t = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)))]
+    host: IpAddr,
+
+    /// The port to use for the server.
+    #[arg(short, long, default_value_t = 8080, value_parser = port_in_range)]
     port: u16,
 
     /// Used for testing only.
@@ -88,7 +94,7 @@ enum Commands {
 // The following code implements the command-line interface for the CodeChat
 // Editor.
 impl Cli {
-    fn run(self) -> Result<(), Box<dyn std::error::Error>> {
+    fn run(self, addr: &SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
             Commands::Serve { log } => {
                 #[cfg(debug_assertions)]
@@ -98,15 +104,17 @@ impl Cli {
                     return Ok(());
                 }
                 webserver::configure_logger(log.unwrap_or(LevelFilter::Info))?;
-                webserver::main(self.port).unwrap();
+                webserver::main(addr).unwrap();
             }
             Commands::Start { open } => {
                 // Poll the server to ensure it starts.
                 let mut process: Option<Child> = None;
                 let now = SystemTime::now();
+                // If host is 0.0.0.0, use localhost to monitor it.
+                let ping_addr = fix_addr(addr);
                 loop {
                     // Look for a ping/pong response from the server.
-                    match minreq::get(format!("http://{IP_ADDRESS}:{}/ping", self.port))
+                    match minreq::get(format!("http://{ping_addr}/ping"))
                         .with_timeout(3)
                         .send()
                     {
@@ -122,7 +130,7 @@ impl Cli {
                                 // -- if `open` used `$BROWSER` (following
                                 // Pyhton), it should work.
                                 if let Some(open_path) = open {
-                                    let address = get_server_url(self.port)?;
+                                    let address = get_server_url(ping_addr.port())?;
                                     let open_path = fs::canonicalize(open_path)?;
                                     let open_path =
                                         path_to_url(&format!("{address}/fw/fsb"), None, &open_path);
@@ -146,7 +154,7 @@ impl Cli {
                                         break 'err_print;
                                     }
                                 }
-                                eprintln!("Failed to connect to server: {err}");
+                                eprintln!("Failed to connect to server at {addr}: {err}");
                             }
                         }
                     }
@@ -182,7 +190,15 @@ impl Cli {
                                 }
                             }
                             process = match cmd
-                                .args(["--port", &self.port.to_string(), "serve", "--log", "off"])
+                                .args([
+                                    "--host",
+                                    &self.host.to_string(),
+                                    "--port",
+                                    &self.port.to_string(),
+                                    "serve",
+                                    "--log",
+                                    "off",
+                                ])
                                 // Subtle: the default of
                                 // `stdout(Stdio::inherit())` causes a parent
                                 // process to block, since the child process
@@ -245,13 +261,15 @@ impl Cli {
             }
             Commands::Stop => {
                 println!("Stopping server...");
+                let stop_addr = fix_addr(addr);
+
                 // TODO: Use https://crates.io/crates/sysinfo to find the server
                 // process and kill it if it doesn't respond to a stop request.
-                return match minreq::get(format!("http://{IP_ADDRESS}:{}/stop", self.port))
+                return match minreq::get(format!("http://{stop_addr}/stop"))
                     .with_timeout(3)
                     .send()
                 {
-                    Err(err) => Err(format!("Failed to stop server: {err}").into()),
+                    Err(err) => Err(format!("Failed to stop server at {stop_addr}: {err}").into()),
                     Ok(response) => {
                         let status_code = response.status_code;
                         if status_code == 204 {
@@ -273,10 +291,39 @@ impl Cli {
     }
 }
 
+const PORT_RANGE: RangeInclusive<usize> = 1..=65535;
+
+// Copied from the [clap docs](https://docs.rs/clap/latest/clap/_derive/_tutorial/index.html#validated-values).
+fn port_in_range(s: &str) -> Result<u16, String> {
+    let port: usize = s
+        .parse()
+        .map_err(|_| format!("`{s}` isn't a port number"))?;
+    if PORT_RANGE.contains(&port) {
+        Ok(port as u16)
+    } else {
+        Err(format!(
+            "port not in range {}-{}",
+            PORT_RANGE.start(),
+            PORT_RANGE.end()
+        ))
+    }
+}
+
+fn fix_addr(addr: &SocketAddr) -> SocketAddr {
+    if addr.ip() == IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)) {
+        let mut addr = *addr;
+        addr.set_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        addr
+    } else {
+        *addr
+    }
+}
+
 #[cfg(not(tarpaulin_include))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    cli.run()?;
+    let addr = SocketAddr::new(cli.host, cli.port);
+    cli.run(&addr)?;
 
     Ok(())
 }
