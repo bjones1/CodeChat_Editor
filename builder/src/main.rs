@@ -514,6 +514,9 @@ fn run_prerelease() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
     run_install(true)?;
+    run_cmd!(
+        cargo test export_bindings;
+    )?;
     run_script("npm", &["run", "dist"], "../client", true)?;
     Ok(())
 }
