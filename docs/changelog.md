@@ -21,6 +21,8 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.20, 2025-Jul-18:
+    *   Correct data corruption in Client on delete/insert diff operations.
 *   v0.1.19, 2025-Jul-17: 
     *   Correctly apply diffs to Client document.
     *   Avoid deleting adjacent doc blocks.
