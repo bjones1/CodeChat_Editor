@@ -26,9 +26,6 @@ appenders:
     kind: console
     encoder:
       pattern: "{d} {l} {t} {L} - {m}{n}"
-    filters:
-      - kind: threshold
-        level: warn
 
   # File appender for INFO, WARN, and ERROR levels
   file_appender:
