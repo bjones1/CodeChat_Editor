@@ -21,6 +21,9 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v0.1.21, 2025-Jul-18:
+    *   Allow specifying the host address the server binds to.
+    *   Send server logs to the console by default.
 *   v0.1.20, 2025-Jul-18:
     *   Correct data corruption in Client on delete/insert diff operations.
 *   v0.1.19, 2025-Jul-17: 
