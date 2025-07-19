@@ -158,7 +158,7 @@ pub async fn vscode_ide_websocket(
         .insert(connection_id_str.clone());
 
     // Clone variables owned by the processing task.
-    let connection_id_task = connection_id_str.clone();
+    let connection_id_task = connection_id_str;
     let app_state_task = app_state.clone();
 
     // Start the processing task.
@@ -447,7 +447,8 @@ pub async fn vscode_ide_websocket(
                                         error!("Not plain!");
                                         break;
                                     };
-                                    // TODO: this is expensive -- fix!
+                                    // We must clone here, since the original is
+                                    // placed in the TX queue.
                                     code_mirror_doc = plain.doc.clone();
                                     code_mirror_doc_blocks = plain.doc_blocks.clone();
 
@@ -478,9 +479,7 @@ pub async fn vscode_ide_websocket(
                                                             TranslationResultsString::CodeChat(ccfw) => {
                                                                 // Send the new translated contents.
                                                                 debug!("Sending translated contents to Client.");
-                                                                // TODO: this is an expensive clone! Try to
-                                                                // find a way around this.
-                                                                let CodeMirrorDiffable::Plain(ccfw_source_plain) = ccfw.clone().source else {
+                                                                let CodeMirrorDiffable::Plain(ref ccfw_source_plain) = ccfw.source else {
                                                                     error!("{}", "Unexpected diff value.");
                                                                     break;
                                                                 };
@@ -498,7 +497,11 @@ pub async fn vscode_ide_websocket(
                                                                         })
                                                                     }
                                                                 } else {
-                                                                    ccfw
+                                                                    // We must make a clone to put in the TX
+                                                                    // queue; this allows us to keep the
+                                                                    // original below to use with the next
+                                                                    // diff.
+                                                                    ccfw.clone()
                                                                 });
                                                                 queue_send!(to_client_tx.send(EditorMessage {
                                                                     id: ide_message.id,
@@ -510,7 +513,12 @@ pub async fn vscode_ide_websocket(
                                                                     }),
                                                                 }));
                                                                 // Update to the latest code after
-                                                                // computing diffs.
+                                                                // computing diffs. To avoid ownership
+                                                                // problems, re-define `ccfw_source_plain`.
+                                                                let CodeMirrorDiffable::Plain(ccfw_source_plain) = ccfw.source else {
+                                                                    error!("{}", "Unexpected diff value.");
+                                                                    break;
+                                                                };
                                                                 _source_code = code_mirror.doc;
                                                                 code_mirror_doc = ccfw_source_plain.doc;
                                                                 code_mirror_doc_blocks = ccfw_source_plain.doc_blocks;
@@ -536,7 +544,7 @@ pub async fn vscode_ide_websocket(
                                                                                 mode: "".to_string()
                                                                             },
                                                                             source: CodeMirrorDiffable::Plain(CodeMirror {
-                                                                                doc: code_mirror.doc.clone(),
+                                                                                doc: code_mirror.doc,
                                                                                 doc_blocks: vec![]
                                                                             })
                                                                         }),
@@ -669,8 +677,8 @@ pub async fn vscode_ide_websocket(
                                                 &cfw)
                                             {
                                                 Ok(result) => {
-                                                    // TODO: this clone is expensive. Look for
-                                                    // a way to avoid this.
+                                                    // We must clone here; the original is
+                                                    // placed in the TX queue.
                                                     _source_code = result.clone();
                                                     let CodeMirrorDiffable::Plain(cmd) = cfw.source else {
                                                         // TODO: support diffable!
