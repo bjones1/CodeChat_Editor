@@ -20,7 +20,7 @@ Changelog
 =========
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
-    *   No changes.
+    *   Better support for opening a page in a web browser.
 *   v0.1.21, 2025-Jul-18:
     *   Allow specifying the host address the server binds to.
     *   Send server logs to the console by default.

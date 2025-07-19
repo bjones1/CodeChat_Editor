@@ -134,7 +134,7 @@ impl Cli {
                                     let open_path = fs::canonicalize(open_path)?;
                                     let open_path =
                                         path_to_url(&format!("{address}/fw/fsb"), None, &open_path);
-                                    open::that_detached(&open_path)?;
+                                    webbrowser::open(&open_path)?;
                                 }
 
                                 return Ok(());

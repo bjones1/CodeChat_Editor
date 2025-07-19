@@ -36,7 +36,6 @@ use actix_web::{
 };
 use indoc::formatdoc;
 use log::{debug, error, warn};
-use open;
 use tokio::{fs::File, select, sync::mpsc};
 
 // ### Local
@@ -267,7 +266,7 @@ pub async fn vscode_ide_websocket(
                     } else {
                         // Open the Client in an external browser.
                         if let Err(err) =
-                            open::that_detached(format!("{address}/vsc/cf/{connection_id_task}"))
+                            webbrowser::open(&format!("{address}/vsc/cf/{connection_id_task}"))
                         {
                             let msg = format!("Unable to open web browser: {err}");
                             error!("{msg}");
@@ -649,7 +648,7 @@ pub async fn vscode_ide_websocket(
                                 // This doesn't work in Codespaces. TODO: send
                                 // this back to the VSCode window, then call
                                 // `vscode.env.openExternal(vscode.Uri.parse(url))`.
-                                if let Err(err) = open::that_detached(&url) {
+                                if let Err(err) = webbrowser::open(&url) {
                                     let msg = format!("Unable to open web browser to URL {url}: {err}");
                                     error!("{msg}");
                                     send_response(&to_client_tx, client_message.id, Err(msg)).await;
