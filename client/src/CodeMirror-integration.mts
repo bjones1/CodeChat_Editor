@@ -1027,7 +1027,7 @@ export const CodeMirror_load = async (
     }
 };
 
-// Appply a `StringDiff` to the before string to produce the after string.
+// Apply a `StringDiff` to the before string to produce the after string.
 export const apply_diff_str = (before: string, diffs: StringDiff[]) => {
     // Walk from the last diff to the first. JavaScript doesn't have reverse
     // iteration AFAIK.
