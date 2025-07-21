@@ -537,7 +537,10 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         let (simple_http_response, option_update) = make_simple_http_response(&http_request, cfp, false).await;
                         if let Some(update) = option_update {
                             // Send the update to the client.
-                            queue_send!(to_websocket_tx.send(EditorMessage { id, message: update }));
+                            queue_send!(to_websocket_tx.send(EditorMessage {
+                                id,
+                                message: EditorMessageContents::Update(update)
+                            }));
                             id += 1.0;
                         }
                         oneshot_send!(http_request.response_queue.send(simple_http_response));

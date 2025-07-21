@@ -35,7 +35,9 @@ use actix_web::{
     get, web,
 };
 use indoc::formatdoc;
+use lazy_static::lazy_static;
 use log::{debug, error, warn};
+use regex::Regex;
 use tokio::{fs::File, select, sync::mpsc};
 
 // ### Local
@@ -46,9 +48,9 @@ use super::{
 use crate::{
     oneshot_send,
     processing::{
-        CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlockVec,
-        SourceFileMetadata, TranslationResultsString, codechat_for_web_to_source,
-        diff_code_mirror_doc_blocks, diff_str, source_to_codechat_for_web_string,
+        CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata,
+        TranslationResultsString, codechat_for_web_to_source, diff_code_mirror_doc_blocks,
+        diff_str, source_to_codechat_for_web_string,
     },
     queue_send,
     webserver::{
@@ -65,8 +67,45 @@ const VSCODE_PATH_PREFIX: &[&str] = &["vsc", "fs"];
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH: usize = 300;
 
+lazy_static! {
+        /// A regex to determine the type of the first EOL. See 'PROCESSINGS1.
+    pub static ref EOL_FINDER: Regex = Regex::new("[^\r\n]*(\r?\n)").unwrap();
+
+}
+
+// Data structures
+// ---------------
+#[derive(Clone, Debug, PartialEq)]
+pub enum EolType {
+    Lf,
+    Crlf,
+}
+
 // Code
 // ----
+pub fn find_eol_type(s: &str) -> EolType {
+    match EOL_FINDER.captures(s) {
+        // Assume a line type for strings with no newlines.
+        None => {
+            if cfg!(windows) {
+                EolType::Crlf
+            } else {
+                EolType::Lf
+            }
+        }
+        Some(captures) => match captures.get(1) {
+            None => panic!("No capture group!"),
+            Some(match_) => {
+                if match_.as_str() == "\n" {
+                    EolType::Lf
+                } else {
+                    EolType::Crlf
+                }
+            }
+        },
+    }
+}
+
 //
 // This is the processing task for the Visual Studio Code IDE. It handles all
 // the core logic to moving data between the IDE and the client.
@@ -305,9 +344,14 @@ pub async fn vscode_ide_websocket(
 
             // All further messages are handled in the main loop.
             let mut id: f64 = INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT;
-            let mut _source_code = String::new();
+            let mut source_code = String::new();
             let mut code_mirror_doc = String::new();
-            let mut code_mirror_doc_blocks: CodeMirrorDocBlockVec = Vec::new();
+            // The initial state will be overwritten by the first `Update` or `LoadFile`, so this
+            // value doesn't matter.
+            let mut eol = EolType::Lf;
+            // Some means this contains valid HTML; None means don't use it (since it would have
+            // contained Markdown).
+            let mut code_mirror_doc_blocks = Some(Vec::new());
             // To send a diff from Server to Client or vice versa, we need to
             // ensure they are in sync:
             //
@@ -329,7 +373,7 @@ pub async fn vscode_ide_websocket(
             // blocks, but Markdown. When Turndown is moved from JavaScript to
             // Rust, this can be changed, since both sides will have HTML in the
             // doc blocks.
-            let mut sync_id = SyncState::OutOfSync;
+            let mut sync_state = SyncState::OutOfSync;
             loop {
                 select! {
                     // Look for messages from the IDE.
@@ -374,16 +418,8 @@ pub async fn vscode_ide_websocket(
                                     // If this was confirmation from the IDE
                                     // that it received the latest update, then
                                     // mark the IDE as synced.
-                                    if sync_id == SyncState::Pending(ide_message.id) {
-                                        // TODO: currently, the Client sends doc
-                                        // blocks as Markdown, not HTML. This means
-                                        // sync won't work, since the IDE sends doc
-                                        // blocks as HTML. Eventually, move the
-                                        // Markdown conversion from the Client
-                                        // (implemented in JavaScript) to the
-                                        // Server (implemented in Rust). After
-                                        // this, we can use the sync results.
-                                        //sync_id = SyncState::InSync;
+                                    if sync_state == SyncState::Pending(ide_message.id) {
+                                        sync_state = SyncState::InSync;
                                     }
                                     queue_send!(to_client_tx.send(ide_message));
                                     continue;
@@ -396,9 +432,9 @@ pub async fn vscode_ide_websocket(
                                 };
 
                                 // Take ownership of the result after sending it
-                                // above (which required owernship).
+                                // above (which requires ownership).
                                 let EditorMessageContents::Result(result) = ide_message.message else {
-                                    error!("{}", "Not an update.");
+                                    error!("{}", "Not a result.");
                                     break;
                                 };
                                 // Get the file contents from a `LoadFile`
@@ -421,8 +457,11 @@ pub async fn vscode_ide_websocket(
                                 let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
                                 let (simple_http_response, option_update) = match file_contents_option {
                                     Some(file_contents) => {
+                                        // If there are Windows newlines, replace with Unix; this is reversed when the file is sent back to the IDE.
+                                        eol = find_eol_type(&file_contents);
+                                        let file_contents = file_contents.replace("\r\n", "\n");
                                         let ret = file_to_response(&http_request, &current_file, Some(&file_contents), use_pdf_js).await;
-                                        _source_code = file_contents;
+                                        source_code = file_contents;
                                         ret
                                     },
                                     None => {
@@ -432,13 +471,7 @@ pub async fn vscode_ide_websocket(
                                     }
                                 };
                                 if let Some(update) = option_update {
-                                    // Record the CodeMirror contents before
-                                    // sending.
-                                    let EditorMessageContents::Update(ref update_message_contents) = update else {
-                                        error!("Not an update!");
-                                        break;
-                                    };
-                                    let Some(ref tmp) = update_message_contents.contents else {
+                                    let Some(ref tmp) = update.contents else {
                                         error!("None.");
                                         break;
                                     };
@@ -449,10 +482,14 @@ pub async fn vscode_ide_websocket(
                                     // We must clone here, since the original is
                                     // placed in the TX queue.
                                     code_mirror_doc = plain.doc.clone();
-                                    code_mirror_doc_blocks = plain.doc_blocks.clone();
+                                    code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
+                                    sync_state = SyncState::Pending(id);
 
                                     debug!("Sending Update to Client, id = {id}.");
-                                    queue_send!(to_client_tx.send(EditorMessage { id, message: update }));
+                                    queue_send!(to_client_tx.send(EditorMessage {
+                                        id,
+                                        message: EditorMessageContents::Update(update)
+                                    }));
                                     id += MESSAGE_ID_INCREMENT;
                                 }
                                 debug!("Sending HTTP response.");
@@ -471,9 +508,12 @@ pub async fn vscode_ide_websocket(
                                                 match contents.source {
                                                     CodeMirrorDiffable::Diff(_diff) => Err("TODO: support for updates with diffable sources.".to_string()),
                                                     CodeMirrorDiffable::Plain(code_mirror) => {
+                                                        // If there are Windows newlines, replace with Unix; this is reversed when the file is sent back to the IDE.
+                                                        eol = find_eol_type(&code_mirror.doc);
+                                                        let doc_normalized_eols = code_mirror.doc.replace("\r\n", "\n");
                                                         // Translate the file.
                                                         let (translation_results_string, _path_to_toc) =
-                                                        source_to_codechat_for_web_string(&code_mirror.doc, &current_file, false);
+                                                        source_to_codechat_for_web_string(&doc_normalized_eols, &current_file, false);
                                                         match translation_results_string {
                                                             TranslationResultsString::CodeChat(ccfw) => {
                                                                 // Send the new translated contents.
@@ -485,23 +525,27 @@ pub async fn vscode_ide_websocket(
                                                                 // Send a diff if possible (only when the
                                                                 // Client's contents are synced with the
                                                                 // IDE).
-                                                                let contents = Some(if sync_id == SyncState::InSync {
-                                                                    let doc_diff = diff_str(&code_mirror_doc, &ccfw_source_plain.doc);
-                                                                    let code_mirror_diff = diff_code_mirror_doc_blocks(&code_mirror_doc_blocks, &ccfw_source_plain.doc_blocks);
-                                                                    CodeChatForWeb {
-                                                                        metadata: ccfw.metadata,
-                                                                        source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                                                                            doc: doc_diff,
-                                                                            doc_blocks: code_mirror_diff
-                                                                        })
+                                                                let contents = Some(
+                                                                    if let Some(cmdb) = code_mirror_doc_blocks &&
+                                                                     sync_state == SyncState::InSync {
+                                                                        let doc_diff = diff_str(&code_mirror_doc, &ccfw_source_plain.doc);
+                                                                        let code_mirror_diff = diff_code_mirror_doc_blocks(&cmdb, &ccfw_source_plain.doc_blocks);
+                                                                        CodeChatForWeb {
+                                                                            // Clone needed here, so we can copy it later.
+                                                                            metadata: ccfw.metadata.clone(),
+                                                                            source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                                                                                doc: doc_diff,
+                                                                                doc_blocks: code_mirror_diff
+                                                                            })
+                                                                        }
+                                                                    } else {
+                                                                        // We must make a clone to put in the TX
+                                                                        // queue; this allows us to keep the
+                                                                        // original below to use with the next
+                                                                        // diff.
+                                                                        ccfw.clone()
                                                                     }
-                                                                } else {
-                                                                    // We must make a clone to put in the TX
-                                                                    // queue; this allows us to keep the
-                                                                    // original below to use with the next
-                                                                    // diff.
-                                                                    ccfw.clone()
-                                                                });
+                                                                );
                                                                 queue_send!(to_client_tx.send(EditorMessage {
                                                                     id: ide_message.id,
                                                                     message: EditorMessageContents::Update(UpdateMessageContents {
@@ -518,12 +562,12 @@ pub async fn vscode_ide_websocket(
                                                                     error!("{}", "Unexpected diff value.");
                                                                     break;
                                                                 };
-                                                                _source_code = code_mirror.doc;
+                                                                source_code = code_mirror.doc;
                                                                 code_mirror_doc = ccfw_source_plain.doc;
-                                                                code_mirror_doc_blocks = ccfw_source_plain.doc_blocks;
+                                                                code_mirror_doc_blocks = Some(ccfw_source_plain.doc_blocks);
                                                                 // Mark the Client as unsynced until this
                                                                 // is acknowledged.
-                                                                sync_id = SyncState::Pending(ide_message.id);
+                                                                sync_state = SyncState::Pending(ide_message.id);
                                                                 Ok(ResultOkTypes::Void)
                                                             }
                                                             // TODO
@@ -540,7 +584,7 @@ pub async fn vscode_ide_websocket(
                                                                             metadata: SourceFileMetadata {
                                                                                 // Since this is raw data, `mode` doesn't
                                                                                 // matter.
-                                                                                mode: "".to_string()
+                                                                                mode: "".to_string(),
                                                                             },
                                                                             source: CodeMirrorDiffable::Plain(CodeMirror {
                                                                                 doc: code_mirror.doc,
@@ -587,7 +631,7 @@ pub async fn vscode_ide_websocket(
                                         current_file = file_path.into();
                                         // Since this is a new file, mark it as
                                         // unsynced.
-                                        sync_id = SyncState::OutOfSync;
+                                        sync_state = SyncState::OutOfSync;
                                     }
                                     Err(err) => {
                                         let msg = format!(
@@ -637,8 +681,8 @@ pub async fn vscode_ide_websocket(
                                 // If this result confirms that the Client
                                 // received the most recent IDE update, then
                                 // mark the documents as synced.
-                                if sync_id == SyncState::Pending(client_message.id) {
-                                    sync_id = SyncState::InSync;
+                                if sync_state == SyncState::Pending(client_message.id) {
+                                    sync_state = SyncState::InSync;
                                 }
                                 queue_send!(to_ide_tx.send(client_message))
                             },
@@ -675,24 +719,40 @@ pub async fn vscode_ide_websocket(
                                             Some(cfw) => match codechat_for_web_to_source(
                                                 &cfw)
                                             {
-                                                Ok(result) => {
-                                                    // We must clone here; the original is
-                                                    // placed in the TX queue.
-                                                    _source_code = result.clone();
+                                                Ok(mut result) => {
+                                                    if eol == EolType::Crlf {
+                                                        // Before sending back to the IDE, fix EOLs for Windows.
+                                                        result = result.replace("\n", "\r\n");
+                                                    }
+                                                    let ccfw = if sync_state == SyncState::InSync {
+                                                        Some(CodeChatForWeb {
+                                                            metadata: cfw.metadata,
+                                                            source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                                                                doc: diff_str(&source_code, &result),
+                                                                doc_blocks: vec![],
+                                                            }),
+                                                        })
+                                                    } else {
+                                                        Some(CodeChatForWeb {
+                                                            metadata: cfw.metadata,
+                                                            source: CodeMirrorDiffable::Plain(CodeMirror {
+                                                                // We must clone here, so that it can be placed in the TX queue.
+                                                                doc: result.clone(),
+                                                                doc_blocks: vec![],
+                                                            }),
+                                                        })
+                                                    };
+                                                    source_code = result;
                                                     let CodeMirrorDiffable::Plain(cmd) = cfw.source else {
                                                         // TODO: support diffable!
                                                         error!("No diff!");
                                                         break;
                                                     };
                                                     code_mirror_doc = cmd.doc;
-                                                    code_mirror_doc_blocks = cmd.doc_blocks;
-                                                    Some(CodeChatForWeb {
-                                                        metadata: cfw.metadata,
-                                                        source: CodeMirrorDiffable::Plain(CodeMirror {
-                                                            doc: result,
-                                                            doc_blocks: vec![],
-                                                        }),
-                                                    })
+                                                    // TODO: instead of `cmd.doc_blocks`, use `None` to indicate that
+                                                    // the doc blocks contain Markdown instead of HTML.
+                                                    code_mirror_doc_blocks = None;
+                                                    ccfw
                                                 },
                                                 Err(message) => {
                                                     let msg = format!(
@@ -715,7 +775,7 @@ pub async fn vscode_ide_websocket(
                                         }));
                                         // Mark the IDE contents as out of sync
                                         // until this message is received.
-                                        sync_id = SyncState::Pending(client_message.id);
+                                        sync_state = SyncState::Pending(client_message.id);
                                     }
                                 }
                             },
@@ -745,7 +805,7 @@ pub async fn vscode_ide_websocket(
                                                 current_file = file_path;
                                                 // Mark the IDE as out of sync, since this
                                                 // is a new file.
-                                                sync_id = SyncState::OutOfSync;
+                                                sync_state = SyncState::OutOfSync;
                                                 Ok(())
                                             }
                                         }

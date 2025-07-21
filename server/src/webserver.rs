@@ -691,7 +691,7 @@ async fn make_simple_http_response(
     SimpleHttpResponse,
     // If this file is currently being edited, this is the body of an `Update`
     // message to send.
-    Option<EditorMessageContents>,
+    Option<UpdateMessageContents>,
 ) {
     // Convert the provided URL back into a file name.
     let file_path = &http_request.file_path;
@@ -755,7 +755,7 @@ async fn file_to_response(
     // If the response is a Client, also return the appropriate `Update` data to
     // populate the Client with the parsed `file_contents`. In all other cases,
     // return None.
-    Option<EditorMessageContents>,
+    Option<UpdateMessageContents>,
 ) {
     // Use a lossy conversion, since this is UI display, not filesystem access.
     let file_path = &http_request.file_path;
@@ -981,12 +981,12 @@ async fn file_to_response(
         )),
         // If this file is editable and is the main file, send an `Update`. The
         // `simple_http_response` contains the Client.
-        Some(EditorMessageContents::Update(UpdateMessageContents {
+        Some(UpdateMessageContents {
             file_path: file_path.to_string(),
             contents: Some(codechat_for_web),
             cursor_position: None,
             scroll_position: None,
-        })),
+        }),
     )
 }
 

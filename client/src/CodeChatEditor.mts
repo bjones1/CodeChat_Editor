@@ -113,7 +113,7 @@ declare global {
     interface Window {
         CodeChatEditor: {
             // Called by the Client Framework.
-            open_lp: (all_source: CodeChatForWeb) => Promise<void>;
+            open_lp: (code_chat_for_web: CodeChatForWeb) => Promise<void>;
             on_save: (_only_if_dirty: boolean) => Promise<void>;
             allow_navigation: boolean;
         };
@@ -211,8 +211,8 @@ const is_doc_only = () => {
 };
 
 // Wait for the DOM to load before opening the file.
-const open_lp = async (all_source: CodeChatForWeb) =>
-    on_dom_content_loaded(() => _open_lp(all_source));
+const open_lp = async (code_chat_for_web: CodeChatForWeb) =>
+    on_dom_content_loaded(() => _open_lp(code_chat_for_web));
 
 // Store the HTML sent for CodeChat Editor documents. We can't simply use TinyMCE's [getContent](https://www.tiny.cloud/docs/tinymce/latest/apis/tinymce.editor/#getContent), since this modifies the content based on cleanup rules before returning it -- which causes applying diffs to this unexpectedly modified content to produce incorrect results. This text is the unmodified content sent from the IDE.
 let doc_content = "";
@@ -224,7 +224,7 @@ let doc_content = "";
 const _open_lp = async (
     // A data structure provided by the server, containing the source and
     // associated metadata. See[`AllSource`](#AllSource).
-    all_source: CodeChatForWeb,
+    code_chat_for_web: CodeChatForWeb,
 ) => {
     // Use[URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
     // to parse out the search parameters of this window's URL.
@@ -239,9 +239,9 @@ const _open_lp = async (
     const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
 
     // Get the<code><a href="#current_metadata">current_metadata</a></code> from
-    // the provided`all_source` struct and store it as a global variable.
-    current_metadata = all_source["metadata"];
-    const source = all_source["source"];
+    // the provided `code_chat_for_web` struct and store it as a global variable.
+    current_metadata = code_chat_for_web["metadata"];
+    const source = code_chat_for_web["source"];
     const codechat_body = document.getElementById(
         "CodeChat-body",
     ) as HTMLDivElement;

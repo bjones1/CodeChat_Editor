@@ -30,7 +30,7 @@ import process from "node:process";
 
 // ### Third-party packages
 import escape from "escape-html";
-import vscode, { commands, ViewColumn } from "vscode";
+import vscode, { commands, Position, Range } from "vscode";
 import { WebSocket } from "ws";
 
 // ### Local packages
@@ -40,9 +40,7 @@ import {
     MessageResult,
     UpdateMessageContents,
 } from "../../../client/src/shared_types.mjs";
-//
-// None.
-//
+
 // Globals
 // -------
 enum CodeChatEditorClientLocation {
@@ -123,12 +121,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                     // <https://code.visualstudio.com/docs/extensionAPI/vscode-api#Event>`\_.
                     context.subscriptions.push(
                         vscode.workspace.onDidChangeTextDocument((event) => {
-                            // If this change was produced by applying an
-                            // `Update` from the Client, ignore it. Do this first, in case the update causes no changes to the content, since we still need to set `ignore_text_document_change` to `false`.
-                            if (ignore_text_document_change) {
-                                ignore_text_document_change = false;
-                                return;
-                            }
                             // VSCode sends empty change events -- ignore these.
                             if (event.contentChanges.length === 0) {
                                 return;
@@ -373,15 +365,14 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     const source =
                                         current_update.contents.source;
                                     // Is this plain text, or a diff?
+                                    // This will produce a change event, which
+                                    // we'll ignore.
+                                    ignore_text_document_change = true;
+                                    // Use a workspace edit, since calls to
+                                    // `TextEditor.edit` must be made to the
+                                    // active editor only.
+                                    const wse = new vscode.WorkspaceEdit();
                                     if ("Plain" in source) {
-                                        const new_contents = source.Plain.doc;
-                                        // This will produce a change event, which
-                                        // we'll ignore.
-                                        ignore_text_document_change = true;
-                                        // Use a workspace edit, since calls to
-                                        // `TextEditor.edit` must be made to the
-                                        // active editor only.
-                                        const wse = new vscode.WorkspaceEdit();
                                         wse.replace(
                                             doc.uri,
                                             doc.validateRange(
@@ -392,12 +383,32 @@ export const activate = (context: vscode.ExtensionContext) => {
                                                     0,
                                                 ),
                                             ),
-                                            new_contents,
+                                            source.Plain.doc,
                                         );
-                                        vscode.workspace.applyEdit(wse);
+                                    } else {
+                                        assert("Diff" in source);
+                                        const diffs = source.Diff.doc;
+                                        for (const diff of diffs) {
+                                            // Convert from character offsets from the beginning of the document to a `Position`
+                                            // (line, then offset on that line) needed by VSCode.
+                                            const from = doc.positionAt(diff.from);
+                                            if (diff.to === undefined) {
+                                                // This is an insert.
+                                                wse.insert(doc.uri, from, diff.insert);
+                                            } else {
+                                                // This is a replace or delete.
+                                                const to = doc.positionAt(diff.to);
+                                                wse.replace(
+                                                    doc.uri,
+                                                    new Range(from, to),
+                                                    diff.insert,
+                                                );
+                                            }
+                                        }
                                     }
+                                    vscode.workspace.applyEdit(wse).then(() => ignore_text_document_change = false);
                                 } else {
-                                    // TODO handle diffs.
+                                    // TODO: handle cursor/scroll position updates.
                                     assert(false);
                                 }
                                 send_result(id);

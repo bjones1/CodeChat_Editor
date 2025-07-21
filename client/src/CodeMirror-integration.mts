@@ -66,7 +66,6 @@ import {
     StateEffect,
     EditorSelection,
     Transaction,
-    TransactionSpec,
     Annotation,
 } from "@codemirror/state";
 import { cpp } from "@codemirror/lang-cpp";

@@ -55,7 +55,10 @@ use crate::{
         CodeMirrorDocBlockTransaction, SourceFileMetadata, StringDiff,
     },
     test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
-    webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
+    webserver::{
+        ResultOkTypes, UpdateMessageContents, drop_leading_slash,
+        vscode::{EolType, find_eol_type},
+    },
 };
 
 // Globals
@@ -1246,4 +1249,18 @@ async fn test_vscode_ide_websocket9() {
     check_logger_errors(0);
     // Report any errors produced when removing the temporary directory.
     temp_dir.close().unwrap();
+}
+
+#[test]
+fn test_find_eoltypes() {
+    assert_eq!(
+        find_eol_type(""),
+        if cfg!(windows) {
+            EolType::Crlf
+        } else {
+            EolType::Lf
+        }
+    );
+    assert_eq!(find_eol_type("Testing\nOne, two, three"), EolType::Lf);
+    assert_eq!(find_eol_type("Testing\r\nOne, two, three"), EolType::Crlf);
 }
