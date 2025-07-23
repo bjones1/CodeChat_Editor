@@ -44,8 +44,9 @@ use actix_web::{
     error::Error,
     get,
     http::header::{ContentType, DispositionType},
-    web,
+    middleware, web,
 };
+use actix_web_httpauth::{extractors::basic::BasicAuth, middleware::HttpAuthentication};
 use actix_ws::AggregatedMessage;
 use bytes::Bytes;
 use dunce::simplified;
@@ -284,23 +285,31 @@ struct UpdateMessageContents {
 /// Define the [state](https://actix.rs/docs/application/#state) available to
 /// all endpoints.
 pub struct AppState {
-    // Provide methods to control the server.
+    /// Provide methods to control the server.
     server_handle: Mutex<Option<ServerHandle>>,
-    // The number of the next connection ID to assign.
+    /// The number of the next connection ID to assign.
     connection_id: Mutex<u32>,
-    // The port this server listens on.
+    /// The port this server listens on.
     port: u16,
-    // For each connection ID, store a queue tx for the HTTP server to send
-    // requests to the processing task for that ID.
+    /// For each connection ID, store a queue tx for the HTTP server to send
+    /// requests to the processing task for that ID.
     processing_task_queue_tx: Arc<Mutex<HashMap<String, Sender<ProcessingTaskHttpRequest>>>>,
-    // For each (connection ID, requested URL) store channel to send the
-    // matching response to the HTTP task.
+    /// For each (connection ID, requested URL) store channel to send the
+    /// matching response to the HTTP task.
     filewatcher_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
-    // For each connection ID, store the queues for the VSCode IDE.
+    /// For each connection ID, store the queues for the VSCode IDE.
     vscode_ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
     vscode_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
-    // Connection IDs that are currently in use.
+    /// Connection IDs that are currently in use.
     vscode_connection_id: Arc<Mutex<HashSet<String>>>,
+    /// The auth credentials if authentication is used.
+    credentials: Option<Credentials>,
+}
+
+#[derive(Clone)]
+pub struct Credentials {
+    pub username: String,
+    pub password: String,
 }
 
 // Macros
@@ -1333,30 +1342,67 @@ async fn client_websocket(
 // Webserver core
 // --------------
 #[actix_web::main]
-pub async fn main(addr: &SocketAddr) -> std::io::Result<()> {
-    run_server(addr).await
+pub async fn main(addr: &SocketAddr, credentials: Option<Credentials>) -> std::io::Result<()> {
+    run_server(addr, credentials).await
 }
 
-pub async fn run_server(addr: &SocketAddr) -> std::io::Result<()> {
+pub async fn run_server(
+    addr: &SocketAddr,
+    credentials: Option<Credentials>,
+) -> std::io::Result<()> {
     // Connect to the Capture Database
     //let _event_capture = EventCapture::new("config.json").await?;
 
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
-    let app_data = make_app_data(addr.port());
+    let app_data = make_app_data(addr.port(), credentials);
     let app_data_server = app_data.clone();
-    let server =
-        match HttpServer::new(move || configure_app(App::new(), &app_data_server)).bind(addr) {
-            Ok(server) => server.run(),
-            Err(err) => {
-                error!("Unable to bind to {addr} - {err}");
-                return Err(err);
-            }
-        };
+    let server = match HttpServer::new(move || {
+        let auth = HttpAuthentication::with_fn(basic_validator);
+        configure_app(
+            App::new().wrap(middleware::Condition::new(
+                app_data_server.credentials.is_some(),
+                auth,
+            )),
+            &app_data_server,
+        )
+    })
+    .bind(addr)
+    {
+        Ok(server) => server.run(),
+        Err(err) => {
+            error!("Unable to bind to {addr} - {err}");
+            return Err(err);
+        }
+    };
     // Store the server handle in the global state.
     *(app_data.server_handle.lock().unwrap()) = Some(server.handle());
     // Start the server.
     server.await
+}
+
+// Use HTTP basic authentication (if provided) to mediate access.
+async fn basic_validator(
+    req: ServiceRequest,
+    credentials: BasicAuth,
+) -> Result<ServiceRequest, (Error, ServiceRequest)> {
+    // Get the provided credentials.
+    let expected_credentials = &req
+        .app_data::<actix_web::web::Data<AppState>>()
+        .unwrap()
+        .credentials
+        .as_ref()
+        .unwrap();
+    if credentials.user_id() == expected_credentials.username
+        && credentials.password() == Some(&expected_credentials.password)
+    {
+        Ok(req)
+    } else {
+        Err((
+            actix_web::error::ErrorUnauthorized("Incorrect username or password."),
+            req,
+        ))
+    }
 }
 
 pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error>> {
@@ -1383,7 +1429,7 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // closure passed to `HttpServer::new` and moved/cloned in." Putting this code
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
-fn make_app_data(port: u16) -> web::Data<AppState> {
+fn make_app_data(port: u16, credentials: Option<Credentials>) -> web::Data<AppState> {
     web::Data::new(AppState {
         server_handle: Mutex::new(None),
         connection_id: Mutex::new(0),
@@ -1393,6 +1439,7 @@ fn make_app_data(port: u16) -> web::Data<AppState> {
         vscode_ide_queues: Arc::new(Mutex::new(HashMap::new())),
         vscode_client_queues: Arc::new(Mutex::new(HashMap::new())),
         vscode_connection_id: Arc::new(Mutex::new(HashSet::new())),
+        credentials,
     })
 }
 

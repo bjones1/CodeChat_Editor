@@ -757,7 +757,7 @@ mod tests {
         WebsocketQueues,
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error> + use<>,
     ) {
-        let app_data = make_app_data(IP_PORT);
+        let app_data = make_app_data(IP_PORT, None);
         let app = test::init_service(configure_app(App::new(), &app_data)).await;
 
         // Load in a test source file to create a websocket.

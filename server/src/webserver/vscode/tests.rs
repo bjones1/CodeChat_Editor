@@ -66,7 +66,7 @@ use crate::{
 lazy_static! {
     // Run a single webserver for all tests.
     static ref WEBSERVER_HANDLE: JoinHandle<Result<(), Error>> =
-        actix_rt::spawn(async move { run_server(&SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT)).await });
+        actix_rt::spawn(async move { run_server(&SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT), None).await });
 }
 
 // Send a message via a websocket.

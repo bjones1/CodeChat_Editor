@@ -36,7 +36,7 @@ use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 // ### Local
-use code_chat_editor::webserver::{self, GetServerUrlError, path_to_url};
+use code_chat_editor::webserver::{self, Credentials, GetServerUrlError, path_to_url};
 
 // Data structures
 // ---------------
@@ -78,6 +78,10 @@ enum Commands {
         /// Control logging verbosity.
         #[arg(short, long)]
         log: Option<LevelFilter>,
+
+        /// Define the username:password used to limit access to the server. By default, access is unlimited.
+        #[arg(short, long, value_parser = parse_credentials)]
+        credentials: Option<Credentials>,
     },
     /// Start the webserver in a child process then exit.
     Start {
@@ -96,7 +100,7 @@ enum Commands {
 impl Cli {
     fn run(self, addr: &SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
-            Commands::Serve { log } => {
+            Commands::Serve { log, credentials } => {
                 #[cfg(debug_assertions)]
                 if let Some(TestMode::Sleep) = self.test_mode {
                     // For testing, don't start the server at all.
@@ -104,7 +108,7 @@ impl Cli {
                     return Ok(());
                 }
                 webserver::configure_logger(log.unwrap_or(LevelFilter::Info))?;
-                webserver::main(addr).unwrap();
+                webserver::main(addr, credentials.clone()).unwrap();
             }
             Commands::Start { open } => {
                 // Poll the server to ensure it starts.
@@ -306,6 +310,21 @@ fn port_in_range(s: &str) -> Result<u16, String> {
             PORT_RANGE.start(),
             PORT_RANGE.end()
         ))
+    }
+}
+
+fn parse_credentials(s: &str) -> Result<Credentials, String> {
+    let split_: Vec<_> = s.split(":").collect();
+    if split_.len() != 2 {
+        Err(format!(
+            "Unable to parse credentials as username:password; found {} colon-separated string(s)",
+            split_.len()
+        ))
+    } else {
+        Ok(Credentials {
+            username: split_[0].to_string(),
+            password: split_[1].to_string(),
+        })
     }
 }
 
