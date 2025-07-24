@@ -21,6 +21,10 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   Better support for opening a page in a web browser.
+    *   Support HTTP basic authentication to restrict access; use
+        `codechat-editor-server serve --auth username:password`.
+    *   Apply diffs to the IDE when available.
+    *   Better handling for CRLF line endings.
 *   v0.1.21, 2025-Jul-18:
     *   Allow specifying the host address the server binds to.
     *   Send server logs to the console by default.
