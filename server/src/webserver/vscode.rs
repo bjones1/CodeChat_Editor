@@ -942,4 +942,3 @@ fn eol_convert(s: String, eol_type: &EolType) -> String {
         s
     }
 }
-
