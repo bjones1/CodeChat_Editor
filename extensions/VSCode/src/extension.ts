@@ -364,9 +364,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 if (current_update.contents !== null) {
                                     const source =
                                         current_update.contents.source;
-                                    // Is this plain text, or a diff?
-                                    // This will produce a change event, which
-                                    // we'll ignore.
+                                    // Is this plain text, or a diff? This will
+                                    // produce a change event, which we'll
+                                    // ignore.
                                     ignore_text_document_change = true;
                                     // Use a workspace edit, since calls to
                                     // `TextEditor.edit` must be made to the
@@ -389,8 +389,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         assert("Diff" in source);
                                         const diffs = source.Diff.doc;
                                         for (const diff of diffs) {
-                                            // Convert from character offsets from the beginning of the document to a `Position`
-                                            // (line, then offset on that line) needed by VSCode.
+                                            // Convert from character offsets from the
+                                            // beginning of the document to a
+                                            // `Position` (line, then offset on that
+                                            // line) needed by VSCode.
                                             const from = doc.positionAt(diff.from);
                                             if (diff.to === undefined) {
                                                 // This is an insert.
@@ -408,7 +410,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     }
                                     vscode.workspace.applyEdit(wse).then(() => ignore_text_document_change = false);
                                 } else {
-                                    // TODO: handle cursor/scroll position updates.
+                                    // TODO: handle cursor/scroll position
+                                    // updates.
                                     assert(false);
                                 }
                                 send_result(id);

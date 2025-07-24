@@ -345,11 +345,11 @@ pub async fn vscode_ide_websocket(
             let mut id: f64 = INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT;
             let mut source_code = String::new();
             let mut code_mirror_doc = String::new();
-            // The initial state will be overwritten by the first `Update` or `LoadFile`, so this
-            // value doesn't matter.
+            // The initial state will be overwritten by the first `Update` or
+            // `LoadFile`, so this value doesn't matter.
             let mut eol = EolType::Lf;
-            // Some means this contains valid HTML; None means don't use it (since it would have
-            // contained Markdown).
+            // Some means this contains valid HTML; None means don't use it
+            // (since it would have contained Markdown).
             let mut code_mirror_doc_blocks = Some(Vec::new());
             // To send a diff from Server to Client or vice versa, we need to
             // ensure they are in sync:
@@ -456,7 +456,9 @@ pub async fn vscode_ide_websocket(
                                 let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
                                 let (simple_http_response, option_update) = match file_contents_option {
                                     Some(file_contents) => {
-                                        // If there are Windows newlines, replace with Unix; this is reversed when the file is sent back to the IDE.
+                                        // If there are Windows newlines, replace
+                                        // with Unix; this is reversed when the
+                                        // file is sent back to the IDE.
                                         eol = find_eol_type(&file_contents);
                                         let file_contents = file_contents.replace("\r\n", "\n");
                                         let ret = file_to_response(&http_request, &current_file, Some(&file_contents), use_pdf_js).await;
@@ -507,7 +509,9 @@ pub async fn vscode_ide_websocket(
                                                 match contents.source {
                                                     CodeMirrorDiffable::Diff(_diff) => Err("TODO: support for updates with diffable sources.".to_string()),
                                                     CodeMirrorDiffable::Plain(code_mirror) => {
-                                                        // If there are Windows newlines, replace with Unix; this is reversed when the file is sent back to the IDE.
+                                                        // If there are Windows newlines, replace
+                                                        // with Unix; this is reversed when the
+                                                        // file is sent back to the IDE.
                                                         eol = find_eol_type(&code_mirror.doc);
                                                         let doc_normalized_eols = code_mirror.doc.replace("\r\n", "\n");
                                                         // Translate the file.
@@ -530,7 +534,8 @@ pub async fn vscode_ide_websocket(
                                                                         let doc_diff = diff_str(&code_mirror_doc, &ccfw_source_plain.doc);
                                                                         let code_mirror_diff = diff_code_mirror_doc_blocks(&cmdb, &ccfw_source_plain.doc_blocks);
                                                                         CodeChatForWeb {
-                                                                            // Clone needed here, so we can copy it later.
+                                                                            // Clone needed here, so we can copy it
+                                                                            // later.
                                                                             metadata: ccfw.metadata.clone(),
                                                                             source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
                                                                                 doc: doc_diff,
@@ -723,7 +728,9 @@ pub async fn vscode_ide_websocket(
                                                         Some(CodeChatForWeb {
                                                             metadata: cfw.metadata,
                                                             source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                                                                // Diff with correct EOLs, so that (for CRLF files as well as LF files) offsets are correct.
+                                                                // Diff with correct EOLs, so that (for
+                                                                // CRLF files as well as LF files) offsets
+                                                                // are correct.
                                                                 doc: diff_str(&eol_convert(source_code, &eol), &eol_convert(result.clone(), &eol)),
                                                                 doc_blocks: vec![],
                                                             }),
@@ -732,13 +739,15 @@ pub async fn vscode_ide_websocket(
                                                         Some(CodeChatForWeb {
                                                             metadata: cfw.metadata,
                                                             source: CodeMirrorDiffable::Plain(CodeMirror {
-                                                                // We must clone here, so that it can be placed in the TX queue.
+                                                                // We must clone here, so that it can be
+                                                                // placed in the TX queue.
                                                                 doc: eol_convert(result.clone(), &eol),
                                                                 doc_blocks: vec![],
                                                             }),
                                                         })
                                                     };
-                                                    // Store the document with Unix-style EOLs (LFs).
+                                                    // Store the document with Unix-style EOLs
+                                                    // (LFs).
                                                     source_code = result;
                                                     let CodeMirrorDiffable::Plain(cmd) = cfw.source else {
                                                         // TODO: support diffable!
@@ -746,8 +755,9 @@ pub async fn vscode_ide_websocket(
                                                         break;
                                                     };
                                                     code_mirror_doc = cmd.doc;
-                                                    // TODO: instead of `cmd.doc_blocks`, use `None` to indicate that
-                                                    // the doc blocks contain Markdown instead of HTML.
+                                                    // TODO: instead of `cmd.doc_blocks`, use
+                                                    // `None` to indicate that the doc blocks
+                                                    // contain Markdown instead of HTML.
                                                     code_mirror_doc_blocks = None;
                                                     ccfw
                                                 },
@@ -923,7 +933,8 @@ async fn serve_vscode_fs(
     filesystem_endpoint(request_path, &req, &app_state).await
 }
 
-// If a string is encoded using CRLFs (Windows style), convert it to LFs only (Unix style).
+// If a string is encoded using CRLFs (Windows style), convert it to LFs only
+// (Unix style).
 fn eol_convert(s: String, eol_type: &EolType) -> String {
     if eol_type == &EolType::Crlf {
         s.replace("\n", "\r\n")

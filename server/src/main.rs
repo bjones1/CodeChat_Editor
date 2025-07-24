@@ -79,7 +79,8 @@ enum Commands {
         #[arg(short, long)]
         log: Option<LevelFilter>,
 
-        /// Define the username:password used to limit access to the server. By default, access is unlimited.
+        /// Define the username:password used to limit access to the server. By
+        /// default, access is unlimited.
         #[arg(short, long, value_parser = parse_credentials)]
         auth: Option<Credentials>,
     },
@@ -100,7 +101,10 @@ enum Commands {
 impl Cli {
     fn run(self, addr: &SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
-            Commands::Serve { log, auth: credentials } => {
+            Commands::Serve {
+                log,
+                auth: credentials,
+            } => {
                 #[cfg(debug_assertions)]
                 if let Some(TestMode::Sleep) = self.test_mode {
                     // For testing, don't start the server at all.
@@ -297,7 +301,8 @@ impl Cli {
 
 const PORT_RANGE: RangeInclusive<usize> = 1..=65535;
 
-// Copied from the [clap docs](https://docs.rs/clap/latest/clap/_derive/_tutorial/index.html#validated-values).
+// Copied from the [clap
+// docs](https://docs.rs/clap/latest/clap/_derive/_tutorial/index.html#validated-values).
 fn port_in_range(s: &str) -> Result<u16, String> {
     let port: usize = s
         .parse()

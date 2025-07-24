@@ -193,10 +193,14 @@ export const docBlockField = StateField.define<DecorationSet>({
                     effect.value.from,
                     effect.value.from,
                     (from, to_found, value) => {
-                        // Only look for blocks whose from is as specified. `between` will also return blocks whose to matches -- for example, given from = 1, one doc block of [0, 1], and another of [1, 2], *both* will be found; we want only the [1, 2] doc block.
+                        // Only look for blocks whose from is as specified.
+                        // `between` will also return blocks whose to matches --
+                        // for example, given from = 1, one doc block of \[0,
+                        // 1\], and another of \[1, 2\], *both* will be found;
+                        // we want only the \[1, 2\] doc block.
                         if (effect.value.from === from) {
-                            // For the given `from`, there should be exactly one doc
-                            // block.
+                            // For the given `from`, there should be exactly one
+                            // doc block.
                             if (prev !== undefined) {
                                 console.error({ doc_blocks, effect });
                                 assert(
@@ -207,7 +211,10 @@ export const docBlockField = StateField.define<DecorationSet>({
                             prev = value;
                             to = to_found;
 
-                            // We could return `false` here to stop the search for efficiency. However, we let it continue in case there are two doc blocks with the same `from` value, so we can at least flag this error.
+                            // We could return `false` here to stop the search
+                            // for efficiency. However, we let it continue in
+                            // case there are two doc blocks with the same
+                            // `from` value, so we can at least flag this error.
                         }
                     },
                 );
@@ -477,10 +484,13 @@ export const mathJaxTypeset = async (
     // An optional function to run when the typeset finishes.
     afterTypesetFunc: () => void = () => {},
 ) => {
-    // Don't await this promise -- other MathJax processing may still be running. See the [release notes](https://github.com/mathjax/MathJax-src/releases/tag/4.0.0-rc.4#api).
+    // Don't await this promise -- other MathJax processing may still be
+    // running. See the [release
+    // notes](https://github.com/mathjax/MathJax-src/releases/tag/4.0.0-rc.4#api).
     window.MathJax.typesetPromise([node]);
     try {
-        // Instead, this function calls `afterTypesetFunc` after it awaits all internal MathJax promises.
+        // Instead, this function calls `afterTypesetFunc` after it awaits all
+        // internal MathJax promises.
         window.MathJax.whenReady(afterTypesetFunc);
     } catch (err: any) {
         console.log("Typeset failed: " + err.message);
@@ -736,9 +746,10 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                 ;
                                 selection_path.length;
                                 selection_node =
-                                    // As before, use the more-consistent `children`
-                                    // except for the last element, where we might
-                                    // be selecting a `text` node.
+                                    // As before, use the more-consistent
+                                    // `children` except for the last element,
+                                    // where we might be selecting a `text`
+                                    // node.
                                     (
                                         selection_path.length > 1
                                             ? selection_node.children
