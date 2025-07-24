@@ -20,6 +20,11 @@ Changelog
 =========
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
+    *   No changes.
+*   v0.1.23, 2025-Jul-24
+    *   Correct diff errors in IDE with CRLF line endings
+    *   Upgrade to newest release of MathJax, TinyMCE.
+*   v0.1.22, 2025-Jul-24 
     *   Better support for opening a page in a web browser.
     *   Support HTTP basic authentication to restrict access; use
         `codechat-editor-server serve --auth username:password`.
@@ -119,4 +124,3 @@ Changelog
 *   v0.1.0, 2024-Oct-16:
     *   Initial release, with binaries for Windows only. Built with
         manually-patched CodeMirror per [this
-        issue](https://github.com/bjones1/CodeChat_Editor/issues/27).
