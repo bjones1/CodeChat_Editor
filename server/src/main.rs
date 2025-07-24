@@ -81,7 +81,7 @@ enum Commands {
 
         /// Define the username:password used to limit access to the server. By default, access is unlimited.
         #[arg(short, long, value_parser = parse_credentials)]
-        credentials: Option<Credentials>,
+        auth: Option<Credentials>,
     },
     /// Start the webserver in a child process then exit.
     Start {
@@ -100,7 +100,7 @@ enum Commands {
 impl Cli {
     fn run(self, addr: &SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
-            Commands::Serve { log, credentials } => {
+            Commands::Serve { log, auth: credentials } => {
                 #[cfg(debug_assertions)]
                 if let Some(TestMode::Sleep) = self.test_mode {
                     // For testing, don't start the server at all.
@@ -317,7 +317,7 @@ fn parse_credentials(s: &str) -> Result<Credentials, String> {
     let split_: Vec<_> = s.split(":").collect();
     if split_.len() != 2 {
         Err(format!(
-            "Unable to parse credentials as username:password; found {} colon-separated string(s)",
+            "Unable to parse credentials as username:password; found {} colon-separated string(s), but expected 2",
             split_.len()
         ))
     } else {
