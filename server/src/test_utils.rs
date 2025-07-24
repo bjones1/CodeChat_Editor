@@ -47,7 +47,7 @@ use crate::testing_logger;
 #[macro_export]
 macro_rules! cast {
     // For an enum containing a single value (the typical case).
-    ($target: expr_2021, $pat: path) => {{
+    ($target: expr, $pat: path) => {{
         // The if let exploits recent Rust compiler's smart pattern matching.
         // Contrary to other solutions like `into_variant`` and friends, this
         // one macro covers all ownership usage like` self``, `&self`` and `&mut
@@ -64,7 +64,7 @@ macro_rules! cast {
         }
     }};
     // For an enum containing multiple values, return a tuple. I can't figure out how to automatically do this; for now, the caller must provide the correct number of tuple parameters.
-    ($target: expr_2021, $pat: path, $( $tup: ident),*) => {{
+    ($target: expr, $pat: path, $( $tup: ident),*) => {{
         if let $pat($($tup,)*) = $target {
             ($($tup,)*)
         }
