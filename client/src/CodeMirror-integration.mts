@@ -477,9 +477,11 @@ export const mathJaxTypeset = async (
     // An optional function to run when the typeset finishes.
     afterTypesetFunc: () => void = () => {},
 ) => {
+    // Don't await this promise -- other MathJax processing may still be running. See the [release notes](https://github.com/mathjax/MathJax-src/releases/tag/4.0.0-rc.4#api).
+    window.MathJax.typesetPromise([node]);
     try {
-        await window.MathJax.typesetPromise([node]);
-        afterTypesetFunc();
+        // Instead, this function calls `afterTypesetFunc` after it awaits all internal MathJax promises.
+        window.MathJax.whenReady(afterTypesetFunc);
     } catch (err: any) {
         console.log("Typeset failed: " + err.message);
     }

@@ -311,13 +311,13 @@ fn patch_client_npm() -> io::Result<()> {
     // Copy across the parts of MathJax that are needed, since bundling it is
     // difficult.
     quick_copy_dir(
-        "../client/node_modules/mathjax/",
+        "../client/node_modules/@mathjax/src/bundle/",
         "../client/static/mathjax",
         None,
     )?;
     quick_copy_dir(
-        "../client/node_modules/mathjax-modern-font/chtml/",
-        "../client/static/mathjax-modern-font/chtml",
+        "../client/node_modules/@mathjax/mathjax-newcm-font/chtml/",
+        "../client/static/mathjax-newcm-font/chtml",
         None,
     )?;
     // Copy over the graphviz files needed.

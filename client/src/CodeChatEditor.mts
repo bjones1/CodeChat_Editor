@@ -118,7 +118,6 @@ declare global {
             allow_navigation: boolean;
         };
         CodeChatEditor_test: any;
-        MathJax: any;
     }
 }
 
@@ -248,7 +247,7 @@ const _open_lp = async (
     // Disable autosave when updating the document.
     autosaveEnabled = false;
     clearAutosaveTimer();
-    // Before calling any MathJax, make sure it's fully loaded.
+    // Before calling any MathJax, make sure it's fully loaded and the initial render is finished.
     await window.MathJax.startup.promise;
     // Per
     // the[docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),

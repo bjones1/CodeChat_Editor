@@ -20,7 +20,7 @@
 # =======================================
 bundled/
 mathjax/
-mathjax-modern-font/
+mathjax-newcm-font/
 graphviz-webcomponent/
 
 # CodeChat Editor lexer: python. See TODO.

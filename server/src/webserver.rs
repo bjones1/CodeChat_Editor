@@ -391,7 +391,7 @@ const MATHJAX_TAGS: &str = indoc!(
         MathJax = {
             // See the [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
             chtml: {
-                fontURL: "/static/mathjax-modern-font/chtml/woff",
+                fontURL: "/static/mathjax-newcm-font/chtml/woff2",
             },
             tex: {
                 inlineMath: [['$', '$'], ['\\(', '\\)']]
