@@ -48,7 +48,7 @@
         "mermaid": "^11",
         "npm-check-updates": "^18",
         "pdfjs-dist": "^5",
-        "tinymce": "^7"
+        "tinymce": "^8"
     },
     "repository": {
         "type": "git",
