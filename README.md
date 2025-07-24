@@ -208,7 +208,7 @@ Contributions to the code are welcome and encouraged!
 License
 -------
 
-Copyright (C) 2022 Bryan A. Jones.
+Copyright (C) 2025 Bryan A. Jones.
 
 This file is part of the CodeChat Editor.
 

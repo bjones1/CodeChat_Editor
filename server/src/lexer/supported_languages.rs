@@ -1,4 +1,4 @@
-/// Copyright (C) 2023 Bryan A. Jones.
+/// Copyright (C) 2025 Bryan A. Jones.
 ///
 /// This file is part of the CodeChat Editor. The CodeChat Editor is free
 /// software: you can redistribute it and/or modify it under the terms of the
