@@ -106,7 +106,6 @@ pub fn find_eol_type(s: &str) -> EolType {
     }
 }
 
-//
 // This is the processing task for the Visual Studio Code IDE. It handles all
 // the core logic to moving data between the IDE and the client.
 #[get("/vsc/ws-ide/{connection_id}")]
@@ -719,16 +718,13 @@ pub async fn vscode_ide_websocket(
                                             Some(cfw) => match codechat_for_web_to_source(
                                                 &cfw)
                                             {
-                                                Ok(mut result) => {
-                                                    if eol == EolType::Crlf {
-                                                        // Before sending back to the IDE, fix EOLs for Windows.
-                                                        result = result.replace("\n", "\r\n");
-                                                    }
+                                                Ok(result) => {
                                                     let ccfw = if sync_state == SyncState::InSync {
                                                         Some(CodeChatForWeb {
                                                             metadata: cfw.metadata,
                                                             source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                                                                doc: diff_str(&source_code, &result),
+                                                                // Diff with correct EOLs, so that (for CRLF files as well as LF files) offsets are correct.
+                                                                doc: diff_str(&eol_convert(source_code, &eol), &eol_convert(result.clone(), &eol)),
                                                                 doc_blocks: vec![],
                                                             }),
                                                         })
@@ -737,11 +733,12 @@ pub async fn vscode_ide_websocket(
                                                             metadata: cfw.metadata,
                                                             source: CodeMirrorDiffable::Plain(CodeMirror {
                                                                 // We must clone here, so that it can be placed in the TX queue.
-                                                                doc: result.clone(),
+                                                                doc: eol_convert(result.clone(), &eol),
                                                                 doc_blocks: vec![],
                                                             }),
                                                         })
                                                     };
+                                                    // Store the document with Unix-style EOLs (LFs).
                                                     source_code = result;
                                                     let CodeMirrorDiffable::Plain(cmd) = cfw.source else {
                                                         // TODO: support diffable!
@@ -925,3 +922,13 @@ async fn serve_vscode_fs(
 ) -> HttpResponse {
     filesystem_endpoint(request_path, &req, &app_state).await
 }
+
+// If a string is encoded using CRLFs (Windows style), convert it to LFs only (Unix style).
+fn eol_convert(s: String, eol_type: &EolType) -> String {
+    if eol_type == &EolType::Crlf {
+        s.replace("\n", "\r\n")
+    } else {
+        s
+    }
+}
+
