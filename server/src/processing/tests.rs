@@ -37,9 +37,9 @@ use crate::{
     prep_test_dir,
     processing::{
         CodeMirrorDiffable, CodeMirrorDocBlockDelete, CodeMirrorDocBlockTransaction,
-        CodeMirrorDocBlockUpdate, code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks,
-        codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
-        source_to_codechat_for_web,
+        CodeMirrorDocBlockUpdate, byte_index_of, code_doc_block_vec_to_source,
+        code_mirror_to_code_doc_blocks, codechat_for_web_to_source, diff_code_mirror_doc_blocks,
+        diff_str, source_to_codechat_for_web,
     },
     test_utils::stringit,
 };
@@ -143,14 +143,24 @@ fn test_codemirror_to_code_doc_blocks_py() {
         vec![build_doc_block("", "#", "Test")]
     );
 
-    // Pass one doc block containing Unicode.
+    // Pass a code and doc block containing Unicode.
     assert_eq!(
         run_test(
             "python",
             "σ\n",
-            vec![build_codemirror_doc_block(1, 2, "", "#", "Test")],
+            vec![build_codemirror_doc_block(1, 2, "", "#", "⑤")],
         ),
-        vec![build_code_block("σ"), build_doc_block("", "#", "Test")]
+        vec![build_code_block("σ"), build_doc_block("", "#", "⑤")]
+    );
+
+    // Pass one doc block containing Unicode composed of two UTF-16 code units.
+    assert_eq!(
+        run_test(
+            "python",
+            "😄\n",
+            vec![build_codemirror_doc_block(2, 3, "", "#", "👨‍👦")],
+        ),
+        vec![build_code_block("😄"), build_doc_block("", "#", "👨‍👦")]
     );
 
     // A code block then a doc block
@@ -722,26 +732,20 @@ fn test_find_path_to_toc_1() {
     temp_dir.close().unwrap();
 }
 
+// Given a diff, apply it to the provided `before` string to produce the
+// resulting `after` string.
 fn apply_str_diff(before: &str, diffs: &[StringDiff]) -> String {
     let mut before = before.to_string();
     // Walk from the last diff to the first.
     for diff in diffs.iter().rev() {
         // Convert from a character index to a byte index. If the index is past
         // the end of the string, report the length of the string.
-        let from_index = before
-            .char_indices()
-            .nth(diff.from)
-            .unwrap_or((before.len(), 'x'))
-            .0;
+        let from_index = byte_index_of(&before, diff.from);
         if let Some(to) = diff.to {
-            let to_index = before
-                .char_indices()
-                .nth(to)
-                .unwrap_or((before.len(), 'x'))
-                .0;
+            let to_index = byte_index_of(&before, to);
             before.replace_range(from_index..to_index, &diff.insert);
         } else {
-            before.insert_str(diff.from, &diff.insert);
+            before.insert_str(from_index, &diff.insert);
         };
     }
     before
@@ -861,11 +865,21 @@ fn test_diff_1() {
 
     // Test with unicode.
     test_diff(
-        "①\n②③④\n⑤⑥",
-        "①\n❷❸\n⑤⑥",
+        // This encodes to the following UTF-16 string:
+        //
+        // ```
+        //       \ud83d \ude04 \u000a \ud83d \udc49 \ud83c \udfff \ud83d \udc68 \u200d \ud83d \udc66 \ud83c \uddfa \ud83c \uddf3 \u000a \u2464 \u2465
+        // index:   0      1      2   [  3      4      5      6      7      8      9      10     11     12     13     14     15     16  ]  17     18
+        // char:    ---😄---     \n      ----------👉🏿---------      --------------👨‍👦--------------     -----------🇺🇳----------      \n     ⑤      ⑥
+        // ```
+        //
+        // These are taken from the [MDN UTF-16
+        // docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String#utf-16_characters_unicode_code_points_and_grapheme_clusters).
+        "😄\n👉🏿👨‍👦🇺🇳\n⑤⑥",
+        "😄\n❷❸\n⑤⑥",
         &[StringDiff {
-            from: 2,
-            to: Some(6),
+            from: 3,
+            to: Some(17),
             insert: "❷❸\n".to_string(),
         }],
     );

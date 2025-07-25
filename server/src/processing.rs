@@ -128,15 +128,16 @@ pub enum CodeMirrorDocBlockTransaction {
 // `CodeMirrorDocBlockTuple`.
 #[ts(as = "CodeMirrorDocBlockTuple")]
 pub struct CodeMirrorDocBlock {
-    // From -- the starting character this doc block is anchored to.
+    /// The starting character this doc block is anchored to, measured in UTF-16
+    /// code units. `to` is measured the same way.
     pub from: usize,
-    // To -- the ending character this doc block is anchored to.
+    /// The ending character this doc block is anchored to.
     pub to: usize,
-    // Indent.
+    /// Indent.
     pub indent: String,
-    // Delimiter.
+    /// Delimiter.
     pub delimiter: String,
-    // Contents.
+    /// Contents.
     pub contents: String,
 }
 
@@ -144,21 +145,19 @@ pub struct CodeMirrorDocBlock {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(optional_fields)]
 pub struct CodeMirrorDocBlockUpdate {
-    /// From -- the starting character this doc block is anchored to before this
-    /// update. In the JSON encoding, there's little gain from making this an
-    /// `Option`, since `undefined` takes more characters than most line
-    /// numbers.
+    /// The starting character this doc block is anchored to before this update.
+    /// Like `CodeMirrorDocBlock`, units for this, `from_update`, and `to` are
+    /// in UTF-16 code units.
     pub from: usize,
     /// The starting character this doc block is anchored to after this update.
     pub from_new: usize,
-    /// To -- the ending character this doc block is anchored to. Likewise,
-    /// avoid using an `Option` here.
+    /// The ending character this doc block is anchored to.
     pub to: usize,
-    /// Indent, or None if unchanged. Since the indent may be many characters,
-    /// use an `Option` here.
+    /// `None` if the indent is unchanged. Since the indent may be many
+    /// characters, use an `Option` here.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indent: Option<String>,
-    /// Delimiter. Again, this is usually too short to merit an `Option`.
+    /// Delimiter.
     pub delimiter: String,
     /// Contents, as a diff of the previous contents.
     pub contents: Vec<StringDiff>,
@@ -193,7 +192,7 @@ pub struct StringDiff {
 #[derive(Debug, PartialEq)]
 pub enum TranslationResults {
     /// This file is unknown to and therefore not supported by the CodeChat
-    // Editor.
+    /// Editor.
     Unknown,
     /// This is a CodeChat Editor file but it contains errors that prevent its
     /// translation. The string contains the error message.
@@ -395,26 +394,44 @@ pub fn codechat_for_web_to_source(
     code_doc_block_vec_to_source(&code_doc_block_vec, lexer)
 }
 
+/// Return the byte index of `s[u16_16_index]`, where the indexing operation is
+/// in UTF-16 code units.
+fn byte_index_of(s: &str, utf_16_index: usize) -> usize {
+    let mut byte_index = 0;
+    let mut current_index = 0;
+    for c in s.chars() {
+        if current_index >= utf_16_index {
+            return byte_index;
+        }
+        current_index += c.len_utf16();
+        byte_index += c.len_utf8();
+    }
+    // This index refers to the end of the string -- return that.
+    s.len()
+}
+
 /// Translate from CodeMirror to CodeDocBlocks.
 fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock> {
     let doc_blocks = &code_mirror.doc_blocks;
-    // A CodeMirror "document" is really source code. Convert it from UTF-8
-    // bytes to an array of characters, which is indexable by character.
-    let code: Vec<char> = code_mirror.doc.chars().collect();
+    // Translate between UTF-16 code units (the `from` and `to` provided by CodeMirror) and byte indexes (which Rust uses). Keep track of the current byte index/UTF-16 index; we always move forward from that location.
+    let mut byte_index: usize = 0;
+    let mut utf16_index: usize = 0;
     let mut code_doc_block_arr: Vec<CodeDocBlock> = Vec::new();
-    // Keep track of the to index of the previous doc block. Since we haven't
-    // processed any doc blocks, start at 0.
-    let mut code_index: usize = 0;
 
     // Walk through each doc block, inserting the previous code block followed
     // by the doc block.
     for codemirror_doc_block in doc_blocks {
+        // Translate `from`.
+        let byte_index_prev = byte_index;
+        byte_index += byte_index_of(
+            &code_mirror.doc[byte_index..],
+            codemirror_doc_block.from - utf16_index,
+        );
+        utf16_index = codemirror_doc_block.from;
         // Append the code block, unless it's empty.
-        let code_contents = &code[code_index..codemirror_doc_block.from];
+        let code_contents = &code_mirror.doc[byte_index_prev..byte_index];
         if !code_contents.is_empty() {
-            // Convert back from a character array to a string.
-            let s: String = code_contents.iter().collect();
-            code_doc_block_arr.push(CodeDocBlock::CodeBlock(s.to_string()))
+            code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()))
         }
         // Append the doc block.
         code_doc_block_arr.push(CodeDocBlock::DocBlock(DocBlock {
@@ -423,15 +440,18 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
             contents: codemirror_doc_block.contents.to_string(),
             lines: 0,
         }));
-        code_index = codemirror_doc_block.to;
+        // Translate `to`.
+        byte_index += byte_index_of(
+            &code_mirror.doc[byte_index..],
+            codemirror_doc_block.to - utf16_index,
+        );
+        utf16_index = codemirror_doc_block.to;
     }
 
     // See if there's a code block after the last doc block.
-    let code_contents = &code[code_index..];
+    let code_contents = &code_mirror.doc[byte_index..];
     if !code_contents.is_empty() {
-        // Convert back from a character array to a string.
-        let s: String = code_contents.iter().collect();
-        code_doc_block_arr.push(CodeDocBlock::CodeBlock(s.to_string()));
+        code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()));
     }
 
     code_doc_block_arr
@@ -850,7 +870,19 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
         let count_before_chars = |lines: Range<u32>| {
             input.before[lines.start as usize..lines.end as usize]
                 .iter()
-                .map(|&line| input.interner[line].chars().count())
+                .map(|&line| {
+                    input.interner[line].chars().fold(
+                        // Count offsets into the string in UTF-16 code units,
+                        // since the offsets produced are used by the Client
+                        // ([JavaScript uses
+                        // UTF-16](https://developer.mozilla.org/en-US/docs/Glossary/UTF-16#utf-16_in_javascript),
+                        // as does
+                        // [CodeMirror](https://codemirror.net/docs/guide/#document-offsets))
+                        // and VSCode (also JavaScript).
+                        0,
+                        |acc, e| acc + e.len_utf16(),
+                    )
+                })
                 .sum::<usize>()
         };
         // Sum characters between the last change and this change.
