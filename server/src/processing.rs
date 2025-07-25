@@ -950,7 +950,7 @@ pub fn diff_code_mirror_doc_blocks(
     // This compare all fields, not just the `contents`, of two
     // `CodeMirrorDocBlock`s. It should be applied to every entry that the
     // `diff` function sees as equal.
-    let mut diff_all = |hunk: &Hunk, change_spec: &mut Vec<CodeMirrorDocBlockTransaction>| {
+    let mut diff_all = |hunk: &Hunk, change_specs: &mut Vec<CodeMirrorDocBlockTransaction>| {
         // First, compare blocks from the previous point until this point. The
         // diff used only compares contents; this checks everything.
         while prev_before_range_end < hunk.before.start && prev_after_range_end < hunk.after.start {
@@ -968,7 +968,7 @@ pub fn diff_code_mirror_doc_blocks(
             // Second phase: if before and after are different, insert an
             // update.
             if prev_before_range_start_val != prev_after_range_start_val {
-                change_spec.push(CodeMirrorDocBlockTransaction::Update(
+                change_specs.push(CodeMirrorDocBlockTransaction::Update(
                     CodeMirrorDocBlockUpdate {
                         from: prev_before_range_start_val.from,
                         from_new: prev_after_range_start_val.from,
@@ -996,10 +996,10 @@ pub fn diff_code_mirror_doc_blocks(
         prev_after_range_end = hunk.after.end;
     };
 
-    let mut change_spec = Vec::new();
+    let mut change_specs = Vec::new();
     let diff = Diff::compute(Algorithm::Histogram, &input);
     for hunk in diff.hunks() {
-        diff_all(&hunk, &mut change_spec);
+        diff_all(&hunk, &mut change_specs);
         // Update the `prev` values so we start processing immediately after
         // this change.
 
@@ -1014,7 +1014,7 @@ pub fn diff_code_mirror_doc_blocks(
             // still correct.
             if before_index < hunk.before.end {
                 let before_val = &before[before_index as usize];
-                change_spec.push(CodeMirrorDocBlockTransaction::Update(
+                change_specs.push(CodeMirrorDocBlockTransaction::Update(
                     CodeMirrorDocBlockUpdate {
                         from: before_val.from,
                         from_new: after_val.from,
@@ -1031,7 +1031,7 @@ pub fn diff_code_mirror_doc_blocks(
                 before_index += 1;
             } else {
                 // Otherwise, this in an insert.
-                change_spec.push(CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
+                change_specs.push(CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
                     from: after_val.from,
                     to: after_val.to,
                     indent: after_val.indent.clone(),
@@ -1042,7 +1042,7 @@ pub fn diff_code_mirror_doc_blocks(
         }
 
         if before_index < hunk.before.end {
-            change_spec.push(CodeMirrorDocBlockTransaction::Delete(
+            change_specs.push(CodeMirrorDocBlockTransaction::Delete(
                 CodeMirrorDocBlockDelete {
                     from: before[before_index as usize].from,
                 },
@@ -1057,13 +1057,46 @@ pub fn diff_code_mirror_doc_blocks(
             before: (before.len() as u32..0),
             after: after.len() as u32..0,
         },
-        &mut change_spec,
+        &mut change_specs,
     );
 
-    // Apply the changes in reverse order, so that later from/to ranges don't
-    // overlap with earlier ranges during the update.
-    change_spec.reverse();
-    change_spec
+    // If two doc blocks immediately follow each other: `# foo\n # bar\n`, for example,
+    // and a line is inserted before both, then a problem occurs when applying the change:
+    // applying the change to the first block sets its `from` value to the `from` value
+    // for the second block. This violates a doc blocks invariant -- each doc block
+    // must have a unique `from` value; therefore, these two doc blocks can no longer be
+    // distinguished, making it impossible to apply the change to the second doc block.
+    // More generally, this can occur with an insert before a series of blocks which
+    // immediately follow each other. Therefore, look for sequences of updates where `from_new` of a previous entry == `from` of the current
+    // entry and swap these sequences.
+    let mut immediate_sequence_start_index: Option<usize> = None;
+    for index in 1..change_specs.len() {
+        if let CodeMirrorDocBlockTransaction::Update(prev_update) = &change_specs[index - 1]
+            && let CodeMirrorDocBlockTransaction::Update(update) = &change_specs[index]
+            && prev_update.from_new == update.from
+            && prev_update.from < prev_update.from_new
+        {
+            // We've found two elements in a sequence.
+            if immediate_sequence_start_index.is_none() {
+                // This is the start of the sequence -- mark it.
+                immediate_sequence_start_index = Some(index - 1);
+            }
+        } else {
+            // These two elements aren't a sequence.
+            if let Some(prev_index) = immediate_sequence_start_index {
+                // This is the end of a sequence. Reverse it.
+                change_specs[prev_index..index].reverse();
+            }
+            // Mark that there's no sequence now.
+            immediate_sequence_start_index = None;
+        }
+    }
+    // If a sequence ended at the end of the document, process it.
+    if let Some(prev_index) = immediate_sequence_start_index {
+        change_specs[prev_index..].reverse();
+    }
+
+    change_specs
 }
 
 // Goal: make it easy to update the data structure. We update on every
