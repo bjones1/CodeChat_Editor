@@ -1,6 +1,6 @@
 {
     "name": "codechat-editor-client",
-    "version": "0.1.23",
+    "version": "0.1.24",
     "publisher": "CodeChat",
     "engines": {
         "vscode": "^1.61.0"
