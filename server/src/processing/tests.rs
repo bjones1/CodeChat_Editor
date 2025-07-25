@@ -1122,7 +1122,8 @@ fn test_diff_2() {
     assert_eq!(
         ret,
         vec![
-            // Order is important -- first, 12->13, then 11->12, 10->11 (reversed order).
+            // Order is important -- first, 12->13, then 11->12, 10->11
+            // (reversed order).
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
                 from: 12,
                 from_new: 13,
@@ -1165,7 +1166,8 @@ fn test_diff_2() {
     assert_eq!(
         ret,
         vec![
-            // Order is important -- 11->12, then 10->11 (reversed), then 13->14.
+            // Order is important -- 11->12, then 10->11 (reversed), then
+            // 13->14.
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
                 from: 11,
                 from_new: 12,

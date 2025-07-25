@@ -413,7 +413,9 @@ fn byte_index_of(s: &str, utf_16_index: usize) -> usize {
 /// Translate from CodeMirror to CodeDocBlocks.
 fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock> {
     let doc_blocks = &code_mirror.doc_blocks;
-    // Translate between UTF-16 code units (the `from` and `to` provided by CodeMirror) and byte indexes (which Rust uses). Keep track of the current byte index/UTF-16 index; we always move forward from that location.
+    // Translate between UTF-16 code units (the `from` and `to` provided by
+    // CodeMirror) and byte indexes (which Rust uses). Keep track of the current
+    // byte index/UTF-16 index; we always move forward from that location.
     let mut byte_index: usize = 0;
     let mut utf16_index: usize = 0;
     let mut code_doc_block_arr: Vec<CodeDocBlock> = Vec::new();
@@ -1060,15 +1062,17 @@ pub fn diff_code_mirror_doc_blocks(
         &mut change_specs,
     );
 
-    // If two doc blocks immediately follow each other: `# foo\n # bar\n`, for example,
-    // and a line is inserted before both, then a problem occurs when applying the change:
-    // applying the change to the first block sets its `from` value to the `from` value
-    // for the second block. This violates a doc blocks invariant -- each doc block
-    // must have a unique `from` value; therefore, these two doc blocks can no longer be
-    // distinguished, making it impossible to apply the change to the second doc block.
-    // More generally, this can occur with an insert before a series of blocks which
-    // immediately follow each other. Therefore, look for sequences of updates where `from_new` of a previous entry == `from` of the current
-    // entry and swap these sequences.
+    // If two doc blocks immediately follow each other: `# foo\n # bar\n`, for
+    // example, and a line is inserted before both, then a problem occurs when
+    // applying the change: applying the change to the first block sets its
+    // `from` value to the `from` value for the second block. This violates a
+    // doc blocks invariant -- each doc block must have a unique `from` value;
+    // therefore, these two doc blocks can no longer be distinguished, making it
+    // impossible to apply the change to the second doc block. More generally,
+    // this can occur with an insert before a series of blocks which immediately
+    // follow each other. Therefore, look for sequences of updates where
+    // `from_new` of a previous entry == `from` of the current entry and swap
+    // these sequences.
     let mut immediate_sequence_start_index: Option<usize> = None;
     for index in 1..change_specs.len() {
         if let CodeMirrorDocBlockTransaction::Update(prev_update) = &change_specs[index - 1]
