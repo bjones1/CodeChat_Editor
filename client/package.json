@@ -17,6 +17,7 @@
         "@types/js-beautify": "^1",
         "@types/mocha": "^10",
         "@types/node": "^24",
+        "@types/toastify-js": "^1.12.4",
         "@typescript-eslint/eslint-plugin": "^8",
         "@typescript-eslint/parser": "^8",
         "chai": "^5",
@@ -41,14 +42,15 @@
         "@codemirror/lang-rust": "^6",
         "@codemirror/lang-xml": "^6",
         "@codemirror/view": "^6",
-        "codemirror": "^6",
-        "graphviz-webcomponent": "^2",
         "@mathjax/mathjax-newcm-font": "4.0.0-rc.4",
         "@mathjax/src": "4.0.0-rc.4",
+        "codemirror": "^6",
+        "graphviz-webcomponent": "^2",
         "mermaid": "^11",
         "npm-check-updates": "^18",
         "pdfjs-dist": "^5",
-        "tinymce": "^8"
+        "tinymce": "^8",
+        "toastify-js": "^1"
     },
     "repository": {
         "type": "git",

@@ -89,6 +89,7 @@ import {
     StringDiff,
 } from "./shared_types.mjs";
 import { assert } from "./assert.mjs";
+import { show_toast } from "./show_toast.mjs";
 
 // Globals
 // -------
@@ -203,10 +204,10 @@ export const docBlockField = StateField.define<DecorationSet>({
                             // doc block.
                             if (prev !== undefined) {
                                 console.error({ doc_blocks, effect });
-                                assert(
-                                    false,
+                                report_error(
                                     "More than one doc block at one location found.",
                                 );
+                                assert(false);
                             }
                             prev = value;
                             to = to_found;
@@ -220,7 +221,8 @@ export const docBlockField = StateField.define<DecorationSet>({
                 );
                 if (prev === undefined) {
                     console.error({ doc_blocks, effect });
-                    assert(false, "No doc block found.");
+                    report_error("No doc block found.");
+                    assert(false);
                 }
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
@@ -493,7 +495,7 @@ export const mathJaxTypeset = async (
         // internal MathJax promises.
         window.MathJax.whenReady(afterTypesetFunc);
     } catch (err: any) {
-        console.log("Typeset failed: " + err.message);
+        report_error(`Typeset failed: ${err.message}`);
     }
 };
 
@@ -937,7 +939,7 @@ export const CodeMirror_load = async (
 
             default:
                 parser = javascript();
-                console.log(`Unknown lexer name ${lexer_name}`);
+                report_error(`Unknown lexer name ${lexer_name}`);
                 break;
         }
         const state = EditorState.fromJSON(
@@ -1067,4 +1069,9 @@ export const CodeMirror_save = (): CodeMirrorDiffable => {
     delete (code_mirror as any).selection;
 
     return { Plain: code_mirror };
+};
+
+const report_error = (text: string) => {
+    console.error(text);
+    show_toast(text);
 };

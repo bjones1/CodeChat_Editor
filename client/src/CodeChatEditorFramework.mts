@@ -30,6 +30,7 @@
 //
 // #### Third-party
 import ReconnectingWebSocket from "./third-party/ReconnectingWebSocket.cjs";
+import { show_toast as show_toast_core } from "./show_toast.mjs";
 
 // #### Local
 import { assert } from "./assert.mjs";
@@ -91,7 +92,9 @@ class WebSocketComm {
 
         // Provide logging to help track down errors.
         this.ws.onerror = (event: any) => {
-            console.error(`CodeChat Client: websocket error ${event}.`);
+            report_error(
+                `CodeChat Client: websocket error ${JSON.stringify(event)}.`,
+            );
         };
 
         this.ws.onclose = (event: any) => {
@@ -109,10 +112,10 @@ class WebSocketComm {
             console.log(
                 `Received data id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
             );
-            console.assert(id !== undefined);
-            console.assert(message !== undefined);
+            assert(id !== undefined);
+            assert(message !== undefined);
             const keys = Object.keys(message);
-            console.assert(keys.length === 1);
+            assert(keys.length === 1);
             const key = keys[0];
             const value = Object.values(message)[0];
 
@@ -128,7 +131,7 @@ class WebSocketComm {
                         current_update.file_path !== this.current_filename
                     ) {
                         const msg = `Ignoring update for ${current_update.file_path} because it's not the current file ${this.current_filename}.`;
-                        console.log(msg);
+                        report_error(msg);
                         this.send_result(id, msg);
                         break;
                     }
@@ -147,8 +150,9 @@ class WebSocketComm {
                         }
                     } else {
                         // TODO: handle scroll/cursor updates.
-                        result = `Unhandled Update message: ${current_update}`;
-                        console.log(result);
+                        report_error(
+                            `Unhandled Update message: ${current_update}`,
+                        );
                     }
 
                     this.send_result(id, result);
@@ -205,17 +209,16 @@ class WebSocketComm {
                     // Report if this was an error.
                     const result_contents = value as MessageResult;
                     if ("Err" in result_contents) {
-                        console.log(
+                        report_error(
                             `Error in message ${id}: ${result_contents.Err}.`,
                         );
                     }
                     break;
 
                 default:
-                    console.log(
-                        `Received unhandled message ${key}(${JSON.stringify(value).substring(0, MAX_MESSAGE_LENGTH)})`,
-                    );
-                    this.send_result(id, `Unhandled message ${key}(${value})`);
+                    const msg = `Received unhandled message ${key}(${JSON.stringify(value).substring(0, MAX_MESSAGE_LENGTH)})`;
+                    report_error(msg);
+                    this.send_result(id, msg);
                     break;
             }
         };
@@ -239,7 +242,7 @@ class WebSocketComm {
     // Report an error from the server.
     report_server_timeout = (message_id: number) => {
         delete this.pending_messages[message_id];
-        console.log(`Error: server timeout for message id ${message_id}`);
+        report_error(`Error: server timeout for message id ${message_id}`);
     };
 
     // Send a message expecting a result to the server.
@@ -251,7 +254,7 @@ class WebSocketComm {
         this.ws_id += 3;
         // Add in the current filename to the message, if it's an `Update`.
         if (typeof message == "object" && "Update" in message) {
-            console.assert(this.current_filename !== undefined);
+            assert(this.current_filename !== undefined);
             message.Update.file_path = this.current_filename!;
         }
         console.log(
@@ -385,3 +388,16 @@ declare global {
         CodeChatEditor_test: any;
     }
 }
+
+const show_toast = (text: string) => {
+    if (get_client() === undefined) {
+        show_toast_core(text);
+    } else {
+        root_iframe!.contentWindow!.CodeChatEditor.show_toast(text);
+    }
+};
+
+const report_error = (text: string) => {
+    console.error(text);
+    show_toast(text);
+};

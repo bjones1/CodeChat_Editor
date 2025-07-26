@@ -59,7 +59,7 @@ import {
 } from "./CodeMirror-integration.mjs";
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
-// This must be imported*after* the previous setup import, so it's placed here,
+// This must be imported *after* the previous setup import, so it's placed here,
 // instead of in the third-party category above.
 import "graphviz-webcomponent";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
@@ -70,6 +70,7 @@ import {
     UpdateMessageContents,
     CodeMirror,
 } from "./shared_types.mjs";
+import { show_toast } from "./show_toast.mjs";
 
 // ### CSS
 import "./css/CodeChatEditor.css";
@@ -115,6 +116,7 @@ declare global {
             // Called by the Client Framework.
             open_lp: (code_chat_for_web: CodeChatForWeb) => Promise<void>;
             on_save: (_only_if_dirty: boolean) => Promise<void>;
+            show_toast: (text: string) => void;
             allow_navigation: boolean;
         };
         CodeChatEditor_test: any;
@@ -180,6 +182,7 @@ export const page_init = () => {
         window.CodeChatEditor = {
             open_lp,
             on_save,
+            show_toast,
             allow_navigation: false,
         };
     });
