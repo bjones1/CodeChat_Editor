@@ -20,6 +20,8 @@ Changelog
 =========
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
+    *   Show notifications in Client when errors occur.
+*   v0.1.24, 2025-Jul-25: 
     *   Fix indexing in diffs for characters that use more than one UTF-16 code
         unit, such as 😄,👉🏿,👨‍👦, and 🇺🇳.
     *   Fix data corruption with adjacent doc blocks.

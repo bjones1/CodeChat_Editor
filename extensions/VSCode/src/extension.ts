@@ -276,9 +276,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                     let was_error: boolean = false;
 
                     websocket.on("error", (err: ErrorEvent) => {
-                        console.error(
-                            `CodeChat Editor extension: error in Server connection: ${err.message}`,
-                        );
                         was_error = true;
                         show_error(
                             `Error communicating with the CodeChat Editor Server: ${err.message}. Re-run the CodeChat Editor extension to restart it.`,
@@ -393,13 +390,21 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             // beginning of the document to a
                                             // `Position` (line, then offset on that
                                             // line) needed by VSCode.
-                                            const from = doc.positionAt(diff.from);
+                                            const from = doc.positionAt(
+                                                diff.from,
+                                            );
                                             if (diff.to === undefined) {
                                                 // This is an insert.
-                                                wse.insert(doc.uri, from, diff.insert);
+                                                wse.insert(
+                                                    doc.uri,
+                                                    from,
+                                                    diff.insert,
+                                                );
                                             } else {
                                                 // This is a replace or delete.
-                                                const to = doc.positionAt(diff.to);
+                                                const to = doc.positionAt(
+                                                    diff.to,
+                                                );
                                                 wse.replace(
                                                     doc.uri,
                                                     new Range(from, to),
@@ -408,7 +413,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             }
                                         }
                                     }
-                                    vscode.workspace.applyEdit(wse).then(() => ignore_text_document_change = false);
+                                    vscode.workspace
+                                        .applyEdit(wse)
+                                        .then(
+                                            () =>
+                                                (ignore_text_document_change = false),
+                                        );
                                 } else {
                                     // TODO: handle cursor/scroll position
                                     // updates.
@@ -488,13 +498,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 // Report if this was an error.
                                 const result_contents = value as MessageResult;
                                 if ("Err" in result_contents) {
-                                    const msg = `Error in message ${id}: ${result_contents.Err}`;
-                                    console.error(msg);
-                                    // Warning: Calling `show_error` shuts down
-                                    // the client. Do this deliberately, since
-                                    // timeouts (missed messages) can cause data
-                                    // corruption.
-                                    show_error(msg);
+                                    show_error(
+                                        `Error in message ${id}: ${result_contents.Err}`,
+                                    );
                                 }
                                 break;
                             }
@@ -693,6 +699,7 @@ const show_error = (message: string) => {
         quiet_next_error = false;
         return;
     }
+    console.error(`CodeChat Editor extension: ${message}`);
     if (webview_panel !== undefined) {
         // If the panel was displaying other content, reset it for errors.
         if (
