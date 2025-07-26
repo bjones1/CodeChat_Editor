@@ -23,6 +23,7 @@ Changelog
     *   Fix indexing in diffs for characters that use more than one UTF-16 code
         unit, such as 😄,👉🏿,👨‍👦, and 🇺🇳.
     *   Fix data corruption with adjacent doc blocks.
+    *   Translate line endings when loading a file from disk.
 *   v0.1.23, 2025-Jul-24
     *   Correct diff errors in IDE with CRLF line endings.
     *   Upgrade to newest release of MathJax, TinyMCE.

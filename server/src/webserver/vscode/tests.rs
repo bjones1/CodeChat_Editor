@@ -831,6 +831,7 @@ async fn test_vscode_ide_websocket4() {
     // Message ids: IDE - 4, Server - 3, Client - 2->5.
     let file_path_temp = fs::canonicalize(test_dir.join("test.py")).unwrap();
     let file_path = simplified(&file_path_temp);
+    let file_path_str = file_path.to_str().unwrap().to_string();
     send_message(
         &mut ws_client,
         &EditorMessage {
@@ -849,10 +850,7 @@ async fn test_vscode_ide_websocket4() {
         read_message(&mut ws_ide).await,
         EditorMessage {
             id: 2.0,
-            message: EditorMessageContents::CurrentFile(
-                file_path.to_str().unwrap().to_string(),
-                Some(true)
-            )
+            message: EditorMessageContents::CurrentFile(file_path_str.clone(), Some(true))
         }
     );
 
@@ -875,6 +873,7 @@ async fn test_vscode_ide_websocket4() {
     // The Client should send a GET request for this file.
     let test_dir_thread = test_dir.clone();
     let join_handle = thread::spawn(move || {
+        // Get the file itself.
         assert_eq!(
             minreq::get(format!(
                 "http://localhost:8080/vsc/fs/{connection_id}/{}/{}",
@@ -887,7 +886,7 @@ async fn test_vscode_ide_websocket4() {
             .unwrap()
             .status_code,
             200
-        )
+        );
     });
 
     // This should produce a `LoadFile` message.
@@ -917,7 +916,7 @@ async fn test_vscode_ide_websocket4() {
         EditorMessage {
             id: 6.0,
             message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: file_path.to_str().unwrap().to_string(),
+                file_path: file_path_str.clone(),
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -951,6 +950,113 @@ async fn test_vscode_ide_websocket4() {
         EditorMessage {
             id: 6.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        }
+    );
+
+    // Simulate a related fetch for a project -- the `toc.md` file.
+    let test_dir_thread = test_dir.clone();
+    let join_handle = thread::spawn(move || {
+        assert_eq!(
+            minreq::get(format!(
+                "http://localhost:8080/vsc/fs/{connection_id}/{}/toc.md",
+                test_dir_thread.to_slash().unwrap()
+            ))
+            .send()
+            .unwrap()
+            .status_code,
+            200
+        );
+    });
+
+    // This should also produce a `LoadFile` message.
+    //
+    // Message ids: IDE - 4, Server - 9->12, Client - 5.
+    let em = read_message(&mut ws_ide).await;
+    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    assert_eq!(
+        fs::canonicalize(&msg).unwrap(),
+        fs::canonicalize(test_dir.join("toc.md")).unwrap()
+    );
+    assert_eq!(em.id, 9.0);
+
+    // Reply to the `LoadFile` message: the IDE doesn't have the file.
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 9.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap();
+
+    // Send an update from the Client, which should produce a diff.
+    //
+    // Message ids: IDE - 4, Server - 12, Client - 5->8.
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: 5.0,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "More\n".to_string(),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 5,
+                            to: 6,
+                            indent: "".to_string(),
+                            delimiter: "#".to_string(),
+                            contents: "test.py".to_string(),
+                        }],
+                    }),
+                }),
+                cursor_position: None,
+                scroll_position: None,
+            }),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: 5.0,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: None,
+                            insert: format!("More{}", if cfg!(windows) { "\r\n" } else { "\n" }),
+                        }],
+                        doc_blocks: vec![],
+                    }),
+                }),
+                cursor_position: None,
+                scroll_position: None,
+            })
+        }
+    );
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 5.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: 5.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
         }
     );
 

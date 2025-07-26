@@ -534,7 +534,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
                         // file, which will still produce an error.
                         let empty_path = PathBuf::new();
                         let cfp = current_filepath.as_ref().unwrap_or(&empty_path);
-                        let (simple_http_response, option_update) = make_simple_http_response(&http_request, cfp, false).await;
+                        let (simple_http_response, option_update, _) = make_simple_http_response(&http_request, cfp, false).await;
                         if let Some(update) = option_update {
                             // Send the update to the client.
                             queue_send!(to_websocket_tx.send(EditorMessage {

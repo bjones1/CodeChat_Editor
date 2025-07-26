@@ -701,6 +701,8 @@ async fn make_simple_http_response(
     // If this file is currently being edited, this is the body of an `Update`
     // message to send.
     Option<UpdateMessageContents>,
+    // The resulting file contents, if this is a CodeChat Editor file
+    Option<String>,
 ) {
     // Convert the provided URL back into a file name.
     let file_path = &http_request.file_path;
@@ -710,19 +712,14 @@ async fn make_simple_http_response(
         Err(err) => (
             SimpleHttpResponse::Err(SimpleHttpResponseError::Io(err)),
             None,
+            None,
         ),
         Ok(mut fc) => {
             let file_contents = try_read_as_text(&mut fc).await;
             // <a id="binary-file-sniffer"></a>If this is a binary file (meaning
             // we can't read the contents as UTF-8), send the contents as none
             // to signal this isn't a text file.
-            file_to_response(
-                http_request,
-                current_filepath,
-                file_contents.as_deref(),
-                use_pdf_js,
-            )
-            .await
+            file_to_response(http_request, current_filepath, file_contents, use_pdf_js).await
         }
     }
 }
@@ -755,7 +752,7 @@ async fn file_to_response(
     // `try_canonicalize`.
     current_filepath: &Path,
     // Contents of this file, if it's text; None if it was binary data.
-    file_contents: Option<&str>,
+    file_contents: Option<String>,
     // True to use the PDF.js viewer for this file.
     use_pdf_js: bool,
 ) -> (
@@ -765,6 +762,8 @@ async fn file_to_response(
     // populate the Client with the parsed `file_contents`. In all other cases,
     // return None.
     Option<UpdateMessageContents>,
+    // The `file_contents` if this is a
+    Option<String>,
 ) {
     // Use a lossy conversion, since this is UI display, not filesystem access.
     let file_path = &http_request.file_path;
@@ -773,6 +772,7 @@ async fn file_to_response(
             SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
                 file_path.to_path_buf(),
             )),
+            None,
             None,
         );
     };
@@ -791,6 +791,7 @@ async fn file_to_response(
                 codechat_editor_js_name,
             )),
             None,
+            None,
         );
     };
     let codechat_editor_css_name = format!("CodeChatEditor{js_test_suffix}.css");
@@ -800,6 +801,7 @@ async fn file_to_response(
                 codechat_editor_css_name,
             )),
             None,
+            file_contents,
         );
     };
 
@@ -807,20 +809,20 @@ async fn file_to_response(
     // `try_canonical`.
     let is_current_file = file_path == current_filepath;
     let is_toc = http_request.flags == ProcessingTaskHttpRequestFlags::Toc;
-    let (translation_results_string, path_to_toc) = if let Some(file_contents_text) = file_contents
-    {
-        if is_current_file || is_toc {
-            source_to_codechat_for_web_string(file_contents_text, file_path, is_toc)
+    let (translation_results_string, path_to_toc) =
+        if let Some(ref file_contents_text) = file_contents {
+            if is_current_file || is_toc {
+                source_to_codechat_for_web_string(file_contents_text, file_path, is_toc)
+            } else {
+                // If this isn't the current file, then don't parse it.
+                (TranslationResultsString::Unknown, None)
+            }
         } else {
-            // If this isn't the current file, then don't parse it.
-            (TranslationResultsString::Unknown, None)
-        }
-    } else {
-        (
-            TranslationResultsString::Binary,
-            find_path_to_toc(file_path),
-        )
-    };
+            (
+                TranslationResultsString::Binary,
+                find_path_to_toc(file_path),
+            )
+        };
     let is_project = path_to_toc.is_some();
     // For project files, add in the sidebar. Convert this from a Windows path
     // to a Posix path if necessary.
@@ -852,6 +854,7 @@ async fn file_to_response(
                     file_name,
                 ))),
                 None,
+                None,
             );
         };
         return (
@@ -871,13 +874,14 @@ async fn file_to_response(
                 },
             ),
             None,
+            None,
         );
     }
 
     let codechat_for_web = match translation_results_string {
         // The file type is binary. Ask the HTTP server to serve it raw.
         TranslationResultsString::Binary => return
-            (SimpleHttpResponse::Bin(file_path.to_path_buf()), None)
+            (SimpleHttpResponse::Bin(file_path.to_path_buf()), None, None)
         ,
         // The file type is unknown. Serve it raw.
         TranslationResultsString::Unknown => {
@@ -887,11 +891,12 @@ async fn file_to_response(
                     mime_guess::from_path(file_path).first_or_text_plain(),
                 ),
                 None,
+                None
             );
         }
         // Report a lexer error.
         TranslationResultsString::Err(err_string) => {
-            return (SimpleHttpResponse::Err(SimpleHttpResponseError::LexerError(err_string)), None);
+            return (SimpleHttpResponse::Err(SimpleHttpResponseError::LexerError(err_string)), None, None);
         }
         // This is a CodeChat file. The following code wraps the CodeChat for
         // web results in a CodeChat Editor Client webpage.
@@ -919,6 +924,7 @@ async fn file_to_response(
                     </html>"#,
                 )),
                 None,
+                None
             );
         }
     };
@@ -940,6 +946,7 @@ async fn file_to_response(
                 file_path.to_path_buf(),
             )),
             None,
+            None,
         );
     };
     let dir = path_display(raw_dir);
@@ -948,6 +955,7 @@ async fn file_to_response(
             SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
                 file_path.to_path_buf(),
             )),
+            None,
             None,
         );
     };
@@ -996,6 +1004,7 @@ async fn file_to_response(
             cursor_position: None,
             scroll_position: None,
         }),
+        file_contents,
     )
 }
 

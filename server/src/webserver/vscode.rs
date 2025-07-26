@@ -55,9 +55,9 @@ use crate::{
     queue_send,
     webserver::{
         INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT, ProcessingTaskHttpRequest, ResultOkTypes,
-        SyncState, UpdateMessageContents, escape_html, file_to_response, filesystem_endpoint,
-        get_server_url, html_wrapper, make_simple_http_response, path_to_url, try_canonicalize,
-        try_read_as_text, url_to_path,
+        SimpleHttpResponse, SimpleHttpResponseError, SyncState, UpdateMessageContents, escape_html,
+        file_to_response, filesystem_endpoint, get_server_url, html_wrapper, path_to_url,
+        try_canonicalize, try_read_as_text, url_to_path,
     },
 };
 
@@ -454,21 +454,47 @@ pub async fn vscode_ide_websocket(
                                 // is a PDF file. (TODO: look at the magic
                                 // number also -- "%PDF").
                                 let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
-                                let (simple_http_response, option_update) = match file_contents_option {
+                                let (simple_http_response, option_update, file_contents) = match file_contents_option {
                                     Some(file_contents) => {
                                         // If there are Windows newlines, replace
                                         // with Unix; this is reversed when the
                                         // file is sent back to the IDE.
                                         eol = find_eol_type(&file_contents);
-                                        let file_contents = file_contents.replace("\r\n", "\n");
-                                        let ret = file_to_response(&http_request, &current_file, Some(&file_contents), use_pdf_js).await;
-                                        source_code = file_contents;
-                                        ret
+                                        let file_contents = if use_pdf_js { file_contents } else { file_contents.replace("\r\n", "\n") };
+                                        file_to_response(&http_request, &current_file, Some(file_contents), use_pdf_js).await
                                     },
                                     None => {
                                         // The file wasn't available in the IDE.
                                         // Look for it in the filesystem.
-                                        make_simple_http_response(&http_request, &current_file, use_pdf_js).await
+                                        match File::open(&http_request.file_path).await {
+                                            Err(err) => (
+                                                SimpleHttpResponse::Err(SimpleHttpResponseError::Io(err)),
+                                                None,
+                                                None
+                                            ),
+                                            Ok(mut fc) => {
+                                                let option_file_contents = try_read_as_text(&mut fc).await;
+                                                let option_file_contents = if let Some(file_contents) = option_file_contents {
+                                                    eol = find_eol_type(&file_contents);
+                                                    let file_contents = if use_pdf_js { file_contents } else { file_contents.replace("\r\n", "\n") };
+                                                    Some(file_contents)
+                                                } else {
+                                                    None
+                                                };
+                                                // <a id="binary-file-sniffer"></a>If this
+                                                // is a binary file (meaning we can't read
+                                                // the contents as UTF-8), send the
+                                                // contents as none to signal this isn't a
+                                                // text file.
+                                                file_to_response(
+                                                    &http_request,
+                                                    &current_file,
+                                                    option_file_contents,
+                                                    use_pdf_js,
+                                                )
+                                                .await
+                                            }
+                                        }
                                     }
                                 };
                                 if let Some(update) = option_update {
@@ -482,6 +508,7 @@ pub async fn vscode_ide_websocket(
                                     };
                                     // We must clone here, since the original is
                                     // placed in the TX queue.
+                                    source_code = file_contents.unwrap();
                                     code_mirror_doc = plain.doc.clone();
                                     code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
                                     sync_state = SyncState::Pending(id);
