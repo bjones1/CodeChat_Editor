@@ -159,129 +159,6 @@ Editor for short) exchange messages with each other, mediated by the CodeChat
 Server. The Server forwards messages from one client to the other, translating
 as necessary (for example, between source code and the Editor format).
 
-### Editor-overlay filesystem
-
-When the Client displays a file provided by the IDE, that file may not exist in
-the filesystem (a newly-created document), the IDE's content may be newer than
-the filesystem content (an unsaved file), or the file may exist only in the
-filesystem (for examples, images referenced by a file). The Client loads files
-by sending HTTP requests to the Server with a URL which includes the path to the
-desired file. Therefore, the Server must first ask the IDE if it has the
-requested file; if so, it must deliver the IDE's file contents; if not, it must
-load thee requested file from the filesystem. This process -- fetching from the
-IDE if possible, then falling back to the filesystem -- defines the
-editor-overlay filesystem.
-
-#### Network interfaces between the Client, Server, and IDE
-
-*   The startup phase loads the Client framework into a browser:
-
-    <wc-mermaid>
-    sequenceDiagram
-    participant IDE
-    participant Server
-    participant Client
-    note over IDE, Client: Startup
-    IDE -&gt;&gt; Server: Opened(IdeType)
-    Server -&gt;&gt; IDE: Result(String: OK)
-    Server -&gt;&gt; IDE: ClientHtml(String: HTML or URL)
-    IDE -&gt;&gt; Server: Result(String: OK)
-    note over IDE, Client: Open browser (Client framework HTML or URL)
-    loop
-    Client -&gt; Server: HTTP request(/static URL)
-    Server -&gt; Client: HTTP response(/static data)
-    end
-    </wc-mermaid>
-
-*   If the current file in the IDE changes (including the initial startup, when
-    the change is from no file to the current file), or a link is followed in
-    the Client's iframe:
-
-    <wc-mermaid>
-    sequenceDiagram
-    participant IDE
-    participant Server
-    participant Client
-    alt IDE loads file
-    IDE -&gt;&gt; Client: CurrentFile(String: Path of main.py)
-    opt If Client document is dirty
-    Client -&gt;&gt; IDE: Update(String: contents of main.py)
-    IDE -&gt;&gt; Client: Response(OK)
-    end
-    Client -&gt;&gt; IDE: Response(OK)
-    else Client loads file
-    Client -&gt;&gt; IDE: CurrentFile(String: URL of main.py)
-    IDE -&gt;&gt; Client: Response(OK)
-    end
-    Client -&gt;&gt; Server: HTTP request(URL of main.py)
-    Server -&gt;&gt; IDE: LoadFile(String: path to main.py)
-    IDE -&gt;&gt; Server: Response(LoadFile(String: file contents of main.py))
-    alt main.py is editable
-    Server -&gt;&gt; Client: HTTP response(contents of Client)
-    Server -&gt;&gt; Client: Update(String: contents of main.py)
-    Client -&gt;&gt; Server: Response(OK)
-    loop
-    Client -&gt;&gt; Server: HTTP request(URL of supporting file in main.py)
-    Server -&gt;&gt; IDE: LoadFile(String: path of supporting file)
-    alt Supporting file in IDE
-    IDE -&gt;&gt; Server: Response(LoadFile(contents of supporting file)
-    Server -&gt;&gt; Client: HTTP response(contents of supporting file)
-    else Supporting file not in IDE
-    IDE -&gt;&gt; Server: Response(LoadFile(None))
-    Server -&gt;&gt; Client: HTTP response(contents of supporting file from filesystem)
-    end
-    end
-    else main.py not editable and not a project
-    Server -&gt;&gt; Client: HTTP response(contents of main.py)
-    else main.py not editable and is a project
-    Server -&gt;&gt; Client: HTTP response(contents of Client Simple Viewer)
-    Client -&gt;&gt; Server: HTTP request (URL?raw of main.py)
-    Server -&gt;&gt; Client: HTTP response(contents of main.py)
-    end
-    </wc-mermaid>
-
-*   If the current file's contents in the IDE are edited:
-
-    <wc-mermaid>
-    sequenceDiagram
-    participant IDE
-    participant Server
-    participant Client
-    IDE -&gt;&gt; Server: Update(String: new text contents)
-    alt Main file is editable
-    Server -&gt;&gt; Client: Update(String: new Client contents)
-    else Main file is not editable
-    Server -&gt;&gt; Client: Update(String: new text contents)
-    end
-    Client -&gt;&gt; IDE: Response(String: OK)<br>
-    </wc-mermaid>
-
-*   If the current file's contents in the Client are edited, the Client sends
-    the IDE an `Update` with the revised contents.
-
-*   When the PC goes to sleep then wakes up, the IDE client and the Editor
-    client both reconnect to the websocket URL containing their assigned ID.
-
-*   If the Editor client or the IDE client are closed, they close their
-    websocket, which sends a `Close` message to the other websocket, causes it
-    to also close and ending the session.
-
-*   If the server is stopped (or crashes), both clients shut down after several
-    reconnect retries.
-
-#### Message IDs
-
-The message system connects the IDE, Server, and Client; all three can serve as
-the source or destination for a message. Any message sent should produce a
-Response message in return. Therefore, we need globally unique IDs for each
-message. To achieve this, the Server uses IDs that are multiples of 3 (0, 3, 6,
-...), the Client multiples of 3 + 1 (1, 4, 7, ...) and the IDE multiples of 3 +
-2 (2, 5, 8, ...). A double-precision floating point number (the standard
-[numeric
-type](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#number_type)
-in JavaScript) has a 53-bit mantissa, meaning IDs won't wrap around for a very
-long time.
-
 #### Architecture
 
 **Reviewed to here**
@@ -310,53 +187,7 @@ To decouple these low-level websocket details from high-level processing (such
 as translating between source code and its web equivalent), the websocket tasks
 enqueue all high-level messages to the processing task; they listen to any
 enqueued messages in the client or ide queue, passing these on via the websocket
-connection. The following diagram illustrates this approach:
-
-<graphviz-graph graph="digraph {
-    ccc -> client_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]
-    ccc -> http_task [ label = &quot;HTTP\nrequest/response&quot; dir = &quot;both&quot;]
-    client_task -> from_client
-    http_task -> http_to_client
-    http_to_client -> processing
-    processing -> http_from_client
-    http_from_client -> http_task
-    from_client -> processing
-    processing -> to_client
-    to_client -> client_task
-    ide -> ide_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]
-    ide_task -> from_ide
-    from_ide -> processing
-    processing -> to_ide
-    to_ide -> ide_task
-    { rank = same; client_task; http_task }
-    { rank = same; to_client; from_client; http_from_client; http_to_client }
-    { rank = same; to_ide; from_ide }
-    { rank = max; ide }
-    ccc [ label = &quot;CodeChat Editor\nClient&quot;]
-    client_task [ label = &quot;Client websocket\ntask&quot;]
-    http_task [ label = &quot;HTTP endpoint&quot;]
-    from_client [ label = &quot;queue from client&quot; shape=&quot;rectangle&quot;]
-    processing [ label = &quot;Processing task&quot; ]
-    to_client [ label = &quot;queue to client&quot; shape=&quot;rectangle&quot;]
-    http_to_client [ label = &quot;http queue to client&quot; shape = &quot;rectangle&quot;]
-    http_from_client [ label = &quot;oneshot from client&quot; shape = &quot;box&quot;]
-    ide [ label = &quot;CodeChat Editor\nIDE plugin&quot;]
-    ide_task [ label = &quot;IDE websocket\ntask&quot; ]
-    from_ide [ label = &quot;queue from IDE&quot; shape=&quot;rectangle&quot; ]
-    to_ide [ label = &quot;queue to IDE&quot; shape=&quot;rectangle&quot; ]
-    }"></graphviz-graph>
-
-The queues use multiple-sender, single receiver (mpsc) types; hence, a single
-task in the diagram receives data from a queue, while multiple tasks send data
-to a queue. When the IDE processing task writes updated content to the file
-being edited, it notifies the file watcher to ignore the next file update (hence
-the dotted arrow).
-
-The exception to this pattern is the HTTP endpoint. This endpoint is invoked
-with each HTTP request, rather than operating as a single, long-running task. It
-sends the request to the processing task using an mpsc queue; this request
-includes a one-shot channel which enables the request to return a response to
-this specific request instance. The endpoint then returns the provided response.
+connection.
 
 Simplest non-IDE integration: the file watcher.
 
@@ -384,7 +215,7 @@ directly through a native interface. For example, [NAPI-RS](https://napi.rs/)
 provide a way to call Rust from Node.js; [JNI](https://docs.rs/jni/latest/jni/)
 allows calling Rust from Java.
 
-### Efficent websocket communication
+### Efficient websocket communication
 
 When an edit occurs, it's best to send only changed data, rather than the whole
 file. The diff crate provides easy access to determining a diff. The idea:
@@ -716,6 +547,3 @@ approach](https://auth0.com/blog/build-an-api-in-rust-with-jwt-authentication-us
 A better approach to make macros accessible where they're defined, instead of at
 the crate root: see
 [SO](https://stackoverflow.com/questions/26731243/how-do-i-use-a-macro-across-module-files/67140319#67140319).
-
-When using VSCode with Rust, set `"rust-analyzer.cargo.targetDir": true`. See
-[this issue](https://github.com/rust-lang/rust-analyzer/issues/17807).
