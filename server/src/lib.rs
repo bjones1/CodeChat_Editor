@@ -20,8 +20,10 @@
 /// TODO: Add the ability to use
 /// [plugins](https://zicklag.github.io/rust-tutorials/rust-plugins.html).
 pub mod capture;
+pub mod ide;
 pub mod lexer;
 pub mod processing;
+pub mod translation;
 pub mod webserver;
 
 #[cfg(test)]

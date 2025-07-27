@@ -201,11 +201,6 @@
 /// type](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#number_type)
 /// in JavaScript) has a 53-bit mantissa, meaning IDs won't wrap around for a
 /// very long time.
-// Submodules
-// ----------
-#[cfg(test)]
-pub mod tests;
-
 // Imports
 // -------
 //
@@ -225,9 +220,9 @@ use regex::Regex;
 use tokio::{fs::File, select, sync::mpsc};
 
 // ### Local
-use super::{
+use crate::webserver::{
     AppState, EditorMessage, EditorMessageContents, IdeType, WebsocketQueues, client_websocket,
-    get_client_framework, send_response,
+    send_response,
 };
 use crate::{
     oneshot_send,
@@ -239,9 +234,9 @@ use crate::{
     queue_send,
     webserver::{
         INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT, ProcessingTaskHttpRequest, ResultOkTypes,
-        SimpleHttpResponse, SimpleHttpResponseError, SyncState, UpdateMessageContents, escape_html,
-        file_to_response, filesystem_endpoint, get_server_url, html_wrapper, path_to_url,
-        try_canonicalize, try_read_as_text, url_to_path,
+        SimpleHttpResponse, SimpleHttpResponseError, SyncState, UpdateMessageContents,
+        file_to_response, get_server_url, path_to_url, try_canonicalize, try_read_as_text,
+        url_to_path,
     },
 };
 
@@ -1096,52 +1091,6 @@ pub async fn vscode_ide_websocket(
         app_state.vscode_ide_queues.clone(),
     )
     .await
-}
-
-pub fn get_vscode_client_framework(connection_id: &str) -> String {
-    // Send the HTML for the internal browser.
-    match get_client_framework(false, "vsc/ws-client", connection_id) {
-        Ok(web_page) => web_page,
-        Err(html_string) => {
-            error!("{html_string}");
-            html_wrapper(&escape_html(&html_string))
-        }
-    }
-}
-
-/// Serve the Client Framework.
-#[get("/vsc/cf/{connection_id}")]
-pub async fn vscode_client_framework(connection_id: web::Path<String>) -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(get_vscode_client_framework(&connection_id))
-}
-
-/// Define a websocket handler for the CodeChat Editor Client.
-#[get("/vsc/ws-client/{connection_id}")]
-pub async fn vscode_client_websocket(
-    connection_id: web::Path<String>,
-    req: HttpRequest,
-    body: web::Payload,
-    app_state: web::Data<AppState>,
-) -> Result<HttpResponse, Error> {
-    client_websocket(
-        connection_id,
-        req,
-        body,
-        app_state.vscode_client_queues.clone(),
-    )
-    .await
-}
-
-// Respond to requests for the filesystem.
-#[get("/vsc/fs/{connection_id}/{file_path:.*}")]
-async fn serve_vscode_fs(
-    request_path: web::Path<(String, String)>,
-    req: HttpRequest,
-    app_state: web::Data<AppState>,
-) -> HttpResponse {
-    filesystem_endpoint(request_path, &req, &app_state).await
 }
 
 // If a string is encoded using CRLFs (Windows style), convert it to LFs only

@@ -26,7 +26,8 @@ use std::{
 use assert_cmd::Command;
 use assertables::{assert_ends_with, assert_not_contains, assert_starts_with};
 
-use super::{filewatcher::FILEWATCHER_PATH_PREFIX, path_to_url, url_to_path};
+use super::{path_to_url, url_to_path};
+use crate::ide::filewatcher::FILEWATCHER_PATH_PREFIX;
 use crate::prep_test_dir;
 
 // Constants

@@ -53,7 +53,7 @@ use urlencoding;
 use win_partitions::win_api::get_logical_drive;
 
 // ### Local
-use super::{
+use crate::webserver::{
     AppState, EditorMessage, EditorMessageContents, UpdateMessageContents, WebsocketQueues,
     client_websocket, escape_html, get_client_framework, get_connection_id, html_not_found,
     html_wrapper, path_display, send_response,
@@ -736,9 +736,9 @@ mod tests {
     use tokio::{select, sync::mpsc::Receiver, time::sleep};
     use url::Url;
 
-    use super::{
-        super::{WebsocketQueues, configure_app, make_app_data},
-        AppState, EditorMessage, EditorMessageContents, UpdateMessageContents, send_response,
+    use crate::webserver::{
+        AppState, EditorMessage, EditorMessageContents, UpdateMessageContents, WebsocketQueues,
+        configure_app, make_app_data, send_response,
     };
     use crate::{
         cast, prep_test_dir,

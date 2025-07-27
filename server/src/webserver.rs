@@ -17,10 +17,8 @@
 /// =======================================================
 // Submodules
 // ----------
-mod filewatcher;
 #[cfg(test)]
 pub mod tests;
-mod vscode;
 
 // Imports
 // -------
@@ -77,16 +75,15 @@ use url::Url;
 
 // ### Local
 //use crate::capture::EventCapture;
-use crate::processing::{
-    CodeChatForWeb, TranslationResultsString, find_path_to_toc, source_to_codechat_for_web_string,
-};
-use filewatcher::{
+use crate::ide::filewatcher::{
     filewatcher_browser_endpoint, filewatcher_client_endpoint, filewatcher_root_fs_redirect,
     filewatcher_websocket,
 };
-use vscode::{
-    serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
+use crate::ide::vscode::{serve_vscode_fs, vscode_client_framework, vscode_client_websocket};
+use crate::processing::{
+    CodeChatForWeb, TranslationResultsString, find_path_to_toc, source_to_codechat_for_web_string,
 };
+use crate::translation::vscode_ide_websocket;
 
 // Data structures
 // ---------------
@@ -96,26 +93,26 @@ use vscode::{
 // server, and the CodeChat Editor Client
 /// Provide queues which send data to the IDE and the CodeChat Editor Client.
 #[derive(Debug)]
-struct WebsocketQueues {
-    from_websocket_tx: Sender<EditorMessage>,
-    to_websocket_rx: Receiver<EditorMessage>,
+pub struct WebsocketQueues {
+    pub from_websocket_tx: Sender<EditorMessage>,
+    pub to_websocket_rx: Receiver<EditorMessage>,
 }
 
 #[derive(Debug)]
 /// Since an `HttpResponse` doesn't implement `Send`, use this as a simply proxy
 /// for it. This is used to send a response to the HTTP task to an HTTP request
 /// made to that task. Send: String, response
-struct ProcessingTaskHttpRequest {
+pub struct ProcessingTaskHttpRequest {
     /// The URL provided by this request.
-    url: String,
+    pub url: String,
     /// The path of the file requested.
-    file_path: PathBuf,
+    pub file_path: PathBuf,
     /// Flags for this file: none, TOC, raw.
     flags: ProcessingTaskHttpRequestFlags,
     /// True if test mode is enabled.
     is_test_mode: bool,
     /// A queue to send the response back to the HTTP task.
-    response_queue: oneshot::Sender<SimpleHttpResponse>,
+    pub response_queue: oneshot::Sender<SimpleHttpResponse>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -131,7 +128,7 @@ enum ProcessingTaskHttpRequestFlags {
 /// Since an `HttpResponse` doesn't implement `Send`, use this as a proxy to
 /// cover all responses to serving a file.
 #[derive(Debug)]
-enum SimpleHttpResponse {
+pub enum SimpleHttpResponse {
     /// Return a 200 with the provided string as the HTML body.
     Ok(String),
     /// Return an error as the HTML body.
@@ -147,7 +144,7 @@ enum SimpleHttpResponse {
 // definitive guide to error handling in
 // Rust](https://www.howtocodeit.com/articles/the-definitive-guide-to-rust-error-handling).
 #[derive(Debug, thiserror::Error)]
-enum SimpleHttpResponseError {
+pub enum SimpleHttpResponseError {
     #[error("Error opening file")]
     Io(#[from] io::Error),
     #[error("Project path {0:?} has no final component.")]
@@ -166,19 +163,19 @@ enum SimpleHttpResponseError {
 /// Client, the IDE, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export)]
-struct EditorMessage {
+pub struct EditorMessage {
     /// A value unique to this message; it's used to report results
     /// (success/failure) back to the sender.
-    id: f64,
+    pub id: f64,
     /// The actual message.
-    message: EditorMessageContents,
+    pub message: EditorMessageContents,
 }
 
 /// Define the data structure used to pass data between the CodeChat Editor
 /// Client, the CodeChat Editor IDE extension, and the CodeChat Editor Server.
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export)]
-enum EditorMessageContents {
+pub enum EditorMessageContents {
     // #### These messages may be sent by either the IDE or the Client.
     /// This sends an update; any missing fields are unchanged. Valid
     /// destinations: IDE, Client.
@@ -240,7 +237,7 @@ type MessageResult = Result<
 >;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
-enum ResultOkTypes {
+pub enum ResultOkTypes {
     /// Most messages have no result.
     Void,
     /// The `LoadFile` message provides file contents, if available. This
@@ -250,7 +247,7 @@ enum ResultOkTypes {
 
 /// Specify the type of IDE that this client represents.
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
-enum IdeType {
+pub enum IdeType {
     /// True if the CodeChat Editor will be hosted inside VSCode; false means it
     /// should be hosted in an external browser.
     VSCode(bool),
@@ -261,23 +258,23 @@ enum IdeType {
 /// Contents of the `Update` message.
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export)]
-struct UpdateMessageContents {
+pub struct UpdateMessageContents {
     /// The filesystem path to this file. This is only used by the IDE to
     /// determine which file to apply Update contents to. The Client stores then
     /// then sends it back to the IDE in `Update` messages. This helps deal with
     /// transition times when the IDE and Client have different files loaded,
     /// guaranteeing to updates are still applied to the correct file.
-    file_path: String,
+    pub file_path: String,
     /// The contents of this file.
-    contents: Option<CodeChatForWeb>,
+    pub contents: Option<CodeChatForWeb>,
     /// The current cursor position in the file, where 0 = before the first
     /// character in the file and contents.length() = after the last character
     /// in the file. TODO: Selections are not yet supported. TODO: how to get a
     /// cursor location from within a doc block in the Client?
-    cursor_position: Option<u32>,
+    pub cursor_position: Option<u32>,
     /// The normalized vertical scroll position in the file, where 0 = top and 1
     /// = bottom.
-    scroll_position: Option<f32>,
+    pub scroll_position: Option<f32>,
 }
 
 /// ### Data structures used by the webserver
@@ -288,20 +285,20 @@ pub struct AppState {
     /// Provide methods to control the server.
     server_handle: Mutex<Option<ServerHandle>>,
     /// The number of the next connection ID to assign.
-    connection_id: Mutex<u32>,
+    pub connection_id: Mutex<u32>,
     /// The port this server listens on.
-    port: u16,
+    pub port: u16,
     /// For each connection ID, store a queue tx for the HTTP server to send
     /// requests to the processing task for that ID.
-    processing_task_queue_tx: Arc<Mutex<HashMap<String, Sender<ProcessingTaskHttpRequest>>>>,
+    pub processing_task_queue_tx: Arc<Mutex<HashMap<String, Sender<ProcessingTaskHttpRequest>>>>,
     /// For each (connection ID, requested URL) store channel to send the
     /// matching response to the HTTP task.
-    filewatcher_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    pub filewatcher_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
     /// For each connection ID, store the queues for the VSCode IDE.
-    vscode_ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
-    vscode_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    pub vscode_ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    pub vscode_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
     /// Connection IDs that are currently in use.
-    vscode_connection_id: Arc<Mutex<HashSet<String>>>,
+    pub vscode_connection_id: Arc<Mutex<HashSet<String>>>,
     /// The auth credentials if authentication is used.
     credentials: Option<Credentials>,
 }
@@ -357,7 +354,7 @@ const REPLY_TIMEOUT: Duration = if cfg!(test) {
 const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 
 /// The initial value for a message ID.
-const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
+pub const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
     // A simpler value when testing.
     0.0
 } else {
@@ -370,7 +367,7 @@ const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
 /// that message IDs will be unique. (Given a mantissa of 53 bits plus a sign
 /// bit, 2^54 seconds = 574 million years before the message ID wraps around
 /// assuming an average of 1 message/second.)
-const MESSAGE_ID_INCREMENT: f64 = 3.0;
+pub const MESSAGE_ID_INCREMENT: f64 = 3.0;
 
 /// Synchronization state between the Client, Server, and IDE.
 #[derive(PartialEq)]
@@ -494,7 +491,7 @@ async fn connection_id_endpoint(
 }
 
 /// Return a unique ID for an IDE websocket connection.
-fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
+pub fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
     let mut connection_id = app_state.connection_id.lock().unwrap();
     *connection_id += 1;
     *connection_id
@@ -512,7 +509,7 @@ pub fn get_test_mode(req: &HttpRequest) -> bool {
 }
 
 // Return an instance of the Client.
-fn get_client_framework(
+pub fn get_client_framework(
     // True if the page should enable test mode for Clients it loads.
     is_test_mode: bool,
     // The URL prefix for a websocket connection to the Server.
@@ -688,7 +685,7 @@ pub async fn filesystem_endpoint(
 
 // Use the provided HTTP request to look for the requested file, returning it as
 // an HTTP response. This should be called from within a processing task.
-async fn make_simple_http_response(
+pub async fn make_simple_http_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
     // Path to the file currently being edited.
@@ -726,7 +723,7 @@ async fn make_simple_http_response(
 
 // Determine if the provided file is text or binary. If text, return it as a
 // Unicode string. If binary, return None.
-async fn try_read_as_text(file: &mut File) -> Option<String> {
+pub async fn try_read_as_text(file: &mut File) -> Option<String> {
     let mut file_contents = String::new();
     // TODO: this is a rather crude way to detect if a file is binary. It's
     // probably slow for large file (the [underlying
@@ -745,7 +742,7 @@ async fn try_read_as_text(file: &mut File) -> Option<String> {
 // file contents itself (if it's not editable by the Client). If responding with
 // a Client, also return an Update message which will provided the contents for
 // the Client.
-async fn file_to_response(
+pub async fn file_to_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
     // Path to the file currently being edited. This path should be cleaned by
@@ -1092,7 +1089,7 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
 /// allowing the user to edit the plain text of the source code in the IDE, or
 /// make GUI-enhanced edits of the source code rendered by the CodeChat Editor
 /// Client.
-async fn client_websocket(
+pub async fn client_websocket(
     connection_id: web::Path<String>,
     req: HttpRequest,
     body: web::Payload,
@@ -1438,7 +1435,7 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // closure passed to `HttpServer::new` and moved/cloned in." Putting this code
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
-fn make_app_data(port: u16, credentials: Option<Credentials>) -> web::Data<AppState> {
+pub fn make_app_data(port: u16, credentials: Option<Credentials>) -> web::Data<AppState> {
     web::Data::new(AppState {
         server_handle: Mutex::new(None),
         connection_id: Mutex::new(0),
@@ -1454,7 +1451,7 @@ fn make_app_data(port: u16, credentials: Option<Credentials>) -> web::Data<AppSt
 
 // Configure the web application. I'd like to make this return an
 // `App<AppEntry>`, but `AppEntry` is a private module.
-fn configure_app<T>(app: App<T>, app_data: &web::Data<AppState>) -> App<T>
+pub fn configure_app<T>(app: App<T>, app_data: &web::Data<AppState>) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
 {
@@ -1488,7 +1485,7 @@ where
 // ---------
 //
 // Send a response to the client after processing a message from the client.
-async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: MessageResult) {
+pub async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: MessageResult) {
     if let Err(err) = client_tx
         .send(EditorMessage {
             id,
@@ -1502,7 +1499,7 @@ async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: Messa
 
 // Convert a URL referring to a file in the filesystem into the path to that
 // file.
-fn url_to_path(
+pub fn url_to_path(
     // The URL for the file.
     url_string: &str,
     // An array of URL path segments; the URL must start with these. They will
@@ -1563,7 +1560,7 @@ fn url_to_path(
 // 2.  If the file exists and if this is Windows, correct case based on the
 //     actual file's naming (even though the filesystem is case-insensitive;
 //     this makes comparisons in the TypeScript simpler).
-fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
+pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
     match PathBuf::from_str(file_path) {
         Err(err) => Err(format!(
             "Error: unable to parse file path {file_path}: {err}."
@@ -1620,7 +1617,7 @@ pub fn path_to_url(prefix: &str, connection_id: Option<&str>, file_path: &Path) 
 
 // Given a string (which is probably a pathname), drop the leading slash if it's
 // present.
-fn drop_leading_slash(path_: &str) -> &str {
+pub fn drop_leading_slash(path_: &str) -> &str {
     if path_.starts_with("/") {
         let mut chars = path_.chars();
         chars.next();
@@ -1632,19 +1629,19 @@ fn drop_leading_slash(path_: &str) -> &str {
 
 // Given a `Path`, transform it into a displayable HTML string (with any
 // necessary escaping).
-fn path_display(p: &Path) -> String {
+pub fn path_display(p: &Path) -> String {
     escape_html(&simplified(p).to_string_lossy())
 }
 
 // Return a Not Found (404) error with the provided HTML body.
-fn html_not_found(msg: &str) -> HttpResponse {
+pub fn html_not_found(msg: &str) -> HttpResponse {
     HttpResponse::NotFound()
         .content_type(ContentType::html())
         .body(html_wrapper(msg))
 }
 
 // Wrap the provided HTML body in DOCTYPE/html/head tags.
-fn html_wrapper(body: &str) -> String {
+pub fn html_wrapper(body: &str) -> String {
     formatdoc!(
         r#"
         <!DOCTYPE html>
@@ -1663,7 +1660,7 @@ fn html_wrapper(body: &str) -> String {
 
 // Given text, escape it so it formats correctly as HTML. This is a translation
 // of Python's `html.escape` function.
-fn escape_html(unsafe_text: &str) -> String {
+pub fn escape_html(unsafe_text: &str) -> String {
     unsafe_text
         .replace('&', "&amp;")
         .replace('<', "&lt;")
