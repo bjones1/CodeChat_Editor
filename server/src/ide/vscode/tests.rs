@@ -47,7 +47,8 @@ use tokio_tungstenite::{
     tungstenite::{http::StatusCode, protocol::Message},
 };
 
-use super::super::{EditorMessage, EditorMessageContents, IdeType, run_server, tests::IP_PORT};
+use crate::translation::{EolType, find_eol_type};
+use crate::webserver::{EditorMessage, EditorMessageContents, IdeType, run_server, tests::IP_PORT};
 use crate::{
     cast,
     processing::{
@@ -55,10 +56,7 @@ use crate::{
         CodeMirrorDocBlockTransaction, SourceFileMetadata, StringDiff,
     },
     test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
-    webserver::{
-        ResultOkTypes, UpdateMessageContents, drop_leading_slash,
-        vscode::{EolType, find_eol_type},
-    },
+    webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
 };
 
 // Globals

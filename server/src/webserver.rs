@@ -79,11 +79,11 @@ use crate::ide::filewatcher::{
     filewatcher_browser_endpoint, filewatcher_client_endpoint, filewatcher_root_fs_redirect,
     filewatcher_websocket,
 };
+use crate::ide::vscode::vscode_ide_websocket;
 use crate::ide::vscode::{serve_vscode_fs, vscode_client_framework, vscode_client_websocket};
 use crate::processing::{
     CodeChatForWeb, TranslationResultsString, find_path_to_toc, source_to_codechat_for_web_string,
 };
-use crate::translation::vscode_ide_websocket;
 
 // Data structures
 // ---------------
