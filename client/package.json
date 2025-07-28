@@ -1,6 +1,6 @@
 {
     "name": "codechat-editor-client",
-    "version": "0.1.24",
+    "version": "0.1.25",
     "description": "The CodeChat Editor Client, part of a web-based literate programming editor (the CodeChat Editor).",
     "homepage": "https://github.com/bjones1/CodeChat_Editor",
     "type": "module",

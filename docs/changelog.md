@@ -20,7 +20,10 @@ Changelog
 =========
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
+    *   No changes.
+*    v0.1.25, 2025-28-Jul:
     *   Show notifications in Client when errors occur.
+    *   For safety, close the Client if applying edits fails.
 *   v0.1.24, 2025-Jul-25: 
     *   Fix indexing in diffs for characters that use more than one UTF-16 code
         unit, such as 😄,👉🏿,👨‍👦, and 🇺🇳.
@@ -129,4 +132,3 @@ Changelog
 *   v0.1.0, 2024-Oct-16:
     *   Initial release, with binaries for Windows only. Built with
         manually-patched CodeMirror per [this
-        issue](https://github.com/bjones1/CodeChat_Editor/issues/27).
