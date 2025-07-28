@@ -55,8 +55,8 @@ use win_partitions::win_api::get_logical_drive;
 // ### Local
 use crate::webserver::{
     AppState, EditorMessage, EditorMessageContents, UpdateMessageContents, WebsocketQueues,
-    client_websocket, escape_html, get_client_framework, get_connection_id, html_not_found,
-    html_wrapper, path_display, send_response,
+    client_websocket, escape_html, get_client_framework, html_not_found, html_wrapper,
+    path_display, send_response,
 };
 use crate::{
     oneshot_send,
@@ -142,12 +142,15 @@ async fn filewatcher_browser_endpoint(
         return dir_listing(orig_path.as_str(), &canon_path).await;
     } else if canon_path.is_file() {
         // Get an ID for this connection.
-        let connection_id = get_connection_id(&app_state);
+        let connection_id_raw = get_connection_id_raw(&app_state);
         actix_rt::spawn(async move {
-            processing_task(&canon_path, app_state, connection_id).await;
+            processing_task(&canon_path, app_state, connection_id_raw).await;
         });
-        return match get_client_framework(get_test_mode(&req), "fw/ws", &connection_id.to_string())
-        {
+        return match get_client_framework(
+            get_test_mode(&req),
+            "fw/ws",
+            &connection_id_raw.to_string(),
+        ) {
             Ok(s) => HttpResponse::Ok().content_type(ContentType::html()).body(s),
             Err(err) => html_not_found(&format!("<p>{}</p>", escape_html(&err))),
         };
@@ -316,18 +319,27 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         .body(html_wrapper(&body))
 }
 
+const FW: &str = "fw-";
+
 /// `fsc` stands for "FileSystem Client", and provides the Client contents from
 /// the filesystem.
-#[get("/fw/fsc/{connection_id}/{file_path:.*}")]
+#[get("/fw/fsc/{connection_id_raw}/{file_path:.*}")]
 async fn filewatcher_client_endpoint(
     request_path: web::Path<(String, String)>,
     req: HttpRequest,
     app_state: web::Data<AppState>,
 ) -> HttpResponse {
-    filesystem_endpoint(request_path, &req, &app_state).await
+    let (connection_id_raw, file_path) = request_path.into_inner();
+    filesystem_endpoint(
+        format!("{FW}{connection_id_raw}"),
+        file_path,
+        &req,
+        &app_state,
+    )
+    .await
 }
 
-async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, connection_id: u32) {
+async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, connection_id_raw: u32) {
     // #### Filewatcher IDE
     //
     // This is a CodeChat Editor file. Start up the Filewatcher IDE tasks:
@@ -383,10 +395,11 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
 
             // Create the queues for the websocket connection to communicate
             // with this task.
+            let connection_id = format!("{FW}{connection_id_raw}");
             let (from_websocket_tx, mut from_websocket_rx) = mpsc::channel(10);
             let (to_websocket_tx, to_websocket_rx) = mpsc::channel(10);
             app_state.filewatcher_client_queues.lock().unwrap().insert(
-                connection_id.to_string(),
+                connection_id.clone(),
                 WebsocketQueues {
                     from_websocket_tx,
                     to_websocket_rx,
@@ -396,7 +409,7 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
             // Provide it a file to open.
             let mut id: f64 = 0.0;
             if let Some(cfp) = &current_filepath {
-                let url_pathbuf = path_to_url("/fw/fsc", Some(&connection_id.to_string()), cfp);
+                let url_pathbuf = path_to_url("/fw/fsc", Some(&connection_id_raw.to_string()), cfp);
                 queue_send!(to_websocket_tx.send(EditorMessage {
                     id,
                     message: EditorMessageContents::CurrentFile(url_pathbuf, None)
@@ -696,20 +709,27 @@ async fn processing_task(file_path: &Path, app_state: web::Data<AppState>, conne
 }
 
 /// Define a websocket handler for the CodeChat Editor Client.
-#[get("/fw/ws/{connection_id}")]
+#[get("/fw/ws/{connection_id_raw}")]
 pub async fn filewatcher_websocket(
-    connection_id: web::Path<String>,
+    connection_id_raw: web::Path<String>,
     req: HttpRequest,
     body: web::Payload,
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
     client_websocket(
-        connection_id,
+        format!("{FW}{connection_id_raw}"),
         req,
         body,
         app_state.filewatcher_client_queues.clone(),
     )
     .await
+}
+
+/// Return a unique ID for an IDE websocket connection.
+pub fn get_connection_id_raw(app_state: &web::Data<AppState>) -> u32 {
+    let mut connection_id_raw = app_state.filewatcher_next_connection_id.lock().unwrap();
+    *connection_id_raw += 1;
+    *connection_id_raw
 }
 
 // Tests
@@ -736,10 +756,7 @@ mod tests {
     use tokio::{select, sync::mpsc::Receiver, time::sleep};
     use url::Url;
 
-    use crate::webserver::{
-        AppState, EditorMessage, EditorMessageContents, UpdateMessageContents, WebsocketQueues,
-        configure_app, make_app_data, send_response,
-    };
+    use super::FW;
     use crate::{
         cast, prep_test_dir,
         processing::{
@@ -747,7 +764,11 @@ mod tests {
             source_to_codechat_for_web,
         },
         test_utils::{check_logger_errors, configure_testing_logger},
-        webserver::{IdeType, ResultOkTypes, drop_leading_slash, tests::IP_PORT},
+        webserver::{
+            AppState, EditorMessage, EditorMessageContents, IdeType, ResultOkTypes,
+            UpdateMessageContents, WebsocketQueues, configure_app, drop_leading_slash,
+            make_app_data, send_response, tests::IP_PORT,
+        },
     };
 
     async fn get_websocket_queues(
@@ -773,10 +794,12 @@ mod tests {
         // the appropriate tx/rx queues.
         let app_state = resp.request().app_data::<web::Data<AppState>>().unwrap();
         let mut joint_editors = app_state.filewatcher_client_queues.lock().unwrap();
-        let connection_id = *app_state.connection_id.lock().unwrap();
+        let connection_id_raw = *app_state.filewatcher_next_connection_id.lock().unwrap();
         assert_eq!(joint_editors.len(), 1);
         (
-            joint_editors.remove(&connection_id.to_string()).unwrap(),
+            joint_editors
+                .remove(&format!("{FW}{connection_id_raw}"))
+                .unwrap(),
             app,
         )
     }

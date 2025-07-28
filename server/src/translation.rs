@@ -295,7 +295,7 @@ pub struct CreatedTranslationQueues {
 }
 
 pub fn create_translation_queues(
-    connection_id_str: String,
+    connection_id: String,
     app_state: web::Data<AppState>,
 ) -> Result<CreatedTranslationQueues, CreateTranslationQueuesError> {
     // There are three cases for this `connection_id`:
@@ -309,20 +309,20 @@ pub fn create_translation_queues(
     //
     // Check case 3.
     if app_state
-        .vscode_connection_id
+        .connection_id
         .lock()
         .unwrap()
-        .contains(&connection_id_str)
+        .contains(&connection_id)
     {
-        return Err(CreateTranslationQueuesError::IdInUse(connection_id_str));
+        return Err(CreateTranslationQueuesError::IdInUse(connection_id));
     }
 
     // Now case 2.
     if app_state
-        .vscode_ide_queues
+        .ide_queues
         .lock()
         .unwrap()
-        .contains_key(&connection_id_str)
+        .contains_key(&connection_id)
     {
         return Err(CreateTranslationQueuesError::IdeInUse);
     }
@@ -333,11 +333,11 @@ pub fn create_translation_queues(
     let (to_ide_tx, to_ide_rx) = mpsc::channel(10);
     assert!(
         app_state
-            .vscode_ide_queues
+            .ide_queues
             .lock()
             .unwrap()
             .insert(
-                connection_id_str.clone(),
+                connection_id.clone(),
                 WebsocketQueues {
                     from_websocket_tx: from_ide_tx.clone(),
                     to_websocket_rx: to_ide_rx,
@@ -349,11 +349,11 @@ pub fn create_translation_queues(
     let (to_client_tx, to_client_rx) = mpsc::channel(10);
     assert!(
         app_state
-            .vscode_client_queues
+            .client_queues
             .lock()
             .unwrap()
             .insert(
-                connection_id_str.clone(),
+                connection_id.clone(),
                 WebsocketQueues {
                     from_websocket_tx: from_client_tx.clone(),
                     to_websocket_rx: to_client_rx,
@@ -362,10 +362,10 @@ pub fn create_translation_queues(
             .is_none()
     );
     app_state
-        .vscode_connection_id
+        .connection_id
         .lock()
         .unwrap()
-        .insert(connection_id_str.clone());
+        .insert(connection_id.clone());
 
     Ok(CreatedTranslationQueues {
         from_ide_rx,
@@ -377,8 +377,10 @@ pub fn create_translation_queues(
 
 // This is the processing task for the Visual Studio Code IDE. It handles all
 // the core logic to moving data between the IDE and the client.
+#[allow(clippy::too_many_arguments)]
 pub async fn translation_task(
-    connection_id_task: String,
+    connection_id_prefix: String,
+    connection_id_raw: String,
     app_state_task: web::Data<AppState>,
     to_ide_tx: Sender<EditorMessage>,
     mut from_ide_rx: Receiver<EditorMessage>,
@@ -388,10 +390,11 @@ pub async fn translation_task(
 ) {
     // Start the processing task.
     actix_rt::spawn(async move {
-        // Use a [labeled block
-        // expression](https://doc.rust-lang.org/reference/expressions/loop-expr.html#labelled-block-expressions)
-        // to provide a way to exit the current task.
+        let connection_id = format!("{connection_id_prefix}{connection_id_raw}");
         if !shutdown_only {
+            // Use a [labeled block
+            // expression](https://doc.rust-lang.org/reference/expressions/loop-expr.html#labelled-block-expressions)
+            // to provide a way to exit the current task.
             'task: {
                 let mut current_file = PathBuf::new();
                 let mut load_file_requests: HashMap<u64, ProcessingTaskHttpRequest> =
@@ -404,7 +407,7 @@ pub async fn translation_task(
                     .processing_task_queue_tx
                     .lock()
                     .unwrap()
-                    .insert(connection_id_task.to_string(), from_http_tx);
+                    .insert(connection_id.to_string(), from_http_tx);
 
                 // All further messages are handled in the main loop.
                 let mut id: f64 = INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT;
@@ -721,7 +724,7 @@ pub async fn translation_task(
                                             queue_send!(to_client_tx.send(EditorMessage {
                                                 id: ide_message.id,
                                                 message: EditorMessageContents::CurrentFile(
-                                                    path_to_url("/vsc/fs", Some(&connection_id_task), &clean_file_path), Some(true)
+                                                    path_to_url("/vsc/fs", Some(&connection_id_raw), &clean_file_path), Some(true)
                                                 )
                                             }));
                                             current_file = file_path.into();
@@ -928,30 +931,30 @@ pub async fn translation_task(
                 .processing_task_queue_tx
                 .lock()
                 .unwrap()
-                .remove(&connection_id_task)
+                .remove(&connection_id)
                 .is_none()
             {
                 error!(
-                    "Unable to remove connection ID {connection_id_task} from processing task queue."
+                    "Unable to remove connection ID {connection_id} from processing task queue."
                 );
             }
             if app_state_task
-                .vscode_client_queues
+                .client_queues
                 .lock()
                 .unwrap()
-                .remove(&connection_id_task)
+                .remove(&connection_id)
                 .is_none()
             {
-                error!("Unable to remove connection ID {connection_id_task} from client queues.");
+                error!("Unable to remove connection ID {connection_id} from client queues.");
             }
             if app_state_task
-                .vscode_ide_queues
+                .ide_queues
                 .lock()
                 .unwrap()
-                .remove(&connection_id_task)
+                .remove(&connection_id)
                 .is_none()
             {
-                error!("Unable to remove connection ID {connection_id_task} from IDE queues.");
+                error!("Unable to remove connection ID {connection_id} from IDE queues.");
             }
 
             from_ide_rx.close();

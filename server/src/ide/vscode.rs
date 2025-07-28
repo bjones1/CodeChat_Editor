@@ -46,16 +46,21 @@ use crate::{
     },
 };
 
+// Globals
+// -------
+const VSC: &str = "vsc-";
+
 // Code
 // ----
-#[get("/vsc/ws-ide/{connection_id}")]
+#[get("/vsc/ws-ide/{connection_id_raw}")]
 pub async fn vscode_ide_websocket(
-    connection_id: web::Path<String>,
+    connection_id_raw: web::Path<String>,
     req: HttpRequest,
     body: web::Payload,
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    let connection_id_str = connection_id.to_string();
+    let connection_id_raw = connection_id_raw.to_string();
+    let connection_id_str = format!("{VSC}{connection_id_raw}");
 
     let created_translation_queues_result =
         create_translation_queues(connection_id_str.clone(), app_state.clone());
@@ -67,10 +72,10 @@ pub async fn vscode_ide_websocket(
                 }
                 CreateTranslationQueuesError::IdeInUse => {
                     return client_websocket(
-                        connection_id,
+                        connection_id_str.clone(),
                         req,
                         body,
-                        app_state.vscode_ide_queues.clone(),
+                        app_state.ide_queues.clone(),
                     )
                     .await;
                 }
@@ -134,7 +139,7 @@ pub async fn vscode_ide_websocket(
                                 <head>
                                 </head>
                                 <body style="margin: 0px; padding: 0px; overflow: hidden">
-                                    <iframe src="{address}/vsc/cf/{connection_id_str}" style="width: 100%; height: 100vh; border: none"></iframe>
+                                    <iframe src="{address}/vsc/cf/{connection_id_raw}" style="width: 100%; height: 100vh; border: none"></iframe>
                                 </body>
                             </html>"#
                         );
@@ -183,7 +188,7 @@ pub async fn vscode_ide_websocket(
                     } else {
                         // Open the Client in an external browser.
                         if let Err(err) =
-                            webbrowser::open(&format!("{address}/vsc/cf/{connection_id_str}"))
+                            webbrowser::open(&format!("{address}/vsc/cf/{connection_id_raw}"))
                         {
                             let msg = format!("Unable to open web browser: {err}");
                             error!("{msg}");
@@ -214,7 +219,8 @@ pub async fn vscode_ide_websocket(
             shutdown_only = false;
         }
         translation_task(
-            connection_id_str,
+            VSC.to_string(),
+            connection_id_raw,
             app_state_task,
             to_ide_tx,
             from_ide_rx,
@@ -228,13 +234,7 @@ pub async fn vscode_ide_websocket(
     // Move data between the IDE and the processing task via queues. The
     // websocket connection between the client and the IDE will run in the
     // endpoint for that connection.
-    client_websocket(
-        connection_id,
-        req,
-        body,
-        app_state.vscode_ide_queues.clone(),
-    )
-    .await
+    client_websocket(connection_id_str, req, body, app_state.ide_queues.clone()).await
 }
 
 /// Serve the Client Framework.
@@ -261,10 +261,10 @@ pub async fn vscode_client_websocket(
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
     client_websocket(
-        connection_id,
+        format!("{VSC}{connection_id}"),
         req,
         body,
-        app_state.vscode_client_queues.clone(),
+        app_state.client_queues.clone(),
     )
     .await
 }
@@ -276,5 +276,6 @@ async fn serve_vscode_fs(
     req: HttpRequest,
     app_state: web::Data<AppState>,
 ) -> HttpResponse {
-    filesystem_endpoint(request_path, &req, &app_state).await
+    let (connection_id, file_path) = request_path.into_inner();
+    filesystem_endpoint(format!("{VSC}{connection_id}"), file_path, &req, &app_state).await
 }

@@ -63,7 +63,9 @@ macro_rules! cast {
             panic!("mismatch variant when cast to {}", stringify!($pat));
         }
     }};
-    // For an enum containing multiple values, return a tuple. I can't figure out how to automatically do this; for now, the caller must provide the correct number of tuple parameters.
+    // For an enum containing multiple values, return a tuple. I can't figure
+    // out how to automatically do this; for now, the caller must provide the
+    // correct number of tuple parameters.
     ($target: expr, $pat: path, $( $tup: ident),*) => {{
         if let $pat($($tup,)*) = $target {
             ($($tup,)*)

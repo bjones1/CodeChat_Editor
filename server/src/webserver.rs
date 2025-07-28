@@ -284,8 +284,8 @@ pub struct UpdateMessageContents {
 pub struct AppState {
     /// Provide methods to control the server.
     server_handle: Mutex<Option<ServerHandle>>,
-    /// The number of the next connection ID to assign.
-    pub connection_id: Mutex<u32>,
+    /// The number of the next connection ID to assign for the filewatcher.
+    pub filewatcher_next_connection_id: Mutex<u32>,
     /// The port this server listens on.
     pub port: u16,
     /// For each connection ID, store a queue tx for the HTTP server to send
@@ -294,11 +294,11 @@ pub struct AppState {
     /// For each (connection ID, requested URL) store channel to send the
     /// matching response to the HTTP task.
     pub filewatcher_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
-    /// For each connection ID, store the queues for the VSCode IDE.
-    pub vscode_ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
-    pub vscode_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    /// For each connection ID, store the queues for the IDE and Client.
+    pub ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    pub client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
     /// Connection IDs that are currently in use.
-    pub vscode_connection_id: Arc<Mutex<HashSet<String>>>,
+    pub connection_id: Arc<Mutex<HashSet<String>>>,
     /// The auth credentials if authentication is used.
     credentials: Option<Credentials>,
 }
@@ -468,35 +468,6 @@ async fn stop(app_state: web::Data<AppState>) -> HttpResponse {
     HttpResponse::NoContent().finish()
 }
 
-/// Assign an ID to a new connection.
-#[get("/id")]
-async fn connection_id_endpoint(
-    req: HttpRequest,
-    body: web::Payload,
-    app_state: web::Data<AppState>,
-) -> Result<HttpResponse, Error> {
-    let (response, mut session, _msg_stream) = actix_ws::handle(&req, body)?;
-    actix_rt::spawn(async move {
-        if let Err(err) = session
-            .text(get_connection_id(&app_state).to_string())
-            .await
-        {
-            error!("Unable to send connection ID: {err}");
-        }
-        if let Err(err) = session.close(None).await {
-            error!("Unable to close connection: {err}");
-        }
-    });
-    Ok(response)
-}
-
-/// Return a unique ID for an IDE websocket connection.
-pub fn get_connection_id(app_state: &web::Data<AppState>) -> u32 {
-    let mut connection_id = app_state.connection_id.lock().unwrap();
-    *connection_id += 1;
-    *connection_id
-}
-
 // Get the `mode` query parameter to determine `is_test_mode`; default to
 // `false`.
 pub fn get_test_mode(req: &HttpRequest) -> bool {
@@ -572,11 +543,11 @@ pub fn get_client_framework(
 /// is then serve it. Serve a CodeChat Editor Client webpage using the
 /// FileWatcher "IDE".
 pub async fn filesystem_endpoint(
-    request_path: web::Path<(String, String)>,
+    connection_id: String,
+    request_file_path: String,
     req: &HttpRequest,
     app_state: &web::Data<AppState>,
 ) -> HttpResponse {
-    let (connection_id, request_file_path) = request_path.into_inner();
     // On Windows, backslashes in the `request_file_path` will be treated as
     // path separators; however, HTTP does not treat them as path separators.
     // Therefore, re-encode them to prevent inconsistency between the way HTTP
@@ -1090,7 +1061,7 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
 /// make GUI-enhanced edits of the source code rendered by the CodeChat Editor
 /// Client.
 pub async fn client_websocket(
-    connection_id: web::Path<String>,
+    connection_id: String,
     req: HttpRequest,
     body: web::Payload,
     websocket_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
@@ -1107,17 +1078,14 @@ pub async fn client_websocket(
         aggregated_msg_stream = aggregated_msg_stream.max_continuation_size(10_000_000);
 
         // Transfer the queues from the global state to this task.
-        let (from_websocket_tx, mut to_websocket_rx) = match websocket_queues
-            .lock()
-            .unwrap()
-            .remove(&connection_id.to_string())
-        {
-            Some(queues) => (queues.from_websocket_tx.clone(), queues.to_websocket_rx),
-            None => {
-                error!("No websocket queues for connection id {connection_id}.");
-                return;
-            }
-        };
+        let (from_websocket_tx, mut to_websocket_rx) =
+            match websocket_queues.lock().unwrap().remove(&connection_id) {
+                Some(queues) => (queues.from_websocket_tx.clone(), queues.to_websocket_rx),
+                None => {
+                    error!("No websocket queues for connection id {connection_id}.");
+                    return;
+                }
+            };
 
         // Keep track of pending messages.
         let mut pending_messages: HashMap<u64, JoinHandle<()>> = HashMap::new();
@@ -1438,13 +1406,13 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 pub fn make_app_data(port: u16, credentials: Option<Credentials>) -> web::Data<AppState> {
     web::Data::new(AppState {
         server_handle: Mutex::new(None),
-        connection_id: Mutex::new(0),
+        filewatcher_next_connection_id: Mutex::new(0),
         port,
         processing_task_queue_tx: Arc::new(Mutex::new(HashMap::new())),
         filewatcher_client_queues: Arc::new(Mutex::new(HashMap::new())),
-        vscode_ide_queues: Arc::new(Mutex::new(HashMap::new())),
-        vscode_client_queues: Arc::new(Mutex::new(HashMap::new())),
-        vscode_connection_id: Arc::new(Mutex::new(HashSet::new())),
+        ide_queues: Arc::new(Mutex::new(HashMap::new())),
+        client_queues: Arc::new(Mutex::new(HashMap::new())),
+        connection_id: Arc::new(Mutex::new(HashSet::new())),
         credentials,
     })
 }
