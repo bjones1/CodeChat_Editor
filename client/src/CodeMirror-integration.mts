@@ -207,6 +207,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                                 report_error(
                                     "More than one doc block at one location found.",
                                 );
+                                window.close();
                                 assert(false);
                             }
                             prev = value;
@@ -222,6 +223,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                 if (prev === undefined) {
                     console.error({ doc_blocks, effect });
                     report_error("No doc block found.");
+                    window.close();
                     assert(false);
                 }
                 doc_blocks = doc_blocks.update({
