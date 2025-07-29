@@ -1105,120 +1105,35 @@ fn test_diff_2() {
         )]
     );
 
-    // Test inserts before adjacent doc blocks.
-    //
-    // First, with end adjacent doc blocks at the end of the document.
+    // Test ordering of inserts, deletes, and updates: two deletes, follow by three add/updates.
     let before = vec![
-        build_codemirror_doc_block(10, 11, "", "#", "test1"),
-        build_codemirror_doc_block(11, 12, " ", "#", "test2"),
-        build_codemirror_doc_block(12, 13, "", "#", "test3"),
-    ];
-    let after = vec![
-        build_codemirror_doc_block(11, 12, "", "#", "test1"),
-        build_codemirror_doc_block(12, 13, " ", "#", "test2"),
-        build_codemirror_doc_block(13, 14, "", "#", "test3"),
-    ];
-    let ret = diff_code_mirror_doc_blocks(&before, &after);
-    assert_eq!(
-        ret,
-        vec![
-            // Order is important -- first, 12->13, then 11->12, 10->11
-            // (reversed order).
-            CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
-                from: 12,
-                from_new: 13,
-                to: 14,
-                indent: None,
-                delimiter: "#".to_string(),
-                contents: vec![]
-            }),
-            CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
-                from: 11,
-                from_new: 12,
-                to: 13,
-                indent: None,
-                delimiter: "#".to_string(),
-                contents: vec![]
-            }),
-            CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
-                from: 10,
-                from_new: 11,
-                to: 12,
-                indent: None,
-                delimiter: "#".to_string(),
-                contents: vec![]
-            }),
-        ]
-    );
-
-    // Next, with end adjacent doc blocks not at the end of the document.
-    let before = vec![
-        build_codemirror_doc_block(10, 11, "", "#", "test1"),
-        build_codemirror_doc_block(11, 12, " ", "#", "test2"),
-        build_codemirror_doc_block(13, 14, "", "#", "test3"),
-    ];
-    let after = vec![
-        build_codemirror_doc_block(11, 12, "", "#", "test1"),
-        build_codemirror_doc_block(12, 13, " ", "#", "test2"),
-        build_codemirror_doc_block(14, 15, "", "#", "test3"),
-    ];
-    let ret = diff_code_mirror_doc_blocks(&before, &after);
-    assert_eq!(
-        ret,
-        vec![
-            // Order is important -- 11->12, then 10->11 (reversed), then
-            // 13->14.
-            CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
-                from: 11,
-                from_new: 12,
-                to: 13,
-                indent: None,
-                delimiter: "#".to_string(),
-                contents: vec![]
-            }),
-            CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
-                from: 10,
-                from_new: 11,
-                to: 12,
-                indent: None,
-                delimiter: "#".to_string(),
-                contents: vec![]
-            }),
-            CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
-                from: 13,
-                from_new: 14,
-                to: 15,
-                indent: None,
-                delimiter: "#".to_string(),
-                contents: vec![]
-            }),
-        ]
-    );
-
-    // Test deletes before adjacent doc blocks.
-    let before = vec![
-        build_codemirror_doc_block(10, 11, "", "#", "test1"),
-        build_codemirror_doc_block(11, 12, " ", "#", "test2"),
-        build_codemirror_doc_block(12, 13, "", "#", "test3"),
-    ];
-    let after = vec![
         build_codemirror_doc_block(9, 10, "", "#", "test1"),
-        build_codemirror_doc_block(10, 11, " ", "#", "test2"),
+        build_codemirror_doc_block(10, 11, "", "#", "test2"),
         build_codemirror_doc_block(11, 12, "", "#", "test3"),
+        build_codemirror_doc_block(12, 13, "", "#", "test4"),
+        build_codemirror_doc_block(22, 23, "", "#", "test5"),
+    ];
+    let after = vec![
+        build_codemirror_doc_block(8, 9, "", "#", "test1"),
+        build_codemirror_doc_block(10, 11, "", "#", "test3"),
+        build_codemirror_doc_block(13, 14, "", "#", "test4"),
+        build_codemirror_doc_block(14, 15, "", "#", "test4a"),
+        build_codemirror_doc_block(23, 24, "", "#", "test5"),
     ];
     let ret = diff_code_mirror_doc_blocks(&before, &after);
     assert_eq!(
         ret,
         vec![
-            // Order: no reversal needed.
+            // Order is important! Deletions are ordered beginning to end.
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
-                from: 10,
-                from_new: 9,
-                to: 10,
+                from: 9,
+                from_new: 8,
+                to: 9,
                 indent: None,
                 delimiter: "#".to_string(),
                 contents: vec![]
             }),
+            CodeMirrorDocBlockTransaction::Delete(CodeMirrorDocBlockDelete { from: 10 }),
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
                 from: 11,
                 from_new: 10,
@@ -1227,10 +1142,26 @@ fn test_diff_2() {
                 delimiter: "#".to_string(),
                 contents: vec![]
             }),
+            // Insertions are ordered end to beginning.
+            CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
+                from: 22,
+                from_new: 23,
+                to: 24,
+                indent: None,
+                delimiter: "#".to_string(),
+                contents: vec![]
+            }),
+            CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
+                from: 14,
+                to: 15,
+                indent: "".to_string(),
+                delimiter: "#".to_string(),
+                contents: "test4a".to_string()
+            }),
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
                 from: 12,
-                from_new: 11,
-                to: 12,
+                from_new: 13,
+                to: 14,
                 indent: None,
                 delimiter: "#".to_string(),
                 contents: vec![]

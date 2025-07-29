@@ -1070,23 +1070,46 @@ pub fn diff_code_mirror_doc_blocks(
     // therefore, these two doc blocks can no longer be distinguished, making it
     // impossible to apply the change to the second doc block. More generally,
     // this can occur with an insert before a series of blocks which immediately
-    // follow each other. Therefore, look for sequences of updates where
-    // `from_new` of a previous entry == `from` of the current entry and swap
-    // these sequences.
+    // follow each other.
+    //
+    // A similar problem occurs when multiple lines are inserted: the `from` of
+    // an earlier doc block can become the same as the `from` of a later doc
+    // block. For example, consider three doc blocks starting at lines 10, 15,
+    // and 20. Inserting 10 lines makes from first doc block's `from` value
+    // change to 20, which again violates the doc blocks invariant.
+    //
+    // Rather than search for this case (which would be computationally
+    // expensive), generalize: inserts (which increase the `from` value of a doc
+    // block, possibly making it identical to later `from` values) should be
+    // processed from the end of the document toward the beginning, while
+    // deletions which decrease the `from` value should be processed from the
+    // beginning of the document to its end.
+    //
+    // Doc block insertions and deletions carry the same challenges as textual
+    // insertions and deletions. Insertions must be performed end to beginning,
+    // while deletions must be performed beginning to end.
+    //
+    // Therefore, look for sequences of insertions (adds) or updates where
+    // `from_new` > `from` and swap these sequences.
     let mut immediate_sequence_start_index: Option<usize> = None;
-    for index in 1..change_specs.len() {
-        if let CodeMirrorDocBlockTransaction::Update(prev_update) = &change_specs[index - 1]
-            && let CodeMirrorDocBlockTransaction::Update(update) = &change_specs[index]
-            && prev_update.from_new == update.from
-            && prev_update.from < prev_update.from_new
+    for index in 0..change_specs.len() {
+        let is_add = matches!(&change_specs[index], CodeMirrorDocBlockTransaction::Add(_));
+        let is_inserted_update = if let CodeMirrorDocBlockTransaction::Update(update) =
+            &change_specs[index]
+            && update.from_new > update.from
         {
-            // We've found two elements in a sequence.
+            true
+        } else {
+            false
+        };
+        if is_add || is_inserted_update {
+            // This is an update produced by inserting lines.
             if immediate_sequence_start_index.is_none() {
                 // This is the start of the sequence -- mark it.
-                immediate_sequence_start_index = Some(index - 1);
+                immediate_sequence_start_index = Some(index);
             }
         } else {
-            // These two elements aren't a sequence.
+            // This is not an update produced by an insertion.
             if let Some(prev_index) = immediate_sequence_start_index {
                 // This is the end of a sequence. Reverse it.
                 change_specs[prev_index..index].reverse();

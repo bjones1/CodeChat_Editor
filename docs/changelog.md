@@ -20,7 +20,7 @@ Changelog
 =========
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
-    *   No changes.
+    *   Additional data corruption fixes when applying edits.
 *    v0.1.25, 2025-29-Jul:
     *   Show notifications in Client when errors occur.
     *   For safety, close the Client if applying edits fails.
@@ -131,4 +131,4 @@ Changelog
     *   Cross-platform fixes.
 *   v0.1.0, 2024-Oct-16:
     *   Initial release, with binaries for Windows only. Built with
-        manually-patched CodeMirror per [this
+        manually-patched CodeMirror per \[this
