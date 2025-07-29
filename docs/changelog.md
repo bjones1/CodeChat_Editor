@@ -21,7 +21,7 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
-*    v0.1.25, 2025-28-Jul:
+*    v0.1.25, 2025-29-Jul:
     *   Show notifications in Client when errors occur.
     *   For safety, close the Client if applying edits fails.
 *   v0.1.24, 2025-Jul-25: 

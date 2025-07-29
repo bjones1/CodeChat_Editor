@@ -48,7 +48,7 @@
         "graphviz-webcomponent": "^2",
         "mermaid": "^11",
         "npm-check-updates": "^18",
-        "pdfjs-dist": "^5",
+        "pdfjs-dist": "=5.3.93",
         "tinymce": "^8",
         "toastify-js": "^1"
     },
