@@ -216,6 +216,21 @@ fn test_codemirror_to_code_doc_blocks_py() {
             build_doc_block("", "#", "")
         ]
     );
+
+    // Error -- instead of newlines, doc blocks replace something else.
+}
+
+#[test]
+#[should_panic]
+fn test_codemirror_to_code_doc_blocks_error() {
+    run_test(
+        "python",
+        "a\n\n",
+        vec![
+            build_codemirror_doc_block(0, 1, "", "#", ""),
+            build_codemirror_doc_block(2, 3, "", "#", ""),
+        ],
+    );
 }
 
 #[test]

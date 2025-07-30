@@ -442,12 +442,17 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
             contents: codemirror_doc_block.contents.to_string(),
             lines: 0,
         }));
+        let byte_index_prev = byte_index;
         // Translate `to`.
         byte_index += byte_index_of(
             &code_mirror.doc[byte_index..],
             codemirror_doc_block.to - utf16_index,
         );
         utf16_index = codemirror_doc_block.to;
+        // Verify that everything between `from` and `to` is newlines.
+        for char in code_mirror.doc[byte_index_prev..byte_index].chars() {
+            assert_eq!(char, '\n');
+        }
     }
 
     // See if there's a code block after the last doc block.
