@@ -48,6 +48,7 @@ use crate::{
 
 // Globals
 // -------
+const VSCODE_PATH_PREFIX: &[&str] = &["vsc", "fs"];
 const VSC: &str = "vsc-";
 
 // Code
@@ -221,12 +222,14 @@ pub async fn vscode_ide_websocket(
         translation_task(
             VSC.to_string(),
             connection_id_raw,
+            VSCODE_PATH_PREFIX,
             app_state_task,
+            shutdown_only,
+            true,
             to_ide_tx,
             from_ide_rx,
             to_client_tx,
             from_client_rx,
-            shutdown_only,
         )
         .await;
     });

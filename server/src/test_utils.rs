@@ -49,9 +49,9 @@ macro_rules! cast {
     // For an enum containing a single value (the typical case).
     ($target: expr, $pat: path) => {{
         // The if let exploits recent Rust compiler's smart pattern matching.
-        // Contrary to other solutions like `into_variant`` and friends, this
-        // one macro covers all ownership usage like` self``, `&self`` and `&mut
-        // self``. On the other hand` {into,as,as\_mut}\_{variant}\`\` solution
+        // Contrary to other solutions like `into_variant` and friends, this
+        // one macro covers all ownership usage like `self`, `&self` and `&mut
+        // self`. On the other hand `{into,as,as_mut}_{variant}` solution
         // usually needs 3 \* N method definitions where N is the number of
         // variants.
         if let $pat(a) = $target {

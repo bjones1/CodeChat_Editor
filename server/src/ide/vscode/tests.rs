@@ -314,19 +314,19 @@ async fn test_vscode_ide_websocket3() {
 
     // The HTTP request produces a `LoadFile` message.
     //
-    // Message ids: IDE - 4, Server - 3->6, Client - 2.
+    // Message ids: IDE - 4, Server - 4->7, Client - 2.
     let em = read_message(&mut ws_ide).await;
     let msg = cast!(em.message, EditorMessageContents::LoadFile);
     // Compare these as strings -- we want to ensure the path separator is
     // correct for the current platform.
     assert_eq!(file_path.to_string_lossy(), msg.to_string_lossy());
-    assert_eq!(em.id, 3.0);
+    assert_eq!(em.id, 4.0);
 
     // Reply to the `LoadFile` message -- the file isn't present.
     send_message(
         &mut ws_ide,
         &EditorMessage {
-            id: 3.0,
+            id: 4.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
         },
     )
@@ -371,17 +371,17 @@ async fn test_vscode_ide_websocket3a() {
 
     // The HTTP request produces a `LoadFile` message.
     //
-    // Message ids: IDE - 4, Server - 3->6, Client - 2.
+    // Message ids: IDE - 4, Server - 4->7, Client - 2.
     let em = read_message(&mut ws_ide).await;
     cast!(em.message, EditorMessageContents::LoadFile);
     // Skip comparing the file names, due to the backslash encoding.
-    assert_eq!(em.id, 3.0);
+    assert_eq!(em.id, 4.0);
 
     // Reply to the `LoadFile` message -- the file isn't present.
     send_message(
         &mut ws_ide,
         &EditorMessage {
-            id: 3.0,
+            id: 4.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
         },
     )
@@ -403,7 +403,7 @@ async fn test_vscode_ide_websocket8() {
     let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
     open_client(&mut ws_ide).await;
 
-    // Message ids: IDE - 4->7, Server - 3, Client - 2.
+    // Message ids: IDE - 4->7, Server - 4, Client - 2.
     let file_path = test_dir.join("only-in-ide.py");
     let file_path_str = file_path.to_str().unwrap().to_string();
     send_message(
@@ -465,20 +465,20 @@ async fn test_vscode_ide_websocket8() {
 
     // This should produce a `LoadFile` message.
     //
-    // Message ids: IDE - 7, Server - 3->6, Client - 2.
+    // Message ids: IDE - 7, Server - 4->7, Client - 2.
     let em = read_message(&mut ws_ide).await;
     let msg = cast!(em.message, EditorMessageContents::LoadFile);
     assert_eq!(
         path::absolute(Path::new(&msg)).unwrap(),
         path::absolute(&file_path).unwrap()
     );
-    assert_eq!(em.id, 3.0);
+    assert_eq!(em.id, 4.0);
 
     // Reply to the `LoadFile` message with the file's contents.
     send_message(
         &mut ws_ide,
         &EditorMessage {
-            id: 3.0,
+            id: 4.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(Some(
                 "# testing".to_string(),
             )))),
@@ -489,11 +489,11 @@ async fn test_vscode_ide_websocket8() {
 
     // This should also produce an `Update` message sent from the Server.
     //
-    // Message ids: IDE - 7, Server - 6->9, Client - 2.
+    // Message ids: IDE - 7, Server - 7->10, Client - 2.
     assert_eq!(
         read_message(&mut ws_client).await,
         EditorMessage {
-            id: 6.0,
+            id: 7.0,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path_str.clone(),
                 contents: Some(CodeChatForWeb {
@@ -519,7 +519,7 @@ async fn test_vscode_ide_websocket8() {
     send_message(
         &mut ws_client,
         &EditorMessage {
-            id: 6.0,
+            id: 7.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
         },
     )
@@ -530,7 +530,7 @@ async fn test_vscode_ide_websocket8() {
     assert_eq!(
         read_message(&mut ws_ide).await,
         EditorMessage {
-            id: 6.0,
+            id: 7.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
         }
     );
@@ -826,7 +826,7 @@ async fn test_vscode_ide_websocket4() {
     let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
     open_client(&mut ws_ide).await;
 
-    // Message ids: IDE - 4, Server - 3, Client - 2->5.
+    // Message ids: IDE - 4, Server - 4, Client - 2->5.
     let file_path_temp = fs::canonicalize(test_dir.join("test.py")).unwrap();
     let file_path = simplified(&file_path_temp);
     let file_path_str = file_path.to_str().unwrap().to_string();
@@ -889,17 +889,17 @@ async fn test_vscode_ide_websocket4() {
 
     // This should produce a `LoadFile` message.
     //
-    // Message ids: IDE - 4, Server - 3->6, Client - 5.
+    // Message ids: IDE - 4, Server - 4->7, Client - 5.
     let em = read_message(&mut ws_ide).await;
     let msg = cast!(em.message, EditorMessageContents::LoadFile);
     assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
-    assert_eq!(em.id, 3.0);
+    assert_eq!(em.id, 4.0);
 
     // Reply to the `LoadFile` message: the IDE doesn't have the file.
     send_message(
         &mut ws_ide,
         &EditorMessage {
-            id: 3.0,
+            id: 4.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
         },
     )
@@ -908,11 +908,11 @@ async fn test_vscode_ide_websocket4() {
 
     // This should also produce an `Update` message sent from the Server.
     //
-    // Message ids: IDE - 4, Server - 6->9, Client - 5.
+    // Message ids: IDE - 4, Server - 7->10, Client - 5.
     assert_eq!(
         read_message(&mut ws_client).await,
         EditorMessage {
-            id: 6.0,
+            id: 7.0,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path_str.clone(),
                 contents: Some(CodeChatForWeb {
@@ -938,7 +938,7 @@ async fn test_vscode_ide_websocket4() {
     send_message(
         &mut ws_client,
         &EditorMessage {
-            id: 6.0,
+            id: 7.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
         },
     )
@@ -946,7 +946,7 @@ async fn test_vscode_ide_websocket4() {
     assert_eq!(
         read_message(&mut ws_ide).await,
         EditorMessage {
-            id: 6.0,
+            id: 7.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
         }
     );
@@ -968,20 +968,20 @@ async fn test_vscode_ide_websocket4() {
 
     // This should also produce a `LoadFile` message.
     //
-    // Message ids: IDE - 4, Server - 9->12, Client - 5.
+    // Message ids: IDE - 4, Server - 10->13, Client - 5.
     let em = read_message(&mut ws_ide).await;
     let msg = cast!(em.message, EditorMessageContents::LoadFile);
     assert_eq!(
         fs::canonicalize(&msg).unwrap(),
         fs::canonicalize(test_dir.join("toc.md")).unwrap()
     );
-    assert_eq!(em.id, 9.0);
+    assert_eq!(em.id, 10.0);
 
     // Reply to the `LoadFile` message: the IDE doesn't have the file.
     send_message(
         &mut ws_ide,
         &EditorMessage {
-            id: 9.0,
+            id: 10.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
         },
     )
@@ -990,7 +990,7 @@ async fn test_vscode_ide_websocket4() {
 
     // Send an update from the Client, which should produce a diff.
     //
-    // Message ids: IDE - 4, Server - 12, Client - 5->8.
+    // Message ids: IDE - 4, Server - 13, Client - 5->8.
     send_message(
         &mut ws_client,
         &EditorMessage {
@@ -1071,7 +1071,7 @@ async fn test_vscode_ide_websocket4a() {
     let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
     open_client(&mut ws_ide).await;
 
-    // Message ids: IDE - 4, Server - 3, Client - 2->5.
+    // Message ids: IDE - 4, Server - 4, Client - 2->5.
     let hw = "helloworld.pdf";
     let file_path_temp = fs::canonicalize(test_dir.join(hw)).unwrap();
     let file_path = simplified(&file_path_temp);
@@ -1142,17 +1142,17 @@ async fn test_vscode_ide_websocket4a() {
 
     // This should produce a `LoadFile` message.
     //
-    // Message ids: IDE - 4, Server - 3->6, Client - 5.
+    // Message ids: IDE - 4, Server - 4->7, Client - 5.
     let em = read_message(&mut ws_ide).await;
     let msg = cast!(em.message, EditorMessageContents::LoadFile);
     assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
-    assert_eq!(em.id, 3.0);
+    assert_eq!(em.id, 4.0);
 
     // Reply to the `LoadFile` message: the IDE doesn't have the file.
     send_message(
         &mut ws_ide,
         &EditorMessage {
-            id: 3.0,
+            id: 4.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
         },
     )
@@ -1172,7 +1172,7 @@ async fn test_vscode_ide_websocket4b() {
     let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
     open_client(&mut ws_ide).await;
 
-    // Message ids: IDE - 4, Server - 3, Client - 2->5.
+    // Message ids: IDE - 4, Server - 4, Client - 2->5.
     let hw = "helloworld.pdf";
     let file_path_temp = fs::canonicalize(test_dir.join(hw)).unwrap();
     let file_path = simplified(&file_path_temp);
@@ -1256,17 +1256,17 @@ async fn test_vscode_ide_websocket4b() {
 
     // This should produce a `LoadFile` message.
     //
-    // Message ids: IDE - 4, Server - 3->6, Client - 5.
+    // Message ids: IDE - 4, Server - 4->7, Client - 5.
     let em = read_message(&mut ws_ide).await;
     let msg = cast!(em.message, EditorMessageContents::LoadFile);
     assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
-    assert_eq!(em.id, 3.0);
+    assert_eq!(em.id, 4.0);
 
     // Reply to the `LoadFile` message: the IDE doesn't have the file.
     send_message(
         &mut ws_ide,
         &EditorMessage {
-            id: 3.0,
+            id: 4.0,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
         },
     )

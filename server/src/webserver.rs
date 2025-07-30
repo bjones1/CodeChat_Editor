@@ -291,9 +291,6 @@ pub struct AppState {
     /// For each connection ID, store a queue tx for the HTTP server to send
     /// requests to the processing task for that ID.
     pub processing_task_queue_tx: Arc<Mutex<HashMap<String, Sender<ProcessingTaskHttpRequest>>>>,
-    /// For each (connection ID, requested URL) store channel to send the
-    /// matching response to the HTTP task.
-    pub filewatcher_client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
     /// For each connection ID, store the queues for the IDE and Client.
     pub ide_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
     pub client_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
@@ -353,8 +350,8 @@ const REPLY_TIMEOUT: Duration = if cfg!(test) {
 /// this server.
 const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 
-/// The initial value for a message ID.
-pub const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
+/// A message ID which won't be used by anything but a `Result` produced by an error not produced in response to a message.
+pub const RESERVED_MESSAGE_ID: f64 = if cfg!(test) {
     // A simpler value when testing.
     0.0
 } else {
@@ -362,6 +359,12 @@ pub const INITIAL_MESSAGE_ID: f64 = if cfg!(test) {
     // representable. This is -9007199254740991.
     -((1i64 << f64::MANTISSA_DIGITS) - 1) as f64
 };
+/// The initial value for the server's message ID.
+pub const INITIAL_MESSAGE_ID: f64 = RESERVED_MESSAGE_ID + 1.0;
+// The initial value for a Client.
+pub const INITIAL_CLIENT_MESSAGE_ID: f64 = INITIAL_MESSAGE_ID + 1.0;
+// The initial value for an IDE.
+pub const INITIAL_IDE_MESSAGE_ID: f64 = INITIAL_CLIENT_MESSAGE_ID + 1.0;
 /// The increment for a message ID. Since the Client, IDE, and Server all
 /// increment by this same amount but start at different values, this ensures
 /// that message IDs will be unique. (Given a mantissa of 53 bits plus a sign
@@ -1409,7 +1412,6 @@ pub fn make_app_data(port: u16, credentials: Option<Credentials>) -> web::Data<A
         filewatcher_next_connection_id: Mutex::new(0),
         port,
         processing_task_queue_tx: Arc::new(Mutex::new(HashMap::new())),
-        filewatcher_client_queues: Arc::new(Mutex::new(HashMap::new())),
         ide_queues: Arc::new(Mutex::new(HashMap::new())),
         client_queues: Arc::new(Mutex::new(HashMap::new())),
         connection_id: Arc::new(Mutex::new(HashSet::new())),

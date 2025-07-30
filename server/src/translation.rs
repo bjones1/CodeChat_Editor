@@ -236,7 +236,6 @@ use crate::{
 
 // Globals
 // -------
-const VSCODE_PATH_PREFIX: &[&str] = &["vsc", "fs"];
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH: usize = 300;
 
@@ -339,7 +338,7 @@ pub fn create_translation_queues(
             .insert(
                 connection_id.clone(),
                 WebsocketQueues {
-                    from_websocket_tx: from_ide_tx.clone(),
+                    from_websocket_tx: from_ide_tx,
                     to_websocket_rx: to_ide_rx,
                 },
             )
@@ -355,17 +354,19 @@ pub fn create_translation_queues(
             .insert(
                 connection_id.clone(),
                 WebsocketQueues {
-                    from_websocket_tx: from_client_tx.clone(),
+                    from_websocket_tx: from_client_tx,
                     to_websocket_rx: to_client_rx,
                 },
             )
             .is_none()
     );
-    app_state
-        .connection_id
-        .lock()
-        .unwrap()
-        .insert(connection_id.clone());
+    assert!(
+        app_state
+            .connection_id
+            .lock()
+            .unwrap()
+            .insert(connection_id.clone())
+    );
 
     Ok(CreatedTranslationQueues {
         from_ide_rx,
@@ -381,12 +382,14 @@ pub fn create_translation_queues(
 pub async fn translation_task(
     connection_id_prefix: String,
     connection_id_raw: String,
+    prefix: &'static [&'static str],
     app_state_task: web::Data<AppState>,
+    shutdown_only: bool,
+    allow_source_diffs: bool,
     to_ide_tx: Sender<EditorMessage>,
     mut from_ide_rx: Receiver<EditorMessage>,
     to_client_tx: Sender<EditorMessage>,
     mut from_client_rx: Receiver<EditorMessage>,
-    shutdown_only: bool,
 ) {
     // Start the processing task.
     actix_rt::spawn(async move {
@@ -409,7 +412,7 @@ pub async fn translation_task(
                     .unwrap()
                     .insert(connection_id.to_string(), from_http_tx);
 
-                // All further messages are handled in the main loop.
+                // Leave space for a server message during the init phase.
                 let mut id: f64 = INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT;
                 let mut source_code = String::new();
                 let mut code_mirror_doc = String::new();
@@ -419,6 +422,7 @@ pub async fn translation_task(
                 // Some means this contains valid HTML; None means don't use it
                 // (since it would have contained Markdown).
                 let mut code_mirror_doc_blocks = Some(Vec::new());
+                let prefix_str = "/".to_string() + &prefix.join("/");
                 // To send a diff from Server to Client or vice versa, we need to
                 // ensure they are in sync:
                 //
@@ -724,7 +728,7 @@ pub async fn translation_task(
                                             queue_send!(to_client_tx.send(EditorMessage {
                                                 id: ide_message.id,
                                                 message: EditorMessageContents::CurrentFile(
-                                                    path_to_url("/vsc/fs", Some(&connection_id_raw), &clean_file_path), Some(true)
+                                                    path_to_url(&prefix_str, Some(&connection_id_raw), &clean_file_path), Some(true)
                                                 )
                                             }));
                                             current_file = file_path.into();
@@ -819,7 +823,7 @@ pub async fn translation_task(
                                                     &cfw)
                                                 {
                                                     Ok(result) => {
-                                                        let ccfw = if sync_state == SyncState::InSync {
+                                                        let ccfw = if sync_state == SyncState::InSync && allow_source_diffs {
                                                             Some(CodeChatForWeb {
                                                                 metadata: cfw.metadata,
                                                                 source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
@@ -886,7 +890,7 @@ pub async fn translation_task(
                                 // then pass it to the IDE.
                                 EditorMessageContents::CurrentFile(url_string, _is_text) => {
                                     debug!("Forwarding translated path to IDE.");
-                                    let result = match url_to_path(&url_string, VSCODE_PATH_PREFIX) {
+                                    let result = match url_to_path(&url_string, prefix) {
                                         Err(err) => Err(format!("Unable to convert URL to path: {err}")),
                                         Ok(file_path) => {
                                             match file_path.to_str() {
