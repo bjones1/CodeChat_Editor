@@ -155,6 +155,13 @@ export const docBlockField = StateField.define<DecorationSet>({
         // a doc block, as requested by this effect.
         for (let effect of tr.effects)
             if (effect.is(addDocBlock)) {
+                // Check that we're not overwriting text.
+                const newlines = current_view.state.doc.slice(effect.value.from, effect.value.to).toString();
+                if (newlines !== "\n".repeat(newlines.length)) {
+                    report_error(`Attempt to overwrite text: "${newlines}".`);
+                    window.close();
+                    assert(false);
+                }
                 // Perform an
                 // [update](https://codemirror.net/docs/ref/#state.RangeSet.update)
                 // by adding the requested doc block.
@@ -226,6 +233,16 @@ export const docBlockField = StateField.define<DecorationSet>({
                     window.close();
                     assert(false);
                 }
+                // Determine the final from/to values.
+                to = effect.value.to ?? to;
+                const from = effect.value.from_new ?? effect.value.from;
+                // Check that we're not overwriting text.
+                const newlines = current_view.state.doc.slice(from, to).toString();
+                if (newlines !== "\n".repeat(newlines.length)) {
+                    report_error(`Attempt to overwrite text: "${newlines}".`);
+                    window.close();
+                    assert(false);
+                }
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
@@ -248,10 +265,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                                 effect.value.dom ?? prev.spec.widget.dom,
                             ),
                             ...decorationOptions,
-                        }).range(
-                            effect.value.from_new ?? effect.value.from,
-                            effect.value.to ?? to,
-                        ),
+                        }).range(from, to),
                     ],
                 });
             } else if (effect.is(deleteDocBlock)) {
