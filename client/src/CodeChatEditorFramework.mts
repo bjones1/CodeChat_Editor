@@ -41,6 +41,7 @@ import {
     MessageResult,
     UpdateMessageContents,
 } from "./shared_types.mjs";
+import { console_log } from "./CodeChatEditor.mjs";
 
 // Websocket
 // ---------
@@ -87,7 +88,7 @@ class WebSocketComm {
         this.ws = new ReconnectingWebSocket!(ws_url);
         // Identify this client on connection.
         this.ws.onopen = () => {
-            console.log(`CodeChat Client: websocket to CodeChat Server open.`);
+            console_log(`CodeChat Client: websocket to CodeChat Server open.`);
         };
 
         // Provide logging to help track down errors.
@@ -98,7 +99,7 @@ class WebSocketComm {
         };
 
         this.ws.onclose = (event: any) => {
-            console.log(
+            console_log(
                 `CodeChat Client: websocket closed by event type ${event.type}: ${event.detail}. This should only happen on shutdown.`,
             );
         };
@@ -109,7 +110,7 @@ class WebSocketComm {
             // dictionary representing a `JointMessage`.
             const joint_message = JSON.parse(event.data) as EditorMessage;
             const { id: id, message: message } = joint_message;
-            console.log(
+            console_log(
                 `Received data id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
             );
             assert(id !== undefined);
@@ -262,7 +263,7 @@ class WebSocketComm {
             assert(this.current_filename !== undefined);
             message.Update.file_path = this.current_filename!;
         }
-        console.log(
+        console_log(
             `Sent message ${id}, ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
         );
         const jm: EditorMessage = {
@@ -299,7 +300,7 @@ class WebSocketComm {
         const message: EditorMessageContents = {
             Result: result === null ? { Ok: "Void" } : { Err: result },
         };
-        console.log(
+        console_log(
             `Sending result id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
         );
         // We can't simply call `send_message` because that function expects a

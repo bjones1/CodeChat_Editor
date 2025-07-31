@@ -32,7 +32,6 @@ import process from "node:process";
 import escape from "escape-html";
 import vscode, {
     commands,
-    Position,
     Range,
     TextDocument,
     TextEditor,
@@ -41,8 +40,6 @@ import { WebSocket } from "ws";
 
 // ### Local packages
 import {
-    CodeChatForWeb,
-    CodeMirror,
     EditorMessage,
     EditorMessageContents,
     MessageResult,
@@ -125,7 +122,7 @@ export const activate = (context: vscode.ExtensionContext) => {
         vscode.commands.registerCommand(
             "extension.codeChatEditorActivate",
             async () => {
-                console.log("CodeChat Editor extension starting.");
+                console_log("CodeChat Editor extension starting.");
 
                 if (!subscribed) {
                     subscribed = true;
@@ -139,7 +136,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             if (event.contentChanges.length === 0) {
                                 return;
                             }
-                            console.log(
+                            console_log(
                                 `CodeChat Editor extension: text changed - ${
                                     event.reason
                                 }, ${format_struct(event.contentChanges)}.`,
@@ -241,7 +238,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                         webview_panel.onDidDispose(async () => {
                             // Shut down the render client when the webview
                             // panel closes.
-                            console.log(
+                            console_log(
                                 "CodeChat Editor extension: shut down webview.",
                             );
                             // Closing the webview abruptly closes the Client,
@@ -281,7 +278,7 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                 // Start the server.
                 try {
-                    console.log("CodeChat Editor extension: starting server.");
+                    console_log("CodeChat Editor extension: starting server.");
                     await run_server(["start"]);
                 } catch (err) {
                     assert(err instanceof Error);
@@ -290,7 +287,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                 }
 
                 if (websocket === undefined) {
-                    console.log(
+                    console_log(
                         "CodeChat Editor extension: opening websocket.",
                     );
 
@@ -312,7 +309,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                     });
 
                     websocket.on("close", (hadError: CloseEvent) => {
-                        console.log(
+                        console_log(
                             "CodeChat Editor extension: closing websocket connection.",
                         );
                         // If there was an error, the event handler above
@@ -332,7 +329,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                     });
 
                     websocket.on("open", () => {
-                        console.log(
+                        console_log(
                             "CodeChat Editor extension: connected to server.",
                         );
                         assert(websocket !== undefined);
@@ -360,7 +357,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                         const { id, message } = JSON.parse(
                             data.toString(),
                         ) as EditorMessage;
-                        console.log(
+                        console_log(
                             `CodeChat Editor extension: Received data id = ${id}, message = ${format_struct(
                                 message,
                             )}.`,
@@ -368,7 +365,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                         assert(id !== undefined);
                         assert(message !== undefined);
                         const keys = Object.keys(message);
-                        console.assert(keys.length === 1);
+                        assert(keys.length === 1);
                         const key = keys[0];
                         const value = Object.values(message)[0];
 
@@ -456,7 +453,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         ignore_selection_change = true;
                                         // The VSCode line is zero-based; the CodeMirror line is one-based.
                                         line -= 1;
-                                        console.log(`Moving to line ${line}.`);
+                                        console_log(`Moving to line ${line}.`);
                                         const position = new vscode.Position(
                                             line,
                                             line,
@@ -592,7 +589,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                         }
                     });
                 } else {
-                    console.log(
+                    console_log(
                         "CodeChat Editor extension: connection already pending, so a new client wasn't created.",
                     );
                 }
@@ -603,10 +600,10 @@ export const activate = (context: vscode.ExtensionContext) => {
 
 // On deactivation, close everything down.
 export const deactivate = async () => {
-    console.log("CodeChat extension: deactivating.");
+    console_log("CodeChat extension: deactivating.");
     await stop_client();
     webview_panel?.dispose();
-    console.log("CodeChat extension: deactivated.");
+    console_log("CodeChat extension: deactivated.");
 };
 
 // Supporting functions
@@ -624,7 +621,7 @@ const send_message = (
         message,
     };
     assert(websocket);
-    console.log(
+    console_log(
         `CodeChat Editor extension: sending message ${format_struct(jm)}.`,
     );
     websocket.send(JSON.stringify(jm));
@@ -664,7 +661,7 @@ const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
         },
     };
     assert(websocket);
-    console.log(
+    console_log(
         `CodeChat Editor extension: sending result ${JSON.stringify(
             jm,
         ).substring(0, MAX_MESSAGE_LENGTH)}.`,
@@ -729,9 +726,9 @@ const current_file = () => {
 // Gracefully shut down the render client if possible. Shut down the client as
 // well.
 const stop_client = async () => {
-    console.log("CodeChat Editor extension: stopping client.");
+    console_log("CodeChat Editor extension: stopping client.");
     if (websocket !== undefined) {
-        console.log("CodeChat Editor extension: ending connection.");
+        console_log("CodeChat Editor extension: ending connection.");
         websocket?.close();
         websocket = undefined;
     }
@@ -891,3 +888,9 @@ const run_server = (args: string[]) => {
         });
     });
 };
+
+const console_log = (...args: any) => {
+    if (DEBUG_ENABLED) {
+        console.log(...args);
+    }
+}
