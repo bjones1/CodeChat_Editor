@@ -56,7 +56,7 @@ import {
     CodeMirror_save,
     mathJaxTypeset,
     mathJaxUnTypeset,
-    scroll_to_line,
+    scroll_to_line as codemirror_scroll_to_line,
     set_CodeMirror_positions,
 } from "./CodeMirror-integration.mjs";
 import "./EditorComponents.mjs";
@@ -345,7 +345,11 @@ const save_lp = (is_dirty: boolean) => {
         // The Framework will fill in this value.
         file_path: "",
     };
-    set_CodeMirror_positions(update);
+    if (is_doc_only()) {
+        // TODO: set cursor/scroll position.
+    } else {
+        set_CodeMirror_positions(update);
+    }
 
     // Add the contents only if the document is dirty.
     if (is_dirty) {
@@ -541,6 +545,13 @@ const save_then_navigate = (codeChatEditorUrl: URL) => {
     });
 };
 
+const scroll_to_line = (line: number) => {
+    if (is_doc_only()) {
+        // TODO.
+    } else {
+        codemirror_scroll_to_line(line);
+    }
+}
 
 export const console_log = (...args: any) => {
     if (DEBUG_ENABLED) {
