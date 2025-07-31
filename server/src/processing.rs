@@ -150,15 +150,18 @@ pub struct CodeMirrorDocBlockUpdate {
     /// in UTF-16 code units.
     pub from: usize,
     /// The starting character this doc block is anchored to after this update.
-    pub from_new: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_new: Option<usize>,
     /// The ending character this doc block is anchored to.
-    pub to: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<usize>,
     /// `None` if the indent is unchanged. Since the indent may be many
     /// characters, use an `Option` here.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub indent: Option<String>,
     /// Delimiter.
-    pub delimiter: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delimiter: Option<String>,
     /// Contents, as a diff of the previous contents.
     pub contents: Vec<StringDiff>,
 }
@@ -942,6 +945,18 @@ impl<'a> TokenSource for CodeMirrorDocBlocksStruct<'a> {
     }
 }
 
+fn none_if_eq<T: PartialEq>(before: T, after: T) -> Option<T> {
+    if before == after { None } else { Some(after) }
+}
+
+fn none_if_eq_ref<T: PartialEq + Clone>(before: &T, after: &T) -> Option<T> {
+    if before == after {
+        None
+    } else {
+        Some(after.clone())
+    }
+}
+
 /// Given two `CodeMirrorDocBlocks`, return a list of changes between them.
 pub fn diff_code_mirror_doc_blocks(
     before: &CodeMirrorDocBlockVec,
@@ -978,16 +993,22 @@ pub fn diff_code_mirror_doc_blocks(
                 change_specs.push(CodeMirrorDocBlockTransaction::Update(
                     CodeMirrorDocBlockUpdate {
                         from: prev_before_range_start_val.from,
-                        from_new: prev_after_range_start_val.from,
-                        to: prev_after_range_start_val.to,
-                        indent: if prev_before_range_start_val.indent
-                            == prev_after_range_start_val.indent
-                        {
-                            None
-                        } else {
-                            Some(prev_after_range_start_val.indent.clone())
-                        },
-                        delimiter: prev_after_range_start_val.delimiter.clone(),
+                        from_new: none_if_eq(
+                            prev_before_range_start_val.from,
+                            prev_after_range_start_val.from,
+                        ),
+                        to: none_if_eq(
+                            prev_before_range_start_val.to,
+                            prev_after_range_start_val.to,
+                        ),
+                        indent: none_if_eq_ref(
+                            &prev_before_range_start_val.indent,
+                            &prev_after_range_start_val.indent,
+                        ),
+                        delimiter: none_if_eq_ref(
+                            &prev_before_range_start_val.delimiter,
+                            &prev_after_range_start_val.delimiter,
+                        ),
                         contents: diff_str(
                             &prev_after_range_start_val.contents,
                             &prev_after_range_start_val.contents,
@@ -1024,14 +1045,10 @@ pub fn diff_code_mirror_doc_blocks(
                 change_specs.push(CodeMirrorDocBlockTransaction::Update(
                     CodeMirrorDocBlockUpdate {
                         from: before_val.from,
-                        from_new: after_val.from,
-                        to: after_val.to,
-                        indent: if before_val.indent == after_val.indent {
-                            None
-                        } else {
-                            Some(after_val.indent.clone())
-                        },
-                        delimiter: after_val.delimiter.clone(),
+                        from_new: none_if_eq(before_val.from, after_val.from),
+                        to: none_if_eq(before_val.to, after_val.to),
+                        indent: none_if_eq_ref(&before_val.indent, &after_val.indent),
+                        delimiter: none_if_eq_ref(&before_val.delimiter, &after_val.delimiter),
                         contents: diff_str(&before_val.contents, &after_val.contents),
                     },
                 ));
@@ -1101,7 +1118,8 @@ pub fn diff_code_mirror_doc_blocks(
         let is_add = matches!(&change_specs[index], CodeMirrorDocBlockTransaction::Add(_));
         let is_inserted_update = if let CodeMirrorDocBlockTransaction::Update(update) =
             &change_specs[index]
-            && update.from_new > update.from
+            && let Some(from_new) = update.from_new
+            && from_new > update.from
         {
             true
         } else {

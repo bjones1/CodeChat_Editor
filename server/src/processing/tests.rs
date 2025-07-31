@@ -923,10 +923,10 @@ fn test_diff_2() {
         vec![CodeMirrorDocBlockTransaction::Update(
             CodeMirrorDocBlockUpdate {
                 from: 10,
-                from_new: 10,
-                to: 12,
+                from_new: None,
+                to: Some(12),
                 indent: None,
-                delimiter: "#".to_string(),
+                delimiter: None,
                 contents: vec![]
             }
         )]
@@ -940,10 +940,10 @@ fn test_diff_2() {
         vec![CodeMirrorDocBlockTransaction::Update(
             CodeMirrorDocBlockUpdate {
                 from: 10,
-                from_new: 10,
-                to: 11,
+                from_new: None,
+                to: None,
                 indent: Some(" ".to_string()),
-                delimiter: "#".to_string(),
+                delimiter: None,
                 contents: vec![]
             }
         )]
@@ -957,10 +957,10 @@ fn test_diff_2() {
         vec![CodeMirrorDocBlockTransaction::Update(
             CodeMirrorDocBlockUpdate {
                 from: 10,
-                from_new: 10,
-                to: 11,
+                from_new: None,
+                to: None,
                 indent: None,
-                delimiter: "*".to_string(),
+                delimiter: Some("*".to_string()),
                 contents: vec![]
             }
         )]
@@ -974,10 +974,10 @@ fn test_diff_2() {
         vec![CodeMirrorDocBlockTransaction::Update(
             CodeMirrorDocBlockUpdate {
                 from: 10,
-                from_new: 10,
-                to: 11,
+                from_new: None,
+                to: None,
                 indent: None,
-                delimiter: "#".to_string(),
+                delimiter: None,
                 contents: vec![StringDiff {
                     from: 5,
                     to: None,
@@ -1019,10 +1019,10 @@ fn test_diff_2() {
         vec![
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
                 from: 11,
-                from_new: 10,
-                to: 11,
+                from_new: Some(10),
+                to: Some(11),
                 indent: None,
-                delimiter: "#".to_string(),
+                delimiter: None,
                 contents: vec![]
             }),
             CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
@@ -1142,28 +1142,28 @@ fn test_diff_2() {
             // Order is important! Deletions are ordered beginning to end.
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
                 from: 9,
-                from_new: 8,
-                to: 9,
+                from_new: Some(8),
+                to: Some(9),
                 indent: None,
-                delimiter: "#".to_string(),
+                delimiter: None,
                 contents: vec![]
             }),
             CodeMirrorDocBlockTransaction::Delete(CodeMirrorDocBlockDelete { from: 10 }),
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
                 from: 11,
-                from_new: 10,
-                to: 11,
+                from_new: Some(10),
+                to: Some(11),
                 indent: None,
-                delimiter: "#".to_string(),
+                delimiter: None,
                 contents: vec![]
             }),
             // Insertions are ordered end to beginning.
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
                 from: 22,
-                from_new: 23,
-                to: 24,
+                from_new: Some(23),
+                to: Some(24),
                 indent: None,
-                delimiter: "#".to_string(),
+                delimiter: None,
                 contents: vec![]
             }),
             CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
@@ -1175,10 +1175,10 @@ fn test_diff_2() {
             }),
             CodeMirrorDocBlockTransaction::Update(CodeMirrorDocBlockUpdate {
                 from: 12,
-                from_new: 13,
-                to: 14,
+                from_new: Some(13),
+                to: Some(14),
                 indent: None,
-                delimiter: "#".to_string(),
+                delimiter: None,
                 contents: vec![]
             }),
         ]

@@ -255,7 +255,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                         Decoration.replace({
                             widget: new DocBlockWidget(
                                 effect.value.indent ?? prev.spec.widget.indent,
-                                effect.value.delimiter,
+                                effect.value.delimiter ?? prev.spec.widget.delimiter,
                                 typeof effect.value.contents === "string"
                                     ? effect.value.contents
                                     : apply_diff_str(
@@ -356,7 +356,7 @@ type updateDocBlockType = {
     from_new?: number;
     to?: number;
     indent?: string;
-    delimiter: string;
+    delimiter?: string;
     contents: string | StringDiff[];
     dom?: HTMLDivElement;
 };
