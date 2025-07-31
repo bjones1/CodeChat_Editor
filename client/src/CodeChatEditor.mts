@@ -56,6 +56,8 @@ import {
     CodeMirror_save,
     mathJaxTypeset,
     mathJaxUnTypeset,
+    scroll_to_line,
+    set_CodeMirror_positions,
 } from "./CodeMirror-integration.mjs";
 import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
@@ -114,8 +116,12 @@ declare global {
     interface Window {
         CodeChatEditor: {
             // Called by the Client Framework.
-            open_lp: (code_chat_for_web: CodeChatForWeb) => Promise<void>;
+            open_lp: (
+                codechat_for_web: CodeChatForWeb,
+                cursor_position?: number,
+            ) => Promise<void>;
             on_save: (_only_if_dirty: boolean) => Promise<void>;
+            scroll_to_line: (line: number) => void;
             show_toast: (text: string) => void;
             allow_navigation: boolean;
         };
@@ -182,6 +188,7 @@ export const page_init = () => {
         window.CodeChatEditor = {
             open_lp,
             on_save,
+            scroll_to_line,
             show_toast,
             allow_navigation: false,
         };
@@ -213,10 +220,17 @@ const is_doc_only = () => {
 };
 
 // Wait for the DOM to load before opening the file.
-const open_lp = async (code_chat_for_web: CodeChatForWeb) =>
-    on_dom_content_loaded(() => _open_lp(code_chat_for_web));
+const open_lp = async (
+    codechat_for_web: CodeChatForWeb,
+    cursor_position?: number,
+) => on_dom_content_loaded(() => _open_lp(codechat_for_web, cursor_position));
 
-// Store the HTML sent for CodeChat Editor documents. We can't simply use TinyMCE's [getContent](https://www.tiny.cloud/docs/tinymce/latest/apis/tinymce.editor/#getContent), since this modifies the content based on cleanup rules before returning it -- which causes applying diffs to this unexpectedly modified content to produce incorrect results. This text is the unmodified content sent from the IDE.
+// Store the HTML sent for CodeChat Editor documents. We can't simply use
+// TinyMCE's
+// [getContent](https://www.tiny.cloud/docs/tinymce/latest/apis/tinymce.editor/#getContent),
+// since this modifies the content based on cleanup rules before returning it --
+// which causes applying diffs to this unexpectedly modified content to produce
+// incorrect results. This text is the unmodified content sent from the IDE.
 let doc_content = "";
 
 // This function is called on page load to "load" a file. Before this point, the
@@ -226,7 +240,8 @@ let doc_content = "";
 const _open_lp = async (
     // A data structure provided by the server, containing the source and
     // associated metadata. See[`AllSource`](#AllSource).
-    code_chat_for_web: CodeChatForWeb,
+    codechat_for_web: CodeChatForWeb,
+    cursor_position?: number,
 ) => {
     // Use[URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
     // to parse out the search parameters of this window's URL.
@@ -241,16 +256,18 @@ const _open_lp = async (
     const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
 
     // Get the<code><a href="#current_metadata">current_metadata</a></code> from
-    // the provided `code_chat_for_web` struct and store it as a global variable.
-    current_metadata = code_chat_for_web["metadata"];
-    const source = code_chat_for_web["source"];
+    // the provided `code_chat_for_web` struct and store it as a global
+    // variable.
+    current_metadata = codechat_for_web["metadata"];
+    const source = codechat_for_web["source"];
     const codechat_body = document.getElementById(
         "CodeChat-body",
     ) as HTMLDivElement;
     // Disable autosave when updating the document.
     autosaveEnabled = false;
     clearAutosaveTimer();
-    // Before calling any MathJax, make sure it's fully loaded and the initial render is finished.
+    // Before calling any MathJax, make sure it's fully loaded and the initial
+    // render is finished.
     await window.MathJax.startup.promise;
     // Per
     // the[docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
@@ -302,7 +319,12 @@ const _open_lp = async (
         }
         mathJaxTypeset(codechat_body);
     } else {
-        await CodeMirror_load(codechat_body, source, current_metadata.mode, []);
+        await CodeMirror_load(
+            codechat_body,
+            codechat_for_web,
+            [],
+            cursor_position,
+        );
     }
     autosaveEnabled = true;
 
@@ -315,45 +337,48 @@ const _open_lp = async (
     }
 };
 
-const save_lp = () => {
-    /// @ts-expect-error
-    let code_mirror_diffable: CodeMirrorDiffable = {};
-    if (is_doc_only()) {
-        // Untypeset all math before saving the document.
-        const codechat_body = document.getElementById(
-            "CodeChat-body",
-        ) as HTMLDivElement;
-        mathJaxUnTypeset(codechat_body);
-        // To save a document only, simply get the HTML from the only Tiny MCE
-        // div.
-        tinymce.activeEditor!.save();
-        const html = tinymce.activeEditor!.getContent();
-        (
-            code_mirror_diffable as {
-                Plain: CodeMirror;
-            }
-        ).Plain = {
-            doc: turndownService.turndown(html),
-            doc_blocks: [],
-        };
-        // Retypeset all math after saving the document.
-        mathJaxTypeset(codechat_body);
-    } else {
-        code_mirror_diffable = CodeMirror_save();
-        assert("Plain" in code_mirror_diffable);
-        codechat_html_to_markdown(code_mirror_diffable.Plain.doc_blocks);
-    }
-
+const save_lp = (is_dirty: boolean) => {
     let update: UpdateMessageContents = {
         // The Framework will fill in this value.
         file_path: "",
-        contents: {
+    };
+    set_CodeMirror_positions(update);
+
+    // Add the contents only if the document is dirty.
+    if (is_dirty) {
+        /// @ts-expect-error
+        let code_mirror_diffable: CodeMirrorDiffable = {};
+        if (is_doc_only()) {
+            // Untypeset all math before saving the document.
+            const codechat_body = document.getElementById(
+                "CodeChat-body",
+            ) as HTMLDivElement;
+            mathJaxUnTypeset(codechat_body);
+            // To save a document only, simply get the HTML from the only Tiny MCE
+            // div.
+            tinymce.activeEditor!.save();
+            const html = tinymce.activeEditor!.getContent();
+            (
+                code_mirror_diffable as {
+                    Plain: CodeMirror;
+                }
+            ).Plain = {
+                doc: turndownService.turndown(html),
+                doc_blocks: [],
+            };
+            // Retypeset all math after saving the document.
+            mathJaxTypeset(codechat_body);
+        } else {
+            code_mirror_diffable = CodeMirror_save();
+            assert("Plain" in code_mirror_diffable);
+            codechat_html_to_markdown(code_mirror_diffable.Plain.doc_blocks);
+        }
+        update.contents = {
             metadata: current_metadata,
             source: code_mirror_diffable,
-        },
-        scroll_position: null,
-        cursor_position: null,
-    };
+        };
+    }
+
     return update;
 };
 
@@ -376,7 +401,9 @@ const on_save = async (only_if_dirty: boolean = false) => {
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
     console.log("Sent Update - saving document.");
     await new Promise(async (resolve) => {
-        webSocketComm.send_message({ Update: save_lp() }, () => resolve(0));
+        webSocketComm.send_message({ Update: save_lp(is_dirty) }, () =>
+            resolve(0),
+        );
     });
     is_dirty = false;
 };

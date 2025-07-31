@@ -87,6 +87,7 @@ import {
     CodeMirrorDiffable,
     CodeMirrorDocBlockTuple,
     StringDiff,
+    UpdateMessageContents,
 } from "./shared_types.mjs";
 import { assert } from "./assert.mjs";
 import { show_toast } from "./show_toast.mjs";
@@ -98,6 +99,9 @@ let tinymce_singleton: Editor | undefined;
 // When true, don't update on the next call to `on_dirty`. See that function for
 // more info.
 let ignore_next_dirty = false;
+// True to ignore the next text selection change, since updates to the
+// cursor or scroll position from the Client trigged this change.
+let ignore_selection_change = false;
 
 // Options used when creating a `Decoration`.
 const decorationOptions = {
@@ -156,7 +160,9 @@ export const docBlockField = StateField.define<DecorationSet>({
         for (let effect of tr.effects)
             if (effect.is(addDocBlock)) {
                 // Check that we're not overwriting text.
-                const newlines = current_view.state.doc.slice(effect.value.from, effect.value.to).toString();
+                const newlines = current_view.state.doc
+                    .slice(effect.value.from, effect.value.to)
+                    .toString();
                 if (newlines !== "\n".repeat(newlines.length)) {
                     report_error(`Attempt to overwrite text: "${newlines}".`);
                     window.close();
@@ -237,7 +243,9 @@ export const docBlockField = StateField.define<DecorationSet>({
                 to = effect.value.to ?? to;
                 const from = effect.value.from_new ?? effect.value.from;
                 // Check that we're not overwriting text.
-                const newlines = current_view.state.doc.slice(from, to).toString();
+                const newlines = current_view.state.doc
+                    .slice(from, to)
+                    .toString();
                 if (newlines !== "\n".repeat(newlines.length)) {
                     report_error(`Attempt to overwrite text: "${newlines}".`);
                     window.close();
@@ -255,7 +263,8 @@ export const docBlockField = StateField.define<DecorationSet>({
                         Decoration.replace({
                             widget: new DocBlockWidget(
                                 effect.value.indent ?? prev.spec.widget.indent,
-                                effect.value.delimiter ?? prev.spec.widget.delimiter,
+                                effect.value.delimiter ??
+                                    prev.spec.widget.delimiter,
                                 typeof effect.value.contents === "string"
                                     ? effect.value.contents
                                     : apply_diff_str(
@@ -849,6 +858,13 @@ const autosaveExtension = EditorView.updateListener.of(
         if (isChanged) {
             set_is_dirty();
             startAutosaveTimer();
+        } else if (v.selectionSet) {
+            if (ignore_selection_change) {
+                ignore_selection_change = false;
+                return;
+            }
+            // Send an update if only the selection changed.
+            startAutosaveTimer();
         }
     },
 );
@@ -859,13 +875,12 @@ export const CodeMirror_load = async (
     // The div to place the loaded document in.
     codechat_body: HTMLDivElement,
     // The document to load.
-    source: CodeChatForWeb["source"],
-    // The name of the lexer to use.
-    lexer_name: string,
+    codechat_for_web: CodeChatForWeb,
     // Additional extensions.
     extensions: Array<Extension>,
+    cursor_position?: number,
 ) => {
-    if ("Plain" in source) {
+    if ("Plain" in codechat_for_web.source) {
         // Although the
         // [docs](https://codemirror.net/docs/ref/#state.EditorState^fromJSON)
         // specify a
@@ -873,9 +888,9 @@ export const CodeMirror_load = async (
         // which contains `doc` and `selection`, the implementation requires
         // these to be present in the `json` (first) argument. Therefore:
         const editor_state_json = {
-            doc: source.Plain.doc,
+            doc: codechat_for_web.source.Plain.doc,
             selection: EditorSelection.single(0).toJSON(),
-            doc_blocks: source.Plain.doc_blocks,
+            doc_blocks: codechat_for_web.source.Plain.doc_blocks,
         };
         // Save the current scroll position, to prevent the view from scrolling
         // back to the top after an update/reload.
@@ -891,7 +906,7 @@ export const CodeMirror_load = async (
             '<div class="CodeChat-CodeMirror"></div><div id="TinyMCE-inst" class="CodeChat-doc-contents" spellcheck="true"></div>';
         let parser;
         // TODO: dynamically load the parser.
-        switch (lexer_name) {
+        switch (codechat_for_web.metadata.mode) {
             // Languages with a parser
             case "sh":
                 parser = cpp();
@@ -955,7 +970,9 @@ export const CodeMirror_load = async (
 
             default:
                 parser = javascript();
-                report_error(`Unknown lexer name ${lexer_name}`);
+                report_error(
+                    `Unknown lexer name ${codechat_for_web.metadata.mode}`,
+                );
                 break;
         }
         const state = EditorState.fromJSON(
@@ -1024,7 +1041,7 @@ export const CodeMirror_load = async (
         // blocks aren't changed; without this, the diff won't work (since
         // from/to values of doc blocks are changed by unfrozen text edits).
         current_view.dispatch({
-            changes: source.Diff.doc,
+            changes: codechat_for_web.source.Diff.doc,
             annotations: docBlockFreezeAnnotation.of(true),
         });
         // Now, apply the diff in a separate transaction. Applying them in the
@@ -1032,7 +1049,7 @@ export const CodeMirror_load = async (
         // the doc block effects, even when changes to the doc block state is
         // frozen.
         const stateEffects: StateEffect<any>[] = [];
-        for (const transaction of source.Diff.doc_blocks) {
+        for (const transaction of codechat_for_web.source.Diff.doc_blocks) {
             if ("Add" in transaction) {
                 const add = transaction.Add;
                 stateEffects.push(
@@ -1055,6 +1072,19 @@ export const CodeMirror_load = async (
         // Update the view with these changes to the state.
         current_view.dispatch({ effects: stateEffects });
     }
+    // If provided, scroll the cursor position into view.
+    if (cursor_position !== undefined) {
+        scroll_to_line(cursor_position);
+    }
+};
+
+export const scroll_to_line = (line: number) => {
+    ignore_selection_change = true;
+    const line_range = current_view.state.doc.line(line);
+    current_view.dispatch({
+        selection: EditorSelection.cursor(line_range.from),
+        scrollIntoView: true,
+    });
 };
 
 // Apply a `StringDiff` to the before string to produce the after string.
@@ -1085,6 +1115,15 @@ export const CodeMirror_save = (): CodeMirrorDiffable => {
     delete (code_mirror as any).selection;
 
     return { Plain: code_mirror };
+};
+
+export const set_CodeMirror_positions = (
+    update_message_contents: UpdateMessageContents,
+) => {
+    update_message_contents.cursor_position = current_view.state.doc.lineAt(
+        current_view.state.selection.main.from,
+    ).number;
+    update_message_contents.scroll_position = current_view.viewport.from;
 };
 
 const report_error = (text: string) => {

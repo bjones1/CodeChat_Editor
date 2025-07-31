@@ -30,11 +30,19 @@ import process from "node:process";
 
 // ### Third-party packages
 import escape from "escape-html";
-import vscode, { commands, Position, Range } from "vscode";
+import vscode, {
+    commands,
+    Position,
+    Range,
+    TextDocument,
+    TextEditor,
+} from "vscode";
 import { WebSocket } from "ws";
 
 // ### Local packages
 import {
+    CodeChatForWeb,
+    CodeMirror,
     EditorMessage,
     EditorMessageContents,
     MessageResult,
@@ -94,8 +102,14 @@ let ignore_text_document_change = false;
 // True to ignore the next active editor change event, since a `CurrentFile`
 // message from the Client caused this change.
 let ignore_active_editor_change = false;
+// True to ignore the next text selection change, since updates to the
+// cursor or scroll position from the Client trigged this change.
+let ignore_selection_change = false;
 // True to not report the next error.
 let quiet_next_error = false;
+// True if the editor contents have changed (are dirty) from the perspective
+// of the CodeChat Editor (not if the contents are saved to disk).
+let is_dirty = false;
 
 // Activation/deactivation
 // -----------------------
@@ -130,7 +144,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     event.reason
                                 }, ${format_struct(event.contentChanges)}.`,
                             );
-                            start_render();
+                            send_update(true);
                         }),
                     );
 
@@ -143,6 +157,18 @@ export const activate = (context: vscode.ExtensionContext) => {
                             }
                             current_file();
                         }),
+                    );
+
+                    context.subscriptions.push(
+                        vscode.window.onDidChangeTextEditorSelection(
+                            (_event) => {
+                                if (ignore_selection_change) {
+                                    ignore_selection_change = false;
+                                    return;
+                                }
+                                send_update(false);
+                            },
+                        ),
                     );
                 }
 
@@ -233,7 +259,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 // Only render if the webview was activated;
                                 // this event also occurs when it's deactivated.
                                 if (webview_panel?.active) {
-                                    start_render();
+                                    send_update(true);
                                 }
                             },
                         );
@@ -335,7 +361,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                             data.toString(),
                         ) as EditorMessage;
                         console.log(
-                            `CodeChat Editor extension: Received data id = ${id}, message = ${format_struct(message)}.`,
+                            `CodeChat Editor extension: Received data id = ${id}, message = ${format_struct(
+                                message,
+                            )}.`,
                         );
                         assert(id !== undefined);
                         assert(message !== undefined);
@@ -358,7 +386,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     });
                                     break;
                                 }
-                                if (current_update.contents !== null) {
+                                if (current_update.contents !== undefined) {
                                     const source =
                                         current_update.contents.source;
                                     // Is this plain text, or a diff? This will
@@ -419,10 +447,33 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             () =>
                                                 (ignore_text_document_change = false),
                                         );
-                                } else {
-                                    // TODO: handle cursor/scroll position
-                                    // updates.
-                                    assert(false);
+                                }
+                                // Update the cursor position if provided.
+                                let line = current_update.cursor_position;
+                                if (line !== undefined) {
+                                    const editor = get_text_editor(doc);
+                                    if (editor) {
+                                        ignore_selection_change = true;
+                                        // The VSCode line is zero-based; the CodeMirror line is one-based.
+                                        line -= 1;
+                                        console.log(`Moving to line ${line}.`);
+                                        const position = new vscode.Position(
+                                            line,
+                                            line,
+                                        );
+                                        editor.selections = [
+                                            new vscode.Selection(
+                                                position,
+                                                position,
+                                            ),
+                                        ];
+                                        editor.revealRange(
+                                            new vscode.Range(
+                                                position,
+                                                position,
+                                            ),
+                                        );
+                                    }
                                 }
                                 send_result(id);
                                 break;
@@ -533,7 +584,9 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                             default:
                                 console.error(
-                                    `Unhandled message ${key}(${format_struct(value)}`,
+                                    `Unhandled message ${key}(${format_struct(
+                                        value,
+                                    )}`,
                                 );
                                 break;
                         }
@@ -622,7 +675,8 @@ const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
 // This is called after an event such as an edit, or when the CodeChat panel
 // becomes visible. Wait a bit in case any other events occur, then request a
 // render.
-const start_render = () => {
+const send_update = (this_is_dirty: boolean) => {
+    is_dirty ||= this_is_dirty;
     if (can_render()) {
         // Render after some inactivity: cancel any existing timer, then ...
         if (idle_timer !== undefined) {
@@ -632,21 +686,29 @@ const start_render = () => {
         idle_timer = setTimeout(() => {
             if (can_render()) {
                 const ate = vscode.window.activeTextEditor!;
-                send_message({
-                    Update: {
-                        file_path: ate.document.fileName,
-                        contents: {
-                            metadata: { mode: "" },
-                            source: {
-                                Plain: {
-                                    doc: ate.document.getText(),
-                                    doc_blocks: [],
-                                },
+                // The [Position](https://code.visualstudio.com/api/references/vscode-api#Position)
+                // encodes the line as a zero-based value. In contrast, CodeMirror [Text.line](https://codemirror.net/docs/ref/#state.Text.line)
+                // is 1-based.
+                const current_line = ate.selection.active.line + 1;
+                const Update: UpdateMessageContents = {
+                    file_path: ate.document.fileName,
+                    cursor_position: current_line,
+                };
+                // Send contents only if necessary.
+                if (is_dirty) {
+                    Update.contents = {
+                        metadata: { mode: "" },
+                        source: {
+                            Plain: {
+                                doc: ate.document.getText(),
+                                doc_blocks: [],
                             },
                         },
-                        cursor_position: null,
-                        scroll_position: null,
-                    },
+                    };
+                    is_dirty = false;
+                }
+                send_message({
+                    Update,
                 });
             }
         }, 300);
@@ -755,6 +817,12 @@ const get_document = (file_path: string) => {
         }
     }
     return undefined;
+};
+
+const get_text_editor = (doc: TextDocument): TextEditor | undefined => {
+    for (const editor of vscode.window.visibleTextEditors) {
+        if (editor.document === doc) return editor;
+    }
 };
 
 const get_port = (): number => {

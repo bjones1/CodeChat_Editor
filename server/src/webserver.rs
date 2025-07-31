@@ -257,7 +257,7 @@ pub enum IdeType {
 
 /// Contents of the `Update` message.
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
-#[ts(export)]
+#[ts(export, optional_fields)]
 pub struct UpdateMessageContents {
     /// The filesystem path to this file. This is only used by the IDE to
     /// determine which file to apply Update contents to. The Client stores then
@@ -266,14 +266,17 @@ pub struct UpdateMessageContents {
     /// guaranteeing to updates are still applied to the correct file.
     pub file_path: String,
     /// The contents of this file.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub contents: Option<CodeChatForWeb>,
     /// The current cursor position in the file, where 0 = before the first
     /// character in the file and contents.length() = after the last character
     /// in the file. TODO: Selections are not yet supported. TODO: how to get a
     /// cursor location from within a doc block in the Client?
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_position: Option<u32>,
     /// The normalized vertical scroll position in the file, where 0 = top and 1
     /// = bottom.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub scroll_position: Option<f32>,
 }
 

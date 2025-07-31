@@ -603,7 +603,19 @@ pub async fn translation_task(
                                         Err(err) => Err(err),
                                         Ok(clean_file_path) => {
                                             match update.contents {
-                                                None => Err("TODO: support for updates without contents.".to_string()),
+                                                None => {
+                                                    queue_send!(to_client_tx.send(EditorMessage {
+                                                        id: ide_message.id,
+                                                        message: EditorMessageContents::Update(UpdateMessageContents {
+                                                            file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                                                            contents: None,
+                                                            cursor_position: update.cursor_position,
+                                                            scroll_position: update.scroll_position,
+                                                        }),
+                                                    }));
+                                                    Ok(ResultOkTypes::Void)
+                                                }
+
                                                 Some(contents) => {
                                                     match contents.source {
                                                         CodeMirrorDiffable::Diff(_diff) => Err("TODO: support for updates with diffable sources.".to_string()),
@@ -654,8 +666,8 @@ pub async fn translation_task(
                                                                         message: EditorMessageContents::Update(UpdateMessageContents {
                                                                             file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
                                                                             contents,
-                                                                            cursor_position: None,
-                                                                            scroll_position: None,
+                                                                            cursor_position: update.cursor_position,
+                                                                            scroll_position: update.scroll_position,
                                                                         }),
                                                                     }));
                                                                     // Update to the latest code after
@@ -694,8 +706,8 @@ pub async fn translation_task(
                                                                                     doc_blocks: vec![]
                                                                                 })
                                                                             }),
-                                                                            cursor_position: None,
-                                                                            scroll_position: None,
+                                                                            cursor_position: update.cursor_position,
+                                                                            scroll_position: update.scroll_position,
                                                                         }),
                                                                     }));
                                                                     Ok(ResultOkTypes::Void)

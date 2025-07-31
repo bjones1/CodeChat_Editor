@@ -135,27 +135,32 @@ class WebSocketComm {
                         this.send_result(id, msg);
                         break;
                     }
-                    let result = null;
                     const contents = current_update.contents;
-                    if (contents !== null && contents !== undefined) {
+                    const cursor_position = current_update.cursor_position;
+                    if (contents !== undefined) {
                         // If the page is still loading, wait until the load
                         // completed before updating the editable contents.
                         if (this.onloading) {
                             root_iframe!.onload = () => {
-                                set_content(contents);
+                                set_content(
+                                    contents,
+                                    current_update.cursor_position,
+                                );
                                 this.onloading = false;
                             };
                         } else {
-                            set_content(contents);
+                            set_content(
+                                contents,
+                                current_update.cursor_position,
+                            );
                         }
-                    } else {
-                        // TODO: handle scroll/cursor updates.
-                        report_error(
-                            `Unhandled Update message: ${current_update}`,
+                    } else if (cursor_position !== undefined) {
+                        root_iframe!.contentWindow!.CodeChatEditor.scroll_to_line(
+                            cursor_position,
                         );
                     }
 
-                    this.send_result(id, result);
+                    this.send_result(id, null);
                     break;
 
                 case "CurrentFile":
@@ -313,7 +318,7 @@ const get_client = () => root_iframe?.contentWindow?.CodeChatEditor;
 
 // Assign content to either the Client (if it's loaded) or the webpage (if not)
 // in the `root_iframe`.
-const set_content = (contents: CodeChatForWeb) => {
+const set_content = (contents: CodeChatForWeb, cursor_position?: number) => {
     let client = get_client();
     if (client === undefined) {
         // See if this is the [simple viewer](#Client-simple-viewer). Otherwise,
@@ -329,7 +334,10 @@ const set_content = (contents: CodeChatForWeb) => {
         cw.document.write(contents.source.Plain.doc);
         cw.document.close();
     } else {
-        root_iframe!.contentWindow!.CodeChatEditor.open_lp(contents);
+        root_iframe!.contentWindow!.CodeChatEditor.open_lp(
+            contents,
+            cursor_position,
+        );
     }
 };
 
