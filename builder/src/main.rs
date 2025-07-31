@@ -359,7 +359,7 @@ fn run_update() -> io::Result<()> {
         cargo update --manifest-path=../builder/Cargo.toml;
         cargo update;
     )?;
-    // Simply display outdated dependencies, but don't considert them an error.
+    // Simply display outdated dependencies, but don't consider them an error.
     run_script("npm", &["outdated"], "../client", false)?;
     run_script("npm", &["outdated"], "../extensions/VSCode", false)?;
     run_cmd!(

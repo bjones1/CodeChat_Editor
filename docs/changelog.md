@@ -21,6 +21,10 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   Additional data corruption fixes when applying edits.
+    *   Add more checks to detect data corruption.
+    *   Update the file watcher to support the diff protocol.
+    *   Send only changed fields when using the diff protocol.
+    *   Provide basic synchronization between the IDE and Client.
 *    v0.1.25, 2025-29-Jul:
     *   Show notifications in Client when errors occur.
     *   For safety, close the Client if applying edits fails.
@@ -131,4 +135,5 @@ Changelog
     *   Cross-platform fixes.
 *   v0.1.0, 2024-Oct-16:
     *   Initial release, with binaries for Windows only. Built with
-        manually-patched CodeMirror per \[this
+        manually-patched CodeMirror per [this
+        issue](https://github.com/bjones1/CodeChat_Editor/issues/27).
