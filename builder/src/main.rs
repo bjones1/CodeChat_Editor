@@ -539,7 +539,7 @@ fn run_postrelease(target: &str) -> io::Result<()> {
 
     let src_name = format!("codechat-editor-server-{target}");
     quick_copy_dir(
-        format!("target/distrib/{src_name}/").as_str(),
+        format!("../target/distrib/{src_name}/").as_str(),
         "../extensions/VSCode/server",
         None,
     )?;
