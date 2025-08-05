@@ -20,6 +20,6 @@
 # # `bt` -- Shortcut to run the CodeChat Editor build tool
 
 # See [passing all command-line arguments](https://www.scivision.dev/powershell-pass-all-command-args/).
-cargo run --manifest-path=../builder/Cargo.toml -- "$@"
+cargo run --manifest-path=$(dirname "${BASH_SOURCE[0]}")/../builder/Cargo.toml -- "$@"
 
 # CodeChat Editor lexer: sh.
