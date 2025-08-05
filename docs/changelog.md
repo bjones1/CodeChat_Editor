@@ -19,11 +19,21 @@ CodeChat Editor. If not, see
 Changelog
 =========
 
-*   [Github master](https://github.com/bjones1/CodeChat_Editor):
-    *   No changes.
-*   v 0.1.27, 2025-05-Aug:
-    *   Correctly handle document-only files.
-    *   Update to the MathJax 4.0.0 release.
+[Github master](https://github.com/bjones1/CodeChat_Editor)
+-----------------------------------------------------------
+
+*   No changes.
+
+v 0.1.27, 2025-05-Aug:
+----------------------
+
+*   Correctly handle document-only files.
+*   Update to the MathJax 4.0.0 release.
+*   Improve release process -- include release notes taken from the changelog.
+
+Earlier releases
+----------------
+
 *   v 0.1.26, 2025-31-Jul:
     *   Additional data corruption fixes when applying edits.
     *   Add more checks to detect data corruption.

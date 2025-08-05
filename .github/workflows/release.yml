@@ -77,7 +77,6 @@ jobs:
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         run: |
-          cd server
           dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
           echo "dist ran successfully"
           cat plan-dist-manifest.json
@@ -86,7 +85,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: artifacts-plan-dist-manifest
-          path: server/plan-dist-manifest.json
+          path: plan-dist-manifest.json
 
   # Build and packages all the platform-specific things
   build-local-artifacts:
@@ -145,11 +144,10 @@ jobs:
           ${{ matrix.packages_install }}
       - name: Build artifacts
         run: |
-          cd server
-          ./bt prerelease
+          builder/bt prerelease
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
-          ./bt postrelease ${{ matrix.dist_args }}
+          builder/bt postrelease ${{ matrix.dist_args }}
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build
@@ -158,7 +156,6 @@ jobs:
         # inconsistent syntax between shell and powershell.
         shell: bash
         run: |
-          cd server
           # Parse out what we just built and upload it to scratch storage
           echo "paths<<EOF" >> "$GITHUB_OUTPUT"
           dist print-upload-files-from-manifest --manifest dist-manifest.json >> "$GITHUB_OUTPUT"
@@ -201,7 +198,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: artifacts-*
-          path: server/target/distrib/
+          path: target/distrib/
           merge-multiple: true
       - id: cargo-dist
         shell: bash
@@ -256,12 +253,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: artifacts-*
-          path: server/target/distrib/
+          path: target/distrib/
           merge-multiple: true
       - id: host
         shell: bash
         run: |
-          cd server
           dist host ${{ needs.plan.outputs.tag-flag }} --steps=upload --steps=release --output-format=json > dist-manifest.json
           echo "artifacts uploaded and released successfully"
           cat dist-manifest.json
@@ -271,7 +267,7 @@ jobs:
         with:
           # Overwrite the previous copy
           name: artifacts-dist-manifest
-          path: server/dist-manifest.json
+          path: dist-manifest.json
       # Create a GitHub Release while uploading all files to it
       - name: "Download GitHub Artifacts"
         uses: actions/download-artifact@v4

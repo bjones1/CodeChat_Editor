@@ -32,6 +32,7 @@
 //
 // ### Standard library
 use std::{
+    env,
     ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
@@ -42,6 +43,7 @@ use std::{
 use clap::{Parser, Subcommand};
 use cmd_lib::run_cmd;
 use current_platform::CURRENT_PLATFORM;
+use dunce::canonicalize;
 use path_slash::PathBufExt;
 use regex::Regex;
 
@@ -575,6 +577,13 @@ impl Cli {
 }
 
 fn main() -> io::Result<()> {
+    // Change to the `server/` directory, so it can be run from anywhere.
+    let mut root_path = PathBuf::from(env::current_exe().unwrap().parent().unwrap());
+    root_path.push("../../../server");
+    // Use `dunce.canonicalize`, since UNC paths booger up some of the build tools (cargo can't delete the builder's binary, NPM doesn't accept UNC paths.)
+    root_path = canonicalize(root_path).unwrap();
+    env::set_current_dir(root_path).unwrap();
+
     let cli = Cli::parse();
     cli.run()?;
 

@@ -19,4 +19,6 @@
 # # `bt` -- Shortcut to run the CodeChat Editor build tool
 
 # See [passing all command-line arguments](https://www.scivision.dev/powershell-pass-all-command-args/).
-cargo run --manifest-path=../builder/Cargo.toml -- $args
+$manifest_path = Join-Path -Path $PSScriptRoot -ChildPath ../builder/Cargo.toml
+echo $manifest_path
+cargo run --manifest-path=$manifest_path -- $args
