@@ -21,6 +21,9 @@ Changelog
 
 *   [Github master](https://github.com/bjones1/CodeChat_Editor):
     *   No changes.
+*   v 0.1.27, 2025-05-Aug:
+    *   Correctly handle document-only files.
+    *   Update to the MathJax 4.0.0 release.
 *   v 0.1.26, 2025-31-Jul:
     *   Additional data corruption fixes when applying edits.
     *   Add more checks to detect data corruption.
