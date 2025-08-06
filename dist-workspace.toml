@@ -37,4 +37,3 @@ allow-dirty = ["ci"]
 # These files are relative to the root `dist-workspace.toml`, not to this file.
 changelog = "docs/changelog.md"
 license-files = ["LICENSE.md"]
-pr-run-mode = "upload"
