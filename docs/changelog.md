@@ -24,8 +24,8 @@ Changelog
 
 *   No changes.
 
-v 0.1.27, 2025-05-Aug:
-----------------------
+Version 0.1.27 -- 2025-05-Aug
+-----------------------------
 
 *   Correctly handle document-only files.
 *   Update to the MathJax 4.0.0 release.
@@ -34,13 +34,13 @@ v 0.1.27, 2025-05-Aug:
 Earlier releases
 ----------------
 
-*   v 0.1.26, 2025-31-Jul:
+*   v0.1.26, 2025-31-Jul:
     *   Additional data corruption fixes when applying edits.
     *   Add more checks to detect data corruption.
     *   Update the file watcher to support the diff protocol.
     *   Send only changed fields when using the diff protocol.
     *   Provide basic synchronization between the IDE and Client.
-*    v0.1.25, 2025-29-Jul:
+*   v0.1.25, 2025-29-Jul:
     *   Show notifications in Client when errors occur.
     *   For safety, close the Client if applying edits fails.
 *   v0.1.24, 2025-Jul-25: 
