@@ -207,6 +207,7 @@ jobs:
       - id: cargo-dist
         shell: bash
         run: |
+          npm install -g vsce
           npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-win32-x64-${APP_VERSION}.vsix $VSCE_ARGS
           npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-linux-x64-${APP_VERSION}.vsix $VSCE_ARGS
           npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-x64-${APP_VERSION}.vsix $VSCE_ARGS
