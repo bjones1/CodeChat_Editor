@@ -7,6 +7,13 @@ its basic features and use. In contrast, the [style guide](docs/style_guide.cpp)
 provides strategies for effectively employing the CodeChat Editor to improve the
 software development process.
 
+Full manual
+-----------
+
+The [full
+manual](https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md),
+in 
+
 Installation
 ------------
 

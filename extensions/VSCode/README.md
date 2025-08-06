@@ -42,4 +42,4 @@ Additional documentation
 ------------------------
 
 See the [user
-manual](https://github.com/bjones1/CodeChat_Editor/blob/main/README.md).
+manual](https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md).

@@ -182,6 +182,7 @@ jobs:
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
       APP_VERSION: ${{ fromJson(needs.plan.outputs.val).releases[0].app_version }}
+      VSCE_ARGS: --changelog-path docs/changelog.md
     steps:
       - uses: actions/checkout@v4
         with:
@@ -203,10 +204,10 @@ jobs:
       - id: cargo-dist
         shell: bash
         run: |
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-win32-x64-${APP_VERSION}.vsix
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-linux-x64-${APP_VERSION}.vsix
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-x64-${APP_VERSION}.vsix
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-arm64-${APP_VERSION}.vsix
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-win32-x64-${APP_VERSION}.vsix $VSCE_ARGS
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-linux-x64-${APP_VERSION}.vsix $VSCE_ARGS
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-x64-${APP_VERSION}.vsix $VSCE_ARGS
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-arm64-${APP_VERSION}.vsix $VSCE_ARGS
           dist build ${{ needs.plan.outputs.tag-flag }} --output-format=json "--artifacts=global" > dist-manifest.json
           echo "dist ran successfully"
 
