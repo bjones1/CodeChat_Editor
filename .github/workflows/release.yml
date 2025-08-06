@@ -203,11 +203,10 @@ jobs:
       - id: cargo-dist
         shell: bash
         run: |
-          npx vsce publish --packagePath server/target/distrib/extensions/VSCode/codechat-editor-client-win32-x64-${APP_VERSION}.vsix
-          npx vsce publish --packagePath server/target/distrib/extensions/VSCode/codechat-editor-client-linux-x64-${APP_VERSION}.vsix
-          npx vsce publish --packagePath server/target/distrib/extensions/VSCode/codechat-editor-client-darwin-x64-${APP_VERSION}.vsix
-          npx vsce publish --packagePath server/target/distrib/extensions/VSCode/codechat-editor-client-darwin-arm64-${APP_VERSION}.vsix
-          cd server
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-win32-x64-${APP_VERSION}.vsix
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-linux-x64-${APP_VERSION}.vsix
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-x64-${APP_VERSION}.vsix
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-arm64-${APP_VERSION}.vsix
           dist build ${{ needs.plan.outputs.tag-flag }} --output-format=json "--artifacts=global" > dist-manifest.json
           echo "dist ran successfully"
 
@@ -289,7 +288,7 @@ jobs:
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
 
-          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/server/target/distrib/*
+          gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/target/distrib/*
 
   announce:
     needs:
