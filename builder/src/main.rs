@@ -390,6 +390,7 @@ fn run_test() -> io::Result<()> {
         cargo test --manifest-path=../builder/Cargo.toml;
         cargo test;
     )?;
+    println!("Tests complete.");
     Ok(())
 }
 
