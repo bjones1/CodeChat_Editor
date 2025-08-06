@@ -1,7 +1,7 @@
-// `turndown.browser.es.d.ts` - TypeScript ignores for the Turndown library
-// ========================================================================
+// `turndown.browser.es.d.mts` - TypeScript ignores for the Turndown library
+// =========================================================================
 //
-// This suppress type errors when using the Turndown library.
+// This suppresses type errors when using the Turndown library.
 declare class TurndownService {
     constructor(options: any);
     use(_: Function|Array<Function>): any;

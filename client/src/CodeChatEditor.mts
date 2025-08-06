@@ -44,7 +44,7 @@
 // ### JavaScript/TypeScript
 //
 // #### Third-party
-import TurndownService from "./third-party/turndown/turndown.browser.es.js";
+import TurndownService from "./third-party/turndown/turndown.browser.es.mjs";
 import { gfm } from "./third-party/turndown/turndown-plugin-gfm.browser.es.js";
 import "./third-party/wc-mermaid/wc-mermaid";
 

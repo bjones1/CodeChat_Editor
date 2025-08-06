@@ -142,7 +142,7 @@ fn run_script<T: AsRef<Path>, A: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Displa
     if exit_code == Some(0) || (exit_code.is_some() && !check_exit_code) {
         Ok(())
     } else {
-        Err(io::Error::other("npm exit code indicates failure."))
+        Err(io::Error::other("pnpm exit code indicates failure."))
     }
 }
 
@@ -289,7 +289,7 @@ fn patch_file(patch: &str, before_patch: &str, file_path: &str) -> io::Result<()
     Ok(())
 }
 /// After updating files in the client's Node files, perform some fix-ups.
-fn patch_client_npm() -> io::Result<()> {
+fn patch_client_libs() -> io::Result<()> {
     // Apply a the fixes described in [issue
     // 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
     patch_file(
@@ -333,9 +333,9 @@ fn patch_client_npm() -> io::Result<()> {
 }
 
 fn run_install(dev: bool) -> io::Result<()> {
-    run_script("npm", &["install"], "../client", true)?;
-    patch_client_npm()?;
-    run_script("npm", &["install"], "../extensions/VSCode", true)?;
+    run_script("pnpm", &["install"], "../client", true)?;
+    patch_client_libs()?;
+    run_script("pnpm", &["install"], "../extensions/VSCode", true)?;
     run_cmd!(
         cargo fetch --manifest-path=../builder/Cargo.toml;
         cargo fetch;
@@ -354,16 +354,16 @@ fn run_install(dev: bool) -> io::Result<()> {
 }
 
 fn run_update() -> io::Result<()> {
-    run_script("npm", &["update"], "../client", true)?;
-    patch_client_npm()?;
-    run_script("npm", &["update"], "../extensions/VSCode", true)?;
+    run_script("pnpm", &["update"], "../client", true)?;
+    patch_client_libs()?;
+    run_script("pnpm", &["update"], "../extensions/VSCode", true)?;
     run_cmd!(
         cargo update --manifest-path=../builder/Cargo.toml;
         cargo update;
     )?;
     // Simply display outdated dependencies, but don't consider them an error.
-    run_script("npm", &["outdated"], "../client", false)?;
-    run_script("npm", &["outdated"], "../extensions/VSCode", false)?;
+    run_script("pnpm", &["outdated"], "../client", false)?;
+    run_script("pnpm", &["outdated"], "../extensions/VSCode", false)?;
     run_cmd!(
         cargo outdated --manifest-path=../builder/Cargo.toml;
         cargo outdated;
@@ -403,7 +403,7 @@ fn run_build() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
     run_client_build(false, false)?;
-    run_script("npm", &["run", "compile"], "../extensions/VSCode", true)?;
+    run_script("pnpm", &["run", "compile"], "../extensions/VSCode", true)?;
     Ok(())
 }
 
@@ -501,7 +501,7 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
     )?;
     let json_search_regex = r#"(\r?\n    "version": ")[\d.]+(",\r?\n)"#;
     search_and_replace_file(
-        "../client/package.json",
+        "../client/package.json5",
         json_search_regex,
         &replacement_string,
     )?;
@@ -520,7 +520,7 @@ fn run_prerelease() -> io::Result<()> {
     run_cmd!(
         cargo test export_bindings;
     )?;
-    run_script("npm", &["run", "dist"], "../client", true)?;
+    run_script("pnpm", &["run", "dist"], "../client", true)?;
     Ok(())
 }
 

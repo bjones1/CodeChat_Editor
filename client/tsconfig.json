@@ -30,7 +30,6 @@
         // docs](https://www.typescriptlang.org/tsconfig#isolatedModules).
         "isolatedModules": true,
         "module": "nodenext",
-        "moduleResolution": "nodenext",
         "outDir": "out",
         "rootDir": "src",
         "strict": true
