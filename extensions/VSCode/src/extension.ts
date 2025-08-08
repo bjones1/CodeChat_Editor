@@ -30,12 +30,7 @@ import process from "node:process";
 
 // ### Third-party packages
 import escape from "escape-html";
-import vscode, {
-    commands,
-    Range,
-    TextDocument,
-    TextEditor,
-} from "vscode";
+import vscode, { commands, Range, TextDocument, TextEditor } from "vscode";
 import { WebSocket } from "ws";
 
 // ### Local packages
@@ -99,13 +94,13 @@ let ignore_text_document_change = false;
 // True to ignore the next active editor change event, since a `CurrentFile`
 // message from the Client caused this change.
 let ignore_active_editor_change = false;
-// True to ignore the next text selection change, since updates to the
-// cursor or scroll position from the Client trigged this change.
+// True to ignore the next text selection change, since updates to the cursor or
+// scroll position from the Client trigged this change.
 let ignore_selection_change = false;
 // True to not report the next error.
 let quiet_next_error = false;
-// True if the editor contents have changed (are dirty) from the perspective
-// of the CodeChat Editor (not if the contents are saved to disk).
+// True if the editor contents have changed (are dirty) from the perspective of
+// the CodeChat Editor (not if the contents are saved to disk).
 let is_dirty = false;
 
 // Activation/deactivation
@@ -117,7 +112,7 @@ export const activate = (context: vscode.ExtensionContext) => {
     context.subscriptions.push(
         vscode.commands.registerCommand(
             "extension.codeChatEditorDeactivate",
-            deactivate,
+            deactivate
         ),
         vscode.commands.registerCommand(
             "extension.codeChatEditorActivate",
@@ -139,10 +134,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                             console_log(
                                 `CodeChat Editor extension: text changed - ${
                                     event.reason
-                                }, ${format_struct(event.contentChanges)}.`,
+                                }, ${format_struct(event.contentChanges)}.`
                             );
                             send_update(true);
-                        }),
+                        })
                     );
 
                     // Render when the active editor changes.
@@ -153,7 +148,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 return;
                             }
                             current_file();
-                        }),
+                        })
                     );
 
                     context.subscriptions.push(
@@ -164,8 +159,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     return;
                                 }
                                 send_update(false);
-                            },
-                        ),
+                            }
+                        )
                     );
                 }
 
@@ -233,13 +228,13 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 // Without this, the websocket connection is
                                 // dropped when the panel is hidden.
                                 retainContextWhenHidden: true,
-                            },
+                            }
                         );
                         webview_panel.onDidDispose(async () => {
                             // Shut down the render client when the webview
                             // panel closes.
                             console_log(
-                                "CodeChat Editor extension: shut down webview.",
+                                "CodeChat Editor extension: shut down webview."
                             );
                             // Closing the webview abruptly closes the Client,
                             // which produces an error. Don't report it.
@@ -251,14 +246,14 @@ export const activate = (context: vscode.ExtensionContext) => {
                         // Render when the webview panel is shown.
                         webview_panel.onDidChangeViewState(
                             (
-                                _event: vscode.WebviewPanelOnDidChangeViewStateEvent,
+                                _event: vscode.WebviewPanelOnDidChangeViewStateEvent
                             ) => {
                                 // Only render if the webview was activated;
                                 // this event also occurs when it's deactivated.
                                 if (webview_panel?.active) {
                                     send_update(true);
                                 }
-                            },
+                            }
                         );
                     }
                 }
@@ -272,7 +267,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                         "<h1>CodeChat Editor</h1><p>Loading...</p>";
                 } else {
                     vscode.window.showInformationMessage(
-                        "The CodeChat Editor is loading in an external browser...",
+                        "The CodeChat Editor is loading in an external browser..."
                     );
                 }
 
@@ -288,12 +283,12 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                 if (websocket === undefined) {
                     console_log(
-                        "CodeChat Editor extension: opening websocket.",
+                        "CodeChat Editor extension: opening websocket."
                     );
 
                     // Connect to the CodeChat Editor Server.
                     websocket = new WebSocket(
-                        `ws://localhost:${get_port()}/vsc/ws-ide/${Math.random()}`,
+                        `ws://localhost:${get_port()}/vsc/ws-ide/${Math.random()}`
                     );
 
                     let was_error: boolean = false;
@@ -301,7 +296,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                     websocket.on("error", (err: ErrorEvent) => {
                         was_error = true;
                         show_error(
-                            `Error communicating with the CodeChat Editor Server: ${err.message}. Re-run the CodeChat Editor extension to restart it.`,
+                            `Error communicating with the CodeChat Editor Server: ${err.message}. Re-run the CodeChat Editor extension to restart it.`
                         );
                         // The close event will be [emitted
                         // next](https://nodejs.org/api/net.html#net_event_error_1);
@@ -310,7 +305,7 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                     websocket.on("close", (hadError: CloseEvent) => {
                         console_log(
-                            "CodeChat Editor extension: closing websocket connection.",
+                            "CodeChat Editor extension: closing websocket connection."
                         );
                         // If there was an error, the event handler above
                         // already provided the message. Note: the [parameter
@@ -321,7 +316,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                         // non-transmission errors.
                         if (!was_error && hadError) {
                             show_error(
-                                "The connection to the CodeChat Editor Server was closed due to a transmission error. Re-run the CodeChat Editor extension to restart it.",
+                                "The connection to the CodeChat Editor Server was closed due to a transmission error. Re-run the CodeChat Editor extension to restart it."
                             );
                         }
                         websocket = undefined;
@@ -330,7 +325,7 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                     websocket.on("open", () => {
                         console_log(
-                            "CodeChat Editor extension: connected to server.",
+                            "CodeChat Editor extension: connected to server."
                         );
                         assert(websocket !== undefined);
                         send_message({
@@ -355,12 +350,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                     websocket.on("message", (data) => {
                         // Parse the data into a message.
                         const { id, message } = JSON.parse(
-                            data.toString(),
+                            data.toString()
                         ) as EditorMessage;
                         console_log(
                             `CodeChat Editor extension: Received data id = ${id}, message = ${format_struct(
-                                message,
-                            )}.`,
+                                message
+                            )}.`
                         );
                         assert(id !== undefined);
                         assert(message !== undefined);
@@ -375,11 +370,11 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 const current_update =
                                     value as UpdateMessageContents;
                                 const doc = get_document(
-                                    current_update.file_path,
+                                    current_update.file_path
                                 );
                                 if (doc === undefined) {
                                     send_result(id, {
-                                        Err: "No open document for this file.",
+                                        Err: `No open document for ${current_update.file_path}`,
                                     });
                                     break;
                                 }
@@ -402,10 +397,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                                                     0,
                                                     0,
                                                     doc.lineCount,
-                                                    0,
-                                                ),
+                                                    0
+                                                )
                                             ),
-                                            source.Plain.doc,
+                                            source.Plain.doc
                                         );
                                     } else {
                                         assert("Diff" in source);
@@ -416,24 +411,24 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             // `Position` (line, then offset on that
                                             // line) needed by VSCode.
                                             const from = doc.positionAt(
-                                                diff.from,
+                                                diff.from
                                             );
                                             if (diff.to === undefined) {
                                                 // This is an insert.
                                                 wse.insert(
                                                     doc.uri,
                                                     from,
-                                                    diff.insert,
+                                                    diff.insert
                                                 );
                                             } else {
                                                 // This is a replace or delete.
                                                 const to = doc.positionAt(
-                                                    diff.to,
+                                                    diff.to
                                                 );
                                                 wse.replace(
                                                     doc.uri,
                                                     new Range(from, to),
-                                                    diff.insert,
+                                                    diff.insert
                                                 );
                                             }
                                         }
@@ -442,7 +437,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         .applyEdit(wse)
                                         .then(
                                             () =>
-                                                (ignore_text_document_change = false),
+                                                (ignore_text_document_change =
+                                                    false)
                                         );
                                 }
                                 // Update the cursor position if provided.
@@ -451,24 +447,22 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     const editor = get_text_editor(doc);
                                     if (editor) {
                                         ignore_selection_change = true;
-                                        // The VSCode line is zero-based; the CodeMirror line is one-based.
+                                        // The VSCode line is zero-based; the
+                                        // CodeMirror line is one-based.
                                         line -= 1;
                                         console_log(`Moving to line ${line}.`);
                                         const position = new vscode.Position(
                                             line,
-                                            line,
+                                            line
                                         );
                                         editor.selections = [
                                             new vscode.Selection(
                                                 position,
-                                                position,
+                                                position
                                             ),
                                         ];
                                         editor.revealRange(
-                                            new vscode.Range(
-                                                position,
-                                                position,
-                                            ),
+                                            new vscode.Range(position, position)
                                         );
                                     }
                                 }
@@ -484,17 +478,18 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         .openTextDocument(current_file)
                                         .then(
                                             (document) => {
-                                                ignore_active_editor_change = true;
+                                                ignore_active_editor_change =
+                                                    true;
                                                 vscode.window.showTextDocument(
                                                     document,
-                                                    current_editor?.viewColumn,
+                                                    current_editor?.viewColumn
                                                 );
                                                 send_result(id);
                                             },
                                             (reason) =>
                                                 send_result(id, {
                                                     Err: `Error: unable to open file ${current_file}: ${reason}`,
-                                                }),
+                                                })
                                         );
                                 } else {
                                     // TODO: open using a custom document
@@ -514,14 +509,14 @@ export const activate = (context: vscode.ExtensionContext) => {
                                                 {
                                                     viewColumn:
                                                         current_editor?.viewColumn,
-                                                },
+                                                }
                                             )
                                             .then(
                                                 () => send_result(id),
                                                 (reason) =>
                                                     send_result(id, {
                                                         Err: `Error: unable to open file ${current_file}: ${reason}`,
-                                                    }),
+                                                    })
                                             );
                                     }
                                     send_result(id);
@@ -547,7 +542,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 const result_contents = value as MessageResult;
                                 if ("Err" in result_contents) {
                                     show_error(
-                                        `Error in message ${id}: ${result_contents.Err}`,
+                                        `Error in message ${id}: ${result_contents.Err}`
                                     );
                                 }
                                 break;
@@ -582,19 +577,19 @@ export const activate = (context: vscode.ExtensionContext) => {
                             default:
                                 console.error(
                                     `Unhandled message ${key}(${format_struct(
-                                        value,
-                                    )}`,
+                                        value
+                                    )}`
                                 );
                                 break;
                         }
                     });
                 } else {
                     console_log(
-                        "CodeChat Editor extension: connection already pending, so a new client wasn't created.",
+                        "CodeChat Editor extension: connection already pending, so a new client wasn't created."
                     );
                 }
-            },
-        ),
+            }
+        )
     );
 };
 
@@ -612,7 +607,7 @@ export const deactivate = async () => {
 // Send a message expecting a result to the server.
 const send_message = (
     message: EditorMessageContents,
-    callback: (succeeded: boolean) => void = (_) => 0,
+    callback: (succeeded: boolean) => void = (_) => 0
 ) => {
     const id = message_id;
     message_id += 3;
@@ -622,7 +617,7 @@ const send_message = (
     };
     assert(websocket);
     console_log(
-        `CodeChat Editor extension: sending message ${format_struct(jm)}.`,
+        `CodeChat Editor extension: sending message ${format_struct(jm)}.`
     );
     websocket.send(JSON.stringify(jm));
     pending_messages[id] = {
@@ -636,7 +631,7 @@ const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
         ? JSON.stringify(complex_data_structure).substring(
               0,
-              MAX_MESSAGE_LENGTH,
+              MAX_MESSAGE_LENGTH
           )
         : "";
 
@@ -663,8 +658,8 @@ const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
     assert(websocket);
     console_log(
         `CodeChat Editor extension: sending result ${JSON.stringify(
-            jm,
-        ).substring(0, MAX_MESSAGE_LENGTH)}.`,
+            jm
+        ).substring(0, MAX_MESSAGE_LENGTH)}.`
     );
     websocket.send(JSON.stringify(jm));
 };
@@ -683,8 +678,11 @@ const send_update = (this_is_dirty: boolean) => {
         idle_timer = setTimeout(() => {
             if (can_render()) {
                 const ate = vscode.window.activeTextEditor!;
-                // The [Position](https://code.visualstudio.com/api/references/vscode-api#Position)
-                // encodes the line as a zero-based value. In contrast, CodeMirror [Text.line](https://codemirror.net/docs/ref/#state.Text.line)
+                // The
+                // [Position](https://code.visualstudio.com/api/references/vscode-api#Position)
+                // encodes the line as a zero-based value. In contrast,
+                // CodeMirror
+                // [Text.line](https://codemirror.net/docs/ref/#state.Text.line)
                 // is 1-based.
                 const current_line = ate.selection.active.line + 1;
                 const Update: UpdateMessageContents = {
@@ -746,7 +744,7 @@ const stop_client = async () => {
     } catch (err) {
         assert(err instanceof Error);
         console.error(
-            `CodeChat Editor Client: error on server shutdown - ${err.message}`,
+            `CodeChat Editor Client: error on server shutdown - ${err.message}`
         );
     }
     current_editor = undefined;
@@ -767,11 +765,11 @@ const show_error = (message: string) => {
             webview_panel.webview.html = "<h1>CodeChat Editor</h1>";
         }
         webview_panel.webview.html += `<p style="white-space: pre-wrap;">${escape(
-            message,
+            message
         )}</p><p>See the <a href="https://github.com/bjones1/CodeChat_Editor" target="_blank" rel="noreferrer noopener">docs</a>.</p>`;
     } else {
         vscode.window.showErrorMessage(
-            message + "\nSee https://github.com/bjones1/CodeChat_Editor.",
+            message + "\nSee https://github.com/bjones1/CodeChat_Editor."
         );
     }
 };
@@ -840,7 +838,7 @@ const run_server = (args: string[]) => {
     // If not specified, use the packaged binary.
     if (codechat_editor_server_command === "") {
         const ext = vscode.extensions.getExtension(
-            "CodeChat.codechat-editor-client",
+            "CodeChat.codechat-editor-client"
         );
         assert(ext !== undefined);
         codechat_editor_server_command =
@@ -852,7 +850,7 @@ const run_server = (args: string[]) => {
     return new Promise((resolve, reject) => {
         const server_process = child_process.spawn(
             codechat_editor_server_command as string,
-            ["--port", get_port().toString()].concat(args),
+            ["--port", get_port().toString()].concat(args)
         );
         server_process.on("error", (err: NodeJS.ErrnoException) => {
             const msg =
@@ -860,7 +858,7 @@ const run_server = (args: string[]) => {
                     ? `Error - cannot find the file ${err.path}`
                     : err;
             reject(
-                new Error(`While starting the CodeChat Editor Server: ${msg}.`),
+                new Error(`While starting the CodeChat Editor Server: ${msg}.`)
             );
         });
 
@@ -871,8 +869,8 @@ const run_server = (args: string[]) => {
             } else {
                 reject(
                     new Error(
-                        `${stdout}\n${stderr}\n\nCodeChat Editor Server exited with ${exit_str}.\n`,
-                    ),
+                        `${stdout}\n${stderr}\n\nCodeChat Editor Server exited with ${exit_str}.\n`
+                    )
                 );
             }
         });
@@ -893,4 +891,4 @@ const console_log = (...args: any) => {
     if (DEBUG_ENABLED) {
         console.log(...args);
     }
-}
+};

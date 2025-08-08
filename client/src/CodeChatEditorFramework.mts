@@ -94,13 +94,13 @@ class WebSocketComm {
         // Provide logging to help track down errors.
         this.ws.onerror = (event: any) => {
             report_error(
-                `CodeChat Client: websocket error ${JSON.stringify(event)}.`,
+                `CodeChat Client: websocket error ${JSON.stringify(event)}.`
             );
         };
 
         this.ws.onclose = (event: any) => {
             console_log(
-                `CodeChat Client: websocket closed by event type ${event.type}: ${event.detail}. This should only happen on shutdown.`,
+                `CodeChat Client: websocket closed by event type ${event.type}: ${event.detail}. This should only happen on shutdown.`
             );
         };
 
@@ -111,7 +111,9 @@ class WebSocketComm {
             const joint_message = JSON.parse(event.data) as EditorMessage;
             const { id: id, message: message } = joint_message;
             console_log(
-                `Received data id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
+                `Received data id = ${id}, message = ${JSON.stringify(
+                    message
+                ).substring(0, MAX_MESSAGE_LENGTH)}`
             );
             assert(id !== undefined);
             assert(message !== undefined);
@@ -145,19 +147,22 @@ class WebSocketComm {
                             root_iframe!.onload = () => {
                                 set_content(
                                     contents,
-                                    current_update.cursor_position,
+                                    current_update.cursor_position
                                 );
                                 this.onloading = false;
                             };
                         } else {
                             set_content(
                                 contents,
-                                current_update.cursor_position,
+                                current_update.cursor_position
                             );
                         }
                     } else if (cursor_position !== undefined) {
-                        root_iframe!.contentWindow!.CodeChatEditor.scroll_to_line(
-                            cursor_position,
+                        // We might receive a message while the Client is
+                        // reloading; during this period, `scroll_to_line` isn't
+                        // defined.
+                        root_iframe!.contentWindow!.CodeChatEditor.scroll_to_line?.(
+                            cursor_position
                         );
                     }
 
@@ -216,13 +221,15 @@ class WebSocketComm {
                     const result_contents = value as MessageResult;
                     if ("Err" in result_contents) {
                         report_error(
-                            `Error in message ${id}: ${result_contents.Err}.`,
+                            `Error in message ${id}: ${result_contents.Err}.`
                         );
                     }
                     break;
 
                 default:
-                    const msg = `Received unhandled message ${key}(${JSON.stringify(value).substring(0, MAX_MESSAGE_LENGTH)})`;
+                    const msg = `Received unhandled message ${key}(${JSON.stringify(
+                        value
+                    ).substring(0, MAX_MESSAGE_LENGTH)})`;
                     report_error(msg);
                     this.send_result(id, msg);
                     break;
@@ -254,7 +261,7 @@ class WebSocketComm {
     // Send a message expecting a result to the server.
     send_message = (
         message: EditorMessageContents,
-        callback: () => void = () => 0,
+        callback: () => void = () => 0
     ) => {
         const id = this.ws_id;
         this.ws_id += 3;
@@ -264,7 +271,10 @@ class WebSocketComm {
             message.Update.file_path = this.current_filename!;
         }
         console_log(
-            `Sent message ${id}, ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
+            `Sent message ${id}, ${JSON.stringify(message).substring(
+                0,
+                MAX_MESSAGE_LENGTH
+            )}`
         );
         const jm: EditorMessage = {
             id: id,
@@ -275,7 +285,7 @@ class WebSocketComm {
             timer_id: window.setTimeout(
                 this.report_server_timeout,
                 RESPONSE_TIMEOUT,
-                id,
+                id
             ),
             callback,
         };
@@ -301,7 +311,9 @@ class WebSocketComm {
             Result: result === null ? { Ok: "Void" } : { Err: result },
         };
         console_log(
-            `Sending result id = ${id}, message = ${JSON.stringify(message).substring(0, MAX_MESSAGE_LENGTH)}`,
+            `Sending result id = ${id}, message = ${JSON.stringify(
+                message
+            ).substring(0, MAX_MESSAGE_LENGTH)}`
         );
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
@@ -327,7 +339,7 @@ const set_content = (contents: CodeChatForWeb, cursor_position?: number) => {
         const cw =
             (
                 root_iframe!.contentDocument?.getElementById(
-                    "CodeChat-contents",
+                    "CodeChat-contents"
                 ) as HTMLIFrameElement | undefined
             )?.contentWindow ?? root_iframe!.contentWindow!;
         cw.document.open();
@@ -337,7 +349,7 @@ const set_content = (contents: CodeChatForWeb, cursor_position?: number) => {
     } else {
         root_iframe!.contentWindow!.CodeChatEditor.open_lp(
             contents,
-            cursor_position,
+            cursor_position
         );
     }
 };
@@ -356,7 +368,7 @@ export const page_init = (
     // nice, interactive definition of the components of a URL.
     ws_pathname: string,
     // Test mode flag
-    testMode_: boolean,
+    testMode_: boolean
 ) => {
     testMode = testMode_;
     on_dom_content_loaded(async () => {
@@ -365,10 +377,10 @@ export const page_init = (
         const protocol = window.location.protocol === "http:" ? "ws:" : "wss:";
         // Build a websocket address based on the URL of the current page.
         webSocketComm = new WebSocketComm(
-            `${protocol}//${window.location.host}/${ws_pathname}`,
+            `${protocol}//${window.location.host}/${ws_pathname}`
         );
         root_iframe = document.getElementById(
-            "CodeChat-iframe",
+            "CodeChat-iframe"
         )! as HTMLIFrameElement;
         window.CodeChatEditorFramework = {
             webSocketComm,
