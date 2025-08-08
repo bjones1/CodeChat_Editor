@@ -157,10 +157,10 @@ impl Cli {
                             // statement.
                             'err_print: {
                                 // Ignore a connection refused error.
-                                if let minreq::Error::IoError(io_error) = &err {
-                                    if io_error.kind() == io::ErrorKind::ConnectionRefused {
-                                        break 'err_print;
-                                    }
+                                if let minreq::Error::IoError(io_error) = &err
+                                    && io_error.kind() == io::ErrorKind::ConnectionRefused
+                                {
+                                    break 'err_print;
                                 }
                                 eprintln!("Failed to connect to server at {addr}: {err}");
                             }

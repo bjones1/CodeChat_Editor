@@ -410,11 +410,11 @@ async fn processing_task(
             error!("Unable to create debouncer.");
             return;
         };
-        if let Some(ref cfp) = current_filepath {
-            if let Err(err) = debounced_watcher.watch(cfp, RecursiveMode::NonRecursive) {
-                error!("Unable to watch file: {err}");
-                return;
-            };
+        if let Some(ref cfp) = current_filepath
+            && let Err(err) = debounced_watcher.watch(cfp, RecursiveMode::NonRecursive)
+        {
+            error!("Unable to watch file: {err}");
+            return;
         }
 
         'task: {
@@ -613,13 +613,13 @@ async fn processing_task(
                                 Ok(ref file_path) => 'err_exit: {
                                     // We finally have the desired path! First,
                                     // unwatch the old path.
-                                    if let Some(cfp) = &current_filepath {
-                                        if let Err(err) = debounced_watcher.unwatch(cfp) {
-                                            break 'err_exit Err(format!(
-                                                "Unable to unwatch file '{}': {err}.",
-                                                cfp.to_string_lossy()
-                                            ));
-                                        };
+                                    if let Some(cfp) = &current_filepath
+                                        && let Err(err) = debounced_watcher.unwatch(cfp)
+                                    {
+                                        break 'err_exit Err(format!(
+                                            "Unable to unwatch file '{}': {err}.",
+                                            cfp.to_string_lossy()
+                                        ));
                                     }
                                     // Update to the new path.
                                     current_filepath = Some(file_path.to_path_buf());
