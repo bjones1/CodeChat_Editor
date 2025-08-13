@@ -554,6 +554,13 @@ fn run_postrelease(target: &str) -> io::Result<()> {
         "../extensions/VSCode/server",
         None,
     )?;
+    // `vsce` requires a `package.json`.
+    run_script(
+        "npx",
+        &["json5", "-o", "package.json", "package.json5"],
+        "../extensions/VSCode",
+        true,
+    )?;
     run_script(
         "npx",
         &["vsce", "package", "--target", vsce_target],

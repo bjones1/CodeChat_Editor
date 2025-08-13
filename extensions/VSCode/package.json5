@@ -109,6 +109,7 @@
         'eslint-config-prettier': '^10.1.8',
         'eslint-plugin-import': '^2.32.0',
         'eslint-plugin-node': '^11.1.0',
+        json5: '^2.2.3',
         ovsx: '^0.10.5',
         typescript: '^5.9.2',
     },

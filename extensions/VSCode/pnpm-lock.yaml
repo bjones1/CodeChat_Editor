@@ -45,6 +45,9 @@ importers:
       eslint-plugin-node:
         specifier: ^11.1.0
         version: 11.1.0(eslint@9.33.0)
+      json5:
+        specifier: ^2.2.3
+        version: 2.2.3
       ovsx:
         specifier: ^0.10.5
         version: 0.10.5
