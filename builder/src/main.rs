@@ -336,7 +336,9 @@ fn run_install(dev: bool) -> io::Result<()> {
     if dev {
         run_script("npm", &["install", "-g", "pnpm@latest-10"], ".", true)?;
     }
-    run_script("pnpm", &["install"], "../client", true)?;
+    // See [the client manifest](../../client/package.json5) for an explanation
+    // of `--no-frozen-lockfile`.
+    run_script("pnpm", &["install", "--no-frozen-lockfile"], "../client", true)?;
     patch_client_libs()?;
     run_script("pnpm", &["install"], "../extensions/VSCode", true)?;
     run_cmd!(
