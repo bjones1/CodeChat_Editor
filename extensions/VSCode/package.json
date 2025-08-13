@@ -1,0 +1,108 @@
+{
+    "author": {
+        "name": "Bryan A. Jones"
+    },
+    "categories": [
+        "Other"
+    ],
+    "description": "This embeds the CodeChat Editor in the Visual Studio Code Editor.",
+    "displayName": "CodeChat Editor",
+    "engines": {
+        "vscode": "^1.61.0"
+    },
+    "extensionKind": [
+        "workspace"
+    ],
+    "homepage": "https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md",
+    "keywords": [
+        "literate programming",
+        "CodeChat Editor",
+        "Visual Studio Code extension"
+    ],
+    "license": "GPL-3.0-only",
+    "main": "out/extensions/VSCode/src/extension.js",
+    "name": "codechat-editor-client",
+    "prettier": {
+        "tabWidth": 4
+    },
+    "publisher": "CodeChat",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/bjones1/CodeChat_Editor"
+    },
+    "version": "0.1.27",
+    "activationEvents": [
+        "onCommand:extension.codeChatEditorActivate",
+        "onCommand:extension.codeChatEditorDeactivate"
+    ],
+    "contributes": {
+        "configuration": {
+            "title": "CodeChat Editor",
+            "properties": {
+                "CodeChatEditor.Server.Command": {
+                    "type": "string",
+                    "default": "",
+                    "markdownDescription": "Path to the CodeChat Editor Server executable; for example, `codechat-editor-server`. Leave blank to use the binary included with the extension."
+                },
+                "CodeChatEditor.Server.ClientLocation": {
+                    "type": "string",
+                    "default": "html",
+                    "enum": [
+                        "html",
+                        "browser"
+                    ],
+                    "enumDescriptions": [
+                        "A panel in Visual Studio Code",
+                        "In the default external web browser"
+                    ],
+                    "markdownDescription": "Select the location of the CodeChat Editor Client. After changing this value, you **must** close then restart the CodeChat Editor extension."
+                },
+                "CodeChatEditor.Server.Port": {
+                    "type": "number",
+                    "default": 8080,
+                    "minimum": 0,
+                    "maximum": 65535,
+                    "markdownDescription": "Port number for the CodeChat Editor Server."
+                }
+            }
+        },
+        "commands": [
+            {
+                "command": "extension.codeChatEditorActivate",
+                "title": "Enable the CodeChat Editor"
+            },
+            {
+                "command": "extension.codeChatEditorDeactivate",
+                "title": "Disable the CodeChat Editor"
+            }
+        ]
+    },
+    "dependencies": {
+        "escape-html": "^1",
+        "ws": "^8"
+    },
+    "devDependencies": {
+        "@types/escape-html": "^1",
+        "@types/ws": "^8",
+        "@types/vscode": "^1.51.0",
+        "@typescript-eslint/eslint-plugin": "^8",
+        "@typescript-eslint/parser": "^8",
+        "@vscode/vsce": "^3",
+        "eslint": "^9",
+        "eslint-config-prettier": "^10",
+        "eslint-plugin-import": "^2",
+        "eslint-plugin-node": "^11",
+        "ovsx": "^0.10",
+        "typescript": "^5"
+    },
+    "optionalDependencies": {
+        "bufferutil": "^4"
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile",
+        "test": "node ./out/test/runTest.js"
+    }
+}
