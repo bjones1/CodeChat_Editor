@@ -22,7 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-*   No changes.
+Version 0.1.28 -- 2025-13-Aug
+-----------------------------
+
+*   Fix navigation in document-only mode.
+*   Improve errors reporting in the VSCode extension.
 
 Version 0.1.27 -- 2025-05-Aug
 -----------------------------

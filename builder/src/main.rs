@@ -333,6 +333,9 @@ fn patch_client_libs() -> io::Result<()> {
 }
 
 fn run_install(dev: bool) -> io::Result<()> {
+    if dev {
+        run_script("npm", &["install", "-g", "pnpm@latest-10"], ".", true)?;
+    }
     run_script("pnpm", &["install"], "../client", true)?;
     patch_client_libs()?;
     run_script("pnpm", &["install"], "../extensions/VSCode", true)?;
@@ -581,7 +584,9 @@ fn main() -> io::Result<()> {
     // Change to the `server/` directory, so it can be run from anywhere.
     let mut root_path = PathBuf::from(env::current_exe().unwrap().parent().unwrap());
     root_path.push("../../../server");
-    // Use `dunce.canonicalize`, since UNC paths booger up some of the build tools (cargo can't delete the builder's binary, NPM doesn't accept UNC paths.)
+    // Use `dunce.canonicalize`, since UNC paths booger up some of the build
+    // tools (cargo can't delete the builder's binary, NPM doesn't accept UNC
+    // paths.)
     root_path = canonicalize(root_path).unwrap();
     env::set_current_dir(root_path).unwrap();
 
