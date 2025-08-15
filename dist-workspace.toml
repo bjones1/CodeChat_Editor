@@ -34,6 +34,4 @@ installers = []
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 # Skip checking whether the specified configuration files are up to date
 allow-dirty = ["ci"]
-# These files are relative to the root `dist-workspace.toml`, not to this file.
-changelog = "docs/changelog.md"
 license-files = ["LICENSE.md"]
