@@ -260,7 +260,7 @@ fn search_and_replace_file<
     let file_contents_replaced = re.replace(&file_contents, replace_string.as_ref());
     assert_ne!(
         file_contents, file_contents_replaced,
-        "No replacements made."
+        "No replacements made in {path}."
     );
     fs::write(&path, file_contents_replaced.as_bytes())
 }
@@ -509,15 +509,14 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
         r#"(\r?\nversion = ")[\d.]+("\r?\n)"#,
         &replacement_string,
     )?;
-    let json_search_regex = r#"(\r?\n    "version": ")[\d.]+(",\r?\n)"#;
     search_and_replace_file(
         "../client/package.json5",
-        json_search_regex,
+        r#"(\r?\n    version: ')[\d.]+(',\r?\n)"#,
         &replacement_string,
     )?;
     search_and_replace_file(
         "../extensions/VSCode/package.json",
-        json_search_regex,
+        r#"(\r?\n    "version": ")[\d.]+(",\r?\n)"#,
         &replacement_string,
     )?;
     Ok(())
