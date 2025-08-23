@@ -32,7 +32,7 @@ license = "GPL-3.0-only"
 name = "codechat-editor-server"
 readme = "../README.md"
 repository = "https://github.com/bjones1/CodeChat_Editor"
-version = "0.1.28"
+version = "0.1.29"
 
 # This library allows other packages to use core CodeChat Editor features.
 [lib]

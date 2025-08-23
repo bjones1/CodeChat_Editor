@@ -22,6 +22,13 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+Version 0.1.29 -- 2025-23-Aug
+-----------------------------
+
+*   Fix bugs in PDF viewer.
+*   Fix error when scrolling before a document is loaded.
+*   Fix debug print statements.
+
 Version 0.1.28 -- 2025-13-Aug
 -----------------------------
 
