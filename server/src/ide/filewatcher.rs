@@ -1057,17 +1057,17 @@ mod tests {
             (20.0, Ok(ResultOkTypes::Void))
         );
 
-        // Check that the requested file is written.
+        // Check that the requested file was written.
         let mut s = fs::read_to_string(&file_path).unwrap();
         assert_eq!(s, "testing()");
-        // Wait for the filewatcher to debounce this file write.
-        sleep(Duration::from_secs(1)).await;
 
         // 8.  Change this file and verify that this produces an update.
         //
         // Message ids: IDE - 6->9, Server - 10, Client - 23.
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
+        // Wait for the filewatcher to debounce this file write.
+        sleep(Duration::from_secs(1)).await;
         assert_eq!(
             get_message_as!(to_client_rx, EditorMessageContents::Update),
             (
