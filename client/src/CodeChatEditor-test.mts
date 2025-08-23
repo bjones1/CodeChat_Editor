@@ -112,8 +112,8 @@ window.CodeChatEditor_test = () => {
                 ];
                 codechat_html_to_markdown(db);
                 assert.deepEqual(db, [
-                    [0, 0, "", "//", "# <u>A<u></u></u>\n\n<u><u>\n"],
-                    [2, 2, "", "//", "<h2>Ax</h2></u></u>\n"],
+                    [0, 0, "", "//", "<u>A<u></u></u>\n===============\n"],
+                    [2, 2, "", "//", "Ax\n--\n"],
                 ]);
             });
         });
@@ -137,7 +137,6 @@ window.CodeChatEditor_test = () => {
                     [[1, 2, "", "#", "test"]],
                     { from: 1, insert: "\n" },
                 );
-                console.log(after_state);
                 assert.deepEqual(after_state, {
                     doc: "a\n\nbcd",
                     doc_blocks: [[1, 3, "", "#", "test"]],
@@ -176,8 +175,6 @@ const run_CodeMirror_test = (
 
     // Run a transaction, then extract at the results.
     view.dispatch({ changes });
-    console.log(view.state.field(docBlockField));
-    console.log(MapMode.TrackBefore);
     const after_state = view.state.toJSON(CodeMirror_JSON_fields);
     delete after_state.selection;
     return after_state;
