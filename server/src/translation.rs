@@ -205,7 +205,7 @@
 // -------
 //
 // ### Standard library
-use std::{cmp::min, collections::HashMap, ffi::OsStr, path::PathBuf};
+use std::{collections::HashMap, ffi::OsStr, fmt::Debug, path::PathBuf};
 
 // ### Third-party
 use actix_web::web;
@@ -236,13 +236,13 @@ use crate::{
 
 // Globals
 // -------
+//
 // The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH: usize = 300;
+const MAX_MESSAGE_LENGTH: usize = 30000;
 
 lazy_static! {
         /// A regex to determine the type of the first EOL. See 'PROCESSINGS1.
     pub static ref EOL_FINDER: Regex = Regex::new("[^\r\n]*(\r?\n)").unwrap();
-
 }
 
 // Data structures
@@ -404,7 +404,8 @@ pub async fn translation_task(
                     HashMap::new();
                 debug!("VSCode processing task started.");
 
-                // Create a queue for HTTP requests fo communicate with this task.
+                // Create a queue for HTTP requests fo communicate with this
+                // task.
                 let (from_http_tx, mut from_http_rx) = mpsc::channel(10);
                 app_state_task
                     .processing_task_queue_tx
@@ -416,41 +417,41 @@ pub async fn translation_task(
                 let mut id: f64 = INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT;
                 let mut source_code = String::new();
                 let mut code_mirror_doc = String::new();
-                // The initial state will be overwritten by the first `Update` or
-                // `LoadFile`, so this value doesn't matter.
+                // The initial state will be overwritten by the first `Update`
+                // or `LoadFile`, so this value doesn't matter.
                 let mut eol = EolType::Lf;
                 // Some means this contains valid HTML; None means don't use it
                 // (since it would have contained Markdown).
                 let mut code_mirror_doc_blocks = Some(Vec::new());
                 let prefix_str = "/".to_string() + &prefix.join("/");
-                // To send a diff from Server to Client or vice versa, we need to
-                // ensure they are in sync:
+                // To send a diff from Server to Client or vice versa, we need
+                // to ensure they are in sync:
                 //
-                // 1.  IDE update -> Server -> Client or Client update -> Server ->
-                //     IDE: the Server and Client sync is pending. Client response
-                //     -> Server -> IDE or IDE response -> Server -> Client: the
-                //     Server and Client are synced.
-                // 2.  IDE current file -> Server -> Client or Client current file
-                //     -> Server -> IDE: Out of sync.
+                // 1.  IDE update -> Server -> Client or Client update -> Server
+                //     -> IDE: the Server and Client sync is pending. Client
+                //     response -> Server -> IDE or IDE response -> Server ->
+                //     Client: the Server and Client are synced.
+                // 2.  IDE current file -> Server -> Client or Client current
+                //     file -> Server -> IDE: Out of sync.
                 //
                 // It's only safe to send a diff when the most recent sync is
-                // achieved. So, we need to track the ID of the most recent IDE ->
-                // Client update or Client -> IDE update, if one is in flight. When
-                // complete, mark the connection as synchronized. Since all IDs are
-                // unique, we can use a single variable to store the ID.
+                // achieved. So, we need to track the ID of the most recent IDE
+                // -> Client update or Client -> IDE update, if one is in
+                // flight. When complete, mark the connection as synchronized.
+                // Since all IDs are unique, we can use a single variable to
+                // store the ID.
                 //
-                // Currently, when the Client sends an update, mark the connection
-                // as out of sync, since the update contains not HTML in the doc
-                // blocks, but Markdown. When Turndown is moved from JavaScript to
-                // Rust, this can be changed, since both sides will have HTML in the
-                // doc blocks.
+                // Currently, when the Client sends an update, mark the
+                // connection as out of sync, since the update contains not HTML
+                // in the doc blocks, but Markdown. When Turndown is moved from
+                // JavaScript to Rust, this can be changed, since both sides
+                // will have HTML in the doc blocks.
                 let mut sync_state = SyncState::OutOfSync;
                 loop {
                     select! {
                         // Look for messages from the IDE.
                         Some(ide_message) = from_ide_rx.recv() => {
-                            let msg = format!("{:?}", ide_message.message);
-                            debug!("Received IDE message id = {}, message = {}", ide_message.id, &msg[..min(MAX_MESSAGE_LENGTH, msg.len())]);
+                            debug!("Received IDE message id = {}, message = {}", ide_message.id, debug_shorten(&ide_message.message));
                             match ide_message.message {
                                 // Handle messages that the IDE must not send.
                                 EditorMessageContents::Opened(_) |
@@ -462,7 +463,8 @@ pub async fn translation_task(
                                     send_response(&to_ide_tx, ide_message.id, Err(msg.to_string())).await;
                                 },
 
-                                // Handle messages that are simply passed through.
+                                // Handle messages that are simply passed
+                                // through.
                                 EditorMessageContents::Closed |
                                 EditorMessageContents::RequestClose => {
                                     debug!("Forwarding it to the Client.");
@@ -481,9 +483,10 @@ pub async fn translation_task(
                                             ResultOkTypes::LoadFile(_) => true,
                                         }
                                     };
-                                    // Pass the message to the client if this isn't
-                                    // a `LoadFile` result (the only type of result
-                                    // which the Server should handle).
+                                    // Pass the message to the client if this
+                                    // isn't a `LoadFile` result (the only type
+                                    // of result which the Server should
+                                    // handle).
                                     if !is_loadfile {
                                         debug!("Forwarding it to the Client.");
                                         // If this was confirmation from the IDE
@@ -502,8 +505,9 @@ pub async fn translation_task(
                                         break 'task;
                                     };
 
-                                    // Take ownership of the result after sending it
-                                    // above (which requires ownership).
+                                    // Take ownership of the result after
+                                    // sending it above (which requires
+                                    // ownership).
                                     let EditorMessageContents::Result(result) = ide_message.message else {
                                         error!("{}", "Not a result.");
                                         break;
@@ -522,9 +526,9 @@ pub async fn translation_task(
                                     };
 
                                     // Process the file contents. Since VSCode
-                                    // doesn't have a PDF viewer, determine if this
-                                    // is a PDF file. (TODO: look at the magic
-                                    // number also -- "%PDF").
+                                    // doesn't have a PDF viewer, determine if
+                                    // this is a PDF file. (TODO: look at the
+                                    // magic number also -- "%PDF").
                                     let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
                                     let (simple_http_response, option_update, file_contents) = match file_contents_option {
                                         Some(file_contents) => {
@@ -578,8 +582,8 @@ pub async fn translation_task(
                                             error!("Not plain!");
                                             break;
                                         };
-                                        // We must clone here, since the original is
-                                        // placed in the TX queue.
+                                        // We must clone here, since the original
+                                        // is placed in the TX queue.
                                         source_code = file_contents.unwrap();
                                         code_mirror_doc = plain.doc.clone();
                                         code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
@@ -731,8 +735,8 @@ pub async fn translation_task(
                                     }
                                 }
 
-                                // Update the current file; translate it to a URL
-                                // then pass it to the Client.
+                                // Update the current file; translate it to a
+                                // URL then pass it to the Client.
                                 EditorMessageContents::CurrentFile(file_path, _is_text) => {
                                     debug!("Translating and forwarding it to the Client.");
                                     match try_canonicalize(&file_path) {
@@ -768,18 +772,19 @@ pub async fn translation_task(
                                 id,
                                 message: EditorMessageContents::LoadFile(http_request.file_path.clone())
                             }));
-                            // Store the ID and request, which are needed to send a
-                            // response when the `LoadFile` result is received.
+                            // Store the ID and request, which are needed to
+                            // send a response when the `LoadFile` result is
+                            // received.
                             load_file_requests.insert(id.to_bits(), http_request);
                             id += MESSAGE_ID_INCREMENT;
                         }
 
                         // Handle messages from the client.
                         Some(client_message) = from_client_rx.recv() => {
-                            let msg = format!("{:?}", client_message.message);
-                            debug!("Received Client message id = {}, message = {}", client_message.id, &msg[..min(MAX_MESSAGE_LENGTH, msg.len())]);
+                            debug!("Received Client message id = {}, message = {}", client_message.id, debug_shorten(&client_message.message));
                             match client_message.message {
-                                // Handle messages that the client must not send.
+                                // Handle messages that the client must not
+                                // send.
                                 EditorMessageContents::Opened(_) |
                                 EditorMessageContents::LoadFile(_) |
                                 EditorMessageContents::RequestClose |
@@ -789,7 +794,8 @@ pub async fn translation_task(
                                     send_response(&to_client_tx, client_message.id, Err(msg.to_string())).await;
                                 },
 
-                                // Handle messages that are simply passed through.
+                                // Handle messages that are simply passed
+                                // through.
                                 EditorMessageContents::Closed |
                                 EditorMessageContents::Result(_) => {
                                     debug!("Forwarding it to the IDE.");
@@ -804,8 +810,9 @@ pub async fn translation_task(
 
                                 // Open a web browser when requested.
                                 EditorMessageContents::OpenUrl(url) => {
-                                    // This doesn't work in Codespaces. TODO: send
-                                    // this back to the VSCode window, then call
+                                    // This doesn't work in Codespaces. TODO:
+                                    // send this back to the VSCode window, then
+                                    // call
                                     // `vscode.env.openExternal(vscode.Uri.parse(url))`.
                                     if let Err(err) = webbrowser::open(&url) {
                                         let msg = format!("Unable to open web browser to URL {url}: {err}");
@@ -898,8 +905,8 @@ pub async fn translation_task(
                                     }
                                 },
 
-                                // Update the current file; translate it to a URL
-                                // then pass it to the IDE.
+                                // Update the current file; translate it to a
+                                // URL then pass it to the IDE.
                                 EditorMessageContents::CurrentFile(url_string, _is_text) => {
                                     debug!("Forwarding translated path to IDE.");
                                     let result = match url_to_path(&url_string, prefix) {
@@ -995,5 +1002,21 @@ fn eol_convert(s: String, eol_type: &EolType) -> String {
         s.replace("\n", "\r\n")
     } else {
         s
+    }
+}
+
+// Provide a simple debug function that prints only the first
+// `MAX_MESSAGE_LENGTH` characters of the provided value.
+fn debug_shorten<T: Debug>(val: T) -> String {
+    if cfg!(debug_assertions) {
+        let msg = format!("{:?}", val);
+        let max_index = msg
+            .char_indices()
+            .nth(MAX_MESSAGE_LENGTH)
+            .unwrap_or((msg.len(), 'x'))
+            .0;
+        msg[..max_index].to_string()
+    } else {
+        "".to_string()
     }
 }
