@@ -26,4 +26,4 @@
 include = ["log4rs.yml", "hashLocations.json", "../client/static"]
 
 [package]
-changelog = "../docs/changelog.md"
+changelog = "docs/changelog.md"
