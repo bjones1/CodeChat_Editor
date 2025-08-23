@@ -133,7 +133,7 @@ declare global {
 // -------
 //
 // True to enable additional debug logging.
-export const DEBUG_ENABLED = true;
+export const DEBUG_ENABLED = false;
 
 // The ID of the autosave timer; when this timer expires, the document will be
 // autosaved.

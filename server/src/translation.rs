@@ -238,7 +238,7 @@ use crate::{
 // -------
 //
 // The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH: usize = 30000;
+const MAX_MESSAGE_LENGTH: usize = 300;
 
 lazy_static! {
         /// A regex to determine the type of the first EOL. See 'PROCESSINGS1.
