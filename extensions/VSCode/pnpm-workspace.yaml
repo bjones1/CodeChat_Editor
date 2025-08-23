@@ -1,4 +1,0 @@
-onlyBuiltDependencies:
-  - '@vscode/vsce-sign'
-  - bufferutil
-  - keytar
