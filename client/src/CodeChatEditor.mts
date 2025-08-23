@@ -133,7 +133,7 @@ declare global {
 // -------
 //
 // True to enable additional debug logging.
-export const DEBUG_ENABLED = false;
+export const DEBUG_ENABLED = true;
 
 // The ID of the autosave timer; when this timer expires, the document will be
 // autosaved.
@@ -219,7 +219,9 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
 //
 // True if this is a CodeChat Editor document (not a source file).
 const is_doc_only = () => {
-    return current_metadata["mode"] === "markdown";
+    // This might be called by the framework before a document is loaded.
+    // So, make sure `current_metadata` exists first.
+    return current_metadata !== undefined && current_metadata["mode"] === "markdown";
 };
 
 // Wait for the DOM to load before opening the file.
