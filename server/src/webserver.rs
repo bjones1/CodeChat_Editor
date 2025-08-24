@@ -903,16 +903,6 @@ pub async fn file_to_response(
         }
     };
 
-    // Add testing mode scripts if requested.
-    let testing_src = if http_request.is_test_mode {
-        r#"
-        <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
-        <script src="https://unpkg.com/mocha/mocha.js"></script>
-        "#
-    } else {
-        ""
-    };
-
     // Provided info from the HTTP request, determine the following parameters.
     let Some(raw_dir) = file_path.parent() else {
         return (
@@ -949,7 +939,6 @@ pub async fn file_to_response(
                         page_init()
                     </script>
                     <link rel="stylesheet" href="/{codehat_editor_css}">
-                    {testing_src}
                     {sidebar_css}
                 </head>
                 <body class="CodeChat-theme-light">
