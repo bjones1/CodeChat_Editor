@@ -313,7 +313,7 @@ fn patch_client_libs() -> io::Result<()> {
     // Copy across the parts of MathJax that are needed, since bundling it is
     // difficult.
     quick_copy_dir(
-        "../client/node_modules/@mathjax/src/bundle/",
+        "../client/node_modules/mathjax/",
         "../client/static/mathjax",
         None,
     )?;
