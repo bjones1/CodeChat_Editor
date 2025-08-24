@@ -63,7 +63,7 @@
         '@mathjax/src': '4.0.0',
         codemirror: '^6.0.2',
         'graphviz-webcomponent': '^2.0.0',
-        mermaid: '^11.10.0',
+        mermaid: '^11.10.1',
         'npm-check-updates': '^18.0.2',
         /* Per [this pdfjs-dist
            issue](https://github.com/mozilla/pdf.js/issues/20127), avoid v5.4.54
@@ -99,9 +99,9 @@
         '@types/toastify-js': '^1.12.4',
         '@typescript-eslint/eslint-plugin': '^8.40.0',
         '@typescript-eslint/parser': '^8.40.0',
-        chai: '^5.3.1',
+        chai: '^6.0.1',
         esbuild: '^0.25.9',
-        eslint: '^9.33.0',
+        eslint: '^9.34.0',
         'eslint-config-prettier': '^10.1.8',
         'eslint-plugin-import': '^2.32.0',
         'eslint-plugin-prettier': '^5.5.4',
