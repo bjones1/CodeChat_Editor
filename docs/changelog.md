@@ -22,6 +22,9 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+*   Fix and improve test framework.
+*   Improve MathJax bundling.
+
 Version 0.1.29 -- 2025-23-Aug
 -----------------------------
 

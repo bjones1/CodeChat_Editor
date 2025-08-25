@@ -313,7 +313,7 @@ fn patch_client_libs() -> io::Result<()> {
     // Copy across the parts of MathJax that are needed, since bundling it is
     // difficult.
     quick_copy_dir(
-        "../client/node_modules/@mathjax/src/bundle/",
+        "../client/node_modules/mathjax/",
         "../client/static/mathjax",
         None,
     )?;
@@ -395,7 +395,10 @@ fn run_test() -> io::Result<()> {
     )?;
     run_build()?;
     // Verify that compiling for release produces no errors.
-    run_cmd!(dist build;)?;
+    run_cmd!(
+        cd ..;
+        dist build;
+    )?;
     run_cmd!(
         cargo test --manifest-path=../builder/Cargo.toml;
         cargo test;

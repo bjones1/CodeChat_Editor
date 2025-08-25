@@ -49,7 +49,7 @@ use actix_ws::AggregatedMessage;
 use bytes::Bytes;
 use dunce::simplified;
 use futures_util::StreamExt;
-use indoc::{formatdoc, indoc};
+use indoc::{concatdoc, formatdoc};
 use lazy_static::lazy_static;
 use log::{LevelFilter, error, info, warn};
 use log4rs::{self, config::load_config_file};
@@ -388,11 +388,12 @@ pub enum SyncState {
     OutOfSync,
 }
 
-const MATHJAX_TAGS: &str = indoc!(
+const MATHJAX_TAGS: &str = concatdoc!(
     r#"
     <script>
-        MathJax = {
-            // See the [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
+        MathJax = {"#,
+    // See the [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
+    r#"
             chtml: {
                 fontURL: "/static/mathjax-newcm-font/chtml/woff2",
             },
@@ -400,9 +401,10 @@ const MATHJAX_TAGS: &str = indoc!(
                 inlineMath: [['$', '$'], ['\\(', '\\)']]
             },
         };
-    </script>
-    <script defer src="/static/mathjax/tex-chtml.js"></script>
-    "#
+    </script>"#,
+    // Per the [MathJax docs](https://docs.mathjax.org/en/latest/web/components/combined.html#tex-chtml), enable tex input and HTML output.
+    r#"
+    <script defer src="/static/mathjax/tex-chtml.js"></script>"#
 );
 
 lazy_static! {
@@ -903,16 +905,6 @@ pub async fn file_to_response(
         }
     };
 
-    // Add testing mode scripts if requested.
-    let testing_src = if http_request.is_test_mode {
-        r#"
-        <link rel="stylesheet" href="https://unpkg.com/mocha/mocha.css" />
-        <script src="https://unpkg.com/mocha/mocha.js"></script>
-        "#
-    } else {
-        ""
-    };
-
     // Provided info from the HTTP request, determine the following parameters.
     let Some(raw_dir) = file_path.parent() else {
         return (
@@ -949,7 +941,6 @@ pub async fn file_to_response(
                         page_init()
                     </script>
                     <link rel="stylesheet" href="/{codehat_editor_css}">
-                    {testing_src}
                     {sidebar_css}
                 </head>
                 <body class="CodeChat-theme-light">
