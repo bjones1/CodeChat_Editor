@@ -115,7 +115,6 @@ fn test_path_to_url() {
 
 // Test startup outside the repo path.
 #[test]
-#[ignore]
 fn test_other_path() {
     let (temp_dir, test_dir) = prep_test_dir!();
 
