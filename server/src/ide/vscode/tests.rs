@@ -18,18 +18,22 @@
 // Imports
 // -------
 use std::{
-    io::Error,
+    fs::{self, File},
+    io::{Error, Read},
     net::SocketAddr,
     path::PathBuf,
+    thread,
     time::{Duration, SystemTime},
 };
 
 use actix_rt::task::JoinHandle;
 use assert_fs::TempDir;
-use assertables::assert_starts_with;
+use assertables::{assert_contains, assert_starts_with};
+use dunce::simplified;
 use futures_util::{SinkExt, StreamExt};
 use lazy_static::lazy_static;
 use minreq;
+use path_slash::PathExt;
 use pretty_assertions::assert_eq;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -45,8 +49,12 @@ use crate::translation::{EolType, find_eol_type};
 use crate::webserver::{EditorMessage, EditorMessageContents, IdeType, run_server, tests::IP_PORT};
 use crate::{
     cast,
+    processing::{
+        CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
+        SourceFileMetadata, StringDiff,
+    },
     test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
-    webserver::ResultOkTypes,
+    webserver::{ResultOkTypes, UpdateMessageContents},
 };
 
 // Globals
@@ -201,9 +209,523 @@ macro_rules! prep_test {
 
 // Tests
 // -----
-//
-// Test incorrect inputs: two connections with the same ID, sending the wrong
-// first message.
+
+// Send a `CurrentFile` message from the Client, requesting a file that exists
+// on disk, but not in the IDE.
+#[actix_web::test]
+async fn test_vscode_ide_websocket4() {
+    let connection_id = "test-connection-id4";
+    let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+    open_client(&mut ws_ide).await;
+
+    // Message ids: IDE - 4, Server - 4, Client - 2->5.
+    let file_path_temp = fs::canonicalize(test_dir.join("test.py")).unwrap();
+    let file_path = simplified(&file_path_temp);
+    let file_path_str = file_path.to_str().unwrap().to_string();
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::CurrentFile(
+                format!(
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    &file_path.to_slash().unwrap()
+                ),
+                None,
+            ),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::CurrentFile(file_path_str.clone(), Some(true))
+        }
+    );
+
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // The Client should send a GET request for this file.
+    let test_dir_thread = test_dir.clone();
+    let join_handle = thread::spawn(move || {
+        // Get the file itself.
+        assert_eq!(
+            minreq::get(format!(
+                "http://localhost:8080/vsc/fs/{connection_id}/{}/{}",
+                test_dir_thread.to_slash().unwrap(),
+                // On Windows, send incorrect case for this file; the server
+                // should correct it.
+                if cfg!(windows) { "Test.py" } else { "test.py" }
+            ))
+            .send()
+            .unwrap()
+            .status_code,
+            200
+        );
+    });
+
+    // This should produce a `LoadFile` message.
+    //
+    // Message ids: IDE - 4, Server - 4->7, Client - 5.
+    let em = read_message(&mut ws_ide).await;
+    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
+    assert_eq!(em.id, 4.0);
+
+    // Reply to the `LoadFile` message: the IDE doesn't have the file.
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 4.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap();
+
+    // This should also produce an `Update` message sent from the Server.
+    //
+    // Message ids: IDE - 4, Server - 7->10, Client - 5.
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: 7.0,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "\n".to_string(),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 0,
+                            to: 1,
+                            indent: "".to_string(),
+                            delimiter: "#".to_string(),
+                            contents: "<p>test.py</p>\n".to_string()
+                        }],
+                    }),
+                }),
+                cursor_position: None,
+                scroll_position: None,
+            })
+        }
+    );
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: 7.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: 7.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        }
+    );
+
+    // Simulate a related fetch for a project -- the `toc.md` file.
+    let test_dir_thread = test_dir.clone();
+    let join_handle = thread::spawn(move || {
+        assert_eq!(
+            minreq::get(format!(
+                "http://localhost:8080/vsc/fs/{connection_id}/{}/toc.md",
+                test_dir_thread.to_slash().unwrap()
+            ))
+            .send()
+            .unwrap()
+            .status_code,
+            200
+        );
+    });
+
+    // This should also produce a `LoadFile` message.
+    //
+    // Message ids: IDE - 4, Server - 10->13, Client - 5.
+    let em = read_message(&mut ws_ide).await;
+    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    assert_eq!(
+        fs::canonicalize(&msg).unwrap(),
+        fs::canonicalize(test_dir.join("toc.md")).unwrap()
+    );
+    assert_eq!(em.id, 10.0);
+
+    // Reply to the `LoadFile` message: the IDE doesn't have the file.
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 10.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap();
+
+    // Send an update from the Client, which should produce a diff.
+    //
+    // Message ids: IDE - 4, Server - 13, Client - 5->8.
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: 5.0,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "More\n".to_string(),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 5,
+                            to: 6,
+                            indent: "".to_string(),
+                            delimiter: "#".to_string(),
+                            contents: "test.py".to_string(),
+                        }],
+                    }),
+                }),
+                cursor_position: None,
+                scroll_position: None,
+            }),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: 5.0,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: None,
+                            insert: format!("More{}", if cfg!(windows) { "\r\n" } else { "\n" }),
+                        }],
+                        doc_blocks: vec![],
+                    }),
+                }),
+                cursor_position: None,
+                scroll_position: None,
+            })
+        }
+    );
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 5.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: 5.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    check_logger_errors(0);
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
+}
+
+// Send a `CurrentFile` message from the Client, requesting a binary file that
+// exists on disk, but not in the IDE.
+#[actix_web::test]
+async fn test_vscode_ide_websocket4a() {
+    let connection_id = "test-connection-id4a";
+    let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+    open_client(&mut ws_ide).await;
+
+    // Message ids: IDE - 4, Server - 4, Client - 2->5.
+    let hw = "helloworld.pdf";
+    let file_path_temp = fs::canonicalize(test_dir.join(hw)).unwrap();
+    let file_path = simplified(&file_path_temp);
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::CurrentFile(
+                format!(
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    &file_path.to_slash().unwrap()
+                ),
+                None,
+            ),
+        },
+    )
+    .await;
+
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::CurrentFile(
+                file_path.to_str().unwrap().to_string(),
+                // `helloworld.pdf` is a text file! (But perhaps should mark all
+                // PDFs as binary, regardless?)
+                Some(true)
+            )
+        }
+    );
+
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // The Client should send a GET request for this file.
+    let mut test_dir_thread = test_dir.clone();
+    let join_handle = thread::spawn(move || {
+        // Read the file.
+        let response = minreq::get(format!(
+            "http://localhost:8080/vsc/fs/{connection_id}/{}/{hw}",
+            test_dir_thread.to_slash().unwrap(),
+        ))
+        .send()
+        .unwrap();
+        assert_eq!(response.status_code, 200);
+        // Since this isn't a project, the response should be just the image.
+        test_dir_thread.push(hw);
+        let mut helloworld_pdf_data = vec![];
+        File::open(test_dir_thread)
+            .unwrap()
+            .read_to_end(&mut helloworld_pdf_data)
+            .unwrap();
+        assert_eq!(response.as_bytes().to_vec(), helloworld_pdf_data);
+    });
+
+    // This should produce a `LoadFile` message.
+    //
+    // Message ids: IDE - 4, Server - 4->7, Client - 5.
+    let em = read_message(&mut ws_ide).await;
+    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
+    assert_eq!(em.id, 4.0);
+
+    // Reply to the `LoadFile` message: the IDE doesn't have the file.
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 4.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap();
+
+    check_logger_errors(0);
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
+}
+
+// Send a `CurrentFile` message from the Client, requesting a PDF that exists on
+// disk, but not in the IDE, inside a project.
+#[actix_web::test]
+async fn test_vscode_ide_websocket4b() {
+    let connection_id = "test-connection-id4b";
+    let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+    open_client(&mut ws_ide).await;
+
+    // Message ids: IDE - 4, Server - 4, Client - 2->5.
+    let hw = "helloworld.pdf";
+    let file_path_temp = fs::canonicalize(test_dir.join(hw)).unwrap();
+    let file_path = simplified(&file_path_temp);
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::CurrentFile(
+                format!(
+                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    &file_path.to_slash().unwrap()
+                ),
+                None,
+            ),
+        },
+    )
+    .await;
+
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::CurrentFile(
+                file_path.to_str().unwrap().to_string(),
+                // `helloworld.pdf` is a text file! (But perhaps should mark all
+                // PDFs as binary, regardless?)
+                Some(true)
+            )
+        }
+    );
+
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: 2.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // The Client should send a GET request for this file.
+    let mut test_dir_thread = test_dir.clone();
+    let join_handle = thread::spawn(move || {
+        // Read the file.
+        let response = minreq::get(format!(
+            "http://localhost:8080/vsc/fs/{connection_id}/{}/{hw}",
+            test_dir_thread.to_slash().unwrap(),
+        ))
+        .send()
+        .unwrap();
+        assert_eq!(response.status_code, 200);
+        // This is a project; the response should be a Client Simple Viewer.
+        assert_contains!(
+            response.as_str().unwrap(),
+            r#"<iframe src="/static/pdfjs-main.html?"#
+        );
+
+        // Now, request the PDF as a raw file.
+        let response = minreq::get(format!(
+            "http://localhost:8080/vsc/fs/{connection_id}/{}/{hw}?raw",
+            test_dir_thread.to_slash().unwrap(),
+        ))
+        .send()
+        .unwrap();
+        assert_eq!(response.status_code, 200);
+        test_dir_thread.push(hw);
+        let mut helloworld_pdf_data = vec![];
+        File::open(test_dir_thread)
+            .unwrap()
+            .read_to_end(&mut helloworld_pdf_data)
+            .unwrap();
+        assert_eq!(response.as_bytes(), helloworld_pdf_data);
+    });
+
+    // This should produce a `LoadFile` message.
+    //
+    // Message ids: IDE - 4, Server - 4->7, Client - 5.
+    let em = read_message(&mut ws_ide).await;
+    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
+    assert_eq!(em.id, 4.0);
+
+    // Reply to the `LoadFile` message: the IDE doesn't have the file.
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 4.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap();
+
+    check_logger_errors(0);
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
+}
+
+// Send a `RequestClose` message to the Client, then close the Client.
+#[actix_web::test]
+async fn test_vscode_ide_websocket5() {
+    let connection_id = "test-connection-id5";
+    let (temp_dir, _, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+    open_client(&mut ws_ide).await;
+
+    // Message ids: IDE - 4->7, Server - 3, Client - 2.
+    //
+    // Send the `RequestClose` message.
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: 4.0,
+            message: EditorMessageContents::RequestClose,
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: 4.0,
+            message: EditorMessageContents::RequestClose
+        }
+    );
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: 4.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: 4.0,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        }
+    );
+
+    // Close the Client websocket.
+    ws_client.close(None).await.unwrap();
+    loop {
+        match ws_ide.next().await.unwrap().unwrap() {
+            Message::Ping(_) => ws_ide.send(Message::Pong(vec![].into())).await.unwrap(),
+            Message::Close(_) => break,
+            _ => panic!("Unexpected message."),
+        }
+    }
+
+    check_logger_errors(0);
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
+}
+
 // Close the IDE.
 #[actix_web::test]
 async fn test_vscode_ide_websocket9() {
