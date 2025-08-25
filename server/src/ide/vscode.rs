@@ -1,3 +1,4 @@
+use indoc::formatdoc;
 // Copyright (C) 2025 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -16,6 +17,11 @@
 /// `vscode.rs` -- Implement server-side functionality for the Visual Studio
 /// Code IDE
 /// ========================================================================
+// Modules
+// -------
+#[cfg(test)]
+pub mod tests;
+
 // Imports
 // -------
 // ### Standard library
@@ -27,7 +33,6 @@ use actix_web::{
     error::{Error, ErrorBadRequest},
     get, web,
 };
-use indoc::formatdoc;
 use log::{debug, error};
 
 // ### Local
