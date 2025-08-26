@@ -128,7 +128,7 @@ fn test_other_path() {
             .success();
     });
     // The server waits for up to 3 seconds for a ping to work. Add some extra time for starting the process.
-    sleep(Duration::from_millis(4000));
+    sleep(Duration::from_millis(5000));
     get_server()
         .args(["--port", "8083", "stop"])
         .current_dir(&test_dir)
