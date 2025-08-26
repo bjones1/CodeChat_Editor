@@ -1067,7 +1067,7 @@ mod tests {
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         // Wait for the filewatcher to debounce this file write.
-        sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(2)).await;
         assert_eq!(
             get_message_as!(to_client_rx, EditorMessageContents::Update),
             (
