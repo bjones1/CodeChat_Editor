@@ -28,11 +28,7 @@ import { assert } from "chai";
 import "mocha/mocha.js";
 import "mocha/mocha.css";
 import { EditorView } from "@codemirror/view";
-import {
-    ChangeSpec,
-    EditorState,
-    EditorSelection,
-} from "@codemirror/state";
+import { ChangeSpec, EditorState, EditorSelection } from "@codemirror/state";
 import { exportedForTesting, page_init } from "./CodeChatEditor.mjs";
 import { CodeMirror, CodeMirrorDocBlockTuple } from "./shared_types.mjs";
 import {

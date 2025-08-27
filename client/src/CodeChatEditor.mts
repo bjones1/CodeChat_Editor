@@ -553,13 +553,13 @@ const scroll_to_line = (line: number) => {
     } else {
         codemirror_scroll_to_line(line);
     }
-}
+};
 
 export const console_log = (...args: any) => {
     if (DEBUG_ENABLED) {
         console.log(...args);
     }
-}
+};
 
 // Testing
 // -------
