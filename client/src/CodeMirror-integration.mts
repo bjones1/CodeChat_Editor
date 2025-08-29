@@ -95,6 +95,7 @@ import { show_toast } from "./show_toast.mjs";
 // Globals
 // -------
 let current_view: EditorView;
+console.log("*************** Init");
 let tinymce_singleton: Editor | undefined;
 // When true, don't update on the next call to `on_dirty`. See that function for
 // more info.
@@ -994,6 +995,7 @@ export const CodeMirror_load = async (
             state,
             scrollTo: scrollSnapshot,
         });
+        console.log("*************** Defined");
         tinymce_singleton = (
             await init({
                 selector: "#TinyMCE-inst",
@@ -1080,8 +1082,8 @@ export const CodeMirror_load = async (
 
 export const scroll_to_line = (line: number) => {
     ignore_selection_change = true;
-    const line_range = current_view.state.doc.line(line);
-    current_view.dispatch({
+    const line_range = current_view?.state.doc.line(line);
+    current_view?.dispatch({
         selection: EditorSelection.cursor(line_range.from),
         scrollIntoView: true,
     });

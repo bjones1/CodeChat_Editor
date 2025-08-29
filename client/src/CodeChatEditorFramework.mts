@@ -72,13 +72,12 @@ class WebSocketComm {
             callback: () => void;
         }
     > = {};
-    // True when the iframe is loading, so that an `Update` should be postponed
-    // until the page load is finished. Otherwise, the page is fully loaded, so
-    // the `Update` may be applied immediately.
-    onloading = false;
     // The current filename of the file being edited. This is provided by the
     // IDE and passed back to it, but not otherwise used by the Framework.
     current_filename: string | undefined = undefined;
+
+    // A promise to serialize calls to `set_content`.
+    promise = Promise.resolve();
 
     constructor(ws_url: string) {
         // The `ReconnectingWebSocket` doesn't provide ALL the `WebSocket`
@@ -141,28 +140,44 @@ class WebSocketComm {
                     const contents = current_update.contents;
                     const cursor_position = current_update.cursor_position;
                     if (contents !== undefined) {
-                        // If the page is still loading, wait until the load
-                        // completed before updating the editable contents.
-                        if (this.onloading) {
-                            root_iframe!.onload = () => {
-                                set_content(
-                                    contents,
-                                    current_update.cursor_position
-                                );
-                                this.onloading = false;
-                            };
-                        } else {
-                            set_content(
-                                contents,
-                                current_update.cursor_position
+                        if (
+                            root_iframe!.contentDocument?.readyState !==
+                            "loading"
+                        ) {
+                            // The page is ready; load in the provided content.
+                            this.promise = this.promise.finally(
+                                async () =>
+                                    await set_content(
+                                        contents,
+                                        current_update.cursor_position,
+                                    ),
                             );
+                        } else {
+                            // If the page is still loading, wait until the load
+                            // completes before updating the editable contents.
+                            //
+                            // Construct the promise to use; this causes the
+                            // `onload` callback to be set immediately.
+                            const p = new Promise<void>(
+                                (resolve) =>
+                                    (root_iframe!.onload = async () => {
+                                        await set_content(
+                                            contents,
+                                            current_update.cursor_position,
+                                        );
+                                        resolve();
+                                    }),
+                            );
+                            this.promise = this.promise.finally(() => p);
                         }
                     } else if (cursor_position !== undefined) {
                         // We might receive a message while the Client is
                         // reloading; during this period, `scroll_to_line` isn't
                         // defined.
-                        root_iframe!.contentWindow!.CodeChatEditor.scroll_to_line?.(
-                            cursor_position
+                        this.promise = this.promise.finally(() =>
+                            root_iframe!.contentWindow?.CodeChatEditor.scroll_to_line?.(
+                                cursor_position,
+                            ),
                         );
                     }
 
@@ -173,36 +188,34 @@ class WebSocketComm {
                     // Note that we can ignore `value[1]` (if the file is text
                     // or binary); the server only sends text files here.
                     const current_file = value[0] as string;
+                    const testSuffix = testMode
+                        ? // Append the test parameter correctly, depending if
+                          // there are already parameters or not.
+                          current_file.indexOf("?") === -1
+                            ? "?test"
+                            : "&test"
+                        : "";
                     // If the page is still loading, then don't save. Otherwise,
                     // save the editor contents if necessary.
-                    let cce = get_client();
-                    let promise =
-                        cce !== undefined
-                            ? cce.on_save(true)
-                            : Promise.resolve();
-                    promise.then((_) => {
-                        // Now, it's safe to load a new file.
-                        const testSuffix = testMode
-                            ? // Append the test parameter correctly, depending if
-                              // there are already parameters or not.
-                              current_file.indexOf("?") === -1
-                                ? "?test"
-                                : "&test"
-                            : "";
-                        // Tell the client to allow this navigation -- the
-                        // document it contains has already been saved.
-                        if (cce !== undefined) {
-                            cce.allow_navigation = true;
-                        }
-                        this.set_root_iframe_src(current_file + testSuffix);
-                        // The `current_file` is a URL-encoded path, not a
-                        // filesystem path. So, we can't use it for
-                        // `current_filename`. Instead, signal that the
-                        // `current_filename` should be set on the next `Update`
-                        // message.
-                        this.current_filename = undefined;
-                        this.send_result(id, null);
-                    });
+                    const cce = get_client();
+                    this.promise = this.promise
+                        .finally(() => cce?.on_save(true))
+                        .finally(() => {
+                            // Now, it's safe to load a new file.
+                            // Tell the client to allow this navigation -- the
+                            // document it contains has already been saved.
+                            if (cce !== undefined) {
+                                cce.allow_navigation = true;
+                            }
+                            this.set_root_iframe_src(current_file + testSuffix);
+                            // The `current_file` is a URL-encoded path, not a
+                            // filesystem path. So, we can't use it for
+                            // `current_filename`. Instead, signal that the
+                            // `current_filename` should be set on the next `Update`
+                            // message.
+                            this.current_filename = undefined;
+                            this.send_result(id, null);
+                        });
                     break;
 
                 case "Result":
@@ -243,10 +256,6 @@ class WebSocketComm {
         // assign the `src` attribute.
         root_iframe!.removeAttribute("srcdoc");
         root_iframe!.src = url;
-        // There's no easy way to determine when the iframe's DOM is ready. This
-        // is a kludgy workaround -- set a flag.
-        this.onloading = true;
-        root_iframe!.onload = () => (this.onloading = false);
     };
 
     send = (data: any) => this.ws.send(data);
@@ -331,7 +340,10 @@ const get_client = () => root_iframe?.contentWindow?.CodeChatEditor;
 
 // Assign content to either the Client (if it's loaded) or the webpage (if not)
 // in the `root_iframe`.
-const set_content = (contents: CodeChatForWeb, cursor_position?: number) => {
+const set_content = async (
+    contents: CodeChatForWeb,
+    cursor_position?: number,
+) => {
     let client = get_client();
     if (client === undefined) {
         // See if this is the [simple viewer](#Client-simple-viewer). Otherwise,
@@ -347,7 +359,7 @@ const set_content = (contents: CodeChatForWeb, cursor_position?: number) => {
         cw.document.write(contents.source.Plain.doc);
         cw.document.close();
     } else {
-        root_iframe!.contentWindow!.CodeChatEditor.open_lp(
+        await root_iframe!.contentWindow!.CodeChatEditor.open_lp(
             contents,
             cursor_position,
         );
@@ -371,7 +383,7 @@ export const page_init = (
     testMode_: boolean,
 ) => {
     testMode = testMode_;
-    on_dom_content_loaded(async () => {
+    on_dom_content_loaded(() => {
         // If the hosting page uses HTTPS, then use a secure websocket (WSS
         // protocol); otherwise, use an insecure websocket (WS).
         const protocol = window.location.protocol === "http:" ? "ws:" : "wss:";

@@ -221,14 +221,20 @@ const on_dom_content_loaded = (on_load_func: () => void) => {
 const is_doc_only = () => {
     // This might be called by the framework before a document is loaded.
     // So, make sure `current_metadata` exists first.
-    return current_metadata !== undefined && current_metadata["mode"] === "markdown";
+    return current_metadata?.["mode"] === "markdown";
 };
 
 // Wait for the DOM to load before opening the file.
 const open_lp = async (
     codechat_for_web: CodeChatForWeb,
     cursor_position?: number,
-) => on_dom_content_loaded(() => _open_lp(codechat_for_web, cursor_position));
+) =>
+    await new Promise<void>((resolve) =>
+        on_dom_content_loaded(async () => {
+            await _open_lp(codechat_for_web, cursor_position);
+            resolve();
+        }),
+    );
 
 // Store the HTML sent for CodeChat Editor documents. We can't simply use
 // TinyMCE's
