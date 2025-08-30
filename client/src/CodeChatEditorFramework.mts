@@ -41,7 +41,11 @@ import {
     MessageResult,
     UpdateMessageContents,
 } from "./shared_types.mjs";
-import { console_log } from "./CodeChatEditor.mjs";
+import {
+    console_log,
+    on_error,
+    on_dom_content_loaded,
+} from "./CodeChatEditor.mjs";
 
 // Websocket
 // ---------
@@ -51,8 +55,8 @@ import { console_log } from "./CodeChatEditor.mjs";
 //
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH = 200;
-// The timeout for a websocket `Response`.
-const RESPONSE_TIMEOUT = 15000;
+// The timeout for a websocket `Response`, in ms.
+const RESPONSE_TIMEOUT_MS = 1500000;
 
 // An instance of the websocket communication class.
 let webSocketComm: WebSocketComm;
@@ -141,10 +145,10 @@ class WebSocketComm {
                     const cursor_position = current_update.cursor_position;
                     if (contents !== undefined) {
                         if (
-                            root_iframe!.contentDocument?.readyState !==
-                            "loading"
+                            root_iframe!.contentDocument?.readyState ===
+                            "complete"
                         ) {
-                            // The page is ready; load in the provided content.
+                            // Wait until after the DOM is ready, since we rely on content set in `on_dom_content_loaded` in the Client.
                             this.promise = this.promise.finally(
                                 async () =>
                                     await set_content(
@@ -293,7 +297,7 @@ class WebSocketComm {
         this.pending_messages[id] = {
             timer_id: window.setTimeout(
                 this.report_server_timeout,
-                RESPONSE_TIMEOUT,
+                RESPONSE_TIMEOUT_MS,
                 id,
             ),
             callback,
@@ -384,6 +388,10 @@ export const page_init = (
 ) => {
     testMode = testMode_;
     on_dom_content_loaded(() => {
+        // Provide basic error reporting for uncaught errors.
+        window.addEventListener("unhandledrejection", on_error);
+        window.addEventListener("error", on_error);
+
         // If the hosting page uses HTTPS, then use a secure websocket (WSS
         // protocol); otherwise, use an insecure websocket (WS).
         const protocol = window.location.protocol === "http:" ? "ws:" : "wss:";
@@ -398,18 +406,6 @@ export const page_init = (
             webSocketComm,
         };
     });
-};
-
-// This is copied from
-// [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
-const on_dom_content_loaded = (on_load_func: () => void) => {
-    if (document.readyState === "loading") {
-        // Loading hasn't finished yet.
-        document.addEventListener("DOMContentLoaded", on_load_func);
-    } else {
-        // `DOMContentLoaded` has already fired.
-        on_load_func();
-    }
 };
 
 // Tell TypeScript about the global namespace this program defines.

@@ -341,9 +341,9 @@ macro_rules! queue_send {
 
 /// Globals
 /// -------
-// The timeout for a reply from a websocket. Use a short timeout to speed up
+// The timeout for a reply from a websocket, in ms. Use a short timeout to speed up
 // unit tests.
-const REPLY_TIMEOUT: Duration = if cfg!(test) {
+const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
     Duration::from_millis(500)
 } else {
     Duration::from_millis(15000)
@@ -1246,7 +1246,7 @@ pub async fn client_websocket(
                         _ => {
                             let timeout_tx = from_websocket_tx.clone();
                             let waiting_task = actix_rt::spawn(async move {
-                                sleep(REPLY_TIMEOUT).await;
+                                sleep(REPLY_TIMEOUT_MS).await;
                                 let msg = format!("Timeout: message id {} unacknowledged.", m.id);
                                 error!("{msg}");
                                 // Since the websocket failed to send a

@@ -187,6 +187,9 @@ export const page_init = () => {
             on_navigate,
         );
         document.addEventListener("click", on_click);
+        // Provide basic error reporting for uncaught errors. However, enabling either of these makes the Client not work. ???
+        //window.addEventListener("unhandledrejection", on_error);
+        //window.addEventListener("error", on_error);
 
         window.CodeChatEditor = {
             open_lp,
@@ -204,7 +207,7 @@ export const set_is_dirty = (value: boolean = true) => {
 
 // This is copied
 // from[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
-const on_dom_content_loaded = (on_load_func: () => void) => {
+export const on_dom_content_loaded = (on_load_func: () => void) => {
     if (document.readyState === "loading") {
         // Loading hasn't finished yet.
         document.addEventListener("DOMContentLoaded", on_load_func);
@@ -553,6 +556,8 @@ const save_then_navigate = (codeChatEditorUrl: URL) => {
     });
 };
 
+// This can be called by the framework. Therefore, make no assumptions
+// about variables being valid; it be called before a file is loaded, etc.
 const scroll_to_line = (line: number) => {
     if (is_doc_only()) {
         // TODO.
@@ -565,6 +570,19 @@ export const console_log = (...args: any) => {
     if (DEBUG_ENABLED) {
         console.log(...args);
     }
+};
+
+// A global error handler: this is called on any uncaught exception.
+export const on_error = (event: Event) => {
+    let err_str: string;
+    if (event instanceof ErrorEvent) {
+        err_str = `${event.filename}:${event.lineno}: ${event.message}`;
+    } else if (event instanceof PromiseRejectionEvent) {
+        err_str = `${event.promise} rejected: ${event.reason}`;
+    } else {
+        err_str = `Unexpected error ${typeof(event)}: ${event}`
+    }
+    show_toast(`Error: ${err_str}`);
 };
 
 // Testing
