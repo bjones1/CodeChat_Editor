@@ -64,30 +64,8 @@
         'graphviz-webcomponent': '^2.0.0',
         mathjax: '4.0.0',
         mermaid: '^11.10.1',
-        'npm-check-updates': '^18.0.2',
-        /* Per [this pdfjs-dist
-           issue](https://github.com/mozilla/pdf.js/issues/20127), avoid v5.4.54
-           of this library. Per [this pnpm
-           issue](https://github.com/pnpm/pnpm/issues/6714), `pnpm` will
-           auto-rewrite this incorrectly, so manually revert changes after each
-           `pnpm update`. However, reverting these changes causes the following
-           error:
-
-           ```
-           ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with "frozen-lockfile" because pnpm-lock.
-           yaml is not up to date with <ROOT>/package.json
-
-           Note that in CI environments this setting is true by default. If you still need to
-           run install in such cases, use "pnpm install --no-frozen-lockfile"
-
-           Failure reason:
-           specifiers in the lockfile don't match specifiers in package.json:
-           * 1 dependencies are mismatched:
-           - pdfjs-dist (lockfile: ^5.3.93, manifest: ~5 < 5.4.54 || ~5.4.55)
-           ```
-
-           So, installs in CI must have the `--no-frozen-lockfile` CLI flag. */
-        'pdfjs-dist': '~5 < 5.4.54 || ~5.4.55',
+        'npm-check-updates': '^18.0.3',
+        'pdfjs-dist': '^5.4.149',
         tinymce: '^8.0.2',
         'toastify-js': '^1.12.0',
     },
@@ -97,8 +75,8 @@
         '@types/mocha': '^10.0.10',
         '@types/node': '^24.3.0',
         '@types/toastify-js': '^1.12.4',
-        '@typescript-eslint/eslint-plugin': '^8.40.0',
-        '@typescript-eslint/parser': '^8.40.0',
+        '@typescript-eslint/eslint-plugin': '^8.41.0',
+        '@typescript-eslint/parser': '^8.41.0',
         chai: '^6.0.1',
         esbuild: '^0.25.9',
         eslint: '^9.34.0',
