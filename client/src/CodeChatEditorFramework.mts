@@ -104,20 +104,21 @@ class WebSocketComm {
         };
 
         // Provide logging to help track down errors.
-        this.ws.onerror = (event: any) => {
+        this.ws.onerror = (event: Event) => {
             report_error(
-                `CodeChat Client: websocket error ${JSON.stringify(event)}.`,
+                `CodeChat Client: websocket error.`, event
             );
         };
 
-        this.ws.onclose = (event: any) => {
+        this.ws.onclose = (event: CloseEvent) => {
             console_log(
-                `CodeChat Client: websocket closed by event type ${event.type}: ${event.detail}. This should only happen on shutdown.`,
+                `CodeChat Client: websocket ${event.wasClean ? "" : "*NOT*"} cleanly closed ${event.reason}. This should only happen on shutdown.`
             );
+            console_log(event);
         };
 
         // Handle websocket messages.
-        this.ws.onmessage = (event: any) => {
+        this.ws.onmessage = (event: MessageEvent) => {
             // Parse the received message, which must be a single element of a
             // dictionary representing a `JointMessage`.
             const joint_message = JSON.parse(event.data) as EditorMessage;
@@ -444,7 +445,10 @@ export const format_struct = (complex_data_structure: any): string =>
           )
         : "";
 
-const report_error = (text: string) => {
+const report_error = (text: string, ...objs: any) => {
     console.error(text);
+    if (objs !== undefined) {
+        console.log(...objs);
+    }
     show_toast(text);
 };

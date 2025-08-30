@@ -187,9 +187,9 @@ export const page_init = () => {
             on_navigate,
         );
         document.addEventListener("click", on_click);
-        // Provide basic error reporting for uncaught errors. However, enabling either of these makes the Client not work. ???
-        //window.addEventListener("unhandledrejection", on_error);
-        //window.addEventListener("error", on_error);
+        // Provide basic error reporting for uncaught errors.
+        window.addEventListener("unhandledrejection", on_error);
+        window.addEventListener("error", on_error);
 
         window.CodeChatEditor = {
             open_lp,
@@ -583,6 +583,7 @@ export const on_error = (event: Event) => {
         err_str = `Unexpected error ${typeof event}: ${event}`;
     }
     show_toast(`Error: ${err_str}`);
+    console.error(event);
 };
 
 // Testing
