@@ -43,6 +43,7 @@ import {
 } from "./shared_types.mjs";
 import {
     console_log,
+    DEBUG_ENABLED,
     on_error,
     on_dom_content_loaded,
 } from "./CodeChatEditor.mjs";
@@ -65,9 +66,11 @@ class WebSocketComm {
     // Use a unique ID for each websocket message sent. See the Implementation
     // section on Message IDs for more information.
     ws_id = -9007199254740988;
+
     // The websocket used by this class. Really a `ReconnectingWebSocket`, but
     // that's not a type.
     ws: WebSocket;
+
     // A map of message id to (timer id, callback) for all pending messages.
     pending_messages: Record<
         number,
@@ -76,9 +79,15 @@ class WebSocketComm {
             callback: () => void;
         }
     > = {};
+
     // The current filename of the file being edited. This is provided by the
     // IDE and passed back to it, but not otherwise used by the Framework.
     current_filename: string | undefined = undefined;
+
+    // True when the iframe is loading, so that an `Update` should be postponed
+    // until the page load is finished. Otherwise, the page is fully loaded, so
+    // the `Update` may be applied immediately.
+    is_loading = false;
 
     // A promise to serialize calls to `set_content`.
     promise = Promise.resolve();
@@ -112,11 +121,9 @@ class WebSocketComm {
             // Parse the received message, which must be a single element of a
             // dictionary representing a `JointMessage`.
             const joint_message = JSON.parse(event.data) as EditorMessage;
-            const { id: id, message: message } = joint_message;
+            const { id, message } = joint_message;
             console_log(
-                `Received data id = ${id}, message = ${JSON.stringify(
-                    message,
-                ).substring(0, MAX_MESSAGE_LENGTH)}`,
+                `Received data id = ${id}, message = ${format_struct(message)}`,
             );
             assert(id !== undefined);
             assert(message !== undefined);
@@ -130,62 +137,61 @@ class WebSocketComm {
                 case "Update":
                     // Load this data in.
                     const current_update = value as UpdateMessageContents;
-                    // Check or update the `current_filename`.
-                    if (this.current_filename === undefined) {
-                        this.current_filename = current_update.file_path;
-                    } else if (
-                        current_update.file_path !== this.current_filename
-                    ) {
-                        const msg = `Ignoring update for ${current_update.file_path} because it's not the current file ${this.current_filename}.`;
-                        report_error(msg);
-                        this.send_result(id, msg);
-                        break;
-                    }
-                    const contents = current_update.contents;
-                    const cursor_position = current_update.cursor_position;
-                    if (contents !== undefined) {
-                        if (
-                            root_iframe!.contentDocument?.readyState ===
-                            "complete"
+                    // The rest of this should run after all other messages have been processed.
+                    this.promise = this.promise.finally(async () => {
+                        // Check or update the `current_filename`.
+                        if (this.current_filename === undefined) {
+                            this.current_filename = current_update.file_path;
+                        } else if (
+                            current_update.file_path !== this.current_filename
                         ) {
-                            // Wait until after the DOM is ready, since we rely on content set in `on_dom_content_loaded` in the Client.
-                            this.promise = this.promise.finally(
-                                async () =>
-                                    await set_content(
-                                        contents,
-                                        current_update.cursor_position,
-                                    ),
-                            );
-                        } else {
-                            // If the page is still loading, wait until the load
-                            // completes before updating the editable contents.
-                            //
-                            // Construct the promise to use; this causes the
-                            // `onload` callback to be set immediately.
-                            const p = new Promise<void>(
-                                (resolve) =>
-                                    (root_iframe!.onload = async () => {
-                                        await set_content(
-                                            contents,
-                                            current_update.cursor_position,
-                                        );
-                                        resolve();
-                                    }),
-                            );
-                            this.promise = this.promise.finally(() => p);
+                            const msg = `Ignoring update for ${current_update.file_path} because it's not the current file ${this.current_filename}.`;
+                            report_error(msg);
+                            this.send_result(id, msg);
+                            return;
                         }
-                    } else if (cursor_position !== undefined) {
-                        // We might receive a message while the Client is
-                        // reloading; during this period, `scroll_to_line` isn't
-                        // defined.
-                        this.promise = this.promise.finally(() =>
-                            root_iframe!.contentWindow?.CodeChatEditor.scroll_to_line?.(
+                        const contents = current_update.contents;
+                        const cursor_position = current_update.cursor_position;
+                        if (contents !== undefined) {
+                            // I'd prefer to use a system-maintained value to determine the ready state of the iframe,
+                            // such as `readyState`. However, this value only applies to the initial load of the iframe;
+                            // it doesn't change when the iframe's `src` attribute is changed. So, we have to track
+                            // this manually instead.
+                            if (!this.is_loading) {
+                                // Wait until after the DOM is ready, since we rely on content set in `on_dom_content_loaded` in the Client.
+                                await set_content(
+                                    contents,
+                                    current_update.cursor_position,
+                                );
+                            } else {
+                                // If the page is still loading, wait until the load
+                                // completes before updating the editable contents.
+                                //
+                                // Construct the promise to use; this causes the
+                                // `onload` callback to be set immediately.
+                                await new Promise<void>(
+                                    (resolve) =>
+                                        (root_iframe!.onload = async () => {
+                                            this.is_loading = false;
+                                            await set_content(
+                                                contents,
+                                                current_update.cursor_position,
+                                            );
+                                            resolve();
+                                        }),
+                                );
+                            }
+                        } else if (cursor_position !== undefined) {
+                            // We might receive a message while the Client is
+                            // reloading; during this period, `scroll_to_line` isn't
+                            // defined.
+                            root_iframe!.contentWindow?.CodeChatEditor?.scroll_to_line?.(
                                 cursor_position,
-                            ),
-                        );
-                    }
+                            );
+                        }
 
-                    this.send_result(id, null);
+                        this.send_result(id, null);
+                    });
                     break;
 
                 case "CurrentFile":
@@ -199,27 +205,27 @@ class WebSocketComm {
                             ? "?test"
                             : "&test"
                         : "";
-                    // If the page is still loading, then don't save. Otherwise,
-                    // save the editor contents if necessary.
-                    const cce = get_client();
-                    this.promise = this.promise
-                        .finally(() => cce?.on_save(true))
-                        .finally(() => {
-                            // Now, it's safe to load a new file.
-                            // Tell the client to allow this navigation -- the
-                            // document it contains has already been saved.
-                            if (cce !== undefined) {
-                                cce.allow_navigation = true;
-                            }
-                            this.set_root_iframe_src(current_file + testSuffix);
-                            // The `current_file` is a URL-encoded path, not a
-                            // filesystem path. So, we can't use it for
-                            // `current_filename`. Instead, signal that the
-                            // `current_filename` should be set on the next `Update`
-                            // message.
-                            this.current_filename = undefined;
-                            this.send_result(id, null);
-                        });
+                    // Execute this after all other messages have been processed.
+                    this.promise = this.promise.finally(async () => {
+                        // If the page is still loading, then don't save. Otherwise,
+                        // save the editor contents if necessary.
+                        const cce = get_client();
+                        await cce?.on_save(true);
+                        // Now, it's safe to load a new file.
+                        // Tell the client to allow this navigation -- the
+                        // document it contains has already been saved.
+                        if (cce !== undefined) {
+                            cce.allow_navigation = true;
+                        }
+                        this.set_root_iframe_src(current_file + testSuffix);
+                        // The `current_file` is a URL-encoded path, not a
+                        // filesystem path. So, we can't use it for
+                        // `current_filename`. Instead, signal that the
+                        // `current_filename` should be set on the next `Update`
+                        // message.
+                        this.current_filename = undefined;
+                        this.send_result(id, null);
+                    });
                     break;
 
                 case "Result":
@@ -244,9 +250,9 @@ class WebSocketComm {
                     break;
 
                 default:
-                    const msg = `Received unhandled message ${key}(${JSON.stringify(
+                    const msg = `Received unhandled message ${key}(${format_struct(
                         value,
-                    ).substring(0, MAX_MESSAGE_LENGTH)})`;
+                    )})`;
                     report_error(msg);
                     this.send_result(id, msg);
                     break;
@@ -254,16 +260,19 @@ class WebSocketComm {
         };
     }
 
+    send = (data: any) => this.ws.send(data);
+    close = (...args: any) => this.ws.close(...args);
+
     set_root_iframe_src = (url: string) => {
         // Set the new src to (re)load content. At startup, the `srcdoc`
         // attribute shows some welcome text. Remove it so that we can now
         // assign the `src` attribute.
         root_iframe!.removeAttribute("srcdoc");
         root_iframe!.src = url;
+        // Track the `is_loading` status.
+        this.is_loading = true;
+        root_iframe!.onload = () => (this.is_loading = false);
     };
-
-    send = (data: any) => this.ws.send(data);
-    close = (...args: any) => this.ws.close(...args);
 
     // Report an error from the server.
     report_server_timeout = (message_id: number) => {
@@ -283,12 +292,7 @@ class WebSocketComm {
             assert(this.current_filename !== undefined);
             message.Update.file_path = this.current_filename!;
         }
-        console_log(
-            `Sent message ${id}, ${JSON.stringify(message).substring(
-                0,
-                MAX_MESSAGE_LENGTH,
-            )}`,
-        );
+        console_log(`Sent message ${id}, ${format_struct(message)}`);
         const jm: EditorMessage = {
             id: id,
             message: message,
@@ -304,17 +308,24 @@ class WebSocketComm {
         };
     };
 
+    // This is called by the Client when the user navigates to another webpage.
     current_file = (url: URL) => {
-        // If this points to the Server, then tell the IDE to load a new file.
-        if (url.host === window.location.host) {
-            this.send_message({ CurrentFile: [url.toString(), null] }, () => {
+        this.promise = this.promise.finally(() => {
+            if (url.host === window.location.host) {
+                // If this points to the Server, then tell the IDE to load a new file.
+                this.send_message(
+                    { CurrentFile: [url.toString(), null] },
+                    () => {
+                        this.set_root_iframe_src(url.toString());
+                    },
+                );
+            } else {
+                // Otherwise, navigate to the provided page.
                 this.set_root_iframe_src(url.toString());
-            });
-        } else {
-            this.set_root_iframe_src(url.toString());
-        }
-        // Read the `current_filename` from the next `Update` message.
-        this.current_filename = undefined;
+            }
+            // Read the `current_filename` from the next `Update` message.
+            this.current_filename = undefined;
+        });
     };
 
     // Send a result (a response to a message from the server) back to the
@@ -324,9 +335,7 @@ class WebSocketComm {
             Result: result === null ? { Ok: "Void" } : { Err: result },
         };
         console_log(
-            `Sending result id = ${id}, message = ${JSON.stringify(
-                message,
-            ).substring(0, MAX_MESSAGE_LENGTH)}`,
+            `Sending result id = ${id}, message = ${format_struct(message)}`,
         );
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
@@ -425,6 +434,15 @@ const show_toast = (text: string) => {
         root_iframe!.contentWindow!.CodeChatEditor.show_toast(text);
     }
 };
+
+// Format a complex data structure as a string when in debug mode.
+export const format_struct = (complex_data_structure: any): string =>
+    DEBUG_ENABLED
+        ? JSON.stringify(complex_data_structure).substring(
+              0,
+              MAX_MESSAGE_LENGTH,
+          )
+        : "";
 
 const report_error = (text: string) => {
     console.error(text);

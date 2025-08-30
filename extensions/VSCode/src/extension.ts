@@ -50,7 +50,7 @@ enum CodeChatEditorClientLocation {
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH = 200;
 // The timeout for a websocket `Response`, in ms.
-const RESPONSE_TIMEOUT_MS = 1500000;
+const RESPONSE_TIMEOUT_MS = 15000;
 // True to enable additional debug logging.
 const DEBUG_ENABLED = false;
 

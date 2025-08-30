@@ -83,8 +83,8 @@
     },
     "devDependencies": {
         "@types/escape-html": "^1",
-        "@types/ws": "^8",
         "@types/vscode": "^1.51.0",
+        "@types/ws": "^8",
         "@typescript-eslint/eslint-plugin": "^8",
         "@typescript-eslint/parser": "^8",
         "@vscode/vsce": "^3",
@@ -93,6 +93,7 @@
         "eslint-plugin-import": "^2",
         "eslint-plugin-node": "^11",
         "ovsx": "^0.10",
+        "prettier": "^3.6.2",
         "typescript": "^5"
     },
     "optionalDependencies": {

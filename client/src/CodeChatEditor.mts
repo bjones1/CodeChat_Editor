@@ -580,7 +580,7 @@ export const on_error = (event: Event) => {
     } else if (event instanceof PromiseRejectionEvent) {
         err_str = `${event.promise} rejected: ${event.reason}`;
     } else {
-        err_str = `Unexpected error ${typeof(event)}: ${event}`
+        err_str = `Unexpected error ${typeof event}: ${event}`;
     }
     show_toast(`Error: ${err_str}`);
 };

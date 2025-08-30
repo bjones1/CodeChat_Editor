@@ -95,7 +95,6 @@ import { show_toast } from "./show_toast.mjs";
 // Globals
 // -------
 let current_view: EditorView;
-console.log("*************** Init");
 let tinymce_singleton: Editor | undefined;
 // When true, don't update on the next call to `on_dirty`. See that function for
 // more info.
@@ -995,7 +994,6 @@ export const CodeMirror_load = async (
             state,
             scrollTo: scrollSnapshot,
         });
-        console.log("*************** Defined");
         tinymce_singleton = (
             await init({
                 selector: "#TinyMCE-inst",
