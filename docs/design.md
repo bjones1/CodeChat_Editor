@@ -10,7 +10,7 @@ To build from source
 3.  [Install
     NPM](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) (the
     Node.js package manager).
-4.  In the `server/` directory:
+4.  In the `server/` directory:
     1.  Run `./bt install --dev`.
     2.  Run `./bt build`.
     3.  Run `cargo run -- start ../README.md`.
