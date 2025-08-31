@@ -22,6 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+*   No changes yet.
+
+Version 0.1.30 -- 2025-30-Aug
+-----------------------------
+
 *   Correct ordering of messages sent to and from the Framework to the Client.
 *   Fix and improve test framework and error reporting.
 *   Improve MathJax bundling.

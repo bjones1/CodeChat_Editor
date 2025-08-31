@@ -43,7 +43,7 @@
         url: 'https://github.com/bjones1/CodeChat_editor',
     },
     type: 'module',
-    version: '0.1.29',
+    version: '0.1.30',
     dependencies: {
         '@codemirror/lang-cpp': '^6.0.3',
         '@codemirror/lang-css': '^6.3.1',
