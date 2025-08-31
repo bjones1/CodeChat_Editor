@@ -222,8 +222,8 @@ export const on_dom_content_loaded = (on_load_func: () => void) => {
 //
 // True if this is a CodeChat Editor document (not a source file).
 const is_doc_only = () => {
-    // This might be called by the framework before a document is loaded.
-    // So, make sure `current_metadata` exists first.
+    // This might be called by the framework before a document is loaded. So,
+    // make sure `current_metadata` exists first.
     return current_metadata?.["mode"] === "markdown";
 };
 
@@ -372,8 +372,8 @@ const save_lp = (is_dirty: boolean) => {
                 "CodeChat-body",
             ) as HTMLDivElement;
             mathJaxUnTypeset(codechat_body);
-            // To save a document only, simply get the HTML from the only Tiny MCE
-            // div.
+            // To save a document only, simply get the HTML from the only Tiny
+            // MCE div.
             tinymce.activeEditor!.save();
             const html = tinymce.activeEditor!.getContent();
             (
@@ -556,8 +556,8 @@ const save_then_navigate = (codeChatEditorUrl: URL) => {
     });
 };
 
-// This can be called by the framework. Therefore, make no assumptions
-// about variables being valid; it be called before a file is loaded, etc.
+// This can be called by the framework. Therefore, make no assumptions about
+// variables being valid; it be called before a file is loaded, etc.
 const scroll_to_line = (line: number) => {
     if (is_doc_only()) {
         // TODO.

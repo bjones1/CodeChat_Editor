@@ -89,7 +89,10 @@ class WebSocketComm {
     // the `Update` may be applied immediately.
     is_loading = false;
 
-    // A promise to serialize calls to `set_content`.
+    // A promise to serialize calls to and from the Client. This is important: a
+    // `CurrentFile` requires the Client to save, then switch to a new web page.
+    // If an `Update` comes in, it should be applied after the `CurrentFile` is
+    // finished executing.
     promise = Promise.resolve();
 
     constructor(ws_url: string) {
@@ -138,7 +141,8 @@ class WebSocketComm {
                 case "Update":
                     // Load this data in.
                     const current_update = value as UpdateMessageContents;
-                    // The rest of this should run after all other messages have been processed.
+                    // The rest of this should run after all other messages have
+                    // been processed.
                     this.promise = this.promise.finally(async () => {
                         // Check or update the `current_filename`.
                         if (this.current_filename === undefined) {
@@ -154,19 +158,24 @@ class WebSocketComm {
                         const contents = current_update.contents;
                         const cursor_position = current_update.cursor_position;
                         if (contents !== undefined) {
-                            // I'd prefer to use a system-maintained value to determine the ready state of the iframe,
-                            // such as `readyState`. However, this value only applies to the initial load of the iframe;
-                            // it doesn't change when the iframe's `src` attribute is changed. So, we have to track
-                            // this manually instead.
+                            // I'd prefer to use a system-maintained value to
+                            // determine the ready state of the iframe, such as
+                            // `readyState`. However, this value only applies to
+                            // the initial load of the iframe; it doesn't change
+                            // when the iframe's `src` attribute is changed. So,
+                            // we have to track this manually instead.
                             if (!this.is_loading) {
-                                // Wait until after the DOM is ready, since we rely on content set in `on_dom_content_loaded` in the Client.
+                                // Wait until after the DOM is ready, since we
+                                // rely on content set in
+                                // `on_dom_content_loaded` in the Client.
                                 await set_content(
                                     contents,
                                     current_update.cursor_position,
                                 );
                             } else {
-                                // If the page is still loading, wait until the load
-                                // completes before updating the editable contents.
+                                // If the page is still loading, wait until the
+                                // load completes before updating the editable
+                                // contents.
                                 //
                                 // Construct the promise to use; this causes the
                                 // `onload` callback to be set immediately.
@@ -184,8 +193,8 @@ class WebSocketComm {
                             }
                         } else if (cursor_position !== undefined) {
                             // We might receive a message while the Client is
-                            // reloading; during this period, `scroll_to_line` isn't
-                            // defined.
+                            // reloading; during this period, `scroll_to_line`
+                            // isn't defined.
                             root_iframe!.contentWindow?.CodeChatEditor?.scroll_to_line?.(
                                 cursor_position,
                             );
@@ -206,15 +215,16 @@ class WebSocketComm {
                             ? "?test"
                             : "&test"
                         : "";
-                    // Execute this after all other messages have been processed.
+                    // Execute this after all other messages have been
+                    // processed.
                     this.promise = this.promise.finally(async () => {
-                        // If the page is still loading, then don't save. Otherwise,
-                        // save the editor contents if necessary.
+                        // If the page is still loading, then don't save.
+                        // Otherwise, save the editor contents if necessary.
                         const cce = get_client();
                         await cce?.on_save(true);
-                        // Now, it's safe to load a new file.
-                        // Tell the client to allow this navigation -- the
-                        // document it contains has already been saved.
+                        // Now, it's safe to load a new file. Tell the client to
+                        // allow this navigation -- the document it contains has
+                        // already been saved.
                         if (cce !== undefined) {
                             cce.allow_navigation = true;
                         }
@@ -313,7 +323,8 @@ class WebSocketComm {
     current_file = (url: URL) => {
         this.promise = this.promise.finally(() => {
             if (url.host === window.location.host) {
-                // If this points to the Server, then tell the IDE to load a new file.
+                // If this points to the Server, then tell the IDE to load a new
+                // file.
                 this.send_message(
                     { CurrentFile: [url.toString(), null] },
                     () => {

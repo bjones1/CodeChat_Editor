@@ -341,8 +341,8 @@ macro_rules! queue_send {
 
 /// Globals
 /// -------
-// The timeout for a reply from a websocket, in ms. Use a short timeout to speed up
-// unit tests.
+// The timeout for a reply from a websocket, in ms. Use a short timeout to speed
+// up unit tests.
 const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
     Duration::from_millis(500)
 } else {
@@ -353,7 +353,8 @@ const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
 /// this server.
 const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 
-/// A message ID which won't be used by anything but a `Result` produced by an error not produced in response to a message.
+/// A message ID which won't be used by anything but a `Result` produced by an
+/// error not produced in response to a message.
 pub const RESERVED_MESSAGE_ID: f64 = if cfg!(test) {
     // A simpler value when testing.
     0.0
@@ -392,7 +393,8 @@ const MATHJAX_TAGS: &str = concatdoc!(
     r#"
     <script>
         MathJax = {"#,
-    // See the [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
+    // See the
+    // [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
     r#"
             chtml: {
                 fontURL: "/static/mathjax-newcm-font/chtml/woff2",
@@ -402,7 +404,9 @@ const MATHJAX_TAGS: &str = concatdoc!(
             },
         };
     </script>"#,
-    // Per the [MathJax docs](https://docs.mathjax.org/en/latest/web/components/combined.html#tex-chtml), enable tex input and HTML output.
+    // Per the [MathJax
+    // docs](https://docs.mathjax.org/en/latest/web/components/combined.html#tex-chtml),
+    // enable tex input and HTML output.
     r#"
     <script defer src="/static/mathjax/tex-chtml.js"></script>"#
 );
