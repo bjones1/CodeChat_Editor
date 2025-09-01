@@ -415,6 +415,7 @@ pub async fn translation_task(
 
                 // Leave space for a server message during the init phase.
                 let mut id: f64 = INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT;
+                // The source code, provided by the IDE. It will use whatever the IDE provides for EOLs, which is stored in `eol` below.
                 let mut source_code = String::new();
                 let mut code_mirror_doc = String::new();
                 // The initial state will be overwritten by the first `Update`
@@ -530,45 +531,38 @@ pub async fn translation_task(
                                     // this is a PDF file. (TODO: look at the
                                     // magic number also -- "%PDF").
                                     let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
-                                    let (simple_http_response, option_update, file_contents) = match file_contents_option {
+                                    let ((simple_http_response, option_update), file_contents) = match file_contents_option {
                                         Some(file_contents) => {
                                             // If there are Windows newlines, replace
                                             // with Unix; this is reversed when the
                                             // file is sent back to the IDE.
-                                            eol = find_eol_type(&file_contents);
-                                            let file_contents = if use_pdf_js { file_contents } else { file_contents.replace("\r\n", "\n") };
-                                            file_to_response(&http_request, &current_file, Some(file_contents), use_pdf_js).await
+                                            (file_to_response(&http_request, &current_file, Some(&file_contents), use_pdf_js).await, file_contents)
                                         },
                                         None => {
                                             // The file wasn't available in the IDE.
                                             // Look for it in the filesystem.
                                             match File::open(&http_request.file_path).await {
                                                 Err(err) => (
-                                                    SimpleHttpResponse::Err(SimpleHttpResponseError::Io(err)),
-                                                    None,
-                                                    None
+                                                    (
+                                                        SimpleHttpResponse::Err(SimpleHttpResponseError::Io(err)),
+                                                        None,
+                                                    ),
+                                                    // There's no file, so return empty contents, which will be ignored.
+                                                    "".to_string()
                                                 ),
                                                 Ok(mut fc) => {
                                                     let option_file_contents = try_read_as_text(&mut fc).await;
-                                                    let option_file_contents = if let Some(file_contents) = option_file_contents {
-                                                        eol = find_eol_type(&file_contents);
-                                                        let file_contents = if use_pdf_js { file_contents } else { file_contents.replace("\r\n", "\n") };
-                                                        Some(file_contents)
-                                                    } else {
-                                                        None
-                                                    };
-                                                    // <a id="binary-file-sniffer"></a>If this
-                                                    // is a binary file (meaning we can't read
-                                                    // the contents as UTF-8), send the
-                                                    // contents as none to signal this isn't a
-                                                    // text file.
-                                                    file_to_response(
-                                                        &http_request,
-                                                        &current_file,
-                                                        option_file_contents,
-                                                        use_pdf_js,
+                                                    (
+                                                        file_to_response(
+                                                            &http_request,
+                                                            &current_file,
+                                                            option_file_contents.as_ref(),
+                                                            use_pdf_js,
+                                                        )
+                                                        .await,
+                                                        // If the file is binary, return empty contents, which will be ignored.
+                                                        option_file_contents.unwrap_or("".to_string())
                                                     )
-                                                    .await
                                                 }
                                             }
                                         }
@@ -582,9 +576,10 @@ pub async fn translation_task(
                                             error!("Not plain!");
                                             break;
                                         };
+                                        source_code = file_contents;
+                                        eol = find_eol_type(&source_code);
                                         // We must clone here, since the original
                                         // is placed in the TX queue.
-                                        source_code = file_contents.unwrap();
                                         code_mirror_doc = plain.doc.clone();
                                         code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
                                         sync_state = SyncState::Pending(id);
@@ -841,7 +836,9 @@ pub async fn translation_task(
                                                 Some(cfw) => match codechat_for_web_to_source(
                                                     &cfw)
                                                 {
-                                                    Ok(result) => {
+                                                    Ok(new_source_code) => {
+                                                        // Correct EOL endings for use with the IDE.
+                                                        let new_source_code_eol = eol_convert(new_source_code, &eol);
                                                         let ccfw = if sync_state == SyncState::InSync && allow_source_diffs {
                                                             Some(CodeChatForWeb {
                                                                 metadata: cfw.metadata,
@@ -849,7 +846,7 @@ pub async fn translation_task(
                                                                     // Diff with correct EOLs, so that (for
                                                                     // CRLF files as well as LF files) offsets
                                                                     // are correct.
-                                                                    doc: diff_str(&eol_convert(source_code, &eol), &eol_convert(result.clone(), &eol)),
+                                                                    doc: diff_str(&source_code, &new_source_code_eol),
                                                                     doc_blocks: vec![],
                                                                 }),
                                                             })
@@ -859,14 +856,12 @@ pub async fn translation_task(
                                                                 source: CodeMirrorDiffable::Plain(CodeMirror {
                                                                     // We must clone here, so that it can be
                                                                     // placed in the TX queue.
-                                                                    doc: eol_convert(result.clone(), &eol),
+                                                                    doc: new_source_code_eol.clone(),
                                                                     doc_blocks: vec![],
                                                                 }),
                                                             })
                                                         };
-                                                        // Store the document with Unix-style EOLs
-                                                        // (LFs).
-                                                        source_code = result;
+                                                        source_code = new_source_code_eol;
                                                         let CodeMirrorDiffable::Plain(cmd) = cfw.source else {
                                                             // TODO: support diffable!
                                                             error!("No diff!");
