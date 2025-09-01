@@ -19,11 +19,18 @@
 # `vscodeignore` - Files not to package
 # =====================================
 #
-# See
-# [Using .vscodeignore](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#using-.vscodeignore).
+# See [Using
+# .vscodeignore](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#using-.vscodeignore).
 #
 # Omit all TypeScript source.
 src/**
+
+# Omit libraries, since `esbuild` takes care of packaging.
+node_modules/
+
+# Omit output, which could include map files from non-production builds; `vsce`
+# will always package the actual JavaScript for the extension.
+out/
 
 # Omit VSCode config.
 .vscode/**
@@ -40,4 +47,4 @@ developer.md
 jsconfig.json
 tsconfig.json
 
-# CodeChat Editor lexer: python. See TODO.
+# CodeChat Editor lexer: python.

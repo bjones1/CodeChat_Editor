@@ -77,14 +77,9 @@ enum Commands {
     /// Build everything.
     Build,
     /// Build the Client.
-    ClientBuild {
-        /// True to build for distribution, instead of development.
-        #[arg(short, long, default_value_t = false)]
-        dist: bool,
-        /// True to skip checks for TypeScript errors in the Client.
-        #[arg(short, long, default_value_t = false)]
-        skip_check_errors: bool,
-    },
+    ClientBuild(TypeScriptBuildOptions),
+    /// Build the extensions.
+    ExtBuild(TypeScriptBuildOptions),
     /// Change the version for the client, server, and extensions.
     ChangeVersion {
         /// The new version number, such as "0.1.1".
@@ -105,6 +100,16 @@ enum Commands {
         #[arg(short, long)]
         artifacts: Option<String>,
     },
+}
+
+#[derive(Parser)]
+struct TypeScriptBuildOptions {
+    /// True to build for distribution, instead of development.
+    #[arg(short, long, default_value_t = false)]
+    dist: bool,
+    /// True to skip checks for TypeScript errors in the Client.
+    #[arg(short, long, default_value_t = false)]
+    skip_check_errors: bool,
 }
 
 // Code
@@ -500,6 +505,48 @@ fn run_client_build(
     Ok(())
 }
 
+// Build the CodeChat Editor extensions.
+fn run_extensions_build(
+    // True to build for distribution, not development.
+    dist: bool,
+    // True to skip checking for TypeScript errors; false to perform these
+    // checks.
+    skip_check_errors: bool,
+) -> io::Result<()> {
+    let esbuild = PathBuf::from_slash("node_modules/.bin/esbuild");
+    let distflag = if dist { "--minify" } else { "--sourcemap" };
+    // This makes the program work from either the `server/` or `client/`
+    // directories.
+    let rel_path = "../extensions/VSCode";
+
+    // The main build for the Client.
+    run_script(
+        &esbuild,
+        &[
+            "src/extension.ts",
+            "--platform=node",
+            "--format=cjs",
+            "--bundle",
+            // Don't bundle the VSCode library, since it's built in.
+            "--external:vscode",
+            "--outdir=./out",
+            distflag,
+        ],
+        rel_path,
+        true,
+    )?;
+    // Finally, check the TypeScript with the (slow) TypeScript compiler.
+    if !skip_check_errors {
+        run_script(
+            PathBuf::from_slash("node_modules/.bin/tsc"),
+            &["-noEmit"],
+            rel_path,
+            true,
+        )?;
+    }
+    Ok(())
+}
+
 fn run_change_version(new_version: &String) -> io::Result<()> {
     let replacement_string = format!("${{1}}{new_version}${{2}}");
     search_and_replace_file(
@@ -553,7 +600,16 @@ fn run_postrelease(target: &str) -> io::Result<()> {
     )?;
     run_script(
         "npx",
-        &["vsce", "package", "--target", vsce_target],
+        &[
+            "vsce",
+            "package",
+            // We use esbuild to package; therefore, tell `vsce` not to package.
+            "--no-dependencies",
+            // Since we include the server as a binary, package for the
+            // architecture the binary was build for.
+            "--target",
+            vsce_target,
+        ],
         "../extensions/VSCode",
         true,
     )?;
@@ -573,10 +629,12 @@ impl Cli {
             Commands::Update => run_update(),
             Commands::Test => run_test(),
             Commands::Build => run_build(),
-            Commands::ClientBuild {
-                dist,
-                skip_check_errors,
-            } => run_client_build(*dist, *skip_check_errors),
+            Commands::ClientBuild(build_options) => {
+                run_client_build(build_options.dist, build_options.skip_check_errors)
+            }
+            Commands::ExtBuild(build_options) => {
+                run_extensions_build(build_options.dist, build_options.skip_check_errors)
+            }
             Commands::ChangeVersion { new_version } => run_change_version(new_version),
             Commands::Prerelease => run_prerelease(),
             Commands::Postrelease { target, .. } => run_postrelease(target),

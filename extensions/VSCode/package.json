@@ -20,7 +20,7 @@
         "Visual Studio Code extension"
     ],
     "license": "GPL-3.0-only",
-    "main": "out/extensions/VSCode/src/extension.js",
+    "main": "out/extension.js",
     "name": "codechat-editor-client",
     "prettier": {
         "tabWidth": 4
@@ -88,6 +88,7 @@
         "@typescript-eslint/eslint-plugin": "^8",
         "@typescript-eslint/parser": "^8",
         "@vscode/vsce": "^3",
+        "esbuild": "^0.25.9",
         "eslint": "^9",
         "eslint-config-prettier": "^10",
         "eslint-plugin-import": "^2",
@@ -100,10 +101,7 @@
         "bufferutil": "^4"
     },
     "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
-        "pretest": "npm run compile",
-        "test": "node ./out/test/runTest.js"
+        "compile": "cargo run --manifest-path=../../builder/Cargo.toml ext-build",
+        "vscode:prepublish": "cargo run --manifest-path=../../builder/Cargo.toml ext-build --dist"
     }
 }
