@@ -409,17 +409,19 @@ export const deleteDocBlock = StateEffect.define<{ from: number }>({
 // Create a [widget](https://codemirror.net/docs/ref/#view.WidgetType) which
 // contains a doc block.
 class DocBlockWidget extends WidgetType {
+    dom: null | HTMLDivElement;
     constructor(
         readonly indent: string,
         readonly delimiter: string,
         readonly contents: string,
+        dom: null | HTMLDivElement
         // Only used in an update to avoid changing an already-modified doc
         // block.
-        readonly dom: null | HTMLDivElement,
     ) {
         // TODO: I don't understand why I don't need to store the provided
         // parameters in the object: `this.indent = indent;`, etc.
         super();
+        this.dom = dom;
     }
 
     eq(other: DocBlockWidget) {
@@ -446,6 +448,7 @@ class DocBlockWidget extends WidgetType {
             this.contents +
             "</div>";
         mathJaxTypeset(wrap);
+        this.dom = wrap;
         return wrap;
     }
 
@@ -473,6 +476,7 @@ class DocBlockWidget extends WidgetType {
             contents_div.innerHTML = this.contents;
             mathJaxTypeset(contents_div);
         }
+        this.dom = dom as HTMLDivElement;
 
         // Indicate the update was successful.
         return true;
@@ -502,6 +506,7 @@ class DocBlockWidget extends WidgetType {
             const tinymce_div = document.getElementById("TinyMCE-inst")!;
             codechat_body.insertBefore(tinymce_div, null);
         }
+        this.dom = null;
     }
 }
 
@@ -620,7 +625,28 @@ const on_dirty = (
 export const DocBlockPlugin = ViewPlugin.fromClass(
     class {
         constructor(view: EditorView) {}
-        update(update: ViewUpdate) {}
+        update(update: ViewUpdate) {
+            // If the editor doesn't have focus, ignore selection changes. This
+            // avoid the case where cursor movement in the IDE produces
+            // selection changes in the Client, which then steals focus. TODO:
+            // with the editor isn't focused, highlight the relevant line or
+            // something similar.
+            if (update.selectionSet && update.view.hasFocus) {
+                // See if the new main selection falls within a doc block.
+                const main_selection = update.state.selection.main;
+                update.state
+                    .field(docBlockField)
+                    .between(
+                        main_selection.from,
+                        main_selection.to,
+                        (from: number, to: number, value: Decoration) => {
+                            // If so, give focus to the contents of the doc
+                            // block.
+                            value.spec.widget.dom?.childNodes[1].focus();
+                        },
+                    );
+            }
+        }
     },
     {
         eventHandlers: {
