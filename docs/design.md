@@ -26,20 +26,27 @@ These form a set of high-level requirements to guide the project.
 *   View source code as <a id="vision-code-blocks-and-doc-blocks"></a>[code
     blocks and doc blocks](index.md#code-blocks-and-doc-blocks). Doc blocks are
     lines of source which contain only correctly-formatted comments.
+
 *   Provide support for a <a id="vision-programming-language-support"></a>[wide
     variety of programming languages](index.md#programming-language-support).
+
 *   Provide integration with a <a id="vision-ide-integration"></a>[wide variety
     of IDEs/text editors](index.md#ide-integration).
-*   Load a document from source code, allow edits in a GUI, then save it
-    back to source code.
+
+*   Load a document from source code, allow edits in a GUI, then save it back to
+    source code.
+
     *   Provide word processor GUI tools (insert hyperlink, images, headings,
         change font, etc.) for doc blocks.
     *   Provide text editor/IDE tools (syntax highlighting, line numbers, show
         linter feedback) for code blocks.
 *   Zero build: eliminate the traditional project build process -- make it
     almost instantaneous.
+
 *   Doc block markup should be readable and well-known: markdown.
+
 *   Support both a single-file mode and a project mode.
+
     *   A project is a specific directory tree, identified by the presence of a
         TOC. A TOC is just a plain Markdown file with a specific name. A better
         term: not a TOC, but a navigation pane, since the TOC can contain
@@ -50,8 +57,9 @@ These form a set of high-level requirements to guide the project.
         *   Numbering comes from the current page's location within the TOC.
             Pages not in the TOC aren't numbered.
 *   <a id="authoring-support"></a>Provide [authoring
-    support](index.md#authoring-support), which allows authors to easily
-    create book/project-like features. In particular:
+    support](index.md#authoring-support), which allows authors to easily create
+    book/project-like features. In particular:
+
     *   Counters for numbering figures, tables, equations, etc. All counters are
         page-local (no global counters).
     *   Auto-titled links: the link text is automatically derived from the
@@ -108,9 +116,9 @@ These form a set of high-level requirements to guide the project.
         all anchors to be globally unique. HTML allows upper/lowercase ASCII
         plus the hyphen and underscore for IDs, meaning that a 5-character
         string provides >250 million unique anchors.
-
 *   Make picking a file/anchor easy: provide a searchable, expanded TOC listing
     every anchor.
+
 *   Provide edit and view options. (Rely on an IDE to edit raw source.)
 
 ### Nice to have features

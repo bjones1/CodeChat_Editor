@@ -29,7 +29,7 @@ import "mocha/mocha.js";
 import "mocha/mocha.css";
 import { EditorView } from "@codemirror/view";
 import { ChangeSpec, EditorState, EditorSelection } from "@codemirror/state";
-import { exportedForTesting, page_init } from "./CodeChatEditor.mjs";
+import { exportedForTesting } from "./CodeChatEditor.mjs";
 import { CodeMirror, CodeMirrorDocBlockTuple } from "./shared_types.mjs";
 import {
     DocBlockPlugin,
@@ -40,7 +40,9 @@ import {
 // Otherwise, including [CodeChatEditor.mts](CodeChatEditor.mts) elsewhere would
 // double-define everything (producing complaints about two attempts to define
 // each web component).
-export { page_init };
+//
+// Nothing needed at present.
+//
 // Provide convenient access to all functions tested here.
 const { codechat_html_to_markdown } = exportedForTesting;
 

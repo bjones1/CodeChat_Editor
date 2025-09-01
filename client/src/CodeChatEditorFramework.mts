@@ -26,13 +26,11 @@
 // Imports
 // -------
 //
-// ### JavaScript/TypeScript
-//
-// #### Third-party
+// ### Third-party
 import ReconnectingWebSocket from "./third-party/ReconnectingWebSocket.cjs";
 import { show_toast as show_toast_core } from "./show_toast.mjs";
 
-// #### Local
+// ### Local
 import { assert } from "./assert.mjs";
 import {
     CodeChatForWeb,
@@ -91,7 +89,7 @@ class WebSocketComm {
 
     // A promise to serialize calls to and from the Client. This is important: a
     // `CurrentFile` requires the Client to save, then switch to a new web page.
-    // If an `Update` comes in, it should be applied after the `CurrentFile` is
+    // If an `Update` comes in, it should be applied after the `CurrentFile` has
     // finished executing.
     promise = Promise.resolve();
 
@@ -123,7 +121,7 @@ class WebSocketComm {
         // Handle websocket messages.
         this.ws.onmessage = (event: MessageEvent) => {
             // Parse the received message, which must be a single element of a
-            // dictionary representing a `JointMessage`.
+            // dictionary representing an `EditorMessage`.
             const joint_message = JSON.parse(event.data) as EditorMessage;
             const { id, message } = joint_message;
             console_log(
@@ -160,10 +158,11 @@ class WebSocketComm {
                         if (contents !== undefined) {
                             // I'd prefer to use a system-maintained value to
                             // determine the ready state of the iframe, such as
-                            // `readyState`. However, this value only applies to
-                            // the initial load of the iframe; it doesn't change
-                            // when the iframe's `src` attribute is changed. So,
-                            // we have to track this manually instead.
+                            // [readyState](https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState).
+                            // However, this value only applies to the initial
+                            // load of the iframe; it doesn't change when the
+                            // iframe's `src` attribute is changed. So, we have
+                            // to track this manually instead.
                             if (!this.is_loading) {
                                 // Wait until after the DOM is ready, since we
                                 // rely on content set in
@@ -297,6 +296,8 @@ class WebSocketComm {
         callback: () => void = () => 0,
     ) => {
         const id = this.ws_id;
+        // The Client gets every third ID -- the IDE gets another third, while
+        // the Server gets the final third.
         this.ws_id += 3;
         // Add in the current filename to the message, if it's an `Update`.
         if (typeof message == "object" && "Update" in message) {
@@ -321,6 +322,9 @@ class WebSocketComm {
 
     // This is called by the Client when the user navigates to another webpage.
     current_file = (url: URL) => {
+        // TODO: should we delay execution of user navigation until all previous
+        // actions have finished, or ignore them and immediately perform the
+        // user navigation?
         this.promise = this.promise.finally(() => {
             if (url.host === window.location.host) {
                 // If this points to the Server, then tell the IDE to load a new

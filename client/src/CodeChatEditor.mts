@@ -171,42 +171,12 @@ turndownService.use(gfm);
 
 // Page initialization
 // -------------------
-//
-// Load the dynamic content into the static page.
-export const page_init = () => {
-    on_dom_content_loaded(async () => {
-        // Intercept links in this document to save before following the link.
-        /// @ts-ignore
-        navigation.addEventListener("navigate", on_navigate);
-        const ccb = document.getElementById("CodeChat-sidebar") as
-            | HTMLIFrameElement
-            | undefined;
-        /// @ts-ignore
-        ccb?.contentWindow?.navigation.addEventListener(
-            "navigate",
-            on_navigate,
-        );
-        document.addEventListener("click", on_click);
-        // Provide basic error reporting for uncaught errors.
-        window.addEventListener("unhandledrejection", on_error);
-        window.addEventListener("error", on_error);
-
-        window.CodeChatEditor = {
-            open_lp,
-            on_save,
-            scroll_to_line,
-            show_toast,
-            allow_navigation: false,
-        };
-    });
-};
-
 export const set_is_dirty = (value: boolean = true) => {
     is_dirty = value;
 };
 
-// This is copied
-// from[MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
+// This is copied from
+// [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
 export const on_dom_content_loaded = (on_load_func: () => void) => {
     if (document.readyState === "loading") {
         // Loading hasn't finished yet.
@@ -585,6 +555,32 @@ export const on_error = (event: Event) => {
     show_toast(`Error: ${err_str}`);
     console.error(event);
 };
+
+// Load the dynamic content into the static page. Place this last, since we need
+// functions above defined before assigning them to the `CodeChatEditor`
+// namespace.
+on_dom_content_loaded(async () => {
+    // Intercept links in this document to save before following the link.
+    /// @ts-ignore
+    navigation.addEventListener("navigate", on_navigate);
+    const ccb = document.getElementById("CodeChat-sidebar") as
+        | HTMLIFrameElement
+        | undefined;
+    /// @ts-ignore
+    ccb?.contentWindow?.navigation.addEventListener("navigate", on_navigate);
+    document.addEventListener("click", on_click);
+    // Provide basic error reporting for uncaught errors.
+    window.addEventListener("unhandledrejection", on_error);
+    window.addEventListener("error", on_error);
+
+    window.CodeChatEditor = {
+        open_lp,
+        on_save,
+        scroll_to_line,
+        show_toast,
+        allow_navigation: false,
+    };
+});
 
 // Testing
 // -------

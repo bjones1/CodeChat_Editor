@@ -415,7 +415,8 @@ pub async fn translation_task(
 
                 // Leave space for a server message during the init phase.
                 let mut id: f64 = INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT;
-                // The source code, provided by the IDE. It will use whatever the IDE provides for EOLs, which is stored in `eol` below.
+                // The source code, provided by the IDE. It will use whatever
+                // the IDE provides for EOLs, which is stored in `eol` below.
                 let mut source_code = String::new();
                 let mut code_mirror_doc = String::new();
                 // The initial state will be overwritten by the first `Update`
@@ -547,7 +548,8 @@ pub async fn translation_task(
                                                         SimpleHttpResponse::Err(SimpleHttpResponseError::Io(err)),
                                                         None,
                                                     ),
-                                                    // There's no file, so return empty contents, which will be ignored.
+                                                    // There's no file, so return empty
+                                                    // contents, which will be ignored.
                                                     "".to_string()
                                                 ),
                                                 Ok(mut fc) => {
@@ -560,7 +562,8 @@ pub async fn translation_task(
                                                             use_pdf_js,
                                                         )
                                                         .await,
-                                                        // If the file is binary, return empty contents, which will be ignored.
+                                                        // If the file is binary, return empty
+                                                        // contents, which will be ignored.
                                                         option_file_contents.unwrap_or("".to_string())
                                                     )
                                                 }
@@ -837,7 +840,8 @@ pub async fn translation_task(
                                                     &cfw)
                                                 {
                                                     Ok(new_source_code) => {
-                                                        // Correct EOL endings for use with the IDE.
+                                                        // Correct EOL endings for use with the
+                                                        // IDE.
                                                         let new_source_code_eol = eol_convert(new_source_code, &eol);
                                                         let ccfw = if sync_state == SyncState::InSync && allow_source_diffs {
                                                             Some(CodeChatForWeb {

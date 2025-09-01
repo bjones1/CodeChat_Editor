@@ -183,17 +183,12 @@ double accurate_g(
 // Properly configuring the text editor used with the CodeChat Editor
 // significantly improves the authoring process. Recommended settings:
 //
-// *   Enable word wrap:
-//     [vscode](https://learn.microsoft.com/en-us/visualstudio/ide/reference/how-to-manage-word-wrap-in-the-editor?view=vs-2022)
-// *   Use spaces, not tabs​, for indentation:
-//     [vscode](https://code.visualstudio.com/docs/editor/codebasics#_indentation)
-// *   Enable auto-save:
-//     [vscode](https://code.visualstudio.com/docs/editor/codebasics#_save-auto-save)
+// *   Enable word wrap: [vscode](https://learn.microsoft.com/en-us/visualstudio/ide/reference/how-to-manage-word-wrap-in-the-editor?view=vs-2022)
+// *   Use spaces, not tabs​, for indentation: [vscode](https://code.visualstudio.com/docs/editor/codebasics#_indentation)
+// *   Enable auto-save: [vscode](https://code.visualstudio.com/docs/editor/codebasics#_save-auto-save)
 // *   Auto-reload enabled​: default in vscode
-// *   On save, remove trailing whitespace​:
-//     [vscode](https://stackoverflow.com/a/53663494/16038919)
-// *   Use a spell checker:
-//     [vscode](https://marketplace.visualstudio.com/items?itemName=streetsidesoftware.code-spell-checker)
+// *   On save, remove trailing whitespace​: [vscode](https://stackoverflow.com/a/53663494/16038919)
+// *   Use a spell checker: [vscode](https://marketplace.visualstudio.com/items?itemName=streetsidesoftware.code-spell-checker)
 // *   On a big monitor, place your IDE side by side with the CodeChat Editor.
 //
 // Common problems

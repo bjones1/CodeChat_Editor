@@ -750,7 +750,8 @@ pub async fn file_to_response(
     {
         if is_current_file || is_toc {
             source_to_codechat_for_web_string(
-                // Ensure we work with Unix-style (LF only) files, since other line endings break the translation process.
+                // Ensure we work with Unix-style (LF only) files, since other
+                // line endings break the translation process.
                 &file_contents_text.replace("\r\n", "\n"),
                 file_path,
                 is_toc,
@@ -896,10 +897,7 @@ pub async fn file_to_response(
                     <meta name="viewport" content="width=device-width, initial-scale=1">
                     <title>{name} - The CodeChat Editor</title>
                     {MATHJAX_TAGS}
-                    <script type="module">
-                        import {{ page_init }} from "/{codechat_editor_js}"
-                        page_init()
-                    </script>
+                    <script type="module">import "/{codechat_editor_js}"</script>
                     <link rel="stylesheet" href="/{codehat_editor_css}">
                     {sidebar_css}
                 </head>

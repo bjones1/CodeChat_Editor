@@ -18,7 +18,9 @@ In particular, a language-specific grammar must provide:
     inline_comment | block_comment }`. However, languages which lack an inline
     comment (such as CSS) or a block comment (such as Python) would contain only
     the appropriate comment type.
+
 *   Inline comment definitions:
+
     *   Opening inline delimiter(s) supported by the language. Three inline
         comment delimiters must be defined for a language. For C, this is:
 
