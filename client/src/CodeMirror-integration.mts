@@ -50,10 +50,12 @@
 //
 // ### Third-party
 import { basicSetup } from "codemirror";
+import { indentWithTab } from "@codemirror/commands";
 import {
     EditorView,
     Decoration,
     DecorationSet,
+    keymap,
     ViewUpdate,
     ViewPlugin,
     WidgetType,
@@ -99,8 +101,8 @@ let tinymce_singleton: Editor | undefined;
 // When true, don't update on the next call to `on_dirty`. See that function for
 // more info.
 let ignore_next_dirty = false;
-// True to ignore the next text selection change, since updates to the
-// cursor or scroll position from the Client trigged this change.
+// True to ignore the next text selection change, since updates to the cursor or
+// scroll position from the Client trigged this change.
 let ignore_selection_change = false;
 
 // Options used when creating a `Decoration`.
@@ -984,6 +986,10 @@ export const CodeMirror_load = async (
                     basicSetup,
                     EditorView.lineWrapping,
                     autosaveExtension,
+                    // Make tab an indent per the
+                    // [docs](https://codemirror.net/examples/tab/). TODO:
+                    // document a way to escape the tab key per the same docs.
+                    keymap.of([indentWithTab]),
                     ...extensions,
                 ],
             },
