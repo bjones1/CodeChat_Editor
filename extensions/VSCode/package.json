@@ -30,7 +30,7 @@
         "type": "git",
         "url": "https://github.com/bjones1/CodeChat_Editor"
     },
-    "version": "0.1.31",
+    "version": "0.1.32",
     "activationEvents": [
         "onCommand:extension.codeChatEditorActivate",
         "onCommand:extension.codeChatEditorDeactivate"
@@ -78,27 +78,27 @@
         ]
     },
     "dependencies": {
-        "escape-html": "^1",
-        "ws": "^8"
+        "escape-html": "^1.0.3",
+        "ws": "^8.18.3"
     },
     "devDependencies": {
-        "@types/escape-html": "^1",
-        "@types/vscode": "^1.51.0",
-        "@types/ws": "^8",
-        "@typescript-eslint/eslint-plugin": "^8",
-        "@typescript-eslint/parser": "^8",
-        "@vscode/vsce": "^3",
+        "@types/escape-html": "^1.0.4",
+        "@types/vscode": "^1.103.0",
+        "@types/ws": "^8.18.1",
+        "@typescript-eslint/eslint-plugin": "^8.41.0",
+        "@typescript-eslint/parser": "^8.41.0",
+        "@vscode/vsce": "^3.6.0",
         "esbuild": "^0.25.9",
-        "eslint": "^9",
-        "eslint-config-prettier": "^10",
-        "eslint-plugin-import": "^2",
-        "eslint-plugin-node": "^11",
-        "ovsx": "^0.10",
+        "eslint": "^9.34.0",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-import": "^2.32.0",
+        "eslint-plugin-node": "^11.1.0",
+        "ovsx": "^0.10.5",
         "prettier": "^3.6.2",
-        "typescript": "^5"
+        "typescript": "^5.9.2"
     },
     "optionalDependencies": {
-        "bufferutil": "^4"
+        "bufferutil": "^4.0.9"
     },
     "scripts": {
         "compile": "cargo run --manifest-path=../../builder/Cargo.toml ext-build",

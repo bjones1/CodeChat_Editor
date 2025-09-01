@@ -22,14 +22,20 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-*   Improved tooling for VSCode extension.
+*   No changes.
 
-Version 0.1.31 -- 2025-31-Aug
+Version 0.1.32 -- 2025-Sep-01
+-----------------------------
+
+*   Improve tooling for VSCode extension.
+*   Improve selection handling in the Client.
+
+Version 0.1.31 -- 2025-Aug-31
 -----------------------------
 
 *   Correct EOL handling on Windows which caused data corruption.
 
-Version 0.1.30 -- 2025-30-Aug
+Version 0.1.30 -- 2025-Aug-30
 -----------------------------
 
 *   Correct ordering of messages sent to and from the Framework to the Client.
@@ -37,20 +43,20 @@ Version 0.1.30 -- 2025-30-Aug
 *   Improve MathJax bundling.
 *   Update PDF viewer.
 
-Version 0.1.29 -- 2025-23-Aug
+Version 0.1.29 -- 2025-Aug-23
 -----------------------------
 
 *   Fix bugs in PDF viewer.
 *   Fix error when scrolling before a document is loaded.
 *   Fix debug print statements.
 
-Version 0.1.28 -- 2025-13-Aug
+Version 0.1.28 -- 2025-Aug-13
 -----------------------------
 
 *   Fix navigation in document-only mode.
 *   Improve errors reporting in the VSCode extension.
 
-Version 0.1.27 -- 2025-05-Aug
+Version 0.1.27 -- 2025-Aug-05
 -----------------------------
 
 *   Correctly handle document-only files.
@@ -60,13 +66,13 @@ Version 0.1.27 -- 2025-05-Aug
 Earlier releases
 ----------------
 
-*   v0.1.26, 2025-31-Jul:
+*   v0.1.26, 2025-Jul-31:
     *   Additional data corruption fixes when applying edits.
     *   Add more checks to detect data corruption.
     *   Update the file watcher to support the diff protocol.
     *   Send only changed fields when using the diff protocol.
     *   Provide basic synchronization between the IDE and Client.
-*   v0.1.25, 2025-29-Jul:
+*   v0.1.25, 2025-Jul-29:
     *   Show notifications in Client when errors occur.
     *   For safety, close the Client if applying edits fails.
 *   v0.1.24, 2025-Jul-25: 
