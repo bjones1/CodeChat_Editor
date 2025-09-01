@@ -19,8 +19,8 @@ importers:
         specifier: ^1.0.4
         version: 1.0.4
       '@types/vscode':
-        specifier: ^1.103.0
-        version: 1.103.0
+        specifier: ^1.61.0
+        version: 1.61.0
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -550,8 +550,8 @@ packages:
   '@types/sarif@2.1.7':
     resolution: {integrity: sha512-kRz0VEkJqWLf1LLVN4pT1cg1Z9wAuvI6L97V3m2f5B76Tg8d413ddvLBPTEHAZJlnn4XSvu0FkZtViCQGVyrXQ==}
 
-  '@types/vscode@1.103.0':
-    resolution: {integrity: sha512-o4hanZAQdNfsKecexq9L3eHICd0AAvdbLk6hA60UzGXbGH/q8b/9xv2RgR7vV3ZcHuyKVq7b37IGd/+gM4Tu+Q==}
+  '@types/vscode@1.61.0':
+    resolution: {integrity: sha512-9k5Nwq45hkRwdfCFY+eKXeQQSbPoA114mF7U/4uJXRBJeGIO7MuJdhF1PnaDN+lllL9iKGQtd6FFXShBXMNaFg==}
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
@@ -2775,7 +2775,7 @@ snapshots:
 
   '@types/sarif@2.1.7': {}
 
-  '@types/vscode@1.103.0': {}
+  '@types/vscode@1.61.0': {}
 
   '@types/ws@8.18.1':
     dependencies:
