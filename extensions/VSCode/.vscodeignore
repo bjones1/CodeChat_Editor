@@ -28,10 +28,6 @@ src/**
 # Omit libraries, since `esbuild` takes care of packaging.
 node_modules/
 
-# Omit output, which could include map files from non-production builds; `vsce`
-# will always package the actual JavaScript for the extension.
-out/
-
 # Omit VSCode config.
 .vscode/**
 
