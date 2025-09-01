@@ -22,7 +22,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-*   No changes.
+*   Improved tooling for VSCode extension.
 
 Version 0.1.31 -- 2025-31-Aug
 -----------------------------

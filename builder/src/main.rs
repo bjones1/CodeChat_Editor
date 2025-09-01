@@ -345,7 +345,7 @@ fn run_install(dev: bool) -> io::Result<()> {
     // of `--no-frozen-lockfile`.
     run_script("pnpm", &["install"], "../client", true)?;
     patch_client_libs()?;
-    run_script("npm", &["install"], "../extensions/VSCode", true)?;
+    run_script("pnpm", &["install"], "../extensions/VSCode", true)?;
     run_cmd!(
         cargo fetch --manifest-path=../builder/Cargo.toml;
         cargo fetch;
@@ -366,14 +366,14 @@ fn run_install(dev: bool) -> io::Result<()> {
 fn run_update() -> io::Result<()> {
     run_script("pnpm", &["update"], "../client", true)?;
     patch_client_libs()?;
-    run_script("npm", &["update"], "../extensions/VSCode", true)?;
+    run_script("pnpm", &["update"], "../extensions/VSCode", true)?;
     run_cmd!(
         cargo update --manifest-path=../builder/Cargo.toml;
         cargo update;
     )?;
     // Simply display outdated dependencies, but don't consider them an error.
     run_script("pnpm", &["outdated"], "../client", false)?;
-    run_script("npm", &["outdated"], "../extensions/VSCode", false)?;
+    run_script("pnpm", &["outdated"], "../extensions/VSCode", false)?;
     run_cmd!(
         cargo outdated --manifest-path=../builder/Cargo.toml;
         cargo outdated;
@@ -416,7 +416,7 @@ fn run_build() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
     run_client_build(false, false)?;
-    run_script("npm", &["run", "compile"], "../extensions/VSCode", true)?;
+    run_extensions_build(false, false)?;
     Ok(())
 }
 
