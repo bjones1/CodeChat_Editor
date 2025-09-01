@@ -22,7 +22,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-*   No changes yet.
+*   Correct EOL handling on Windows which caused data corruption.
 
 Version 0.1.30 -- 2025-30-Aug
 -----------------------------
