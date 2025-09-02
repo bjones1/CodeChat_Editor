@@ -1065,10 +1065,11 @@ pub fn diff_code_mirror_doc_blocks(
             }
         }
 
-        if before_index < hunk.before.end {
+        // Anything left should be deleted.
+        for index in before_index..hunk.before.end {
             change_specs.push(CodeMirrorDocBlockTransaction::Delete(
                 CodeMirrorDocBlockDelete {
-                    from: before[before_index as usize].from,
+                    from: before[index as usize].from,
                 },
             ));
         }

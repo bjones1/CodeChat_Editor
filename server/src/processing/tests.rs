@@ -1106,6 +1106,23 @@ fn test_diff_2() {
         )]
     );
 
+    // Delete multiple.
+    let before = vec![
+        build_codemirror_doc_block(10, 11, "", "#", "test1"),
+        build_codemirror_doc_block(11, 12, "", "#", "test2"),
+        build_codemirror_doc_block(12, 13, "", "#", "test3"),
+    ];
+    let after = vec![];
+    let ret = diff_code_mirror_doc_blocks(&before, &after);
+    assert_eq!(
+        ret,
+        vec![
+            CodeMirrorDocBlockTransaction::Delete(CodeMirrorDocBlockDelete { from: 10 }),
+            CodeMirrorDocBlockTransaction::Delete(CodeMirrorDocBlockDelete { from: 11 }),
+            CodeMirrorDocBlockTransaction::Delete(CodeMirrorDocBlockDelete { from: 12 }),
+        ]
+    );
+
     // Delete at end.
     let before = vec![
         build_codemirror_doc_block(10, 11, "", "#", "test1"),
@@ -1120,7 +1137,7 @@ fn test_diff_2() {
         )]
     );
 
-    // Test ordering of inserts, deletes, and updates: two deletes, follow by three add/updates.
+    // Test ordering of inserts, deletes, and updates.
     let before = vec![
         build_codemirror_doc_block(9, 10, "", "#", "test1"),
         build_codemirror_doc_block(10, 11, "", "#", "test2"),
