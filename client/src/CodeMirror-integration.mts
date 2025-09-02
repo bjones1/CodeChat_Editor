@@ -457,12 +457,6 @@ class DocBlockWidget extends WidgetType {
     // "Update a DOM element created by a widget of the same type (but
     // different, non-eq content) to reflect this widget."
     updateDOM(dom: HTMLElement, view: EditorView): boolean {
-        // If this update has already been made to the provided DOM, then we're
-        // done. TODO: does this actually improve performance?
-        if (this.dom === dom) {
-            return true;
-        }
-
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
 
         // The contents div could be a TinyMCE instance, or just a plain div.
@@ -476,7 +470,6 @@ class DocBlockWidget extends WidgetType {
             contents_div.innerHTML = this.contents;
             mathJaxTypeset(contents_div);
         }
-        this.dom = dom as HTMLDivElement;
 
         // Indicate the update was successful.
         return true;
