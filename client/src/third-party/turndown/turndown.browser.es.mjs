@@ -55,7 +55,8 @@ var meaningfulWhenBlankElements = [
 ];
 
 function isMeaningfulWhenBlank (node) {
-  return is(node, meaningfulWhenBlankElements)
+  // Certain standard HTML tags, plus any custom tag, are meaningful when blank.
+  return is(node, meaningfulWhenBlankElements) || node.nodeName.includes('-')
 }
 
 function hasMeaningfulWhenBlank (node) {
@@ -77,7 +78,7 @@ function has (node, tagNames) {
 
 function Node (node, options) {
   node.isBlock = isBlock(node);
-  node.isCode = node.nodeName === 'CODE' || node.nodeName === 'WC-MERMAID' || node.parentNode.isCode;
+  node.isCode = node.nodeName === 'CODE' || node.nodeName === 'WC-MERMAID' || node.nodeName === 'GRAPHVIZ-GRAPH' || node.parentNode.isCode;
   node.isBlank = isBlank(node);
   node.flankingWhitespace = flankingWhitespace(node, options);
   // When true, this node will be rendered as pure Markdown; false indicates it
@@ -132,7 +133,8 @@ function isBlank (node) {
     !isMeaningfulWhenBlank(node) &&
     /^\s*$/i.test(node.textContent) &&
     !hasVoid(node) &&
-    !hasMeaningfulWhenBlank(node)
+    !hasMeaningfulWhenBlank(node) &&
+    (node.childNodes === undefined || node.childNodes.length === 0)
   )
 }
 
@@ -773,7 +775,7 @@ function collapseWhitespace (options) {
   var isBlock = options.isBlock;
   var isVoid = options.isVoid;
   var isPre = options.isPre || function (node) {
-    return node.nodeName === 'PRE' || node.nodeName === 'WC-MERMAID'
+    return node.nodeName === 'PRE' || node.nodeName === 'WC-MERMAID' || node.nodeName === 'GRAPHVIZ-GRAPH'
   };
   var renderAsPure = options.renderAsPure;
 
@@ -1222,7 +1224,7 @@ TurndownService.prototype = {
 
 // These HTML elements are considered block nodes, as opposed to inline nodes. It's based on the Commonmark spec's selection of [HTML blocks](https://spec.commonmark.org/0.31.2/#html-blocks).
 const blockNodeNames = new Set([
-  'PRE', 'SCRIPT', 'STYLE', 'TEXTAREA', 'ADDRESS', 'ARTICLE', 'ASIDE', 'BASE', 'BASEFONT', 'BLOCKQUOTE', 'BODY', 'CAPTION', 'CENTER', 'COL', 'COLGROUP', 'DD', 'DETAILS', 'DIALOG', 'DIR', 'DIV', 'DL', 'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'FRAME', 'FRAMESET', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEAD', 'HEADER', 'HR', 'HTML', 'IFRAME', 'LEGEND', 'LI', 'LINK', 'MAIN', 'MENU', 'MENUITEM', 'NAV', 'NOFRAMES', 'OL', 'OPTGROUP', 'OPTION', 'P', 'PARAM', 'SEARCH', 'SECTION', 'SUMMARY', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TITLE', 'TR', 'TRACK', 'UL', 'WC-MERMAID'
+  'PRE', 'SCRIPT', 'STYLE', 'TEXTAREA', 'ADDRESS', 'ARTICLE', 'ASIDE', 'BASE', 'BASEFONT', 'BLOCKQUOTE', 'BODY', 'CAPTION', 'CENTER', 'COL', 'COLGROUP', 'DD', 'DETAILS', 'DIALOG', 'DIR', 'DIV', 'DL', 'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'FRAME', 'FRAMESET', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEAD', 'HEADER', 'HR', 'HTML', 'IFRAME', 'LEGEND', 'LI', 'LINK', 'MAIN', 'MENU', 'MENUITEM', 'NAV', 'NOFRAMES', 'OL', 'OPTGROUP', 'OPTION', 'P', 'PARAM', 'SEARCH', 'SECTION', 'SUMMARY', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH', 'THEAD', 'TITLE', 'TR', 'TRACK', 'UL', 'WC-MERMAID', 'GRAPHVIZ-GRAPH'
 ]);
 
 /**

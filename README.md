@@ -147,9 +147,9 @@ following characters should be escaped: `*`, `_`, `\`, `[`, `]`, `<`.
 The CodeChat Editor contains rudimentary support for diagrams created by
 [Graphviz](https://graphviz.org/). For example,
 
-| Source                                                         | Rendered                                                     |
-| -------------------------------------------------------------- | ------------------------------------------------------------ |
-| `<graphviz-graph graph="digraph { A -> B }"></graphviz-graph>` | <graphviz-graph graph="digraph { A -> B }"></graphviz-graph> |
+| Source                                                | Rendered                                            |
+| ----------------------------------------------------- | --------------------------------------------------- |
+| `<graphviz-graph>digraph { A -> B }</graphviz-graph>` | <graphviz-graph>digraph { A -> B }</graphviz-graph> |
 
 To edit these diagrams, use an [HTML entity
 encoder/decoder](https://mothereff.in/html-entities) and a Graphviz editor such
