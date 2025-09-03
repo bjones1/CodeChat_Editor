@@ -41,6 +41,9 @@ node_modules/
 contents.md
 developer.md
 jsconfig.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+package.json
 tsconfig.json
 
 # CodeChat Editor lexer: python.

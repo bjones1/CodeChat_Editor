@@ -317,10 +317,18 @@ fn patch_client_libs() -> io::Result<()> {
 
     // Copy across the parts of MathJax that are needed, since bundling it is
     // difficult.
+    remove_dir_all_if_exists("../client/static/mathjax")?;
+    for subdir in ["a11y", "adaptors", "input", "output", "sre", "ui"] {
+        quick_copy_dir(
+            format!("../client/node_modules/mathjax/{subdir}/"),
+            format!("../client/static/mathjax/{subdir}"),
+            None,
+        )?;
+    }
     quick_copy_dir(
         "../client/node_modules/mathjax/",
         "../client/static/mathjax",
-        None,
+        Some("tex-chtml.js"),
     )?;
     quick_copy_dir(
         "../client/node_modules/@mathjax/mathjax-newcm-font/chtml/",
