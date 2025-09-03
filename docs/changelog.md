@@ -24,6 +24,16 @@ Changelog
 
 *   No changes.
 
+Version 0.1.33 -- 2025-Sep-02
+-----------------------------
+
+*   Change `<graphviz-graph>` syntax, which now correctly translates from the
+    Client to source code, avoiding data loss in previous versions.
+*   Make the Client text editable from the IDE by fixing a bug introduced in
+    v0.1.32.
+*   Significantly reduce the size of the MathJax package.
+*   Correct a data loss bug when deleting multiple sequential doc blocks.
+
 Version 0.1.32 -- 2025-Sep-01
 -----------------------------
 
