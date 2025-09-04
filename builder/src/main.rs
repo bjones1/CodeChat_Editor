@@ -355,16 +355,23 @@ fn run_install(dev: bool) -> io::Result<()> {
     patch_client_libs()?;
     run_script("pnpm", &["install"], "../extensions/VSCode", true)?;
     run_cmd!(
+        info "Builder: cargo fetch";
         cargo fetch --manifest-path=../builder/Cargo.toml;
+        info "cargo fetch";
         cargo fetch;
     )?;
     if dev {
         // If the dist install reports an error, perhaps it's already installed.
-        if run_cmd!(cargo install --locked cargo-dist;).is_err() {
+        if run_cmd!(
+            info "cargo install cargo-dist";
+            cargo install --locked cargo-dist;
+        ).is_err() {
             run_cmd!(dist --version;)?;
         }
         run_cmd!(
+            info "cargo install cargo-outdated";
             cargo install --locked cargo-outdated;
+            info "cargo install cargo-sort";
             cargo install cargo-sort;
         )?;
     }
@@ -376,14 +383,18 @@ fn run_update() -> io::Result<()> {
     patch_client_libs()?;
     run_script("pnpm", &["update"], "../extensions/VSCode", true)?;
     run_cmd!(
+        info "Builder: cargo update";
         cargo update --manifest-path=../builder/Cargo.toml;
+        info "cargo update";
         cargo update;
     )?;
     // Simply display outdated dependencies, but don't consider them an error.
     run_script("pnpm", &["outdated"], "../client", false)?;
     run_script("pnpm", &["outdated"], "../extensions/VSCode", false)?;
     run_cmd!(
+        info "Builder: cargo outdated";
         cargo outdated --manifest-path=../builder/Cargo.toml;
+        info "cargo outdated";
         cargo outdated;
     )?;
     Ok(())
@@ -393,32 +404,41 @@ fn run_test() -> io::Result<()> {
     // The `-D warnings` flag causes clippy to return a non-zero exit status if
     // it issues warnings.
     run_cmd!(
+        info "cargo clippy and fmt";
         cargo clippy --all-targets -- -D warnings;
         cargo fmt --check;
+        info "Builder: cargo clippy and fmt";
         cargo clippy --all-targets --manifest-path=../builder/Cargo.toml -- -D warnings;
         cargo fmt --check --manifest-path=../builder/Cargo.toml;
+        info "cargo sort";
         cargo sort --check;
         cd ../builder;
+        info "Builder: cargo sort";
         cargo sort --check;
     )?;
     run_build()?;
     // Verify that compiling for release produces no errors.
     run_cmd!(
         cd ..;
+        info "dist build";
         dist build;
     )?;
     run_cmd!(
+        info "Builder: cargo test";
         cargo test --manifest-path=../builder/Cargo.toml;
+        info "cargo test";
         cargo test;
     )?;
-    println!("Tests complete.");
     Ok(())
 }
 
 fn run_build() -> io::Result<()> {
     run_cmd!(
+        info "Builder: cargo build";
         cargo build --manifest-path=../builder/Cargo.toml;
+        info "cargo build";
         cargo build;
+        info "cargo test export_bindings";
         cargo test export_bindings;
     )?;
     // Clean out all bundled files before the rebuild.
@@ -580,6 +600,7 @@ fn run_prerelease() -> io::Result<()> {
     remove_dir_all_if_exists("../client/static/bundled")?;
     run_install(true)?;
     run_cmd!(
+        info "cargo test export_bindings";
         cargo test export_bindings;
     )?;
     run_script("pnpm", &["run", "dist"], "../client", true)?;
