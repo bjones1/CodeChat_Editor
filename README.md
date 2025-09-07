@@ -10,9 +10,9 @@ software development process.
 Full manual
 -----------
 
-The [full
-manual](https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md),
-in 
+Read the [manual rendered using the CodeCode
+Editor](https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md),
+since this documentation doesn't correctly render on GitHub.
 
 Installation
 ------------
@@ -25,16 +25,16 @@ Structure
 ---------
 
 The CodeChat Editor divides source code into code blocks and documentation (doc)
-blocks.​ These blocks are separated by newlines; the image below shows the
+blocks. These blocks are separated by newlines; the image below shows the
 [style guide](docs/style_guide.cpp) on the left in the Visual Studio Code
 (VSCode) text editor, while the right pane shows the same text from style guide
 in the CodeChat Editor (using the VSCode extension). Specifically, this
 screenshot shows:
 
 *   <span style="font-size: 20pt;">❶</span>: a doc block. Doc blocks must have
-    one space after the comment delimiter.​
+    one space after the comment delimiter.
 *   <span style="font-size: 20pt;">❷</span>: a code block. Comments on the same
-    line as code are not interpreted as doc blocks.​
+    line as code are not interpreted as doc blocks.
 *   <span style="font-size: 20pt;">❸</span>: varying indents before a doc block.
 *   <span style="font-size: 20pt;">❹</span>: [Markdown](https://commonmark.org/)
     in a doc block; see a [brief overview of

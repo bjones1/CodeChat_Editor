@@ -5,8 +5,7 @@ User documentation
 ------------------
 
 1.  [The CodeChat Editor manual](README.md)
-2.  [The CodeChat Editor extension for Visual Studio Code
-    manual](extensions/VSCode/README.md)
+2.  [The CodeChat Editor extension for Visual Studio Code manual](extensions/VSCode/README.md)
 3.  [Literate programming using the CodeChat Editor](docs/style_guide.cpp)
 
 Design
@@ -30,16 +29,21 @@ Implementation
             3.  [c.pest](server/src/lexer/pest/c.pest)
             4.  [python.pest](server/src/lexer/pest/python.pest)
     4.  [webserver.rs](server/src/webserver.rs)
-        1.  [filewatcher.rs](server/src/webserver/filewatcher.rs)
-        2.  [vscode.rs](server/src/webserver/vscode.rs)
-        3.  [log4rs.yml](server/log4rs.yml)
-    5.  [processing.rs](server/src/processing.rs)
-    6.  Tests
+        1.  [log4rs.yml](server/log4rs.yml)
+    5.  [ide.rs](server/src/ide.rs)
+        1.  [filewatcher.rs](server/src/ide/filewatcher.rs)
+        2.  [vscode.rs](server/src/ide/vscode.rs)
+    6.  [translation.rs](server/src/translation.rs)
+    7.  [processing.rs](server/src/processing.rs)
+    8.  Tests
         1.  [test\_utils.rs](server/src/test_utils.rs)
-        2.  Lexer [tests.rs](server/src/lexer/tests.rs)
-        3.  Webserver [tests.rs](server/src/webserver/tests.rs)
-        4.  [cli.rs](server/tests/cli.rs)
-    7.  [Cargo.toml](server/Cargo.toml)
+        2.  [testing\_logger.rs](server/src/testing_logger.rs)
+        3.  Lexer [tests.rs](server/src/lexer/tests.rs)
+        4.  Webserver [tests.rs](server/src/webserver/tests.rs)
+        5.  ide/vscode [tests.rs](server/src/ide/vscode/tests.rs)
+        6.  Processing [tests.rs](server/src/processing/tests.rs)
+        7.  [cli.rs](server/tests/cli.rs)
+    9.  [Cargo.toml](server/Cargo.toml)
 2.  Client
     1.  Editor
         1.  [CodeChatEditorFramework.mts](client/src/CodeChatEditorFramework.mts)
@@ -49,7 +53,10 @@ Implementation
             3.  [EditorComponents.mts](client/src/EditorComponents.mts)
             4.  [graphviz-webcomponent-setup.mts](client/src/graphviz-webcomponent-setup.mts)
             5.  [Mermaid](client/src/wc-mermaid/developer.md)
-            6.  [typings.d.ts](client/src/typings.d.ts)
+            6.  [shared\_types.mts](client/src/shared_types.mts)
+            7.  [assert.mts](client/src/assert.mts)
+            8.  [show\_toast.mts](client/src/show_toast.mts)
+            9.  [typings.d.ts](client/src/typings.d.ts)
     2.  Styles
         1.  [CodeChatEditor.css](client/src/css/CodeChatEditor.css)
         2.  [CodeChatEditorProject.css](client/src/css/CodeChatEditorProject.css)
@@ -67,7 +74,7 @@ Implementation
     1.  Builder
         1.  [builder/Cargo.toml](builder/Cargo.toml)
         2.  [builder/src/main.rs](builder/src/main.rs)
-    2.   Git
+    2.  Git
         1.  [server/.gitignore](server/.gitignore)
         2.  [client/static/.gitignore](client/static/.gitignore)
         3.  [client/.gitignore](client/.gitignore)
@@ -86,14 +93,14 @@ Implementation
         10. [.prettierignore](.prettierignore)
     4.  Misc
         1.  [config.toml](server/.cargo/config.toml) - for Rust code coverage
-        2.  [dist-workspace.toml](server/dist-workspace.toml) - cargo-dist
+        2.  [dist-workspace.toml](dist-workspace.toml) - cargo-dist
             configuration
+        3.  [dist.toml](server/dist.toml) - additional cargo-dist configuration
 
 Misc
 ----
 
-*   <a href="new-project-template/README.md" target="_blank" rel="noopener">New
-    project template</a>
+*   <a href="new-project-template/README.md" target="_blank" rel="noopener">New project template</a>
 *   [Table of contents](toc.md)
 *   [Changelog](CHANGELOG.md)
 *   [Index](docs/index.md)
