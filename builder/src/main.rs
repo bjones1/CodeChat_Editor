@@ -365,7 +365,9 @@ fn run_install(dev: bool) -> io::Result<()> {
         if run_cmd!(
             info "cargo install cargo-dist";
             cargo install --locked cargo-dist;
-        ).is_err() {
+        )
+        .is_err()
+        {
             run_cmd!(dist --version;)?;
         }
         run_cmd!(
