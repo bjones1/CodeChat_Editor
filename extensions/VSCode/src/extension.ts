@@ -147,7 +147,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 ignore_active_editor_change = false;
                                 return;
                             }
-                            current_file();
+                            send_update(false);
                         }),
                     );
 
@@ -343,7 +343,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             codechat_client_location ===
                             CodeChatEditorClientLocation.browser
                         ) {
-                            current_file();
+                            send_update(false);
                         }
                     });
 
@@ -571,7 +571,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 send_result(id);
                                 // Now that the Client is loaded, send the
                                 // editor's current file to the server.
-                                current_file();
+                                send_update(false);
                                 break;
                             }
 
@@ -665,9 +665,9 @@ const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
     websocket.send(JSON.stringify(jm));
 };
 
-// This is called after an event such as an edit, or when the CodeChat panel
-// becomes visible. Wait a bit in case any other events occur, then request a
-// render.
+// This is called after an event such as an edit, when the CodeChat panel
+// becomes visible, or when the current editor changes. Wait a bit in case any
+// other events occur, then request a render.
 const send_update = (this_is_dirty: boolean) => {
     is_dirty ||= this_is_dirty;
     if (can_render()) {
@@ -679,6 +679,22 @@ const send_update = (this_is_dirty: boolean) => {
         idle_timer = setTimeout(() => {
             if (can_render()) {
                 const ate = vscode.window.activeTextEditor!;
+                if (ate !== current_editor) {
+                    // Send a new current file after a short delay; this allows
+                    // the user to rapidly cycle through several editors without
+                    // needing to reload the Client with each cycle.
+                    current_editor = ate;
+                    send_message({
+                        CurrentFile: [ate!.document.fileName, null],
+                    });
+                    // Since we just requested a new file, the contents are
+                    // clean by definition.
+                    is_dirty = false;
+                    // Don't send an updated cursor position until this file is
+                    // loaded.
+                    return;
+                }
+
                 // The
                 // [Position](https://code.visualstudio.com/api/references/vscode-api#Position)
                 // encodes the line as a zero-based value. In contrast,
@@ -708,17 +724,6 @@ const send_update = (this_is_dirty: boolean) => {
                 });
             }
         }, 300);
-    }
-};
-
-const current_file = () => {
-    // Only send a new current file is there's a change.
-    const ate = vscode.window.activeTextEditor;
-    if (can_render() && ate !== current_editor) {
-        current_editor = ate;
-        send_message({
-            CurrentFile: [ate!.document.fileName, null],
-        });
     }
 };
 
