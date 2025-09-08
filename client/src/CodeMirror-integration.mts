@@ -186,7 +186,6 @@ export const docBlockField = StateField.define<DecorationSet>({
                                 effect.value.indent,
                                 effect.value.delimiter,
                                 effect.value.content,
-                                null,
                             ),
                             ...decorationOptions,
                         }).range(effect.value.from, effect.value.to),
@@ -273,7 +272,6 @@ export const docBlockField = StateField.define<DecorationSet>({
                                           prev.spec.widget.contents,
                                           effect.value.contents,
                                       ),
-                                effect.value.dom ?? prev.spec.widget.dom,
                             ),
                             ...decorationOptions,
                         }).range(from, to),
@@ -324,12 +322,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                     contents,
                 ]: CodeMirrorDocBlockTuple) =>
                     Decoration.replace({
-                        widget: new DocBlockWidget(
-                            indent,
-                            delimiter,
-                            contents,
-                            null,
-                        ),
+                        widget: new DocBlockWidget(indent, delimiter, contents),
                         ...decorationOptions,
                     }).range(from, to),
             ),
@@ -369,13 +362,12 @@ type updateDocBlockType = {
     indent?: string;
     delimiter?: string;
     contents: string | StringDiff[];
-    dom?: HTMLDivElement;
 };
 
 // Define an update.
 export const updateDocBlock = StateEffect.define<updateDocBlockType>({
     map: (
-        { from, from_new: fromNew, to, indent, delimiter, contents, dom },
+        { from, from_new: fromNew, to, indent, delimiter, contents },
         change: ChangeDesc,
     ) => {
         const ret: updateDocBlockType = {
@@ -385,7 +377,6 @@ export const updateDocBlock = StateEffect.define<updateDocBlockType>({
             indent,
             delimiter,
             contents,
-            dom,
         };
         if (to !== undefined) {
             ret.to = change.mapPos(to);
@@ -409,19 +400,14 @@ export const deleteDocBlock = StateEffect.define<{ from: number }>({
 // Create a [widget](https://codemirror.net/docs/ref/#view.WidgetType) which
 // contains a doc block.
 class DocBlockWidget extends WidgetType {
-    dom: null | HTMLDivElement;
     constructor(
         readonly indent: string,
         readonly delimiter: string,
         readonly contents: string,
-        dom: null | HTMLDivElement
-        // Only used in an update to avoid changing an already-modified doc
-        // block.
     ) {
         // TODO: I don't understand why I don't need to store the provided
         // parameters in the object: `this.indent = indent;`, etc.
         super();
-        this.dom = dom;
     }
 
     eq(other: DocBlockWidget) {
@@ -448,7 +434,6 @@ class DocBlockWidget extends WidgetType {
             this.contents +
             "</div>";
         mathJaxTypeset(wrap);
-        this.dom = wrap;
         return wrap;
     }
 
@@ -457,6 +442,12 @@ class DocBlockWidget extends WidgetType {
     // "Update a DOM element created by a widget of the same type (but
     // different, non-eq content) to reflect this widget."
     updateDOM(dom: HTMLElement, view: EditorView): boolean {
+        // See if this update was produced by a change in TinyMCE text, which means the DOM is already updated.
+        if ((dom as any).update_complete === true) {
+            // Yes, so clear this update flag before returning.
+            delete (dom as any).update_complete;
+            return true;
+        }
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
 
         // The contents div could be a TinyMCE instance, or just a plain div.
@@ -499,7 +490,6 @@ class DocBlockWidget extends WidgetType {
             const tinymce_div = document.getElementById("TinyMCE-inst")!;
             codechat_body.insertBefore(tinymce_div, null);
         }
-        this.dom = null;
     }
 }
 
@@ -596,6 +586,8 @@ const on_dirty = (
     const indent = indent_div.innerHTML;
     const delimiter = indent_div.getAttribute("data-delimiter")!;
     const [contents_div, is_tinymce] = get_contents(target);
+    // Sorta ugly hack: TinyMCE stores its date in the DOM. CodeMirror stores state in external structs. We need to update the CodeMirror state, but not overwrite the DOM with this "new" state, since the DOM is already updated. So, signal that this "update" is already done.
+    (target as any).update_complete = true;
     tinymce_singleton!.save();
     const contents = is_tinymce
         ? tinymce_singleton!.getContent()
@@ -606,7 +598,6 @@ const on_dirty = (
             indent,
             delimiter,
             contents,
-            dom: target,
         }),
     ];
 
@@ -633,9 +624,24 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         main_selection.from,
                         main_selection.to,
                         (from: number, to: number, value: Decoration) => {
-                            // If so, give focus to the contents of the doc
+                            // Is this range contained within this doc block? If the ranges also contains element outside it, then don't capture focus. TODO: not certain on the bounds -- should I use \<= or \<, etc.?
+                            if (
+                                main_selection.from < from ||
+                                main_selection.to > main_selection.to
+                            ) {
+                                return;
+                            }
+
+                            // Ensure we have a valid dom. This also checks for undefined.
+                            const dom_at_pos = update.view.domAtPos(from);
+                            const dom = dom_at_pos.node.childNodes[dom_at_pos.offset] as HTMLDivElement | null;
+                            if (dom == null) {
+                                return;
+                            }
+
+                            // Give focus to the contents of the doc
                             // block.
-                            value.spec.widget.dom?.childNodes[1].focus();
+                            (dom.childNodes[1] as HTMLElement).focus();
                         },
                     );
             }
