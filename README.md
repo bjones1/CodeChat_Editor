@@ -25,11 +25,11 @@ Structure
 ---------
 
 The CodeChat Editor divides source code into code blocks and documentation (doc)
-blocks. These blocks are separated by newlines; the image below shows the
-[style guide](docs/style_guide.cpp) on the left in the Visual Studio Code
-(VSCode) text editor, while the right pane shows the same text from style guide
-in the CodeChat Editor (using the VSCode extension). Specifically, this
-screenshot shows:
+blocks. These blocks are separated by newlines; the image below shows the [style
+guide](docs/style_guide.cpp) on the left in the Visual Studio Code (VSCode) text
+editor, while the right pane shows the same text from style guide in the
+CodeChat Editor (using the VSCode extension). Specifically, this screenshot
+shows:
 
 *   <span style="font-size: 20pt;">❶</span>: a doc block. Doc blocks must have
     one space after the comment delimiter.
@@ -140,7 +140,8 @@ following characters should be escaped: `*`, `_`, `\`, `[`, `]`, `<`.
 | `$3 <a> b$`      | $3 <a>b$</a>   | `$3 \<a> b$`       | $3 \<a> b$         |
 | `$a \; b$`       | $a \; b$       | `$a \\; b$`        | $a \\; b$          |
 
-## Diagrams
+Diagrams
+--------
 
 ### Graphviz
 
