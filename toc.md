@@ -95,7 +95,7 @@ Misc
 *   <a href="new-project-template/README.md" target="_blank" rel="noopener">New
     project template</a>
 *   [Table of contents](toc.md)
-*   [Changelog](docs/CHANGELOG.md)
+*   [Changelog](CHANGELOG.md)
 *   [Index](docs/index.md)
 
 Notes
