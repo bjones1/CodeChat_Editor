@@ -24,6 +24,13 @@ Changelog
 
 *   No changes.
 
+Version 0.1.34 -- 2025-Sep-02
+-----------------------------
+
+*   Make the Client text editable again. Improve handling of selections.
+*   In VSCode, load a new file in the Client after a short delay, rather than
+    immediately. This provides a more efficient process when changing files.
+
 Version 0.1.33 -- 2025-Sep-02
 -----------------------------
 
