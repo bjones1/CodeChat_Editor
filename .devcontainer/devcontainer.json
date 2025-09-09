@@ -32,6 +32,8 @@
         },
         "vscode": {
             "settings": {
+                // Use the local build of the CodeChat Editor, instead of the one packaged with the
+                // VSCode extension.
                 "CodeChatEditor.Server.Command": "/workspaces/CodeChat_Editor/server/target/debug/codechat-editor-server"
             },
             "extensions": [
