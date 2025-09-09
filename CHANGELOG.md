@@ -24,7 +24,7 @@ Changelog
 
 *   No changes.
 
-Version 0.1.34 -- 2025-Sep-02
+Version 0.1.34 -- 2025-Sep-08
 -----------------------------
 
 *   Make the Client text editable again. Improve handling of selections.
