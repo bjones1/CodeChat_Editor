@@ -69,7 +69,9 @@ Implementation
 3.  Extensions
     1.  Visual Studio Code
         1.  [extension.ts](extensions/VSCode/src/extension.ts)
-        2.  [Developer documentation](extensions/VSCode/developer.md)
+        2.  [lib.rs](extensions/VSCode/src/lib.rs)
+        3.  [Cargo.toml](extensions/VSCode/Cargo.toml)
+        4.  [Developer documentation](extensions/VSCode/developer.md)
 4.  Development tools
     1.  Builder
         1.  [builder/Cargo.toml](builder/Cargo.toml)

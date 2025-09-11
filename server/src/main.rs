@@ -111,8 +111,13 @@ impl Cli {
                     std::thread::sleep(std::time::Duration::from_secs(10));
                     return Ok(());
                 }
-                webserver::configure_logger(log.unwrap_or(LevelFilter::Info))?;
-                webserver::main(addr, credentials.clone()).unwrap();
+                webserver::main(
+                    None,
+                    addr,
+                    credentials.clone(),
+                    log.unwrap_or(LevelFilter::Info),
+                )
+                .unwrap();
             }
             Commands::Start { open } => {
                 // Poll the server to ensure it starts.

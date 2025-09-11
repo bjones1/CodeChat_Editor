@@ -22,7 +22,8 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-*   No changes.
+*   Embed the CodeChat Editor Server inside the VSCode extension, rather than
+    running it as a standalone binary.
 
 Version 0.1.34 -- 2025-Sep-08
 -----------------------------

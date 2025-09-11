@@ -208,7 +208,6 @@
 use std::{collections::HashMap, ffi::OsStr, fmt::Debug, path::PathBuf};
 
 // ### Third-party
-use actix_web::web;
 use lazy_static::lazy_static;
 use log::{debug, error, warn};
 use regex::Regex;
@@ -217,7 +216,7 @@ use tokio::{fs::File, select, sync::mpsc};
 
 // ### Local
 use crate::webserver::{
-    AppState, EditorMessage, EditorMessageContents, WebsocketQueues, send_response,
+    EditorMessage, EditorMessageContents, WebAppState, WebsocketQueues, send_response,
 };
 use crate::{
     oneshot_send,
@@ -282,8 +281,8 @@ pub fn find_eol_type(s: &str) -> EolType {
 pub enum CreateTranslationQueuesError {
     #[error("Connection ID {0} already in use.")]
     IdInUse(String),
-    #[error("IDE queue already in use.")]
-    IdeInUse,
+    #[error("IDE queue {0} already in use.")]
+    IdeInUse(String),
 }
 
 pub struct CreatedTranslationQueues {
@@ -295,7 +294,7 @@ pub struct CreatedTranslationQueues {
 
 pub fn create_translation_queues(
     connection_id: String,
-    app_state: web::Data<AppState>,
+    app_state: WebAppState,
 ) -> Result<CreatedTranslationQueues, CreateTranslationQueuesError> {
     // There are three cases for this `connection_id`:
     //
@@ -323,7 +322,7 @@ pub fn create_translation_queues(
         .unwrap()
         .contains_key(&connection_id)
     {
-        return Err(CreateTranslationQueuesError::IdeInUse);
+        return Err(CreateTranslationQueuesError::IdeInUse(connection_id));
     }
 
     // Then this is case 1. Add the connection ID to the list of active
@@ -383,7 +382,7 @@ pub async fn translation_task(
     connection_id_prefix: String,
     connection_id_raw: String,
     prefix: &'static [&'static str],
-    app_state_task: web::Data<AppState>,
+    app_state_task: WebAppState,
     shutdown_only: bool,
     allow_source_diffs: bool,
     to_ide_tx: Sender<EditorMessage>,

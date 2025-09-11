@@ -57,15 +57,15 @@ use crate::{
     processing::CodeMirrorDiffable,
     queue_send,
     webserver::{
-        INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT, ResultOkTypes, filesystem_endpoint,
-        get_test_mode, url_to_path,
+        INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT, ResultOkTypes, WebAppState,
+        filesystem_endpoint, get_test_mode, url_to_path,
     },
 };
 use crate::{
     processing::{CodeChatForWeb, CodeMirror, SourceFileMetadata},
     translation::{create_translation_queues, translation_task},
     webserver::{
-        AppState, EditorMessage, EditorMessageContents, RESERVED_MESSAGE_ID, UpdateMessageContents,
+        EditorMessage, EditorMessageContents, RESERVED_MESSAGE_ID, UpdateMessageContents,
         client_websocket, get_client_framework, html_not_found, html_wrapper, path_display,
         send_response,
     },
@@ -106,7 +106,7 @@ pub async fn filewatcher_root_fs_redirect() -> impl Responder {
 #[get("/fw/fsb/{path:.*}")]
 async fn filewatcher_browser_endpoint(
     req: HttpRequest,
-    app_state: web::Data<AppState>,
+    app_state: WebAppState,
     orig_path: web::Path<String>,
 ) -> Result<HttpResponse, Error> {
     #[cfg(not(target_os = "windows"))]
@@ -312,7 +312,7 @@ const FW: &str = "fw-";
 async fn filewatcher_client_endpoint(
     request_path: web::Path<(String, String)>,
     req: HttpRequest,
-    app_state: web::Data<AppState>,
+    app_state: WebAppState,
 ) -> HttpResponse {
     let (connection_id_raw, file_path) = request_path.into_inner();
     filesystem_endpoint(
@@ -327,7 +327,7 @@ async fn filewatcher_client_endpoint(
 async fn processing_task(
     file_path: &Path,
     req: HttpRequest,
-    app_state: web::Data<AppState>,
+    app_state: WebAppState,
     connection_id_raw: u32,
 ) -> Result<HttpResponse, Error> {
     // #### Filewatcher IDE
@@ -698,7 +698,7 @@ pub async fn filewatcher_websocket(
     connection_id_raw: web::Path<String>,
     req: HttpRequest,
     body: web::Payload,
-    app_state: web::Data<AppState>,
+    app_state: WebAppState,
 ) -> Result<HttpResponse, Error> {
     client_websocket(
         format!("{FW}{connection_id_raw}"),
@@ -710,7 +710,7 @@ pub async fn filewatcher_websocket(
 }
 
 /// Return a unique ID for an IDE websocket connection.
-pub fn get_connection_id_raw(app_state: &web::Data<AppState>) -> u32 {
+pub fn get_connection_id_raw(app_state: &WebAppState) -> u32 {
     let mut connection_id_raw = app_state.filewatcher_next_connection_id.lock().unwrap();
     *connection_id_raw += 1;
     *connection_id_raw
@@ -732,7 +732,7 @@ mod tests {
         App,
         body::BoxBody,
         dev::{Service, ServiceResponse},
-        test, web,
+        test,
     };
     use assertables::assert_starts_with;
     use dunce::simplified;
@@ -750,9 +750,9 @@ mod tests {
         },
         test_utils::{check_logger_errors, configure_testing_logger},
         webserver::{
-            AppState, EditorMessage, EditorMessageContents, IdeType, ResultOkTypes,
-            UpdateMessageContents, WebsocketQueues, configure_app, drop_leading_slash,
-            make_app_data, send_response, tests::IP_PORT,
+            EditorMessage, EditorMessageContents, IdeType, ResultOkTypes, UpdateMessageContents,
+            WebAppState, WebsocketQueues, configure_app, drop_leading_slash, make_app_data,
+            send_response, set_root_path, tests::IP_PORT,
         },
     };
 
@@ -763,6 +763,7 @@ mod tests {
         WebsocketQueues,
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error> + use<>,
     ) {
+        set_root_path(None).unwrap();
         let app_data = make_app_data(IP_PORT, None);
         let app = test::init_service(configure_app(App::new(), &app_data)).await;
 
@@ -777,7 +778,7 @@ mod tests {
 
         // The web page has been served; fake the connected websocket by getting
         // the appropriate tx/rx queues.
-        let app_state = resp.request().app_data::<web::Data<AppState>>().unwrap();
+        let app_state = resp.request().app_data::<WebAppState>().unwrap();
         let mut client_queues = app_state.client_queues.lock().unwrap();
         let connection_id_raw = *app_state.filewatcher_next_connection_id.lock().unwrap();
         assert_eq!(client_queues.len(), 1);

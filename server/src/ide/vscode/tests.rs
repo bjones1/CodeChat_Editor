@@ -23,11 +23,10 @@ use std::{
     io::{Error, Read},
     net::SocketAddr,
     path::{self, Path, PathBuf},
-    thread,
+    thread::{self, JoinHandle},
     time::{Duration, SystemTime},
 };
 
-use actix_rt::task::JoinHandle;
 use assert_fs::TempDir;
 use assertables::{assert_contains, assert_ends_with, assert_starts_with};
 use dunce::simplified;
@@ -48,8 +47,7 @@ use tokio_tungstenite::{
     tungstenite::{http::StatusCode, protocol::Message},
 };
 
-use crate::translation::{EolType, find_eol_type};
-use crate::webserver::{EditorMessage, EditorMessageContents, IdeType, run_server, tests::IP_PORT};
+use crate::webserver::{EditorMessage, EditorMessageContents, IdeType, tests::IP_PORT};
 use crate::{
     cast,
     processing::{
@@ -59,13 +57,24 @@ use crate::{
     test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
     webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
 };
+use crate::{
+    translation::{EolType, find_eol_type},
+    webserver::main,
+};
 
 // Globals
 // -------
 lazy_static! {
     // Run a single webserver for all tests.
     static ref WEBSERVER_HANDLE: JoinHandle<Result<(), Error>> =
-        actix_rt::spawn(async move { run_server(&SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT), None).await });
+        thread::spawn(|| {
+            main(
+                None,
+                &SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT),
+                None,
+                log::LevelFilter::Debug
+            )
+        });
 }
 
 // Send a message via a websocket.

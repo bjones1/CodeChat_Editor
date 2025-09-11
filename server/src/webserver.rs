@@ -38,11 +38,12 @@ use std::{
 use actix_files;
 use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer,
-    dev::{ServerHandle, ServiceFactory, ServiceRequest},
+    dev::{Server, ServerHandle, ServiceFactory, ServiceRequest},
     error::Error,
     get,
     http::header::{ContentType, DispositionType},
-    middleware, web,
+    middleware,
+    web::{self, Data},
 };
 use actix_web_httpauth::{extractors::basic::BasicAuth, middleware::HttpAuthentication};
 use actix_ws::AggregatedMessage;
@@ -303,6 +304,8 @@ pub struct AppState {
     credentials: Option<Credentials>,
 }
 
+pub type WebAppState = web::Data<AppState>;
+
 #[derive(Clone)]
 pub struct Credentials {
     pub username: String,
@@ -412,32 +415,11 @@ const MATHJAX_TAGS: &str = concatdoc!(
 );
 
 lazy_static! {
-
-    // Define the location of the root path, which contains `static/`,
-    // `log4rs.yml`, and `hashLocations.json` in a production build, or
-    // `client/` and `server/` in a development build.
-    static ref ROOT_PATH: PathBuf = {
-        let exe_path = env::current_exe().unwrap();
-        let exe_dir = exe_path.parent().unwrap();
-        #[cfg(not(any(test, debug_assertions)))]
-        let root_path = PathBuf::from(exe_dir);
-        #[cfg(any(test, debug_assertions))]
-        let mut root_path = PathBuf::from(exe_dir);
-        // When in debug or running tests, use the layout of the Git repo to
-        // find client files. In release mode, we assume the static folder is a
-        // subdirectory of the directory containing the executable.
-        #[cfg(test)]
-        root_path.push("..");
-        // Note that `debug_assertions` is also enabled for testing, so this
-        // adds to the previous line when running tests.
-        #[cfg(debug_assertions)]
-        root_path.push("../../..");
-        root_path.canonicalize().unwrap()
-    };
+    pub static ref ROOT_PATH: Arc<Mutex<PathBuf>> = Arc::new(Mutex::new(PathBuf::new()));
 
     // Define the location of static files.
     static ref CLIENT_STATIC_PATH: PathBuf = {
-        let mut client_static_path = ROOT_PATH.clone();
+        let mut client_static_path = ROOT_PATH.lock().unwrap().clone();
         #[cfg(debug_assertions)]
         client_static_path.push("client");
 
@@ -447,18 +429,59 @@ lazy_static! {
 
     // Read in the hashed names of files bundled by esbuild.
     static ref BUNDLED_FILES_MAP: HashMap<String, String> = {
-        let mut hl = ROOT_PATH.clone();
+        let mut hl = ROOT_PATH.lock().unwrap().clone();
         #[cfg(debug_assertions)]
         hl.push("server");
         hl.push("hashLocations.json");
-        let json = fs::read_to_string(hl.clone()).unwrap_or_else(|_| panic!("Unable to read {}", hl.to_string_lossy()));
-        let hmm: HashMap<String, String> = serde_json::from_str(&json).unwrap();
+        let json = fs::read_to_string(hl.clone()).unwrap_or_else(|_| format!(r#"{{"error": "Unable to read {:#?}"}}"#, hl.to_string_lossy()));
+        let hmm: HashMap<String, String> = serde_json::from_str(&json).unwrap_or_else(|_| HashMap::new());
         hmm
     };
 
-    static ref CODECHAT_EDITOR_FRAMEWORK_JS: String = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").unwrap().to_string();
-    static ref CODECHAT_EDITOR_PROJECT_CSS: String = BUNDLED_FILES_MAP.get("CodeChatEditorProject.css").unwrap().to_string();
+    static ref CODECHAT_EDITOR_FRAMEWORK_JS: String = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").cloned().unwrap_or("Not found".to_string());
+    static ref CODECHAT_EDITOR_PROJECT_CSS: String = BUNDLED_FILES_MAP.get("CodeChatEditorProject.css").cloned().unwrap_or("Not found".to_string());
+}
 
+// Define the location of the root path, which contains `static/`, `log4rs.yml`,
+// and `hashLocations.json` in a production build, or `client/` and `server/` in
+// a development build.
+pub fn set_root_path(
+    // The path where this extension's files reside. `None` if this is running
+    // an a standalone server, instead of as an extension loaded by an IDE.
+    extension_base_path: Option<&Path>,
+) -> io::Result<()> {
+    // If the extension provided a base path, use that; otherwise, get the path
+    // to this executable.
+    let exe_path;
+    let exe_dir = if let Some(ed) = extension_base_path {
+        ed
+    } else {
+        exe_path = env::current_exe().unwrap();
+        exe_path.parent().unwrap()
+    };
+    #[cfg(not(any(test, debug_assertions)))]
+    let root_path = PathBuf::from(exe_dir);
+    #[cfg(any(test, debug_assertions))]
+    let mut root_path = PathBuf::from(exe_dir);
+    // When in debug or running tests, use the layout of the Git repo to find
+    // client files. In release mode, we assume the static folder is a
+    // subdirectory of the directory containing the executable.
+    #[cfg(test)]
+    // In development, this extra directory level for the extension isn't
+    // needed.
+    if extension_base_path.is_none() {
+        root_path.push("..");
+    }
+    // Note that `debug_assertions` is also enabled for testing, so this adds to
+    // the previous line when running tests.
+    #[cfg(debug_assertions)]
+    root_path.push(if extension_base_path.is_some() {
+        "../.."
+    } else {
+        "../../.."
+    });
+    *ROOT_PATH.lock().unwrap() = root_path.canonicalize()?;
+    Ok(())
 }
 
 // Webserver functionality
@@ -469,7 +492,7 @@ async fn ping() -> HttpResponse {
 }
 
 #[get("/stop")]
-async fn stop(app_state: web::Data<AppState>) -> HttpResponse {
+async fn stop(app_state: WebAppState) -> HttpResponse {
     let Some(ref server_handle) = *app_state.server_handle.lock().unwrap() else {
         error!("Server handle not available to stop server.");
         return HttpResponse::InternalServerError().finish();
@@ -558,7 +581,7 @@ pub async fn filesystem_endpoint(
     connection_id: String,
     request_file_path: String,
     req: &HttpRequest,
-    app_state: &web::Data<AppState>,
+    app_state: &WebAppState,
 ) -> HttpResponse {
     // On Windows, backslashes in the `request_file_path` will be treated as
     // path separators; however, HTTP does not treat them as path separators.
@@ -1270,14 +1293,34 @@ pub async fn client_websocket(
 // Webserver core
 // --------------
 #[actix_web::main]
-pub async fn main(addr: &SocketAddr, credentials: Option<Credentials>) -> std::io::Result<()> {
-    run_server(addr, credentials).await
-}
-
-pub async fn run_server(
+pub async fn main(
+    extension_base_path: Option<&Path>,
     addr: &SocketAddr,
     credentials: Option<Credentials>,
+    level: LevelFilter,
 ) -> std::io::Result<()> {
+    init_server(extension_base_path, level)?;
+    let server = setup_server(addr, credentials)?.0;
+    server.await
+}
+
+// Perform global init of the server. This must only be called once; it must be
+// called before the server is run.
+pub fn init_server(extension_base_path: Option<&Path>, level: LevelFilter) -> std::io::Result<()> {
+    set_root_path(extension_base_path)?;
+    #[cfg(debug_assertions)]
+    let _ = level;
+    #[cfg(not(debug_assertions))]
+    configure_logger(level).map_err(|e| std::io::Error::other(e.to_string()))?;
+    Ok(())
+}
+
+// Set up the server so it's ready to run, but don't start it yet. This does
+// check that the assigned `addr` is available, returning an error if not.
+pub fn setup_server(
+    addr: &SocketAddr,
+    credentials: Option<Credentials>,
+) -> std::io::Result<(Server, Data<AppState>)> {
     // Connect to the Capture Database
     //let _event_capture = EventCapture::new("config.json").await?;
 
@@ -1295,6 +1338,8 @@ pub async fn run_server(
             &app_data_server,
         )
     })
+    // We only have one user; don't spawn lots of threads.
+    .workers(1)
     .bind(addr)
     {
         Ok(server) => server.run(),
@@ -1305,8 +1350,8 @@ pub async fn run_server(
     };
     // Store the server handle in the global state.
     *(app_data.server_handle.lock().unwrap()) = Some(server.handle());
-    // Start the server.
-    server.await
+
+    Ok((server, app_data))
 }
 
 // Use HTTP basic authentication (if provided) to mediate access.
@@ -1316,7 +1361,7 @@ async fn basic_validator(
 ) -> Result<ServiceRequest, (Error, ServiceRequest)> {
     // Get the provided credentials.
     let expected_credentials = &req
-        .app_data::<actix_web::web::Data<AppState>>()
+        .app_data::<WebAppState>()
         .unwrap()
         .credentials
         .as_ref()
@@ -1335,18 +1380,17 @@ async fn basic_validator(
 
 pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(debug_assertions))]
-    let l4rs = ROOT_PATH.clone();
+    let l4rs = ROOT_PATH.lock().unwrap().clone();
     #[cfg(debug_assertions)]
-    let mut l4rs = ROOT_PATH.clone();
+    let mut l4rs = ROOT_PATH.lock().unwrap().clone();
     #[cfg(debug_assertions)]
     l4rs.push("server");
+    println!("Path: {l4rs:?}");
     let config_file = l4rs.join("log4rs.yml");
-    let mut config = load_config_file(&config_file, Default::default()).unwrap_or_else(|_| {
-        panic!(
-            "Unable to load config file {}",
-            config_file.to_string_lossy()
-        )
-    });
+    let mut config = match load_config_file(&config_file, Default::default()) {
+        Ok(c) => c,
+        Err(err) => return Err(err.into()),
+    };
     config.root_mut().set_level(level);
     log4rs::init_config(config)?;
     Ok(())
@@ -1357,7 +1401,7 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // closure passed to `HttpServer::new` and moved/cloned in." Putting this code
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
-pub fn make_app_data(port: u16, credentials: Option<Credentials>) -> web::Data<AppState> {
+pub fn make_app_data(port: u16, credentials: Option<Credentials>) -> WebAppState {
     web::Data::new(AppState {
         server_handle: Mutex::new(None),
         filewatcher_next_connection_id: Mutex::new(0),
@@ -1372,7 +1416,7 @@ pub fn make_app_data(port: u16, credentials: Option<Credentials>) -> web::Data<A
 
 // Configure the web application. I'd like to make this return an
 // `App<AppEntry>`, but `AppEntry` is a private module.
-pub fn configure_app<T>(app: App<T>, app_data: &web::Data<AppState>) -> App<T>
+pub fn configure_app<T>(app: App<T>, app_data: &WebAppState) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
 {

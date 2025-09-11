@@ -25,13 +25,13 @@
 //
 // ### Node.js packages
 import assert from "assert";
-import child_process from "node:child_process";
 import process from "node:process";
 
 // ### Third-party packages
 import escape from "escape-html";
 import vscode, { commands, Range, TextDocument, TextEditor } from "vscode";
 import { WebSocket } from "ws";
+import { CodeChatEditorServer, initServer } from "./index";
 
 // ### Local packages
 import {
@@ -102,6 +102,17 @@ let quiet_next_error = false;
 // True if the editor contents have changed (are dirty) from the perspective of
 // the CodeChat Editor (not if the contents are saved to disk).
 let is_dirty = false;
+
+// An object to start/stop the CodeChat Editor Server.
+let codeChatEditorServer: CodeChatEditorServer;
+// Before using `CodeChatEditorServer`, we must initialize it.
+{
+    const ext = vscode.extensions.getExtension(
+        "CodeChat.codechat-editor-client",
+    );
+    assert(ext !== undefined);
+    initServer(ext.extensionPath);
+}
 
 // Activation/deactivation
 // -----------------------
@@ -274,7 +285,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                 // Start the server.
                 try {
                     console_log("CodeChat Editor extension: starting server.");
-                    await run_server(["start"]);
+                    codeChatEditorServer = new CodeChatEditorServer(get_port());
+                    codeChatEditorServer.startServer();
                 } catch (err) {
                     assert(err instanceof Error);
                     show_error(err.message);
@@ -746,7 +758,7 @@ const stop_client = async () => {
 
     // Shut down the server.
     try {
-        await run_server(["stop"]);
+        await codeChatEditorServer.stopServer();
     } catch (err) {
         assert(err instanceof Error);
         console.error(
@@ -832,65 +844,6 @@ const get_port = (): number => {
         .get("Port");
     assert(typeof port === "number");
     return port;
-};
-
-const run_server = (args: string[]) => {
-    // Get the command from the VSCode configuration.
-    let codechat_editor_server_command = vscode.workspace
-        .getConfiguration("CodeChatEditor.Server")
-        .get("Command");
-    assert(typeof codechat_editor_server_command === "string");
-
-    // If not specified, use the packaged binary.
-    if (codechat_editor_server_command === "") {
-        const ext = vscode.extensions.getExtension(
-            "CodeChat.codechat-editor-client",
-        );
-        assert(ext !== undefined);
-        codechat_editor_server_command =
-            ext.extensionPath + "/server/codechat-editor-server";
-    }
-
-    let stdout = "";
-    let stderr = "";
-    return new Promise((resolve, reject) => {
-        const server_process = child_process.spawn(
-            codechat_editor_server_command as string,
-            ["--port", get_port().toString()].concat(args),
-        );
-        server_process.on("error", (err: NodeJS.ErrnoException) => {
-            const msg =
-                err.code === "ENOENT"
-                    ? `Error - cannot find the file ${err.path}`
-                    : err;
-            reject(
-                new Error(`While starting the CodeChat Editor Server: ${msg}.`),
-            );
-        });
-
-        server_process.on("exit", (code, signal) => {
-            const exit_str = code ? `code ${code}` : `signal ${signal}`;
-            if (code === 0) {
-                resolve("");
-            } else {
-                reject(
-                    new Error(
-                        `${stdout}\n${stderr}\n\nCodeChat Editor Server exited with ${exit_str}.\n`,
-                    ),
-                );
-            }
-        });
-
-        assert(server_process.stdout !== null);
-        server_process.stdout.on("data", (chunk) => {
-            stdout += chunk.toString();
-        });
-
-        assert(server_process.stderr !== null);
-        server_process.stderr.on("data", (chunk) => {
-            stderr += chunk.toString();
-        });
-    });
 };
 
 const console_log = (...args: any) => {

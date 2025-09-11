@@ -1,4 +1,3 @@
-use indoc::formatdoc;
 // Copyright (C) 2025 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -24,7 +23,9 @@ pub mod tests;
 
 // Imports
 // -------
+//
 // ### Standard library
+//
 // None.
 //
 // ### Third-party
@@ -33,6 +34,7 @@ use actix_web::{
     error::{Error, ErrorBadRequest},
     get, web,
 };
+use indoc::formatdoc;
 use log::{debug, error};
 
 // ### Local
@@ -40,9 +42,9 @@ use crate::{
     queue_send,
     translation::{CreateTranslationQueuesError, create_translation_queues, translation_task},
     webserver::{
-        AppState, EditorMessage, EditorMessageContents, IdeType, ResultOkTypes, client_websocket,
-        escape_html, filesystem_endpoint, get_client_framework, get_server_url, html_wrapper,
-        send_response,
+        EditorMessage, EditorMessageContents, IdeType, ResultOkTypes, WebAppState,
+        client_websocket, escape_html, filesystem_endpoint, get_client_framework, get_server_url,
+        html_wrapper, send_response,
     },
 };
 
@@ -58,8 +60,38 @@ pub async fn vscode_ide_websocket(
     connection_id_raw: web::Path<String>,
     req: HttpRequest,
     body: web::Payload,
-    app_state: web::Data<AppState>,
+    app_state: WebAppState,
 ) -> Result<HttpResponse, Error> {
+    let connection_id_str = match vscode_ide_core(connection_id_raw, app_state.clone()).await {
+        Ok(s) => s,
+        Err(err) => match err {
+            CreateTranslationQueuesError::IdInUse(_) => {
+                return Err(ErrorBadRequest(err.to_string()));
+            }
+            CreateTranslationQueuesError::IdeInUse(connection_id_str) => {
+                return client_websocket(
+                    connection_id_str.clone(),
+                    req,
+                    body,
+                    app_state.ide_queues.clone(),
+                )
+                .await;
+            }
+        },
+    };
+    // Move data between the IDE and the processing task via queues. The
+    // websocket connection between the client and the IDE will run in the
+    // endpoint for that connection.
+    client_websocket(connection_id_str, req, body, app_state.ide_queues.clone()).await
+}
+
+// Create queues, perform the IDE startup sequence, then enter a loop
+// translating between the IDE and Client. The caller must provide a task to
+// move data to/from the IDE queues.
+pub async fn vscode_ide_core(
+    connection_id_raw: web::Path<String>,
+    app_state: WebAppState,
+) -> Result<String, CreateTranslationQueuesError> {
     let connection_id_raw = connection_id_raw.to_string();
     let connection_id_str = format!("{VSC}{connection_id_raw}");
 
@@ -67,20 +99,7 @@ pub async fn vscode_ide_websocket(
         create_translation_queues(connection_id_str.clone(), app_state.clone());
     let (mut from_ide_rx, to_ide_tx, from_client_rx, to_client_tx) =
         match created_translation_queues_result {
-            Err(err) => match err {
-                CreateTranslationQueuesError::IdInUse(_) => {
-                    return Err(ErrorBadRequest(err.to_string()));
-                }
-                CreateTranslationQueuesError::IdeInUse => {
-                    return client_websocket(
-                        connection_id_str.clone(),
-                        req,
-                        body,
-                        app_state.ide_queues.clone(),
-                    )
-                    .await;
-                }
-            },
+            Err(err) => return Err(err),
             Ok(tqr) => (
                 tqr.from_ide_rx,
                 tqr.to_ide_tx,
@@ -234,10 +253,7 @@ pub async fn vscode_ide_websocket(
         .await;
     });
 
-    // Move data between the IDE and the processing task via queues. The
-    // websocket connection between the client and the IDE will run in the
-    // endpoint for that connection.
-    client_websocket(connection_id_str, req, body, app_state.ide_queues.clone()).await
+    Ok(connection_id_str)
 }
 
 /// Serve the Client Framework.
@@ -261,7 +277,7 @@ pub async fn vscode_client_websocket(
     connection_id: web::Path<String>,
     req: HttpRequest,
     body: web::Payload,
-    app_state: web::Data<AppState>,
+    app_state: WebAppState,
 ) -> Result<HttpResponse, Error> {
     client_websocket(
         format!("{VSC}{connection_id}"),
@@ -277,7 +293,7 @@ pub async fn vscode_client_websocket(
 async fn serve_vscode_fs(
     request_path: web::Path<(String, String)>,
     req: HttpRequest,
-    app_state: web::Data<AppState>,
+    app_state: WebAppState,
 ) -> HttpResponse {
     let (connection_id, file_path) = request_path.into_inner();
     filesystem_endpoint(format!("{VSC}{connection_id}"), file_path, &req, &app_state).await

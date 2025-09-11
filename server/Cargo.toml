@@ -53,6 +53,7 @@ lexer_explain = []
 actix-files = "0.6"
 actix-http = "3.9.0"
 actix-rt = "2.9.0"
+actix-service = "2.0.3"
 actix-web = "4"
 actix-web-httpauth = "0.8.2"
 actix-ws = "0.3.0"
@@ -117,9 +118,10 @@ tokio-tungstenite = "0.27"
 # Specify release-only features for pulldown. See the
 # [docs](https://docs.rs/crate/pulldown-cmark/latest).
 [profile.release]
-lto = true
 codegen-units = 1
+lto = true
 panic = "abort"
+strip = "symbols"
 
 # Distribution
 # ------------
@@ -130,7 +132,6 @@ panic = "abort"
 # The profile that `cargo dist` will build with.
 [profile.dist]
 inherits = "release"
-lto = "thin"
 
 [lints.rust]
 # Avoid a lint about tarpaulin.

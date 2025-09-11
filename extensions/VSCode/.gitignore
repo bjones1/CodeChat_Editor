@@ -26,4 +26,9 @@ out/
 # Server
 server/
 
+# NAPI-RS
+src/index.d.ts
+src/index.js
+src/codechat-editor-client.win32-x64-msvc.node
+
 # CodeChat Editor lexer: python. See TODO.

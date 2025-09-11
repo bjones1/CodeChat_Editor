@@ -242,6 +242,11 @@ fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Resu
     }
 }
 
+fn copy_file<P: AsRef<Path> + std::fmt::Debug>(src: P, dest: P) -> io::Result<()> {
+    println!("copy {src:?} -> {dest:?}");
+    fs::copy(src, dest).map(|_| ())
+}
+
 fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(path: P) -> io::Result<()> {
     if Path::new(path.as_ref()).try_exists().unwrap() {
         fs::remove_dir_all(path.as_ref())?;
@@ -357,6 +362,8 @@ fn run_install(dev: bool) -> io::Result<()> {
     run_cmd!(
         info "Builder: cargo fetch";
         cargo fetch --manifest-path=../builder/Cargo.toml;
+        info "VSCode extension: cargo fetch";
+        cargo fetch --manifest-path=../extensions/VSCode/Cargo.toml;
         info "cargo fetch";
         cargo fetch;
     )?;
@@ -387,6 +394,8 @@ fn run_update() -> io::Result<()> {
     run_cmd!(
         info "Builder: cargo update";
         cargo update --manifest-path=../builder/Cargo.toml;
+        info "VSCoe extension: cargo update";
+        cargo update --manifest-path=../extensions/VSCode/Cargo.toml;
         info "cargo update";
         cargo update;
     )?;
@@ -396,6 +405,8 @@ fn run_update() -> io::Result<()> {
     run_cmd!(
         info "Builder: cargo outdated";
         cargo outdated --manifest-path=../builder/Cargo.toml;
+        info "VSCode extension: cargo outdated";
+        cargo outdated --manifest-path=../extensions/VSCode/Cargo.toml;
         info "cargo outdated";
         cargo outdated;
     )?;
@@ -412,10 +423,16 @@ fn run_test() -> io::Result<()> {
         info "Builder: cargo clippy and fmt";
         cargo clippy --all-targets --manifest-path=../builder/Cargo.toml -- -D warnings;
         cargo fmt --check --manifest-path=../builder/Cargo.toml;
+        info "VSCode extension: cargo clippy and fmt";
+        cargo clippy --all-targets --manifest-path=../extensions/VSCode/Cargo.toml -- -D warnings;
+        cargo fmt --check --manifest-path=../extensions/VSCode/Cargo.toml;
         info "cargo sort";
         cargo sort --check;
         cd ../builder;
         info "Builder: cargo sort";
+        cargo sort --check;
+        cd ../extensions/VSCode;
+        info "VSCode extension: cargo sort";
         cargo sort --check;
     )?;
     run_build()?;
@@ -428,6 +445,8 @@ fn run_test() -> io::Result<()> {
     run_cmd!(
         info "Builder: cargo test";
         cargo test --manifest-path=../builder/Cargo.toml;
+        info "VSCode extension: cargo test";
+        cargo test --manifest-path=../extensions/VSCode/Cargo.toml;
         info "cargo test";
         cargo test;
     )?;
@@ -458,6 +477,12 @@ fn run_client_build(
     // checks.
     skip_check_errors: bool,
 ) -> io::Result<()> {
+    // Ensure the JavaScript data structured generated from Rust are up to date.
+    run_cmd!(
+        info "cargo test export_bindings";
+        cargo test export_bindings;
+    )?;
+
     let esbuild = PathBuf::from_slash("node_modules/.bin/esbuild");
     let distflag = if dist { "--minify" } else { "--sourcemap" };
     // This makes the program work from either the `server/` or `client/`
@@ -549,6 +574,13 @@ fn run_extensions_build(
     // directories.
     let rel_path = "../extensions/VSCode";
 
+    // The NAPI build.
+    let mut napi_args = vec!["napi", "build", "--platform", "--output-dir", "src"];
+    if dist {
+        napi_args.push("--release");
+    }
+    run_script("npx", &napi_args, rel_path, true)?;
+
     // The main build for the Client.
     run_script(
         &esbuild,
@@ -561,6 +593,11 @@ fn run_extensions_build(
             "--external:vscode",
             "--outdir=./out",
             distflag,
+            // The binaries produced by NAPI-RS should be copied over.
+            "--loader:.node=copy",
+            // Avoid the default of adding hash names to the `.node` file
+            // generated.
+            "--asset-names=[name]",
         ],
         rel_path,
         true,
@@ -578,10 +615,12 @@ fn run_extensions_build(
 }
 
 fn run_change_version(new_version: &String) -> io::Result<()> {
+    let cargo_regex = r#"(\r?\nversion = ")[\d.]+("\r?\n)"#;
     let replacement_string = format!("${{1}}{new_version}${{2}}");
+    search_and_replace_file("Cargo.toml", cargo_regex, &replacement_string)?;
     search_and_replace_file(
-        "Cargo.toml",
-        r#"(\r?\nversion = ")[\d.]+("\r?\n)"#,
+        "../extensions/VSCode/Cargo.toml",
+        cargo_regex,
         &replacement_string,
     )?;
     search_and_replace_file(
@@ -601,18 +640,20 @@ fn run_prerelease() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists("../client/static/bundled")?;
     run_install(true)?;
-    run_cmd!(
-        info "cargo test export_bindings";
-        cargo test export_bindings;
-    )?;
-    run_script("pnpm", &["run", "dist"], "../client", true)?;
-    Ok(())
+    run_client_build(true, false)
 }
 
 fn run_postrelease(target: &str) -> io::Result<()> {
-    let server_dir = "../extensions/VSCode/server";
-    // Only clean the `server/` directory if it exists.
-    remove_dir_all_if_exists(server_dir)?;
+    // Copy all the Client static files needed by the embedded Server to the
+    // VSCode extension.
+    let client_static_dir = "../extensions/VSCode/static";
+    remove_dir_all_if_exists(client_static_dir)?;
+    quick_copy_dir("../client/static/", client_static_dir, None)?;
+    copy_file("log4rs.yml", "../extensions/VSCode/log4rs.yml")?;
+    copy_file(
+        "hashLocations.json",
+        "../extensions/VSCode/hashLocations.json",
+    )?;
 
     // Translate from the target triple to VSCE's target parameter.
     let vsce_target = match target {
@@ -622,13 +663,6 @@ fn run_postrelease(target: &str) -> io::Result<()> {
         "aarch64-apple-darwin" => "darwin-arm64",
         _ => panic!("Unsupported platform {target}."),
     };
-
-    let src_name = format!("codechat-editor-server-{target}");
-    quick_copy_dir(
-        format!("../target/distrib/{src_name}/").as_str(),
-        "../extensions/VSCode/server",
-        None,
-    )?;
     run_script(
         "npx",
         &[
