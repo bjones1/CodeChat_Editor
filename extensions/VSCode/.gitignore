@@ -23,8 +23,10 @@
 node_modules/
 out/
 
-# Server
-server/
+# Server support files
+log4rs.yml
+hashLocations.json
+static/
 
 # NAPI-RS
 src/index.d.ts

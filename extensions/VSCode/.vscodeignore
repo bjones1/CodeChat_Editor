@@ -31,6 +31,9 @@ node_modules/
 # Omit VSCode config.
 .vscode/**
 
+# Omit Rust build / intermediate files.
+target/**
+
 # Omit target-specific binaries. (Comment out when publishing for a specific
 # target.)
 #server/**
@@ -38,6 +41,9 @@ node_modules/
 # Misc files not needed in a package.
 .eslintrc.yml
 .gitignore
+build.rs
+Cargo.lock
+Cargo.toml
 contents.md
 developer.md
 jsconfig.json
