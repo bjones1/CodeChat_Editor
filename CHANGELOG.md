@@ -23,7 +23,11 @@ Changelog
 -----------------------------------------------------------
 
 *   Communicate between the VSCode extension and the Server using queues instead
-    of a websocket.
+    of a websocket and a websocket.
+*   Remove the HTML editor's toolbar, to free up more space on the screen.
+*   Add a code formatting button to the quick toolbar which appears when tex is
+    selected in the HTML editor.
+*   Remove the File entry from the HTML editor's main menu.
 
 Version 0.1.35 -- 2025-Sep-12
 -----------------------------

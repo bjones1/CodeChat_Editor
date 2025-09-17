@@ -14,9 +14,9 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// `tinymce-webpack.ts` -- integrate and configure the TinyMCE editor for use
+// `tinymce-config.ts` -- integrate and configure the TinyMCE editor for use
 // with the CodeChat Editor
-// ==========================================================================
+// =========================================================================
 //
 // Import TinyMCE.
 import {
@@ -68,74 +68,107 @@ import "tinymce/plugins/visualblocks/index.js";
 import "tinymce/plugins/visualchars/index.js";
 
 // Import premium plugins. NOTE: Download separately and add these to
-// /src/plugins.
+// `src/plugins`.
 /// import './plugins/checklist/plugin';
 /// import './plugins/powerpaste/plugin';
 /// import './plugins/powerpaste/js/wordimport';
 
 // Initialize TinyMCE.
 export const init = async (
-    // Provide editor options; don't set \`\`plugins\`\` or \`\`skin\`\`, since
-    // these must be accompanied by the correct imports.
+    // Provide editor options; don't set `plugins` or `skin`, since these must
+    // be accompanied by the correct imports.
     options: RawEditorOptions,
-) =>
-    // See
-    // [init()](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#init).
-    tinymce.init(
-        Object.assign({}, options, {
-            // See the list of
-            // [plugins](https://www.tiny.cloud/docs/tinymce/6/plugins/). These
-            // must be accompanied by the corresponding import above.
-            plugins:
-                "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
-            // The imports above apply the skins; don't try to dynamically load
-            // the skin's CSS.
-            skin: false,
-            // Enable the [browser-supplied
-            // spellchecker](https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck),
-            // since TinyMCE's spellchecker is a premium feature.
-            browser_spellcheck: true,
-            // Put more buttons on the [quick
-            // toolbar](https://www.tiny.cloud/docs/tinymce/6/quickbars/) that
-            // appears when text is selected. TODO: add a button for code format
-            // (can't find this one -- it's only on the [list of menu
-            // items](https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items)
-            // as `codeformat`).
-            quickbars_selection_toolbar:
-                "align | bold italic underline | quicklink h2 h3 blockquote",
-            // Place the Tiny MCE menu bar at the top of the screen; otherwise,
-            // it floats in front of text, sometimes obscuring what the user
-            // wants to edit. See the
-            // [docs](https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container).
-            fixed_toolbar_container: "#CodeChat-menu",
-            inline: true,
-            // When true, this still prevents hyperlinks to anchors on the
-            // current page from working correctly. There's an onClick handler
-            // that prevents links in the current page from working -- need to
-            // look into this. See also [a related GitHub
-            // issue](https://github.com/tinymce/tinymce/issues/3836).
-            //readonly: true  // Per the comment above, this is commented out.
-            // TODO: Notes on this setting.
-            relative_urls: true,
-            // This combines the [default TinyMCE toolbar
-            // buttons](https://www.tiny.cloud/blog/tinymce-toolbar/) with a few
-            // more from plugins. I like the default, so this is currently
-            // disabled.
-            //toolbar: 'undo redo | styleselect | bold italic | alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist | ltr rtl | help',
-            // See [License
-            // key](https://www.tiny.cloud/docs/tinymce/latest/license-key).
-            license_key: "gpl",
+) => {
+    // Merge the provided options with these default options.
+    let combinedOptions = Object.assign({}, options, {
+        // See the list of
+        // [plugins](https://www.tiny.cloud/docs/tinymce/6/plugins/). These must
+        // be accompanied by the corresponding import above.
+        plugins:
+            "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
+        // The imports above apply the skins; don't try to dynamically load the
+        // skin's CSS.
+        skin: false,
+        // Enable the [browser-supplied
+        // spellchecker](https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck),
+        // since TinyMCE's spellchecker is a premium feature.
+        browser_spellcheck: true,
+        // Place the Tiny MCE menu bar at the top of the screen; otherwise, it
+        // floats in front of text, sometimes obscuring what the user wants to
+        // edit. See the
+        // [docs](https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container).
+        fixed_toolbar_container: "#CodeChat-menu",
+        inline: true,
+        // When true, this still prevents hyperlinks to anchors on the current
+        // page from working correctly. There's an onClick handler that prevents
+        // links in the current page from working -- need to look into this. See
+        // also [a related GitHub
+        // issue](https://github.com/tinymce/tinymce/issues/3836).
+        //readonly: true  // Per the comment above, this is commented out.
+        // Use relative URLs in hyperlinks.
+        relative_urls: true,
+        // Disable the [TinyMCE toolbar
+        // buttons](https://www.tiny.cloud/blog/tinymce-toolbar/) to provide
+        // more real estate on the screen.
+        toolbar: false,
+        // Don't show the file option on the
+        // [menu](https://www.tiny.cloud/docs/tinymce/6/menus-configuration-options/#menubar),
+        // which is useless.
+        menubar: "edit insert view format table tools help",
+        // See [License
+        // key](https://www.tiny.cloud/docs/tinymce/latest/license-key).
+        license_key: "gpl",
 
-            // Settings for plugins
-            //
-            // [Image](https://www.tiny.cloud/docs/plugins/opensource/image/)
-            image_caption: true,
-            image_advtab: true,
-            image_title: true,
-            // Needed to allow custom elements.
-            extended_valid_elements:
-                "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale],wc-mermaid",
-            custom_elements:
-                "graphviz-graph,graphviz-script-editor,graphviz-combined,wc-mermaid",
-        }),
-    );
+        // ### Settings for plugins
+        //
+        // [Image](https://www.tiny.cloud/docs/plugins/opensource/image/)
+        image_caption: true,
+        image_advtab: true,
+        image_title: true,
+
+        // Quickbar config: disable the insert toolbar (which doesn't seem
+        // useful, and also has the image insert, which is problematic
+        // currently).
+        quickbars_insert_toolbar: false,
+        // Put more buttons on the [quick
+        // toolbar](https://www.tiny.cloud/docs/tinymce/6/quickbars/) that
+        // appears when text is selected. TODO: add a button for code format
+        // (can't find this one -- it's only on the [list of menu
+        // items](https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items)
+        // as `codeformat`).
+        quickbars_selection_toolbar:
+            "bold italic underline codeformat | quicklink h2 h3",
+
+        // Needed to allow custom elements.
+        extended_valid_elements:
+            "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale],wc-mermaid",
+        custom_elements:
+            "graphviz-graph,graphviz-script-editor,graphviz-combined,wc-mermaid",
+    });
+
+    // Merge in additional setup code.
+    const oldSetup = combinedOptions.setup;
+    combinedOptions.setup =
+        // Add a "Format as code" button (generated by Gemini).
+        (editor: Editor) => {
+            oldSetup?.(editor);
+            editor.ui.registry.addToggleButton("codeformat", {
+                text: "<>",
+                tooltip: "Format as code",
+                onAction: (_) =>
+                    editor.execCommand("mceToggleFormat", false, "code"),
+                onSetup: (api) => {
+                    const changed = editor.formatter.formatChanged(
+                        "code",
+                        (state) => api.setActive(state),
+                    );
+                    return () => changed.unbind();
+                },
+            });
+        };
+  
+          // Use these combiend options to
+        // [init](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#init)
+        // TinyMCE.
+      return tinymce.init(combinedOptions);
+};

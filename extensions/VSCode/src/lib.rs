@@ -30,11 +30,6 @@ use std::{
 
 // ### Third-party
 use actix_server::{Server, ServerHandle};
-use code_chat_editor::{
-    ide::vscode::{connection_id_raw_to_str, vscode_ide_core},
-    translation::{CreatedTranslationQueues, create_translation_queues},
-    webserver::{self, EditorMessage, WebAppState, setup_server},
-};
 use log::LevelFilter;
 use napi::{Error, Status};
 use napi_derive::napi;
@@ -44,13 +39,24 @@ use tokio::sync::{
     mpsc::{Receiver, Sender},
 };
 
+// ### Local
+use code_chat_editor::{
+    ide::vscode::{connection_id_raw_to_str, vscode_ide_core},
+    translation::{CreatedTranslationQueues, create_translation_queues},
+    webserver::{self, EditorMessage, WebAppState, setup_server},
+};
+
 // Code
 // ----
 //
 // This must be called only once, before constructing the `CodeChatEditorServer`
 // class.
 #[napi]
-pub fn init_server(extension_base_path: String) -> Result<(), Error> {
+pub fn init_server(
+    // The path to the location of this extension's files. This is used to
+    // locate static files for the webserver, etc.
+    extension_base_path: String,
+) -> Result<(), Error> {
     webserver::init_server(
         Some(&PathBuf::from(extension_base_path)),
         LevelFilter::Debug,
@@ -85,7 +91,10 @@ struct CodeChatEditorServer {
 #[allow(dead_code)]
 impl CodeChatEditorServer {
     #[napi(constructor)]
-    pub fn new(port: u16) -> Result<CodeChatEditorServer, Error> {
+    pub fn new(
+        // The port the webserver should use for the Client.
+        port: u16,
+    ) -> Result<CodeChatEditorServer, Error> {
         // Start the server.
         let (server, app_state) = setup_server(
             &SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port),
@@ -111,7 +120,8 @@ impl CodeChatEditorServer {
             )
         });
 
-        // Get the IDE queues created by this task.
+        // Get the IDE queues created by this task for use with the `get`/`put`
+        // methods.
         let websocket_queues = app_state
             .ide_queues
             .lock()
@@ -128,6 +138,9 @@ impl CodeChatEditorServer {
         })
     }
 
+    // This returns an error if the conversion to JSON fails, `None` if the
+    // queue is closed, or a JSON-encoded string containing the message
+    // otherwise.
     #[napi]
     pub async fn get_message(&self) -> Result<Option<String>, Error> {
         match self.to_ide_rx.lock().await.recv().await {
@@ -139,8 +152,14 @@ impl CodeChatEditorServer {
         }
     }
 
+    // Given a JSON-encoded message, send it to the Client. This returns an
+    // error if string's contents can't be JSON decoded to an `EditorMessage`.
     #[napi]
-    pub async fn send_message(&self, message: String) -> std::io::Result<()> {
+    pub async fn send_message(
+        &self,
+        // The `EditorMessage` to send, as a JSON-encoded string.
+        message: String,
+    ) -> std::io::Result<()> {
         let editor_message = serde_json::from_str::<EditorMessage>(&message)?;
         self.from_ide_tx
             .send(editor_message)
@@ -148,6 +167,7 @@ impl CodeChatEditorServer {
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
+    // This returns after the server shuts down.
     #[napi]
     pub async fn stop_server(&self) {
         self.server_handle.stop(true).await;

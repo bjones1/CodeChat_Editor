@@ -37,7 +37,7 @@
    This is used only to store a reused variable value. See the [CSS
    docs](https://drafts.csswg.org/css-variables/). */
 :root {
-    --top-height: 6.7rem;
+    --top-height: 3.7rem;
     --body-padding: 0.2rem;
 }
 
