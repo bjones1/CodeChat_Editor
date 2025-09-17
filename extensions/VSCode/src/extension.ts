@@ -335,9 +335,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 value as UpdateMessageContents;
                             const doc = get_document(current_update.file_path);
                             if (doc === undefined) {
-                                send_result(id, {
-                                    Err: `No open document for ${current_update.file_path}`,
-                                });
+                                sendResult(
+                                    id,
+                                    `No open document for ${current_update.file_path}`,
+                                );
                                 break;
                             }
                             if (current_update.contents !== undefined) {
@@ -421,7 +422,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     );
                                 }
                             }
-                            send_result(id);
+                            sendResult(id);
                             break;
                         }
 
@@ -438,12 +439,13 @@ export const activate = (context: vscode.ExtensionContext) => {
                                                 document,
                                                 current_editor?.viewColumn,
                                             );
-                                            send_result(id);
+                                            sendResult(id);
                                         },
                                         (reason) =>
-                                            send_result(id, {
-                                                Err: `Error: unable to open file ${current_file}: ${reason}`,
-                                            }),
+                                            sendResult(
+                                                id,
+                                                `Error: unable to open file ${current_file}: ${reason}`,
+                                            ),
                                     );
                             } else {
                                 // TODO: open using a custom document editor.
@@ -466,14 +468,15 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             },
                                         )
                                         .then(
-                                            () => send_result(id),
+                                            () => sendResult(id),
                                             (reason) =>
-                                                send_result(id, {
-                                                    Err: `Error: unable to open file ${current_file}: ${reason}`,
-                                                }),
+                                                sendResult(
+                                                    id,
+                                                    `Error: unable to open file ${current_file}: ${reason}`,
+                                                ),
                                         );
                                 }
-                                send_result(id);
+                                sendResult(id);
                             }
                             break;
                         }
@@ -509,11 +512,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const doc = get_document(load_file);
                             const load_file_result =
                                 doc === undefined ? null : doc.getText();
-                            send_result(id, {
-                                Ok: {
-                                    LoadFile: load_file_result,
-                                },
-                            });
+                            codeChatEditorServer.sendResultLoadfile(
+                                id,
+                                load_file_result,
+                            );
                             break;
                         }
 
@@ -521,7 +523,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const client_html = value as string;
                             assert(webview_panel !== undefined);
                             webview_panel.webview.html = client_html;
-                            send_result(id);
+                            sendResult(id);
                             // Now that the Client is loaded, send the editor's
                             // current file to the server.
                             send_update(false);
@@ -599,22 +601,12 @@ const report_server_timeout = (message_id: number) => {
 };
 
 // Send a result (a response to a message from the server) back to the server.
-const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
-    // We can't simply call `send_message` because that function expects a
-    // result message back from the server.
-    const jm: EditorMessage = {
-        id,
-        message: {
-            Result: result,
-        },
-    };
+const sendResult = (id: number, result: string | null = null) => {
     assert(codeChatEditorServer);
     console_log(
-        `CodeChat Editor extension: sending result ${JSON.stringify(
-            jm,
-        ).substring(0, MAX_MESSAGE_LENGTH)}.`,
+        `CodeChat Editor extension: sending result ${format_struct(result)}.`,
     );
-    codeChatEditorServer.sendMessage(JSON.stringify(jm));
+    codeChatEditorServer.sendResult(id, result);
 };
 
 // This is called after an event such as an edit, when the CodeChat panel

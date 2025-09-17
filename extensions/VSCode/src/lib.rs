@@ -43,7 +43,7 @@ use tokio::sync::{
 use code_chat_editor::{
     ide::vscode::{connection_id_raw_to_str, vscode_ide_core},
     translation::{CreatedTranslationQueues, create_translation_queues},
-    webserver::{self, EditorMessage, WebAppState, setup_server},
+    webserver::{self, EditorMessage, ResultOkTypes, WebAppState, setup_server},
 };
 
 // Code
@@ -152,6 +152,15 @@ impl CodeChatEditorServer {
         }
     }
 
+    // TODO: wait for a response; produce an error if no response after a timeout.
+    // Automatically generate an ID for each message.
+    async fn send_editor_message(&self, editor_message: EditorMessage) -> std::io::Result<()> {
+        self.from_ide_tx
+            .send(editor_message)
+            .await
+            .map_err(|e| std::io::Error::other(e.to_string()))
+    }
+
     // Given a JSON-encoded message, send it to the Client. This returns an
     // error if string's contents can't be JSON decoded to an `EditorMessage`.
     #[napi]
@@ -161,10 +170,55 @@ impl CodeChatEditorServer {
         message: String,
     ) -> std::io::Result<()> {
         let editor_message = serde_json::from_str::<EditorMessage>(&message)?;
-        self.from_ide_tx
-            .send(editor_message)
-            .await
-            .map_err(|e| std::io::Error::other(e.to_string()))
+        self.send_editor_message(editor_message).await
+    }
+
+    // TODO: not used yet; need to integrate in auto-result tracking, auto ID
+    // generation.
+    #[napi]
+    pub async fn send_message_opened(&self, id: f64, hosted_in_ide: bool) -> std::io::Result<()> {
+        let editor_message = EditorMessage {
+            id,
+            message: webserver::EditorMessageContents::Opened(webserver::IdeType::VSCode(
+                hosted_in_ide,
+            )),
+        };
+        self.send_editor_message(editor_message).await
+    }
+
+    // Send either an Ok(Void) or an Error result to the Client.
+    #[napi]
+    pub async fn send_result(
+        &self,
+        id: f64,
+        message_result: Option<String>,
+    ) -> std::io::Result<()> {
+        let editor_message = EditorMessage {
+            id,
+            message: webserver::EditorMessageContents::Result(
+                if let Some(message_result) = message_result {
+                    Err(message_result)
+                } else {
+                    Ok(ResultOkTypes::Void)
+                },
+            ),
+        };
+        self.send_editor_message(editor_message).await
+    }
+
+    #[napi]
+    pub async fn send_result_loadfile(
+        &self,
+        id: f64,
+        load_file: Option<String>,
+    ) -> std::io::Result<()> {
+        let editor_message = EditorMessage {
+            id,
+            message: webserver::EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(
+                load_file,
+            ))),
+        };
+        self.send_editor_message(editor_message).await
     }
 
     // This returns after the server shuts down.
