@@ -22,8 +22,15 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+*   No changes.
+
+Version 0.1.36 -- 2025-Sep-17
+-----------------------------
+
+*   The system continues to work after a PC goes to sleep then wakes back up;
+    communication within previous versions fails after a sleep/wake up cycle.
 *   Communicate between the VSCode extension and the Server using queues instead
-    of a websocket and a websocket.
+    of a websocket and a queue.
 *   Remove the HTML editor's toolbar, to free up more space on the screen.
 *   Add a code formatting button to the quick toolbar which appears when tex is
     selected in the HTML editor.
