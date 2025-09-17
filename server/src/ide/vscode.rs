@@ -40,7 +40,10 @@ use log::{debug, error};
 // ### Local
 use crate::{
     queue_send,
-    translation::{CreateTranslationQueuesError, create_translation_queues, translation_task},
+    translation::{
+        CreateTranslationQueuesError, CreatedTranslationQueues, create_translation_queues,
+        translation_task,
+    },
     webserver::{
         EditorMessage, EditorMessageContents, IdeType, ResultOkTypes, WebAppState,
         client_websocket, escape_html, filesystem_endpoint, get_client_framework, get_server_url,
@@ -62,8 +65,11 @@ pub async fn vscode_ide_websocket(
     body: web::Payload,
     app_state: WebAppState,
 ) -> Result<HttpResponse, Error> {
-    let connection_id_str = match vscode_ide_core(connection_id_raw, app_state.clone()).await {
-        Ok(s) => s,
+    let connection_id_raw = connection_id_raw.to_string();
+    let connection_id = format!("{VSC}{connection_id_raw}");
+
+    let translation_queues = match create_translation_queues(connection_id.clone(), &app_state) {
+        Ok(tq) => tq,
         Err(err) => match err {
             CreateTranslationQueuesError::IdInUse(_) => {
                 return Err(ErrorBadRequest(err.to_string()));
@@ -74,42 +80,40 @@ pub async fn vscode_ide_websocket(
                     req,
                     body,
                     app_state.ide_queues.clone(),
-                )
-                .await;
+                );
             }
         },
     };
+    vscode_ide_core(connection_id_raw, app_state.clone(), translation_queues);
     // Move data between the IDE and the processing task via queues. The
     // websocket connection between the client and the IDE will run in the
     // endpoint for that connection.
-    client_websocket(connection_id_str, req, body, app_state.ide_queues.clone()).await
+    client_websocket(connection_id, req, body, app_state.ide_queues.clone())
+}
+
+// Given a (random) connection ID produced by the IDE, return a string that
+// gives a VSCode-specific ID.
+pub fn connection_id_raw_to_str(connection_id_raw: &str) -> String {
+    format!("{VSC}{connection_id_raw}")
 }
 
 // Create queues, perform the IDE startup sequence, then enter a loop
 // translating between the IDE and Client. The caller must provide a task to
 // move data to/from the IDE queues.
-pub async fn vscode_ide_core(
-    connection_id_raw: web::Path<String>,
+pub fn vscode_ide_core(
+    connection_id_raw: String,
     app_state: WebAppState,
-) -> Result<String, CreateTranslationQueuesError> {
-    let connection_id_raw = connection_id_raw.to_string();
-    let connection_id_str = format!("{VSC}{connection_id_raw}");
+    translation_queues: CreatedTranslationQueues,
+) {
+    let (mut from_ide_rx, to_ide_tx, from_client_rx, to_client_tx) = (
+        translation_queues.from_ide_rx,
+        translation_queues.to_ide_tx,
+        translation_queues.from_client_rx,
+        translation_queues.to_client_tx,
+    );
 
-    let created_translation_queues_result =
-        create_translation_queues(connection_id_str.clone(), app_state.clone());
-    let (mut from_ide_rx, to_ide_tx, from_client_rx, to_client_tx) =
-        match created_translation_queues_result {
-            Err(err) => return Err(err),
-            Ok(tqr) => (
-                tqr.from_ide_rx,
-                tqr.to_ide_tx,
-                tqr.from_client_rx,
-                tqr.to_client_tx,
-            ),
-        };
-
-    let app_state_task = app_state.clone();
     actix_rt::spawn(async move {
+        let app_state_task = app_state.clone();
         let mut shutdown_only = true;
         'task: {
             // Get the first message sent by the IDE.
@@ -252,8 +256,6 @@ pub async fn vscode_ide_core(
         )
         .await;
     });
-
-    Ok(connection_id_str)
 }
 
 /// Serve the Client Framework.
@@ -285,7 +287,6 @@ pub async fn vscode_client_websocket(
         body,
         app_state.client_queues.clone(),
     )
-    .await
 }
 
 // Respond to requests for the filesystem.

@@ -353,7 +353,7 @@ async fn processing_task(
     let connection_id = format!("{FW}{connection_id_raw}");
 
     let created_translation_queues_result =
-        create_translation_queues(connection_id.clone(), app_state.clone());
+        create_translation_queues(connection_id.clone(), &app_state);
     let (from_ide_rx, to_ide_tx, from_client_rx, to_client_tx) =
         match created_translation_queues_result {
             Err(err) => {
@@ -440,21 +440,18 @@ async fn processing_task(
 
         // Now that the filewatcher is started, start the translation task then
         // proceed to the filewatcher main loop.
-        actix_rt::spawn(async move {
-            translation_task(
-                FW.to_string(),
-                connection_id_raw_task,
-                FILEWATCHER_PATH_PREFIX,
-                app_state,
-                shutdown_only,
-                false,
-                to_ide_tx,
-                from_ide_rx,
-                to_client_tx,
-                from_client_rx,
-            )
-            .await;
-        });
+        actix_rt::spawn(translation_task(
+            FW.to_string(),
+            connection_id_raw_task,
+            FILEWATCHER_PATH_PREFIX,
+            app_state,
+            shutdown_only,
+            false,
+            to_ide_tx,
+            from_ide_rx,
+            to_client_tx,
+            from_client_rx,
+        ));
 
         let mut is_closed = false;
         'task: loop {
@@ -654,7 +651,8 @@ async fn processing_task(
                         }
 
                         EditorMessageContents::LoadFile(_)  => {
-                            // We never have the requested file loaded in this "IDE". Intead, it's always on disk.
+                            // We never have the requested file loaded in this
+                            // "IDE". Intead, it's always on disk.
                             send_response(&from_ide_tx, m.id, Ok(ResultOkTypes::LoadFile(None))).await;
                         }
 
@@ -706,7 +704,6 @@ pub async fn filewatcher_websocket(
         body,
         app_state.client_queues.clone(),
     )
-    .await
 }
 
 /// Return a unique ID for an IDE websocket connection.
@@ -857,9 +854,9 @@ mod tests {
         let url_path = url_path.canonicalize().unwrap();
         assert_eq!(url_path, test_path);
 
-        // 2.  After fetching the file, we should get an update. The Server sends
-        //     a `LoadFile` to the IDE using message id 4; therefore, the `Update`
-        //     is ID 7, and the next message is ID 10.
+        // 2.  After fetching the file, we should get an update. The Server
+        //     sends a `LoadFile` to the IDE using message id 4; therefore, the
+        //     `Update` is ID 7, and the next message is ID 10.
         //
         // Message ids: IDE - 6, Server - 4->10, Client - 2.
         let uri = format!(
@@ -891,8 +888,8 @@ mod tests {
         let from_client_tx = wq.from_websocket_tx;
         let mut to_client_rx = wq.to_websocket_rx;
 
-        // 1. The initial web request for the Client framework produces a
-        //    `CurrentFile`.
+        // 1.  The initial web request for the Client framework produces a
+        //     `CurrentFile`.
         //
         // Message ids: IDE - 3->6, Server - 4, Client - 2.
         let (id, (..)) = get_message_as!(
@@ -904,9 +901,9 @@ mod tests {
         assert_eq!(id, 3.0);
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
-        // 2.  After fetching the file, we should get an update. The Server sends
-        //     a `LoadFile` to the IDE using message id 4; therefore, the `Update`
-        //     is ID 7, and the next message is ID 10.
+        // 2.  After fetching the file, we should get an update. The Server
+        //     sends a `LoadFile` to the IDE using message id 4; therefore, the
+        //     `Update` is ID 7, and the next message is ID 10.
         //
         // Message ids: IDE - 6, Server - 4->10, Client - 2.
         let mut file_path = test_dir.clone();
@@ -926,7 +923,7 @@ mod tests {
         assert_eq!(id, 7.0);
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
-        // 3. Send an update message with no contents.
+        // 3.  Send an update message with no contents.
         //
         // Message ids: IDE - 6, Server - 10, Client - 2->5.
         from_client_tx

@@ -1037,7 +1037,7 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
 /// allowing the user to edit the plain text of the source code in the IDE, or
 /// make GUI-enhanced edits of the source code rendered by the CodeChat Editor
 /// Client.
-pub async fn client_websocket(
+pub fn client_websocket(
     connection_id: String,
     req: HttpRequest,
     body: web::Payload,

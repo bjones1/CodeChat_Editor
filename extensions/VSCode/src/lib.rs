@@ -21,18 +21,28 @@
 // -------
 //
 // ### Standard library
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::ops::DerefMut;
-use std::path::PathBuf;
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::PathBuf,
+    sync::Arc,
+    thread,
+};
 
 // ### Third-party
 use actix_server::{Server, ServerHandle};
-use code_chat_editor::webserver::{self, WebAppState, setup_server};
+use code_chat_editor::{
+    ide::vscode::{connection_id_raw_to_str, vscode_ide_core},
+    translation::{CreatedTranslationQueues, create_translation_queues},
+    webserver::{self, EditorMessage, WebAppState, setup_server},
+};
 use log::LevelFilter;
 use napi::{Error, Status};
 use napi_derive::napi;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use rand::random;
+use tokio::sync::{
+    Mutex,
+    mpsc::{Receiver, Sender},
+};
 
 // Code
 // ----
@@ -48,12 +58,26 @@ pub fn init_server(extension_base_path: String) -> Result<(), Error> {
     .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))
 }
 
-// Provide a class to start and stop the server.
+// Using this macro is critical -- otherwise, the Actix system doesn't get
+// correctly initialized, which makes calls to `actix_rt::spawn` fail.
+#[actix_web::main]
+async fn start_server(
+    connection_id_raw: String,
+    app_state_task: WebAppState,
+    translation_queues: CreatedTranslationQueues,
+    server: Server,
+) -> std::io::Result<()> {
+    vscode_ide_core(connection_id_raw, app_state_task, translation_queues);
+    server.await
+}
+
+// Provide a class to start and stop the server. All its fields are opaque,
+// since only Rust should use them.
 #[napi]
 struct CodeChatEditorServer {
-    server: Arc<Mutex<Server>>,
     server_handle: ServerHandle,
-    _app_state: WebAppState,
+    from_ide_tx: Sender<EditorMessage>,
+    to_ide_rx: Arc<Mutex<Receiver<EditorMessage>>>,
 }
 
 #[napi]
@@ -62,22 +86,66 @@ struct CodeChatEditorServer {
 impl CodeChatEditorServer {
     #[napi(constructor)]
     pub fn new(port: u16) -> Result<CodeChatEditorServer, Error> {
-        let (server, _app_state) = setup_server(
+        // Start the server.
+        let (server, app_state) = setup_server(
             &SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port),
             None,
+        )?;
+        let server_handle = server.handle();
+
+        // Start a thread to translate between this IDE and a Client.
+        let connection_id_raw = random::<u64>().to_string();
+        let connection_id = connection_id_raw_to_str(&connection_id_raw);
+        let app_state_task = app_state.clone();
+        let translation_queues = create_translation_queues(
+            connection_id_raw_to_str(connection_id_raw.as_str()),
+            &app_state,
         )
         .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))?;
+        thread::spawn(move || {
+            start_server(
+                connection_id_raw,
+                app_state_task,
+                translation_queues,
+                server,
+            )
+        });
+
+        // Get the IDE queues created by this task.
+        let websocket_queues = app_state
+            .ide_queues
+            .lock()
+            .map_err(|e| std::io::Error::other(format!("Unable to lock queue: {e}")))?
+            .remove(&connection_id)
+            .ok_or_else(|| {
+                std::io::Error::other(format!("Unable to find queue named {connection_id}"))
+            })?;
+
         Ok(CodeChatEditorServer {
-            server_handle: server.handle(),
-            server: Arc::new(Mutex::new(server)),
-            _app_state,
+            server_handle,
+            from_ide_tx: websocket_queues.from_websocket_tx,
+            to_ide_rx: Arc::new(Mutex::new(websocket_queues.to_websocket_rx)),
         })
     }
 
     #[napi]
-    pub async fn start_server(&self) -> std::io::Result<()> {
-        let mut server_guard = self.server.lock().await;
-        server_guard.deref_mut().await
+    pub async fn get_message(&self) -> Result<Option<String>, Error> {
+        match self.to_ide_rx.lock().await.recv().await {
+            Some(editor_message) => match serde_json::to_string(&editor_message) {
+                Ok(v) => Ok(Some(v)),
+                Err(err) => Err(Error::new(Status::GenericFailure, err.to_string())),
+            },
+            None => Ok(None),
+        }
+    }
+
+    #[napi]
+    pub async fn send_message(&self, message: String) -> std::io::Result<()> {
+        let editor_message = serde_json::from_str::<EditorMessage>(&message)?;
+        self.from_ide_tx
+            .send(editor_message)
+            .await
+            .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     #[napi]

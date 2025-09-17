@@ -22,7 +22,8 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-*   No changes.
+*   Communicate between the VSCode extension and the Server using queues instead
+    of a websocket.
 
 Version 0.1.35 -- 2025-Sep-12
 -----------------------------

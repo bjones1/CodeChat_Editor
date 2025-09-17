@@ -30,7 +30,6 @@ import process from "node:process";
 // ### Third-party packages
 import escape from "escape-html";
 import vscode, { commands, Range, TextDocument, TextEditor } from "vscode";
-import { WebSocket } from "ws";
 import { CodeChatEditorServer, initServer } from "./index";
 
 // ### Local packages
@@ -58,7 +57,7 @@ const DEBUG_ENABLED = false;
 const is_windows = process.platform === "win32";
 
 // These globals are truly global: only one is needed for this entire plugin.
-let websocket: WebSocket | undefined;
+//
 // Where the webclient resides: `html` for a webview panel embedded in VSCode;
 // `browser` to use an external browser.
 let codechat_client_location: CodeChatEditorClientLocation =
@@ -104,7 +103,7 @@ let quiet_next_error = false;
 let is_dirty = false;
 
 // An object to start/stop the CodeChat Editor Server.
-let codeChatEditorServer: CodeChatEditorServer;
+let codeChatEditorServer: CodeChatEditorServer | undefined;
 // Before using `CodeChatEditorServer`, we must initialize it.
 {
     const ext = vscode.extensions.getExtension(
@@ -283,323 +282,260 @@ export const activate = (context: vscode.ExtensionContext) => {
                 }
 
                 // Start the server.
-                try {
-                    console_log("CodeChat Editor extension: starting server.");
-                    codeChatEditorServer = new CodeChatEditorServer(get_port());
-                    codeChatEditorServer.startServer();
-                } catch (err) {
-                    assert(err instanceof Error);
-                    show_error(err.message);
-                    return;
+                console_log("CodeChat Editor extension: starting server.");
+                codeChatEditorServer = new CodeChatEditorServer(get_port());
+
+                console_log("CodeChat Editor extension: connected to server.");
+                await send_message({
+                    Opened: {
+                        VSCode:
+                            codechat_client_location ===
+                            CodeChatEditorClientLocation.html,
+                    },
+                });
+                // For the external browser, we can immediately send the
+                // `CurrentFile` message. For the WebView, we must first wait to
+                // receive the HTML for the WebView (the `ClientHtml` message).
+                if (
+                    codechat_client_location ===
+                    CodeChatEditorClientLocation.browser
+                ) {
+                    send_update(false);
                 }
 
-                if (websocket === undefined) {
+                while (codeChatEditorServer) {
+                    const message_raw = await codeChatEditorServer.getMessage();
+                    if (message_raw === null) {
+                        console_log("CodeChat Editor extension: queue closed.");
+                        break;
+                    }
+                    // Parse the data into a message.
+                    const { id, message } = JSON.parse(
+                        message_raw,
+                    ) as EditorMessage;
                     console_log(
-                        "CodeChat Editor extension: opening websocket.",
+                        `CodeChat Editor extension: Received data id = ${id}, message = ${format_struct(
+                            message,
+                        )}.`,
                     );
+                    assert(id !== undefined);
+                    assert(message !== undefined);
+                    if (message === "Closed") {
+                        break;
+                    }
+                    const keys = Object.keys(message);
+                    assert(keys.length === 1);
+                    const key = keys[0];
+                    const value = Object.values(message)[0];
 
-                    // Connect to the CodeChat Editor Server.
-                    websocket = new WebSocket(
-                        `ws://localhost:${get_port()}/vsc/ws-ide/${Math.random()}`,
-                    );
-
-                    let was_error: boolean = false;
-
-                    websocket.on("error", (err: ErrorEvent) => {
-                        was_error = true;
-                        show_error(
-                            `Error communicating with the CodeChat Editor Server: ${err.message}. Re-run the CodeChat Editor extension to restart it.`,
-                        );
-                        // The close event will be [emitted
-                        // next](https://nodejs.org/api/net.html#net_event_error_1);
-                        // that will handle cleanup.
-                    });
-
-                    websocket.on("close", (hadError: CloseEvent) => {
-                        console_log(
-                            "CodeChat Editor extension: closing websocket connection.",
-                        );
-                        // If there was an error, the event handler above
-                        // already provided the message. Note: the [parameter
-                        // hadError](https://nodejs.org/api/net.html#net_event_close_1)
-                        // only applies to transmission errors, not to any other
-                        // errors which trigger the error callback. Therefore,
-                        // I'm using the `was_error` flag instead to catch
-                        // non-transmission errors.
-                        if (!was_error && hadError) {
-                            show_error(
-                                "The connection to the CodeChat Editor Server was closed due to a transmission error. Re-run the CodeChat Editor extension to restart it.",
-                            );
-                        }
-                        websocket = undefined;
-                        idle_timer = undefined;
-                    });
-
-                    websocket.on("open", () => {
-                        console_log(
-                            "CodeChat Editor extension: connected to server.",
-                        );
-                        assert(websocket !== undefined);
-                        send_message({
-                            Opened: {
-                                VSCode:
-                                    codechat_client_location ===
-                                    CodeChatEditorClientLocation.html,
-                            },
-                        });
-                        // For the external browser, we can immediately send the
-                        // `CurrentFile` message. For the WebView, we must first
-                        // wait to receive the HTML for the WebView (the
-                        // `ClientHtml` message).
-                        if (
-                            codechat_client_location ===
-                            CodeChatEditorClientLocation.browser
-                        ) {
-                            send_update(false);
-                        }
-                    });
-
-                    websocket.on("message", (data) => {
-                        // Parse the data into a message.
-                        const { id, message } = JSON.parse(
-                            data.toString(),
-                        ) as EditorMessage;
-                        console_log(
-                            `CodeChat Editor extension: Received data id = ${id}, message = ${format_struct(
-                                message,
-                            )}.`,
-                        );
-                        assert(id !== undefined);
-                        assert(message !== undefined);
-                        const keys = Object.keys(message);
-                        assert(keys.length === 1);
-                        const key = keys[0];
-                        const value = Object.values(message)[0];
-
-                        // Process this message.
-                        switch (key) {
-                            case "Update": {
-                                const current_update =
-                                    value as UpdateMessageContents;
-                                const doc = get_document(
-                                    current_update.file_path,
-                                );
-                                if (doc === undefined) {
-                                    send_result(id, {
-                                        Err: `No open document for ${current_update.file_path}`,
-                                    });
-                                    break;
-                                }
-                                if (current_update.contents !== undefined) {
-                                    const source =
-                                        current_update.contents.source;
-                                    // Is this plain text, or a diff? This will
-                                    // produce a change event, which we'll
-                                    // ignore.
-                                    ignore_text_document_change = true;
-                                    // Use a workspace edit, since calls to
-                                    // `TextEditor.edit` must be made to the
-                                    // active editor only.
-                                    const wse = new vscode.WorkspaceEdit();
-                                    if ("Plain" in source) {
-                                        wse.replace(
-                                            doc.uri,
-                                            doc.validateRange(
-                                                new vscode.Range(
-                                                    0,
-                                                    0,
-                                                    doc.lineCount,
-                                                    0,
-                                                ),
-                                            ),
-                                            source.Plain.doc,
-                                        );
-                                    } else {
-                                        assert("Diff" in source);
-                                        const diffs = source.Diff.doc;
-                                        for (const diff of diffs) {
-                                            // Convert from character offsets from the
-                                            // beginning of the document to a
-                                            // `Position` (line, then offset on that
-                                            // line) needed by VSCode.
-                                            const from = doc.positionAt(
-                                                diff.from,
-                                            );
-                                            if (diff.to === undefined) {
-                                                // This is an insert.
-                                                wse.insert(
-                                                    doc.uri,
-                                                    from,
-                                                    diff.insert,
-                                                );
-                                            } else {
-                                                // This is a replace or delete.
-                                                const to = doc.positionAt(
-                                                    diff.to,
-                                                );
-                                                wse.replace(
-                                                    doc.uri,
-                                                    new Range(from, to),
-                                                    diff.insert,
-                                                );
-                                            }
-                                        }
-                                    }
-                                    vscode.workspace
-                                        .applyEdit(wse)
-                                        .then(
-                                            () =>
-                                                (ignore_text_document_change = false),
-                                        );
-                                }
-                                // Update the cursor position if provided.
-                                let line = current_update.cursor_position;
-                                if (line !== undefined) {
-                                    const editor = get_text_editor(doc);
-                                    if (editor) {
-                                        ignore_selection_change = true;
-                                        // The VSCode line is zero-based; the
-                                        // CodeMirror line is one-based.
-                                        line -= 1;
-                                        console_log(`Moving to line ${line}.`);
-                                        const position = new vscode.Position(
-                                            line,
-                                            line,
-                                        );
-                                        editor.selections = [
-                                            new vscode.Selection(
-                                                position,
-                                                position,
-                                            ),
-                                        ];
-                                        editor.revealRange(
-                                            new vscode.Range(
-                                                position,
-                                                position,
-                                            ),
-                                        );
-                                    }
-                                }
-                                send_result(id);
+                    // Process this message.
+                    switch (key) {
+                        case "Update": {
+                            const current_update =
+                                value as UpdateMessageContents;
+                            const doc = get_document(current_update.file_path);
+                            if (doc === undefined) {
+                                send_result(id, {
+                                    Err: `No open document for ${current_update.file_path}`,
+                                });
                                 break;
                             }
+                            if (current_update.contents !== undefined) {
+                                const source = current_update.contents.source;
+                                // Is this plain text, or a diff? This will
+                                // produce a change event, which we'll ignore.
+                                ignore_text_document_change = true;
+                                // Use a workspace edit, since calls to
+                                // `TextEditor.edit` must be made to the active
+                                // editor only.
+                                const wse = new vscode.WorkspaceEdit();
+                                if ("Plain" in source) {
+                                    wse.replace(
+                                        doc.uri,
+                                        doc.validateRange(
+                                            new vscode.Range(
+                                                0,
+                                                0,
+                                                doc.lineCount,
+                                                0,
+                                            ),
+                                        ),
+                                        source.Plain.doc,
+                                    );
+                                } else {
+                                    assert("Diff" in source);
+                                    const diffs = source.Diff.doc;
+                                    for (const diff of diffs) {
+                                        // Convert from character offsets from the
+                                        // beginning of the document to a
+                                        // `Position` (line, then offset on that
+                                        // line) needed by VSCode.
+                                        const from = doc.positionAt(diff.from);
+                                        if (diff.to === undefined) {
+                                            // This is an insert.
+                                            wse.insert(
+                                                doc.uri,
+                                                from,
+                                                diff.insert,
+                                            );
+                                        } else {
+                                            // This is a replace or delete.
+                                            const to = doc.positionAt(diff.to);
+                                            wse.replace(
+                                                doc.uri,
+                                                new Range(from, to),
+                                                diff.insert,
+                                            );
+                                        }
+                                    }
+                                }
+                                vscode.workspace
+                                    .applyEdit(wse)
+                                    .then(
+                                        () =>
+                                            (ignore_text_document_change = false),
+                                    );
+                            }
+                            // Update the cursor position if provided.
+                            let line = current_update.cursor_position;
+                            if (line !== undefined) {
+                                const editor = get_text_editor(doc);
+                                if (editor) {
+                                    ignore_selection_change = true;
+                                    // The VSCode line is zero-based; the
+                                    // CodeMirror line is one-based.
+                                    line -= 1;
+                                    console_log(`Moving to line ${line}.`);
+                                    const position = new vscode.Position(
+                                        line,
+                                        line,
+                                    );
+                                    editor.selections = [
+                                        new vscode.Selection(
+                                            position,
+                                            position,
+                                        ),
+                                    ];
+                                    editor.revealRange(
+                                        new vscode.Range(position, position),
+                                    );
+                                }
+                            }
+                            send_result(id);
+                            break;
+                        }
 
-                            case "CurrentFile": {
-                                const current_file = value[0] as string;
-                                const is_text = value[1] as boolean | undefined;
-                                if (is_text) {
-                                    vscode.workspace
-                                        .openTextDocument(current_file)
-                                        .then(
-                                            (document) => {
-                                                ignore_active_editor_change = true;
-                                                vscode.window.showTextDocument(
-                                                    document,
+                        case "CurrentFile": {
+                            const current_file = value[0] as string;
+                            const is_text = value[1] as boolean | undefined;
+                            if (is_text) {
+                                vscode.workspace
+                                    .openTextDocument(current_file)
+                                    .then(
+                                        (document) => {
+                                            ignore_active_editor_change = true;
+                                            vscode.window.showTextDocument(
+                                                document,
+                                                current_editor?.viewColumn,
+                                            );
+                                            send_result(id);
+                                        },
+                                        (reason) =>
+                                            send_result(id, {
+                                                Err: `Error: unable to open file ${current_file}: ${reason}`,
+                                            }),
+                                    );
+                            } else {
+                                // TODO: open using a custom document editor.
+                                // See
+                                // [openCustomDocument](https://code.visualstudio.com/api/references/vscode-api#CustomEditorProvider.openCustomDocument),
+                                // which can evidently be called
+                                // [indirectly](https://stackoverflow.com/a/65101181/4374935).
+                                // See also [Built-in
+                                // Commands](https://code.visualstudio.com/api/references/commands).
+                                // For now, simply respond with an OK, since the
+                                // following doesn't work.
+                                if (false) {
+                                    commands
+                                        .executeCommand(
+                                            "vscode.open",
+                                            vscode.Uri.file(current_file),
+                                            {
+                                                viewColumn:
                                                     current_editor?.viewColumn,
-                                                );
-                                                send_result(id);
                                             },
+                                        )
+                                        .then(
+                                            () => send_result(id),
                                             (reason) =>
                                                 send_result(id, {
                                                     Err: `Error: unable to open file ${current_file}: ${reason}`,
                                                 }),
                                         );
-                                } else {
-                                    // TODO: open using a custom document
-                                    // editor. See
-                                    // [openCustomDocument](https://code.visualstudio.com/api/references/vscode-api#CustomEditorProvider.openCustomDocument),
-                                    // which can evidently be called
-                                    // [indirectly](https://stackoverflow.com/a/65101181/4374935).
-                                    // See also [Built-in
-                                    // Commands](https://code.visualstudio.com/api/references/commands).
-                                    // For now, simply respond with an OK, since
-                                    // the following doesn't work.
-                                    if (false) {
-                                        commands
-                                            .executeCommand(
-                                                "vscode.open",
-                                                vscode.Uri.file(current_file),
-                                                {
-                                                    viewColumn:
-                                                        current_editor?.viewColumn,
-                                                },
-                                            )
-                                            .then(
-                                                () => send_result(id),
-                                                (reason) =>
-                                                    send_result(id, {
-                                                        Err: `Error: unable to open file ${current_file}: ${reason}`,
-                                                    }),
-                                            );
-                                    }
-                                    send_result(id);
                                 }
-                                break;
-                            }
-
-                            case "Result": {
-                                // Cancel the timer for this message and remove
-                                // it from `pending_messages`.
-                                const pending_message = pending_messages[id];
-                                if (pending_message !== undefined) {
-                                    const { timer_id, callback } =
-                                        pending_messages[id];
-                                    clearTimeout(timer_id);
-                                    // eslint-disable-next-line
-                                    // n/no-callback-literal
-                                    callback(true);
-                                    delete pending_messages[id];
-                                }
-
-                                // Report if this was an error.
-                                const result_contents = value as MessageResult;
-                                if ("Err" in result_contents) {
-                                    show_error(
-                                        `Error in message ${id}: ${result_contents.Err}`,
-                                    );
-                                }
-                                break;
-                            }
-
-                            case "LoadFile": {
-                                const load_file = value as string;
-                                // Look through all open documents to see if we
-                                // have the requested file.
-                                const doc = get_document(load_file);
-                                const load_file_result =
-                                    doc === undefined ? null : doc.getText();
-                                send_result(id, {
-                                    Ok: {
-                                        LoadFile: load_file_result,
-                                    },
-                                });
-                                break;
-                            }
-
-                            case "ClientHtml": {
-                                const client_html = value as string;
-                                assert(webview_panel !== undefined);
-                                webview_panel.webview.html = client_html;
                                 send_result(id);
-                                // Now that the Client is loaded, send the
-                                // editor's current file to the server.
-                                send_update(false);
-                                break;
+                            }
+                            break;
+                        }
+
+                        case "Result": {
+                            // Cancel the timer for this message and remove it
+                            // from `pending_messages`.
+                            const pending_message = pending_messages[id];
+                            if (pending_message !== undefined) {
+                                const { timer_id, callback } =
+                                    pending_messages[id];
+                                clearTimeout(timer_id);
+                                // eslint-disable-next-line
+                                // n/no-callback-literal
+                                callback(true);
+                                delete pending_messages[id];
                             }
 
-                            default:
-                                console.error(
-                                    `Unhandled message ${key}(${format_struct(
-                                        value,
-                                    )}`,
+                            // Report if this was an error.
+                            const result_contents = value as MessageResult;
+                            if ("Err" in result_contents) {
+                                show_error(
+                                    `Error in message ${id}: ${result_contents.Err}`,
                                 );
-                                break;
+                            }
+                            break;
                         }
-                    });
-                } else {
-                    console_log(
-                        "CodeChat Editor extension: connection already pending, so a new client wasn't created.",
-                    );
+
+                        case "LoadFile": {
+                            const load_file = value as string;
+                            // Look through all open documents to see if we have
+                            // the requested file.
+                            const doc = get_document(load_file);
+                            const load_file_result =
+                                doc === undefined ? null : doc.getText();
+                            send_result(id, {
+                                Ok: {
+                                    LoadFile: load_file_result,
+                                },
+                            });
+                            break;
+                        }
+
+                        case "ClientHtml": {
+                            const client_html = value as string;
+                            assert(webview_panel !== undefined);
+                            webview_panel.webview.html = client_html;
+                            send_result(id);
+                            // Now that the Client is loaded, send the editor's
+                            // current file to the server.
+                            send_update(false);
+                            break;
+                        }
+
+                        default:
+                            console.error(
+                                `Unhandled message ${key}(${format_struct(
+                                    value,
+                                )}`,
+                            );
+                            break;
+                    }
                 }
             },
         ),
@@ -618,7 +554,7 @@ export const deactivate = async () => {
 // --------------------
 //
 // Send a message expecting a result to the server.
-const send_message = (
+const send_message = async (
     message: EditorMessageContents,
     callback: (succeeded: boolean) => void = (_) => 0,
 ) => {
@@ -628,11 +564,15 @@ const send_message = (
         id,
         message,
     };
-    assert(websocket);
+    assert(codeChatEditorServer);
     console_log(
         `CodeChat Editor extension: sending message ${format_struct(jm)}.`,
     );
-    websocket.send(JSON.stringify(jm));
+    try {
+        await codeChatEditorServer.sendMessage(JSON.stringify(jm));
+    } catch (e) {
+        console.error(`send_message: ${e}`);
+    }
     pending_messages[id] = {
         timer_id: setTimeout(report_server_timeout, RESPONSE_TIMEOUT_MS, id),
         callback,
@@ -668,13 +608,13 @@ const send_result = (id: number, result: MessageResult = { Ok: "Void" }) => {
             Result: result,
         },
     };
-    assert(websocket);
+    assert(codeChatEditorServer);
     console_log(
         `CodeChat Editor extension: sending result ${JSON.stringify(
             jm,
         ).substring(0, MAX_MESSAGE_LENGTH)}.`,
     );
-    websocket.send(JSON.stringify(jm));
+    codeChatEditorServer.sendMessage(JSON.stringify(jm));
 };
 
 // This is called after an event such as an edit, when the CodeChat panel
@@ -688,7 +628,7 @@ const send_update = (this_is_dirty: boolean) => {
             clearTimeout(idle_timer);
         }
         // ... schedule a render after 300 ms.
-        idle_timer = setTimeout(() => {
+        idle_timer = setTimeout(async () => {
             if (can_render()) {
                 const ate = vscode.window.activeTextEditor!;
                 if (ate !== current_editor) {
@@ -696,7 +636,7 @@ const send_update = (this_is_dirty: boolean) => {
                     // the user to rapidly cycle through several editors without
                     // needing to reload the Client with each cycle.
                     current_editor = ate;
-                    send_message({
+                    await send_message({
                         CurrentFile: [ate!.document.fileName, null],
                     });
                     // Since we just requested a new file, the contents are
@@ -731,7 +671,7 @@ const send_update = (this_is_dirty: boolean) => {
                     };
                     is_dirty = false;
                 }
-                send_message({
+                await send_message({
                     Update,
                 });
             }
@@ -743,10 +683,10 @@ const send_update = (this_is_dirty: boolean) => {
 // well.
 const stop_client = async () => {
     console_log("CodeChat Editor extension: stopping client.");
-    if (websocket !== undefined) {
+    if (codeChatEditorServer !== undefined) {
         console_log("CodeChat Editor extension: ending connection.");
-        websocket?.close();
-        websocket = undefined;
+        await codeChatEditorServer.stopServer();
+        codeChatEditorServer = undefined;
     }
 
     // Shut the timer down after the client is undefined, to ensure it can't be
@@ -756,15 +696,6 @@ const stop_client = async () => {
         idle_timer = undefined;
     }
 
-    // Shut down the server.
-    try {
-        await codeChatEditorServer.stopServer();
-    } catch (err) {
-        assert(err instanceof Error);
-        console.error(
-            `CodeChat Editor Client: error on server shutdown - ${err.message}`,
-        );
-    }
     current_editor = undefined;
 };
 
@@ -797,7 +728,7 @@ const show_error = (message: string) => {
 const can_render = () => {
     return (
         vscode.window.activeTextEditor !== undefined &&
-        websocket !== undefined &&
+        codeChatEditorServer !== undefined &&
         (codechat_client_location === CodeChatEditorClientLocation.browser ||
             webview_panel !== undefined)
     );
