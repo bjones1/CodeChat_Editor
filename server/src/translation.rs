@@ -391,7 +391,6 @@ pub async fn translation_task(
     mut from_client_rx: Receiver<EditorMessage>,
 ) {
     // Start the processing task.
-
     let connection_id = format!("{connection_id_prefix}{connection_id_raw}");
     if !shutdown_only {
         // Use a [labeled block

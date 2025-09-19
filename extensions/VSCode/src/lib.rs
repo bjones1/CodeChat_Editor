@@ -22,6 +22,7 @@
 //
 // ### Standard library
 use std::{
+    collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::Arc,
@@ -34,16 +35,26 @@ use log::LevelFilter;
 use napi::{Error, Status};
 use napi_derive::napi;
 use rand::random;
-use tokio::sync::{
-    Mutex,
-    mpsc::{Receiver, Sender},
+use tokio::{
+    runtime::Handle,
+    select,
+    sync::{
+        Mutex,
+        mpsc::{self, Receiver, Sender},
+    },
+    task::JoinHandle,
+    time::sleep,
 };
 
 // ### Local
 use code_chat_editor::{
     ide::vscode::{connection_id_raw_to_str, vscode_ide_core},
+    processing::{CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata},
     translation::{CreatedTranslationQueues, create_translation_queues},
-    webserver::{self, EditorMessage, ResultOkTypes, WebAppState, setup_server},
+    webserver::{
+        self, EditorMessage, EditorMessageContents, INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT,
+        REPLY_TIMEOUT_MS, ResultOkTypes, UpdateMessageContents, WebAppState, setup_server,
+    },
 };
 
 // Code
@@ -65,7 +76,7 @@ pub fn init_server(
 }
 
 // Using this macro is critical -- otherwise, the Actix system doesn't get
-// correctly initialized, which makes calls to `actix_rt::spawn` fail.
+// correctly initialized, which makes calls to `actix_rt::spawn` fail. In addition, this ensures that the server runs in a separate thread, rather than depending on the extension to yield it time to run in the current thread.
 #[actix_web::main]
 async fn start_server(
     connection_id_raw: String,
@@ -84,6 +95,10 @@ struct CodeChatEditorServer {
     server_handle: ServerHandle,
     from_ide_tx: Sender<EditorMessage>,
     to_ide_rx: Arc<Mutex<Receiver<EditorMessage>>>,
+    current_id: Arc<Mutex<f64>>,
+    pending_messages: Arc<Mutex<HashMap<u64, JoinHandle<()>>>>,
+    expired_messages_tx: Sender<f64>,
+    expired_messages_rx: Arc<Mutex<Receiver<f64>>>,
 }
 
 #[napi]
@@ -131,10 +146,17 @@ impl CodeChatEditorServer {
                 std::io::Error::other(format!("Unable to find queue named {connection_id}"))
             })?;
 
+        let (expired_messages_tx, expired_messages_rx) = mpsc::channel(100);
         Ok(CodeChatEditorServer {
             server_handle,
             from_ide_tx: websocket_queues.from_websocket_tx,
             to_ide_rx: Arc::new(Mutex::new(websocket_queues.to_websocket_rx)),
+            // Use a unique ID for each websocket message sent. See the Implementation
+            // section on Message IDs for more information.
+            current_id: Arc::new(Mutex::new(INITIAL_IDE_MESSAGE_ID)),
+            pending_messages: Arc::new(Mutex::new(HashMap::new())),
+            expired_messages_tx,
+            expired_messages_rx: Arc::new(Mutex::new(expired_messages_rx)),
         })
     }
 
@@ -143,7 +165,31 @@ impl CodeChatEditorServer {
     // otherwise.
     #[napi]
     pub async fn get_message(&self) -> Result<Option<String>, Error> {
-        match self.to_ide_rx.lock().await.recv().await {
+        // Get a message -- either an expired message result or an incoming message.
+        let mut to_ide_rx = self.to_ide_rx.lock().await;
+        let mut expired_messages_rx = self.expired_messages_rx.lock().await;
+        let editor_message = select! {
+            Some(m) = to_ide_rx.recv() => {
+                // Cancel the timer on this pending message.
+                if let Some(task) = self.pending_messages.lock().await.remove(&m.id.to_bits()) {
+                    task.abort();
+                }
+                // Return it.
+                Some(m)
+            },
+            Some(id) = expired_messages_rx.recv() =>
+                // Report this unacknowledged message.
+                Some(
+                    EditorMessage {
+                        id,
+                        message: EditorMessageContents::Result(Err(format!("Timeout: message id {id} unacknowledged.")))
+                    }
+                ),
+            else => None,
+        };
+
+        // Encode then deliver it.
+        match editor_message {
             Some(editor_message) => match serde_json::to_string(&editor_message) {
                 Ok(v) => Ok(Some(v)),
                 Err(err) => Err(Error::new(Status::GenericFailure, err.to_string())),
@@ -152,38 +198,96 @@ impl CodeChatEditorServer {
         }
     }
 
-    // TODO: wait for a response; produce an error if no response after a timeout.
-    // Automatically generate an ID for each message.
-    async fn send_editor_message(&self, editor_message: EditorMessage) -> std::io::Result<()> {
+    // Send the provided message contents; add in an ID and add this to the list of pending messages. This produces a timeout of a matching `Result` message isn't received with the timeout.
+    async fn send_message_timeout(
+        &self,
+        editor_message_contents: EditorMessageContents,
+    ) -> std::io::Result<()> {
+        // Get and update the current ID.
+        let id = {
+            let mut id = self.current_id.lock().await;
+            let old_id = *id;
+            *id += MESSAGE_ID_INCREMENT;
+            old_id
+        };
+        // Build the resulting message to send.
+        let editor_message = EditorMessage {
+            id,
+            message: editor_message_contents,
+        };
+
+        // Start a timeout in case the message isn't acknowledged.
+        let expired_messages_tx = self.expired_messages_tx.clone();
+        // Important: there's already a Tokio runtime since this is an async function. Use that to spawn a new task; there's not an Actix System/Arbiter running in this thread.
+        let waiting_task = Handle::current().spawn(async move {
+            sleep(REPLY_TIMEOUT_MS).await;
+            // Since the websocket failed to send a
+            // `Result`, produce a timeout `Result` for it.
+            match expired_messages_tx.send(id).await {
+                Ok(join_handle) => join_handle,
+                Err(err) => {
+                    eprintln!("Error -- unable to send expired message: {err}");
+                }
+            }
+        });
+        // Add this to the list of pending message.
+        self.pending_messages
+            .lock()
+            .await
+            .insert(editor_message.id.to_bits(), waiting_task);
+
+        self.send_message_raw(editor_message).await
+    }
+
+    // Send a message with no timeout or other additional steps.
+    async fn send_message_raw(&self, editor_message: EditorMessage) -> std::io::Result<()> {
         self.from_ide_tx
             .send(editor_message)
             .await
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
-    // Given a JSON-encoded message, send it to the Client. This returns an
-    // error if string's contents can't be JSON decoded to an `EditorMessage`.
     #[napi]
-    pub async fn send_message(
-        &self,
-        // The `EditorMessage` to send, as a JSON-encoded string.
-        message: String,
-    ) -> std::io::Result<()> {
-        let editor_message = serde_json::from_str::<EditorMessage>(&message)?;
-        self.send_editor_message(editor_message).await
+    pub async fn send_message_opened(&self, hosted_in_ide: bool) -> std::io::Result<()> {
+        self.send_message_timeout(EditorMessageContents::Opened(webserver::IdeType::VSCode(
+            hosted_in_ide,
+        )))
+        .await
     }
 
-    // TODO: not used yet; need to integrate in auto-result tracking, auto ID
-    // generation.
     #[napi]
-    pub async fn send_message_opened(&self, id: f64, hosted_in_ide: bool) -> std::io::Result<()> {
-        let editor_message = EditorMessage {
-            id,
-            message: webserver::EditorMessageContents::Opened(webserver::IdeType::VSCode(
-                hosted_in_ide,
-            )),
-        };
-        self.send_editor_message(editor_message).await
+    // Send a `CurrentFile` message. The other parameter (true if text/false if binary/None if ignored) is ignored by the server, so it's always sent as `None`.
+    pub async fn send_message_current_file(&self, url: String) -> std::io::Result<()> {
+        self.send_message_timeout(EditorMessageContents::CurrentFile(url, None))
+            .await
+    }
+
+    #[napi]
+    // Send an `Update` message, optionally with plain text (instead of a diff) containing the
+    // source code from the IDE.
+    pub async fn send_message_update_plain(
+        &self,
+        file_path: String,
+        // `null` to send no source code; a string to send the source code.
+        option_contents: Option<String>,
+        cursor_position: Option<u32>,
+        scroll_position: Option<f64>,
+    ) -> std::io::Result<()> {
+        self.send_message_timeout(EditorMessageContents::Update(UpdateMessageContents {
+            file_path,
+            contents: option_contents.map(|contents| CodeChatForWeb {
+                metadata: SourceFileMetadata {
+                    mode: "".to_string(),
+                },
+                source: CodeMirrorDiffable::Plain(CodeMirror {
+                    doc: contents,
+                    doc_blocks: vec![],
+                }),
+            }),
+            cursor_position,
+            scroll_position: scroll_position.map(|x| x as f32),
+        }))
+        .await
     }
 
     // Send either an Ok(Void) or an Error result to the Client.
@@ -203,7 +307,7 @@ impl CodeChatEditorServer {
                 },
             ),
         };
-        self.send_editor_message(editor_message).await
+        self.send_message_raw(editor_message).await
     }
 
     #[napi]
@@ -212,18 +316,22 @@ impl CodeChatEditorServer {
         id: f64,
         load_file: Option<String>,
     ) -> std::io::Result<()> {
-        let editor_message = EditorMessage {
+        self.send_message_raw(EditorMessage {
             id,
-            message: webserver::EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(
-                load_file,
-            ))),
-        };
-        self.send_editor_message(editor_message).await
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(load_file))),
+        })
+        .await
     }
 
     // This returns after the server shuts down.
     #[napi]
     pub async fn stop_server(&self) {
         self.server_handle.stop(true).await;
+        // Stop all running timers.
+        for (_id, join_handle) in self.pending_messages.lock().await.drain() {
+            join_handle.abort();
+        }
+        // Since the server is closing, don't report any expired message.
+        self.expired_messages_rx.lock().await.close();
     }
 }

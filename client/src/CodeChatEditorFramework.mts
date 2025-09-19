@@ -63,7 +63,7 @@ let webSocketComm: WebSocketComm;
 class WebSocketComm {
     // Use a unique ID for each websocket message sent. See the Implementation
     // section on Message IDs for more information.
-    ws_id = -9007199254740988;
+    ws_id = 4;
 
     // The websocket used by this class. Really a `ReconnectingWebSocket`, but
     // that's not a type.

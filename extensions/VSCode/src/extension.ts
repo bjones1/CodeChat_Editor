@@ -35,7 +35,6 @@ import { CodeChatEditorServer, initServer } from "./index";
 // ### Local packages
 import {
     EditorMessage,
-    EditorMessageContents,
     MessageResult,
     UpdateMessageContents,
 } from "../../../client/src/shared_types.mjs";
@@ -48,10 +47,8 @@ enum CodeChatEditorClientLocation {
 }
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH = 200;
-// The timeout for a websocket `Response`, in ms.
-const RESPONSE_TIMEOUT_MS = 15000;
 // True to enable additional debug logging.
-const DEBUG_ENABLED = false;
+const DEBUG_ENABLED = true;
 
 // True on Windows, false on OS X / Linux.
 const is_windows = process.platform === "win32";
@@ -74,17 +71,6 @@ let webview_panel: vscode.WebviewPanel | undefined;
 // A timer used to wait for additional events (keystrokes, etc.) before
 // performing a render.
 let idle_timer: NodeJS.Timeout | undefined;
-// Use a unique ID for each websocket message sent. See the Implementation
-// section on Message IDs for more information.
-let message_id = -9007199254740989;
-// A map of message id to (timer id, callback) for all pending messages.
-const pending_messages: Record<
-    number,
-    {
-        timer_id: NodeJS.Timeout;
-        callback: (succeeded: boolean) => void;
-    }
-> = {};
 // The text editor containing the current file.
 let current_editor: vscode.TextEditor | undefined;
 // True to ignore the next change event, which is produced by applying an
@@ -286,13 +272,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                 codeChatEditorServer = new CodeChatEditorServer(get_port());
 
                 console_log("CodeChat Editor extension: connected to server.");
-                await send_message({
-                    Opened: {
-                        VSCode:
-                            codechat_client_location ===
-                            CodeChatEditorClientLocation.html,
-                    },
-                });
+                await codeChatEditorServer.sendMessageOpened(
+                    codechat_client_location ===
+                        CodeChatEditorClientLocation.html,
+                );
                 // For the external browser, we can immediately send the
                 // `CurrentFile` message. For the WebView, we must first wait to
                 // receive the HTML for the WebView (the `ClientHtml` message).
@@ -482,19 +465,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                         }
 
                         case "Result": {
-                            // Cancel the timer for this message and remove it
-                            // from `pending_messages`.
-                            const pending_message = pending_messages[id];
-                            if (pending_message !== undefined) {
-                                const { timer_id, callback } =
-                                    pending_messages[id];
-                                clearTimeout(timer_id);
-                                // eslint-disable-next-line
-                                // n/no-callback-literal
-                                callback(true);
-                                delete pending_messages[id];
-                            }
-
                             // Report if this was an error.
                             const result_contents = value as MessageResult;
                             if ("Err" in result_contents) {
@@ -554,33 +524,6 @@ export const deactivate = async () => {
 
 // Supporting functions
 // --------------------
-//
-// Send a message expecting a result to the server.
-const send_message = async (
-    message: EditorMessageContents,
-    callback: (succeeded: boolean) => void = (_) => 0,
-) => {
-    const id = message_id;
-    message_id += 3;
-    const jm: EditorMessage = {
-        id,
-        message,
-    };
-    assert(codeChatEditorServer);
-    console_log(
-        `CodeChat Editor extension: sending message ${format_struct(jm)}.`,
-    );
-    try {
-        await codeChatEditorServer.sendMessage(JSON.stringify(jm));
-    } catch (e) {
-        console.error(`send_message: ${e}`);
-    }
-    pending_messages[id] = {
-        timer_id: setTimeout(report_server_timeout, RESPONSE_TIMEOUT_MS, id),
-        callback,
-    };
-};
-
 // Format a complex data structure as a string when in debug mode.
 const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
@@ -589,16 +532,6 @@ const format_struct = (complex_data_structure: any): string =>
               MAX_MESSAGE_LENGTH,
           )
         : "";
-
-// Report an error from the server.
-const report_server_timeout = (message_id: number) => {
-    // Invoke the callback with an error.
-    pending_messages[message_id]?.callback(false);
-
-    // Remove the message from the pending messages and report the error.
-    delete pending_messages[message_id];
-    console.error(`Error: server timeout for message id ${message_id}`);
-};
 
 // Send a result (a response to a message from the server) back to the server.
 const sendResult = (id: number, result: string | null = null) => {
@@ -628,9 +561,9 @@ const send_update = (this_is_dirty: boolean) => {
                     // the user to rapidly cycle through several editors without
                     // needing to reload the Client with each cycle.
                     current_editor = ate;
-                    await send_message({
-                        CurrentFile: [ate!.document.fileName, null],
-                    });
+                    await codeChatEditorServer!.sendMessageCurrentFile(
+                        ate!.document.fileName,
+                    );
                     // Since we just requested a new file, the contents are
                     // clean by definition.
                     is_dirty = false;
@@ -646,26 +579,19 @@ const send_update = (this_is_dirty: boolean) => {
                 // [Text.line](https://codemirror.net/docs/ref/#state.Text.line)
                 // is 1-based.
                 const current_line = ate.selection.active.line + 1;
-                const Update: UpdateMessageContents = {
-                    file_path: ate.document.fileName,
-                    cursor_position: current_line,
-                };
+                const file_path = ate.document.fileName;
+                const cursor_position = current_line;
                 // Send contents only if necessary.
-                if (is_dirty) {
-                    Update.contents = {
-                        metadata: { mode: "" },
-                        source: {
-                            Plain: {
-                                doc: ate.document.getText(),
-                                doc_blocks: [],
-                            },
-                        },
-                    };
-                    is_dirty = false;
-                }
-                await send_message({
-                    Update,
-                });
+                const option_contents = is_dirty
+                    ? ate.document.getText()
+                    : null;
+                is_dirty = false;
+                await codeChatEditorServer!.sendMessageUpdatePlain(
+                    file_path,
+                    option_contents,
+                    cursor_position,
+                    null,
+                );
             }
         }, 300);
     }

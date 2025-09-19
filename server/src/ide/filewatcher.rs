@@ -747,9 +747,10 @@ mod tests {
         },
         test_utils::{check_logger_errors, configure_testing_logger},
         webserver::{
-            EditorMessage, EditorMessageContents, IdeType, ResultOkTypes, UpdateMessageContents,
-            WebAppState, WebsocketQueues, configure_app, drop_leading_slash, make_app_data,
-            send_response, set_root_path, tests::IP_PORT,
+            EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID,
+            INITIAL_IDE_MESSAGE_ID, INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT,
+            ResultOkTypes, UpdateMessageContents, WebAppState, WebsocketQueues, configure_app,
+            drop_leading_slash, make_app_data, send_response, set_root_path, tests::IP_PORT,
         },
     };
 
@@ -821,14 +822,14 @@ mod tests {
         // The initial web request for the Client framework produces a
         // `CurrentFile`.
         //
-        // Message ids: IDE - 3->6, Server - 4, Client - 2.
+        // Message ids: IDE - 0->1, Server - 2, Client - 0.
         let (id, (url_string, is_text)) = get_message_as!(
             to_client_rx,
             EditorMessageContents::CurrentFile,
             file_name,
             is_text
         );
-        assert_eq!(id, 3.0);
+        assert_eq!(id, INITIAL_IDE_MESSAGE_ID);
         assert_eq!(is_text, Some(true));
         // Acknowledge it.
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
@@ -854,11 +855,9 @@ mod tests {
         let url_path = url_path.canonicalize().unwrap();
         assert_eq!(url_path, test_path);
 
-        // 2.  After fetching the file, we should get an update. The Server
-        //     sends a `LoadFile` to the IDE using message id 4; therefore, the
-        //     `Update` is ID 7, and the next message is ID 10.
+        // 2.  After fetching the file, we should get an update.
         //
-        // Message ids: IDE - 6, Server - 4->10, Client - 2.
+        // Message ids: IDE - 1, Server - 2->3, Client - 0.
         let uri = format!(
             "/fw/fsc/1/{}/test.py",
             drop_leading_slash(&test_dir.to_slash().unwrap())
@@ -867,7 +866,7 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
         let (id, umc) = get_message_as!(to_client_rx, EditorMessageContents::Update);
-        assert_eq!(id, 7.0);
+        assert_eq!(id, INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT);
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
         // Check the contents.
@@ -891,21 +890,21 @@ mod tests {
         // 1.  The initial web request for the Client framework produces a
         //     `CurrentFile`.
         //
-        // Message ids: IDE - 3->6, Server - 4, Client - 2.
+        // Message ids: IDE - 0->1, Server - 2, Client - 0.
         let (id, (..)) = get_message_as!(
             to_client_rx,
             EditorMessageContents::CurrentFile,
             file_name,
             is_text
         );
-        assert_eq!(id, 3.0);
+        assert_eq!(id, INITIAL_IDE_MESSAGE_ID);
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
         // 2.  After fetching the file, we should get an update. The Server
-        //     sends a `LoadFile` to the IDE using message id 4; therefore, the
-        //     `Update` is ID 7, and the next message is ID 10.
+        //     sends a `LoadFile` to the IDE using message the next ID;
+        //     therefore, this consumes two IDs.
         //
-        // Message ids: IDE - 6, Server - 4->10, Client - 2.
+        // Message ids: IDE - 1, Server - 2->3, Client - 0.
         let mut file_path = test_dir.clone();
         file_path.push("test.py");
         let file_path = simplified(&file_path.canonicalize().unwrap())
@@ -920,15 +919,15 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
         let (id, _) = get_message_as!(to_client_rx, EditorMessageContents::Update);
-        assert_eq!(id, 7.0);
+        assert_eq!(id, INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT);
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
         // 3.  Send an update message with no contents.
         //
-        // Message ids: IDE - 6, Server - 10, Client - 2->5.
+        // Message ids: IDE - 1, Server - 3, Client - 0->1.
         from_client_tx
             .send(EditorMessage {
-                id: 2.0,
+                id: INITIAL_CLIENT_MESSAGE_ID,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     file_path: file_path.clone(),
                     contents: None,
@@ -942,16 +941,25 @@ mod tests {
         // Check that it produces no error.
         assert_eq!(
             get_message_as!(to_client_rx, EditorMessageContents::Result),
-            (2.0, Ok(ResultOkTypes::Void))
+            (INITIAL_CLIENT_MESSAGE_ID, Ok(ResultOkTypes::Void))
         );
 
         // 4.  Send invalid messages.
         //
-        // Message ids: IDE - 6, Server - 10, Client - 5->14.
+        // Message ids: IDE - 1, Server - 3, Client - 1->4.
         for (id, msg) in [
-            (5.0, EditorMessageContents::Opened(IdeType::VSCode(true))),
-            (8.0, EditorMessageContents::ClientHtml("".to_string())),
-            (11.0, EditorMessageContents::RequestClose),
+            (
+                INITIAL_CLIENT_MESSAGE_ID + MESSAGE_ID_INCREMENT,
+                EditorMessageContents::Opened(IdeType::VSCode(true)),
+            ),
+            (
+                INITIAL_CLIENT_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
+                EditorMessageContents::ClientHtml("".to_string()),
+            ),
+            (
+                INITIAL_CLIENT_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
+                EditorMessageContents::RequestClose,
+            ),
         ] {
             from_client_tx
                 .send(EditorMessage { id, message: msg })
@@ -964,10 +972,10 @@ mod tests {
 
         // 5.  Send an update message with no path.
         //
-        // Message ids: IDE - 6, Server - 10, Client - 14->17.
+        // Message ids: IDE - 1, Server - 3, Client - 4->5.
         from_client_tx
             .send(EditorMessage {
-                id: 14.0,
+                id: INITIAL_CLIENT_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     file_path: "".to_string(),
                     contents: Some(CodeChatForWeb {
@@ -988,7 +996,7 @@ mod tests {
 
         // Check that it produces an error.
         let (id, err_msg) = get_message_as!(to_client_rx, EditorMessageContents::Result);
-        assert_eq!(id, 14.0);
+        assert_eq!(id, INITIAL_CLIENT_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT);
         assert_starts_with!(
             cast!(err_msg, Err),
             "Update for file '' doesn't match current file"
@@ -996,10 +1004,10 @@ mod tests {
 
         // 6.  Send an update message with unknown source language.
         //
-        // Message ids: IDE - 6, Server - 10, Client - 17->20.
+        // Message ids: IDE - 1, Server - 3, Client - 5->6.
         from_client_tx
             .send(EditorMessage {
-                id: 17.0,
+                id: INITIAL_CLIENT_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     file_path: file_path.clone(),
                     contents: Some(CodeChatForWeb {
@@ -1022,17 +1030,17 @@ mod tests {
         assert_eq!(
             get_message_as!(to_client_rx, EditorMessageContents::Result),
             (
-                17.0,
+                INITIAL_CLIENT_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT,
                 Err("Unable to translate to source: Invalid mode".to_string())
             )
         );
 
         // 7.  Send a valid message.
         //
-        // Message ids: IDE - 6, Server - 10, Client - 20->23.
+        // Message ids: IDE - 1, Server - 3, Client - 6->7.
         from_client_tx
             .send(EditorMessage {
-                id: 20.0,
+                id: INITIAL_CLIENT_MESSAGE_ID + 6.0 * MESSAGE_ID_INCREMENT,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     file_path: file_path.clone(),
                     contents: Some(CodeChatForWeb {
@@ -1052,7 +1060,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             get_message_as!(to_client_rx, EditorMessageContents::Result),
-            (20.0, Ok(ResultOkTypes::Void))
+            (
+                INITIAL_CLIENT_MESSAGE_ID + 6.0 * MESSAGE_ID_INCREMENT,
+                Ok(ResultOkTypes::Void)
+            )
         );
 
         // Check that the requested file was written.
@@ -1061,7 +1072,7 @@ mod tests {
 
         // 8.  Change this file and verify that this produces an update.
         //
-        // Message ids: IDE - 6->9, Server - 10, Client - 23.
+        // Message ids: IDE - 1->2, Server - 3, Client - 7.
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         // Wait for the filewatcher to debounce this file write.
@@ -1069,7 +1080,7 @@ mod tests {
         assert_eq!(
             get_message_as!(to_client_rx, EditorMessageContents::Update),
             (
-                6.0,
+                INITIAL_IDE_MESSAGE_ID + MESSAGE_ID_INCREMENT,
                 UpdateMessageContents {
                     file_path: file_path.clone(),
                     contents: Some(CodeChatForWeb {
@@ -1087,21 +1098,31 @@ mod tests {
             )
         );
         // Acknowledge this message.
-        send_response(&from_client_tx, 6.0, Ok(ResultOkTypes::Void)).await;
+        send_response(
+            &from_client_tx,
+            INITIAL_IDE_MESSAGE_ID + MESSAGE_ID_INCREMENT,
+            Ok(ResultOkTypes::Void),
+        )
+        .await;
 
         // 9.  Rename it and check for an close (the file watcher can't detect
         //     the destination file, so it's treated as the file is deleted).
         //
-        // Message ids: IDE - 9->12, Server - 10, Client - 23.
+        // Message ids: IDE - 2->3, Server - 3, Client - 7.
         let mut dest = PathBuf::from(&file_path).parent().unwrap().to_path_buf();
         dest.push("test2.py");
         fs::rename(file_path, dest.as_path()).unwrap();
         // Wait for the filewatcher to debounce this file write.
         sleep(Duration::from_secs(1)).await;
         let m = get_message(&mut to_client_rx).await;
-        assert_eq!(m.id, 9.0);
+        assert_eq!(m.id, INITIAL_IDE_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT);
         assert!(matches!(m.message, EditorMessageContents::Closed));
-        send_response(&from_client_tx, 9.0, Ok(ResultOkTypes::Void)).await;
+        send_response(
+            &from_client_tx,
+            INITIAL_IDE_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
+            Ok(ResultOkTypes::Void),
+        )
+        .await;
 
         // Each of the three invalid message types produces one error.
         check_logger_errors(5);

@@ -318,13 +318,13 @@ pub struct Credentials {
 #[macro_export]
 macro_rules! oneshot_send {
     // Provide two options: `break` or `break 'label`.
-    ($tx: expr_2021) => {
+    ($tx: expr) => {
         if let Err(err) = $tx {
             error!("Unable to enqueue: {err:?}");
             break;
         }
     };
-    ($tx: expr_2021, $label: tt) => {
+    ($tx: expr, $label: tt) => {
         if let Err(err) = $tx {
             error!("Unable to enqueue: {err:?}");
             break $label;
@@ -334,10 +334,10 @@ macro_rules! oneshot_send {
 
 #[macro_export]
 macro_rules! queue_send {
-    ($tx: expr_2021) => {
+    ($tx: expr) => {
         $crate::oneshot_send!($tx.await)
     };
-    ($tx: expr_2021, $label: tt) => {
+    ($tx: expr, $label: tt) => {
         $crate::oneshot_send!($tx.await, $label)
     };
 }
@@ -346,7 +346,7 @@ macro_rules! queue_send {
 /// -------
 // The timeout for a reply from a websocket, in ms. Use a short timeout to speed
 // up unit tests.
-const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
+pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
     Duration::from_millis(500)
 } else {
     Duration::from_millis(15000)
@@ -356,18 +356,10 @@ const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
 /// this server.
 const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 
-/// A message ID which won't be used by anything but a `Result` produced by an
-/// error not produced in response to a message.
-pub const RESERVED_MESSAGE_ID: f64 = if cfg!(test) {
-    // A simpler value when testing.
-    0.0
-} else {
-    // In production, start with the smallest whole number exactly
-    // representable. This is -9007199254740991.
-    -((1i64 << f64::MANTISSA_DIGITS) - 1) as f64
-};
+/// A few message IDs reserve for used during startup or for sending errors.
+pub const RESERVED_MESSAGE_ID: f64 = 0.0;
 /// The initial value for the server's message ID.
-pub const INITIAL_MESSAGE_ID: f64 = RESERVED_MESSAGE_ID + 1.0;
+pub const INITIAL_MESSAGE_ID: f64 = RESERVED_MESSAGE_ID + 3.0;
 // The initial value for a Client.
 pub const INITIAL_CLIENT_MESSAGE_ID: f64 = INITIAL_MESSAGE_ID + 1.0;
 // The initial value for an IDE.
@@ -1273,6 +1265,11 @@ pub fn client_websocket(
             while let Some(m) = to_websocket_rx.recv().await {
                 warn!("Dropped queued message {m:?}");
             }
+            to_websocket_rx.close();
+            // Stop all timers.
+            for (_id, join_handle) in pending_messages.drain() {
+                join_handle.abort();
+            }
         } else {
             info!("Websocket re-enqueued.");
             websocket_queues.lock().unwrap().insert(
@@ -1308,9 +1305,6 @@ pub async fn main(
 // called before the server is run.
 pub fn init_server(extension_base_path: Option<&Path>, level: LevelFilter) -> std::io::Result<()> {
     set_root_path(extension_base_path)?;
-    #[cfg(debug_assertions)]
-    let _ = level;
-    #[cfg(not(debug_assertions))]
     configure_logger(level).map_err(|e| std::io::Error::other(e.to_string()))?;
     Ok(())
 }
