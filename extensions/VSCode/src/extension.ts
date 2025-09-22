@@ -113,7 +113,7 @@ export const activate = (context: vscode.ExtensionContext) => {
         vscode.commands.registerCommand(
             "extension.codeChatEditorActivate",
             async () => {
-                console_log("CodeChat Editor extension starting.");
+                console_log("CodeChat Editor extension: starting.");
 
                 if (!subscribed) {
                     subscribed = true;
@@ -271,11 +271,13 @@ export const activate = (context: vscode.ExtensionContext) => {
                 console_log("CodeChat Editor extension: starting server.");
                 codeChatEditorServer = new CodeChatEditorServer(get_port());
 
-                console_log("CodeChat Editor extension: connected to server.");
-                await codeChatEditorServer.sendMessageOpened(
+                const hosted_in_ide =
                     codechat_client_location ===
-                        CodeChatEditorClientLocation.html,
+                    CodeChatEditorClientLocation.html;
+                console_log(
+                    `CodeChat Editor extension: sending message Opened(${hosted_in_ide}).`,
                 );
+                await codeChatEditorServer.sendMessageOpened(hosted_in_ide);
                 // For the external browser, we can immediately send the
                 // `CurrentFile` message. For the WebView, we must first wait to
                 // receive the HTML for the WebView (the `ClientHtml` message).
@@ -389,7 +391,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     // The VSCode line is zero-based; the
                                     // CodeMirror line is one-based.
                                     line -= 1;
-                                    console_log(`Moving to line ${line}.`);
                                     const position = new vscode.Position(
                                         line,
                                         line,
@@ -482,6 +483,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const doc = get_document(load_file);
                             const load_file_result =
                                 doc === undefined ? null : doc.getText();
+                            console_log(
+                                `CodeChat Editor extension: Result(LoadFile(${format_struct(load_file_result)}))`,
+                            );
                             codeChatEditorServer.sendResultLoadfile(
                                 id,
                                 load_file_result,
@@ -516,10 +520,10 @@ export const activate = (context: vscode.ExtensionContext) => {
 
 // On deactivation, close everything down.
 export const deactivate = async () => {
-    console_log("CodeChat extension: deactivating.");
+    console_log("CodeChat Editor extension: deactivating.");
     await stop_client();
     webview_panel?.dispose();
-    console_log("CodeChat extension: deactivated.");
+    console_log("CodeChat Editor extension: deactivated.");
 };
 
 // Supporting functions
@@ -537,7 +541,7 @@ const format_struct = (complex_data_structure: any): string =>
 const sendResult = (id: number, result: string | null = null) => {
     assert(codeChatEditorServer);
     console_log(
-        `CodeChat Editor extension: sending result ${format_struct(result)}.`,
+        `CodeChat Editor extension: sending result ${id}, ${format_struct(result)}.`,
     );
     codeChatEditorServer.sendResult(id, result);
 };
@@ -560,9 +564,14 @@ const send_update = (this_is_dirty: boolean) => {
                     // Send a new current file after a short delay; this allows
                     // the user to rapidly cycle through several editors without
                     // needing to reload the Client with each cycle.
+                    console_log(`CodeChat Editor extension: current_editor = ${current_editor?.document.fileName}, ate = ${ate.document.fileName}.`)
                     current_editor = ate;
+                    const current_file = ate!.document.fileName;
+                    console_log(
+                        `CodeChat Editor extension: sending CurrentFile(${current_file}}).`,
+                    );
                     await codeChatEditorServer!.sendMessageCurrentFile(
-                        ate!.document.fileName,
+                        current_file,
                     );
                     // Since we just requested a new file, the contents are
                     // clean by definition.
@@ -586,6 +595,9 @@ const send_update = (this_is_dirty: boolean) => {
                     ? ate.document.getText()
                     : null;
                 is_dirty = false;
+                console_log(
+                    `CodeChat Editor extension: sending Update(${file_path}, ${cursor_position}, ${format_struct(cursor_position)})`,
+                );
                 await codeChatEditorServer!.sendMessageUpdatePlain(
                     file_path,
                     option_contents,
@@ -602,7 +614,7 @@ const send_update = (this_is_dirty: boolean) => {
 const stop_client = async () => {
     console_log("CodeChat Editor extension: stopping client.");
     if (codeChatEditorServer !== undefined) {
-        console_log("CodeChat Editor extension: ending connection.");
+        console_log("CodeChat Editor extension: stopping server.");
         await codeChatEditorServer.stopServer();
         codeChatEditorServer = undefined;
     }

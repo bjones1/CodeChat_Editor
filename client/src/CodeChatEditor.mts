@@ -387,7 +387,7 @@ const on_save = async (only_if_dirty: boolean = false) => {
     // <a id="save"></a>Save the provided contents back to the filesystem, by
     // sending an update message over the websocket.
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
-    console_log("Sent Update - saving document.");
+    console_log("CodeChat Editor Client: sent Update - saving document.");
     await new Promise(async (resolve) => {
         webSocketComm.send_message({ Update: save_lp(is_dirty) }, () =>
             resolve(0),
@@ -425,7 +425,7 @@ export const startAutosaveTimer = () => {
     clearAutosaveTimer();
     // ...then start another timeout which saves the document when it expires.
     autosaveTimeoutId = window.setTimeout(() => {
-        console_log("Autosaving.");
+        console_log("CodeChat Editor Client: autosaving.");
         on_save();
     }, 1000);
 };
@@ -472,7 +472,7 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
 
     // Intercept this navigation so we can save the document first.
     navigateEvent.intercept();
-    console_log("CodeChat Editor: saving document before navigation.");
+    console_log("CodeChat Editor Client: saving document before navigation.");
     save_then_navigate(new URL(navigateEvent.destination.url));
 };
 

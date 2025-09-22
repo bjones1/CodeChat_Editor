@@ -101,19 +101,19 @@ class WebSocketComm {
         this.ws = new ReconnectingWebSocket!(ws_url);
         // Identify this client on connection.
         this.ws.onopen = () => {
-            console_log(`CodeChat Client: websocket to CodeChat Server open.`);
+            console_log(`CodeChat Editor Client: websocket to CodeChat Server open.`);
         };
 
         // Provide logging to help track down errors.
         this.ws.onerror = (event: Event) => {
             report_error(
-                `CodeChat Client: websocket error.`, event
+                `CodeChat Editor Client: websocket error.`, event
             );
         };
 
         this.ws.onclose = (event: CloseEvent) => {
             console_log(
-                `CodeChat Client: websocket ${event.wasClean ? "" : "*NOT*"} cleanly closed ${event.reason}. This should only happen on shutdown.`
+                `CodeChat Editor Client: websocket ${event.wasClean ? "" : "*NOT*"} cleanly closed ${event.reason}. This should only happen on shutdown.`
             );
             console_log(event);
         };
@@ -125,7 +125,7 @@ class WebSocketComm {
             const joint_message = JSON.parse(event.data) as EditorMessage;
             const { id, message } = joint_message;
             console_log(
-                `Received data id = ${id}, message = ${format_struct(message)}`,
+                `CodeChat Editor Client: received data id = ${id}, message = ${format_struct(message)}`,
             );
             assert(id !== undefined);
             assert(message !== undefined);
@@ -304,7 +304,7 @@ class WebSocketComm {
             assert(this.current_filename !== undefined);
             message.Update.file_path = this.current_filename!;
         }
-        console_log(`Sent message ${id}, ${format_struct(message)}`);
+        console_log(`CodeChat Editor Client: sent message ${id}, ${format_struct(message)}`);
         const jm: EditorMessage = {
             id: id,
             message: message,
@@ -351,7 +351,7 @@ class WebSocketComm {
             Result: result === null ? { Ok: "Void" } : { Err: result },
         };
         console_log(
-            `Sending result id = ${id}, message = ${format_struct(message)}`,
+            `CodeChat Client: sending result id = ${id}, message = ${format_struct(message)}`,
         );
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
