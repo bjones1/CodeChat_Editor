@@ -1305,6 +1305,11 @@ pub async fn main(
 // called before the server is run.
 pub fn init_server(extension_base_path: Option<&Path>, level: LevelFilter) -> std::io::Result<()> {
     set_root_path(extension_base_path)?;
+    // The unit tests include a test logger; don't config the logger in a test
+    // build.
+    #[cfg(test)]
+    let _ = level;
+    #[cfg(not(test))]
     configure_logger(level).map_err(|e| std::io::Error::other(e.to_string()))?;
     Ok(())
 }
