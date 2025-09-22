@@ -38,7 +38,6 @@ version = "0.1.36"
 crate-type = ["cdylib"]
 
 [dependencies]
-actix-rt = "2.11.0"
 actix-server = "2.6.0"
 actix-web = "4.11.0"
 codechat-editor-server = { path = "../../server" }

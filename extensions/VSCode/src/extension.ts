@@ -143,7 +143,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                     // Render when the active editor changes.
                     context.subscriptions.push(
                         vscode.window.onDidChangeActiveTextEditor((event) => {
-                            // If no text editor is active (for example, the CodeChat Editor has focus), ignore this update.
+                            // If no text editor is active (for example, the
+                            // CodeChat Editor has focus), ignore this update.
                             if (event === undefined) {
                                 return;
                             }
@@ -424,17 +425,20 @@ export const activate = (context: vscode.ExtensionContext) => {
                             if (is_text) {
                                 let document;
                                 try {
-                                    document = await vscode.workspace
-                                    .openTextDocument(current_file);
+                                    document =
+                                        await vscode.workspace.openTextDocument(
+                                            current_file,
+                                        );
                                 } catch (e) {
                                     sendResult(
                                         id,
-                                        `Error: unable to open file ${current_file}: ${e}`
-                                            );
+                                        `Error: unable to open file ${current_file}: ${e}`,
+                                    );
                                     continue;
                                 }
                                 ignore_active_editor_change = true;
-                                current_editor = await vscode.window.showTextDocument(
+                                current_editor =
+                                    await vscode.window.showTextDocument(
                                         document,
                                         current_editor?.viewColumn,
                                     );
@@ -537,6 +541,7 @@ export const deactivate = async () => {
 
 // Supporting functions
 // --------------------
+//
 // Format a complex data structure as a string when in debug mode.
 const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
@@ -573,7 +578,9 @@ const send_update = (this_is_dirty: boolean) => {
                     // Send a new current file after a short delay; this allows
                     // the user to rapidly cycle through several editors without
                     // needing to reload the Client with each cycle.
-                    console_log(`CodeChat Editor extension: current_editor = ${current_editor?.document.fileName}, ate = ${ate.document.fileName}.`)
+                    console_log(
+                        `CodeChat Editor extension: current_editor = ${current_editor?.document.fileName}, ate = ${ate.document.fileName}.`,
+                    );
                     current_editor = ate;
                     const current_file = ate!.document.fileName;
                     console_log(

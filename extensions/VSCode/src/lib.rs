@@ -76,7 +76,9 @@ pub fn init_server(
 }
 
 // Using this macro is critical -- otherwise, the Actix system doesn't get
-// correctly initialized, which makes calls to `actix_rt::spawn` fail. In addition, this ensures that the server runs in a separate thread, rather than depending on the extension to yield it time to run in the current thread.
+// correctly initialized, which makes calls to `actix_rt::spawn` fail. In
+// addition, this ensures that the server runs in a separate thread, rather than
+// depending on the extension to yield it time to run in the current thread.
 #[actix_web::main]
 async fn start_server(
     connection_id_raw: String,
@@ -151,8 +153,8 @@ impl CodeChatEditorServer {
             server_handle,
             from_ide_tx: websocket_queues.from_websocket_tx,
             to_ide_rx: Arc::new(Mutex::new(websocket_queues.to_websocket_rx)),
-            // Use a unique ID for each websocket message sent. See the Implementation
-            // section on Message IDs for more information.
+            // Use a unique ID for each websocket message sent. See the
+            // Implementation section on Message IDs for more information.
             current_id: Arc::new(Mutex::new(INITIAL_IDE_MESSAGE_ID)),
             pending_messages: Arc::new(Mutex::new(HashMap::new())),
             expired_messages_tx,
@@ -165,7 +167,8 @@ impl CodeChatEditorServer {
     // otherwise.
     #[napi]
     pub async fn get_message(&self) -> Result<Option<String>, Error> {
-        // Get a message -- either an expired message result or an incoming message.
+        // Get a message -- either an expired message result or an incoming
+        // message.
         let mut to_ide_rx = self.to_ide_rx.lock().await;
         let mut expired_messages_rx = self.expired_messages_rx.lock().await;
         let editor_message = select! {
@@ -198,7 +201,9 @@ impl CodeChatEditorServer {
         }
     }
 
-    // Send the provided message contents; add in an ID and add this to the list of pending messages. This produces a timeout of a matching `Result` message isn't received with the timeout.
+    // Send the provided message contents; add in an ID and add this to the list
+    // of pending messages. This produces a timeout of a matching `Result`
+    // message isn't received with the timeout.
     async fn send_message_timeout(
         &self,
         editor_message_contents: EditorMessageContents,
@@ -218,11 +223,13 @@ impl CodeChatEditorServer {
 
         // Start a timeout in case the message isn't acknowledged.
         let expired_messages_tx = self.expired_messages_tx.clone();
-        // Important: there's already a Tokio runtime since this is an async function. Use that to spawn a new task; there's not an Actix System/Arbiter running in this thread.
+        // Important: there's already a Tokio runtime since this is an async
+        // function. Use that to spawn a new task; there's not an Actix
+        // System/Arbiter running in this thread.
         let waiting_task = Handle::current().spawn(async move {
             sleep(REPLY_TIMEOUT_MS).await;
-            // Since the websocket failed to send a
-            // `Result`, produce a timeout `Result` for it.
+            // Since the websocket failed to send a `Result`, produce a timeout
+            // `Result` for it.
             match expired_messages_tx.send(id).await {
                 Ok(join_handle) => join_handle,
                 Err(err) => {
@@ -256,15 +263,17 @@ impl CodeChatEditorServer {
     }
 
     #[napi]
-    // Send a `CurrentFile` message. The other parameter (true if text/false if binary/None if ignored) is ignored by the server, so it's always sent as `None`.
+    // Send a `CurrentFile` message. The other parameter (true if text/false if
+    // binary/None if ignored) is ignored by the server, so it's always sent as
+    // `None`.
     pub async fn send_message_current_file(&self, url: String) -> std::io::Result<()> {
         self.send_message_timeout(EditorMessageContents::CurrentFile(url, None))
             .await
     }
 
     #[napi]
-    // Send an `Update` message, optionally with plain text (instead of a diff) containing the
-    // source code from the IDE.
+    // Send an `Update` message, optionally with plain text (instead of a diff)
+    // containing the source code from the IDE.
     pub async fn send_message_update_plain(
         &self,
         file_path: String,
