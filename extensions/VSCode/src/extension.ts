@@ -127,6 +127,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                             if (event.contentChanges.length === 0) {
                                 return;
                             }
+                            if (ignore_text_document_change) {
+                                ignore_text_document_change = false;
+                                return;
+                            }
                             console_log(
                                 `CodeChat Editor extension: text changed - ${
                                     event.reason
@@ -138,7 +142,11 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                     // Render when the active editor changes.
                     context.subscriptions.push(
-                        vscode.window.onDidChangeActiveTextEditor((_event) => {
+                        vscode.window.onDidChangeActiveTextEditor((event) => {
+                            // If no text editor is active (for example, the CodeChat Editor has focus), ignore this update.
+                            if (event === undefined) {
+                                return;
+                            }
                             if (ignore_active_editor_change) {
                                 ignore_active_editor_change = false;
                                 return;
@@ -414,23 +422,24 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const current_file = value[0] as string;
                             const is_text = value[1] as boolean | undefined;
                             if (is_text) {
-                                vscode.workspace
-                                    .openTextDocument(current_file)
-                                    .then(
-                                        (document) => {
-                                            ignore_active_editor_change = true;
-                                            vscode.window.showTextDocument(
-                                                document,
-                                                current_editor?.viewColumn,
+                                let document;
+                                try {
+                                    document = await vscode.workspace
+                                    .openTextDocument(current_file);
+                                } catch (e) {
+                                    sendResult(
+                                        id,
+                                        `Error: unable to open file ${current_file}: ${e}`
                                             );
-                                            sendResult(id);
-                                        },
-                                        (reason) =>
-                                            sendResult(
-                                                id,
-                                                `Error: unable to open file ${current_file}: ${reason}`,
-                                            ),
+                                    continue;
+                                }
+                                ignore_active_editor_change = true;
+                                current_editor = await vscode.window.showTextDocument(
+                                        document,
+                                        current_editor?.viewColumn,
                                     );
+                                ignore_active_editor_change = false;
+                                sendResult(id);
                             } else {
                                 // TODO: open using a custom document editor.
                                 // See
