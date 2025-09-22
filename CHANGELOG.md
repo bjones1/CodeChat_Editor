@@ -24,6 +24,13 @@ Changelog
 
 *   No changes.
 
+Version 0.1.37 -- 2025-Sep-17
+-----------------------------
+
+*   Fix: avoid loading the same file twice in a row when the user clicks on a
+    link in the Client.
+*   Improve VSCode connection with the Server.
+
 Version 0.1.36 -- 2025-Sep-17
 -----------------------------
 
