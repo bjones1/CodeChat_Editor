@@ -430,7 +430,7 @@ class DocBlockWidget extends WidgetType {
                 this.delimiter,
             )}>${this.indent}</div>` +
             // The contents of this doc block.
-            `<div class="CodeChat-doc-contents" contenteditable>` +
+            `<div class="CodeChat-doc-contents" spellcheck contenteditable>` +
             this.contents +
             "</div>";
         mathJaxTypeset(wrap);
@@ -642,7 +642,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             // Ensure we have a valid dom. This also checks for
                             // undefined.
                             const dom_at_pos = update.view.domAtPos(from);
-                            const dom = dom_at_pos.node.childNodes[dom_at_pos.offset] as HTMLDivElement | null;
+                            const dom = dom_at_pos.node.childNodes[
+                                dom_at_pos.offset
+                            ] as HTMLDivElement | null;
                             if (dom == null) {
                                 return;
                             }
@@ -678,8 +680,23 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 // needing to check if it's already present.
                 indent_div.addEventListener(
                     "beforeinput",
-                    doc_block_indent_on_before_input,
+                    // Allow only spaces and delete/backspaces when editing the indent of a doc
+                    // block.
+                    (event: InputEvent) => {
+                        // Only modify the behavior of inserts.
+                        if (event.data) {
+                            // Block any insert that's not an insert of spaces. TODO: need to
+                            // support tabs.
+                            if (event.data !== " ".repeat(event.data.length)) {
+                                event.preventDefault();
+                            }
+                        }
+                    },
                 );
+                indent_div.addEventListener("input", (event) => {
+                    // Signal that this indent is dirty.
+                    on_dirty(event.target as HTMLElement);
+                });
 
                 // If the target is in the indent, not the contents, then the
                 // following code isn't needed.
@@ -833,25 +850,6 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
 
 // UI
 // --
-//
-// Allow only spaces and delete/backspaces when editing the indent of a doc
-// block.
-const doc_block_indent_on_before_input = (event_: Event) => {
-    // Declaring this as an InputEvent causes TypeScript to complain about an
-    // incorrect type, so fix it here.
-    const event = event_ as InputEvent;
-    // Only modify the behavior of inserts.
-    if (event.data) {
-        // Block any insert that's not an insert of spaces. TODO: need to
-        // support tabs.
-        if (event.data !== " ".repeat(event.data.length)) {
-            event.preventDefault();
-        }
-    }
-    // Signal that this indent is dirty.
-    event.target && on_dirty(event.target as HTMLElement);
-};
-
 // There doesn't seem to be any tracking of a dirty/clean flag built into
 // CodeMirror v6 (although [v5
 // does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've found
