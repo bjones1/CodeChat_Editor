@@ -419,13 +419,13 @@ fn run_test() -> io::Result<()> {
     run_cmd!(
         info "cargo clippy and fmt";
         cargo clippy --all-targets -- -D warnings;
-        cargo fmt --check;
+        cargo fmt --all --check;
         info "Builder: cargo clippy and fmt";
         cargo clippy --all-targets --manifest-path=../builder/Cargo.toml -- -D warnings;
-        cargo fmt --check --manifest-path=../builder/Cargo.toml;
+        cargo fmt --all --check --manifest-path=../builder/Cargo.toml;
         info "VSCode extension: cargo clippy and fmt";
         cargo clippy --all-targets --manifest-path=../extensions/VSCode/Cargo.toml -- -D warnings;
-        cargo fmt --check --manifest-path=../extensions/VSCode/Cargo.toml;
+        cargo fmt --all --check --manifest-path=../extensions/VSCode/Cargo.toml;
         info "cargo sort";
         cargo sort --check;
         cd ../builder;
@@ -434,6 +434,13 @@ fn run_test() -> io::Result<()> {
         cd ../extensions/VSCode;
         info "VSCode extension: cargo sort";
         cargo sort --check;
+    )?;
+    run_script("npx", &["prettier", "src", "--check"], "../client", true)?;
+    run_script(
+        "npx",
+        &["prettier", "src", "--check"],
+        "../extensions/VSCode",
+        true,
     )?;
     run_build()?;
     // Verify that compiling for release produces no errors.
