@@ -10,7 +10,7 @@ software development process.
 Full manual
 -----------
 
-Read the [manual rendered using the CodeCode
+Read the [manual rendered using the CodeChat
 Editor](https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md),
 since this documentation doesn't correctly render on GitHub.
 
