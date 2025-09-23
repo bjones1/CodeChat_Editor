@@ -112,6 +112,12 @@ struct TypeScriptBuildOptions {
     skip_check_errors: bool,
 }
 
+// Constants
+// ---------
+static VSCODE_PATH: &str = "../extensions/VSCode";
+static CLIENT_PATH: &str = "../client";
+static BUILDER_PATH: &str = "../builder";
+
 // Code
 // ----
 //
@@ -307,7 +313,7 @@ fn patch_client_libs() -> io::Result<()> {
         selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)",
         "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
             hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));",
-        "../client/node_modules/@codemirror/view/dist/index.js"
+        &format!("{CLIENT_PATH}/node_modules/@codemirror/view/dist/index.js")
     )?;
     // In [older
     // releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options),
@@ -317,34 +323,34 @@ fn patch_client_libs() -> io::Result<()> {
     patch_file(
         " wc-mermaid",
         "const whitespaceElementsMap = createLookupTable('whitespace_elements', 'pre script noscript style textarea video audio iframe object code",
-        "../client/node_modules/tinymce/tinymce.js",
+        &format!("{CLIENT_PATH}/node_modules/tinymce/tinymce.js"),
     )?;
 
     // Copy across the parts of MathJax that are needed, since bundling it is
     // difficult.
-    remove_dir_all_if_exists("../client/static/mathjax")?;
+    remove_dir_all_if_exists(format!("{CLIENT_PATH}/static/mathjax"))?;
     for subdir in ["a11y", "adaptors", "input", "output", "sre", "ui"] {
         quick_copy_dir(
-            format!("../client/node_modules/mathjax/{subdir}/"),
-            format!("../client/static/mathjax/{subdir}"),
+            format!("{CLIENT_PATH}/node_modules/mathjax/{subdir}/"),
+            format!("{CLIENT_PATH}/static/mathjax/{subdir}"),
             None,
         )?;
     }
     quick_copy_dir(
-        "../client/node_modules/mathjax/",
-        "../client/static/mathjax",
-        Some("tex-chtml.js"),
+        format!("{CLIENT_PATH}/node_modules/mathjax/"),
+        format!("{CLIENT_PATH}/static/mathjax"),
+        Some("tex-chtml.js".to_string()),
     )?;
     quick_copy_dir(
-        "../client/node_modules/@mathjax/mathjax-newcm-font/chtml/",
-        "../client/static/mathjax-newcm-font/chtml",
+        format!("{CLIENT_PATH}/node_modules/@mathjax/mathjax-newcm-font/chtml/"),
+        format!("{CLIENT_PATH}/static/mathjax-newcm-font/chtml"),
         None,
     )?;
     // Copy over the graphviz files needed.
     quick_copy_dir(
-        "../client/node_modules/graphviz-webcomponent/dist/",
-        "../client/static/graphviz-webcomponent",
-        Some("renderer.min.js*"),
+        format!("{CLIENT_PATH}/node_modules/graphviz-webcomponent/dist/"),
+        format!("{CLIENT_PATH}/static/graphviz-webcomponent"),
+        Some("renderer.min.js*".to_string()),
     )?;
 
     Ok(())
@@ -356,27 +362,18 @@ fn run_install(dev: bool) -> io::Result<()> {
     }
     // See [the client manifest](../../client/package.json5) for an explanation
     // of `--no-frozen-lockfile`.
-    run_script("pnpm", &["install"], "../client", true)?;
+    run_script("pnpm", &["install"], CLIENT_PATH, true)?;
     patch_client_libs()?;
-    run_script("pnpm", &["install"], "../extensions/VSCode", true)?;
+    run_script("pnpm", &["install"], VSCODE_PATH, true)?;
     run_cmd!(
         info "Builder: cargo fetch";
-        cargo fetch --manifest-path=../builder/Cargo.toml;
+        cargo fetch --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo fetch";
-        cargo fetch --manifest-path=../extensions/VSCode/Cargo.toml;
+        cargo fetch --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo fetch";
         cargo fetch;
     )?;
     if dev {
-        // If the dist install reports an error, perhaps it's already installed.
-        if run_cmd!(
-            info "cargo install cargo-dist";
-            cargo install --locked cargo-dist;
-        )
-        .is_err()
-        {
-            run_cmd!(dist --version;)?;
-        }
         // Install the cargo binstall binary, taken from the
         // [docs](https://docs.rs/crate/cargo-binstall/1.15.5).
         #[cfg(windows)]
@@ -385,9 +382,12 @@ fn run_install(dev: bool) -> io::Result<()> {
         }?;
         #[cfg(not(windows))]
         run_cmd! {
-            curl -L --proto "=https" --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+            r#"curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash"#
         }?;
+
         run_cmd!(
+            info "cargo binstall cargo-dist";
+            cargo binstall cargo-dist;
             info "cargo binstall cargo-outdated";
             cargo binstall cargo-outdated --disable-telemetry ;
             info "cargo binstall cargo-sort";
@@ -398,25 +398,25 @@ fn run_install(dev: bool) -> io::Result<()> {
 }
 
 fn run_update() -> io::Result<()> {
-    run_script("pnpm", &["update"], "../client", true)?;
+    run_script("pnpm", &["update"], CLIENT_PATH, true)?;
     patch_client_libs()?;
-    run_script("pnpm", &["update"], "../extensions/VSCode", true)?;
+    run_script("pnpm", &["update"], VSCODE_PATH, true)?;
     run_cmd!(
         info "Builder: cargo update";
-        cargo update --manifest-path=../builder/Cargo.toml;
+        cargo update --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCoe extension: cargo update";
-        cargo update --manifest-path=../extensions/VSCode/Cargo.toml;
+        cargo update --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo update";
         cargo update;
     )?;
     // Simply display outdated dependencies, but don't consider them an error.
-    run_script("pnpm", &["outdated"], "../client", false)?;
-    run_script("pnpm", &["outdated"], "../extensions/VSCode", false)?;
+    run_script("pnpm", &["outdated"], CLIENT_PATH, false)?;
+    run_script("pnpm", &["outdated"], VSCODE_PATH, false)?;
     run_cmd!(
         info "Builder: cargo outdated";
-        cargo outdated --manifest-path=../builder/Cargo.toml;
+        cargo outdated --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo outdated";
-        cargo outdated --manifest-path=../extensions/VSCode/Cargo.toml;
+        cargo outdated --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo outdated";
         cargo outdated;
     )?;
@@ -431,27 +431,22 @@ fn run_test() -> io::Result<()> {
         cargo clippy --all-targets -- -D warnings;
         cargo fmt --all --check;
         info "Builder: cargo clippy and fmt";
-        cargo clippy --all-targets --manifest-path=../builder/Cargo.toml -- -D warnings;
-        cargo fmt --all --check --manifest-path=../builder/Cargo.toml;
+        cargo clippy --all-targets --manifest-path=$BUILDER_PATH/Cargo.toml -- -D warnings;
+        cargo fmt --all --check --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo clippy and fmt";
-        cargo clippy --all-targets --manifest-path=../extensions/VSCode/Cargo.toml -- -D warnings;
-        cargo fmt --all --check --manifest-path=../extensions/VSCode/Cargo.toml;
+        cargo clippy --all-targets --manifest-path=$VSCODE_PATH/Cargo.toml -- -D warnings;
+        cargo fmt --all --check --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo sort";
         cargo sort --check;
-        cd ../builder;
+        cd $BUILDER_PATH;
         info "Builder: cargo sort";
         cargo sort --check;
-        cd ../extensions/VSCode;
+        cd $VSCODE_PATH;
         info "VSCode extension: cargo sort";
         cargo sort --check;
     )?;
-    run_script("npx", &["prettier", "src", "--check"], "../client", true)?;
-    run_script(
-        "npx",
-        &["prettier", "src", "--check"],
-        "../extensions/VSCode",
-        true,
-    )?;
+    run_script("npx", &["prettier", "src", "--check"], CLIENT_PATH, true)?;
+    run_script("npx", &["prettier", "src", "--check"], VSCODE_PATH, true)?;
     run_build()?;
     // Verify that compiling for release produces no errors.
     run_cmd!(
@@ -461,9 +456,9 @@ fn run_test() -> io::Result<()> {
     )?;
     run_cmd!(
         info "Builder: cargo test";
-        cargo test --manifest-path=../builder/Cargo.toml;
+        cargo test --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo test";
-        cargo test --manifest-path=../extensions/VSCode/Cargo.toml;
+        cargo test --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo test";
         cargo test;
     )?;
@@ -473,14 +468,14 @@ fn run_test() -> io::Result<()> {
 fn run_build() -> io::Result<()> {
     run_cmd!(
         info "Builder: cargo build";
-        cargo build --manifest-path=../builder/Cargo.toml;
+        cargo build --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "cargo build";
         cargo build;
         info "cargo test export_bindings";
         cargo test export_bindings;
     )?;
     // Clean out all bundled files before the rebuild.
-    remove_dir_all_if_exists("../client/static/bundled")?;
+    remove_dir_all_if_exists(format!("{CLIENT_PATH}/static/bundled"))?;
     run_client_build(false, false)?;
     run_extensions_build(false, false)?;
     Ok(())
@@ -502,9 +497,6 @@ fn run_client_build(
 
     let esbuild = PathBuf::from_slash("node_modules/.bin/esbuild");
     let distflag = if dist { "--minify" } else { "--sourcemap" };
-    // This makes the program work from either the `server/` or `client/`
-    // directories.
-    let rel_path = "../client";
 
     // The main build for the Client.
     run_script(
@@ -523,7 +515,7 @@ fn run_client_build(
             "--metafile=meta.json",
             "--entry-names=[dir]/[name]-[hash]",
         ],
-        rel_path,
+        CLIENT_PATH,
         true,
     )?;
     // <a id="#pdf.js>The PDF viewer for use with VSCode. Built it separately,
@@ -541,13 +533,13 @@ fn run_client_build(
             "--loader:.svg=dataurl",
             "--loader:.gif=dataurl",
         ],
-        rel_path,
+        CLIENT_PATH,
         true,
     )?;
     // Copy over the cmap (color map?) files, which the bundler doesn't handle.
     quick_copy_dir(
-        format!("{rel_path}/node_modules/pdfjs-dist/cmaps/"),
-        format!("{rel_path}/static/bundled/node_modules/pdfjs-dist/cmaps/"),
+        format!("{CLIENT_PATH}/node_modules/pdfjs-dist/cmaps/"),
+        format!("{CLIENT_PATH}/static/bundled/node_modules/pdfjs-dist/cmaps/"),
         None,
     )?;
     // The HashReader isn't bundled; instead, it's used to translate the JSON
@@ -561,16 +553,16 @@ fn run_client_build(
             "--platform=node",
             "--format=esm",
         ],
-        rel_path,
+        CLIENT_PATH,
         true,
     )?;
-    run_script("node", &["HashReader.js"], rel_path, true)?;
+    run_script("node", &["HashReader.js"], CLIENT_PATH, true)?;
     // Finally, check the TypeScript with the (slow) TypeScript compiler.
     if !skip_check_errors {
         run_script(
             PathBuf::from_slash("node_modules/.bin/tsc"),
             &["-noEmit"],
-            rel_path,
+            CLIENT_PATH,
             true,
         )?;
     }
@@ -587,18 +579,15 @@ fn run_extensions_build(
 ) -> io::Result<()> {
     let esbuild = PathBuf::from_slash("node_modules/.bin/esbuild");
     let distflag = if dist { "--minify" } else { "--sourcemap" };
-    // This makes the program work from either the `server/` or `client/`
-    // directories.
-    let rel_path = "../extensions/VSCode";
 
     // The NAPI build.
     let mut napi_args = vec!["napi", "build", "--platform", "--output-dir", "src"];
     if dist {
         napi_args.push("--release");
     }
-    run_script("npx", &napi_args, rel_path, true)?;
+    run_script("npx", &napi_args, VSCODE_PATH, true)?;
 
-    // The main build for the Client.
+    // The main build for the extension.
     run_script(
         &esbuild,
         &[
@@ -616,7 +605,7 @@ fn run_extensions_build(
             // generated.
             "--asset-names=[name]",
         ],
-        rel_path,
+        VSCODE_PATH,
         true,
     )?;
     // Finally, check the TypeScript with the (slow) TypeScript compiler.
@@ -624,7 +613,7 @@ fn run_extensions_build(
         run_script(
             PathBuf::from_slash("node_modules/.bin/tsc"),
             &["-noEmit"],
-            rel_path,
+            VSCODE_PATH,
             true,
         )?;
     }
@@ -636,18 +625,18 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
     let replacement_string = format!("${{1}}{new_version}${{2}}");
     search_and_replace_file("Cargo.toml", cargo_regex, &replacement_string)?;
     search_and_replace_file(
-        "../extensions/VSCode/Cargo.toml",
+        format!("{VSCODE_PATH}/Cargo.toml"),
         cargo_regex,
         &replacement_string,
     )?;
     search_and_replace_file(
-        "../client/package.json5",
-        r#"(\r?\n    version: ')[\d.]+(',\r?\n)"#,
+        format!("{VSCODE_PATH}/package.json"),
+        r#"(\r?\n    "version": ")[\d.]+(",\r?\n)"#,
         &replacement_string,
     )?;
     search_and_replace_file(
-        "../extensions/VSCode/package.json",
-        r#"(\r?\n    "version": ")[\d.]+(",\r?\n)"#,
+        format!("{CLIENT_PATH}/package.json5"),
+        r#"(\r?\n    version: ')[\d.]+(',\r?\n)"#,
         &replacement_string,
     )?;
     Ok(())
@@ -655,7 +644,7 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
 
 fn run_prerelease() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
-    remove_dir_all_if_exists("../client/static/bundled")?;
+    remove_dir_all_if_exists(format!("{CLIENT_PATH}/static/bundled"))?;
     run_install(true)?;
     run_client_build(true, false)
 }
@@ -663,13 +652,13 @@ fn run_prerelease() -> io::Result<()> {
 fn run_postrelease(target: &str) -> io::Result<()> {
     // Copy all the Client static files needed by the embedded Server to the
     // VSCode extension.
-    let client_static_dir = "../extensions/VSCode/static";
-    remove_dir_all_if_exists(client_static_dir)?;
-    quick_copy_dir("../client/static/", client_static_dir, None)?;
-    copy_file("log4rs.yml", "../extensions/VSCode/log4rs.yml")?;
+    let client_static_dir = format!("{VSCODE_PATH}/static");
+    remove_dir_all_if_exists(&client_static_dir)?;
+    quick_copy_dir(&format!("{CLIENT_PATH}/static/"), &client_static_dir, None)?;
+    copy_file("log4rs.yml", &format!("{VSCODE_PATH}/log4rs.yml"))?;
     copy_file(
         "hashLocations.json",
-        "../extensions/VSCode/hashLocations.json",
+        &format!("{VSCODE_PATH}/hashLocations.json"),
     )?;
 
     // Translate from the target triple to VSCE's target parameter.
@@ -692,7 +681,7 @@ fn run_postrelease(target: &str) -> io::Result<()> {
             "--target",
             vsce_target,
         ],
-        "../extensions/VSCode",
+        VSCODE_PATH,
         true,
     )?;
 
