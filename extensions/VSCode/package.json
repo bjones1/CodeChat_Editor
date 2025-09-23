@@ -32,7 +32,8 @@
     },
     "name": "codechat-editor-client",
     "prettier": {
-        "tabWidth": 4
+        "tabWidth": 4,
+        "endOfLine": "auto"
     },
     "publisher": "CodeChat",
     "repository": {
