@@ -750,7 +750,7 @@ mod tests {
             EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID,
             INITIAL_IDE_MESSAGE_ID, INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT,
             ResultOkTypes, UpdateMessageContents, WebAppState, WebsocketQueues, configure_app,
-            drop_leading_slash, make_app_data, send_response, set_root_path, tests::IP_PORT,
+            drop_leading_slash, make_app_data, send_response, set_root_path,
         },
     };
 
@@ -762,7 +762,7 @@ mod tests {
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error> + use<>,
     ) {
         set_root_path(None).unwrap();
-        let app_data = make_app_data(IP_PORT, None);
+        let app_data = make_app_data(None);
         let app = test::init_service(configure_app(App::new(), &app_data)).await;
 
         // Load in a test source file to create a websocket.
