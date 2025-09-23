@@ -166,9 +166,9 @@ export const init = async (
                 },
             });
         };
-  
-          // Use these combiend options to
-        // [init](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#init)
-        // TinyMCE.
-      return tinymce.init(combinedOptions);
+
+    // Use these combined options to
+    // [init](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#init)
+    // TinyMCE.
+    return tinymce.init(combinedOptions);
 };

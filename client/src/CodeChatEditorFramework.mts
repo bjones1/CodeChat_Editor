@@ -101,19 +101,19 @@ class WebSocketComm {
         this.ws = new ReconnectingWebSocket!(ws_url);
         // Identify this client on connection.
         this.ws.onopen = () => {
-            console_log(`CodeChat Editor Client: websocket to CodeChat Server open.`);
+            console_log(
+                `CodeChat Editor Client: websocket to CodeChat Server open.`,
+            );
         };
 
         // Provide logging to help track down errors.
         this.ws.onerror = (event: Event) => {
-            report_error(
-                `CodeChat Editor Client: websocket error.`, event
-            );
+            report_error(`CodeChat Editor Client: websocket error.`, event);
         };
 
         this.ws.onclose = (event: CloseEvent) => {
             console_log(
-                `CodeChat Editor Client: websocket ${event.wasClean ? "" : "*NOT*"} cleanly closed ${event.reason}. This should only happen on shutdown.`
+                `CodeChat Editor Client: websocket ${event.wasClean ? "" : "*NOT*"} cleanly closed ${event.reason}. This should only happen on shutdown.`,
             );
             console_log(event);
         };
@@ -304,7 +304,9 @@ class WebSocketComm {
             assert(this.current_filename !== undefined);
             message.Update.file_path = this.current_filename!;
         }
-        console_log(`CodeChat Editor Client: sent message ${id}, ${format_struct(message)}`);
+        console_log(
+            `CodeChat Editor Client: sent message ${id}, ${format_struct(message)}`,
+        );
         const jm: EditorMessage = {
             id: id,
             message: message,
