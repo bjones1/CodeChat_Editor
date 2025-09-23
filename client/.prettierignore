@@ -19,3 +19,4 @@
 static/
 *.md
 src/third-party/
+src/rust-types/
