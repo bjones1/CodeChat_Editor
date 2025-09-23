@@ -108,13 +108,11 @@ struct CodeChatEditorServer {
 #[allow(dead_code)]
 impl CodeChatEditorServer {
     #[napi(constructor)]
-    pub fn new(
-        // The port the webserver should use for the Client.
-        port: u16,
-    ) -> Result<CodeChatEditorServer, Error> {
+    pub fn new() -> Result<CodeChatEditorServer, Error> {
         // Start the server.
         let (server, app_state) = setup_server(
-            &SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port),
+            // A port of 0 requests the OS to assign an open port.
+            &SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0),
             None,
         )?;
         let server_handle = server.handle();

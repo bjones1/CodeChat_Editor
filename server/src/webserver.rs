@@ -291,7 +291,7 @@ pub struct AppState {
     /// The number of the next connection ID to assign for the filewatcher.
     pub filewatcher_next_connection_id: Mutex<u32>,
     /// The port this server listens on.
-    pub port: u16,
+    pub port: Arc<Mutex<u16>>,
     /// For each connection ID, store a queue tx for the HTTP server to send
     /// requests to the processing task for that ID.
     pub processing_task_queue_tx: Arc<Mutex<HashMap<String, Sender<ProcessingTaskHttpRequest>>>>,
@@ -349,7 +349,7 @@ macro_rules! queue_send {
 pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
     Duration::from_millis(500)
 } else {
-    Duration::from_millis(15000)
+    Duration::from_millis(1500000)
 };
 
 /// The time to wait for a pong from the websocket in response to a ping sent by
@@ -1325,7 +1325,7 @@ pub fn setup_server(
 
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
-    let app_data = make_app_data(addr.port(), credentials);
+    let app_data = make_app_data(credentials);
     let app_data_server = app_data.clone();
     let server = match HttpServer::new(move || {
         let auth = HttpAuthentication::with_fn(basic_validator);
@@ -1341,7 +1341,12 @@ pub fn setup_server(
     .workers(1)
     .bind(addr)
     {
-        Ok(server) => server.run(),
+        Ok(server) => {
+            // Store the port in the global state. Use the port of the first
+            // bound address.
+            *app_data.port.lock().unwrap() = server.addrs()[0].port();
+            server.run()
+        }
         Err(err) => {
             error!("Unable to bind to {addr} - {err}");
             return Err(err);
@@ -1384,7 +1389,6 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
     let mut l4rs = ROOT_PATH.lock().unwrap().clone();
     #[cfg(debug_assertions)]
     l4rs.push("server");
-    println!("Path: {l4rs:?}");
     let config_file = l4rs.join("log4rs.yml");
     let mut config = match load_config_file(&config_file, Default::default()) {
         Ok(c) => c,
@@ -1400,11 +1404,12 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // closure passed to `HttpServer::new` and moved/cloned in." Putting this code
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
-pub fn make_app_data(port: u16, credentials: Option<Credentials>) -> WebAppState {
+pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
     web::Data::new(AppState {
         server_handle: Mutex::new(None),
         filewatcher_next_connection_id: Mutex::new(0),
-        port,
+        // Use a dummy value until the server binds to a port.
+        port: Arc::new(Mutex::new(0)),
         processing_task_queue_tx: Arc::new(Mutex::new(HashMap::new())),
         ide_queues: Arc::new(Mutex::new(HashMap::new())),
         client_queues: Arc::new(Mutex::new(HashMap::new())),

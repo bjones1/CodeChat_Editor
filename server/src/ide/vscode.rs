@@ -139,7 +139,7 @@ pub fn vscode_ide_core(
             match ide_type {
                 IdeType::VSCode(is_self_hosted) => {
                     // Get the address for the server.
-                    let port = app_state_task.port;
+                    let port = *app_state_task.port.lock().unwrap();
                     let address = match get_server_url(port).await {
                         Ok(address) => address,
                         Err(err) => {

@@ -49,11 +49,6 @@
         "configuration": {
             "title": "CodeChat Editor",
             "properties": {
-                "CodeChatEditor.Server.Command": {
-                    "type": "string",
-                    "default": "",
-                    "markdownDescription": "Path to the CodeChat Editor Server executable; for example, `codechat-editor-server`. Leave blank to use the binary included with the extension."
-                },
                 "CodeChatEditor.Server.ClientLocation": {
                     "type": "string",
                     "default": "html",
@@ -66,13 +61,6 @@
                         "In the default external web browser"
                     ],
                     "markdownDescription": "Select the location of the CodeChat Editor Client. After changing this value, you **must** close then restart the CodeChat Editor extension."
-                },
-                "CodeChatEditor.Server.Port": {
-                    "type": "number",
-                    "default": 8080,
-                    "minimum": 0,
-                    "maximum": 65535,
-                    "markdownDescription": "Port number for the CodeChat Editor Server."
                 }
             }
         },

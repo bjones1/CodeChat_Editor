@@ -218,18 +218,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                             // [WebViewOptions](https://code.visualstudio.com/api/references/vscode-api#WebviewOptions).
                             {
                                 enableScripts: true,
-                                // Per the
-                                // [docs](https://code.visualstudio.com/api/references/vscode-api#WebviewOptions),
-                                // "If a webview accesses localhost content, we
-                                // recommend that you specify port mappings even
-                                // if the `webviewPort` and `extensionHostPort`
-                                // ports are the same."
-                                portMapping: [
-                                    {
-                                        extensionHostPort: get_port(),
-                                        webviewPort: get_port(),
-                                    },
-                                ],
                                 // Without this, the websocket connection is
                                 // dropped when the panel is hidden.
                                 retainContextWhenHidden: true,
@@ -278,7 +266,7 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                 // Start the server.
                 console_log("CodeChat Editor extension: starting server.");
-                codeChatEditorServer = new CodeChatEditorServer(get_port());
+                codeChatEditorServer = new CodeChatEditorServer();
 
                 const hosted_in_ide =
                     codechat_client_location ===
@@ -578,9 +566,6 @@ const send_update = (this_is_dirty: boolean) => {
                     // Send a new current file after a short delay; this allows
                     // the user to rapidly cycle through several editors without
                     // needing to reload the Client with each cycle.
-                    console_log(
-                        `CodeChat Editor extension: current_editor = ${current_editor?.document.fileName}, ate = ${ate.document.fileName}.`,
-                    );
                     current_editor = ate;
                     const current_file = ate!.document.fileName;
                     console_log(
@@ -713,14 +698,6 @@ const get_text_editor = (doc: TextDocument): TextEditor | undefined => {
     for (const editor of vscode.window.visibleTextEditors) {
         if (editor.document === doc) return editor;
     }
-};
-
-const get_port = (): number => {
-    const port = vscode.workspace
-        .getConfiguration("CodeChatEditor.Server")
-        .get("Port");
-    assert(typeof port === "number");
-    return port;
 };
 
 const console_log = (...args: any) => {
