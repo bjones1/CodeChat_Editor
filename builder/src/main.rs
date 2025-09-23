@@ -381,8 +381,11 @@ fn run_install(dev: bool) -> io::Result<()> {
             pwsh -Command "Set-ExecutionPolicy Unrestricted -Scope Process; iex (iwr 'https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.ps1').Content";
         }?;
         #[cfg(not(windows))]
+        // The original command had `'=https'`, but single quotes confused
+        // `cmd_lib`. The only way I found to escape `https:....` was to enclose
+        // it in quotes.
         run_cmd! {
-            r#"curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash"#
+            curl -L --proto =https --tlsv1.2 -sSf "https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh" | bash;
         }?;
 
         run_cmd!(
