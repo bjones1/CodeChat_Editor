@@ -30,11 +30,6 @@ use super::{path_to_url, url_to_path};
 use crate::ide::filewatcher::FILEWATCHER_PATH_PREFIX;
 use crate::prep_test_dir;
 
-// Constants
-// ---------
-/// The default port on which the server listens for incoming connections.
-pub const IP_PORT: u16 = 8080;
-
 // Support functions
 // -----------------
 fn get_server() -> Command {
