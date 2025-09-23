@@ -377,11 +377,21 @@ fn run_install(dev: bool) -> io::Result<()> {
         {
             run_cmd!(dist --version;)?;
         }
+        // Install the cargo binstall binary, taken from the
+        // [docs](https://docs.rs/crate/cargo-binstall/1.15.5).
+        #[cfg(windows)]
+        run_cmd! {
+            pwsh -Command "Set-ExecutionPolicy Unrestricted -Scope Process; iex (iwr 'https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.ps1').Content";
+        }?;
+        #[cfg(not(windows))]
+        run_cmd! {
+            curl -L --proto "=https" --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+        }?;
         run_cmd!(
-            info "cargo install cargo-outdated";
-            cargo install --locked cargo-outdated;
-            info "cargo install cargo-sort";
-            cargo install cargo-sort;
+            info "cargo binstall cargo-outdated";
+            cargo binstall cargo-outdated --disable-telemetry ;
+            info "cargo binstall cargo-sort";
+            cargo binstall cargo-sort --disable-telemetry ;
         )?;
     }
     Ok(())
