@@ -24,14 +24,16 @@ Changelog
 
 *   No changes.
 
-Version 0.1.38 -- 2025-Sep-23
+Version 0.1.38 -- 2025-Sep-24
 -----------------------------
 
 *   Automatically find a free port for the Client, instead of requiring the user
     to specify it in the VSCode settings.
 *   Remove unused VSCode settings.
 *   Update code in the IDE when changes are made to the indent in the Client.
-*   Enable spellchecking in doc blocks.
+*   Enable spell checking in doc blocks. Note that the VSCode browser doesn't
+    support spell checking.
+*   Improved build process.
 
 Version 0.1.37 -- 2025-Sep-22
 -----------------------------
