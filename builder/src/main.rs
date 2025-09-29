@@ -13,20 +13,18 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-//
-// `main.rs` -- Entrypoint for the CodeChat Editor Builder
-// =======================================================
-//
-// This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
-// of the release process. To update the `./release.yaml` file this tool
-// creates:
-//
-// 1.  Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
-// 2.  Run `dist init` and accept the defaults, then run `dist generate`.
-// 3.  Review changes to `./release.yaml`, reapplying hand edits.
-// 4.  Revert the changes to `server/dist-workspace.toml`.
-// 5.  Test
-//
+/// `main.rs` -- Entrypoint for the CodeChat Editor Builder
+/// =======================================================
+///
+/// This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
+/// of the release process. To update the `./release.yaml` file this tool
+/// creates:
+///
+/// 1.  Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
+/// 2.  Run `dist init` and accept the defaults, then run `dist generate`.
+/// 3.  Review changes to `./release.yaml`, reapplying hand edits.
+/// 4.  Revert the changes to `server/dist-workspace.toml`.
+/// 5.  Test
 // Imports
 // -------
 //
@@ -382,8 +380,9 @@ fn run_install(dev: bool) -> io::Result<()> {
         }?;
         #[cfg(not(windows))]
         // The original command had `'=https'`, but single quotes confused
-        // `cmd_lib`. The only way I found to escape `https:....` was to enclose
-        // it in quotes.
+        // `cmd_lib` and aren't needed to quote this. Note that `//` in the URL
+        // is a comment in Rust, so it must be [enclosed in
+        // quotes](https://github.com/rust-shell-script/rust_cmd_lib/issues/88).
         run_cmd! {
             curl -L --proto =https --tlsv1.2 -sSf "https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh" | bash;
         }?;
@@ -392,9 +391,9 @@ fn run_install(dev: bool) -> io::Result<()> {
             info "cargo binstall cargo-dist";
             cargo binstall cargo-dist;
             info "cargo binstall cargo-outdated";
-            cargo binstall cargo-outdated --disable-telemetry ;
+            cargo binstall cargo-outdated --disable-telemetry;
             info "cargo binstall cargo-sort";
-            cargo binstall cargo-sort --disable-telemetry ;
+            cargo binstall cargo-sort --disable-telemetry;
         )?;
     }
     Ok(())
