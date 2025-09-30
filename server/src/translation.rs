@@ -13,9 +13,8 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `vscode.rs` -- Implement server-side functionality for the Visual Studio
-/// Code IDE
-/// ========================================================================
+/// `translation.rs` -- translate messages between the IDE and the Client
+/// =====================================================================
 ///
 /// The IDE extension client (IDE for short) and the CodeChat Editor Client (or
 /// Editor for short) exchange messages with each other, mediated by the
