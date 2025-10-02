@@ -430,13 +430,13 @@ fn run_test() -> io::Result<()> {
     // it issues warnings.
     run_cmd!(
         info "cargo clippy and fmt";
-        cargo clippy --all-targets -- -D warnings;
+        cargo clippy --all-targets --tests -- -D warnings;
         cargo fmt --all --check;
         info "Builder: cargo clippy and fmt";
-        cargo clippy --all-targets --manifest-path=$BUILDER_PATH/Cargo.toml -- -D warnings;
+        cargo clippy --all-targets --tests --manifest-path=$BUILDER_PATH/Cargo.toml -- -D warnings;
         cargo fmt --all --check --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo clippy and fmt";
-        cargo clippy --all-targets --manifest-path=$VSCODE_PATH/Cargo.toml -- -D warnings;
+        cargo clippy --all-targets --tests --manifest-path=$VSCODE_PATH/Cargo.toml -- -D warnings;
         cargo fmt --all --check --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo sort";
         cargo sort --check;
@@ -462,7 +462,7 @@ fn run_test() -> io::Result<()> {
         info "VSCode extension: cargo test";
         cargo test --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo test";
-        cargo test;
+        cargo test --features all_tests;
     )?;
     Ok(())
 }

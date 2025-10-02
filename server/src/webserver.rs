@@ -1303,7 +1303,12 @@ pub async fn main(
 
 // Perform global init of the server. This must only be called once; it must be
 // called before the server is run.
-pub fn init_server(extension_base_path: Option<&Path>, level: LevelFilter) -> std::io::Result<()> {
+pub fn init_server(
+    // If provided, the path to the location of this extension's files. This is used to
+    // locate static files for the webserver, etc. When None, assume the default layout.
+    extension_base_path: Option<&Path>,
+    level: LevelFilter,
+) -> std::io::Result<()> {
     set_root_path(extension_base_path)?;
     // The unit tests include a test logger; don't config the logger in a test
     // build.

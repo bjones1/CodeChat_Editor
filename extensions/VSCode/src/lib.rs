@@ -21,22 +21,25 @@
 // -------
 //
 // ### Standard library
-// None.
-//
+use std::path::PathBuf;
+
 // ### Third-party
+use log::LevelFilter;
 use napi::{Error, Status};
 use napi_derive::napi;
 
 // ### Local
-use code_chat_editor::ide;
+use code_chat_editor::{ide, webserver};
 
 // Code
 // ----
-//
 #[napi]
 pub fn init_server(extension_base_path: String) -> Result<(), Error> {
-    ide::init_server(extension_base_path)
-        .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))
+    webserver::init_server(
+        Some(&PathBuf::from(extension_base_path)),
+        LevelFilter::Debug,
+    )
+    .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))
 }
 
 #[napi]
@@ -69,12 +72,12 @@ impl CodeChatEditorServer {
     }
 
     #[napi]
-    pub async fn send_message_opened(&self, hosted_in_ide: bool) -> std::io::Result<()> {
+    pub async fn send_message_opened(&self, hosted_in_ide: bool) -> std::io::Result<f64> {
         self.0.send_message_opened(hosted_in_ide).await
     }
 
     #[napi]
-    pub async fn send_message_current_file(&self, url: String) -> std::io::Result<()> {
+    pub async fn send_message_current_file(&self, url: String) -> std::io::Result<f64> {
         self.0.send_message_current_file(url).await
     }
 
@@ -86,7 +89,7 @@ impl CodeChatEditorServer {
         option_contents: Option<String>,
         cursor_position: Option<u32>,
         scroll_position: Option<f64>,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<f64> {
         self.0
             .send_message_update_plain(file_path, option_contents, cursor_position, scroll_position)
             .await

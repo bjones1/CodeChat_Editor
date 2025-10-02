@@ -19,20 +19,86 @@
 /// These are functional tests of the overall system, performed by attaching a
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
-use std::error::Error;
+// Imports
+// -------
+//
+#[cfg(feature = "all_tests")]
+// ### Standard library
+use {
+    // ### Local
+    code_chat_editor::{
+        cast,
+        ide::CodeChatEditorServer,
+        webserver::{EditorMessage, EditorMessageContents, ResultOkTypes, set_root_path},
+    },
+    // ### Third-party
+    pretty_assertions::assert_eq,
+    std::{env, error::Error},
 
-use thirtyfour::prelude::*;
-use tokio::time::sleep;
+    thirtyfour::prelude::*,
+    tokio::time::sleep,
+};
 
+// Tests
+// -----
+#[cfg(feature = "all_tests")]
 #[tokio::test]
 async fn thirtyfour() -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Start the webdriver.
     let server_url = "http://localhost:4444";
     let caps = DesiredCapabilities::chrome();
     start_webdriver_process(server_url, &caps);
     let driver = WebDriver::new(server_url, caps).await?;
 
-    // Navigate to https://wikipedia.org.
-    driver.goto("https://wikipedia.org").await?;
+    // Run the test.
+    let ret = test_body(&driver).await;
+
+    // Always explicitly close the browser.
+    driver.quit().await?;
+    ret
+}
+
+#[cfg(feature = "all_tests")]
+async fn test_body(driver: &WebDriver) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Set up the Server.
+    let p = env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("../../../..");
+    set_root_path(Some(&p))?;
+    let codechat_server = CodeChatEditorServer::new()?;
+
+    // Get the resulting web page text.
+    let opened_id = codechat_server.send_message_opened(true).await?;
+    assert_eq!(
+        codechat_server
+            .get_message()
+            .await
+            .expect("Expected message."),
+        EditorMessage {
+            id: opened_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    let em_html = codechat_server
+        .get_message()
+        .await
+        .expect("Expected message.");
+
+    // Parse out the address to use.
+    let client_html = cast!(&em_html.message, EditorMessageContents::ClientHtml);
+    let find_str = "<iframe src=\"";
+    let address_start = client_html.find(find_str).unwrap() + find_str.len();
+    let address_end = client_html[address_start..].find("\"").unwrap() + address_start - 1;
+    let address = &client_html[address_start..address_end];
+    println!("Address: {address}");
+
+    // Open the Client.
+    driver.goto(address).await?;
+    //codechat_server.send_message_current_file(url)
+
+    // Provide a source file.
     let elem_form = driver.find(By::Id("search-form")).await?;
 
     // Find element from element.
@@ -50,9 +116,6 @@ async fn thirtyfour() -> Result<(), Box<dyn Error + Send + Sync>> {
     assert_eq!(driver.title().await?, "Selenium - Wikipedia");
 
     sleep(std::time::Duration::from_secs(1)).await;
-
-    // Always explicitly close the browser.
-    driver.quit().await?;
 
     Ok(())
 }

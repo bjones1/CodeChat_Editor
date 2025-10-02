@@ -46,6 +46,10 @@ name = "code_chat_editor"
 # Uncomment this to show an explanation of the lexing process.
 #default = ["lexer_explain"]
 lexer_explain = []
+# The `test` configuration option (i.e., `#[cfg(test)]`) applies only to
+# functional tests. This feature applies to both functional tests and
+# integration tests.
+all_tests = ["assert_fs", "assertables"]
 
 # Dependencies
 # ------------
@@ -58,6 +62,9 @@ actix-service = "2.0.3"
 actix-web = "4"
 actix-web-httpauth = "0.8.2"
 actix-ws = "0.3.0"
+# This is used for integration testing. However, since integration tests can't access crates in `dev-dependencies`, they're here behind the appropriate feature flag.
+assert_fs = { version = "1", optional = true }
+assertables = { version = "9", optional = true }
 bytes = { version = "1", features = ["serde"] }
 chrono = "0.4"
 clap = { version = "4.5.19", features = ["derive"] }

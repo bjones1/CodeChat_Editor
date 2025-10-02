@@ -30,10 +30,12 @@ use std::path::MAIN_SEPARATOR_STR;
 use std::path::PathBuf;
 
 // ### Third-party
-use assert_fs::TempDir;
-use assert_fs::fixture::PathCopy;
-use assertables::assert_le;
 use log::Level;
+#[cfg(any(feature = "all_tests", test))]
+use {
+    assert_fs::{TempDir, fixture::PathCopy},
+    assertables::assert_le,
+};
 
 // ### Local
 use crate::testing_logger;
@@ -119,9 +121,6 @@ pub fn _prep_test_dir(
     // The
     PathBuf,
 ) {
-    // Omit the first element of the full module path (the name of the root
-    // module).
-    let test_full_name = test_full_name.strip_prefix("code_chat_editor::").unwrap();
     // Get rid of closures in the path.
     let test_path = &test_full_name.replace("::{{closure}}", "");
     // Switch from `::` to a filesystem path separator.

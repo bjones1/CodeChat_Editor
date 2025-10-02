@@ -25,14 +25,12 @@ pub mod vscode;
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::PathBuf,
     sync::Arc,
     thread,
 };
 
 // ### Third-party
 use actix_server::{Server, ServerHandle};
-use log::LevelFilter;
 use rand::random;
 use tokio::{
     runtime::Handle,
@@ -59,19 +57,6 @@ use crate::{
 // Code
 // ----
 //
-// This must be called only once, before constructing the `CodeChatEditorServer`
-// class.
-pub fn init_server(
-    // The path to the location of this extension's files. This is used to
-    // locate static files for the webserver, etc.
-    extension_base_path: String,
-) -> std::io::Result<()> {
-    webserver::init_server(
-        Some(&PathBuf::from(extension_base_path)),
-        LevelFilter::Debug,
-    )
-}
-
 // Using this macro is critical -- otherwise, the Actix system doesn't get
 // correctly initialized, which makes calls to `actix_rt::spawn` fail. In
 // addition, this ensures that the server runs in a separate thread, rather than
@@ -187,7 +172,7 @@ impl CodeChatEditorServer {
     async fn send_message_timeout(
         &self,
         editor_message_contents: EditorMessageContents,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<f64> {
         // Get and update the current ID.
         let id = {
             let mut id = self.current_id.lock().await;
@@ -223,7 +208,8 @@ impl CodeChatEditorServer {
             .await
             .insert(editor_message.id.to_bits(), waiting_task);
 
-        self.send_message_raw(editor_message).await
+        self.send_message_raw(editor_message).await?;
+        Ok(id)
     }
 
     // Send a message with no timeout or other additional steps.
@@ -234,7 +220,7 @@ impl CodeChatEditorServer {
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
-    pub async fn send_message_opened(&self, hosted_in_ide: bool) -> std::io::Result<()> {
+    pub async fn send_message_opened(&self, hosted_in_ide: bool) -> std::io::Result<f64> {
         self.send_message_timeout(EditorMessageContents::Opened(webserver::IdeType::VSCode(
             hosted_in_ide,
         )))
@@ -244,7 +230,7 @@ impl CodeChatEditorServer {
     // Send a `CurrentFile` message. The other parameter (true if text/false if
     // binary/None if ignored) is ignored by the server, so it's always sent as
     // `None`.
-    pub async fn send_message_current_file(&self, url: String) -> std::io::Result<()> {
+    pub async fn send_message_current_file(&self, url: String) -> std::io::Result<f64> {
         self.send_message_timeout(EditorMessageContents::CurrentFile(url, None))
             .await
     }
@@ -258,7 +244,7 @@ impl CodeChatEditorServer {
         option_contents: Option<String>,
         cursor_position: Option<u32>,
         scroll_position: Option<f64>,
-    ) -> std::io::Result<()> {
+    ) -> std::io::Result<f64> {
         self.send_message_timeout(EditorMessageContents::Update(UpdateMessageContents {
             file_path,
             contents: option_contents.map(|contents| CodeChatForWeb {
