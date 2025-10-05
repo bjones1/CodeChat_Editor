@@ -70,6 +70,12 @@ enum Commands {
     },
     /// Update all dependencies.
     Update,
+    /// Run formatters and linters.
+    Flint {
+        /// Check only; don't modify files.
+        #[arg(short, long, default_value_t = false)]
+        check: bool,
+    },
     /// Run lints and tests.
     Test,
     /// Build everything.
@@ -425,30 +431,49 @@ fn run_update() -> io::Result<()> {
     Ok(())
 }
 
-fn run_test() -> io::Result<()> {
+fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     // The `-D warnings` flag causes clippy to return a non-zero exit status if
     // it issues warnings.
+    let (clippy_check_only, check, prettier_check) = if check_only {
+        ("-Dwarnings", "--check", "--check")
+    } else {
+        ("", "", "--write")
+    };
     run_cmd!(
         info "cargo clippy and fmt";
-        cargo clippy --all-targets --tests -- -D warnings;
-        cargo fmt --all --check;
+        cargo clippy --all-targets --tests -- $clippy_check_only;
+        cargo fmt --all $check;
         info "Builder: cargo clippy and fmt";
-        cargo clippy --all-targets --tests --manifest-path=$BUILDER_PATH/Cargo.toml -- -D warnings;
-        cargo fmt --all --check --manifest-path=$BUILDER_PATH/Cargo.toml;
+        cargo clippy --all-targets --tests --manifest-path=$BUILDER_PATH/Cargo.toml -- $clippy_check_only;
+        cargo fmt --all $check --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo clippy and fmt";
-        cargo clippy --all-targets --tests --manifest-path=$VSCODE_PATH/Cargo.toml -- -D warnings;
-        cargo fmt --all --check --manifest-path=$VSCODE_PATH/Cargo.toml;
+        cargo clippy --all-targets --tests --manifest-path=$VSCODE_PATH/Cargo.toml -- $clippy_check_only;
+        cargo fmt --all $check --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo sort";
-        cargo sort --check;
+        cargo sort $check;
         cd $BUILDER_PATH;
         info "Builder: cargo sort";
-        cargo sort --check;
+        cargo sort $check;
         cd $VSCODE_PATH;
         info "VSCode extension: cargo sort";
-        cargo sort --check;
+        cargo sort $check;
     )?;
-    run_script("npx", &["prettier", "src", "--check"], CLIENT_PATH, true)?;
-    run_script("npx", &["prettier", "src", "--check"], VSCODE_PATH, true)?;
+    run_script(
+        "npx",
+        &["prettier", "src", prettier_check],
+        CLIENT_PATH,
+        true,
+    )?;
+    run_script(
+        "npx",
+        &["prettier", "src", prettier_check],
+        VSCODE_PATH,
+        true,
+    )
+}
+
+fn run_test() -> io::Result<()> {
+    run_format_and_lint(true)?;
     run_build()?;
     // Verify that compiling for release produces no errors.
     run_cmd!(
@@ -700,6 +725,7 @@ impl Cli {
         match &self.command {
             Commands::Install { dev } => run_install(*dev),
             Commands::Update => run_update(),
+            Commands::Flint { check } => run_format_and_lint(*check),
             Commands::Test => run_test(),
             Commands::Build => run_build(),
             Commands::ClientBuild(build_options) => {
