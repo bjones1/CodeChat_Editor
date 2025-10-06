@@ -48,7 +48,7 @@
 //! #[macro_use]
 //! extern crate log;
 //! use log::Level;
-//! extern crate testing_logger;
+//! use code_chat_editor::testing_logger;
 //!
 //! # fn main() { test_something();}
 //! # /* Don't put #[test] in code when running doc tests but DO put it in the documentation
@@ -70,19 +70,19 @@
 //! # #[macro_use]
 //! # extern crate log;
 //! # use log::Level;
-//! # extern crate testing_logger;
+//! # use code_chat_editor::testing_logger;
 //! # fn main() { test_target();}
 //! # /* Don't put #[test] in code when running doc tests but DO put it in the documentation
 //! #[test]
 //! # */
 //! fn test_target() {
 //!     testing_logger::setup();
-//!     log!(target: "documentation", Level::Trace, "targetted log message");
+//!     log!(target: "documentation", Level::Debug, "targetted log message");
 //!     testing_logger::validate( |captured_logs| {
 //!         assert_eq!(captured_logs.len(), 1);
 //!         assert_eq!(captured_logs[0].target, "documentation");
 //!         assert_eq!(captured_logs[0].body, "targetted log message");
-//!         assert_eq!(captured_logs[0].level, Level::Trace);
+//!         assert_eq!(captured_logs[0].level, Level::Debug);
 //!     });
 //! }
 //! ```

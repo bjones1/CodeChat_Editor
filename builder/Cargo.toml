@@ -23,6 +23,9 @@ name = "builder"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+int_tests = []
+
 [dependencies]
 clap = { version = "4.5.19", features = ["derive"] }
 cmd_lib = "2.0.0"

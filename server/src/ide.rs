@@ -27,6 +27,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     thread,
+    time::Duration,
 };
 
 // ### Third-party
@@ -163,6 +164,14 @@ impl CodeChatEditorServer {
                     }
                 ),
             else => None,
+        }
+    }
+
+    // Like `get_message`, but with a timeout.
+    pub async fn get_message_timeout(&self, timeout: Duration) -> Option<EditorMessage> {
+        select! {
+            _ = sleep(timeout) => None,
+            v = self.get_message() => v
         }
     }
 

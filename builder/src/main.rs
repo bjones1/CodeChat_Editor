@@ -441,13 +441,13 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     };
     run_cmd!(
         info "cargo clippy and fmt";
-        cargo clippy --all-targets --tests -- $clippy_check_only;
+        cargo clippy --all-targets --all-features --tests -- $clippy_check_only;
         cargo fmt --all $check;
         info "Builder: cargo clippy and fmt";
-        cargo clippy --all-targets --tests --manifest-path=$BUILDER_PATH/Cargo.toml -- $clippy_check_only;
+        cargo clippy --all-targets --all-features --tests --manifest-path=$BUILDER_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo clippy and fmt";
-        cargo clippy --all-targets --tests --manifest-path=$VSCODE_PATH/Cargo.toml -- $clippy_check_only;
+        cargo clippy --all-targets --all-features --tests --manifest-path=$VSCODE_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo sort";
         cargo sort $check;
@@ -487,7 +487,7 @@ fn run_test() -> io::Result<()> {
         info "VSCode extension: cargo test";
         cargo test --manifest-path=$VSCODE_PATH/Cargo.toml;
         info "cargo test";
-        cargo test --features all_tests;
+        cargo test --features int_tests;
     )?;
     Ok(())
 }

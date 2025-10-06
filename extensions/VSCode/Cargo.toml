@@ -37,6 +37,9 @@ version = "0.1.39"
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+int_tests = []
+
 [dependencies]
 codechat-editor-server = { path = "../../server" }
 log = "0.4.28"
