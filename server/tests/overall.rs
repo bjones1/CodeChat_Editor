@@ -15,21 +15,5 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `overall.rs` - test the overall system
 /// ======================================
-///
-/// These are functional tests of the overall system, performed by attaching a
-/// testing IDE to generate commands then observe results, along with a browser
-/// tester.
-///
-/// Some subtulties of this approach: development dependencies aren't available
-/// to integration tests. Therefore, this crate's `Cargo.toml` file includes the
-/// `int_tests` feature, which enables crates needed only for integration
-/// testing, while keeping these out of the final binary when compiling for
-/// production. This means that the same crate appears both in
-/// `dev-dependencies` and in `dependencies`, so it's available for both unit
-/// tests and integration tests. In addition, any code used in integration tests
-/// must be gated on the `int_tests` feature, since this code fails to compile
-/// without that feature's crates enabled.
-// Imports
-// -------
 #[cfg(feature = "int_tests")]
 mod overall_core;

@@ -16,7 +16,8 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# # `check.yml` -- Run tests in CI
+# `check.yml` -- Run tests in CI
+# ==============================
 
 name: Check
 on:
@@ -37,6 +38,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      # Doesn't work -- on Windows and Mac OS, binstalled programs don't run
+      # from the cache.
+      ##- uses: Swatinem/rust-cache@v2
+      ##  with:
+      ##    workspaces: |
+      ##      builder
+      ##      server
+      ##      extensions/VSCode
       - name: Run tests
         run: |
           rustup update

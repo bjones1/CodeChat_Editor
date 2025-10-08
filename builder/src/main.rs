@@ -386,7 +386,7 @@ fn run_install(dev: bool) -> io::Result<()> {
         }?;
         #[cfg(not(windows))]
         // The original command had `'=https'`, but single quotes confused
-        // `cmd_lib` and aren't needed to quote this. Note that `//` in the URL
+        // `cmd_lib` and aren't needed to quote this. Note that `//` in the URL
         // is a comment in Rust, so it must be [enclosed in
         // quotes](https://github.com/rust-shell-script/rust_cmd_lib/issues/88).
         run_cmd! {
@@ -395,11 +395,11 @@ fn run_install(dev: bool) -> io::Result<()> {
 
         run_cmd!(
             info "cargo binstall cargo-dist";
-            cargo binstall cargo-dist;
+            cargo binstall cargo-dist --no-confirm;
             info "cargo binstall cargo-outdated";
-            cargo binstall cargo-outdated --disable-telemetry;
+            cargo binstall cargo-outdated --no-confirm;
             info "cargo binstall cargo-sort";
-            cargo binstall cargo-sort --disable-telemetry;
+            cargo binstall cargo-sort --no-confirm;
         )?;
     }
     Ok(())

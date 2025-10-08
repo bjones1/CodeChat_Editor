@@ -13,14 +13,14 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `overall.rs` - test the overall system
-/// ======================================
+/// `overall_core/mod.rs` - test the overall system
+/// ===============================================
 ///
 /// These are functional tests of the overall system, performed by attaching a
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
 ///
-/// Some subtulties of this approach: development dependencies aren't available
+/// Some subtleties of this approach: development dependencies aren't available
 /// to integration tests. Therefore, this crate's `Cargo.toml` file includes the
 /// `int_tests` feature, which enables crates needed only for integration
 /// testing, while keeping these out of the final binary when compiling for
@@ -29,6 +29,12 @@
 /// tests and integration tests. In addition, any code used in integration tests
 /// must be gated on the `int_tests` feature, since this code fails to compile
 /// without that feature's crates enabled.
+///
+/// This is implemented here, then `use`d in `overall.rs`, so that a single
+/// `#[cfg(feature = "int_tests")]` statement there gates everything in this
+/// file. See the [test
+/// docs](https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests)
+/// for the correct file and directory names.
 // Imports
 // -------
 //
@@ -36,6 +42,7 @@
 use std::{env, error::Error, panic::AssertUnwindSafe, time::Duration};
 
 // ### Third-party
+use dunce::canonicalize;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use thirtyfour::prelude::*;
@@ -69,7 +76,14 @@ pub async fn thirtyfour() -> Result<(), Box<dyn Error + Send + Sync>> {
     unsafe { env::set_var("RUST_LOG", "debug") };
     // Start the webdriver.
     let server_url = "http://localhost:4444";
-    let caps = DesiredCapabilities::chrome();
+    let mut caps = DesiredCapabilities::chrome();
+    caps.add_arg("--headless")?;
+    // On Ubuntu CI, avoid failures, probably due to running Chrome as root.
+    #[cfg(target_os = "linux")]
+    if env::var("CI") == Ok("true".to_string()) {
+        caps.add_arg("--disable-gpu")?;
+        caps.add_arg("--no-sandbox")?;
+    }
     if let Err(err) = start_webdriver_process(server_url, &caps) {
         // Often, the "failure" is that the webdriver is already running.
         eprintln!("Failed to start the webdriver process: {err:#?}");
@@ -78,7 +92,8 @@ pub async fn thirtyfour() -> Result<(), Box<dyn Error + Send + Sync>> {
     let driver_ref = &driver;
 
     // Run the test inside an async, so we can shut down the driver before
-    // returning an error.
+    // returning an error. Mark the function as unwind safe. though I'm not
+    // certain this is correct. Hopefully, it's good enough for testing.
     let ret = AssertUnwindSafe(async move {
         let p = env::current_exe().unwrap().parent().unwrap().join("../..");
         set_root_path(Some(&p)).unwrap();
@@ -112,35 +127,36 @@ pub async fn thirtyfour() -> Result<(), Box<dyn Error + Send + Sync>> {
 
         // Open the Client and send it a file to load.
         driver_ref.goto(address).await.unwrap();
-        let path = test_dir.join("test.py");
+        let path = canonicalize(test_dir.join("test.py")).unwrap();
         let path_str = path.to_str().unwrap().to_string();
-        let id = codechat_server
+        let current_file_id = codechat_server
             .send_message_current_file(path_str.clone())
             .await
             .unwrap();
-        assert_eq!(
-            codechat_server
-                .get_message_timeout(timeout)
-                .await
-                .expect("Expected message."),
-            EditorMessage {
-                id,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-            }
+        // These next two messages can come in either order. Work around this.
+        let msg1 = codechat_server
+            .get_message_timeout(timeout)
+            .await
+            .expect("Expected message.");
+        let msg2 = codechat_server
+            .get_message_timeout(timeout)
+            .await
+            .expect("Expected message.");
+        let msg1_expected = EditorMessage {
+            id: current_file_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        };
+        let id = 6.0;
+        let msg2_expected = EditorMessage {
+            id,
+            message: EditorMessageContents::LoadFile(path),
+        };
+        assert!(
+            (msg1 == msg1_expected && msg2 == msg2_expected)
+                || (msg1 == msg2_expected && msg2 == msg1_expected)
         );
 
         // Respond to the load request.
-        let id = 6.0;
-        assert_eq!(
-            codechat_server
-                .get_message_timeout(timeout)
-                .await
-                .expect("Expected message."),
-            EditorMessage {
-                id,
-                message: EditorMessageContents::LoadFile(path)
-            }
-        );
         codechat_server
             .send_result_loadfile(id, Some("# Test\ncode()".to_string()))
             .await

@@ -37,6 +37,9 @@ version = "0.1.39"
 [lib]
 crate-type = ["cdylib"]
 
+# To make VSCode happy, create a unused `int_test` feature, then enable this
+# feature in the VSCode Rust language server for a better experience. See
+# `server/Cargo.toml` for its actual use.
 [features]
 int_tests = []
 
