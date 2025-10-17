@@ -108,7 +108,13 @@ window.CodeChatEditor_test = () => {
                 ];
                 codechat_html_to_markdown(db);
                 assert.deepEqual(db, [
-                    [0, 0, "", "//", "<u>A<u></u></u>\n===============\n\n<u><u></u></u>\n"],
+                    [
+                        0,
+                        0,
+                        "",
+                        "//",
+                        "<u>A<u></u></u>\n===============\n\n<u><u></u></u>\n",
+                    ],
                     [2, 2, "", "//", "Ax\n--\n"],
                 ]);
             });
