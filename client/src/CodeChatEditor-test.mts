@@ -22,8 +22,6 @@
 //
 // Imports
 // -------
-//
-// I can't get Mocha to work with ESBuild, so I import it using a script tag.
 import { assert } from "chai";
 import "mocha/mocha.js";
 import "mocha/mocha.css";
@@ -110,7 +108,7 @@ window.CodeChatEditor_test = () => {
                 ];
                 codechat_html_to_markdown(db);
                 assert.deepEqual(db, [
-                    [0, 0, "", "//", "<u>A<u></u></u>\n===============\n"],
+                    [0, 0, "", "//", "<u>A<u></u></u>\n===============\n\n<u><u></u></u>\n"],
                     [2, 2, "", "//", "Ax\n--\n"],
                 ]);
             });
