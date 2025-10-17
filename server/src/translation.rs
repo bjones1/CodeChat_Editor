@@ -33,39 +33,39 @@
 /// core processing needed to translate source code between a CodeChat Editor
 /// Client and an IDE client. The following diagram illustrates this approach:
 ///
-/// <graphviz-graph graph="digraph {
-///     ccc -> client_task [ label = &quot;websocket&quot; dir = &quot;both&quot; ]
-///     ccc -> http_task [ label = &quot;HTTP\nrequest/response&quot; dir = &quot;both&quot;]
-///     client_task -> from_client
-///     http_task -> http_to_client
-///     http_to_client -> processing
-///     processing -> http_from_client
-///     http_from_client -> http_task
-///     from_client -> processing
-///     processing -> to_client
-///     to_client -> client_task
-///     ide -> ide_task [ dir = &quot;both&quot; ]
-///     ide_task -> from_ide
-///     from_ide -> processing
-///     processing -> to_ide
-///     to_ide -> ide_task
-///     { rank = same; client_task; http_task }
-///     { rank = same; to_client; from_client; http_from_client; http_to_client }
-///     { rank = same; to_ide; from_ide }
-///     { rank = max; ide }
-///     ccc [ label = &quot;CodeChat Editor\nClient&quot;]
-///     client_task [ label = &quot;Client websocket\ntask&quot;]
-///     http_task [ label = &quot;HTTP endpoint&quot;]
-///     from_client [ label = &quot;queue from client&quot; shape=&quot;rectangle&quot;]
-///     processing [ label = &quot;Processing task&quot; ]
-///     to_client [ label = &quot;queue to client&quot; shape=&quot;rectangle&quot;]
-///     http_to_client [ label = &quot;http queue to client&quot; shape = &quot;rectangle&quot;]
-///     http_from_client [ label = &quot;oneshot from client&quot; shape = &quot;box&quot;]
-///     ide [ label = &quot;CodeChat Editor\nIDE plugin&quot;]
-///     ide_task [ label = &quot;IDE task&quot; ]
-///     from_ide [ label = &quot;queue from IDE&quot; shape=&quot;rectangle&quot; ]
-///     to_ide [ label = &quot;queue to IDE&quot; shape=&quot;rectangle&quot; ]
-///     }"></graphviz-graph>
+/// <graphviz-graph>digraph {
+/// ccc -&gt; client_task [ label = "websocket" dir = "both" ]
+/// ccc -&gt; http_task [ label = "HTTP\nrequest/response" dir = "both"]
+/// client_task -&gt; from_client
+/// http_task -&gt; http_to_client
+/// http_to_client -&gt; processing
+/// processing -&gt; http_from_client
+/// http_from_client -&gt; http_task
+/// from_client -&gt; processing
+/// processing -&gt; to_client
+/// to_client -&gt; client_task
+/// ide -&gt; ide_task [ dir = "both" ]
+/// ide_task -&gt; from_ide
+/// from_ide -&gt; processing
+/// processing -&gt; to_ide
+/// to_ide -&gt; ide_task
+/// { rank = same; client_task; http_task }
+/// { rank = same; to_client; from_client; http_from_client; http_to_client }
+/// { rank = same; to_ide; from_ide }
+/// { rank = max; ide }
+/// ccc [ label = "CodeChat Editor\nClient"]
+/// client_task [ label = "Client websocket\ntask"]
+/// http_task [ label = "HTTP endpoint"]
+/// from_client [ label = "queue from client" shape="rectangle"]
+/// processing [ label = "Processing task" ]
+/// to_client [ label = "queue to client" shape="rectangle"]
+/// http_to_client [ label = "http queue to client" shape = "rectangle"]
+/// http_from_client [ label = "oneshot from client" shape = "box"]
+/// ide [ label = "CodeChat Editor\nIDE plugin"]
+/// ide_task [ label = "IDE task" ]
+/// from_ide [ label = "queue from IDE" shape="rectangle" ]
+/// to_ide [ label = "queue to IDE" shape="rectangle" ]
+/// }</graphviz-graph>
 ///
 /// The queues use multiple-sender, single receiver (mpsc) types. The exception
 /// to this pattern is the HTTP endpoint. This endpoint is invoked with each
