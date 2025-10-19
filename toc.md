@@ -64,7 +64,7 @@ Implementation
             1.  [light.css](client/src/css/themes/light.css)
     3.  Tests
         1.  [CodeChatEditor-test.mts](client/src/CodeChatEditor-test.mts)
-            1.  [Run tests](server/src/lib.rs?test)
+            1.  [Run tests](README.md?test)
         2.  [HTML to Markdown conversion test document](docs/Markdown_HTML.js)
 3.  Extensions
     1.  Visual Studio Code
