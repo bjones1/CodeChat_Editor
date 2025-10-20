@@ -52,14 +52,18 @@
 // -------
 //
 // ### Standard library
-use std::{collections::HashMap, env, error::Error, panic::AssertUnwindSafe, time::Duration};
+use std::{
+    collections::HashMap, env, error::Error, panic::AssertUnwindSafe, path::PathBuf, time::Duration,
+};
 
+use assert_fs::TempDir;
 // ### Third-party
 use dunce::canonicalize;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use thirtyfour::{
-    By, ChromiumLikeCapabilities, DesiredCapabilities, Key, WebDriver, start_webdriver_process,
+    By, ChromiumLikeCapabilities, DesiredCapabilities, Key, WebDriver, error::WebDriverError,
+    start_webdriver_process,
 };
 use tokio::time::sleep;
 
@@ -81,7 +85,7 @@ use code_chat_editor::{
 // Utilities
 // ---------
 //
-// Not all messages produced by the server are ordered. To accomodate
+// Not all messages produced by the server are ordered. To accommodate
 // out-of-order messages, this class provides a way to `insert` expected
 // messages, then wait until they're all be received (`assert_all_messages`).
 struct ExpectedMessages(HashMap<i64, EditorMessageContents>);
@@ -125,651 +129,859 @@ impl ExpectedMessages {
     }
 }
 
+// Time to wait for `ExpectedMessages`.
+const TIMEOUT: Duration = Duration::from_millis(2000);
+
+// ### Test harness
+//
+// A test harness. It runs the webdriver, the Server, opens the Client, then
+// runs provided tests. After testing finishes, it cleans up (handling panics
+// properly).
+//
+// The goal was to pass the harness a function which runs the tests. This
+// currently doesn't work, due to problems with lifetimes (see comments). So,
+// implement this as a macro instead (kludge!).
+macro_rules! harness {
+    // The name of the test function to call inside the harness.
+    ($func: ident) => {
+        pub async fn harness<
+            'a,
+            F: FnOnce(CodeChatEditorServer, &'a WebDriver, PathBuf) -> Fut,
+            Fut: Future<Output = Result<(), WebDriverError>>,
+        >(
+            // The function which performs tests using thirtyfour. TODO: not
+            // used.
+            _f: F,
+            // The output from calling `prep_test_dir!()`.
+            prep_test_dir: (TempDir, PathBuf),
+        ) -> Result<(), Box<dyn Error + Send + Sync>> {
+            let (temp_dir, test_dir) = prep_test_dir;
+            // The logger gets configured by (I think)
+            // `start_webdriver_process`, which delegates to `selenium-manager`.
+            // Set logging level here.
+            unsafe { env::set_var("RUST_LOG", "debug") };
+            // Start the webdriver.
+            let server_url = "http://localhost:4444";
+            let mut caps = DesiredCapabilities::chrome();
+            caps.add_arg("--headless")?;
+            // On Ubuntu CI, avoid failures, probably due to running Chrome as
+            // root.
+            #[cfg(target_os = "linux")]
+            if env::var("CI") == Ok("true".to_string()) {
+                caps.add_arg("--disable-gpu")?;
+                caps.add_arg("--no-sandbox")?;
+            }
+            if let Err(err) = start_webdriver_process(server_url, &caps, true) {
+                // Often, the "failure" is that the webdriver is already
+                // running.
+                eprintln!("Failed to start the webdriver process: {err:#?}");
+            }
+            let driver = WebDriver::new(server_url, caps).await?;
+            let driver_clone = driver.clone();
+            let driver_ref = &driver_clone;
+
+            // Run the test inside an async, so we can shut down the driver
+            // before returning an error. Mark the function as unwind safe.
+            // though I'm not certain this is correct. Hopefully, it's good
+            // enough for testing.
+            let ret = AssertUnwindSafe(async move {
+                // ### Setup
+                let p = env::current_exe().unwrap().parent().unwrap().join("../..");
+                set_root_path(Some(&p)).unwrap();
+                let codechat_server = CodeChatEditorServer::new().unwrap();
+
+                // Get the resulting web page text.
+                let opened_id = codechat_server.send_message_opened(true).await.unwrap();
+                assert_eq!(
+                    codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+                    EditorMessage {
+                        id: opened_id,
+                        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+                    }
+                );
+                let em_html = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+                codechat_server.send_result(em_html.id, None).await.unwrap();
+
+                // Parse out the address to use.
+                let client_html = cast!(&em_html.message, EditorMessageContents::ClientHtml);
+                let find_str = "<iframe src=\"";
+                let address_start = client_html.find(find_str).unwrap() + find_str.len();
+                let address_end = client_html[address_start..].find("\"").unwrap() + address_start;
+                let address = &client_html[address_start..address_end];
+
+                // Open the Client and send it a file to load.
+                driver_ref.goto(address).await.unwrap();
+                // I'd like to call `f` here, but can't: Rust reports that
+                // `driver_clone` doesn't live long enough. I don't know how to
+                // fix this lifetime issue -- I want to specify that `f`'s
+                // lifetime (which contains the state referring to
+                // `driver_clone`) ends after the call to `f`, but don't know
+                // how.
+                $func(codechat_server, driver_ref, test_dir).await?;
+
+                Ok(())
+            })
+            // Catch any panics/assertions, again to ensure the driver shuts
+            // down cleanly.
+            .catch_unwind()
+            .await;
+
+            // Always explicitly close the browser.
+            driver.quit().await?;
+            // Report any errors produced when removing the temporary directory.
+            temp_dir.close()?;
+
+            ret.unwrap_or_else(|err|
+                    // Convert a panic to an error.
+                    Err::<(), Box<dyn Error + Send + Sync>>(Box::from(format!(
+                        "{err:#?}"
+                    ))))
+        }
+    };
+}
+
 // Tests
 // -----
 //
+// ### Server-side test
+//
+// Perform most functions a user would: open/switch documents (Markdown,
+// CodeChat, plain, PDF), use hyperlinks, perform edits on code and doc blocks.
+mod test1 {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    harness!(test_server_core);
+}
+
+#[tokio::test]
+async fn test_server() -> Result<(), Box<dyn Error + Send + Sync>> {
+    test1::harness(test_server_core, prep_test_dir!()).await
+}
+
 // Some of the thirtyfour calls are marked as deprecated, though they aren't
 // marked that way in the Selenium docs.
 #[allow(deprecated)]
-#[tokio::test]
-pub async fn thirtyfour() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let (temp_dir, test_dir) = prep_test_dir!();
-    // The logger gets configured by (I think) `start_webdriver_process`, which
-    // delegates to `selenium-manager`. Set logging level here.
-    unsafe { env::set_var("RUST_LOG", "debug") };
-    // Start the webdriver.
-    let server_url = "http://localhost:4444";
-    let mut caps = DesiredCapabilities::chrome();
-    caps.add_arg("--headless")?;
-    // On Ubuntu CI, avoid failures, probably due to running Chrome as root.
-    #[cfg(target_os = "linux")]
-    if env::var("CI") == Ok("true".to_string()) {
-        caps.add_arg("--disable-gpu")?;
-        caps.add_arg("--no-sandbox")?;
-    }
-    if let Err(err) = start_webdriver_process(server_url, &caps, true) {
-        // Often, the "failure" is that the webdriver is already running.
-        eprintln!("Failed to start the webdriver process: {err:#?}");
-    }
-    let driver = WebDriver::new(server_url, caps).await?;
-    let driver_ref = &driver;
+async fn test_server_core(
+    codechat_server: CodeChatEditorServer,
+    driver_ref: &WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let mut expected_messages = ExpectedMessages::new();
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let current_file_id = codechat_server
+        .send_message_current_file(path_str.clone())
+        .await
+        .unwrap();
+    // The ordering of these messages isn't fixed -- one can come first, or the
+    // other.
+    expected_messages.insert(EditorMessage {
+        id: current_file_id,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    });
+    let mut server_id = 6.0;
+    expected_messages.insert(EditorMessage {
+        id: server_id,
+        message: EditorMessageContents::LoadFile(path),
+    });
+    expected_messages
+        .assert_all_messages(&codechat_server, TIMEOUT)
+        .await;
 
-    // Run the test inside an async, so we can shut down the driver before
-    // returning an error. Mark the function as unwind safe. though I'm not
-    // certain this is correct. Hopefully, it's good enough for testing.
-    let ret = AssertUnwindSafe(async move {
-        // ### Setup
-        let p = env::current_exe().unwrap().parent().unwrap().join("../..");
-        set_root_path(Some(&p)).unwrap();
-        let codechat_server = CodeChatEditorServer::new().unwrap();
+    // Respond to the load request.
+    codechat_server
+        .send_result_loadfile(server_id, Some("# Test\ncode()".to_string()))
+        .await
+        .unwrap();
 
-        // Get the resulting web page text.
-        let timeout = Duration::from_millis(2000);
-        let opened_id = codechat_server.send_message_opened(true).await.unwrap();
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: opened_id,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-            }
-        );
-        let em_html = codechat_server.get_message_timeout(timeout).await.unwrap();
-        codechat_server.send_result(em_html.id, None).await.unwrap();
-
-        // Parse out the address to use.
-        let client_html = cast!(&em_html.message, EditorMessageContents::ClientHtml);
-        let find_str = "<iframe src=\"";
-        let address_start = client_html.find(find_str).unwrap() + find_str.len();
-        let address_end = client_html[address_start..].find("\"").unwrap() + address_start;
-        let address = &client_html[address_start..address_end];
-
-        // Open the Client and send it a file to load.
-        let mut expected_messages = ExpectedMessages::new();
-        driver_ref.goto(address).await.unwrap();
-        let path = canonicalize(test_dir.join("test.py")).unwrap();
-        let path_str = path.to_str().unwrap().to_string();
-        let current_file_id = codechat_server
-            .send_message_current_file(path_str.clone())
-            .await
-            .unwrap();
-        // The ordering of these messages isn't fixed -- one can come first, or
-        // the other.
-        expected_messages.insert(EditorMessage {
-            id: current_file_id,
-            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
-        });
-        let mut server_id = 6.0;
-        expected_messages.insert(EditorMessage {
+    // Respond to the load request for the TOC.
+    let toc_path = canonicalize(test_dir.join("toc.md")).unwrap();
+    server_id += MESSAGE_ID_INCREMENT * 2.0;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(path),
-        });
-        expected_messages
-            .assert_all_messages(&codechat_server, timeout)
-            .await;
+            message: EditorMessageContents::LoadFile(toc_path),
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
 
-        // Respond to the load request.
-        codechat_server
-            .send_result_loadfile(server_id, Some("# Test\ncode()".to_string()))
-            .await
-            .unwrap();
-
-        // Respond to the load request for the TOC.
-        let toc_path = canonicalize(test_dir.join("toc.md")).unwrap();
-        server_id += MESSAGE_ID_INCREMENT * 2.0;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::LoadFile(toc_path),
-            }
-        );
-        codechat_server
-            .send_result_loadfile(server_id, None)
-            .await
-            .unwrap();
-
-        // The loadfile produces a message to the client, which comes back here.
-        // We don't need to acknowledge it.
-        server_id -= MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-            }
-        );
-
-        // Target the iframe containing the Client.
-        let codechat_iframe = driver_ref.find(By::Css("#CodeChat-iframe")).await.unwrap();
-        driver_ref
-            .switch_to()
-            .frame_element(&codechat_iframe)
-            .await
-            .unwrap();
-
-        // ### Tests on source code
-        //
-        // #### Doc block tests
-        //
-        // Verify the first doc block.
-        let indent_css = ".CodeChat-CodeMirror .CodeChat-doc-indent";
-        let doc_block_indent = driver_ref.find(By::Css(indent_css)).await.unwrap();
-        assert_eq!(doc_block_indent.inner_html().await.unwrap(), "");
-        let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
-        let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
-        assert_eq!(
-            doc_block_contents.inner_html().await.unwrap(),
-            "<p>Test</p>\n"
-        );
-
-        // Focus it.
-        doc_block_contents.click().await.unwrap();
-        sleep(Duration::from_millis(100)).await;
-        // Refind it, since it's now switched with a TinyMCE editor.
-        let tinymce_contents = driver_ref.find(By::Id("TinyMCE-inst")).await.unwrap();
-        // Make an edit.
-        tinymce_contents.send_keys("foo").await.unwrap();
-
-        // Verify the updated text.
-        let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.clone(),
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "python".to_string(),
-                        },
-                        source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                            doc: vec![StringDiff {
-                                from: 0,
-                                to: Some(7),
-                                insert: "# Testfoo\n".to_string()
-                            }],
-                            doc_blocks: vec![]
-                        })
-                    }),
-                    cursor_position: Some(1),
-                    scroll_position: Some(0.0)
-                })
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
-
-        // Edit the indent. It should only allow spaces and tabs, rejecting
-        // other edits.
-        doc_block_indent.send_keys("  123").await.unwrap();
-        client_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.clone(),
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "python".to_string(),
-                        },
-                        source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                            doc: vec![StringDiff {
-                                from: 0,
-                                to: Some(10),
-                                insert: "  # Testfoo\n".to_string()
-                            }],
-                            doc_blocks: vec![]
-                        })
-                    }),
-                    cursor_position: Some(1),
-                    scroll_position: Some(0.0)
-                })
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
-
-        // #### Code block tests
-        //
-        // Verify the first line of code.
-        let code_line_css = ".CodeChat-CodeMirror .cm-line";
-        let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
-        assert_eq!(code_line.inner_html().await.unwrap(), "code()");
-
-        // Moving left should move us back to the doc block.
-        code_line.click().await.unwrap();
-        client_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.clone(),
-                    contents: None,
-                    cursor_position: Some(2),
-                    scroll_position: Some(0.0)
-                })
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
-        code_line
-            .send_keys("" + Key::Home + Key::Left)
-            .await
-            .unwrap();
-        doc_block_indent.send_keys(Key::Right).await.unwrap();
-        sleep(Duration::from_secs(5)).await;
-        client_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.clone(),
-                    contents: None,
-                    cursor_position: Some(2),
-                    scroll_position: Some(0.0)
-                })
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
-
-        // Make an edit to the code. This should also produce a client diff.
-        code_line.send_keys("bar").await.unwrap();
-
-        // Verify the updated text.
-        client_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.clone(),
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "python".to_string(),
-                        },
-                        source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                            doc: vec![StringDiff {
-                                from: 12,
-                                to: Some(18),
-                                insert: "code()bar".to_string()
-                            }],
-                            doc_blocks: vec![]
-                        })
-                    }),
-                    cursor_position: Some(2),
-                    scroll_position: Some(0.0)
-                })
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
-
-        // #### IDE edits
-        //
-        // Perform IDE edits.
-        let ide_id = codechat_server
-            .send_message_update_plain(
-                path_str.clone(),
-                Some("  # Testfood\ncode()bark".to_string()),
-                Some(1),
-                None,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: ide_id,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-            }
-        );
-
-        // Verify them.
-        let doc_block_indent = driver_ref.find(By::Css(indent_css)).await.unwrap();
-        assert_eq!(doc_block_indent.inner_html().await.unwrap(), "  ");
-        let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
-        assert_eq!(
-            doc_block_contents.inner_html().await.unwrap(),
-            "<p>Testfood</p>\n"
-        );
-        let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
-        assert_eq!(code_line.inner_html().await.unwrap(), "code()bark");
-
-        // Perform a second edit and verification, to produce a diff sent to the
-        // Client.
-        let ide_id = codechat_server
-            .send_message_update_plain(
-                path_str.clone(),
-                Some(" # food\nbark".to_string()),
-                Some(1),
-                None,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: ide_id,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-            }
-        );
-        let doc_block_indent = driver_ref.find(By::Css(indent_css)).await.unwrap();
-        assert_eq!(doc_block_indent.inner_html().await.unwrap(), " ");
-        let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
-        assert_eq!(
-            doc_block_contents.inner_html().await.unwrap(),
-            "<p>food</p>\n"
-        );
-        let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
-        assert_eq!(code_line.inner_html().await.unwrap(), "bark");
-
-        // ### Document-only tests
-        //
-        // Load in a document.
-        let md_path = canonicalize(test_dir.join("test.md")).unwrap();
-        let md_path_str = md_path.to_str().unwrap().to_string();
-        let current_file_id = codechat_server
-            .send_message_current_file(md_path_str.clone())
-            .await
-            .unwrap();
-
-        // Before changing files, the current file will be updated.
-        client_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.clone(),
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "python".to_string()
-                        },
-                        source: CodeMirrorDiffable::Plain(CodeMirror {
-                            doc: " # food\nbark".to_string(),
-                            doc_blocks: vec![]
-                        })
-                    }),
-                    cursor_position: Some(1),
-                    scroll_position: Some(0.0)
-                })
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
-
-        // These next two messages can come in either order. Work around this.
-        expected_messages.insert(EditorMessage {
-            id: current_file_id,
-            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
-        });
-        server_id += MESSAGE_ID_INCREMENT * 2.0;
-        expected_messages.insert(EditorMessage {
+    // The loadfile produces a message to the client, which comes back here. We
+    // don't need to acknowledge it.
+    server_id -= MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(md_path),
-        });
-        expected_messages
-            .assert_all_messages(&codechat_server, timeout)
-            .await;
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
 
-        // Ask the server to load the file from disk.
-        codechat_server
-            .send_result_loadfile(server_id, None)
-            .await
-            .unwrap();
+    // Target the iframe containing the Client.
+    let codechat_iframe = driver_ref.find(By::Css("#CodeChat-iframe")).await.unwrap();
+    driver_ref
+        .switch_to()
+        .frame_element(&codechat_iframe)
+        .await
+        .unwrap();
 
-        // Respond to the load request for the TOC.
-        let toc_path = canonicalize(test_dir.join("toc.md")).unwrap();
-        server_id += MESSAGE_ID_INCREMENT * 2.0;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::LoadFile(toc_path.clone()),
-            }
-        );
-        codechat_server
-            .send_result_loadfile(server_id, None)
-            .await
-            .unwrap();
+    // ### Tests on source code
+    //
+    // #### Doc block tests
+    //
+    // Verify the first doc block.
+    let indent_css = ".CodeChat-CodeMirror .CodeChat-doc-indent";
+    let doc_block_indent = driver_ref.find(By::Css(indent_css)).await.unwrap();
+    assert_eq!(doc_block_indent.inner_html().await.unwrap(), "");
+    let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
+    let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
+    assert_eq!(
+        doc_block_contents.inner_html().await.unwrap(),
+        "<p>Test</p>\n"
+    );
 
-        // Absorb the result produced by the Server's Update resulting from the
-        // LoadFile.
-        server_id -= MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-            }
-        );
+    // Focus it.
+    doc_block_contents.click().await.unwrap();
+    sleep(Duration::from_millis(100)).await;
+    // Refind it, since it's now switched with a TinyMCE editor.
+    let tinymce_contents = driver_ref.find(By::Id("TinyMCE-inst")).await.unwrap();
+    // Make an edit.
+    tinymce_contents.send_keys("foo").await.unwrap();
 
-        // Check the content.
-        let body_css = "#CodeChat-body .CodeChat-doc-contents";
-        let body_content = driver_ref.find(By::Css(body_css)).await.unwrap();
-        assert_eq!(
-            body_content.inner_html().await.unwrap(),
-            "<p>A <strong>markdown</strong> file.</p>"
-        );
+    // Verify the updated text.
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(7),
+                            insert: "# Testfoo\n".to_string()
+                        }],
+                        doc_blocks: vec![]
+                    })
+                }),
+                cursor_position: Some(1),
+                scroll_position: Some(0.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
 
-        // Perform edits.
-        body_content.send_keys("foo ").await.unwrap();
-        client_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: md_path_str.clone(),
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "markdown".to_string()
-                        },
-                        source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                            doc: vec![StringDiff {
-                                from: 0,
-                                to: Some(20),
-                                insert: "foo A **markdown** file.".to_string(),
-                            }],
-                            doc_blocks: vec![]
-                        })
-                    }),
-                    cursor_position: None,
-                    scroll_position: None
-                })
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
+    // Edit the indent. It should only allow spaces and tabs, rejecting other
+    // edits.
+    doc_block_indent.send_keys("  123").await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(10),
+                            insert: "  # Testfoo\n".to_string()
+                        }],
+                        doc_blocks: vec![]
+                    })
+                }),
+                cursor_position: Some(1),
+                scroll_position: Some(0.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
 
-        // Perform an IDE edit.
-        let ide_id = codechat_server
-            .send_message_update_plain(
-                md_path_str.clone(),
-                Some("food A **markdown** file.".to_string()),
-                Some(1),
-                None,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: ide_id,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-            }
-        );
-        assert_eq!(
-            body_content.inner_html().await.unwrap(),
-            "<p>food A <strong>markdown</strong> file.</p>"
-        );
+    // #### Code block tests
+    //
+    // Verify the first line of code.
+    let code_line_css = ".CodeChat-CodeMirror .cm-line";
+    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
+    assert_eq!(code_line.inner_html().await.unwrap(), "code()");
 
-        // ### Unsupported document
-        let txt_path = canonicalize(test_dir.join("test.txt")).unwrap();
-        let txt_path_str = txt_path.to_str().unwrap().to_string();
-        let current_file_id = codechat_server
-            .send_message_current_file(txt_path_str.clone())
-            .await
-            .unwrap();
+    // A click will update the current position and focus the code block.
+    code_line.click().await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: None,
+                cursor_position: Some(2),
+                scroll_position: Some(0.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    // Moving left should move us back to the doc block.
+    code_line
+        .send_keys("" + Key::Home + Key::Left)
+        .await
+        .unwrap();
+    // TODO: we don't get correct line numbers from code blocks. Ideally, the
+    // `cursor_position` would be 1 to show we're on the first line.
+    client_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: None,
+                cursor_position: Some(2),
+                scroll_position: Some(0.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
 
-        expected_messages.insert(EditorMessage {
-            id: current_file_id,
-            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
-        });
-        server_id += MESSAGE_ID_INCREMENT * 2.0;
-        expected_messages.insert(EditorMessage {
+    // Make an edit to the code. This should also produce a client diff.
+    code_line.send_keys("bar").await.unwrap();
+
+    // Verify the updated text.
+    client_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 12,
+                            to: Some(18),
+                            insert: "code()bar".to_string()
+                        }],
+                        doc_blocks: vec![]
+                    })
+                }),
+                cursor_position: Some(2),
+                scroll_position: Some(0.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+
+    // #### IDE edits
+    //
+    // Perform IDE edits.
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            path_str.clone(),
+            Some("  # Testfood\ncode()bark".to_string()),
+            Some(1),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // Verify them.
+    let doc_block_indent = driver_ref.find(By::Css(indent_css)).await.unwrap();
+    assert_eq!(doc_block_indent.inner_html().await.unwrap(), "  ");
+    let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
+    assert_eq!(
+        doc_block_contents.inner_html().await.unwrap(),
+        "<p>Testfood</p>\n"
+    );
+    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
+    assert_eq!(code_line.inner_html().await.unwrap(), "code()bark");
+
+    // Perform a second edit and verification, to produce a diff sent to the
+    // Client.
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            path_str.clone(),
+            Some(" # food\nbark".to_string()),
+            Some(1),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    let doc_block_indent = driver_ref.find(By::Css(indent_css)).await.unwrap();
+    assert_eq!(doc_block_indent.inner_html().await.unwrap(), " ");
+    let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
+    assert_eq!(
+        doc_block_contents.inner_html().await.unwrap(),
+        "<p>food</p>\n"
+    );
+    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
+    assert_eq!(code_line.inner_html().await.unwrap(), "bark");
+
+    // ### Document-only tests
+    //
+    // Load in a document.
+    let md_path = canonicalize(test_dir.join("test.md")).unwrap();
+    let md_path_str = md_path.to_str().unwrap().to_string();
+    let current_file_id = codechat_server
+        .send_message_current_file(md_path_str.clone())
+        .await
+        .unwrap();
+
+    // Before changing files, the current file will be updated.
+    client_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string()
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: " # food\nbark".to_string(),
+                        doc_blocks: vec![]
+                    })
+                }),
+                cursor_position: Some(1),
+                scroll_position: Some(0.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+
+    // These next two messages can come in either order. Work around this.
+    expected_messages.insert(EditorMessage {
+        id: current_file_id,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    });
+    server_id += MESSAGE_ID_INCREMENT * 2.0;
+    expected_messages.insert(EditorMessage {
+        id: server_id,
+        message: EditorMessageContents::LoadFile(md_path),
+    });
+    expected_messages
+        .assert_all_messages(&codechat_server, TIMEOUT)
+        .await;
+
+    // Ask the server to load the file from disk.
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+
+    // Respond to the load request for the TOC.
+    let toc_path = canonicalize(test_dir.join("toc.md")).unwrap();
+    server_id += MESSAGE_ID_INCREMENT * 2.0;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(toc_path.clone()),
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+
+    // Absorb the result produced by the Server's Update resulting from the
+    // LoadFile.
+    server_id -= MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // Check the content.
+    let body_css = "#CodeChat-body .CodeChat-doc-contents";
+    let body_content = driver_ref.find(By::Css(body_css)).await.unwrap();
+    assert_eq!(
+        body_content.inner_html().await.unwrap(),
+        "<p>A <strong>markdown</strong> file.</p>"
+    );
+
+    // Perform edits.
+    body_content.send_keys("foo ").await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: md_path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "markdown".to_string()
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(20),
+                            insert: "foo A **markdown** file.".to_string(),
+                        }],
+                        doc_blocks: vec![]
+                    })
+                }),
+                cursor_position: None,
+                scroll_position: None
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+
+    // Perform an IDE edit.
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            md_path_str.clone(),
+            Some("food A **markdown** file.".to_string()),
+            Some(1),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    assert_eq!(
+        body_content.inner_html().await.unwrap(),
+        "<p>food A <strong>markdown</strong> file.</p>"
+    );
+
+    // ### Unsupported document
+    let txt_path = canonicalize(test_dir.join("test.txt")).unwrap();
+    let txt_path_str = txt_path.to_str().unwrap().to_string();
+    let current_file_id = codechat_server
+        .send_message_current_file(txt_path_str.clone())
+        .await
+        .unwrap();
+
+    expected_messages.insert(EditorMessage {
+        id: current_file_id,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    });
+    server_id += MESSAGE_ID_INCREMENT * 2.0;
+    expected_messages.insert(EditorMessage {
+        id: server_id,
+        message: EditorMessageContents::LoadFile(txt_path.clone()),
+    });
+    expected_messages
+        .assert_all_messages(&codechat_server, TIMEOUT)
+        .await;
+    codechat_server.send_result(client_id, None).await.unwrap();
+
+    // Ask the server to load the file from disk.
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+    // There's a second request for this file, made by the iframe, plus a
+    // request for the TOC.
+    server_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(toc_path.clone())
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+    server_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
             id: server_id,
             message: EditorMessageContents::LoadFile(txt_path.clone()),
-        });
-        expected_messages
-            .assert_all_messages(&codechat_server, timeout)
-            .await;
-        codechat_server.send_result(client_id, None).await.unwrap();
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
 
-        // Ask the server to load the file from disk.
-        codechat_server
-            .send_result_loadfile(server_id, None)
+    // Look at the content, which should be an iframe.
+    let plain_content = driver_ref
+        .find(By::Css("#CodeChat-contents"))
+        .await
+        .unwrap();
+    assert!(
+        plain_content
+            .outer_html()
             .await
-            .unwrap();
-        // There's a second request for this file, made by the iframe, plus a
-        // request for the TOC.
-        server_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::LoadFile(toc_path.clone())
-            }
-        );
-        codechat_server
-            .send_result_loadfile(server_id, None)
-            .await
-            .unwrap();
-        server_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::LoadFile(txt_path.clone()),
-            }
-        );
-        codechat_server
-            .send_result_loadfile(server_id, None)
-            .await
-            .unwrap();
+            .unwrap()
+            .starts_with("<iframe src=\"test.txt?raw")
+    );
 
-        // Look at the content, which should be an iframe.
-        let plain_content = driver_ref
-            .find(By::Css("#CodeChat-contents"))
-            .await
-            .unwrap();
-        assert!(
-            plain_content
-                .outer_html()
-                .await
-                .unwrap()
-                .starts_with("<iframe src=\"test.txt?raw")
-        );
+    // TODO: This isn't editable in the Client. Only perform edits in the IDE.
+    // However, this code needs revising, so testing it is skipped for now.
 
-        // TODO: This isn't editable in the Client. Only perform edits in the
-        // IDE. However, this code needs revising, so testing it is skipped for
-        // now.
+    // #### PDF viewer
+    //
+    // Click on the link for the PDF to test.
+    let toc_iframe = driver_ref.find(By::Css("#CodeChat-sidebar")).await.unwrap();
+    driver_ref
+        .switch_to()
+        .frame_element(&toc_iframe)
+        .await
+        .unwrap();
+    let test_pdf = driver_ref.find(By::LinkText("test.pdf")).await.unwrap();
+    test_pdf.click().await.unwrap();
 
-        // #### PDF viewer
-        //
-        // Click on the link for the PDF to test.
-        let toc_iframe = driver_ref.find(By::Css("#CodeChat-sidebar")).await.unwrap();
-        driver_ref
-            .switch_to()
-            .frame_element(&toc_iframe)
-            .await
-            .unwrap();
-        let test_pdf = driver_ref.find(By::LinkText("test.pdf")).await.unwrap();
-        test_pdf.click().await.unwrap();
+    // Respond to the current file, then load requests for the PDf and the TOC.
+    let pdf_path = canonicalize(test_dir.join("test.pdf")).unwrap();
+    let pdf_path_str = pdf_path.to_str().unwrap().to_string();
+    client_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::CurrentFile(pdf_path_str, Some(true))
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    server_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(pdf_path.clone())
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+    server_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(toc_path)
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+    server_id += MESSAGE_ID_INCREMENT;
+    // Another load is sent for the actual PDF contents.
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(pdf_path)
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
 
-        // Respond to the current file, then load requests for the PDf and the
-        // TOC.
-        let pdf_path = canonicalize(test_dir.join("test.pdf")).unwrap();
-        let pdf_path_str = pdf_path.to_str().unwrap().to_string();
-        client_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::CurrentFile(pdf_path_str, Some(true))
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
-        server_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::LoadFile(pdf_path.clone())
-            }
-        );
-        codechat_server
-            .send_result_loadfile(server_id, None)
+    // Check that the PDF viewer was sent.
+    //
+    // Target the iframe containing the Client.
+    driver_ref
+        .switch_to()
+        .frame_element(&codechat_iframe)
+        .await
+        .unwrap();
+    let plain_content = driver_ref
+        .find(By::Css("#CodeChat-contents"))
+        .await
+        .unwrap();
+    assert!(
+        plain_content
+            .outer_html()
             .await
-            .unwrap();
-        server_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::LoadFile(toc_path)
-            }
-        );
-        codechat_server
-            .send_result_loadfile(server_id, None)
-            .await
-            .unwrap();
-        server_id += MESSAGE_ID_INCREMENT;
-        // Another load is sent for the actual PDF contents.
-        assert_eq!(
-            codechat_server.get_message_timeout(timeout).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::LoadFile(pdf_path)
-            }
-        );
-        codechat_server
-            .send_result_loadfile(server_id, None)
-            .await
-            .unwrap();
+            .unwrap()
+            .starts_with("<iframe src=\"/static/pdfjs-main.html?")
+    );
 
-        // Check that the PDF viewer was sent.
-        //
-        // Target the iframe containing the Client.
-        driver_ref
-            .switch_to()
-            .frame_element(&codechat_iframe)
-            .await
-            .unwrap();
-        let plain_content = driver_ref
-            .find(By::Css("#CodeChat-contents"))
-            .await
-            .unwrap();
-        assert!(
-            plain_content
-                .outer_html()
-                .await
-                .unwrap()
-                .starts_with("<iframe src=\"/static/pdfjs-main.html?")
-        );
+    Ok(())
+}
 
-        Ok(())
-    })
-    // Catch any panics/assertions, again to ensure the driver shuts down
-    // cleanly.
-    .catch_unwind()
-    .await;
+// ### Client tests
+//
+// This simply runs client-side tests written in TypeScript, verifying that they
+// all pass.
+mod test2 {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    harness!(test_client_core);
+}
 
-    // Always explicitly close the browser.
-    driver.quit().await?;
-    // Report any errors produced when removing the temporary directory.
-    temp_dir.close()?;
+#[tokio::test]
+async fn test_client() -> Result<(), Box<dyn Error + Send + Sync>> {
+    test2::harness(test_client_core, prep_test_dir!()).await
+}
 
-    ret.unwrap_or_else(|err|
-            // Convert a panic to an error.
-            Err::<(), Box<dyn Error + Send + Sync>>(Box::from(format!(
-                "{err:#?}"
-            ))))
+// Some of the thirtyfour calls are marked as deprecated, though they aren't
+// marked that way in the Selenium docs.
+#[allow(deprecated)]
+async fn test_client_core(
+    codechat_server: CodeChatEditorServer,
+    driver_ref: &WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let mut expected_messages = ExpectedMessages::new();
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let current_file_id = codechat_server
+        .send_message_current_file(path_str.clone())
+        .await
+        .unwrap();
+    // The ordering of these messages isn't fixed -- one can come first, or the
+    // other.
+    expected_messages.insert(EditorMessage {
+        id: current_file_id,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    });
+    let mut server_id = 6.0;
+    expected_messages.insert(EditorMessage {
+        id: server_id,
+        message: EditorMessageContents::LoadFile(path.clone()),
+    });
+    expected_messages
+        .assert_all_messages(&codechat_server, TIMEOUT)
+        .await;
+
+    // Respond to the load request.
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+
+    // Respond to the load request for the TOC.
+    let toc_path = canonicalize(test_dir.join("toc.md")).unwrap();
+    server_id += MESSAGE_ID_INCREMENT * 2.0;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(toc_path.clone()),
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+
+    // The loadfile produces a message to the client, which comes back here. We
+    // don't need to acknowledge it.
+    server_id -= MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // Target the iframe containing the Client.
+    let codechat_iframe = driver_ref.find(By::Css("#CodeChat-iframe")).await.unwrap();
+    driver_ref
+        .switch_to()
+        .frame_element(&codechat_iframe)
+        .await
+        .unwrap();
+
+    // Click on the link for the PDF to test.
+    let toc_iframe = driver_ref.find(By::Css("#CodeChat-sidebar")).await.unwrap();
+    driver_ref
+        .switch_to()
+        .frame_element(&toc_iframe)
+        .await
+        .unwrap();
+    let test_py = driver_ref.find(By::LinkText("test.py")).await.unwrap();
+    test_py.click().await.unwrap();
+
+    // Respond to the current file, then load requests for the PDf and the TOC.
+    let client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::CurrentFile(path_str, Some(true))
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    server_id += MESSAGE_ID_INCREMENT * 2.0;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(path.clone())
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+    server_id += MESSAGE_ID_INCREMENT * 2.0;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(toc_path)
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+
+    // Wait for the tests to run.
+    sleep(Duration::from_millis(2000)).await;
+
+    // Look for the test results.
+    driver_ref
+        .switch_to()
+        .frame_element(&codechat_iframe)
+        .await
+        .unwrap();
+    let mocha_results = driver_ref
+        .find(By::Css("#mocha-stats .result"))
+        .await
+        .unwrap();
+    assert_eq!(mocha_results.inner_html().await.unwrap(), "✓");
+
+    Ok(())
 }

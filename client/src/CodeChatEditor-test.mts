@@ -44,6 +44,9 @@ import {
 // Provide convenient access to all functions tested here.
 const { codechat_html_to_markdown } = exportedForTesting;
 
+// From [SO](https://stackoverflow.com/a/39914235).
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 // Tests
 // -----
 //
@@ -143,6 +146,29 @@ window.CodeChatEditor_test = () => {
                     doc: "a\n\nbcd",
                     doc_blocks: [[1, 3, "", "#", "test"]],
                 });
+            });
+
+            test("GraphViz, Mathjax, Mermaid", async function () {
+                // Wait for the renderers to run.
+                await sleep(1500);
+                // Make sure GraphViz includes an SVG at the top of the shadow
+                // root.
+                assert.equal(
+                    document.getElementsByTagName("graphviz-graph")[0]
+                        .shadowRoot!.children[0].tagName,
+                    "svg",
+                );
+                // Mermaid graphs start with a div.
+                assert.equal(
+                    document.getElementsByTagName("wc-mermaid")[0].shadowRoot!
+                        .children[0].tagName,
+                    "DIV",
+                );
+                // MathJax has its own stuff.
+                assert.equal(
+                    document.getElementsByTagName("mjx-container").length,
+                    1,
+                );
             });
         });
     });
