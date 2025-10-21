@@ -29,7 +29,13 @@ import process from "node:process";
 
 // ### Third-party packages
 import escape from "escape-html";
-import vscode, { commands, Range, TextDocument, TextEditor } from "vscode";
+import vscode, {
+    commands,
+    Range,
+    TextDocument,
+    TextEditor,
+    TextEditorRevealType,
+} from "vscode";
 import { CodeChatEditorServer, initServer } from "./index";
 
 // ### Local packages
@@ -400,6 +406,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     ];
                                     editor.revealRange(
                                         new vscode.Range(position, position),
+                                        TextEditorRevealType.InCenter,
                                     );
                                 }
                             }

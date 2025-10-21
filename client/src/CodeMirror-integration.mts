@@ -1114,11 +1114,13 @@ export const CodeMirror_load = async (
     }
 };
 
+// Scroll so that the given line is centered in the viewport.
 export const scroll_to_line = (line: number) => {
     ignore_selection_change = true;
-    const line_range = current_view?.state.doc.line(line);
+    // Translate the line number to a position.
+    const pos = current_view?.state.doc.line(line).from;
     current_view?.dispatch({
-        selection: EditorSelection.cursor(line_range.from),
+        effects: EditorView.scrollIntoView(pos, { y: "center" }),
         scrollIntoView: true,
     });
 };
