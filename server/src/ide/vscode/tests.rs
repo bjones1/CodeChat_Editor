@@ -87,7 +87,6 @@ pub const IP_PORT: u16 = 8080;
 
 // Support functions
 // -----------------
-//
 /// Send a message via a websocket.
 async fn send_message<S: AsyncRead + AsyncWrite + Unpin>(
     ws_stream: &mut WebSocketStream<S>,
@@ -189,8 +188,8 @@ async fn open_client<S: AsyncRead + AsyncWrite + Unpin>(ws_ide: &mut WebSocketSt
 }
 
 /// Perform all the setup for testing the Server via IDE and Client websockets.
-/// This should be invoked by the `prep_test!` macro; otherwise, test files won't
-/// be found.
+/// This should be invoked by the `prep_test!` macro; otherwise, test files
+/// won't be found.
 async fn _prep_test(
     connection_id: &str,
     test_full_name: &str,
@@ -229,7 +228,6 @@ macro_rules! prep_test {
 
 // Tests
 // -----
-//
 /// Test incorrect inputs: two connections with the same ID, sending the wrong
 /// first message.
 #[actix_web::test]
@@ -282,11 +280,13 @@ async fn test_vscode_ide_websocket1() {
 /// Test opening the Client in an external browser.
 #[actix_web::test]
 async fn test_vscode_ide_websocket2() {
-    // Running this in CI on Windows causes the test suite to never exit. Avoid this.
-    // See the [docs](https://docs.github.com/en/actions/reference/workflows-and-actions/variables)
+    // Running this in CI on Windows causes the test suite to never exit. Avoid
+    // this. See the
+    // [docs](https://docs.github.com/en/actions/reference/workflows-and-actions/variables)
     // on GitHub Actions environment variables.
     if env::var("RUNNER_OS") == Ok("Windows".to_string()) {
-        // TODO: call a function here which tells the test running we're skipping this test.
+        // TODO: call a function here which tells the test running we're
+        // skipping this test.
         return;
     }
 
@@ -329,7 +329,7 @@ async fn test_vscode_ide_websocket3() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:8080/vsc/fs/{connection_id}/{file_path_str_thread}",
+                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{file_path_str_thread}",
             ))
             .send()
             .unwrap()
@@ -367,8 +367,8 @@ async fn test_vscode_ide_websocket3() {
     temp_dir.close().unwrap();
 }
 
-/// Fetch a file that exists, but using backslashes. This should still fail, even
-/// on Windows.
+/// Fetch a file that exists, but using backslashes. This should still fail,
+/// even on Windows.
 #[actix_web::test]
 async fn test_vscode_ide_websocket3a() {
     let connection_id = "test-connection-id3a";
@@ -386,7 +386,7 @@ async fn test_vscode_ide_websocket3a() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:8080/vsc/fs/{connection_id}/{file_path_str_thread}",
+                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{file_path_str_thread}",
             ))
             .send()
             .unwrap()
@@ -422,7 +422,8 @@ async fn test_vscode_ide_websocket3a() {
     temp_dir.close().unwrap();
 }
 
-/// Send a `CurrentFile` message with a file to edit that exists only in the IDE.
+/// Send a `CurrentFile` message with a file to edit that exists only in the
+/// IDE.
 #[actix_web::test]
 async fn test_vscode_ide_websocket8() {
     let connection_id = "test-connection-id8";
@@ -479,7 +480,7 @@ async fn test_vscode_ide_websocket8() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
                 drop_leading_slash(&file_path_thread.to_slash().unwrap())
             ))
             .send()
@@ -584,7 +585,7 @@ async fn test_vscode_ide_websocket7() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
                     &file_path.to_slash().unwrap(),
                 ),
                 None,
@@ -862,7 +863,7 @@ async fn test_vscode_ide_websocket4() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
                     &file_path.to_slash().unwrap()
                 ),
                 None,
@@ -900,7 +901,7 @@ async fn test_vscode_ide_websocket4() {
         // Get the file itself.
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:8080/vsc/fs/{connection_id}/{}/{}",
+                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/{}",
                 test_dir_thread.to_slash().unwrap(),
                 // On Windows, send incorrect case for this file; the server
                 // should correct it.
@@ -982,7 +983,7 @@ async fn test_vscode_ide_websocket4() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:8080/vsc/fs/{connection_id}/{}/toc.md",
+                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/toc.md",
                 test_dir_thread.to_slash().unwrap()
             ))
             .send()
@@ -1107,7 +1108,7 @@ async fn test_vscode_ide_websocket4a() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
                     &file_path.to_slash().unwrap()
                 ),
                 None,
@@ -1150,7 +1151,7 @@ async fn test_vscode_ide_websocket4a() {
     let join_handle = thread::spawn(move || {
         // Read the file.
         let response = minreq::get(format!(
-            "http://localhost:8080/vsc/fs/{connection_id}/{}/{hw}",
+            "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/{hw}",
             test_dir_thread.to_slash().unwrap(),
         ))
         .send()
@@ -1190,8 +1191,8 @@ async fn test_vscode_ide_websocket4a() {
     temp_dir.close().unwrap();
 }
 
-/// Send a `CurrentFile` message from the Client, requesting a PDF that exists on
-/// disk, but not in the IDE, inside a project.
+/// Send a `CurrentFile` message from the Client, requesting a PDF that exists
+/// on disk, but not in the IDE, inside a project.
 #[actix_web::test]
 async fn test_vscode_ide_websocket4b() {
     let connection_id = "test-connection-id4b";
@@ -1208,7 +1209,7 @@ async fn test_vscode_ide_websocket4b() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:8080/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
                     &file_path.to_slash().unwrap()
                 ),
                 None,
@@ -1251,7 +1252,7 @@ async fn test_vscode_ide_websocket4b() {
     let join_handle = thread::spawn(move || {
         // Read the file.
         let response = minreq::get(format!(
-            "http://localhost:8080/vsc/fs/{connection_id}/{}/{hw}",
+            "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/{hw}",
             test_dir_thread.to_slash().unwrap(),
         ))
         .send()
@@ -1265,7 +1266,7 @@ async fn test_vscode_ide_websocket4b() {
 
         // Now, request the PDF as a raw file.
         let response = minreq::get(format!(
-            "http://localhost:8080/vsc/fs/{connection_id}/{}/{hw}?raw",
+            "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/{hw}?raw",
             test_dir_thread.to_slash().unwrap(),
         ))
         .send()

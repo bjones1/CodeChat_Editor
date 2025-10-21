@@ -27,7 +27,7 @@ use assert_cmd::Command;
 use assertables::{assert_ends_with, assert_not_contains, assert_starts_with};
 
 use super::{path_to_url, url_to_path};
-use crate::ide::filewatcher::FILEWATCHER_PATH_PREFIX;
+use crate::ide::{filewatcher::FILEWATCHER_PATH_PREFIX, vscode::tests::IP_PORT};
 use crate::prep_test_dir;
 
 // Support functions
@@ -46,7 +46,7 @@ fn test_url_to_path() {
     assert_eq!(
         url_to_path(
             &format!(
-                "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{}path%20spaces/foo.py",
+                "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}path%20spaces/foo.py",
                 if cfg!(windows) { "C:/" } else { "" }
             ),
             FILEWATCHER_PATH_PREFIX
@@ -61,7 +61,7 @@ fn test_url_to_path() {
     assert_eq!(
         url_to_path(
             &format!(
-                "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{}foo%5Cbar.py",
+                "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}foo%5Cbar.py",
                 if cfg!(windows) { "C:/" } else { "" }
             ),
             FILEWATCHER_PATH_PREFIX
@@ -77,7 +77,7 @@ fn test_url_to_path() {
     assert_eq!(
         url_to_path(
             &format!(
-                "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{test_dir_str}/test%20spaces.py"
+                "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{test_dir_str}/test%20spaces.py"
             ),
             FILEWATCHER_PATH_PREFIX
         )
@@ -122,7 +122,8 @@ fn test_other_path() {
             .assert()
             .success();
     });
-    // The server waits for up to 3 seconds for a ping to work. Add some extra time for starting the process.
+    // The server waits for up to 3 seconds for a ping to work. Add some extra
+    // time for starting the process.
     sleep(Duration::from_millis(6000));
     get_server()
         .args(["--port", "8083", "stop"])
