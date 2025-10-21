@@ -711,15 +711,18 @@ async fn test_server_core(
         .await
         .unwrap();
     // There's a second request for this file, made by the iframe, plus a
-    // request for the TOC.
+    // request for the TOC. The ordering isn't fixed; accommodate this.
     server_id += MESSAGE_ID_INCREMENT;
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: server_id,
-            message: EditorMessageContents::LoadFile(toc_path.clone())
-        }
-    );
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    assert_eq!(msg.id, server_id);
+    let msg_contents = cast!(msg.message, EditorMessageContents::LoadFile);
+    let next_path = if msg_contents == toc_path.clone() {
+        txt_path.clone()
+    } else if msg_contents == txt_path.clone() {
+        toc_path.clone()
+    } else {
+        panic!("Unexpected path {msg_contents:?}.");
+    };
     codechat_server
         .send_result_loadfile(server_id, None)
         .await
@@ -729,7 +732,7 @@ async fn test_server_core(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(txt_path.clone()),
+            message: EditorMessageContents::LoadFile(next_path),
         }
     );
     codechat_server
