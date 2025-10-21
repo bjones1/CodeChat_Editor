@@ -24,6 +24,14 @@ Changelog
 
 *   No changes.
 
+Version 0.1.39 -- 2025-Oct-21
+-----------------------------
+
+*   Scroll viewport to center on cursor movement.
+*   Significant improvements to test framework.
+*   Improved build framework.
+*   Refact
+
 Version 0.1.38 -- 2025-Sep-24
 -----------------------------
 
