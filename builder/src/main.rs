@@ -393,9 +393,20 @@ fn run_install(dev: bool) -> io::Result<()> {
             curl -L --proto =https --tlsv1.2 -sSf "https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh" | bash;
         }?;
 
+        // Installing `cargo-dist` using `cargo binstall` fails intermittently
+        // on MacOS. Try another approach.
+        #[cfg(target_os = "macos")]
+        run_cmd!(
+            curl --proto =https --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/latest/download/cargo-dist-installer.sh" | sh;
+
+        )?;
+        #[cfg(not(target_os = "macos"))]
         run_cmd!(
             info "cargo binstall cargo-dist";
             cargo binstall cargo-dist --no-confirm;
+        )?;
+
+        run_cmd!(
             info "cargo binstall cargo-outdated";
             cargo binstall cargo-outdated --no-confirm;
             info "cargo binstall cargo-sort";
