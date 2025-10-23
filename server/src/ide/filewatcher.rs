@@ -1113,7 +1113,7 @@ mod tests {
         dest.push("test2.py");
         fs::rename(file_path, dest.as_path()).unwrap();
         // Wait for the filewatcher to debounce this file write.
-        sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(2)).await;
         let m = get_message(&mut to_client_rx).await;
         assert_eq!(m.id, INITIAL_IDE_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT);
         assert!(matches!(m.message, EditorMessageContents::Closed));
