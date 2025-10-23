@@ -972,7 +972,7 @@ async fn test_client_core(
         .unwrap();
 
     // Wait for the tests to run.
-    sleep(Duration::from_millis(2000)).await;
+    sleep(Duration::from_millis(3000)).await;
 
     // Look for the test results.
     driver_ref

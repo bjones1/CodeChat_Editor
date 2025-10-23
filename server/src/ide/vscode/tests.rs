@@ -323,6 +323,11 @@ async fn test_vscode_ide_websocket3() {
     let file_path = test_dir.join("none.py");
     let file_path_str = drop_leading_slash(&file_path.to_slash().unwrap()).to_string();
 
+    // Since we expect a 404 error, wait some to ensure the 404 results from not
+    // finding the requested file, instead of the web server not being fully
+    // ready.
+    sleep(Duration::from_millis(500)).await;
+
     // Do this is a thread, since the request generates a message that requires
     // a response in order to complete.
     let file_path_str_thread = file_path_str.clone();
@@ -379,6 +384,11 @@ async fn test_vscode_ide_websocket3a() {
     // Force the path separator to be Window-style for this test, even on
     // non-Windows platforms.
     let file_path_str = file_path.to_str().unwrap().to_string().replace("/", "\\");
+
+    // Since we expect a 404 error, wait some to ensure the 404 results from not
+    // finding the requested file, instead of the web server not being fully
+    // ready.
+    sleep(Duration::from_millis(500)).await;
 
     // Do this is a thread, since the request generates a message that requires
     // a response in order to complete.
