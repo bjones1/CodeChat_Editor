@@ -853,6 +853,12 @@ mod test2 {
 
 #[tokio::test]
 async fn test_client() -> Result<(), Box<dyn Error + Send + Sync>> {
+    // If both thirtyfour tests start at the same time, both fail; perhaps
+    // there's some confusion when two requests care made to the same webserver
+    // from two clients within the same process? In order to avoid then, insert
+    // a delay to hopefully start this test at a different time than
+    // `test_server_core`.
+    sleep(Duration::from_millis(100)).await;
     test2::harness(test_client_core, prep_test_dir!()).await
 }
 
