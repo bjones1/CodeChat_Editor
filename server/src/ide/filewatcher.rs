@@ -58,7 +58,7 @@ use crate::{
     queue_send,
     webserver::{
         INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT, ResultOkTypes, WebAppState,
-        filesystem_endpoint, get_test_mode, url_to_path,
+        filesystem_endpoint, get_test_mode,
     },
 };
 use crate::{
@@ -604,34 +604,30 @@ async fn processing_task(
                             send_response(&from_ide_tx, m.id, result).await;
                         }
 
-                        EditorMessageContents::CurrentFile(url_string, _is_text) => {
-                            let result = match url_to_path(&url_string, FILEWATCHER_PATH_PREFIX) {
-                                Err(err) => Err(err),
-                                Ok(ref file_path) => 'err_exit: {
-                                    // We finally have the desired path! First,
-                                    // unwatch the old path.
-                                    if let Some(cfp) = &current_filepath
-                                        && let Err(err) = debounced_watcher.unwatch(cfp)
-                                    {
-                                        break 'err_exit Err(format!(
-                                            "Unable to unwatch file '{}': {err}.",
-                                            cfp.to_string_lossy()
-                                        ));
-                                    }
-                                    // Update to the new path.
-                                    current_filepath = Some(file_path.to_path_buf());
-
-                                    // Watch the new file.
-                                    if let Err(err) = debounced_watcher.watch(file_path, RecursiveMode::NonRecursive) {
-                                        break 'err_exit Err(format!(
-                                            "Unable to watch file '{}': {err}.",
-                                            file_path.to_string_lossy()
-                                        ));
-                                    }
-                                    // Indicate there was no error in the
-                                    // `Result` message.
-                                    Ok(ResultOkTypes::Void)
+                        EditorMessageContents::CurrentFile(file_path_str, _is_text) => {
+                            let file_path = PathBuf::from(file_path_str.clone());
+                            let result = 'err_exit: {
+                                // Unwatch the old path.
+                                if let Some(cfp) = &current_filepath
+                                    && let Err(err) = debounced_watcher.unwatch(cfp)
+                                {
+                                    break 'err_exit Err(format!(
+                                        "Unable to unwatch file '{}': {err}.",
+                                        cfp.to_string_lossy()
+                                    ));
                                 }
+                                // Update to the new path.
+                                current_filepath = Some(file_path.to_path_buf());
+
+                                // Watch the new file.
+                                if let Err(err) = debounced_watcher.watch(file_path, RecursiveMode::NonRecursive) {
+                                    break 'err_exit Err(format!(
+                                        "Unable to watch file '{file_path_str}': {err}.",
+                                    ));
+                                }
+                                // Indicate there was no error in the `Result`
+                                // message.
+                                Ok(ResultOkTypes::Void)
                             };
                             send_response(&from_ide_tx, m.id, result).await;
                         },
