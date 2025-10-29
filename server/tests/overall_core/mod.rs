@@ -994,3 +994,178 @@ async fn test_client_core(
 
     Ok(())
 }
+
+mod test3 {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    harness!(test_client_updates_core);
+}
+
+#[tokio::test]
+async fn test_client_updates() -> Result<(), Box<dyn Error + Send + Sync>> {
+    // If both thirtyfour tests start at the same time, both fail; perhaps
+    // there's some confusion when two requests care made to the same webserver
+    // from two clients within the same process? In order to avoid then, insert
+    // a delay to hopefully start this test at a different time than
+    // `test_server_core`.
+    sleep(Duration::from_millis(100)).await;
+    test3::harness(test_client_updates_core, prep_test_dir!()).await
+}
+
+// Some of the thirtyfour calls are marked as deprecated, though they aren't
+// marked that way in the Selenium docs.
+#[allow(deprecated)]
+async fn test_client_updates_core(
+    codechat_server: CodeChatEditorServer,
+    driver_ref: &WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let mut expected_messages = ExpectedMessages::new();
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let current_file_id = codechat_server
+        .send_message_current_file(path_str.clone())
+        .await
+        .unwrap();
+    // The ordering of these messages isn't fixed -- one can come first, or the
+    // other.
+    expected_messages.insert(EditorMessage {
+        id: current_file_id,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    });
+    let mut server_id = 6.0;
+    expected_messages.insert(EditorMessage {
+        id: server_id,
+        message: EditorMessageContents::LoadFile(path.clone()),
+    });
+    expected_messages
+        .assert_all_messages(&codechat_server, TIMEOUT)
+        .await;
+
+    // Respond to the load request.
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+
+    // Respond to the load request for the TOC.
+    let toc_path = canonicalize(test_dir.join("toc.md")).unwrap();
+    server_id += MESSAGE_ID_INCREMENT * 2.0;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(toc_path.clone()),
+        }
+    );
+    codechat_server
+        .send_result_loadfile(server_id, None)
+        .await
+        .unwrap();
+
+    // The loadfile produces a message to the client, which comes back here. We
+    // don't need to acknowledge it.
+    server_id -= MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // Target the iframe containing the Client.
+    let codechat_iframe = driver_ref.find(By::Css("#CodeChat-iframe")).await.unwrap();
+    driver_ref
+        .switch_to()
+        .frame_element(&codechat_iframe)
+        .await
+        .unwrap();
+
+    // Select the doc block and add to the line, causing a word wrap.
+    let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
+    let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
+    doc_block_contents
+        .send_keys("" + Key::End + " testing")
+        .await
+        .unwrap();
+
+    // Verify the updated text.
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 79,
+                            to: None,
+                            insert: "# testing\n".to_string()
+                        }],
+                        doc_blocks: vec![]
+                    })
+                }),
+                cursor_position: Some(1),
+                scroll_position: Some(0.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+
+    // Move the cursor to code, then check that the position is correct. TODO:
+    // need access to codemirror in test mode.
+
+    // Insert a character to check the insertion point.
+    let code_line_css = ".CodeChat-CodeMirror .cm-line";
+    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
+    code_line
+        .send_keys(Key::Alt + Key::Control + "g")
+        .await
+        .unwrap();
+    // Enter a line in the dialog that pops up.
+    driver_ref
+        .find(By::Css("input.cm-textfield"))
+        .await
+        .unwrap()
+        .send_keys("4" + Key::Enter)
+        .await
+        .unwrap();
+    // Add an indented comment.
+    code_line.send_keys(Key::Home + "# ").await.unwrap();
+    // This should edit the (new) third line of the file after word wrap: `def
+    // foo():`.
+    client_id += MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 115,
+                            to: Some(131),
+                            insert: "    # A comment\n".to_string()
+                        }],
+                        doc_blocks: vec![]
+                    })
+                }),
+                cursor_position: Some(4),
+                scroll_position: Some(0.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+
+    Ok(())
+}
