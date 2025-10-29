@@ -680,13 +680,13 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 // needing to check if it's already present.
                 indent_div.addEventListener(
                     "beforeinput",
-                    // Allow only spaces and delete/backspaces when editing the indent of a doc
-                    // block.
+                    // Allow only spaces and delete/backspaces when editing the
+                    // indent of a doc block.
                     (event: InputEvent) => {
                         // Only modify the behavior of inserts.
                         if (event.data) {
-                            // Block any insert that's not an insert of spaces. TODO: need to
-                            // support tabs.
+                            // Block any insert that's not an insert of spaces.
+                            // TODO: need to support tabs.
                             if (event.data !== " ".repeat(event.data.length)) {
                                 event.preventDefault();
                             }
@@ -850,6 +850,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
 
 // UI
 // --
+//
 // There doesn't seem to be any tracking of a dirty/clean flag built into
 // CodeMirror v6 (although [v5
 // does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've found

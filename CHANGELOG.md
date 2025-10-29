@@ -22,7 +22,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-*   No changes.
+*   File watcher now accepts new files from the Client.
 
 Version 0.1.39 -- 2025-Oct-23
 -----------------------------
