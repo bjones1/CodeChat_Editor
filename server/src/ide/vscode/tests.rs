@@ -1045,7 +1045,7 @@ async fn test_vscode_ide_websocket4() {
                             to: 6,
                             indent: "".to_string(),
                             delimiter: "#".to_string(),
-                            contents: "test.py".to_string(),
+                            contents: "<p>test.py</p>".to_string(),
                         }],
                     }),
                 }),

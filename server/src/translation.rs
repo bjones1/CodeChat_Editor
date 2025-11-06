@@ -442,6 +442,13 @@ pub async fn translation_task(
             // blocks, but Markdown. When Turndown is moved from JavaScript to
             // Rust, this can be changed, since both sides will have HTML in the
             // doc blocks.
+            //
+            // Another approach: use revision numbers. Both the IDE and Client
+            // start with the same revision number. When either makes an edit,
+            // it sends a new revision number along with a diff. If the receiver
+            // doesn't have the previous version, it returns a result of error,
+            // which prompts the sender to re-send with the full text instead of
+            // a diff.
             let mut sync_state = SyncState::OutOfSync;
             loop {
                 select! {

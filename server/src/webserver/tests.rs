@@ -32,8 +32,19 @@ use crate::prep_test_dir;
 
 // Support functions
 // -----------------
+//
+// The lint on using `cargo_bin` doesn't apply, since this is only available for
+// integration tests per the
+// [docs](https://docs.rs/assert_cmd/latest/assert_cmd/cargo/macro.cargo_bin_cmd.html).
+// Text of the warning:
+//
+// ```
+// warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`:
+//   incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+// ```
+#[allow(deprecated)]
 fn get_server() -> Command {
-    Command::cargo_bin("codechat-editor-server").unwrap()
+    Command::cargo_bin(assert_cmd::pkg_name!()).unwrap()
 }
 
 // Tests

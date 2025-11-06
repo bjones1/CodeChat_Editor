@@ -649,7 +649,10 @@ async fn test_server_core(
                         doc: vec![StringDiff {
                             from: 0,
                             to: Some(20),
-                            insert: "foo A **markdown** file.".to_string(),
+                            insert: format!(
+                                "foo A **markdown** file.{}",
+                                if cfg!(windows) { "\r\n" } else { "\n" }
+                            ),
                         }],
                         doc_blocks: vec![]
                     })

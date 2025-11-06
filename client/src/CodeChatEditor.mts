@@ -44,8 +44,6 @@
 // ### JavaScript/TypeScript
 //
 // #### Third-party
-import TurndownService from "./third-party/turndown/turndown.browser.es.mjs";
-import { gfm } from "./third-party/turndown/turndown-plugin-gfm.browser.es.js";
 import "./third-party/wc-mermaid/wc-mermaid";
 
 // #### Local
@@ -152,22 +150,6 @@ let current_metadata: {
 
 // True if the document is dirty (needs saving).
 let is_dirty = false;
-
-// ### Markdown to HTML conversion
-//
-// Instantiate[turndown](https://github.com/mixmark-io/turndown) for HTML to
-// Markdown conversion
-const turndownService = new TurndownService({
-    br: "\\",
-    codeBlockStyle: "fenced",
-    renderAsPure: false,
-    wordWrap: [80, 40],
-});
-
-// Add the plugins
-// from[turndown-plugin-gfm](https://github.com/laurent22/joplin/tree/dev/packages/turndown-plugin-gfm)
-// to enable conversions for tables, task lists, and strikethroughs.
-turndownService.use(gfm);
 
 // Page initialization
 // -------------------
@@ -351,7 +333,7 @@ const save_lp = (is_dirty: boolean) => {
                     Plain: CodeMirror;
                 }
             ).Plain = {
-                doc: turndownService.turndown(html),
+                doc: html,
                 doc_blocks: [],
             };
             // Retypeset all math after saving the document.
@@ -359,7 +341,6 @@ const save_lp = (is_dirty: boolean) => {
         } else {
             code_mirror_diffable = CodeMirror_save();
             assert("Plain" in code_mirror_diffable);
-            codechat_html_to_markdown(code_mirror_diffable.Plain.doc_blocks);
         }
         update.contents = {
             metadata: current_metadata,
@@ -394,22 +375,6 @@ const on_save = async (only_if_dirty: boolean = false) => {
         );
     });
     is_dirty = false;
-};
-
-const codechat_html_to_markdown = (doc_blocks: CodeMirrorDocBlockTuple[]) => {
-    const entries = doc_blocks.entries();
-    for (const [index, doc_block] of entries) {
-        const wordWrapMargin = Math.max(
-            40,
-            80 - doc_block[3].length - doc_block[2].length - 1,
-        );
-        turndownService.options["wordWrap"] = [wordWrapMargin, 40];
-        doc_block[4] =
-            (index == doc_blocks.length - 1
-                ? turndownService.last(doc_block[4])
-                : turndownService.next(doc_block[4])) + "\n";
-    }
-    turndownService.options["wordWrap"] = [80, 40];
 };
 
 // ### Autosave feature
@@ -589,6 +554,4 @@ on_dom_content_loaded(async () => {
 // wrap all testing exports in a single variable. This avoids namespace
 // pollution, since only one name is exported, and it's clearly marked for
 // testing only. Test code still gets access to everything it needs.
-export const exportedForTesting = {
-    codechat_html_to_markdown,
-};
+export const exportedForTesting = {};

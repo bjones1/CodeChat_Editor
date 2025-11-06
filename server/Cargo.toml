@@ -69,10 +69,12 @@ assertables = { version = "9", optional = true }
 bytes = { version = "1", features = ["serde"] }
 chrono = "0.4"
 clap = { version = "4.5.19", features = ["derive"] }
+dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markdown.git", branch = "all-fixes", version = "0.20.0" }
 dunce = "1.0.5"
 # This is also for integration testing.
 futures = { version = "0.3.31", optional = true }
 futures-util = "0.3.29"
+htmd = "0.4"
 imara-diff = { version = "0.2", features = [] }
 indoc = "2.0.5"
 lazy_static = "1"

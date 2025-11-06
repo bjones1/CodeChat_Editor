@@ -13,10 +13,8 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-//
 /// `cli.rs` - Test the CLI interface
 /// =================================
-//
 // Imports
 // -------
 //
@@ -34,8 +32,19 @@ use tokio::task::spawn_blocking;
 
 // Support functions
 // -----------------
+//
+// The lint on using `cargo_bin` doesn't apply, since this is only available for
+// integration tests per the
+// [docs](https://docs.rs/assert_cmd/latest/assert_cmd/cargo/macro.cargo_bin_cmd.html).
+// Text of the warning:
+//
+// ```
+// warning: use of deprecated associated function `assert_cmd::Command::cargo_bin`:
+//   incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin_cmd!`
+// ```
+#[allow(deprecated)]
 fn get_server() -> Command {
-    Command::cargo_bin("codechat-editor-server").unwrap()
+    Command::cargo_bin(assert_cmd::pkg_name!()).unwrap()
 }
 
 // Tests
@@ -51,8 +60,7 @@ fn test_start_not_found() {
 
 #[test]
 fn test_start_no_start() {
-    let mut cmd = get_server();
-    let assert = cmd
+    let assert = get_server()
         .args(["--test-mode", "sleep", "--port", "8081", "start"])
         .assert();
     assert
@@ -74,8 +82,7 @@ async fn test_start_no_response() {
     // The test must be run in a separate thread to avoid blocking the main
     // thread; otherwise, the webserver will not respond.
     let test = spawn_blocking(move || {
-        let mut cmd = Command::cargo_bin("codechat-editor-server").unwrap();
-        let assert = cmd
+        let assert = get_server()
             .args(["--test-mode", "sleep", "--port", "8082", "start"])
             .assert();
         assert

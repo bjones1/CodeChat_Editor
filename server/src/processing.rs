@@ -40,6 +40,16 @@ use std::{
 };
 
 // ### Third-party
+use dprint_plugin_markdown::{
+    configuration::{
+        Configuration, ConfigurationBuilder, EmphasisKind, HeadingKind, StrongKind, TextWrap,
+    },
+    format_text,
+};
+use htmd::{
+    HtmlToMarkdown,
+    options::{LinkStyle, TranslationMode},
+};
 use imara_diff::{Algorithm, Diff, Hunk, InternedInput, TokenSource};
 use lazy_static::lazy_static;
 use pulldown_cmark::{Options, Parser, html};
@@ -296,6 +306,12 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str = "</code></pre>\n<CodeChatEditor-separator/>\n";
 // <a class="fence-mending-end"></a>
 
+// The column at which to word wrap doc blocks.
+const WORD_WRAP_COLUMN: usize = 80;
+// The minimum width for doc block word wrap, since large indents may leave
+// little space for word wrapping.
+const WORD_WRAP_MIN_WIDTH: usize = 40;
+
 // Serialization for `CodeMirrorDocBlock`
 // --------------------------------------
 #[derive(Serialize, Deserialize, TS)]
@@ -389,11 +405,26 @@ pub fn codechat_for_web_to_source(
         None => return Err("Invalid mode".to_string()),
     };
 
-    // Convert from `CodeMirror` to a `SortaCodeDocBlocks`.
+    // Extract the plain (not diffed) CodeMirror contents.
     let CodeMirrorDiffable::Plain(ref code_mirror) = codechat_for_web.source else {
         panic!("No diff!");
     };
-    let code_doc_block_vec = code_mirror_to_code_doc_blocks(code_mirror);
+
+    // If this is a Markdown-only document, handle this special case.
+    if *lexer.language_lexer.lexer_name == "markdown" {
+        // There should be no doc blocks.
+        if !code_mirror.doc_blocks.is_empty() {
+            return Err("Doc blocks not allowed in Markdown documents.".to_string());
+        }
+        // Translate the HTML document to Markdown.
+        let converter = HtmlToMarkdownWrapped::new();
+        return converter
+            .convert(&code_mirror.doc)
+            .map_err(|e| e.to_string());
+    }
+    let code_doc_block_vec_html = code_mirror_to_code_doc_blocks(code_mirror);
+    let code_doc_block_vec =
+        doc_block_html_to_markdown(code_doc_block_vec_html).map_err(|e| e.to_string())?;
     code_doc_block_vec_to_source(&code_doc_block_vec, lexer)
 }
 
@@ -465,6 +496,73 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     }
 
     code_doc_block_arr
+}
+
+/// This converts HTML to Markdown then word wraps the result.
+struct HtmlToMarkdownWrapped {
+    html_to_markdown: HtmlToMarkdown,
+    word_wrap_config: Configuration,
+}
+
+impl HtmlToMarkdownWrapped {
+    fn new() -> Self {
+        HtmlToMarkdownWrapped {
+            // Most of the options don't need to be specified here, since the line
+            // wrapper will override them.
+            html_to_markdown: HtmlToMarkdown::builder()
+                .options(htmd::options::Options {
+                    link_style: LinkStyle::Inlined,
+                    translation_mode: TranslationMode::Faithful,
+                    ..Default::default()
+                })
+                .build(),
+            // TODO: numbered list formatting should be improved in the dprint library.
+            word_wrap_config: ConfigurationBuilder::new()
+                .emphasis_kind(EmphasisKind::Asterisks)
+                .strong_kind(StrongKind::Asterisks)
+                .text_wrap(TextWrap::Always)
+                .heading_kind(HeadingKind::Setext)
+                .build(),
+        }
+    }
+    fn set_line_width(&mut self, line_width: usize) {
+        self.word_wrap_config.line_width = line_width as u32;
+    }
+
+    fn convert(&self, html: &str) -> std::io::Result<String> {
+        let converted = self.html_to_markdown.convert(html)?;
+        Ok(
+            format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))
+                .map_err(std::io::Error::other)?
+                // A return value of `None` means the text was unchanged or ignored (by an [ignoreFileDirective](https://dprint.dev/plugins/markdown/config/)). Simply return the unchanged text in this case.
+                .unwrap_or_else(|| html.to_string()),
+        )
+    }
+}
+
+// Transform HTML in doc blocks to Markdown.
+fn doc_block_html_to_markdown(
+    mut code_doc_block_vec: Vec<CodeDocBlock>,
+) -> std::io::Result<Vec<CodeDocBlock>> {
+    let mut converter = HtmlToMarkdownWrapped::new();
+    for code_doc_block in &mut code_doc_block_vec {
+        if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
+            // Compute a line wrap width based on the current indent. Set a
+            // minimum of half the line wrap width, to prevent ridiculous
+            // wrapping with large indents.
+            converter.set_line_width(max(
+                WORD_WRAP_MIN_WIDTH,
+                // The +1 factor is for the space separating the delimiter and the comment text.
+                WORD_WRAP_COLUMN
+                    - (doc_block.delimiter.chars().count() + 1 + doc_block.indent.chars().count()),
+            ));
+            doc_block.contents = converter
+                .convert(&doc_block.contents)
+                .map_err(std::io::Error::other)?;
+        }
+    }
+
+    Ok(code_doc_block_vec)
 }
 
 // Turn this vec of CodeDocBlocks into a string of source code.
