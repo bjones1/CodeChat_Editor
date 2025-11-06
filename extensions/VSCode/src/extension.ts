@@ -44,6 +44,10 @@ import {
     MessageResult,
     UpdateMessageContents,
 } from "../../../client/src/shared_types.mjs";
+import {
+    DEBUG_ENABLED,
+    MAX_MESSAGE_LENGTH,
+} from "../../../client/src/debug_enabled.mjs";
 
 // Globals
 // -------
@@ -51,10 +55,6 @@ enum CodeChatEditorClientLocation {
     html,
     browser,
 }
-// The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH = 200;
-// True to enable additional debug logging.
-const DEBUG_ENABLED = true;
 
 // True on Windows, false on OS X / Linux.
 const is_windows = process.platform === "win32";

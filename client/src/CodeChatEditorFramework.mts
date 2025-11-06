@@ -32,6 +32,7 @@ import { show_toast as show_toast_core } from "./show_toast.mjs";
 
 // ### Local
 import { assert } from "./assert.mjs";
+import { DEBUG_ENABLED, MAX_MESSAGE_LENGTH } from "./debug_enabled.mjs";
 import {
     CodeChatForWeb,
     EditorMessage,
@@ -41,7 +42,6 @@ import {
 } from "./shared_types.mjs";
 import {
     console_log,
-    DEBUG_ENABLED,
     on_error,
     on_dom_content_loaded,
 } from "./CodeChatEditor.mjs";
@@ -52,8 +52,6 @@ import {
 // This code communicates with the CodeChat Editor Server via its websocket
 // interface.
 //
-// The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH = 200;
 // The timeout for a websocket `Response`, in ms.
 const RESPONSE_TIMEOUT_MS = 15000;
 

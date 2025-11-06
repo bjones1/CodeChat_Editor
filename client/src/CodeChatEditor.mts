@@ -48,6 +48,7 @@ import "./third-party/wc-mermaid/wc-mermaid";
 
 // #### Local
 import { assert } from "./assert.mjs";
+import { DEBUG_ENABLED } from "./debug_enabled.mjs";
 import {
     apply_diff_str,
     CodeMirror_load,
@@ -130,9 +131,6 @@ declare global {
 // Globals
 // -------
 //
-// True to enable additional debug logging.
-export const DEBUG_ENABLED = false;
-
 // The ID of the autosave timer; when this timer expires, the document will be
 // autosaved.
 let autosaveTimeoutId: null | number = null;
