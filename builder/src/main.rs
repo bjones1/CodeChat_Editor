@@ -121,6 +121,7 @@ struct TypeScriptBuildOptions {
 static VSCODE_PATH: &str = "../extensions/VSCode";
 static CLIENT_PATH: &str = "../client";
 static BUILDER_PATH: &str = "../builder";
+static NAPI_TARGET: &str = "NAPI_TARGET";
 
 // Code
 // ----
@@ -623,6 +624,12 @@ fn run_extensions_build(
     if dist {
         napi_args.push("--release");
     }
+    // See if this is a cross-platform build -- if so, add in the specified target.
+    let target;
+    if let Ok(tmp) = env::var(NAPI_TARGET) {
+        target = tmp;
+        napi_args.extend(["--target", &target]);
+    }
     run_script("npx", &napi_args, VSCODE_PATH, true)?;
 
     // The main build for the extension.
@@ -707,6 +714,10 @@ fn run_postrelease(target: &str) -> io::Result<()> {
         "aarch64-apple-darwin" => "darwin-arm64",
         _ => panic!("Unsupported platform {target}."),
     };
+    // `vsce` will invoke this program's `ext_build`; however, it doesn't provide a way to pass the target when cross-compiling. Use an environment variable instead.
+    unsafe {
+        env::set_var(NAPI_TARGET, target);
+    }
     run_script(
         "npx",
         &[
