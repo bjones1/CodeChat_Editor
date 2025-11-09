@@ -105,6 +105,135 @@ let codeChatEditorServer: CodeChatEditorServer | undefined;
     initServer(ext.extensionPath);
 }
 
+// Types for talking to the Rust /capture endpoint.
+// This mirrors `CaptureEventWire` in webserver.rs.
+interface CaptureEventPayload {
+    user_id: string;
+    assignment_id?: string;
+    group_id?: string;
+    file_path?: string;
+    event_type: string;
+    data: any; // sent as JSON
+}
+
+// TODO: replace these with something real (e.g., VS Code settings)
+// For now, we hard-code to prove that the pipeline works end-to-end.
+const CAPTURE_USER_ID = "test-user";
+const CAPTURE_ASSIGNMENT_ID = "demo-assignment";
+const CAPTURE_GROUP_ID = "demo-group";
+
+// Base URL for the CodeChat server's /capture endpoint.
+// NOTE: keep this in sync with whatever port your server actually uses.
+const CAPTURE_SERVER_BASE = "http://127.0.0.1:8080";
+
+// Simple classification of what the user is currently doing.
+type ActivityKind = "doc" | "code" | "other";
+
+// Language IDs that we treat as "documentation" for the dissertation metrics.
+// You can refine this later if you want.
+const DOC_LANG_IDS = new Set<string>([
+    "markdown",
+    "plaintext",
+    "latex",
+    "restructuredtext",
+]);
+
+// Track the last activity kind and when a reflective-writing (doc) session started.
+let lastActivityKind: ActivityKind = "other";
+let docSessionStart: number | null = null;
+
+// Heuristic: classify a document as documentation vs. code vs. other.
+function classifyDocument(
+    doc: vscode.TextDocument | undefined,
+): ActivityKind {
+    if (!doc) {
+        return "other";
+    }
+    if (DOC_LANG_IDS.has(doc.languageId)) {
+        return "doc";
+    }
+    // Everything else we treat as code for now.
+    return "code";
+}
+
+// Update activity state, emit switch + doc_session events as needed.
+function noteActivity(kind: ActivityKind, filePath?: string) {
+    const now = Date.now();
+
+    // Handle entering / leaving a "doc" session.
+    if (kind === "doc") {
+        if (docSessionStart === null) {
+            // Starting a new reflective-writing session.
+            docSessionStart = now;
+            void sendCaptureEvent(CAPTURE_SERVER_BASE, "session_start", filePath, {
+                mode: "doc",
+            });
+        }
+    } else {
+        if (docSessionStart !== null) {
+            // Ending a reflective-writing session.
+            const durationMs = now - docSessionStart;
+            docSessionStart = null;
+            void sendCaptureEvent(CAPTURE_SERVER_BASE, "doc_session", filePath, {
+                duration_ms: durationMs,
+                duration_seconds: durationMs / 1000.0,
+            });
+            void sendCaptureEvent(CAPTURE_SERVER_BASE, "session_end", filePath, {
+                mode: "doc",
+            });
+        }
+    }
+
+    // If we switched between doc and code, log a switch_pane event.
+    const docOrCode = (k: ActivityKind) => k === "doc" || k === "code";
+    if (
+        docOrCode(lastActivityKind) &&
+        docOrCode(kind) &&
+        kind !== lastActivityKind
+    ) {
+        void sendCaptureEvent(CAPTURE_SERVER_BASE, "switch_pane", filePath, {
+            from: lastActivityKind,
+            to: kind,
+        });
+    }
+
+    lastActivityKind = kind;
+}
+
+// Helper to send a capture event to the Rust server.
+async function sendCaptureEvent(
+    serverBaseUrl: string, // e.g. "http://127.0.0.1:8080"
+    eventType: string,
+    filePath?: string,
+    data: any = {}
+): Promise<void> {
+    const payload: CaptureEventPayload = {
+        user_id: CAPTURE_USER_ID,
+        assignment_id: CAPTURE_ASSIGNMENT_ID,
+        group_id: CAPTURE_GROUP_ID,
+        file_path: filePath,
+        event_type: eventType,
+        data,
+    };
+
+    try {
+        const resp = await fetch(`${serverBaseUrl}/capture`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!resp.ok) {
+            console.error("Capture event failed:", resp.status, await resp.text());
+        }
+    } catch (err) {
+        console.error("Error sending capture event:", err);
+    }
+}
+
+
 // Activation/deactivation
 // -----------------------
 //
@@ -120,6 +249,18 @@ export const activate = (context: vscode.ExtensionContext) => {
             "extension.codeChatEditorActivate",
             async () => {
                 console_log("CodeChat Editor extension: starting.");
+
+                // CAPTURE: mark the start of an editor session.
+                const active = vscode.window.activeTextEditor;
+                const startFilePath = active?.document.fileName;
+                void sendCaptureEvent(
+                    CAPTURE_SERVER_BASE,
+                    "session_start",
+                    startFilePath,
+                    {
+                        mode: "vscode_extension",
+                    },
+                );
 
                 if (!subscribed) {
                     subscribed = true;
@@ -142,6 +283,31 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     event.reason
                                 }, ${format_struct(event.contentChanges)}.`,
                             );
+
+                            // CAPTURE: classify this as documentation vs. code and log a write_* event.
+                            const doc = event.document;
+                            const kind = classifyDocument(doc);
+                            const filePath = doc.fileName;
+                            const charsTyped = event.contentChanges
+                                .map((c) => c.text.length)
+                                .reduce((a, b) => a + b, 0);
+
+                            if (kind === "doc") {
+                                void sendCaptureEvent(CAPTURE_SERVER_BASE, "write_doc", filePath, {
+                                    chars_typed: charsTyped,
+                                    languageId: doc.languageId,
+                                });
+                            } else if (kind === "code") {
+                                void sendCaptureEvent(CAPTURE_SERVER_BASE, "write_code", filePath, {
+                                    chars_typed: charsTyped,
+                                    languageId: doc.languageId,
+                                });
+                            }
+
+                            // Update our notion of current activity + doc session.
+                            noteActivity(kind, filePath);
+
+                            // Existing behavior: trigger CodeChat render.
                             send_update(true);
                         }),
                     );
@@ -158,22 +324,92 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 ignore_active_editor_change = false;
                                 return;
                             }
+
+                            // CAPTURE: update activity + possible switch_pane/doc_session.
+                            const doc = event.document;
+                            const kind = classifyDocument(doc);
+                            const filePath = doc.fileName;
+                            noteActivity(kind, filePath);
+
                             send_update(false);
                         }),
                     );
 
                     context.subscriptions.push(
                         vscode.window.onDidChangeTextEditorSelection(
-                            (_event) => {
+                            (event) => {
                                 if (ignore_selection_change) {
                                     ignore_selection_change = false;
                                     return;
                                 }
+
+                                // CAPTURE: treat a selection change as "activity" in this document.
+                                const doc = event.textEditor.document;
+                                const kind = classifyDocument(doc);
+                                const filePath = doc.fileName;
+                                noteActivity(kind, filePath);
+
                                 send_update(false);
                             },
                         ),
                     );
-                }
+                    // Capture event: listen for file saves (dissertation instrumentation)
+                    context.subscriptions.push(
+                        vscode.workspace.onDidSaveTextDocument((doc) => {
+                            // This is the first full end-to-end capture test.
+                            // When a document is saved, send an event to the Rust server.
+
+                            void sendCaptureEvent(
+                                "http://127.0.0.1:8080", // <-- update if your server uses a different port
+                                "save",
+                                doc.fileName,
+                                {
+                                    reason: "manual_save",
+                                    languageId: doc.languageId,
+                                    lineCount: doc.lineCount,
+                                },
+                            );
+                        }),
+                    );
+
+                    // Capture: start of a debug/run session.
+                    context.subscriptions.push(
+                        vscode.debug.onDidStartDebugSession((session) => {
+                            const active = vscode.window.activeTextEditor;
+                            const filePath = active?.document.fileName;
+                            void sendCaptureEvent(
+                                CAPTURE_SERVER_BASE,
+                                "run",
+                                filePath,
+                                {
+                                    sessionName: session.name,
+                                    sessionType: session.type,
+                                },
+                            );
+                        }),
+                    );
+
+                    // Capture: compile/build events via VS Code tasks.
+                    context.subscriptions.push(
+                        vscode.tasks.onDidStartTaskProcess((e) => {
+                            const active = vscode.window.activeTextEditor;
+                            const filePath = active?.document.fileName;
+                            const task = e.execution.task;
+                            void sendCaptureEvent(
+                                CAPTURE_SERVER_BASE,
+                                "compile",
+                                filePath,
+                                {
+                                    taskName: task.name,
+                                    taskSource: task.source,
+                                    definition: task.definition,
+                                    processId: e.processId,
+                                },
+                            );
+                        }),
+                    );
+
+                } // if subscribed
 
                 // Get the CodeChat Client's location from the VSCode
                 // configuration.
@@ -529,6 +765,19 @@ export const activate = (context: vscode.ExtensionContext) => {
 // On deactivation, close everything down.
 export const deactivate = async () => {
     console_log("CodeChat Editor extension: deactivating.");
+
+    // CAPTURE: mark the end of an editor session.
+    const active = vscode.window.activeTextEditor;
+    const endFilePath = active?.document.fileName;
+    await sendCaptureEvent(
+        CAPTURE_SERVER_BASE,
+        "session_end",
+        endFilePath,
+        {
+            mode: "vscode_extension",
+        },
+    );
+
     await stop_client();
     webview_panel?.dispose();
     console_log("CodeChat Editor extension: deactivated.");

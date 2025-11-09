@@ -35,7 +35,7 @@ appenders:
       pattern: "{d} {l} {t} {L} - {m}{n}"
 
 root:
-  level: info
+  level: debug
   appenders:
     - console_appender
     - file_appender

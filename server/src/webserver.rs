@@ -36,15 +36,17 @@ use std::{
 
 // ### Third-party
 use actix_files;
+
 use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer,
     dev::{Server, ServerHandle, ServiceFactory, ServiceRequest},
     error::Error,
-    get,
+    get, post,
     http::header::{ContentType, DispositionType},
     middleware,
     web::{self, Data},
 };
+
 use actix_web_httpauth::{extractors::basic::BasicAuth, middleware::HttpAuthentication};
 use actix_ws::AggregatedMessage;
 use bytes::Bytes;
@@ -85,6 +87,10 @@ use crate::ide::vscode::{serve_vscode_fs, vscode_client_framework, vscode_client
 use crate::processing::{
     CodeChatForWeb, TranslationResultsString, find_path_to_toc, source_to_codechat_for_web_string,
 };
+
+use crate::capture::{EventCapture, CaptureConfig, CaptureEvent};
+
+use chrono::Utc;
 
 // Data structures
 // ---------------
@@ -302,6 +308,8 @@ pub struct AppState {
     pub connection_id: Arc<Mutex<HashSet<String>>>,
     /// The auth credentials if authentication is used.
     credentials: Option<Credentials>,
+    // Added to support capture - JDS - 11/2025
+    pub capture: Option<EventCapture>,    
 }
 
 pub type WebAppState = web::Data<AppState>;
@@ -310,6 +318,20 @@ pub type WebAppState = web::Data<AppState>;
 pub struct Credentials {
     pub username: String,
     pub password: String,
+}
+
+/// JSON payload received from clients for capture events.
+///
+/// The server will supply the timestamp; clients do not need to send it.
+#[derive(Debug, Deserialize)]
+pub struct CaptureEventWire {
+    pub user_id: String,
+    pub assignment_id: Option<String>,
+    pub group_id: Option<String>,
+    pub file_path: Option<String>,
+    pub event_type: String,
+    /// Arbitrary event-specific data stored as JSON.
+    pub data: serde_json::Value,
 }
 
 // Macros
@@ -493,6 +515,31 @@ async fn stop(app_state: WebAppState) -> HttpResponse {
     // following HTTP response. Assign it to a variable to suppress the warning.
     drop(server_handle.stop(true));
     HttpResponse::NoContent().finish()
+}
+
+#[post("/capture")]
+async fn capture_endpoint(
+    app_state: WebAppState,
+    payload: web::Json<CaptureEventWire>,
+) -> HttpResponse {
+    let wire = payload.into_inner();
+
+    if let Some(capture) = &app_state.capture {
+        let event = CaptureEvent {
+            user_id: wire.user_id,
+            assignment_id: wire.assignment_id,
+            group_id: wire.group_id,
+            file_path: wire.file_path,
+            event_type: wire.event_type,
+            // Server decides when the event is recorded.
+            timestamp: Utc::now(),
+            data: wire.data,
+        };
+
+        capture.log(event);
+    }
+
+    HttpResponse::Ok().finish()
 }
 
 // Get the `mode` query parameter to determine `is_test_mode`; default to
@@ -1326,8 +1373,6 @@ pub fn setup_server(
     addr: &SocketAddr,
     credentials: Option<Credentials>,
 ) -> std::io::Result<(Server, Data<AppState>)> {
-    // Connect to the Capture Database
-    //let _event_capture = EventCapture::new("config.json").await?;
 
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
@@ -1411,6 +1456,42 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
 pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
+    // Initialize event capture from a config file (optional).
+    let capture: Option<EventCapture> = {
+        // Build path: <ROOT_PATH>/capture_config.json
+        let mut config_path = ROOT_PATH.lock().unwrap().clone();
+        config_path.push("capture_config.json");
+
+        match fs::read_to_string(&config_path) {
+            Ok(json) => {
+                match serde_json::from_str::<CaptureConfig>(&json) {
+                    Ok(cfg) => match EventCapture::new(cfg) {
+                        Ok(ec) => {
+                            eprintln!("Capture: enabled (config file: {config_path:?})");
+                            Some(ec)
+                        }
+                        Err(err) => {
+                            eprintln!("Capture: failed to initialize from {config_path:?}: {err}");
+                            None
+                        }
+                    },
+                    Err(err) => {
+                        eprintln!(
+                            "Capture: invalid JSON in {config_path:?}: {err}"
+                        );
+                        None
+                    }
+                }
+            }
+            Err(err) => {
+                eprintln!(
+                    "Capture: disabled (config file not found or unreadable: {config_path:?}: {err})"
+                );
+                None
+            }
+        }
+    };
+
     web::Data::new(AppState {
         server_handle: Mutex::new(None),
         filewatcher_next_connection_id: Mutex::new(0),
@@ -1421,6 +1502,7 @@ pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
         client_queues: Arc::new(Mutex::new(HashMap::new())),
         connection_id: Arc::new(Mutex::new(HashSet::new())),
         credentials,
+        capture,
     })
 }
 
@@ -1450,6 +1532,7 @@ where
         .service(vscode_client_framework)
         .service(ping)
         .service(stop)
+        .service(capture_endpoint)        
         // Reroute to the filewatcher filesystem for typical user-requested
         // URLs.
         .route("/", web::get().to(filewatcher_root_fs_redirect))
