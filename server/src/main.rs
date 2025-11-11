@@ -14,9 +14,9 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `main.rs` -- Entrypoint for the CodeChat Editor Server
-/// ======================================================
+/// ============================================================================
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
@@ -39,7 +39,7 @@ use log::LevelFilter;
 use code_chat_editor::webserver::{self, Credentials, GetServerUrlError, path_to_url};
 
 // Data structures
-// ---------------
+// -----------------------------------------------------------------------------
 //
 // ### Command-line interface
 //
@@ -94,7 +94,7 @@ enum Commands {
 }
 
 // Code
-// ----
+// -----------------------------------------------------------------------------
 //
 // The following code implements the command-line interface for the CodeChat
 // Editor.
@@ -306,8 +306,8 @@ impl Cli {
 
 const PORT_RANGE: RangeInclusive<usize> = 1..=65535;
 
-// Copied from the [clap
-// docs](https://docs.rs/clap/latest/clap/_derive/_tutorial/index.html#validated-values).
+// Copied from the
+// [clap docs](https://docs.rs/clap/latest/clap/_derive/_tutorial/index.html#validated-values).
 fn port_in_range(s: &str) -> Result<u16, String> {
     let port: usize = s
         .parse()

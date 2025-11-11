@@ -11,35 +11,35 @@
 // details.
 //
 // You should have received a copy of the GNU General Public License along with
-// the CodeChat Editor. If not,
-// see[http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+// the CodeChat Editor. If not, see
+// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `CodeChatEditor.mts` -- the CodeChat Editor Client
-// ==================================================
+// =============================================================================
 //
 // The overall process of load a file is:
 //
-// 1.  The user browses to a file on the local machine, using the very simple
-//     file browser webpage provided by the CodeChat Server. Clicking on this
-//     file starts the process of loading a file into the CodeChat editor.
-// 2.  The server sees a request for a file supported by the CodeChat Editor. It
-//     lexes the files into code and doc blocks, then wraps these in a webpage
-//     which contains this program (the CodeChat Editor).
-// 3.  On load, this program (the CodeChat Editor) loads these code and doc
-//     blocks into the CodeMirror text editor, using TinyMCE to provide a GUI
-//     editor within CodeMirror for doc blocks.
+// 1. The user browses to a file on the local machine, using the very simple
+//    file browser webpage provided by the CodeChat Server. Clicking on this
+//    file starts the process of loading a file into the CodeChat editor.
+// 2. The server sees a request for a file supported by the CodeChat Editor. It
+//    lexes the files into code and doc blocks, then wraps these in a webpage
+//    which contains this program (the CodeChat Editor).
+// 3. On load, this program (the CodeChat Editor) loads these code and doc
+//    blocks into the CodeMirror text editor, using TinyMCE to provide a GUI
+//    editor within CodeMirror for doc blocks.
 //
 // The user then uses the editing capabilities of CodeMirror/TinyMCE to edit
 // their program. When the user saves a file:
 //
-// 1.  This program serializes the CodeMirror text plus doc blocks, and
-//     transforms HTML back to markdown.
-// 2.  It sends these code/doc blocks back to the server.
-// 3.  The server then transforms these code/doc blocks into source code, then
-//     writes this code to the disk.
+// 1. This program serializes the CodeMirror text plus doc blocks, and
+//    transforms HTML back to markdown.
+// 2. It sends these code/doc blocks back to the server.
+// 3. The server then transforms these code/doc blocks into source code, then
+//    writes this code to the disk.
 //
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### JavaScript/TypeScript
 //
@@ -77,10 +77,10 @@ import { show_toast } from "./show_toast.mjs";
 import "./css/CodeChatEditor.css";
 
 // Data structures
-// ---------------
+// -----------------------------------------------------------------------------
 //
 // <a id="EditorMode"></a>Define all possible editor modes; these are passed as
-// a[query string](https://en.wikipedia.org/wiki/Query_string)
+// a [query string](https://en.wikipedia.org/wiki/Query_string)
 // (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
 enum EditorMode {
     // Display the source code using CodeChat, but disallow editing.
@@ -94,8 +94,8 @@ enum EditorMode {
     raw,
 }
 
-// Since this is experimental, TypeScript doesn't define it. See
-// the[docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
+// Since this is experimental, TypeScript doesn't define it. See the
+// [docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
 interface NavigateEvent extends Event {
     canIntercept: boolean;
     destination: any;
@@ -129,7 +129,7 @@ declare global {
 }
 
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 //
 // The ID of the autosave timer; when this timer expires, the document will be
 // autosaved.
@@ -141,7 +141,7 @@ let autosaveEnabled = true;
 // Store the lexer info for the currently-loaded language.
 //
 // <a id="current_metadata"></a>This mirrors the data provided by the server --
-// see[SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
+// see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
 let current_metadata: {
     mode: string;
 };
@@ -150,7 +150,7 @@ let current_metadata: {
 let is_dirty = false;
 
 // Page initialization
-// -------------------
+// -----------------------------------------------------------------------------
 export const set_is_dirty = (value: boolean = true) => {
     is_dirty = value;
 };
@@ -168,7 +168,7 @@ export const on_dom_content_loaded = (on_load_func: () => void) => {
 };
 
 // File handling
-// -------------
+// -----------------------------------------------------------------------------
 //
 // True if this is a CodeChat Editor document (not a source file).
 const is_doc_only = () => {
@@ -203,25 +203,24 @@ let doc_content = "";
 // web page with the results.
 const _open_lp = async (
     // A data structure provided by the server, containing the source and
-    // associated metadata. See[`AllSource`](#AllSource).
+    // associated metadata. See [`AllSource`](#AllSource).
     codechat_for_web: CodeChatForWeb,
     cursor_position?: number,
 ) => {
-    // Use[URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
+    // Use
+    // [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
     // to parse out the search parameters of this window's URL.
     const urlParams = new URLSearchParams(window.location.search);
-    // Get the mode from the page's query parameters. Default to edit using
-    // the[nullish coalescing
-    // operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
+    // Get the mode from the page's query parameters. Default to edit using the
+    // [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
     // This works, but TypeScript marks it as an error. Ignore this error by
-    // including the[@ts-ignore
-    // directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
+    // including the
+    // [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
     /// @ts-ignore
     const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
 
-    // Get the<code><a href="#current_metadata">current_metadata</a></code> from
-    // the provided `code_chat_for_web` struct and store it as a global
-    // variable.
+    // Get the <code>[current_metadata](#current_metadata)</code> from the
+    // provided `code_chat_for_web` struct and store it as a global variable.
     current_metadata = codechat_for_web["metadata"];
     const source = codechat_for_web["source"];
     const codechat_body = document.getElementById(
@@ -233,8 +232,8 @@ const _open_lp = async (
     // Before calling any MathJax, make sure it's fully loaded and the initial
     // render is finished.
     await window.MathJax.startup.promise;
-    // Per
-    // the[docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
+    // Per the
+    // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
     // "If you modify the page to remove content that contains typeset
     // mathematics, you will need to tell MathJax about that so that it knows
     // the typeset math that you are removing is no longer on the page."
@@ -251,15 +250,15 @@ const _open_lp = async (
             await init({
                 selector: ".CodeChat-doc-contents",
                 // In the doc-only mode, add autosave functionality. While there
-                // is an[autosave
-                // plugin](https://www.tiny.cloud/docs/tinymce/6/autosave/),
+                // is an
+                // [autosave plugin](https://www.tiny.cloud/docs/tinymce/6/autosave/),
                 // this autosave functionality is completely different from the
-                // autosave provided here. Per[handling editor
-                // events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
+                // autosave provided here. Per
+                // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
                 // this is how to create a TinyMCE event handler.
                 setup: (editor: Editor) => {
-                    // The[editor core events
-                    // list](https://www.tiny.cloud/docs/tinymce/6/events/#editor-core-events)
+                    // The
+                    // [editor core events list](https://www.tiny.cloud/docs/tinymce/6/events/#editor-core-events)
                     // includes the`Dirty` event.
                     editor.on("Dirty", (_event: Event) => {
                         is_dirty = true;
@@ -269,8 +268,8 @@ const _open_lp = async (
             });
             tinymce.activeEditor!.focus();
         } else {
-            // Save and restore cursor/scroll location after an update per
-            // the[docs](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.dom.bookmarkmanager).
+            // Save and restore cursor/scroll location after an update per the
+            // [docs](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.dom.bookmarkmanager).
             // However, this doesn't seem to work for the cursor location.
             // Perhaps when TinyMCE normalizes the document, this gets lost?
             const bm = tinymce.activeEditor!.selection.getBookmark();
@@ -292,10 +291,9 @@ const _open_lp = async (
     }
     autosaveEnabled = true;
 
-    // <a id="CodeChatEditor_test"></a>If tests should be run, then
-    // the[following global
-    // variable](CodeChatEditor-test.mts#CodeChatEditor_test) is function that
-    // runs them.
+    // <a id="CodeChatEditor_test"></a>If tests should be run, then the
+    // [following global variable](CodeChatEditor-test.mts#CodeChatEditor_test)
+    // is function that runs them.
     if (typeof window.CodeChatEditor_test === "function") {
         window.CodeChatEditor_test();
     }
@@ -400,15 +398,14 @@ const clearAutosaveTimer = () => {
 };
 
 // Navigation
-// ----------
+// -----------------------------------------------------------------------------
 //
 // The TOC and this page calls this when a hyperlink is clicked. This saves the
 // current document before navigating.
 const on_navigate = (navigateEvent: NavigateEvent) => {
     if (
-        // Some of this was copied from[Modern client-side routing: the
-        // Navigation
-        // API](https://developer.chrome.com/docs/web-platform/navigation-api/#deciding_how_to_handle_a_navigation).
+        // Some of this was copied from
+        // [Modern client-side routing: the Navigation API](https://developer.chrome.com/docs/web-platform/navigation-api/#deciding_how_to_handle_a_navigation).
         // If we're navigating within the document, ignore this.
         navigateEvent.hashChange ||
         // If this is a download, let the browser perform the download.
@@ -546,10 +543,11 @@ on_dom_content_loaded(async () => {
 });
 
 // Testing
-// -------
+// -----------------------------------------------------------------------------
 //
-// A great and simple idea taken from[SO](https://stackoverflow.com/a/54116079):
-// wrap all testing exports in a single variable. This avoids namespace
-// pollution, since only one name is exported, and it's clearly marked for
-// testing only. Test code still gets access to everything it needs.
+// A great and simple idea taken from
+// [SO](https://stackoverflow.com/a/54116079): wrap all testing exports in a
+// single variable. This avoids namespace pollution, since only one name is
+// exported, and it's clearly marked for testing only. Test code still gets
+// access to everything it needs.
 export const exportedForTesting = {};

@@ -15,7 +15,7 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// `lib.rs` -- Define library modules for the CodeChat Editor Server
-/// =================================================================
+/// ============================================================================
 ///
 /// TODO: Add the ability to use
 /// [plugins](https://zicklag.github.io/rust-tutorials/rust-plugins.html).

@@ -17,10 +17,10 @@
    [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 
    `light.css` -- Styles for the light theme
-   =========================================
+   =============================================================================
 
-   Use [CSS
-   nesting](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_nesting/Using_CSS_nesting)
+   Use
+   [CSS nesting](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_nesting/Using_CSS_nesting)
    to make everything in this style sheet apply only to the light theme. */
 body.CodeChat-theme-light {
     /* Style code blocks so that they are clearly separated from doc blocks. Per

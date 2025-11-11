@@ -15,10 +15,10 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `pest_parser.rs` -- Lex source code into code and doc blocks
-// ============================================================
+// =============================================================================
 //
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 //
@@ -32,7 +32,7 @@
 //
 // None.
 /// Parser generator
-/// ----------------
+/// ----------------------------------------------------------------------------
 ///
 /// This macro generates a parser function that converts the provided string
 /// into a series of code and doc blocks. I'd prefer to use traits, but don't
@@ -251,7 +251,7 @@ macro_rules! make_parse_block_comment {
 }
 
 // Parsers
-// -------
+// -----------------------------------------------------------------------------
 //
 // Each parser is kept in a separate module to avoid name conflicts, since Pest
 // generates a `Rule` enum for each grammar.
@@ -280,7 +280,7 @@ pub mod python {
 }
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod test {
     use indoc::indoc;

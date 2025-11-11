@@ -15,9 +15,9 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `processing.rs` -- Transform source code to its web-editable equivalent and
 /// back
-/// ===========================================================================
+/// ============================================================================
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 //
@@ -61,17 +61,17 @@ use ts_rs::TS;
 use crate::lexer::{CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer};
 
 // Data structures
-// ---------------
+// -----------------------------------------------------------------------------
 //
 // ### Translation between a local (traditional) source file and its web-editable, client-side representation
 //
 // There are three ways that a source file is represented:
 //
-// 1.  As traditional source code, in a plain text file.
-// 2.  As a alternating series of code and doc blocks, produced by the lexer.
-//     See `lexer.rs\CodeDocBlock`.
-// 3.  As a CodeMirror data structure, which consists of a single block of text,
-//     to which are attached doc blocks at specific character offsets.
+// 1. As traditional source code, in a plain text file.
+// 2. As a alternating series of code and doc blocks, produced by the lexer. See
+//    `lexer.rs\CodeDocBlock`.
+// 3. As a CodeMirror data structure, which consists of a single block of text,
+//    to which are attached doc blocks at specific character offsets.
 //
 // The lexer translates between items 1 and 2; `processing.rs` translates
 // between 2 and 3. The following data structures define the format for item 3.
@@ -182,8 +182,7 @@ pub struct CodeMirrorDocBlockDelete {
 }
 
 /// Store the difference between a previous and current string; this is based on
-/// [CodeMirror's
-/// ChangeSpec](https://codemirror.net/docs/ref/#state.ChangeSpec).
+/// [CodeMirror's ChangeSpec](https://codemirror.net/docs/ref/#state.ChangeSpec).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export, optional_fields)]
 pub struct StringDiff {
@@ -191,9 +190,10 @@ pub struct StringDiff {
     /// change.
     pub from: usize,
     /// The index of the end of the change; defined for deletions and
-    /// replacements. See the [skip serializing field
-    /// docs](https://serde.rs/attr-skip-serializing.html); this must be
-    /// excluded from the JSON output if it's `None` to avoid CodeMirror errors.
+    /// replacements. See the
+    /// [skip serializing field docs](https://serde.rs/attr-skip-serializing.html);
+    /// this must be excluded from the JSON output if it's `None` to avoid
+    /// CodeMirror errors.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<usize>,
     /// The text to insert/replace; an empty string indicates deletion.
@@ -237,7 +237,7 @@ pub enum TranslationResultsString {
 // On save, the process is CodeChatForWeb -> Vec\<CodeDocBlocks> -> source code.
 //
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 lazy_static! {
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
@@ -260,8 +260,8 @@ lazy_static! {
 // of HTML blocks. (The remaining types of HTML blocks are terminated by a blank
 // line, which this also provides.)
 const DOC_BLOCK_SEPARATOR_STRING: &str = concat!(
-    // If an HTML block with specific start conditions (see the [section 4.6 of
-    // the commonmark spec](https://spec.commonmark.org/0.31.2/#html-blocks),
+    // If an HTML block with specific start conditions (see the
+    // [section 4.6 of the commonmark spec](https://spec.commonmark.org/0.31.2/#html-blocks),
     // items 1-5) doesn't have a matching end condition, provide one here.
     // Otherwise, hide these end conditions inside a raw HTML block, so that it
     // doesn't get processed by the Markdown parser. Note that this only
@@ -313,7 +313,7 @@ const WORD_WRAP_COLUMN: usize = 80;
 const WORD_WRAP_MIN_WIDTH: usize = 40;
 
 // Serialization for `CodeMirrorDocBlock`
-// --------------------------------------
+// -----------------------------------------------------------------------------
 #[derive(Serialize, Deserialize, TS)]
 #[ts(export)]
 struct CodeMirrorDocBlockTuple<'a>(
@@ -365,7 +365,7 @@ impl<'de> Deserialize<'de> for CodeMirrorDocBlock {
 }
 
 // Determine if the provided file is part of a project
-// ---------------------------------------------------
+// -----------------------------------------------------------------------------
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     // To determine if this source code is part of a project, look for a project
     // file by searching the current directory, then all its parents, for a file
@@ -389,7 +389,7 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
 }
 
 // Transform `CodeChatForWeb` to source code
-// -----------------------------------------
+// -----------------------------------------------------------------------------
 /// This function takes in a source file in web-editable format (the
 /// `CodeChatForWeb` struct) and transforms it into source code.
 pub fn codechat_for_web_to_source(
@@ -507,8 +507,8 @@ struct HtmlToMarkdownWrapped {
 impl HtmlToMarkdownWrapped {
     fn new() -> Self {
         HtmlToMarkdownWrapped {
-            // Most of the options don't need to be specified here, since the line
-            // wrapper will override them.
+            // Most of the options don't need to be specified here, since the
+            // line wrapper will override them.
             html_to_markdown: HtmlToMarkdown::builder()
                 .options(htmd::options::Options {
                     link_style: LinkStyle::Inlined,
@@ -516,7 +516,8 @@ impl HtmlToMarkdownWrapped {
                     ..Default::default()
                 })
                 .build(),
-            // TODO: numbered list formatting should be improved in the dprint library.
+            // TODO: numbered list formatting should be improved in the dprint
+            // library.
             word_wrap_config: ConfigurationBuilder::new()
                 .emphasis_kind(EmphasisKind::Asterisks)
                 .strong_kind(StrongKind::Asterisks)
@@ -534,7 +535,10 @@ impl HtmlToMarkdownWrapped {
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))
                 .map_err(std::io::Error::other)?
-                // A return value of `None` means the text was unchanged or ignored (by an [ignoreFileDirective](https://dprint.dev/plugins/markdown/config/)). Simply return the unchanged text in this case.
+                // A return value of `None` means the text was unchanged or
+                // ignored (by an
+                // [ignoreFileDirective](https://dprint.dev/plugins/markdown/config/)).
+                // Simply return the unchanged text in this case.
                 .unwrap_or_else(|| html.to_string()),
         )
     }
@@ -606,8 +610,8 @@ fn code_doc_block_vec_to_source(
                     // `split_inclusive` becomes an empty list, not `[""]`. Note
                     // that this mirrors what Python's
                     // [splitlines](https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-                    // does, and is also the subject of a [Rust bug
-                    // report](https://github.com/rust-lang/rust/issues/111457).
+                    // does, and is also the subject of a
+                    // [Rust bug report](https://github.com/rust-lang/rust/issues/111457).
                     let lines: Vec<_> = doc_block.contents.split_inclusive('\n').collect();
                     let lines_fixed = if lines.is_empty() { vec![""] } else { lines };
                     for content_line in lines_fixed {
@@ -683,12 +687,12 @@ fn code_doc_block_vec_to_source(
                             );
                         // Since this isn't a first line:
                         } else {
-                            // *   If this line is just a newline, include just
-                            //     the newline.
+                            // * If this line is just a newline, include just
+                            //   the newline.
                             if *content_line == "\n" {
                                 append_doc_block("", "", "\n");
-                            // *   Otherwise, include spaces in place of the
-                            //     delimiter.
+                            // * Otherwise, include spaces in place of the
+                            //   delimiter.
                             } else {
                                 append_doc_block(
                                     &doc_block.indent,
@@ -713,7 +717,7 @@ fn code_doc_block_vec_to_source(
 }
 
 // Transform from source code to `CodeChatForWeb`
-// ----------------------------------------------
+// -----------------------------------------------------------------------------
 //
 // Given the contents of a file, classify it and (for CodeChat Editor files)
 // convert it to the `CodeChatForWeb` format.
@@ -782,8 +786,8 @@ pub fn source_to_codechat_for_web(
             // Combine all the doc blocks into a single string, separated by a
             // delimiter. Transform this to markdown, then split the transformed
             // content back into the doc blocks they came from. This is
-            // necessary to allow [link reference
-            // definitions](https://spec.commonmark.org/0.31.2/#link-reference-definitions)
+            // necessary to allow
+            // [link reference definitions](https://spec.commonmark.org/0.31.2/#link-reference-definitions)
             // between doc blocks to work; for example, `[Link][1]` in one doc
             // block, then `[1]: http:/foo.org` in another doc block requires
             // both to be in the same Markdown document to translate correctly.
@@ -809,12 +813,12 @@ pub fn source_to_codechat_for_web(
 
             // <a class="fence-mending-start"></a>Break it back into doc blocks:
             //
-            // 1.  Mend broken fences.
+            // 1. Mend broken fences.
             let html = DOC_BLOCK_SEPARATOR_BROKEN_FENCE
                 .replace_all(&html, DOC_BLOCK_SEPARATOR_MENDED_FENCE);
-            // 2.  Remove good fences.
+            // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
-            // 3.  Split on the separator.
+            // 3. Split on the separator.
             let mut doc_block_contents_iter = html.split(DOC_BLOCK_SEPARATOR_SPLIT_STRING);
             // <a class="fence-mending-end"></a>
 
@@ -935,16 +939,15 @@ fn markdown_to_html(markdown: &str) -> String {
 // Fundamentally, diffs of a string and diff of this vector require different
 // approaches:
 //
-// *   The `CodeMirrorDocBlock` is a structure, with several fields. In
-//     particular, the contents is usually the largest element; the indent can
-//     also be large.
-// *   It should handle the following common cases well:
-//     1.  An update of a code block. This causes the from and to field of all
-//         following doc blocks to change, without changing the other fields.
-//     2.  An update to the contents of a doc block. For large doc blocks, this
-//         is more efficiently stored as a diff rather than the full doc block
-//         text.
-//     3.  Inserting or deleting a doc block.
+// * The `CodeMirrorDocBlock` is a structure, with several fields. In
+//   particular, the contents is usually the largest element; the indent can
+//   also be large.
+// * It should handle the following common cases well:
+//   1. An update of a code block. This causes the from and to field of all
+//      following doc blocks to change, without changing the other fields.
+//   2. An update to the contents of a doc block. For large doc blocks, this is
+//      more efficiently stored as a diff rather than the full doc block text.
+//   3. Inserting or deleting a doc block.
 //
 // The diff algorithm simply looks for equality between elements contained in
 // the before and after vectors provided it. However, this requires something
@@ -954,14 +957,14 @@ fn markdown_to_html(markdown: &str) -> String {
 //
 // #### Overall approach
 //
-// 1.  Use the diff algorithm to find the minimal change set between a before
-//     and after `CodeMirrorDocBlocksVec`, which only looks at the `contents`.
-//     This avoids "noise" from changes in from/to fields from obscuring changes
-//     only to the `contents`.
-// 2.  For all before and after blocks whose `contents` were identical, compare
-//     the other fields, adding these to the change set, but not attempting to
-//     use the diff algorithm.
-// 3.  Represent changes to the `contents` as a `StringDiff`.
+// 1. Use the diff algorithm to find the minimal change set between a before and
+//    after `CodeMirrorDocBlocksVec`, which only looks at the `contents`. This
+//    avoids "noise" from changes in from/to fields from obscuring changes only
+//    to the `contents`.
+// 2. For all before and after blocks whose `contents` were identical, compare
+//    the other fields, adding these to the change set, but not attempting to
+//    use the diff algorithm.
+// 3. Represent changes to the `contents` as a `StringDiff`.
 //
 // #### String diff
 /// Given two strings, return a list of changes between them.
@@ -982,8 +985,7 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
                     input.interner[line].chars().fold(
                         // Count offsets into the string in UTF-16 code units,
                         // since the offsets produced are used by the Client
-                        // ([JavaScript uses
-                        // UTF-16](https://developer.mozilla.org/en-US/docs/Glossary/UTF-16#utf-16_in_javascript),
+                        // ([JavaScript uses UTF-16](https://developer.mozilla.org/en-US/docs/Glossary/UTF-16#utf-16_in_javascript),
                         // as does
                         // [CodeMirror](https://codemirror.net/docs/guide/#document-offsets))
                         // and VSCode (also JavaScript).
@@ -1251,61 +1253,59 @@ pub fn diff_code_mirror_doc_blocks(
 // Goal: make it easy to update the data structure. We update on every
 // load/save, then do some accesses during those processes.
 //
-// Top-level data structures: a file HashSet<PathBuf, FileAnchor> and an id
-// HashMap<id, {Anchor, HashSet<referring\_id>}>. Some FileAnchors in the file
+// Top-level data structures: a file HashSet\<PathBuf, FileAnchor> and an id
+// HashMap\<id, {Anchor, HashSet\<referring\_id>}>. Some FileAnchors in the file
 // HashSet are also in a pending load list..
 //
-// *   To update a file:
-//     *   Remove the old file from the file HasHMap. Add an empty FileAnchor to
-//         the file HashMap.
-//     *   For each id, see if that id already exists.
-//         *   If the id exists: if it refers to an id in the old FileAnchor,
-//             replace it with the new one. If not, need to perform resolution
-//             on this id (we have a non-unique id; how to fix?).
-//         *   If the id doesn't exist: create a new one.
-//     *   For each hyperlink, see if that id already exists.
-//         *   If so, upsert the referring id. Check the metadata on the id to
-//             make sure that data is current. If not, add this to the pending
-//             hyperlinks list. If the file is missing, delete it from the
-//             cache.
-//         *   If not, create a new entry in the id HashSet and add the
-//             referring id to the HashSet. Add the file to a pending hyperlinks
-//             list.
-//     *   When the file is processed:
-//         *   Look for all entries in the pending file list that refer to the
-//             current file and resolve these. Start another task to load in all
-//             pending files.
-//         *   Look at the old file; remove each id that's still in the id
-//             HashMap. If the id was in the HashMap and it also was a
-//             Hyperlink, remove that from the HashSet.
-// *   To remove a file from the HashMap:
-//     *   Remove it from the file HashMap.
-//     *   For each hyperlink, remove it from the HashSet of referring links (if
-//         that id still exists).
-//     *   For each id, remove it from the id HashMap.
-// *   To add a file from the HashSet:
-//     *   Perform an update with an empty FileAnchor.
+// * To update a file:
+//   * Remove the old file from the file HasHMap. Add an empty FileAnchor to the
+//     file HashMap.
+//   * For each id, see if that id already exists.
+//     * If the id exists: if it refers to an id in the old FileAnchor, replace
+//       it with the new one. If not, need to perform resolution on this id (we
+//       have a non-unique id; how to fix?).
+//     * If the id doesn't exist: create a new one.
+//   * For each hyperlink, see if that id already exists.
+//     * If so, upsert the referring id. Check the metadata on the id to make
+//       sure that data is current. If not, add this to the pending hyperlinks
+//       list. If the file is missing, delete it from the cache.
+//     * If not, create a new entry in the id HashSet and add the referring id
+//       to the HashSet. Add the file to a pending hyperlinks list.
+//   * When the file is processed:
+//     * Look for all entries in the pending file list that refer to the current
+//       file and resolve these. Start another task to load in all pending
+//       files.
+//     * Look at the old file; remove each id that's still in the id HashMap. If
+//       the id was in the HashMap and it also was a Hyperlink, remove that from
+//       the HashSet.
+// * To remove a file from the HashMap:
+//   * Remove it from the file HashMap.
+//   * For each hyperlink, remove it from the HashSet of referring links (if
+//     that id still exists).
+//   * For each id, remove it from the id HashMap.
+// * To add a file from the HashSet:
+//   * Perform an update with an empty FileAnchor.
 //
 // Pending hyperlinks list: for each hyperlink,
 //
-// *   check if the id is now current in the cache. If so, add the referring id
-//     to the HashSet then move to the next hyperlink.
-// *   check if the file is now current in the cache. If not, load the file and
-//     update the cache, then go to step 1.
-// *   The id was not found, even in the expected file. Add the hyperlink to a
-//     broken links set?
+// * check if the id is now current in the cache. If so, add the referring id to
+//   the HashSet then move to the next hyperlink.
+// * check if the file is now current in the cache. If not, load the file and
+//   update the cache, then go to step 1.
+// * The id was not found, even in the expected file. Add the hyperlink to a
+//   broken links set?
 //
 // Global operations:
 //
-// *   Scan all files, then perform add/upsert/removes based on differences with
-//     the cache.
+// * Scan all files, then perform add/upsert/removes based on differences with
+//   the cache.
 //
 // Functions:
 //
-// *   Upsert an Anchor.
-// *   Upsert a Hyperlink.
-// *   Upsert a file.
-// *   Remove a file.
+// * Upsert an Anchor.
+// * Upsert a Hyperlink.
+// * Upsert a file.
+// * Remove a file.
 /*x
 /// There are two types of files that can serve as an anchor: these are file
 /// anchor targets.
@@ -1461,6 +1461,6 @@ fn html_analyze(
 */
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests;

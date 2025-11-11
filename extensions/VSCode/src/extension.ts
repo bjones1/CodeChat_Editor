@@ -15,13 +15,13 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `extension.ts` - The CodeChat Editor Visual Studio Code extension
-// =================================================================
+// =============================================================================
 //
 // This extension creates a webview, then uses a websocket connection to the
 // CodeChat Editor Server and Client to render editor text in that webview.
 //
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Node.js packages
 import assert from "assert";
@@ -50,7 +50,7 @@ import {
 } from "../../../client/src/debug_enabled.mjs";
 
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 enum CodeChatEditorClientLocation {
     html,
     browser,
@@ -106,7 +106,7 @@ let codeChatEditorServer: CodeChatEditorServer | undefined;
 }
 
 // Activation/deactivation
-// -----------------------
+// -----------------------------------------------------------------------------
 //
 // This is invoked when the extension is activated. It either creates a new
 // CodeChat Editor Server instance or reveals the currently running one.
@@ -445,8 +445,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 // [openCustomDocument](https://code.visualstudio.com/api/references/vscode-api#CustomEditorProvider.openCustomDocument),
                                 // which can evidently be called
                                 // [indirectly](https://stackoverflow.com/a/65101181/4374935).
-                                // See also [Built-in
-                                // Commands](https://code.visualstudio.com/api/references/commands).
+                                // See also
+                                // [Built-in Commands](https://code.visualstudio.com/api/references/commands).
                                 // For now, simply respond with an OK, since the
                                 // following doesn't work.
                                 if (false) {
@@ -535,7 +535,7 @@ export const deactivate = async () => {
 };
 
 // Supporting functions
-// --------------------
+// -----------------------------------------------------------------------------
 //
 // Format a complex data structure as a string when in debug mode.
 const format_struct = (complex_data_structure: any): string =>
@@ -679,8 +679,8 @@ const get_document = (file_path: string) => {
         // are case-insensitive; I don't know how to easily determine the
         // case-sensitivity of the current filesystem without extra probing code
         // (write a file in mixed case, try to open it in another mixed case.)
-        // Per [How to Work with Different
-        // Filesystems](https://nodejs.org/en/learn/manipulating-files/working-with-different-filesystems#filesystem-behavior),
+        // Per
+        // [How to Work with Different Filesystems](https://nodejs.org/en/learn/manipulating-files/working-with-different-filesystems#filesystem-behavior),
         // "Be wary of inferring filesystem behavior from `process.platform`.
         // For example, do not assume that because your program is running on
         // Darwin that you are therefore working on a case-insensitive

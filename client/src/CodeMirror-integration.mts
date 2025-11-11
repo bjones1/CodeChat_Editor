@@ -36,17 +36,17 @@
 //
 // To accomplish this:
 //
-// 1.  Create a single CodeMirror instance, which holds the parsed source.
-//     Create a single TinyMCE instance, for editing doc block contents.
-// 2.  Define a replacement decoration for each doc block, which replaces the
-//     newlines in the parsed source with editable doc blocks.
-// 3.  Define a StateField to store the doc block decorations.
-// 4.  Define a ViewPlugin to route events to doc blocks; when doc block
-//     contents are focused, apply the TinyMCE instance to those contents.
-// 5.  Define a set of StateEffects to add/update/etc. doc blocks.
+// 1. Create a single CodeMirror instance, which holds the parsed source. Create
+//    a single TinyMCE instance, for editing doc block contents.
+// 2. Define a replacement decoration for each doc block, which replaces the
+//    newlines in the parsed source with editable doc blocks.
+// 3. Define a StateField to store the doc block decorations.
+// 4. Define a ViewPlugin to route events to doc blocks; when doc block contents
+//    are focused, apply the TinyMCE instance to those contents.
+// 5. Define a set of StateEffects to add/update/etc. doc blocks.
 //
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Third-party
 import { basicSetup } from "codemirror";
@@ -95,7 +95,7 @@ import { assert } from "./assert.mjs";
 import { show_toast } from "./show_toast.mjs";
 
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 let current_view: EditorView;
 let tinymce_singleton: Editor | undefined;
 // When true, don't update on the next call to `on_dirty`. See that function for
@@ -120,7 +120,7 @@ declare global {
 const docBlockFreezeAnnotation = Annotation.define<boolean>();
 
 // Doc blocks in CodeMirror
-// ------------------------
+// -----------------------------------------------------------------------------
 //
 // The goal: given a [Range](https://codemirror.net/docs/ref/#state.Range) of
 // lines containing a doc block (a delimiter, indent, and contents) residing at
@@ -468,9 +468,8 @@ class DocBlockWidget extends WidgetType {
     }
 
     ignoreEvent(event: Event) {
-        // Avoid handling other events, since this causes [weird problems with
-        // event
-        // routing](https://discuss.codemirror.net/t/how-to-get-focusin-events-on-a-custom-widget-decoration/6792).
+        // Avoid handling other events, since this causes
+        // [weird problems with event routing](https://discuss.codemirror.net/t/how-to-get-focusin-events-on-a-custom-widget-decoration/6792).
         if (event.type === "focusin" || event.type === "input") {
             return false;
         } else {
@@ -494,8 +493,8 @@ class DocBlockWidget extends WidgetType {
     }
 }
 
-// Typeset the provided node; taken from the [MathJax
-// docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
+// Typeset the provided node; taken from the
+// [MathJax docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
 export const mathJaxTypeset = async (
     // The node to typeset.
     node: HTMLElement,
@@ -503,8 +502,8 @@ export const mathJaxTypeset = async (
     afterTypesetFunc: () => void = () => {},
 ) => {
     // Don't await this promise -- other MathJax processing may still be
-    // running. See the [release
-    // notes](https://github.com/mathjax/MathJax-src/releases/tag/4.0.0-rc.4#api).
+    // running. See the
+    // [release notes](https://github.com/mathjax/MathJax-src/releases/tag/4.0.0-rc.4#api).
     window.MathJax.typesetPromise([node]);
     try {
         // Instead, this function calls `afterTypesetFunc` after it awaits all
@@ -551,21 +550,21 @@ const element_is_in_doc_block = (
 
 // Called when a doc block is dirty...
 //
-// ...but it's more complicated than that. TinyMCE keeps track of a [dirty
-// flag](https://www.tiny.cloud/docs/tinymce/latest/apis/tinymce.editor/#isDirty),
+// ...but it's more complicated than that. TinyMCE keeps track of a
+// [dirty flag](https://www.tiny.cloud/docs/tinymce/latest/apis/tinymce.editor/#isDirty),
 // but some dirty events it reports shouldn't be saved:
 //
-// 1.  When the existing TinyMCE instance is updated with new text on a redraw,
-//     the resulting dirty flag should be ignored.
-// 2.  When the existing TinyMCE instance is focused, existing math should be
-//     untypeset, then the dirty ignored.
-// 3.  When MathJax typesets math on a TinyMCE focus out event, the dirty flag
-//     gets set. This should be ignored. However, typesetting is an async
-//     operation, so we assume it's OK to await the typeset completion, then
-//     clear the `ignore_next_dirty flag`. This will lead to nasty bugs at some
-//     point.
-// 4.  When an HTML doc block is assigned to the TinyMCE instance for editing,
-//     the dirty flag is set. This must be ignored.
+// 1. When the existing TinyMCE instance is updated with new text on a redraw,
+//    the resulting dirty flag should be ignored.
+// 2. When the existing TinyMCE instance is focused, existing math should be
+//    untypeset, then the dirty ignored.
+// 3. When MathJax typesets math on a TinyMCE focus out event, the dirty flag
+//    gets set. This should be ignored. However, typesetting is an async
+//    operation, so we assume it's OK to await the typeset completion, then
+//    clear the `ignore_next_dirty flag`. This will lead to nasty bugs at some
+//    point.
+// 4. When an HTML doc block is assigned to the TinyMCE instance for editing,
+//    the dirty flag is set. This must be ignored.
 const on_dirty = (
     // The div that's dirty. It must be a child of the doc block div.
     event_target: HTMLElement,
@@ -849,19 +848,19 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
 );
 
 // UI
-// --
+// -----------------------------------------------------------------------------
 //
 // There doesn't seem to be any tracking of a dirty/clean flag built into
-// CodeMirror v6 (although [v5
-// does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've found
-// is a [forum
-// post](https://discuss.codemirror.net/t/codemirror-6-proper-way-to-listen-for-changes/2395/11)
+// CodeMirror v6 (although
+// [v5 does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've
+// found is a
+// [forum post](https://discuss.codemirror.net/t/codemirror-6-proper-way-to-listen-for-changes/2395/11)
 // showing code to do this, which I use below.
 //
 // How this works: the
 // [EditorView.updateListener](https://codemirror.net/docs/ref/#codemirror) is a
-// [Facet](https://codemirror.net/docs/ref/#state.Facet) with an [of
-// function](https://codemirror.net/docs/ref/#state.Facet.of) that creates a
+// [Facet](https://codemirror.net/docs/ref/#state.Facet) with an
+// [of function](https://codemirror.net/docs/ref/#state.Facet.of) that creates a
 // CodeMirror extension.
 const autosaveExtension = EditorView.updateListener.of(
     // CodeMirror passes this function a
