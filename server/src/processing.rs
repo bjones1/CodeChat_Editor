@@ -31,7 +31,7 @@ use std::rc::{Rc, Weak};
 */
 use std::{
     borrow::Cow,
-    cmp::max,
+    cmp::{max, min},
     ffi::OsStr,
     iter::Map,
     ops::Range,
@@ -43,6 +43,7 @@ use std::{
 use dprint_plugin_markdown::{
     configuration::{
         Configuration, ConfigurationBuilder, EmphasisKind, HeadingKind, StrongKind, TextWrap,
+        UnorderedListKind,
     },
     format_text,
 };
@@ -521,6 +522,7 @@ impl HtmlToMarkdownWrapped {
             word_wrap_config: ConfigurationBuilder::new()
                 .emphasis_kind(EmphasisKind::Asterisks)
                 .strong_kind(StrongKind::Asterisks)
+                .unordered_list_kind(UnorderedListKind::Asterisks)
                 .text_wrap(TextWrap::Always)
                 .heading_kind(HeadingKind::Setext)
                 .build(),
@@ -531,7 +533,9 @@ impl HtmlToMarkdownWrapped {
     }
 
     fn convert(&self, html: &str) -> std::io::Result<String> {
+        println!("Before:\n{html}");
         let converted = self.html_to_markdown.convert(html)?;
+        println!("Unwrapped:\n{converted}");
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))
                 .map_err(std::io::Error::other)?
@@ -556,9 +560,11 @@ fn doc_block_html_to_markdown(
             // wrapping with large indents.
             converter.set_line_width(max(
                 WORD_WRAP_MIN_WIDTH,
-                // The +1 factor is for the space separating the delimiter and the comment text.
+                // The +1 factor is for the space separating the delimiter and
+                // the comment text. Use `min` to avoid overflow with unsigned
+                // subtraction.
                 WORD_WRAP_COLUMN
-                    - (doc_block.delimiter.chars().count() + 1 + doc_block.indent.chars().count()),
+                    - min(doc_block.delimiter.chars().count() + 1 + doc_block.indent.chars().count(), WORD_WRAP_COLUMN),
             ));
             doc_block.contents = converter
                 .convert(&doc_block.contents)
