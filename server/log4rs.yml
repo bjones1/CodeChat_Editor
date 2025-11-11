@@ -34,6 +34,11 @@ appenders:
     encoder:
       pattern: "{d} {l} {t} {L} - {m}{n}"
 
+loggers:
+  # This produces a massive amount of logging at the debug level. Avoid this.
+  html5ever:
+    level: warn
+
 root:
   level: info
   appenders:
