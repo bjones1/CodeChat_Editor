@@ -22,7 +22,15 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+*   No changes.
+
+Version 0.1.40 -- 2025-Nov-11
+-----------------------------
+
 *   File watcher now accepts new files from the Client.
+*   Improved translation from HTML to Markdown.
+*   Build correct binary for Mac M1.
+*   Add CodeMirror support for SQL and YAML.
 
 Version 0.1.39 -- 2025-Oct-23
 -----------------------------
