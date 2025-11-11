@@ -564,7 +564,10 @@ fn doc_block_html_to_markdown(
                 // the comment text. Use `min` to avoid overflow with unsigned
                 // subtraction.
                 WORD_WRAP_COLUMN
-                    - min(doc_block.delimiter.chars().count() + 1 + doc_block.indent.chars().count(), WORD_WRAP_COLUMN),
+                    - min(
+                        doc_block.delimiter.chars().count() + 1 + doc_block.indent.chars().count(),
+                        WORD_WRAP_COLUMN,
+                    ),
             ));
             doc_block.contents = converter
                 .convert(&doc_block.contents)
