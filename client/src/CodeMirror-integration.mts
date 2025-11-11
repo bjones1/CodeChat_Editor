@@ -79,6 +79,8 @@ import { javascript } from "@codemirror/lang-javascript";
 import { json } from "@codemirror/lang-json";
 import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
+import { sql } from "@codemirror/lang-sql";
+import { yaml } from "@codemirror/lang-yaml";
 import { Editor, init, tinymce } from "./tinymce-config.mjs";
 
 // ### Local
@@ -970,8 +972,14 @@ export const CodeMirror_load = async (
             case "rust":
                 parser = rust();
                 break;
+            case "sql":
+                parser = sql();
+                break;
             case "typescript":
                 parser = javascript({ typescript: true });
+                break;
+            case "yaml":
+                parser = yaml();
                 break;
 
             // Languages without a parser.
@@ -979,9 +987,6 @@ export const CodeMirror_load = async (
                 parser = json();
                 break;
             case "matlab":
-                parser = python();
-                break;
-            case "sql":
                 parser = python();
                 break;
             case "swift":
