@@ -533,9 +533,7 @@ impl HtmlToMarkdownWrapped {
     }
 
     fn convert(&self, html: &str) -> std::io::Result<String> {
-        println!("Before:\n{html}");
         let converted = self.html_to_markdown.convert(html)?;
-        println!("Unwrapped:\n{converted}");
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))
                 .map_err(std::io::Error::other)?
