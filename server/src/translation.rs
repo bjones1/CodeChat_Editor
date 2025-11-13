@@ -21,7 +21,7 @@
 /// CodeChat Server. The Server forwards messages from one client to the other,
 /// translating as necessary (for example, between source code and the Editor
 /// format). This module implements the protocol for this forwarding and
-/// translation logic; the actuation translation algoritms are implemented in
+/// translation logic; the actuation translation algorithms are implemented in
 /// the processing module.
 ///
 /// Overview
