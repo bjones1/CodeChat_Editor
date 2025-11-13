@@ -47,7 +47,6 @@ import "tinymce/models/dom/index.js";
 import "tinymce/plugins/advlist/index.js";
 import "tinymce/plugins/anchor/index.js";
 import "tinymce/plugins/charmap/index.js";
-import "tinymce/plugins/code/index.js";
 import "tinymce/plugins/directionality/index.js";
 import "tinymce/plugins/emoticons/index.js";
 import "tinymce/plugins/emoticons/js/emojis.js";
@@ -59,8 +58,6 @@ import "tinymce/plugins/image/index.js";
 import "tinymce/plugins/link/index.js";
 import "tinymce/plugins/lists/index.js";
 import "tinymce/plugins/media/index.js";
-import "tinymce/plugins/nonbreaking/index.js";
-import "tinymce/plugins/pagebreak/index.js";
 import "tinymce/plugins/quickbars/index.js";
 import "tinymce/plugins/searchreplace/index.js";
 import "tinymce/plugins/table/index.js";
@@ -85,7 +82,7 @@ export const init = async (
         // [plugins](https://www.tiny.cloud/docs/tinymce/6/plugins/). These must
         // be accompanied by the corresponding import above.
         plugins:
-            "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
+            "advlist anchor charmap directionality emoticons help image link lists media quickbars searchreplace table visualblocks visualchars",
         // The imports above apply the skins; don't try to dynamically load the
         // skin's CSS.
         skin: false,
