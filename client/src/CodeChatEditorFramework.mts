@@ -195,7 +195,7 @@ class WebSocketComm {
                             // isn't defined.
                             root_iframe!.contentWindow?.CodeChatEditor?.scroll_to_line?.(
                                 cursor_position,
-                                current_update.scroll_position
+                                current_update.scroll_position,
                             );
                         }
 

@@ -121,7 +121,10 @@ declare global {
                 scroll_line?: number,
             ) => Promise<void>;
             on_save: (_only_if_dirty: boolean) => Promise<void>;
-            scroll_to_line: (cursor_line?: number, scroll_line?: number) => void;
+            scroll_to_line: (
+                cursor_line?: number,
+                scroll_line?: number,
+            ) => void;
             show_toast: (text: string) => void;
             allow_navigation: boolean;
         };

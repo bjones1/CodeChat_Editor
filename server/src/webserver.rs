@@ -385,10 +385,27 @@ const MATHJAX_TAGS: &str = concatdoc!(
     <script>
         MathJax = {"#,
     // See the
-    // [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions).
+    // [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions),
+    // [postFilters](https://docs.mathjax.org/en/latest/options/output/index.html#output-postfilters);
+    // see also the
+    // [TinyMCE non-editable class](https://www.tiny.cloud/docs/tinymce/latest/non-editable-content-options/#noneditable_class).
+    // After some experimentation, I discovered:
+    //
+    // * Setting the `classList` had no effect. I still think it's a good idea
+    //   for the future, though.
+    // * I can't use the `postFilter` to enclose this in a span with the
+    //   appropriate class; MathJax disallows editing the `mjx-container`
+    //   element.
+    // * Simply setting `contentEditable` is what actually works.
     r#"
             chtml: {
                 fontURL: "/static/mathjax-newcm-font/chtml/woff2",
+            },
+            output: {
+                postFilters: [(obj) => {
+                    obj.data.classList.add("mceNonEditable");
+                    obj.data.contentEditable = false;
+                }],
             },
             tex: {
                 inlineMath: [['$', '$'], ['\\(', '\\)']]
