@@ -69,6 +69,7 @@ import {
     EditorSelection,
     Transaction,
     Annotation,
+    TransactionSpec,
 } from "@codemirror/state";
 import { cpp } from "@codemirror/lang-cpp";
 import { css } from "@codemirror/lang-css";
@@ -912,7 +913,8 @@ export const CodeMirror_load = async (
     codechat_for_web: CodeChatForWeb,
     // Additional extensions.
     extensions: Array<Extension>,
-    cursor_position?: number,
+    cursor_line?: number,
+    scroll_line?: number,
 ) => {
     if ("Plain" in codechat_for_web.source) {
         // Although the
@@ -1025,6 +1027,19 @@ export const CodeMirror_load = async (
                     // [docs](https://codemirror.net/examples/tab/). TODO:
                     // document a way to escape the tab key per the same docs.
                     keymap.of([indentWithTab]),
+                    // Change the font size. See [this post](https://discuss.codemirror.net/t/changing-the-font-size-of-cm6/2935/6).
+                    [
+                        // TODO: get these values from the IDE, so we match its size.
+                        EditorView.theme({
+                            "&": {
+                                fontSize: "14px",
+                            },
+                            ".cm-content": {
+                                fontFamily:
+                                    "Consolas, 'Courier New', monospace",
+                            },
+                        }),
+                    ],
                     ...extensions,
                 ],
             },
@@ -1113,21 +1128,41 @@ export const CodeMirror_load = async (
         // Update the view with these changes to the state.
         current_view.dispatch({ effects: stateEffects });
     }
-    // If provided, scroll the cursor position into view.
-    if (cursor_position !== undefined) {
-        scroll_to_line(cursor_position);
-    }
+    scroll_to_line(cursor_line, scroll_line);
 };
 
-// Scroll so that the given line is centered in the viewport.
-export const scroll_to_line = (line: number) => {
+// Scroll to the provided `scroll_line`; place the cursor at `cursor_line`.
+export const scroll_to_line = (cursor_line?: number, scroll_line?: number) => {
+    if (cursor_line === undefined && scroll_line === undefined) {
+        return;
+    }
+
+    // Create a transaction to set the cursor and scroll position.
+    const dispatch_data: TransactionSpec = {};
+    if (cursor_line !== undefined) {
+        // Translate the line numbers to a position.
+        const cursor_pos = current_view?.state.doc.line(cursor_line).from;
+        dispatch_data.selection = {
+            anchor: cursor_pos,
+            head: cursor_pos,
+        };
+        // If a scroll position is provided, use it; otherwise, scroll the
+        // cursor into the current view.
+        if (scroll_line == undefined) {
+            dispatch_data.scrollIntoView = true;
+        }
+    }
+
+    if (scroll_line !== undefined) {
+        const scroll_pos = current_view?.state.doc.line(scroll_line).from;
+        dispatch_data.effects = EditorView.scrollIntoView(scroll_pos, {
+            y: "start",
+        });
+    }
+
+    // Run it.
     ignore_selection_change = true;
-    // Translate the line number to a position.
-    const pos = current_view?.state.doc.line(line).from;
-    current_view?.dispatch({
-        effects: EditorView.scrollIntoView(pos, { y: "center" }),
-        scrollIntoView: true,
-    });
+    current_view?.dispatch(dispatch_data);
 };
 
 // Apply a `StringDiff` to the before string to produce the after string.
@@ -1163,10 +1198,31 @@ export const CodeMirror_save = (): CodeMirrorDiffable => {
 export const set_CodeMirror_positions = (
     update_message_contents: UpdateMessageContents,
 ) => {
-    update_message_contents.cursor_position = current_view.state.doc.lineAt(
-        current_view.state.selection.main.from,
+    // If a doc block has focus, then the CodeMirror selection reports line 1.
+    // Use the starting line number of the doc block instead.
+    let cursor_line;
+    const doc_block = document.activeElement?.closest(".CodeChat-doc");
+    if (doc_block) {
+        cursor_line = current_view.state.doc.lineAt(
+            current_view.posAtDOM(doc_block),
+        ).number;
+    } else {
+        cursor_line = current_view.state.doc.lineAt(
+            current_view.state.selection.main.from,
+        ).number;
+    }
+    update_message_contents.cursor_position = cursor_line;
+
+    // `current_view.viewport.from` isn't accurate, since it's not really the
+    // top line, but a margin before it; see the
+    // [docs](https://codemirror.net/docs/ref/#view.EditorView.viewport).
+    // Instead, use
+    // [this approach](https://discuss.codemirror.net/t/how-can-i-get-the-top-line-number-in-real-time/9404).
+    // This value still seems a bit off, probably because CodeMirror doesn't
+    // account for doc block sizing?
+    update_message_contents.scroll_position = current_view.state.doc.lineAt(
+        current_view.lineBlockAtHeight(-current_view.documentTop).from,
     ).number;
-    update_message_contents.scroll_position = current_view.viewport.from;
 };
 
 const report_error = (text: string) => {

@@ -385,30 +385,45 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             (ignore_text_document_change = false),
                                     );
                             }
-                            // Update the cursor position if provided.
-                            let line = current_update.cursor_position;
-                            if (line !== undefined) {
-                                const editor = get_text_editor(doc);
-                                if (editor) {
-                                    ignore_selection_change = true;
+
+                            // Update the cursor and scroll position if
+                            // provided.
+                            const editor = get_text_editor(doc);
+                            let scroll_line = current_update.scroll_position;
+                            if (scroll_line !== undefined && editor) {
+                                ignore_selection_change = true;
+                                const scroll_position = new vscode.Position(
                                     // The VSCode line is zero-based; the
                                     // CodeMirror line is one-based.
-                                    line -= 1;
-                                    const position = new vscode.Position(
-                                        line,
-                                        line,
-                                    );
-                                    editor.selections = [
-                                        new vscode.Selection(
-                                            position,
-                                            position,
-                                        ),
-                                    ];
-                                    editor.revealRange(
-                                        new vscode.Range(position, position),
-                                        TextEditorRevealType.InCenter,
-                                    );
-                                }
+                                    scroll_line - 1,
+                                    0,
+                                );
+                                editor.revealRange(
+                                    new vscode.Range(
+                                        scroll_position,
+                                        scroll_position,
+                                    ),
+                                    // This is still not the top of the
+                                    // viewport, but a bit below it.
+                                    TextEditorRevealType.AtTop,
+                                );
+                            }
+
+                            let cursor_line = current_update.cursor_position;
+                            if (cursor_line !== undefined && editor) {
+                                ignore_selection_change = true;
+                                const cursor_position = new vscode.Position(
+                                    // The VSCode line is zero-based; the
+                                    // CodeMirror line is one-based.
+                                    cursor_line - 1,
+                                    0,
+                                );
+                                editor.selections = [
+                                    new vscode.Selection(
+                                        cursor_position,
+                                        cursor_position,
+                                    ),
+                                ];
                             }
                             sendResult(id);
                             break;
@@ -550,7 +565,7 @@ const format_struct = (complex_data_structure: any): string =>
 const sendResult = (id: number, result: string | null = null) => {
     assert(codeChatEditorServer);
     console_log(
-        `CodeChat Editor extension: sending result ${id}, ${format_struct(result)}.`,
+        `CodeChat Editor extension: sending Result(id = ${id}, ${format_struct(result)}).`,
     );
     codeChatEditorServer.sendResult(id, result);
 };
@@ -595,22 +610,22 @@ const send_update = (this_is_dirty: boolean) => {
                 // CodeMirror
                 // [Text.line](https://codemirror.net/docs/ref/#state.Text.line)
                 // is 1-based.
-                const current_line = ate.selection.active.line + 1;
+                const cursor_position = ate.selection.active.line + 1;
+                const scroll_position = ate.visibleRanges[0].start.line + 1;
                 const file_path = ate.document.fileName;
-                const cursor_position = current_line;
                 // Send contents only if necessary.
                 const option_contents = is_dirty
                     ? ate.document.getText()
                     : null;
                 is_dirty = false;
                 console_log(
-                    `CodeChat Editor extension: sending Update(${file_path}, ${cursor_position}, ${format_struct(cursor_position)})`,
+                    `CodeChat Editor extension: sending Update(${file_path}, ${cursor_position}, ${scroll_position}, ${format_struct(option_contents)})`,
                 );
                 await codeChatEditorServer!.sendMessageUpdatePlain(
                     file_path,
                     option_contents,
                     cursor_position,
-                    null,
+                    scroll_position,
                 );
             }
         }, 300);

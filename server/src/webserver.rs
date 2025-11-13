@@ -269,14 +269,10 @@ pub struct UpdateMessageContents {
     /// The contents of this file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contents: Option<CodeChatForWeb>,
-    /// The current cursor position in the file, where 0 = before the first
-    /// character in the file and contents.length() = after the last character
-    /// in the file. TODO: Selections are not yet supported. TODO: how to get a
-    /// cursor location from within a doc block in the Client?
+    /// The line in the file where the cursor is located. TODO: Selections are not yet supported.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_position: Option<u32>,
-    /// The normalized vertical scroll position in the file, where 0 = top and 1
-    /// = bottom.
+    /// The line at the top of the screen.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scroll_position: Option<f32>,
 }

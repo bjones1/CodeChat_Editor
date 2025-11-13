@@ -117,10 +117,11 @@ declare global {
             // Called by the Client Framework.
             open_lp: (
                 codechat_for_web: CodeChatForWeb,
-                cursor_position?: number,
+                cursor_line?: number,
+                scroll_line?: number,
             ) => Promise<void>;
             on_save: (_only_if_dirty: boolean) => Promise<void>;
-            scroll_to_line: (line: number) => void;
+            scroll_to_line: (cursor_line?: number, scroll_line?: number) => void;
             show_toast: (text: string) => void;
             allow_navigation: boolean;
         };
@@ -180,11 +181,12 @@ const is_doc_only = () => {
 // Wait for the DOM to load before opening the file.
 const open_lp = async (
     codechat_for_web: CodeChatForWeb,
-    cursor_position?: number,
+    cursor_line?: number,
+    scroll_line?: number,
 ) =>
     await new Promise<void>((resolve) =>
         on_dom_content_loaded(async () => {
-            await _open_lp(codechat_for_web, cursor_position);
+            await _open_lp(codechat_for_web, cursor_line, scroll_line);
             resolve();
         }),
     );
@@ -205,7 +207,8 @@ const _open_lp = async (
     // A data structure provided by the server, containing the source and
     // associated metadata. See [`AllSource`](#AllSource).
     codechat_for_web: CodeChatForWeb,
-    cursor_position?: number,
+    cursor_line?: number,
+    scroll_line?: number,
 ) => {
     // Use
     // [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
@@ -281,12 +284,14 @@ const _open_lp = async (
             tinymce.activeEditor!.selection.moveToBookmark(bm);
         }
         mathJaxTypeset(codechat_body);
+        scroll_to_line(cursor_line, scroll_line);
     } else {
         await CodeMirror_load(
             codechat_body,
             codechat_for_web,
             [],
-            cursor_position,
+            cursor_line,
+            scroll_line,
         );
     }
     autosaveEnabled = true;
@@ -488,11 +493,11 @@ const save_then_navigate = (codeChatEditorUrl: URL) => {
 
 // This can be called by the framework. Therefore, make no assumptions about
 // variables being valid; it be called before a file is loaded, etc.
-const scroll_to_line = (line: number) => {
+const scroll_to_line = (cursor_line?: number, scroll_line?: number) => {
     if (is_doc_only()) {
         // TODO.
     } else {
-        codemirror_scroll_to_line(line);
+        codemirror_scroll_to_line(cursor_line, scroll_line);
     }
 };
 

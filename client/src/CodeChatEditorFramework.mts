@@ -183,17 +183,19 @@ class WebSocketComm {
                                             await set_content(
                                                 contents,
                                                 current_update.cursor_position,
+                                                current_update.scroll_position,
                                             );
                                             resolve();
                                         }),
                                 );
                             }
-                        } else if (cursor_position !== undefined) {
+                        } else {
                             // We might receive a message while the Client is
                             // reloading; during this period, `scroll_to_line`
                             // isn't defined.
                             root_iframe!.contentWindow?.CodeChatEditor?.scroll_to_line?.(
                                 cursor_position,
+                                current_update.scroll_position
                             );
                         }
 
@@ -371,7 +373,8 @@ const get_client = () => root_iframe?.contentWindow?.CodeChatEditor;
 // in the `root_iframe`.
 const set_content = async (
     contents: CodeChatForWeb,
-    cursor_position?: number,
+    cursor_line?: number,
+    scroll_line?: number,
 ) => {
     let client = get_client();
     if (client === undefined) {
@@ -390,7 +393,8 @@ const set_content = async (
     } else {
         await root_iframe!.contentWindow!.CodeChatEditor.open_lp(
             contents,
-            cursor_position,
+            cursor_line,
+            scroll_line,
         );
     }
 };
