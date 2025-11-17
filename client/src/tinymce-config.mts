@@ -115,6 +115,12 @@ export const init = async (
         // See
         // [License key](https://www.tiny.cloud/docs/tinymce/latest/license-key).
         license_key: "gpl",
+        // Block drag-and-drop of unsupported images and files. See the
+        // [docs](https://www.tiny.cloud/docs/tinymce/latest/file-image-upload/#block_unsupported_drop).
+        block_unsupported_drop: true,
+        // Prevent drag-and-dropping images; this create a mess. See the
+        // [docs](https://www.tiny.cloud/docs/tinymce/latest/copy-and-paste/#paste_data_images).
+        paste_data_images: false,
 
         // ### Settings for plugins
         //
