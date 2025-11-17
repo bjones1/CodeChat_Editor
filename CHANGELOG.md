@@ -29,8 +29,8 @@ Version 0.1.41 -- 2025-Nov-17
 --------------------------------------------------------------------------------
 
 * Math now renders in the active doc block, as shown below.
-* Math is now protected from accidental edits in the Client:
-  <img src="docs/changelog_0.1.41-math.png" alt="" width="408" height="95">
+* Math is now protected from accidental edits in the Client:\
+  ![](docs/changelog_0.1.41-math.png)
 * Improved synchronization between the cursor and scroll position of the Client
   and IDE.
 * Removed accidental debug output.
