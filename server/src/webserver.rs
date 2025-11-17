@@ -14,14 +14,14 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `webserver.rs` -- Serve CodeChat Editor Client webpages
-/// =======================================================
+/// ============================================================================
 // Submodules
-// ----------
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 pub mod tests;
 
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
@@ -87,7 +87,7 @@ use crate::processing::{
 };
 
 // Data structures
-// ---------------
+// -----------------------------------------------------------------------------
 //
 // ### Data structures supporting a websocket connection between the IDE, this
 //
@@ -141,9 +141,8 @@ pub enum SimpleHttpResponse {
     Bin(PathBuf),
 }
 
-// List all the possible errors when responding to an HTTP request. See [The
-// definitive guide to error handling in
-// Rust](https://www.howtocodeit.com/articles/the-definitive-guide-to-rust-error-handling).
+// List all the possible errors when responding to an HTTP request. See
+// [The definitive guide to error handling in Rust](https://www.howtocodeit.com/articles/the-definitive-guide-to-rust-error-handling).
 #[derive(Debug, thiserror::Error)]
 pub enum SimpleHttpResponseError {
     #[error("Error opening file")]
@@ -269,7 +268,8 @@ pub struct UpdateMessageContents {
     /// The contents of this file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contents: Option<CodeChatForWeb>,
-    /// The line in the file where the cursor is located. TODO: Selections are not yet supported.
+    /// The line in the file where the cursor is located. TODO: Selections are
+    /// not yet supported.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_position: Option<u32>,
     /// The line at the top of the screen.
@@ -309,7 +309,7 @@ pub struct Credentials {
 }
 
 // Macros
-// ------
+// -----------------------------------------------------------------------------
 /// Create a macro to report an error when enqueueing an item.
 #[macro_export]
 macro_rules! oneshot_send {
@@ -339,7 +339,7 @@ macro_rules! queue_send {
 }
 
 /// Globals
-/// -------
+/// ----------------------------------------------------------------------------
 // The timeout for a reply from a websocket, in ms. Use a short timeout to speed
 // up unit tests.
 pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
@@ -412,8 +412,8 @@ const MATHJAX_TAGS: &str = concatdoc!(
             },
         };
     </script>"#,
-    // Per the [MathJax
-    // docs](https://docs.mathjax.org/en/latest/web/components/combined.html#tex-chtml),
+    // Per the
+    // [MathJax docs](https://docs.mathjax.org/en/latest/web/components/combined.html#tex-chtml),
     // enable tex input and HTML output.
     r#"
     <script defer src="/static/mathjax/tex-chtml.js"></script>"#
@@ -490,7 +490,7 @@ pub fn set_root_path(
 }
 
 // Webserver functionality
-// -----------------------
+// -----------------------------------------------------------------------------
 #[get("/ping")]
 async fn ping() -> HttpResponse {
     HttpResponse::Ok().body("pong")
@@ -699,8 +699,8 @@ pub async fn filesystem_endpoint(
 pub async fn try_read_as_text(file: &mut File) -> Option<String> {
     let mut file_contents = String::new();
     // TODO: this is a rather crude way to detect if a file is binary. It's
-    // probably slow for large file (the [underlying
-    // code](https://github.com/tokio-rs/tokio/blob/master/tokio/src/io/util/read_to_string.rs#L57)
+    // probably slow for large file (the
+    // [underlying code](https://github.com/tokio-rs/tokio/blob/master/tokio/src/io/util/read_to_string.rs#L57)
     // looks like it reads the entire file to memory, then converts that to
     // UTF-8). Find a heuristic sniffer instead, such as
     // [libmagic](https://docs.rs/magic/0.13.0-alpha.3/magic/).
@@ -989,8 +989,8 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
     let path_to_toc = escape_html(path_to_toc);
 
     SimpleHttpResponse::Ok(
-        // The JavaScript is a stripped-down version of [on\_navigate from
-        // CodeChatEditor.mts](../../client/src/CodeChatEditor.mts).
+        // The JavaScript is a stripped-down version of
+        // [on\_navigate from CodeChatEditor.mts](../../client/src/CodeChatEditor.mts).
         formatdoc!(
             r#"
                 <!DOCTYPE html>
@@ -1035,7 +1035,7 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
 }
 
 /// Websockets
-/// ----------
+/// ----------------------------------------------------------------------------
 ///
 /// Each CodeChat Editor IDE instance pairs with a CodeChat Editor Client
 /// through the CodeChat Editor Server. Together, these form a joint editor,
@@ -1081,21 +1081,20 @@ pub fn client_websocket(
         // then the other websocket should also be immediately closed (also case
         // 2).
         //
-        // 1.  The IDE plugin needs to close.
-        //     1.  The IDE plugin sends a `Closed` message.
-        //     2.  The Client replies with a `Result` message, acknowledging the
-        //         close. It sends an `Update` message if necessary to save the
-        //         current file.
-        //     3.  After receiving the acknowledge from the Update message (if
-        //         sent), the Client closes the websocket. The rest of this
-        //         sequence is covered in the next case.
-        // 2.  Either websocket is closed. In this case, the other websocket
-        //     should be immediately closed; there's no longer the
-        //     opportunity to perform a more controlled shutdown (see the
-        //     first case).
-        //     1.  The websocket which closed enqueues a `Closed` message for
-        //         the other websocket.
-        //     2.  When the other websocket receives this message, it closes.
+        // 1. The IDE plugin needs to close.
+        //    1. The IDE plugin sends a `Closed` message.
+        //    2. The Client replies with a `Result` message, acknowledging the
+        //       close. It sends an `Update` message if necessary to save the
+        //       current file.
+        //    3. After receiving the acknowledge from the Update message (if
+        //       sent), the Client closes the websocket. The rest of this
+        //       sequence is covered in the next case.
+        // 2. Either websocket is closed. In this case, the other websocket
+        //    should be immediately closed; there's no longer the opportunity to
+        //    perform a more controlled shutdown (see the first case).
+        //    1. The websocket which closed enqueues a `Closed` message for the
+        //       other websocket.
+        //    2. When the other websocket receives this message, it closes.
         //
         // True when the websocket's client deliberately closes the websocket;
         // otherwise, closing represents a network interruption (such as the
@@ -1301,7 +1300,7 @@ pub fn client_websocket(
 }
 
 // Webserver core
-// --------------
+// -----------------------------------------------------------------------------
 #[actix_web::main]
 pub async fn main(
     extension_base_path: Option<&Path>,
@@ -1470,7 +1469,7 @@ where
 }
 
 // Utilities
-// ---------
+// -----------------------------------------------------------------------------
 //
 // Send a response to the client after processing a message from the client.
 pub async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: MessageResult) {
@@ -1544,10 +1543,10 @@ pub fn url_to_path(
 // Given a string representing a file, transform it into a `PathBuf`. Correct it
 // as much as possible:
 //
-// 1.  Convert Linux path separators to this platform's path separators.
-// 2.  If the file exists and if this is Windows, correct case based on the
-//     actual file's naming (even though the filesystem is case-insensitive;
-//     this makes comparisons in the TypeScript simpler).
+// 1. Convert Linux path separators to this platform's path separators.
+// 2. If the file exists and if this is Windows, correct case based on the
+//    actual file's naming (even though the filesystem is case-insensitive; this
+//    makes comparisons in the TypeScript simpler).
 pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
     match PathBuf::from_str(file_path) {
         Err(err) => Err(format!(
@@ -1675,8 +1674,8 @@ pub async fn get_server_url(port: u16) -> Result<String, GetServerUrlError> {
     if env::var("CODESPACES") == Ok("true".to_string()) {
         let codespace_name = env::var("CODESPACE_NAME")?;
         let codespace_domain = env::var("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN")?;
-        // Use the GitHub CLI to [forward this
-        // port](https://docs.github.com/en/codespaces/developing-in-a-codespace/using-github-codespaces-with-github-cli#modify-ports-in-a-codespace).
+        // Use the GitHub CLI to
+        // [forward this port](https://docs.github.com/en/codespaces/developing-in-a-codespace/using-github-codespaces-with-github-cli#modify-ports-in-a-codespace).
         let status = Command::new("gh")
             .args([
                 "codespace",

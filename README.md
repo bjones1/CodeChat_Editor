@@ -147,9 +147,9 @@ Diagrams
 The CodeChat Editor contains rudimentary support for diagrams created by
 [Graphviz](https://graphviz.org/). For example,
 
-| Source                                                | Rendered                                               |
-| ----------------------------------------------------- | ------------------------------------------------------ |
-| `<graphviz-graph>digraph { A -> B }</graphviz-graph>` | <graphviz-graph>digraph { A -&gt; B }</graphviz-graph> |
+| Source                                                | Rendered                                            |
+| ----------------------------------------------------- | --------------------------------------------------- |
+| `<graphviz-graph>digraph { A -> B }</graphviz-graph>` | <graphviz-graph>digraph { A -> B }</graphviz-graph> |
 
 To edit these diagrams, use an
 [HTML entity encoder/decoder](https://mothereff.in/html-entities) and a Graphviz
@@ -160,9 +160,9 @@ editor such as [Edotor](https://edotor.net/).
 The CodeChat Editor contains rudimentary support for diagrams created by
 [Mermaid](https://mermaid.js.org/). For example,
 
-| Source                                        | Rendered                                       |
-| --------------------------------------------- | ---------------------------------------------- |
-| `<wc-mermaid>graph TD; A --> B;</wc-mermaid>` | <wc-mermaid>graph TD; A --&gt; B;</wc-mermaid> |
+| Source                                        | Rendered                                    |
+| --------------------------------------------- | ------------------------------------------- |
+| `<wc-mermaid>graph TD; A --> B;</wc-mermaid>` | <wc-mermaid>graph TD; A --> B;</wc-mermaid> |
 
 To edit these diagrams, use an
 [HTML entity encoder/decoder](https://mothereff.in/html-entities) and the
