@@ -127,10 +127,7 @@ impl Cli {
                 let ping_addr = fix_addr(addr);
                 loop {
                     // Look for a ping/pong response from the server.
-                    match minreq::get(format!("http://{ping_addr}/ping"))
-                        .with_timeout(3)
-                        .send()
-                    {
+                    match minreq::get(format!("http://{ping_addr}/ping")).send() {
                         Ok(response) => {
                             let status_code = response.status_code;
                             let body = response.as_str().unwrap_or("Non-text body");
