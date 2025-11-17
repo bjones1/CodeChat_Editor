@@ -92,9 +92,9 @@ Likewise, the path to local images is relative to the current file's location
 | ----------------------------------- | --------------------------------- |
 | `![Monitor icon](docs/monitor.png)` | ![Monitor icon](docs/monitor.png) |
 
-Although the CodeChat Editor allows drag-and-drop of images, the result is a
-mess -- the image data is embedded directly in the source file. Avoid this;
-instead, place images in a separate file, then reference them as shown above.
+The CodeChat Editor disallows drag-and-drop of images, the result is a mess --
+the image data is embedded directly in the source file. Avoid this; instead,
+place images in a separate file, then reference them as shown above.
 
 Projects
 --------------------------------------------------------------------------------

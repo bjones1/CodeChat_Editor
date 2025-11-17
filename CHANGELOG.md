@@ -22,7 +22,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
-* No changes.
+* Block drag and drop of images, which creates a mess.
 
 Version 0.1.41 -- 2025-Nov-17
 --------------------------------------------------------------------------------
