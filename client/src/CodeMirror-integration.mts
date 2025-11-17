@@ -724,6 +724,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 }
                 const [contents_div, is_tinymce] = get_contents(target);
 
+                // Send updated cursor/scroll info.
+                startAutosaveTimer();
+
                 // See if this is already a TinyMCE instance; if not, move it
                 // here.
                 if (is_tinymce) {

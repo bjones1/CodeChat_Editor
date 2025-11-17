@@ -368,10 +368,14 @@ const on_save = async (only_if_dirty: boolean = false) => {
     if (only_if_dirty && !is_dirty) {
         return;
     }
+    clearAutosaveTimer();
+
     // <a id="save"></a>Save the provided contents back to the filesystem, by
     // sending an update message over the websocket.
     const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
-    console_log("CodeChat Editor Client: sent Update - saving document.");
+    console_log(
+        "CodeChat Editor Client: sent Update - saving document/updating cursor location.",
+    );
     await new Promise(async (resolve) => {
         webSocketComm.send_message({ Update: save_lp(is_dirty) }, () =>
             resolve(0),
