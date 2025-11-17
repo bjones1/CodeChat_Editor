@@ -142,19 +142,6 @@ following characters should be escaped: `*`, `_`, `\`, `[`, `]`, `<`.
 Diagrams
 --------------------------------------------------------------------------------
 
-### Graphviz
-
-The CodeChat Editor contains rudimentary support for diagrams created by
-[Graphviz](https://graphviz.org/). For example,
-
-| Source                                                | Rendered                                            |
-| ----------------------------------------------------- | --------------------------------------------------- |
-| `<graphviz-graph>digraph { A -> B }</graphviz-graph>` | <graphviz-graph>digraph { A -> B }</graphviz-graph> |
-
-To edit these diagrams, use an
-[HTML entity encoder/decoder](https://mothereff.in/html-entities) and a Graphviz
-editor such as [Edotor](https://edotor.net/).
-
 ### Mermaid
 
 The CodeChat Editor contains rudimentary support for diagrams created by
@@ -168,6 +155,19 @@ To edit these diagrams, use an
 [HTML entity encoder/decoder](https://mothereff.in/html-entities) and the
 [Mermaid live editor](https://mermaid.live/).
 
+### Graphviz
+
+The CodeChat Editor contains rudimentary support for diagrams created by
+[Graphviz](https://graphviz.org/). For example,
+
+| Source                                                | Rendered                                            |
+| ----------------------------------------------------- | --------------------------------------------------- |
+| `<graphviz-graph>digraph { A -> B }</graphviz-graph>` | <graphviz-graph>digraph { A -> B }</graphviz-graph> |
+
+To edit these diagrams, use an
+[HTML entity encoder/decoder](https://mothereff.in/html-entities) and a Graphviz
+editor such as [Edotor](https://edotor.net/).
+
 ### PlantUML
 
 [PlantUML](https://plantuml.com/) transforms a hyperlink to a user-defined
@@ -180,6 +180,15 @@ diagram directly to an SVG; for example,
 To edit these diagrams, paste the URL into the
 [PlantUML web server](https://www.plantuml.com/plantuml/uml), click Decode URL,
 edit, then copy and paste the SVG URL back to this file.
+
+### Drawing programs
+
+Images files produced by drawing programs can be included, as long as they can
+be saved in a web-compatible format (PNG, SVG, JPG, GIF, etc.). For example, the
+draw.io editor embeds source data into the resulting image, so the image below
+can be directly edited by that package:
+
+![](docs/sample_diagram.drawio.svg)
 
 <a id="supported-languages"></a>Supported languages
 --------------------------------------------------------------------------------
