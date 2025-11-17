@@ -373,7 +373,7 @@ async fn test_server_core(
                     })
                 }),
                 cursor_position: Some(1),
-                scroll_position: Some(0.0)
+                scroll_position: Some(1.0)
             })
         }
     );
@@ -403,7 +403,7 @@ async fn test_server_core(
                     })
                 }),
                 cursor_position: Some(1),
-                scroll_position: Some(0.0)
+                scroll_position: Some(1.0)
             })
         }
     );
@@ -427,7 +427,7 @@ async fn test_server_core(
                 file_path: path_str.clone(),
                 contents: None,
                 cursor_position: Some(2),
-                scroll_position: Some(0.0)
+                scroll_position: Some(1.0)
             })
         }
     );
@@ -437,8 +437,6 @@ async fn test_server_core(
         .send_keys("" + Key::Home + Key::Left)
         .await
         .unwrap();
-    // TODO: we don't get correct line numbers from code blocks. Ideally, the
-    // `cursor_position` would be 1 to show we're on the first line.
     client_id += MESSAGE_ID_INCREMENT;
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
@@ -447,8 +445,8 @@ async fn test_server_core(
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
                 contents: None,
-                cursor_position: Some(2),
-                scroll_position: Some(0.0)
+                cursor_position: Some(1),
+                scroll_position: Some(1.0)
             })
         }
     );
@@ -479,7 +477,7 @@ async fn test_server_core(
                     })
                 }),
                 cursor_position: Some(2),
-                scroll_position: Some(0.0)
+                scroll_position: Some(1.0)
             })
         }
     );
@@ -572,7 +570,7 @@ async fn test_server_core(
                     })
                 }),
                 cursor_position: Some(1),
-                scroll_position: Some(0.0)
+                scroll_position: Some(1.0)
             })
         }
     );
