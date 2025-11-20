@@ -27,8 +27,11 @@ use assert_cmd::Command;
 use assertables::{assert_ends_with, assert_not_contains, assert_starts_with};
 
 use super::{path_to_url, url_to_path};
-use crate::ide::{filewatcher::FILEWATCHER_PATH_PREFIX, vscode::tests::IP_PORT};
 use crate::prep_test_dir;
+use crate::{
+    cast,
+    ide::{filewatcher::FILEWATCHER_PATH_PREFIX, vscode::tests::IP_PORT},
+};
 
 // Support functions
 // -----------------
@@ -55,32 +58,38 @@ fn test_url_to_path() {
 
     // Test a non-existent path.
     assert_eq!(
-        url_to_path(
-            &format!(
-                "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}path%20spaces/foo.py",
-                if cfg!(windows) { "C:/" } else { "" }
+        cast!(
+            url_to_path(
+                &format!(
+                    "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}path%20spaces/foo.py",
+                    if cfg!(windows) { "C:/" } else { "" }
+                ),
+                FILEWATCHER_PATH_PREFIX
             ),
-            FILEWATCHER_PATH_PREFIX
+            Ok
         ),
-        Ok(PathBuf::from(format!(
+        PathBuf::from(format!(
             "{}path spaces{MAIN_SEPARATOR_STR}foo.py",
             if cfg!(windows) { "C:\\" } else { "/" }
-        ),))
+        ),)
     );
 
     // Test a path with a backslash in it.
     assert_eq!(
-        url_to_path(
-            &format!(
-                "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}foo%5Cbar.py",
-                if cfg!(windows) { "C:/" } else { "" }
+        cast!(
+            url_to_path(
+                &format!(
+                    "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}foo%5Cbar.py",
+                    if cfg!(windows) { "C:/" } else { "" }
+                ),
+                FILEWATCHER_PATH_PREFIX
             ),
-            FILEWATCHER_PATH_PREFIX
+            Ok
         ),
-        Ok(PathBuf::from(format!(
+        PathBuf::from(format!(
             "{}foo%5Cbar.py",
             if cfg!(windows) { "C:\\" } else { "/" }
-        ),))
+        ),)
     );
 
     // Test an actual path.

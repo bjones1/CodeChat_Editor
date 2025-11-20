@@ -45,9 +45,9 @@ use crate::{
         translation_task,
     },
     webserver::{
-        EditorMessage, EditorMessageContents, IdeType, RESERVED_MESSAGE_ID, ResultOkTypes,
-        WebAppState, client_websocket, escape_html, filesystem_endpoint, get_client_framework,
-        get_server_url, html_wrapper, send_response,
+        EditorMessage, EditorMessageContents, IdeType, RESERVED_MESSAGE_ID, ResultErrTypes,
+        ResultOkTypes, WebAppState, client_websocket, escape_html, filesystem_endpoint,
+        get_client_framework, get_server_url, html_wrapper, send_response,
     },
 };
 
@@ -125,9 +125,10 @@ pub fn vscode_ide_core(
 
             // Make sure it's the `Opened` message.
             let EditorMessageContents::Opened(ide_type) = first_message.message else {
-                let msg = format!("Unexpected message {first_message:?}");
-                error!("{msg}");
-                send_response(&to_ide_tx, first_message.id, Err(msg)).await;
+                let id = first_message.id;
+                let err = ResultErrTypes::UnexpectedMessage(format!("{:#?}", first_message));
+                error!("{err}");
+                send_response(&to_ide_tx, id, Err(err)).await;
 
                 // Send a `Closed` message to shut down the websocket.
                 queue_send!(to_ide_tx.send(EditorMessage { id: RESERVED_MESSAGE_ID, message: EditorMessageContents::Closed}), 'task);
@@ -214,9 +215,9 @@ pub fn vscode_ide_core(
                         if let Err(err) =
                             webbrowser::open(&format!("{address}/vsc/cf/{connection_id_raw}"))
                         {
-                            let msg = format!("Unable to open web browser: {err}");
-                            error!("{msg}");
-                            send_response(&to_ide_tx, first_message.id, Err(msg)).await;
+                            let err = ResultErrTypes::WebBrowserOpenFailed(err.to_string());
+                            error!("{err:?}");
+                            send_response(&to_ide_tx, first_message.id, Err(err)).await;
 
                             // Send a `Closed` message.
                             queue_send!(to_ide_tx.send(EditorMessage{
@@ -231,9 +232,9 @@ pub fn vscode_ide_core(
                 }
                 _ => {
                     // This is the wrong IDE type. Report the error.
-                    let msg = format!("Invalid IDE type: {ide_type:?}");
-                    error!("{msg}");
-                    send_response(&to_ide_tx, first_message.id, Err(msg)).await;
+                    let err = ResultErrTypes::InvalidIdeType(ide_type);
+                    error!("{err:?}");
+                    send_response(&to_ide_tx, first_message.id, Err(err)).await;
 
                     // Close the connection.
                     queue_send!(to_ide_tx.send(EditorMessage { id: RESERVED_MESSAGE_ID, message: EditorMessageContents::Closed}), 'task);

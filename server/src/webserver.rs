@@ -30,6 +30,7 @@ use std::{
     net::SocketAddr,
     path::{self, MAIN_SEPARATOR_STR, Path, PathBuf},
     str::FromStr,
+    string::FromUtf8Error,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -233,7 +234,7 @@ type MessageResult = Result<
     // The result of the operation, if successful.
     ResultOkTypes,
     // The error message.
-    String,
+    ResultErrTypes,
 >;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
@@ -243,6 +244,57 @@ pub enum ResultOkTypes {
     /// The `LoadFile` message provides file contents, if available. This
     /// message may only be sent from the IDE to the Server.
     LoadFile(Option<String>),
+}
+
+#[derive(Debug, Serialize, Deserialize, TS, PartialEq, thiserror::Error)]
+pub enum ResultErrTypes {
+    #[error("File out of sync; update rejected")]
+    OutOfSync,
+    #[error("IDE must not send this message")]
+    IdeIllegalMessage,
+    #[error("Client not allowed to send this message")]
+    ClientIllegalMessage,
+    #[error("Client must not receive this message: {0}")]
+    ClientIllegalMessageReceived(String),
+    #[error("timeout: message id {0} unacknowledged")]
+    MessageTimeout(f64),
+    #[error("unable to convert path {0:?} to string")]
+    NoPathToString(PathBuf),
+    // We can't pass the full error, since it's not serializable.
+    #[error("unable to convert URL {0} to path: {1}")]
+    UrlToPathError(String, String),
+    #[error("unable to canonicalize path: {0}")]
+    TryCanonicalizeError(String),
+    #[error("source incorrectly recognized as a TOC")]
+    NotToc,
+    #[error("unable to translate source to CodeChat: {0}")]
+    CannotTranslateSource(String),
+    #[error("unable to translate CodeChat to source: {0}")]
+    CannotTranslateCodeChat(String),
+    #[error("TODO: support for updates with diffable sources")]
+    TodoDiffSupport,
+    #[error("TODO: support for binary files")]
+    TodoBinarySupport,
+    #[error("unable to open web browser: {0}")]
+    WebBrowserOpenFailed(String),
+    #[error("unexpected message {0}")]
+    UnexpectedMessage(String),
+    #[error("invalid IDE type: {0:?}")]
+    InvalidIdeType(IdeType),
+    #[error("update for file '{0}' doesn't match current file '{1:?}'")]
+    WrongFileUpdate(String, Option<PathBuf>),
+    #[error("file watcher error: {0}")]
+    FileWatchingError(String),
+    #[error("unable to unwatch file '{0}': {1}")]
+    FileUnwatchError(PathBuf, String),
+    #[error("unable to save file '{0}': {1}")]
+    SaveFileError(PathBuf, String),
+    #[error("unable to watch file '{0}': {1}")]
+    FileWatchError(PathBuf, String),
+    #[error("IDE error: {0}")]
+    ExtensionError(String),
+    #[error("ignoring update for {0} because it's not the current file {1}")]
+    IgnoredUpdate(String, String),
 }
 
 /// Specify the type of IDE that this client represents.
@@ -1170,11 +1222,11 @@ pub fn client_websocket(
                                                 EditorMessageContents::LoadFile(_) |
                                                 EditorMessageContents::ClientHtml(_) |
                                                 EditorMessageContents::Closed => {
-                                                    let msg = format!("Invalid message {joint_message:?}");
-                                                    error!("{msg}");
+                                                    let err = ResultErrTypes::ClientIllegalMessage;
+                                                    error!("{err}");
                                                     queue_send!(from_websocket_tx.send(EditorMessage {
                                                         id: joint_message.id,
-                                                        message: EditorMessageContents::Result(Err(msg))
+                                                        message: EditorMessageContents::Result(Err(err))
                                                     }));
                                                 },
 
@@ -1231,14 +1283,14 @@ pub fn client_websocket(
                             let timeout_tx = from_websocket_tx.clone();
                             let waiting_task = actix_rt::spawn(async move {
                                 sleep(REPLY_TIMEOUT_MS).await;
-                                let msg = format!("Timeout: message id {} unacknowledged.", m.id);
-                                error!("{msg}");
+                                let err = ResultErrTypes::MessageTimeout(m.id);
+                                error!("{err}");
                                 // Since the websocket failed to send a
                                 // `Result`, produce a timeout `Result` for it.
                                 'timeout: {
                                         queue_send!(timeout_tx.send(EditorMessage {
                                         id: m.id,
-                                        message: EditorMessageContents::Result(Err(msg))
+                                        message: EditorMessageContents::Result(Err(err))
                                     }), 'timeout);
                                 }
                             });
@@ -1484,6 +1536,20 @@ pub async fn send_response(client_tx: &Sender<EditorMessage>, id: f64, result: M
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum UrlToPathError {
+    #[error("unable to parse URL")]
+    ParseError(#[from] url::ParseError),
+    #[error("URL {0} cannot be a base.")]
+    NotBase(String),
+    #[error("URL {0} has incorrect prefix.")]
+    IncorrectPrefix(String),
+    #[error("unable to decode URL")]
+    UnableToDecode(#[from] FromUtf8Error),
+    #[error(transparent)]
+    UrlNotFile(#[from] TryCanonicalizeError),
+}
+
 // Convert a URL referring to a file in the filesystem into the path to that
 // file.
 pub fn url_to_path(
@@ -1494,13 +1560,12 @@ pub fn url_to_path(
     expected_prefix: &[&str],
     // Output: the resulting path to the file, or a string explaining why an
     // error occurred during conversion.
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, UrlToPathError> {
     // Parse to a URL, then split it to path segments.
-    let url = Url::parse(url_string)
-        .map_err(|e| format!("Error: unable to parse URL {url_string}: {e}"))?;
+    let url = Url::parse(url_string)?;
     let path_segments_vec: Vec<_> = url
         .path_segments()
-        .ok_or_else(|| format!("Error: URL {url} cannot be a base."))?
+        .ok_or_else(|| UrlToPathError::NotBase(url_string.to_string()))?
         .collect();
 
     // Make sure the path segments start with the `expected_prefix`.
@@ -1511,7 +1576,7 @@ pub fn url_to_path(
     // The URL should have at least the expected prefix plus one more element
     // (the connection ID).
     if path_segments_vec.len() < expected_prefix.len() + 1 || !prefix_equal {
-        return Err(format!("Error: URL {url} has incorrect prefix."));
+        return Err(UrlToPathError::IncorrectPrefix(url_string.to_string()));
     }
 
     // Strip the expected prefix; the remainder is a file path.
@@ -1524,10 +1589,10 @@ pub fn url_to_path(
         .iter()
         .map(|path_segment| {
             urlencoding::decode(path_segment)
-                .map_err(|e| format!("Error: unable to decode URL {url_string}: {e}."))
+                .map_err(UrlToPathError::UnableToDecode)
                 .map(|path_seg| path_seg.replace("\\", "%5C"))
         })
-        .collect::<Result<Vec<String>, String>>()?;
+        .collect::<Result<Vec<String>, UrlToPathError>>()?;
 
     // Join the segments into a path.
     let path_str = path_segments_suffix_decoded.join(MAIN_SEPARATOR_STR);
@@ -1537,9 +1602,16 @@ pub fn url_to_path(
     #[cfg(not(target_os = "windows"))]
     let path_str = "/".to_string() + &path_str;
 
-    try_canonicalize(&path_str)
+    try_canonicalize(&path_str).map_err(UrlToPathError::UrlNotFile)
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum TryCanonicalizeError {
+    #[error("unable to parse {file_path} into file path: {error}")]
+    ParseFailure { file_path: String, error: String },
+    #[error("unable to make file path absolute")]
+    CannotAbsolute(#[from] io::Error),
+}
 // Given a string representing a file, transform it into a `PathBuf`. Correct it
 // as much as possible:
 //
@@ -1547,11 +1619,12 @@ pub fn url_to_path(
 // 2. If the file exists and if this is Windows, correct case based on the
 //    actual file's naming (even though the filesystem is case-insensitive; this
 //    makes comparisons in the TypeScript simpler).
-pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
+pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, TryCanonicalizeError> {
     match PathBuf::from_str(file_path) {
-        Err(err) => Err(format!(
-            "Error: unable to parse file path {file_path}: {err}."
-        )),
+        Err(err) => Err(TryCanonicalizeError::ParseFailure {
+            file_path: file_path.to_string(),
+            error: err.to_string(),
+        }),
         Ok(path_buf) => match path_buf.canonicalize() {
             Ok(p) => Ok(PathBuf::from(simplified(&p))),
             // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
@@ -1567,7 +1640,7 @@ pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, String> {
             Err(_) => {
                 if path_buf.is_absolute() {
                     match path::absolute(&path_buf) {
-                        Err(err) => Err(format!("Unable to make {path_buf:?} absolute: {err}")),
+                        Err(err) => Err(TryCanonicalizeError::CannotAbsolute(err)),
                         Ok(p) => Ok(p),
                     }
                 } else {

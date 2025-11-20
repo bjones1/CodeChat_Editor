@@ -49,7 +49,7 @@ use tokio_tungstenite::{
 
 use crate::webserver::{
     EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID, INITIAL_IDE_MESSAGE_ID,
-    INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT,
+    INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT, ResultErrTypes,
 };
 use crate::{
     cast,
@@ -268,7 +268,7 @@ async fn test_vscode_ide_websocket1() {
     let em = read_message(&mut ws_ide).await;
     let result = cast!(em.message, EditorMessageContents::Result);
 
-    assert_starts_with!(cast!(&result, Err), "Unexpected message");
+    matches!(cast!(&result, Err), ResultErrTypes::ClientIllegalMessage);
 
     // Next, expect the websocket to be closed.
     let err = &ws_ide.next().await.unwrap().unwrap();

@@ -45,6 +45,7 @@ import {
     on_error,
     on_dom_content_loaded,
 } from "./CodeChatEditor.mjs";
+import { ResultErrTypes } from "./rust-types/ResultErrTypes.js";
 
 // Websocket
 // -----------------------------------------------------------------------------
@@ -148,7 +149,12 @@ class WebSocketComm {
                         ) {
                             const msg = `Ignoring update for ${current_update.file_path} because it's not the current file ${this.current_filename}.`;
                             report_error(msg);
-                            this.send_result(id, msg);
+                            this.send_result(id, {
+                                IgnoredUpdate: [
+                                    current_update.file_path,
+                                    this.current_filename,
+                                ],
+                            });
                             return;
                         }
                         const contents = current_update.contents;
@@ -199,7 +205,7 @@ class WebSocketComm {
                             );
                         }
 
-                        this.send_result(id, null);
+                        this.send_result(id);
                     });
                     break;
 
@@ -234,7 +240,7 @@ class WebSocketComm {
                         // `current_filename` should be set on the next `Update`
                         // message.
                         this.current_filename = undefined;
-                        this.send_result(id, null);
+                        this.send_result(id);
                     });
                     break;
 
@@ -264,7 +270,11 @@ class WebSocketComm {
                         value,
                     )})`;
                     report_error(msg);
-                    this.send_result(id, msg);
+                    this.send_result(id, {
+                        ClientIllegalMessageReceived: `${key}(${format_struct(
+                            value,
+                        )})`,
+                    });
                     break;
             }
         };
@@ -348,9 +358,9 @@ class WebSocketComm {
 
     // Send a result (a response to a message from the server) back to the
     // server.
-    send_result = (id: number, result: string | null = null) => {
+    send_result = (id: number, result?: ResultErrTypes) => {
         const message: EditorMessageContents = {
-            Result: result === null ? { Ok: "Void" } : { Err: result },
+            Result: result === undefined ? { Ok: "Void" } : { Err: result },
         };
         console_log(
             `CodeChat Client: sending result id = ${id}, message = ${format_struct(message)}`,

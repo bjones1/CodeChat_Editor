@@ -215,7 +215,8 @@ use tokio::{fs::File, select, sync::mpsc};
 
 // ### Local
 use crate::webserver::{
-    EditorMessage, EditorMessageContents, WebAppState, WebsocketQueues, send_response,
+    EditorMessage, EditorMessageContents, ResultErrTypes, WebAppState, WebsocketQueues,
+    send_response,
 };
 use crate::{
     oneshot_send,
@@ -452,9 +453,9 @@ pub async fn translation_task(
                             EditorMessageContents::OpenUrl(_) |
                             EditorMessageContents::LoadFile(_) |
                             EditorMessageContents::ClientHtml(_) => {
-                                let msg = "IDE must not send this message.";
-                                error!("{msg}");
-                                send_response(&to_ide_tx, ide_message.id, Err(msg.to_string())).await;
+                                let err = ResultErrTypes::IdeIllegalMessage;
+                                error!("{err:?}");
+                                send_response(&to_ide_tx, ide_message.id, Err(err)).await;
                             },
 
                             // Handle messages that are simply passed through.
@@ -507,7 +508,7 @@ pub async fn translation_task(
                                 // result; otherwise, this is None.
                                 let file_contents_option = match result {
                                     Err(err) => {
-                                        error!("{err}");
+                                        error!("{err:?}");
                                         None
                                     },
                                     Ok(result_ok) => match result_ok {
@@ -591,7 +592,7 @@ pub async fn translation_task(
                             EditorMessageContents::Update(update) => {
                                 // Normalize the provided file name.
                                 let result = match try_canonicalize(&update.file_path) {
-                                    Err(err) => Err(err),
+                                    Err(err) => Err(ResultErrTypes::TryCanonicalizeError(err.to_string())),
                                     Ok(clean_file_path) => {
                                         match update.contents {
                                             None => {
@@ -609,7 +610,7 @@ pub async fn translation_task(
 
                                             Some(contents) => {
                                                 match contents.source {
-                                                    CodeMirrorDiffable::Diff(_diff) => Err("TODO: support for updates with diffable sources.".to_string()),
+                                                    CodeMirrorDiffable::Diff(_diff) => Err(ResultErrTypes::TodoDiffSupport),
                                                     CodeMirrorDiffable::Plain(code_mirror) => {
                                                         // If there are Windows newlines, replace
                                                         // with Unix; this is reversed when the
@@ -677,8 +678,8 @@ pub async fn translation_task(
                                                                 Ok(ResultOkTypes::Void)
                                                             }
                                                             // TODO
-                                                            TranslationResultsString::Binary => Err("TODO".to_string()),
-                                                            TranslationResultsString::Err(err) => Err(format!("Error translating source to CodeChat: {err}").to_string()),
+                                                            TranslationResultsString::Binary => Err(ResultErrTypes::TodoBinarySupport),
+                                                            TranslationResultsString::Err(err) => Err(ResultErrTypes::CannotTranslateSource(err)),
                                                             TranslationResultsString::Unknown => {
                                                                 // Send the new raw contents.
                                                                 debug!("Sending translated contents to Client.");
@@ -704,7 +705,7 @@ pub async fn translation_task(
                                                                 Ok(ResultOkTypes::Void)
                                                             },
                                                             TranslationResultsString::Toc(_) => {
-                                                                Err("Error: source incorrectly recognized as a TOC.".to_string())
+                                                                Err(ResultErrTypes::NotToc)
                                                             }
                                                         }
                                                     }
@@ -717,7 +718,7 @@ pub async fn translation_task(
                                 // otherwise, the message is passed to the
                                 // Client, which will provide the result.
                                 if let Err(err) = &result {
-                                    error!("{err}");
+                                    error!("{err:?}");
                                     send_response(&to_ide_tx, ide_message.id, result).await;
                                 }
                             }
@@ -740,11 +741,8 @@ pub async fn translation_task(
                                         sync_state = SyncState::OutOfSync;
                                     }
                                     Err(err) => {
-                                        let msg = format!(
-                                            "Unable to canonicalize file name {}: {err}", &file_path
-                                        );
-                                        error!("{msg}");
-                                        send_response(&to_client_tx, ide_message.id, Err(msg)).await;
+                                        error!("{err:?}");
+                                        send_response(&to_client_tx, ide_message.id, Err(ResultErrTypes::TryCanonicalizeError(err.to_string()))).await;
                                     }
                                 }
                             }
@@ -774,9 +772,9 @@ pub async fn translation_task(
                             EditorMessageContents::LoadFile(_) |
                             EditorMessageContents::RequestClose |
                             EditorMessageContents::ClientHtml(_) => {
-                                let msg = "Client must not send this message.";
-                                error!("{msg}");
-                                send_response(&to_client_tx, client_message.id, Err(msg.to_string())).await;
+                                let err = ResultErrTypes::ClientIllegalMessage;
+                                error!("{err:?}");
+                                send_response(&to_client_tx, client_message.id, Err(err)).await;
                             },
 
                             // Handle messages that are simply passed through.
@@ -798,9 +796,9 @@ pub async fn translation_task(
                                 // this back to the VSCode window, then call
                                 // `vscode.env.openExternal(vscode.Uri.parse(url))`.
                                 if let Err(err) = webbrowser::open(&url) {
-                                    let msg = format!("Unable to open web browser to URL {url}: {err}");
-                                    error!("{msg}");
-                                    send_response(&to_client_tx, client_message.id, Err(msg)).await;
+                                    let err = ResultErrTypes::WebBrowserOpenFailed(err.to_string());
+                                    error!("{err:?}");
+                                    send_response(&to_client_tx, client_message.id, Err(err)).await;
                                 } else {
                                     send_response(&to_client_tx, client_message.id, Ok(ResultOkTypes::Void)).await;
                                 }
@@ -811,11 +809,9 @@ pub async fn translation_task(
                                 debug!("Forwarding translation of it to the IDE.");
                                 match try_canonicalize(&update_message_contents.file_path) {
                                     Err(err) => {
-                                        let msg = format!(
-                                            "Unable to canonicalize file name {}: {err}", &update_message_contents.file_path
-                                        );
-                                        error!("{msg}");
-                                        send_response(&to_client_tx, client_message.id, Err(msg)).await;
+                                        let err = ResultErrTypes::TryCanonicalizeError(err.to_string());
+                                        error!("{err:?}");
+                                        send_response(&to_client_tx, client_message.id, Err(err)).await;
                                         continue;
                                     }
                                     Ok(clean_file_path) => {
@@ -864,11 +860,9 @@ pub async fn translation_task(
                                                     ccfw
                                                 },
                                                 Err(message) => {
-                                                    let msg = format!(
-                                                        "Unable to translate to source: {message}"
-                                                    );
-                                                    error!("{msg}");
-                                                    send_response(&to_client_tx, client_message.id, Err(msg)).await;
+                                                    let err = ResultErrTypes::CannotTranslateCodeChat(message);
+                                                    error!("{err:?}");
+                                                    send_response(&to_client_tx, client_message.id, Err(err)).await;
                                                     continue;
                                                 }
                                             },
@@ -894,10 +888,10 @@ pub async fn translation_task(
                             EditorMessageContents::CurrentFile(url_string, _is_text) => {
                                 debug!("Forwarding translated path to IDE.");
                                 let result = match url_to_path(&url_string, prefix) {
-                                    Err(err) => Err(format!("Unable to convert URL to path: {err}")),
+                                    Err(err) => Err(ResultErrTypes::UrlToPathError(url_string.to_string(), err.to_string())),
                                     Ok(file_path) => {
                                         match file_path.to_str() {
-                                            None => Err("Unable to convert path to string.".to_string()),
+                                            None => Err(ResultErrTypes::NoPathToString(file_path)),
                                             Some(file_path_string) => {
                                                 // Use a [binary file
                                                 // sniffer](#binary-file-sniffer) to

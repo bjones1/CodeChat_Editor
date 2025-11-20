@@ -51,7 +51,8 @@ use crate::{
     translation::{CreatedTranslationQueues, create_translation_queues},
     webserver::{
         self, EditorMessage, EditorMessageContents, INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT,
-        REPLY_TIMEOUT_MS, ResultOkTypes, UpdateMessageContents, WebAppState, setup_server,
+        REPLY_TIMEOUT_MS, ResultErrTypes, ResultOkTypes, UpdateMessageContents, WebAppState,
+        setup_server,
     },
 };
 
@@ -160,7 +161,7 @@ impl CodeChatEditorServer {
                 Some(
                     EditorMessage {
                         id,
-                        message: EditorMessageContents::Result(Err(format!("Timeout: message id {id} unacknowledged.")))
+                        message: EditorMessageContents::Result(Err(webserver::ResultErrTypes::MessageTimeout(id)))
                     }
                 ),
             else => None,
@@ -271,7 +272,7 @@ impl CodeChatEditorServer {
         .await
     }
 
-    // Send either an Ok(Void) or an Error result to the Client.
+    /// Send either an Ok(Void) or an Error result to the Client.
     pub async fn send_result(
         &self,
         id: f64,
@@ -281,7 +282,7 @@ impl CodeChatEditorServer {
             id,
             message: webserver::EditorMessageContents::Result(
                 if let Some(message_result) = message_result {
-                    Err(message_result)
+                    Err(ResultErrTypes::ExtensionError(message_result))
                 } else {
                     Ok(ResultOkTypes::Void)
                 },
