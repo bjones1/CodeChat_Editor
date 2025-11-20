@@ -19,7 +19,7 @@
 // -------
 use std::{
     path::{MAIN_SEPARATOR_STR, PathBuf},
-    thread::{self, sleep},
+    thread::sleep,
     time::Duration,
 };
 
@@ -133,24 +133,24 @@ fn test_path_to_url() {
 fn test_other_path() {
     let (temp_dir, test_dir) = prep_test_dir!();
 
-    // Start the server.
-    let test_dir1 = test_dir.clone();
-    let handle = thread::spawn(move || {
-        get_server()
-            .args(["--port", "8083", "start"])
-            .current_dir(&test_dir1)
-            .assert()
-            .success();
-    });
-    // The server waits for up to 3 seconds for a ping to work. Add some extra
-    // time for starting the process.
-    sleep(Duration::from_millis(6000));
+    // Start the server. Calling `output()` causes the program to hang; call
+    // `status()` instead. Since the `assert_cmd` crates doesn't offer this,
+    // use the std lib instead.
+    std::process::Command::new(get_server().get_program())
+        .args(["--port", "8083", "start"])
+        .current_dir(&test_dir)
+        .status()
+        .expect("failed to start server");
+
+    // Stop it.
     get_server()
         .args(["--port", "8083", "stop"])
         .current_dir(&test_dir)
         .assert()
         .success();
-    handle.join().unwrap();
+
+    // Wait for the server to exit, since it locks the temp_dir.
+    sleep(Duration::from_millis(3000));
 
     // Report any errors produced when removing the temporary directory.
     temp_dir.close().unwrap();
