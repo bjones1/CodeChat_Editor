@@ -297,12 +297,12 @@ pub fn create_translation_queues(
 ) -> Result<CreatedTranslationQueues, CreateTranslationQueuesError> {
     // There are three cases for this `connection_id`:
     //
-    // 1.  It hasn't been used before. In this case, create the appropriate
-    //     queues and start websocket and processing tasks.
-    // 2.  It's in use, but was disconnected. In this case, re-use the queues
-    //     and start the websocket task; the processing task is still running.
-    // 3.  It's in use by another IDE. This is an error, but I don't have a way
-    //     to detect it yet.
+    // 1. It hasn't been used before. In this case, create the appropriate
+    //    queues and start websocket and processing tasks.
+    // 2. It's in use, but was disconnected. In this case, re-use the queues and
+    //    start the websocket task; the processing task is still running.
+    // 3. It's in use by another IDE. This is an error, but I don't have a way
+    //    to detect it yet.
     //
     // Check case 3.
     if app_state
@@ -421,34 +421,25 @@ pub async fn translation_task(
             // (since it would have contained Markdown).
             let mut code_mirror_doc_blocks = Some(Vec::new());
             let prefix_str = "/".to_string() + &prefix.join("/");
-            // To send a diff from Server to Client or vice versa, we need to
-            // ensure they are in sync:
+            // To support sending diffs, we must provide a way to determine if
+            // the sender and receiver have the same file contents before
+            // applying a diff. File contents can become unsynced due to:
             //
-            // 1.  IDE update -> Server -> Client or Client update -> Server ->
-            //     IDE: the Server and Client sync is pending. Client response
-            //     -> Server -> IDE or IDE response -> Server -> Client: the
-            //     Server and Client are synced.
-            // 2.  IDE current file -> Server -> Client or Client current file
-            //     -> Server -> IDE: Out of sync.
+            // 1. A dropped/lost message between the IDE and Client.
+            // 2. Edits to file contents in two locations before updates from
+            //    one location (the Client, for example) propagate to the other
+            //    location (the IDE).
             //
-            // It's only safe to send a diff when the most recent sync is
-            // achieved. So, we need to track the ID of the most recent IDE ->
-            // Client update or Client -> IDE update, if one is in flight. When
-            // complete, mark the connection as synchronized. Since all IDs are
-            // unique, we can use a single variable to store the ID.
-            //
-            // Currently, when the Client sends an update, mark the connection
-            // as out of sync, since the update contains not HTML in the doc
-            // blocks, but Markdown. When Turndown is moved from JavaScript to
-            // Rust, this can be changed, since both sides will have HTML in the
-            // doc blocks.
-            //
-            // Another approach: use revision numbers. Both the IDE and Client
-            // start with the same revision number. When either makes an edit,
-            // it sends a new revision number along with a diff. If the receiver
-            // doesn't have the previous version, it returns a result of error,
-            // which prompts the sender to re-send with the full text instead of
-            // a diff.
+            // Therefore, assign each file a version number. All files are sent
+            // with a unique, randomly-generated version number which define the
+            // file's version after this update is applied. Diffs also include
+            // the version number of the file before applying the diff; the
+            // receiver's current version number must match with the sender's
+            // pre-diff version number in order to apply the diff. When the
+            // versions don't match, the IDE must send a full text file to the
+            // Server and Client to re-sync. When a file is first loaded, its
+            // version number is None, signaling that the sender must always
+            // provide the full text, not a diff.
             let mut sync_state = SyncState::OutOfSync;
             loop {
                 select! {

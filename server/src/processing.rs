@@ -187,11 +187,10 @@ pub struct CodeMirrorDocBlockDelete {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export, optional_fields)]
 pub struct StringDiff {
-    /// The index into the previous `CodeMirrorDocBlockVec` of the start of the
-    /// change.
+    /// The index of the start of the change, in UTF-16 code units.
     pub from: usize,
     /// The index of the end of the change; defined for deletions and
-    /// replacements. See the
+    /// replacements, in UTF-16 code units. See the
     /// [skip serializing field docs](https://serde.rs/attr-skip-serializing.html);
     /// this must be excluded from the JSON output if it's `None` to avoid
     /// CodeMirror errors.
