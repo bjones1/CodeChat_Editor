@@ -61,6 +61,7 @@ actix-service = "2.0.3"
 actix-web = "4"
 actix-web-httpauth = "0.8.2"
 actix-ws = "0.3.0"
+anyhow = "1.0.100"
 # This is used for integration testing. However, since integration tests can't
 # access crates in `dev-dependencies`, they're here behind the appropriate
 # feature flag.

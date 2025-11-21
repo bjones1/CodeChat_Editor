@@ -24,6 +24,7 @@ Changelog
 
 * Block drag and drop of images, which creates a mess.
 * Send sync data when doc blocks receive focus.
+* Improve error handling.
 
 Version 0.1.41 -- 2025-Nov-17
 --------------------------------------------------------------------------------

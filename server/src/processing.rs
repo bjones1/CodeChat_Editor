@@ -207,9 +207,6 @@ pub enum TranslationResults {
     /// This file is unknown to and therefore not supported by the CodeChat
     /// Editor.
     Unknown,
-    /// This is a CodeChat Editor file but it contains errors that prevent its
-    /// translation. The string contains the error message.
-    Err(String),
     /// A CodeChat Editor file; the struct contains the file's contents
     /// translated to CodeMirror.
     CodeChat(CodeChatForWeb),
@@ -224,9 +221,6 @@ pub enum TranslationResultsString {
     /// This file is unknown to the CodeChat Editor. It must be viewed raw or
     /// using the simple viewer.
     Unknown,
-    /// This is a CodeChat Editor file but it contains errors that prevent its
-    /// translation. The string contains the error message.
-    Err(String),
     /// A CodeChat Editor file; the struct contains the file's contents
     /// translated to CodeMirror.
     CodeChat(CodeChatForWeb),
@@ -388,6 +382,20 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum CodechatForWebToSourceError {
+    #[error("invalid lexer {0}")]
+    InvalidLexer(String),
+    #[error("doc blocks not allowed in Markdown documents")]
+    DocBlocksNotAllowed,
+    #[error("TODO: diffs not supported")]
+    TodoDiff,
+    #[error("unable to convert from HTML to Markdown: {0}")]
+    HtmlToMarkdownFailed(#[from] HtmlToMarkdownWrappedError),
+    #[error("unable to translate CodeChat to source: {0}")]
+    CannotTranslateCodeChat(#[from] CodeDocBlockVecToSourceError),
+}
+
 // Transform `CodeChatForWeb` to source code
 // -----------------------------------------------------------------------------
 /// This function takes in a source file in web-editable format (the
@@ -395,37 +403,41 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
 pub fn codechat_for_web_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
     codechat_for_web: &CodeChatForWeb,
-) -> Result<String, String> {
+) -> Result<String, CodechatForWebToSourceError> {
+    let lexer_name = &codechat_for_web.metadata.mode;
     // Given the mode, find the lexer.
-    let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match LEXERS
-        .map_mode_to_lexer
-        .get(&codechat_for_web.metadata.mode)
-    {
-        Some(v) => v,
-        None => return Err("Invalid mode".to_string()),
-    };
+    let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> =
+        match LEXERS.map_mode_to_lexer.get(lexer_name) {
+            Some(v) => v,
+            None => {
+                return Err(CodechatForWebToSourceError::InvalidLexer(
+                    lexer_name.clone(),
+                ));
+            }
+        };
 
     // Extract the plain (not diffed) CodeMirror contents.
     let CodeMirrorDiffable::Plain(ref code_mirror) = codechat_for_web.source else {
-        panic!("No diff!");
+        return Err(CodechatForWebToSourceError::TodoDiff);
     };
 
     // If this is a Markdown-only document, handle this special case.
     if *lexer.language_lexer.lexer_name == "markdown" {
         // There should be no doc blocks.
         if !code_mirror.doc_blocks.is_empty() {
-            return Err("Doc blocks not allowed in Markdown documents.".to_string());
+            return Err(CodechatForWebToSourceError::DocBlocksNotAllowed);
         }
         // Translate the HTML document to Markdown.
         let converter = HtmlToMarkdownWrapped::new();
         return converter
             .convert(&code_mirror.doc)
-            .map_err(|e| e.to_string());
+            .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed);
     }
     let code_doc_block_vec_html = code_mirror_to_code_doc_blocks(code_mirror);
-    let code_doc_block_vec =
-        doc_block_html_to_markdown(code_doc_block_vec_html).map_err(|e| e.to_string())?;
+    let code_doc_block_vec = doc_block_html_to_markdown(code_doc_block_vec_html)
+        .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed)?;
     code_doc_block_vec_to_source(&code_doc_block_vec, lexer)
+        .map_err(CodechatForWebToSourceError::CannotTranslateCodeChat)
 }
 
 /// Return the byte index of `s[u16_16_index]`, where the indexing operation is
@@ -504,6 +516,14 @@ struct HtmlToMarkdownWrapped {
     word_wrap_config: Configuration,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum HtmlToMarkdownWrappedError {
+    #[error("unable to convert from HTML to markdown")]
+    HtmlToMarkdownFailed(#[from] std::io::Error),
+    #[error("unable to word wrap Markdown")]
+    WordWrapFailed(#[from] anyhow::Error),
+}
+
 impl HtmlToMarkdownWrapped {
     fn new() -> Self {
         HtmlToMarkdownWrapped {
@@ -531,11 +551,10 @@ impl HtmlToMarkdownWrapped {
         self.word_wrap_config.line_width = line_width as u32;
     }
 
-    fn convert(&self, html: &str) -> std::io::Result<String> {
+    fn convert(&self, html: &str) -> Result<String, HtmlToMarkdownWrappedError> {
         let converted = self.html_to_markdown.convert(html)?;
         Ok(
-            format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))
-                .map_err(std::io::Error::other)?
+            format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
                 // A return value of `None` means the text was unchanged or
                 // ignored (by an
                 // [ignoreFileDirective](https://dprint.dev/plugins/markdown/config/)).
@@ -548,7 +567,7 @@ impl HtmlToMarkdownWrapped {
 // Transform HTML in doc blocks to Markdown.
 fn doc_block_html_to_markdown(
     mut code_doc_block_vec: Vec<CodeDocBlock>,
-) -> std::io::Result<Vec<CodeDocBlock>> {
+) -> Result<Vec<CodeDocBlock>, HtmlToMarkdownWrappedError> {
     let mut converter = HtmlToMarkdownWrapped::new();
     for code_doc_block in &mut code_doc_block_vec {
         if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
@@ -566,20 +585,24 @@ fn doc_block_html_to_markdown(
                         WORD_WRAP_COLUMN,
                     ),
             ));
-            doc_block.contents = converter
-                .convert(&doc_block.contents)
-                .map_err(std::io::Error::other)?;
+            doc_block.contents = converter.convert(&doc_block.contents)?;
         }
     }
 
     Ok(code_doc_block_vec)
 }
 
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum CodeDocBlockVecToSourceError {
+    #[error("unknown comment opening delimiter '{0}'")]
+    UnknownCommentOpeningDelimiter(String),
+}
+
 // Turn this vec of CodeDocBlocks into a string of source code.
 fn code_doc_block_vec_to_source(
     code_doc_block_vec: &Vec<CodeDocBlock>,
     lexer: &LanguageLexerCompiled,
-) -> Result<String, String> {
+) -> Result<String, CodeDocBlockVecToSourceError> {
     let mut file_contents = String::new();
     for code_doc_block in code_doc_block_vec {
         match code_doc_block {
@@ -636,10 +659,11 @@ fn code_doc_block_vec_to_source(
                     {
                         Some(index) => &lexer.language_lexer.block_comment_delim_arr[index].closing,
                         None => {
-                            return Err(format!(
-                                "Unknown comment opening delimiter '{}'.",
-                                doc_block.delimiter
-                            ));
+                            return Err(
+                                CodeDocBlockVecToSourceError::UnknownCommentOpeningDelimiter(
+                                    doc_block.delimiter.clone(),
+                                ),
+                            );
                         }
                     };
 
@@ -722,6 +746,12 @@ fn code_doc_block_vec_to_source(
     Ok(file_contents)
 }
 
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum SourceToCodeChatForWebError {
+    #[error("unknown lexer {0}")]
+    UnknownLexer(String),
+}
+
 // Transform from source code to `CodeChatForWeb`
 // -----------------------------------------------------------------------------
 //
@@ -736,7 +766,7 @@ pub fn source_to_codechat_for_web(
     _is_toc: bool,
     // True if this file is part of a project.
     _is_project: bool,
-) -> TranslationResults {
+) -> Result<TranslationResults, SourceToCodeChatForWebError> {
     // Determine the lexer to use for this file.
     let lexer_name;
     // First, search for a lexer directive in the file contents.
@@ -745,10 +775,7 @@ pub fn source_to_codechat_for_web(
         match LEXERS.map_mode_to_lexer.get(&lexer_name) {
             Some(v) => v,
             None => {
-                return TranslationResults::Err(format!(
-                    "<p>Unknown lexer type {}.</p>",
-                    &lexer_name
-                ));
+                return Err(SourceToCodeChatForWebError::UnknownLexer(lexer_name));
             }
         }
     } else {
@@ -757,7 +784,7 @@ pub fn source_to_codechat_for_web(
             Some(llc) => llc.first().unwrap(),
             _ => {
                 // The file type is unknown; treat it as plain text.
-                return TranslationResults::Unknown;
+                return Ok(TranslationResults::Unknown);
             }
         }
     };
@@ -861,7 +888,7 @@ pub fn source_to_codechat_for_web(
         },
     };
 
-    TranslationResults::CodeChat(codechat_for_web)
+    Ok(TranslationResults::CodeChat(codechat_for_web))
 }
 
 // Like `source_to_codechat_for_web`, translate a source file to the CodeChat
@@ -875,12 +902,15 @@ pub fn source_to_codechat_for_web_string(
     file_path: &Path,
     // True if this file is a TOC.
     is_toc: bool,
-) -> (
-    // The resulting translation.
-    TranslationResultsString,
-    // Path to the TOC, if found; otherwise, None.
-    Option<PathBuf>,
-) {
+) -> Result<
+    (
+        // The resulting translation.
+        TranslationResultsString,
+        // Path to the TOC, if found; otherwise, None.
+        Option<PathBuf>,
+    ),
+    SourceToCodeChatForWebError,
+> {
     // Determine the file's extension, in order to look up a lexer.
     let ext = &file_path
         .extension()
@@ -893,26 +923,28 @@ pub fn source_to_codechat_for_web_string(
     let path_to_toc = find_path_to_toc(file_path);
     let is_project = path_to_toc.is_some();
 
-    (
+    Ok((
         match source_to_codechat_for_web(file_contents, &ext.to_string(), is_toc, is_project) {
-            TranslationResults::CodeChat(codechat_for_web) => {
-                if is_toc {
-                    // For the table of contents sidebar, which is pure
-                    // markdown, just return the resulting HTML, rather than the
-                    // editable CodeChat for web format.
-                    let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
-                        panic!("No diff!");
-                    };
-                    TranslationResultsString::Toc(plain.doc)
-                } else {
-                    TranslationResultsString::CodeChat(codechat_for_web)
+            Err(err) => return Err(err),
+            Ok(translation_results) => match translation_results {
+                TranslationResults::CodeChat(codechat_for_web) => {
+                    if is_toc {
+                        // For the table of contents sidebar, which is pure
+                        // markdown, just return the resulting HTML, rather than the
+                        // editable CodeChat for web format.
+                        let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
+                            panic!("No diff!");
+                        };
+                        TranslationResultsString::Toc(plain.doc)
+                    } else {
+                        TranslationResultsString::CodeChat(codechat_for_web)
+                    }
                 }
-            }
-            TranslationResults::Unknown => TranslationResultsString::Unknown,
-            TranslationResults::Err(err) => TranslationResultsString::Err(err),
+                TranslationResults::Unknown => TranslationResultsString::Unknown,
+            },
         },
         path_to_toc,
-    )
+    ))
 }
 
 /// Convert markdown to HTML. (This assumes the Markdown defined in the

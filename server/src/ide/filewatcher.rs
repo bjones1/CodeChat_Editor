@@ -846,7 +846,7 @@ mod tests {
 
         // Check the contents.
         let translation_results = source_to_codechat_for_web("", &"py".to_string(), false, false);
-        let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
+        let codechat_for_web = cast!(cast!(translation_results, Ok), TranslationResults::CodeChat);
         assert_eq!(umc.contents, Some(codechat_for_web));
 
         // Report any errors produced when removing the temporary directory.

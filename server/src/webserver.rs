@@ -77,14 +77,20 @@ use url::Url;
 
 // ### Local
 //use crate::capture::EventCapture;
-use crate::ide::filewatcher::{
-    filewatcher_browser_endpoint, filewatcher_client_endpoint, filewatcher_root_fs_redirect,
-    filewatcher_websocket,
-};
-use crate::ide::vscode::vscode_ide_websocket;
-use crate::ide::vscode::{serve_vscode_fs, vscode_client_framework, vscode_client_websocket};
-use crate::processing::{
-    CodeChatForWeb, TranslationResultsString, find_path_to_toc, source_to_codechat_for_web_string,
+use crate::{
+    ide::{
+        filewatcher::{
+            filewatcher_browser_endpoint, filewatcher_client_endpoint,
+            filewatcher_root_fs_redirect, filewatcher_websocket,
+        },
+        vscode::{
+            serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
+        },
+    },
+    processing::{
+        CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, find_path_to_toc,
+        source_to_codechat_for_web_string,
+    },
 };
 
 // Data structures
@@ -157,7 +163,7 @@ pub enum SimpleHttpResponseError {
     #[error("Bundled file {0} not found.")]
     BundledFileNotFound(String),
     #[error("Lexer error: {0}.")]
-    LexerError(String),
+    LexerError(#[from] SourceToCodeChatForWebError),
 }
 
 /// Define the data structure used to pass data between the CodeChat Editor
@@ -826,8 +832,7 @@ pub async fn file_to_response(
     // `try_canonical`.
     let is_current_file = file_path == current_filepath;
     let is_toc = http_request.flags == ProcessingTaskHttpRequestFlags::Toc;
-    let (translation_results_string, path_to_toc) = if let Some(file_contents_text) = file_contents
-    {
+    let translation_results = if let Some(file_contents_text) = file_contents {
         if is_current_file || is_toc {
             source_to_codechat_for_web_string(
                 // Ensure we work with Unix-style (LF only) files, since other
@@ -838,13 +843,23 @@ pub async fn file_to_response(
             )
         } else {
             // If this isn't the current file, then don't parse it.
-            (TranslationResultsString::Unknown, None)
+            Ok((TranslationResultsString::Unknown, None))
         }
     } else {
-        (
+        Ok((
             TranslationResultsString::Binary,
             find_path_to_toc(file_path),
-        )
+        ))
+    };
+    let (translation_results_string, path_to_toc) = match translation_results {
+        // Report a lexer error.
+        Err(err) => {
+            return (
+                SimpleHttpResponse::Err(SimpleHttpResponseError::LexerError(err)),
+                None,
+            );
+        }
+        Ok(tr) => tr,
     };
     let is_project = path_to_toc.is_some();
     // For project files, add in the sidebar. Convert this from a Windows path
@@ -913,10 +928,6 @@ pub async fn file_to_response(
                 ),
                 None,
             );
-        }
-        // Report a lexer error.
-        TranslationResultsString::Err(err_string) => {
-            return (SimpleHttpResponse::Err(SimpleHttpResponseError::LexerError(err_string)), None);
         }
         // This is a CodeChat file. The following code wraps the CodeChat for
         // web results in a CodeChat Editor Client webpage.

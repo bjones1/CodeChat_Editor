@@ -214,10 +214,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::{fs::File, select, sync::mpsc};
 
 // ### Local
-use crate::webserver::{
-    EditorMessage, EditorMessageContents, ResultErrTypes, WebAppState, WebsocketQueues,
-    send_response,
-};
 use crate::{
     oneshot_send,
     processing::{
@@ -227,9 +223,11 @@ use crate::{
     },
     queue_send,
     webserver::{
-        INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT, ProcessingTaskHttpRequest, ResultOkTypes,
-        SimpleHttpResponse, SimpleHttpResponseError, SyncState, UpdateMessageContents,
-        file_to_response, path_to_url, try_canonicalize, try_read_as_text, url_to_path,
+        EditorMessage, EditorMessageContents, INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
+        ProcessingTaskHttpRequest, ResultErrTypes, ResultOkTypes, SimpleHttpResponse,
+        SimpleHttpResponseError, SyncState, UpdateMessageContents, WebAppState, WebsocketQueues,
+        file_to_response, path_to_url, send_response, try_canonicalize, try_read_as_text,
+        url_to_path,
     },
 };
 
@@ -618,94 +616,94 @@ pub async fn translation_task(
                                                         eol = find_eol_type(&code_mirror.doc);
                                                         let doc_normalized_eols = code_mirror.doc.replace("\r\n", "\n");
                                                         // Translate the file.
-                                                        let (translation_results_string, _path_to_toc) =
-                                                        source_to_codechat_for_web_string(&doc_normalized_eols, &current_file, false);
-                                                        match translation_results_string {
-                                                            TranslationResultsString::CodeChat(ccfw) => {
-                                                                // Send the new translated contents.
-                                                                debug!("Sending translated contents to Client.");
-                                                                let CodeMirrorDiffable::Plain(ref ccfw_source_plain) = ccfw.source else {
-                                                                    error!("{}", "Unexpected diff value.");
-                                                                    break;
-                                                                };
-                                                                // Send a diff if possible (only when the
-                                                                // Client's contents are synced with the
-                                                                // IDE).
-                                                                let contents = Some(
-                                                                    if let Some(cmdb) = code_mirror_doc_blocks &&
-                                                                     sync_state == SyncState::InSync {
-                                                                        let doc_diff = diff_str(&code_mirror_doc, &ccfw_source_plain.doc);
-                                                                        let code_mirror_diff = diff_code_mirror_doc_blocks(&cmdb, &ccfw_source_plain.doc_blocks);
-                                                                        CodeChatForWeb {
-                                                                            // Clone needed here, so we can copy it
-                                                                            // later.
-                                                                            metadata: ccfw.metadata.clone(),
-                                                                            source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                                                                                doc: doc_diff,
-                                                                                doc_blocks: code_mirror_diff
-                                                                            })
+                                                        match source_to_codechat_for_web_string(&doc_normalized_eols, &current_file, false) {
+                                                            Err(err) => Err(ResultErrTypes::CannotTranslateSource(err.to_string())),
+                                                            Ok((translation_results_string, _path_to_toc)) => match translation_results_string {
+                                                                TranslationResultsString::CodeChat(ccfw) => {
+                                                                    // Send the new translated contents.
+                                                                    debug!("Sending translated contents to Client.");
+                                                                    let CodeMirrorDiffable::Plain(ref ccfw_source_plain) = ccfw.source else {
+                                                                        error!("{}", "Unexpected diff value.");
+                                                                        break;
+                                                                    };
+                                                                    // Send a diff if possible (only when the
+                                                                    // Client's contents are synced with the
+                                                                    // IDE).
+                                                                    let contents = Some(
+                                                                        if let Some(cmdb) = code_mirror_doc_blocks &&
+                                                                        sync_state == SyncState::InSync {
+                                                                            let doc_diff = diff_str(&code_mirror_doc, &ccfw_source_plain.doc);
+                                                                            let code_mirror_diff = diff_code_mirror_doc_blocks(&cmdb, &ccfw_source_plain.doc_blocks);
+                                                                            CodeChatForWeb {
+                                                                                // Clone needed here, so we can copy it
+                                                                                // later.
+                                                                                metadata: ccfw.metadata.clone(),
+                                                                                source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                                                                                    doc: doc_diff,
+                                                                                    doc_blocks: code_mirror_diff
+                                                                                })
+                                                                            }
+                                                                        } else {
+                                                                            // We must make a clone to put in the TX
+                                                                            // queue; this allows us to keep the
+                                                                            // original below to use with the next
+                                                                            // diff.
+                                                                            ccfw.clone()
                                                                         }
-                                                                    } else {
-                                                                        // We must make a clone to put in the TX
-                                                                        // queue; this allows us to keep the
-                                                                        // original below to use with the next
-                                                                        // diff.
-                                                                        ccfw.clone()
-                                                                    }
-                                                                );
-                                                                queue_send!(to_client_tx.send(EditorMessage {
-                                                                    id: ide_message.id,
-                                                                    message: EditorMessageContents::Update(UpdateMessageContents {
-                                                                        file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                                                        contents,
-                                                                        cursor_position: update.cursor_position,
-                                                                        scroll_position: update.scroll_position,
-                                                                    }),
-                                                                }));
-                                                                // Update to the latest code after
-                                                                // computing diffs. To avoid ownership
-                                                                // problems, re-define `ccfw_source_plain`.
-                                                                let CodeMirrorDiffable::Plain(ccfw_source_plain) = ccfw.source else {
-                                                                    error!("{}", "Unexpected diff value.");
-                                                                    break;
-                                                                };
-                                                                source_code = code_mirror.doc;
-                                                                code_mirror_doc = ccfw_source_plain.doc;
-                                                                code_mirror_doc_blocks = Some(ccfw_source_plain.doc_blocks);
-                                                                // Mark the Client as unsynced until this
-                                                                // is acknowledged.
-                                                                sync_state = SyncState::Pending(ide_message.id);
-                                                                Ok(ResultOkTypes::Void)
-                                                            }
-                                                            // TODO
-                                                            TranslationResultsString::Binary => Err(ResultErrTypes::TodoBinarySupport),
-                                                            TranslationResultsString::Err(err) => Err(ResultErrTypes::CannotTranslateSource(err)),
-                                                            TranslationResultsString::Unknown => {
-                                                                // Send the new raw contents.
-                                                                debug!("Sending translated contents to Client.");
-                                                                queue_send!(to_client_tx.send(EditorMessage {
-                                                                    id: ide_message.id,
-                                                                    message: EditorMessageContents::Update(UpdateMessageContents {
-                                                                        file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                                                        contents: Some(CodeChatForWeb {
-                                                                            metadata: SourceFileMetadata {
-                                                                                // Since this is raw data, `mode` doesn't
-                                                                                // matter.
-                                                                                mode: "".to_string(),
-                                                                            },
-                                                                            source: CodeMirrorDiffable::Plain(CodeMirror {
-                                                                                doc: code_mirror.doc,
-                                                                                doc_blocks: vec![]
-                                                                            })
+                                                                    );
+                                                                    queue_send!(to_client_tx.send(EditorMessage {
+                                                                        id: ide_message.id,
+                                                                        message: EditorMessageContents::Update(UpdateMessageContents {
+                                                                            file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                                                                            contents,
+                                                                            cursor_position: update.cursor_position,
+                                                                            scroll_position: update.scroll_position,
                                                                         }),
-                                                                        cursor_position: update.cursor_position,
-                                                                        scroll_position: update.scroll_position,
-                                                                    }),
-                                                                }));
-                                                                Ok(ResultOkTypes::Void)
-                                                            },
-                                                            TranslationResultsString::Toc(_) => {
-                                                                Err(ResultErrTypes::NotToc)
+                                                                    }));
+                                                                    // Update to the latest code after
+                                                                    // computing diffs. To avoid ownership
+                                                                    // problems, re-define `ccfw_source_plain`.
+                                                                    let CodeMirrorDiffable::Plain(ccfw_source_plain) = ccfw.source else {
+                                                                        error!("{}", "Unexpected diff value.");
+                                                                        break;
+                                                                    };
+                                                                    source_code = code_mirror.doc;
+                                                                    code_mirror_doc = ccfw_source_plain.doc;
+                                                                    code_mirror_doc_blocks = Some(ccfw_source_plain.doc_blocks);
+                                                                    // Mark the Client as unsynced until this
+                                                                    // is acknowledged.
+                                                                    sync_state = SyncState::Pending(ide_message.id);
+                                                                    Ok(ResultOkTypes::Void)
+                                                                }
+                                                                // TODO
+                                                                TranslationResultsString::Binary => Err(ResultErrTypes::TodoBinarySupport),
+                                                                TranslationResultsString::Unknown => {
+                                                                    // Send the new raw contents.
+                                                                    debug!("Sending translated contents to Client.");
+                                                                    queue_send!(to_client_tx.send(EditorMessage {
+                                                                        id: ide_message.id,
+                                                                        message: EditorMessageContents::Update(UpdateMessageContents {
+                                                                            file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                                                                            contents: Some(CodeChatForWeb {
+                                                                                metadata: SourceFileMetadata {
+                                                                                    // Since this is raw data, `mode` doesn't
+                                                                                    // matter.
+                                                                                    mode: "".to_string(),
+                                                                                },
+                                                                                source: CodeMirrorDiffable::Plain(CodeMirror {
+                                                                                    doc: code_mirror.doc,
+                                                                                    doc_blocks: vec![]
+                                                                                })
+                                                                            }),
+                                                                            cursor_position: update.cursor_position,
+                                                                            scroll_position: update.scroll_position,
+                                                                        }),
+                                                                    }));
+                                                                    Ok(ResultOkTypes::Void)
+                                                                },
+                                                                TranslationResultsString::Toc(_) => {
+                                                                    Err(ResultErrTypes::NotToc)
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -860,7 +858,7 @@ pub async fn translation_task(
                                                     ccfw
                                                 },
                                                 Err(message) => {
-                                                    let err = ResultErrTypes::CannotTranslateCodeChat(message);
+                                                    let err = ResultErrTypes::CannotTranslateCodeChat(message.to_string());
                                                     error!("{err:?}");
                                                     send_response(&to_client_tx, client_message.id, Err(err)).await;
                                                     continue;
