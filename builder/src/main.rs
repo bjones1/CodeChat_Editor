@@ -510,8 +510,6 @@ fn run_build() -> io::Result<()> {
         cargo build --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "cargo build";
         cargo build;
-        info "cargo test export_bindings";
-        cargo test export_bindings;
     )?;
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists(format!("{CLIENT_PATH}/static/bundled"))?;
@@ -528,7 +526,7 @@ fn run_client_build(
     // checks.
     skip_check_errors: bool,
 ) -> io::Result<()> {
-    // Ensure the JavaScript data structured generated from Rust are up to date.
+    // Ensure the JavaScript data structures generated from Rust are up to date.
     run_cmd!(
         info "cargo test export_bindings";
         cargo test export_bindings;
@@ -631,6 +629,12 @@ fn run_extensions_build(
         napi_args.extend(["--target", &target]);
     }
     run_script("npx", &napi_args, VSCODE_PATH, true)?;
+
+    // Ensure the JavaScript data structures generated from Rust are up to date.
+    run_cmd!(
+        info "cargo test export_bindings";
+        cargo test export_bindings;
+    )?;
 
     // The main build for the extension.
     run_script(
