@@ -48,6 +48,7 @@ import {
     DEBUG_ENABLED,
     MAX_MESSAGE_LENGTH,
 } from "../../../client/src/debug_enabled.mjs";
+import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes";
 
 // Globals
 // -----------------------------------------------------------------------------
@@ -325,10 +326,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 value as UpdateMessageContents;
                             const doc = get_document(current_update.file_path);
                             if (doc === undefined) {
-                                sendResult(
-                                    id,
-                                    `No open document for ${current_update.file_path}`,
-                                );
+                                sendResult(id, {
+                                    NoOpenDocument: current_update.file_path,
+                                });
                                 break;
                             }
                             if (current_update.contents !== undefined) {
@@ -357,10 +357,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     assert("Diff" in source);
                                     // If this diff was not made against the text we currently have, reject it.
                                     if (source.Diff.version !== version) {
-                                        sendResult(
-                                            id,
-                                            "Out of sync: incorrect version for diff.",
-                                        );
+                                        sendResult(id, "OutOfSync");
                                         // Send an `Update` with the full text to re-sync the Client.
                                         send_update(true);
                                         break;
@@ -454,10 +451,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             current_file,
                                         );
                                 } catch (e) {
-                                    sendResult(
-                                        id,
-                                        `Error: unable to open file ${current_file}: ${e}`,
-                                    );
+                                    sendResult(id, {
+                                        OpenFileFailed: [
+                                            current_file,
+                                            (e as Error).toString(),
+                                        ],
+                                    });
                                     continue;
                                 }
                                 ignore_active_editor_change = true;
@@ -491,10 +490,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         .then(
                                             () => sendResult(id),
                                             (reason) =>
-                                                sendResult(
-                                                    id,
-                                                    `Error: unable to open file ${current_file}: ${reason}`,
-                                                ),
+                                                sendResult(id, {
+                                                    OpenFileFailed: [
+                                                        current_file,
+                                                        reason,
+                                                    ],
+                                                }),
                                         );
                                 }
                                 sendResult(id);
@@ -581,12 +582,12 @@ const format_struct = (complex_data_structure: any): string =>
         : "";
 
 // Send a result (a response to a message from the server) back to the server.
-const sendResult = (id: number, result: string | null = null) => {
+const sendResult = (id: number, result: ResultErrTypes | null = null) => {
     assert(codeChatEditorServer);
     console_log(
         `CodeChat Editor extension: sending Result(id = ${id}, ${format_struct(result)}).`,
     );
-    codeChatEditorServer.sendResult(id, result);
+    codeChatEditorServer.sendResult(id, JSON.stringify(result));
 };
 
 // This is called after an event such as an edit, when the CodeChat panel

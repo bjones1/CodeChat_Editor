@@ -99,9 +99,18 @@ impl CodeChatEditorServer {
     pub async fn send_result(
         &self,
         id: f64,
+        // If provided, a JSON-encoded `ResultErrTypes`.
         message_result: Option<String>,
     ) -> std::io::Result<()> {
-        self.0.send_result(id, message_result).await
+        let message = if let Some(err_json) = message_result {
+            match serde_json::from_str(&err_json) {
+                Ok(v) => Some(v),
+                Err(err) => return Err(std::io::Error::other(err.to_string())),
+            }
+        } else {
+            None
+        };
+        self.0.send_result(id, message).await
     }
 
     #[napi]

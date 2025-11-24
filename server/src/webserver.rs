@@ -297,10 +297,12 @@ pub enum ResultErrTypes {
     SaveFileError(PathBuf, String),
     #[error("unable to watch file '{0}': {1}")]
     FileWatchError(PathBuf, String),
-    #[error("IDE error: {0}")]
-    ExtensionError(String),
     #[error("ignoring update for {0} because it's not the current file {1}")]
     IgnoredUpdate(String, String),
+    #[error("no open document for {0}")]
+    NoOpenDocument(String),
+    #[error("unable to open file {0}: {1}")]
+    OpenFileFailed(String, String),
 }
 
 /// Specify the type of IDE that this client represents.

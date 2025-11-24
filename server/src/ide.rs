@@ -277,13 +277,13 @@ impl CodeChatEditorServer {
     pub async fn send_result(
         &self,
         id: f64,
-        message_result: Option<String>,
+        message_result: Option<ResultErrTypes>,
     ) -> std::io::Result<()> {
         let editor_message = EditorMessage {
             id,
             message: webserver::EditorMessageContents::Result(
                 if let Some(message_result) = message_result {
-                    Err(ResultErrTypes::ExtensionError(message_result))
+                    Err(message_result)
                 } else {
                     Ok(ResultOkTypes::Void)
                 },
