@@ -22,9 +22,10 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
-* Block drag and drop of images, which creates a mess.
+* Drag and drop of images creates a mess; disable drop and drop for this reason.
 * Send sync data when doc blocks receive focus.
 * Improve error handling.
+* Improve method used to keep Client and IDE contents in sync.
 
 Version 0.1.41 -- 2025-Nov-17
 --------------------------------------------------------------------------------
