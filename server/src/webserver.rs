@@ -247,9 +247,9 @@ type MessageResult = Result<
 pub enum ResultOkTypes {
     /// Most messages have no result.
     Void,
-    /// The `LoadFile` message provides file contents, if available. This
+    /// The `LoadFile` message provides file contents and a revision number, if available. This
     /// message may only be sent from the IDE to the Server.
-    LoadFile(Option<String>),
+    LoadFile(Option<(String, f64)>),
 }
 
 #[derive(Debug, Serialize, Deserialize, TS, PartialEq, thiserror::Error)]
@@ -776,6 +776,8 @@ pub async fn try_read_as_text(file: &mut File) -> Option<String> {
 pub async fn file_to_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
+    // The version of this file.
+    version: f64,
     // Path to the file currently being edited. This path should be cleaned by
     // `try_canonicalize`.
     current_filepath: &Path,
@@ -839,6 +841,7 @@ pub async fn file_to_response(
                 // line endings break the translation process.
                 &file_contents_text.replace("\r\n", "\n"),
                 file_path,
+                version,
                 is_toc,
             )
         } else {

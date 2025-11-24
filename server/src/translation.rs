@@ -225,7 +225,7 @@ use crate::{
     webserver::{
         EditorMessage, EditorMessageContents, INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
         ProcessingTaskHttpRequest, ResultErrTypes, ResultOkTypes, SimpleHttpResponse,
-        SimpleHttpResponseError, SyncState, UpdateMessageContents, WebAppState, WebsocketQueues,
+        SimpleHttpResponseError, UpdateMessageContents, WebAppState, WebsocketQueues,
         file_to_response, path_to_url, send_response, try_canonicalize, try_read_as_text,
         url_to_path,
     },
@@ -238,7 +238,7 @@ use crate::{
 const MAX_MESSAGE_LENGTH: usize = 300;
 
 lazy_static! {
-        /// A regex to determine the type of the first EOL. See 'PROCESSINGS1.
+        /// A regex to determine the type of the first EOL. See 'PROCESSINGS`.
     pub static ref EOL_FINDER: Regex = Regex::new("[^\r\n]*(\r?\n)").unwrap();
 }
 
@@ -439,7 +439,10 @@ pub async fn translation_task(
             // Server and Client to re-sync. When a file is first loaded, its
             // version number is None, signaling that the sender must always
             // provide the full text, not a diff.
-            let mut sync_state = SyncState::OutOfSync;
+            let mut version = 0.0;
+            // Has the full (non-diff) version of the current file been sent?
+            // Don't send diffs until this is sent.
+            let mut sent_full = false;
             loop {
                 select! {
                     // Look for messages from the IDE.
@@ -480,11 +483,9 @@ pub async fn translation_task(
                                 // which the Server should handle).
                                 if !is_loadfile {
                                     debug!("Forwarding it to the Client.");
-                                    // If this was confirmation from the IDE
-                                    // that it received the latest update, then
-                                    // mark the IDE as synced.
-                                    if sync_state == SyncState::Pending(ide_message.id) {
-                                        sync_state = SyncState::InSync;
+                                    // If the Server can't read our diff, send the full text next time.
+                                    if matches!(result, Err(ResultErrTypes::OutOfSync)) {
+                                        sent_full = false;
                                     }
                                     queue_send!(to_client_tx.send(ide_message));
                                     continue;
@@ -521,11 +522,11 @@ pub async fn translation_task(
                                 // number also -- "%PDF").
                                 let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
                                 let ((simple_http_response, option_update), file_contents) = match file_contents_option {
-                                    Some(file_contents) => {
-                                        // If there are Windows newlines, replace
-                                        // with Unix; this is reversed when the
-                                        // file is sent back to the IDE.
-                                        (file_to_response(&http_request, &current_file, Some(&file_contents), use_pdf_js).await, file_contents)
+                                    Some((file_contents, new_version)) => {
+                                        version = new_version;
+                                        // The IDE just sent the full contents; we're sending full contents to the Client.
+                                        sent_full = true;
+                                        (file_to_response(&http_request, new_version, &current_file, Some(&file_contents), use_pdf_js).await, file_contents)
                                     },
                                     None => {
                                         // The file wasn't available in the IDE.
@@ -545,6 +546,7 @@ pub async fn translation_task(
                                                 (
                                                     file_to_response(
                                                         &http_request,
+                                                        version,
                                                         &current_file,
                                                         option_file_contents.as_ref(),
                                                         use_pdf_js,
@@ -573,7 +575,6 @@ pub async fn translation_task(
                                     // placed in the TX queue.
                                     code_mirror_doc = plain.doc.clone();
                                     code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
-                                    sync_state = SyncState::Pending(id);
 
                                     debug!("Sending Update to Client, id = {id}.");
                                     queue_send!(to_client_tx.send(EditorMessage {
@@ -616,7 +617,7 @@ pub async fn translation_task(
                                                         eol = find_eol_type(&code_mirror.doc);
                                                         let doc_normalized_eols = code_mirror.doc.replace("\r\n", "\n");
                                                         // Translate the file.
-                                                        match source_to_codechat_for_web_string(&doc_normalized_eols, &current_file, false) {
+                                                        match source_to_codechat_for_web_string(&doc_normalized_eols, &current_file, contents.version, false) {
                                                             Err(err) => Err(ResultErrTypes::CannotTranslateSource(err.to_string())),
                                                             Ok((translation_results_string, _path_to_toc)) => match translation_results_string {
                                                                 TranslationResultsString::CodeChat(ccfw) => {
@@ -626,12 +627,10 @@ pub async fn translation_task(
                                                                         error!("{}", "Unexpected diff value.");
                                                                         break;
                                                                     };
-                                                                    // Send a diff if possible (only when the
-                                                                    // Client's contents are synced with the
-                                                                    // IDE).
-                                                                    let contents = Some(
+                                                                    // Send a diff if possible.
+                                                                    let client_contents = Some(
                                                                         if let Some(cmdb) = code_mirror_doc_blocks &&
-                                                                        sync_state == SyncState::InSync {
+                                                                        sent_full {
                                                                             let doc_diff = diff_str(&code_mirror_doc, &ccfw_source_plain.doc);
                                                                             let code_mirror_diff = diff_code_mirror_doc_blocks(&cmdb, &ccfw_source_plain.doc_blocks);
                                                                             CodeChatForWeb {
@@ -640,10 +639,14 @@ pub async fn translation_task(
                                                                                 metadata: ccfw.metadata.clone(),
                                                                                 source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
                                                                                     doc: doc_diff,
-                                                                                    doc_blocks: code_mirror_diff
-                                                                                })
+                                                                                    doc_blocks: code_mirror_diff,
+                                                                                    // The diff was made between the current version (`version`) and the new version (`contents.version`).
+                                                                                    version
+                                                                                }),
+                                                                                version: contents.version,
                                                                             }
                                                                         } else {
+                                                                            sent_full = true;
                                                                             // We must make a clone to put in the TX
                                                                             // queue; this allows us to keep the
                                                                             // original below to use with the next
@@ -655,7 +658,7 @@ pub async fn translation_task(
                                                                         id: ide_message.id,
                                                                         message: EditorMessageContents::Update(UpdateMessageContents {
                                                                             file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                                                            contents,
+                                                                            contents: client_contents,
                                                                             cursor_position: update.cursor_position,
                                                                             scroll_position: update.scroll_position,
                                                                         }),
@@ -670,9 +673,8 @@ pub async fn translation_task(
                                                                     source_code = code_mirror.doc;
                                                                     code_mirror_doc = ccfw_source_plain.doc;
                                                                     code_mirror_doc_blocks = Some(ccfw_source_plain.doc_blocks);
-                                                                    // Mark the Client as unsynced until this
-                                                                    // is acknowledged.
-                                                                    sync_state = SyncState::Pending(ide_message.id);
+                                                                    // Update to the version of the file just sent.
+                                                                    version = contents.version;
                                                                     Ok(ResultOkTypes::Void)
                                                                 }
                                                                 // TODO
@@ -693,7 +695,8 @@ pub async fn translation_task(
                                                                                 source: CodeMirrorDiffable::Plain(CodeMirror {
                                                                                     doc: code_mirror.doc,
                                                                                     doc_blocks: vec![]
-                                                                                })
+                                                                                }),
+                                                                                version: contents.version
                                                                             }),
                                                                             cursor_position: update.cursor_position,
                                                                             scroll_position: update.scroll_position,
@@ -735,8 +738,8 @@ pub async fn translation_task(
                                         }));
                                         current_file = file_path.into();
                                         // Since this is a new file, mark it as
-                                        // unsynced.
-                                        sync_state = SyncState::OutOfSync;
+                                        // unsent in full.
+                                        sent_full = false;
                                     }
                                     Err(err) => {
                                         error!("{err:?}");
@@ -776,14 +779,16 @@ pub async fn translation_task(
                             },
 
                             // Handle messages that are simply passed through.
-                            EditorMessageContents::Closed |
-                            EditorMessageContents::Result(_) => {
+                            EditorMessageContents::Closed => {
                                 debug!("Forwarding it to the IDE.");
-                                // If this result confirms that the Client
-                                // received the most recent IDE update, then
-                                // mark the documents as synced.
-                                if sync_state == SyncState::Pending(client_message.id) {
-                                    sync_state = SyncState::InSync;
+                                queue_send!(to_ide_tx.send(client_message))
+                            },
+
+                            EditorMessageContents::Result(ref result) => {
+                                debug!("Forwarding it to the IDE.");
+                                // If the Client can't read our diff, send the full text next time.
+                                if matches!(result, Err(ResultErrTypes::OutOfSync)) {
+                                    sent_full = false;
                                 }
                                 queue_send!(to_ide_tx.send(client_message))
                             },
@@ -822,7 +827,7 @@ pub async fn translation_task(
                                                     // Correct EOL endings for use with the
                                                     // IDE.
                                                     let new_source_code_eol = eol_convert(new_source_code, &eol);
-                                                    let ccfw = if sync_state == SyncState::InSync && allow_source_diffs {
+                                                    let ccfw = if sent_full && allow_source_diffs {
                                                         Some(CodeChatForWeb {
                                                             metadata: cfw.metadata,
                                                             source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
@@ -831,7 +836,9 @@ pub async fn translation_task(
                                                                 // are correct.
                                                                 doc: diff_str(&source_code, &new_source_code_eol),
                                                                 doc_blocks: vec![],
+                                                                version,
                                                             }),
+                                                            version: cfw.version,
                                                         })
                                                     } else {
                                                         Some(CodeChatForWeb {
@@ -842,8 +849,10 @@ pub async fn translation_task(
                                                                 doc: new_source_code_eol.clone(),
                                                                 doc_blocks: vec![],
                                                             }),
+                                                            version: cfw.version,
                                                         })
                                                     };
+                                                    version = cfw.version;
                                                     source_code = new_source_code_eol;
                                                     let CodeMirrorDiffable::Plain(cmd) = cfw.source else {
                                                         // TODO: support diffable!
@@ -874,9 +883,6 @@ pub async fn translation_task(
                                                 scroll_position: update_message_contents.scroll_position,
                                             })
                                         }));
-                                        // Mark the IDE contents as out of sync
-                                        // until this message is received.
-                                        sync_state = SyncState::Pending(client_message.id);
                                     }
                                 }
                             },
@@ -904,9 +910,8 @@ pub async fn translation_task(
                                                     message: EditorMessageContents::CurrentFile(file_path_string.to_string(), Some(is_text))
                                                 }));
                                                 current_file = file_path;
-                                                // Mark the IDE as out of sync, since this
-                                                // is a new file.
-                                                sync_state = SyncState::OutOfSync;
+                                                // Since this is a new file, the full text hasn't been sent yet.
+                                                sent_full = false;
                                                 Ok(())
                                             }
                                         }

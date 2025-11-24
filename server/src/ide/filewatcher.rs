@@ -40,6 +40,7 @@ use notify_debouncer_full::{
     DebounceEventResult, new_debouncer,
     notify::{EventKind, RecursiveMode},
 };
+use rand::random;
 use regex::Regex;
 use tokio::{
     fs::DirEntry,
@@ -534,7 +535,9 @@ async fn processing_task(
                                                     source: crate::processing::CodeMirrorDiffable::Plain(CodeMirror {
                                                         doc: file_contents,
                                                         doc_blocks: vec![],
-                                                    })
+                                                    }),
+                                                    // The filewatcher doesn't store a version, since it only accepts plain (non-diff) results. Provide a version so the Client stays in sync with any diffs.
+                                                    version: random(),
                                                 }),
                                                 cursor_position: None,
                                                 scroll_position: None,
@@ -845,7 +848,13 @@ mod tests {
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
         // Check the contents.
-        let translation_results = source_to_codechat_for_web("", &"py".to_string(), false, false);
+        let translation_results = source_to_codechat_for_web(
+            "",
+            &"py".to_string(),
+            umc.contents.as_ref().unwrap().version,
+            false,
+            false,
+        );
         let codechat_for_web = cast!(cast!(translation_results, Ok), TranslationResults::CodeChat);
         assert_eq!(umc.contents, Some(codechat_for_web));
 
@@ -961,6 +970,7 @@ mod tests {
                             doc: "".to_string(),
                             doc_blocks: vec![],
                         }),
+                        version: 0.0,
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -990,6 +1000,7 @@ mod tests {
                             doc: "testing".to_string(),
                             doc_blocks: vec![],
                         }),
+                        version: 1.0,
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -1022,6 +1033,7 @@ mod tests {
                             doc: "testing()".to_string(),
                             doc_blocks: vec![],
                         }),
+                        version: 2.0,
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -1048,8 +1060,10 @@ mod tests {
         fs::write(&file_path, s).unwrap();
         // Wait for the filewatcher to debounce this file write.
         sleep(Duration::from_secs(2)).await;
+        // The version is random; don't check it with a fixed value.
+        let msg = get_message_as!(to_client_rx, EditorMessageContents::Update);
         assert_eq!(
-            get_message_as!(to_client_rx, EditorMessageContents::Update),
+            msg,
             (
                 INITIAL_IDE_MESSAGE_ID + MESSAGE_ID_INCREMENT,
                 UpdateMessageContents {
@@ -1062,6 +1076,7 @@ mod tests {
                             doc: "testing()123".to_string(),
                             doc_blocks: vec![],
                         }),
+                        version: msg.1.contents.as_ref().unwrap().version,
                     }),
                     cursor_position: None,
                     scroll_position: None,

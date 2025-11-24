@@ -93,6 +93,8 @@ let quiet_next_error = false;
 // True if the editor contents have changed (are dirty) from the perspective of
 // the CodeChat Editor (not if the contents are saved to disk).
 let is_dirty = false;
+// The version of the current file.
+let version = 0.0;
 
 // An object to start/stop the CodeChat Editor Server.
 let codeChatEditorServer: CodeChatEditorServer | undefined;
@@ -353,6 +355,16 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     );
                                 } else {
                                     assert("Diff" in source);
+                                    // If this diff was not made against the text we currently have, reject it.
+                                    if (source.Diff.version !== version) {
+                                        sendResult(
+                                            id,
+                                            "Out of sync: incorrect version for diff.",
+                                        );
+                                        // Send an `Update` with the full text to re-sync the Client.
+                                        send_update(true);
+                                        break;
+                                    }
                                     const diffs = source.Diff.doc;
                                     for (const diff of diffs) {
                                         // Convert from character offsets from the
@@ -384,6 +396,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         () =>
                                             (ignore_text_document_change = false),
                                     );
+                                // Now that we've updated our text, update the associated version as well.
+                                version = current_update.contents.version;
                             }
 
                             // Update the cursor and scroll position if
@@ -504,8 +518,13 @@ export const activate = (context: vscode.ExtensionContext) => {
                             // Look through all open documents to see if we have
                             // the requested file.
                             const doc = get_document(load_file);
-                            const load_file_result =
-                                doc === undefined ? null : doc.getText();
+                            const load_file_result: null | [string, number] =
+                                doc === undefined
+                                    ? null
+                                    : [
+                                          doc.getText(),
+                                          (version = Math.random()),
+                                      ];
                             console_log(
                                 `CodeChat Editor extension: Result(LoadFile(${format_struct(load_file_result)}))`,
                             );
@@ -614,8 +633,8 @@ const send_update = (this_is_dirty: boolean) => {
                 const scroll_position = ate.visibleRanges[0].start.line + 1;
                 const file_path = ate.document.fileName;
                 // Send contents only if necessary.
-                const option_contents = is_dirty
-                    ? ate.document.getText()
+                const option_contents: null | [string, number] = is_dirty
+                    ? [ate.document.getText(), (version = Math.random())]
                     : null;
                 is_dirty = false;
                 console_log(

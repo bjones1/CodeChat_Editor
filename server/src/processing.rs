@@ -84,6 +84,8 @@ use crate::lexer::{CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source
 pub struct CodeChatForWeb {
     pub metadata: SourceFileMetadata,
     pub source: CodeMirrorDiffable,
+    /// The version number after accepting this update.
+    pub version: f64,
 }
 
 /// Provide two options for sending CodeMirror data -- as the full contents
@@ -123,6 +125,8 @@ pub struct CodeMirrorDiff {
     /// A diff of the document being edited.
     pub doc: Vec<StringDiff>,
     pub doc_blocks: Vec<CodeMirrorDocBlockTransaction>,
+    /// The version number from which this diff was produced.
+    pub version: f64,
 }
 
 /// A transaction produced by the diff of the `CodeMirror` struct.
@@ -762,6 +766,8 @@ pub fn source_to_codechat_for_web(
     file_contents: &str,
     // The file's extension.
     file_ext: &String,
+    // The version of this file.
+    version: f64,
     // True if this file is a TOC.
     _is_toc: bool,
     // True if this file is part of a project.
@@ -795,6 +801,7 @@ pub fn source_to_codechat_for_web(
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.lexer_name.to_string(),
         },
+        version,
         source: if lexer.language_lexer.lexer_name.as_str() == "markdown" {
             // Document-only files are easy: just encode the contents.
             let html = markdown_to_html(file_contents);
@@ -900,6 +907,8 @@ pub fn source_to_codechat_for_web_string(
     file_contents: &str,
     // The path to this file.
     file_path: &Path,
+    // The version to assign to this file.
+    version: f64,
     // True if this file is a TOC.
     is_toc: bool,
 ) -> Result<
@@ -924,7 +933,13 @@ pub fn source_to_codechat_for_web_string(
     let is_project = path_to_toc.is_some();
 
     Ok((
-        match source_to_codechat_for_web(file_contents, &ext.to_string(), is_toc, is_project) {
+        match source_to_codechat_for_web(
+            file_contents,
+            &ext.to_string(),
+            version,
+            is_toc,
+            is_project,
+        ) {
             Err(err) => return Err(err),
             Ok(translation_results) => match translation_results {
                 TranslationResults::CodeChat(codechat_for_web) => {
@@ -964,11 +979,11 @@ fn markdown_to_html(markdown: &str) -> String {
 // ### Diff support
 //
 // This section provides methods to diff the previous and current
-// `CodeMirrorDocBlockVec`.  The primary purpose is to fix a visual bug: if the
+// `CodeMirrorDocBlockVec`. The primary purpose is to fix a visual bug: if the
 // entire CodeMirror data structure is overwritten, then CodeMirror loses track
 // of the correct vertical scroll bar position, probably because it has build up
 // information on the size of each rendered doc block; these correct sizes are
-// reset when all data is overrwritten, causing unexpected scrolling. Therefore,
+// reset when all data is overwritten, causing unexpected scrolling. Therefore,
 // this approach is to modify only what changed, rather than changing
 // everything. As a secondary goal, this hopefully improves overall performance
 // by sending less data between the server and the client, in spite of the
@@ -998,11 +1013,11 @@ fn markdown_to_html(markdown: &str) -> String {
 // 1. Use the diff algorithm to find the minimal change set between a before and
 //    after `CodeMirrorDocBlocksVec`, which only looks at the `contents`. This
 //    avoids "noise" from changes in from/to fields from obscuring changes only
-//    to the `contents`.
-// 2. For all before and after blocks whose `contents` were identical, compare
+//    to the `contents`.
+// 2. For all before and after blocks whose `contents` were identical, compare
 //    the other fields, adding these to the change set, but not attempting to
 //    use the diff algorithm.
-// 3. Represent changes to the `contents` as a `StringDiff`.
+// 3. Represent changes to the `contents` as a `StringDiff`.
 //
 // #### String diff
 /// Given two strings, return a list of changes between them.

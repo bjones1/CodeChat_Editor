@@ -86,7 +86,7 @@ impl CodeChatEditorServer {
         &self,
         file_path: String,
         // `null` to send no source code; a string to send the source code.
-        option_contents: Option<String>,
+        option_contents: Option<(String, f64)>,
         cursor_position: Option<u32>,
         scroll_position: Option<f64>,
     ) -> std::io::Result<f64> {
@@ -108,7 +108,7 @@ impl CodeChatEditorServer {
     pub async fn send_result_loadfile(
         &self,
         id: f64,
-        load_file: Option<String>,
+        load_file: Option<(String, f64)>,
     ) -> std::io::Result<()> {
         self.0.send_result_loadfile(id, load_file).await
     }

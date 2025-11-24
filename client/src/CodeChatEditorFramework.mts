@@ -81,6 +81,10 @@ class WebSocketComm {
     // IDE and passed back to it, but not otherwise used by the Framework.
     current_filename: string | undefined = undefined;
 
+    // The version number of the current file. This default value will be overwritten when
+    // the first `Update` is sent.
+    version = 0.0;
+
     // True when the iframe is loading, so that an `Update` should be postponed
     // until the page load is finished. Otherwise, the page is fully loaded, so
     // the `Update` may be applied immediately.
@@ -160,6 +164,17 @@ class WebSocketComm {
                         const contents = current_update.contents;
                         const cursor_position = current_update.cursor_position;
                         if (contents !== undefined) {
+                            // Check and update the version. If this is a diff, ensure the diff was made against the version of the file we have.
+                            if ("Diff" in contents.source) {
+                                if (
+                                    contents.source.Diff.version !==
+                                    this.version
+                                ) {
+                                    this.send_result(id, "OutOfSync");
+                                    return;
+                                }
+                            }
+                            this.version = contents.version;
                             // I'd prefer to use a system-maintained value to
                             // determine the ready state of the iframe, such as
                             // [readyState](https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState).
@@ -313,6 +328,8 @@ class WebSocketComm {
         if (typeof message == "object" && "Update" in message) {
             assert(this.current_filename !== undefined);
             message.Update.file_path = this.current_filename!;
+            // Update the version of this file if it's provided.
+            this.version = message.Update.contents?.version ?? this.version;
         }
         console_log(
             `CodeChat Editor Client: sent message ${id}, ${format_struct(message)}`,

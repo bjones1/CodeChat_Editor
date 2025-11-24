@@ -56,8 +56,8 @@ use std::{
     collections::HashMap, env, error::Error, panic::AssertUnwindSafe, path::PathBuf, time::Duration,
 };
 
-use assert_fs::TempDir;
 // ### Third-party
+use assert_fs::TempDir;
 use dunce::canonicalize;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
@@ -240,6 +240,15 @@ macro_rules! harness {
     };
 }
 
+// Given an `Update` message with contents, get the version.
+fn get_version(msg: &EditorMessage) -> f64 {
+    cast!(&msg.message, EditorMessageContents::Update)
+        .contents
+        .as_ref()
+        .unwrap()
+        .version
+}
+
 // Tests
 // -----
 //
@@ -289,8 +298,9 @@ async fn test_server_core(
         .await;
 
     // Respond to the load request.
+    let mut version = 1.0;
     codechat_server
-        .send_result_loadfile(server_id, Some("# Test\ncode()".to_string()))
+        .send_result_loadfile(server_id, Some(("# Test\ncode()".to_string(), version)))
         .await
         .unwrap();
 
@@ -353,8 +363,11 @@ async fn test_server_core(
 
     // Verify the updated text.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    // Update the version from the value provided by the client, which varies randomly.
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
@@ -369,22 +382,27 @@ async fn test_server_core(
                             to: Some(7),
                             insert: "# Testfoo\n".to_string()
                         }],
-                        doc_blocks: vec![]
-                    })
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
                 }),
                 cursor_position: Some(1),
                 scroll_position: Some(1.0)
             })
         }
     );
+    version = client_version;
     codechat_server.send_result(client_id, None).await.unwrap();
 
     // Edit the indent. It should only allow spaces and tabs, rejecting other
     // edits.
     doc_block_indent.send_keys("  123").await.unwrap();
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
     client_id += MESSAGE_ID_INCREMENT;
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
@@ -397,16 +415,19 @@ async fn test_server_core(
                         doc: vec![StringDiff {
                             from: 0,
                             to: Some(10),
-                            insert: "  # Testfoo\n".to_string()
+                            insert: "  # Testfoo\n".to_string(),
                         }],
-                        doc_blocks: vec![]
-                    })
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
                 }),
                 cursor_position: Some(1),
-                scroll_position: Some(1.0)
-            })
+                scroll_position: Some(1.0),
+            }),
         }
     );
+    version = client_version;
     codechat_server.send_result(client_id, None).await.unwrap();
 
     // #### Code block tests
@@ -457,8 +478,10 @@ async fn test_server_core(
 
     // Verify the updated text.
     client_id += MESSAGE_ID_INCREMENT;
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
@@ -473,8 +496,10 @@ async fn test_server_core(
                             to: Some(18),
                             insert: "code()bar".to_string()
                         }],
-                        doc_blocks: vec![]
-                    })
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
                 }),
                 cursor_position: Some(2),
                 scroll_position: Some(1.0)
@@ -486,10 +511,11 @@ async fn test_server_core(
     // #### IDE edits
     //
     // Perform IDE edits.
+    version = 2.0;
     let ide_id = codechat_server
         .send_message_update_plain(
             path_str.clone(),
-            Some("  # Testfood\ncode()bark".to_string()),
+            Some(("  # Testfood\ncode()bark".to_string(), version)),
             Some(1),
             None,
         )
@@ -516,10 +542,11 @@ async fn test_server_core(
 
     // Perform a second edit and verification, to produce a diff sent to the
     // Client.
+    version = 3.0;
     let ide_id = codechat_server
         .send_message_update_plain(
             path_str.clone(),
-            Some(" # food\nbark".to_string()),
+            Some((" # food\nbark".to_string(), version)),
             Some(1),
             None,
         )
@@ -554,8 +581,10 @@ async fn test_server_core(
 
     // Before changing files, the current file will be updated.
     client_id += MESSAGE_ID_INCREMENT;
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
@@ -567,10 +596,11 @@ async fn test_server_core(
                     source: CodeMirrorDiffable::Plain(CodeMirror {
                         doc: " # food\nbark".to_string(),
                         doc_blocks: vec![]
-                    })
+                    }),
+                    version: client_version,
                 }),
                 cursor_position: Some(1),
-                scroll_position: Some(1.0)
+                scroll_position: Some(1.0),
             })
         }
     );
@@ -590,9 +620,13 @@ async fn test_server_core(
         .assert_all_messages(&codechat_server, TIMEOUT)
         .await;
 
-    // Ask the server to load the file from disk.
+    // Provide the requested file contents.
+    version = 4.0;
     codechat_server
-        .send_result_loadfile(server_id, None)
+        .send_result_loadfile(
+            server_id,
+            Some(("A **markdown** file.".to_string(), version)),
+        )
         .await
         .unwrap();
 
@@ -633,8 +667,10 @@ async fn test_server_core(
     // Perform edits.
     body_content.send_keys("foo ").await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
@@ -652,8 +688,10 @@ async fn test_server_core(
                                 if cfg!(windows) { "\r\n" } else { "\n" }
                             ),
                         }],
-                        doc_blocks: vec![]
-                    })
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
                 }),
                 cursor_position: None,
                 scroll_position: None
@@ -663,10 +701,11 @@ async fn test_server_core(
     codechat_server.send_result(client_id, None).await.unwrap();
 
     // Perform an IDE edit.
+    version = 5.0;
     let ide_id = codechat_server
         .send_message_update_plain(
             md_path_str.clone(),
-            Some("food A **markdown** file.".to_string()),
+            Some(("food A **markdown** file.".to_string(), version)),
             Some(1),
             None,
         )

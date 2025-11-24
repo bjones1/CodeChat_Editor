@@ -348,6 +348,7 @@ const save_lp = (is_dirty: boolean) => {
         update.contents = {
             metadata: current_metadata,
             source: code_mirror_diffable,
+            version: Math.random(),
         };
     }
 
