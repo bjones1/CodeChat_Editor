@@ -236,7 +236,7 @@ pub enum EditorMessageContents {
 
 /// The contents of a `Result` message. We can't export this type, since `ts-rs`
 /// only supports structs and enums.
-type MessageResult = Result<
+pub type MessageResult = Result<
     // The result of the operation, if successful.
     ResultOkTypes,
     // The error message.
@@ -372,16 +372,15 @@ pub struct Credentials {
 // -----------------------------------------------------------------------------
 /// Create a macro to report an error when enqueueing an item.
 #[macro_export]
-macro_rules! oneshot_send {
-    // Provide two options: `break` or `break 'label`.
+macro_rules! queue_send {
     ($tx: expr) => {
-        if let Err(err) = $tx {
+        if let Err(err) = $tx.await {
             error!("Unable to enqueue: {err:?}");
             break;
         }
     };
     ($tx: expr, $label: tt) => {
-        if let Err(err) = $tx {
+        if let Err(err) = $tx.await {
             error!("Unable to enqueue: {err:?}");
             break $label;
         }
@@ -389,12 +388,12 @@ macro_rules! oneshot_send {
 }
 
 #[macro_export]
-macro_rules! queue_send {
+macro_rules! queue_send_func {
     ($tx: expr) => {
-        $crate::oneshot_send!($tx.await)
-    };
-    ($tx: expr, $label: tt) => {
-        $crate::oneshot_send!($tx.await, $label)
+        if let Err(err) = $tx.await {
+            error!("Unable to enqueue: {err:?}");
+            return false;
+        }
     };
 }
 
