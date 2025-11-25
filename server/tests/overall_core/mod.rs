@@ -60,6 +60,7 @@ use std::{
 use assert_fs::TempDir;
 use dunce::canonicalize;
 use futures::FutureExt;
+use indoc::indoc;
 use pretty_assertions::assert_eq;
 use thirtyfour::{
     By, ChromiumLikeCapabilities, DesiredCapabilities, Key, WebDriver, error::WebDriverError,
@@ -1035,7 +1036,6 @@ async fn test_client_core(
     Ok(())
 }
 
-/* TODO: fails until self-updates work.
 mod test3 {
     use super::*;
     use pretty_assertions::assert_eq;
@@ -1084,8 +1084,23 @@ async fn test_client_updates_core(
         .await;
 
     // Respond to the load request.
+    let ide_version = 0.0;
     codechat_server
-        .send_result_loadfile(server_id, None)
+        .send_result_loadfile(
+            server_id,
+            Some((
+                indoc!(
+                    "
+                    # Test updates in the client that modify the client after appending to a line.
+                    def foo():
+                        A comment
+                        print()
+                    "
+                )
+                .to_string(),
+                ide_version,
+            )),
+        )
         .await
         .unwrap();
 
@@ -1132,9 +1147,11 @@ async fn test_client_updates_core(
         .unwrap();
 
     // Verify the updated text.
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
@@ -1149,18 +1166,17 @@ async fn test_client_updates_core(
                             to: None,
                             insert: "# testing\n".to_string()
                         }],
-                        doc_blocks: vec![]
-                    })
+                        doc_blocks: vec![],
+                        version: ide_version,
+                    }),
+                    version: client_version,
                 }),
                 cursor_position: Some(1),
-                scroll_position: Some(0.0)
+                scroll_position: Some(1.0)
             })
         }
     );
     codechat_server.send_result(client_id, None).await.unwrap();
-
-    // Move the cursor to code, then check that the position is correct. TODO:
-    // need access to codemirror in test mode.
 
     // Insert a character to check the insertion point.
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
@@ -1181,9 +1197,11 @@ async fn test_client_updates_core(
     code_line.send_keys(Key::Home + "# ").await.unwrap();
     // This should edit the (new) third line of the file after word wrap: `def
     // foo():`.
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let new_client_version = get_version(&msg);
     client_id += MESSAGE_ID_INCREMENT;
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
@@ -1198,11 +1216,13 @@ async fn test_client_updates_core(
                             to: Some(131),
                             insert: "    # A comment\n".to_string()
                         }],
-                        doc_blocks: vec![]
-                    })
+                        doc_blocks: vec![],
+                        version: client_version,
+                    }),
+                    version: new_client_version,
                 }),
                 cursor_position: Some(4),
-                scroll_position: Some(0.0)
+                scroll_position: Some(1.0)
             })
         }
     );
@@ -1210,4 +1230,3 @@ async fn test_client_updates_core(
 
     Ok(())
 }
- */

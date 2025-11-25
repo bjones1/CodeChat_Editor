@@ -865,45 +865,19 @@ impl TranslationTask {
                                                 // Send the new translated contents.
                                                 debug!("Sending translated contents to Client.");
                                                 let CodeMirrorDiffable::Plain(
-                                                    ref ccfw_source_plain,
+                                                    ref code_mirror_translated,
                                                 ) = ccfw.source
                                                 else {
                                                     panic!("Unexpected diff value.");
                                                 };
                                                 // Send a diff if possible.
-                                                let client_contents = if let Some(ref cmdb) =
-                                                    self.code_mirror_doc_blocks
-                                                    && self.sent_full
-                                                {
-                                                    let doc_diff = diff_str(
-                                                        &self.code_mirror_doc,
-                                                        &ccfw_source_plain.doc,
-                                                    );
-                                                    let code_mirror_diff =
-                                                        diff_code_mirror_doc_blocks(
-                                                            cmdb,
-                                                            &ccfw_source_plain.doc_blocks,
-                                                        );
-                                                    CodeChatForWeb {
-                                                        // Clone needed here, so we can copy it
-                                                        // later.
-                                                        metadata: ccfw.metadata.clone(),
-                                                        source: CodeMirrorDiffable::Diff(
-                                                            CodeMirrorDiff {
-                                                                doc: doc_diff,
-                                                                doc_blocks: code_mirror_diff,
-                                                                // The diff was made between the current version (`version`) and the new version (`contents.version`).
-                                                                version: self.version,
-                                                            },
-                                                        ),
-                                                        version: ccfw.version,
-                                                    }
+                                                let client_contents = if self.sent_full {
+                                                    self.wrap_translation(
+                                                        &ccfw,
+                                                        code_mirror_translated,
+                                                    )
                                                 } else {
                                                     self.sent_full = true;
-                                                    // We must make a clone to put in the TX
-                                                    // queue; this allows us to keep the
-                                                    // original below to use with the next
-                                                    // diff.
                                                     ccfw.clone()
                                                 };
                                                 queue_send_func!(self.to_client_tx.send(EditorMessage {
@@ -918,15 +892,16 @@ impl TranslationTask {
                                                 // Update to the latest code after
                                                 // computing diffs. To avoid ownership
                                                 // problems, re-define `ccfw_source_plain`.
-                                                let CodeMirrorDiffable::Plain(ccfw_source_plain) =
-                                                    ccfw.source
+                                                let CodeMirrorDiffable::Plain(
+                                                    code_mirror_translated,
+                                                ) = ccfw.source
                                                 else {
                                                     panic!("{}", "Unexpected diff value.");
                                                 };
                                                 self.source_code = code_mirror.doc;
-                                                self.code_mirror_doc = ccfw_source_plain.doc;
+                                                self.code_mirror_doc = code_mirror_translated.doc;
                                                 self.code_mirror_doc_blocks =
-                                                    Some(ccfw_source_plain.doc_blocks);
+                                                    Some(code_mirror_translated.doc_blocks);
                                                 // Update to the version of the file just sent.
                                                 self.version = contents.version;
                                                 Ok(ResultOkTypes::Void)
@@ -983,6 +958,32 @@ impl TranslationTask {
         true
     }
 
+    /// Given contents translated from `ccfw` to `code_mirror_translated`, return a `CodeChatForWeb` with these translated contents, using a diff.
+    fn wrap_translation(
+        &self,
+        ccfw: &CodeChatForWeb,
+        code_mirror_translated: &CodeMirror,
+    ) -> CodeChatForWeb {
+        assert!(self.sent_full);
+        let doc_diff = diff_str(&self.code_mirror_doc, &code_mirror_translated.doc);
+        let Some(ref cmdb) = self.code_mirror_doc_blocks else {
+            panic!("Should have diff of doc blocks!");
+        };
+        let doc_blocks_diff = diff_code_mirror_doc_blocks(cmdb, &code_mirror_translated.doc_blocks);
+        CodeChatForWeb {
+            // Clone needed here, so we can copy it
+            // later.
+            metadata: ccfw.metadata.clone(),
+            source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                doc: doc_diff,
+                doc_blocks: doc_blocks_diff,
+                // The diff was made between the current version (`version`) and the new version (`contents.version`).
+                version: self.version,
+            }),
+            version: ccfw.version,
+        }
+    }
+
     async fn client_update(&mut self, client_message: EditorMessage) -> bool {
         let EditorMessageContents::Update(update_message_contents) = client_message.message else {
             panic!("Expected update message.");
@@ -1000,6 +1001,34 @@ impl TranslationTask {
                     None => None,
                     Some(cfw) => match codechat_for_web_to_source(&cfw) {
                         Ok(new_source_code) => {
+                            // Translate back to the Client to see if there are any changes after this conversion.
+                            if let Ok(ccfws) = source_to_codechat_for_web_string(
+                                &new_source_code,
+                                &clean_file_path,
+                                cfw.version,
+                                false,
+                            ) && let TranslationResultsString::CodeChat(ref ccfw) = ccfws.0
+                                && let CodeMirrorDiffable::Plain(ref code_mirror_translated) =
+                                    ccfw.source
+                                && self.sent_full
+                            {
+                                // Compute the diff.
+                                let ccfw_client_diff =
+                                    self.wrap_translation(ccfw, code_mirror_translated);
+                                let CodeMirrorDiffable::Diff(client_contents) =
+                                    ccfw_client_diff.source
+                                else {
+                                    panic!("Expected diff.");
+                                };
+                                if !client_contents.doc.is_empty()
+                                    || !client_contents.doc_blocks.is_empty()
+                                {
+                                    // Translating back to the client produced a non-empty diff. Send this to the client.
+                                    println!(
+                                        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                    );
+                                }
+                            };
                             // Correct EOL endings for use with the
                             // IDE.
                             let new_source_code_eol = eol_convert(new_source_code, &self.eol);
@@ -1035,10 +1064,7 @@ impl TranslationTask {
                                 panic!("Diff not supported.");
                             };
                             self.code_mirror_doc = cmd.doc;
-                            // TODO: instead of `cmd.doc_blocks`, use
-                            // `None` to indicate that the doc blocks
-                            // contain Markdown instead of HTML.
-                            self.code_mirror_doc_blocks = None;
+                            self.code_mirror_doc_blocks = Some(cmd.doc_blocks);
                             ccfw
                         }
                         Err(message) => {
