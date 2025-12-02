@@ -209,10 +209,13 @@ use std::{collections::HashMap, ffi::OsStr, fmt::Debug, path::PathBuf};
 // ### Third-party
 use lazy_static::lazy_static;
 use log::{debug, error, warn};
+use rand::random;
 use regex::Regex;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::{fs::File, select, sync::mpsc};
 
+use crate::lexer::supported_languages::MARKDOWN_MODE;
+use crate::processing::CodeMirrorDocBlockVec;
 // ### Local
 use crate::{
     processing::{
@@ -234,7 +237,7 @@ use crate::{
 // -------
 //
 // The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH: usize = 300;
+const MAX_MESSAGE_LENGTH: usize = 3000;
 
 lazy_static! {
         /// A regex to determine the type of the first EOL. See 'PROCESSINGS`.
@@ -872,8 +875,10 @@ impl TranslationTask {
                                                 };
                                                 // Send a diff if possible.
                                                 let client_contents = if self.sent_full {
-                                                    self.wrap_translation(
-                                                        &ccfw,
+                                                    self.diff_code_mirror(
+                                                        ccfw.metadata.clone(),
+                                                        self.version,
+                                                        ccfw.version,
                                                         code_mirror_translated,
                                                     )
                                                 } else {
@@ -958,29 +963,35 @@ impl TranslationTask {
         true
     }
 
-    /// Given contents translated from `ccfw` to `code_mirror_translated`, return a `CodeChatForWeb` with these translated contents, using a diff.
-    fn wrap_translation(
+    /// Return a `CodeChatForWeb` struct containing a diff between `self.code_mirror_doc` / `self.code_mirror_doc_blocks` and `code_mirror_translated`.
+    fn diff_code_mirror(
         &self,
-        ccfw: &CodeChatForWeb,
-        code_mirror_translated: &CodeMirror,
+        // The `metadata` and `version` fields will be copied from this to the returned `CodeChatForWeb` struct.
+        metadata: SourceFileMetadata,
+        // The version number of the previous (before) data. Typically, `self.version`.
+        before_version: f64,
+        // The version number for the resulting return struct.
+        version: f64,
+        // This provides the after data for the diff; before data comes from `self.code_mirror` / `self.code_mirror_doc`.
+        code_mirror_after: &CodeMirror,
     ) -> CodeChatForWeb {
         assert!(self.sent_full);
-        let doc_diff = diff_str(&self.code_mirror_doc, &code_mirror_translated.doc);
+        let doc_diff = diff_str(&self.code_mirror_doc, &code_mirror_after.doc);
         let Some(ref cmdb) = self.code_mirror_doc_blocks else {
             panic!("Should have diff of doc blocks!");
         };
-        let doc_blocks_diff = diff_code_mirror_doc_blocks(cmdb, &code_mirror_translated.doc_blocks);
+        let doc_blocks_diff = diff_code_mirror_doc_blocks(cmdb, &code_mirror_after.doc_blocks);
         CodeChatForWeb {
             // Clone needed here, so we can copy it
             // later.
-            metadata: ccfw.metadata.clone(),
+            metadata,
             source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
                 doc: doc_diff,
                 doc_blocks: doc_blocks_diff,
-                // The diff was made between the current version (`version`) and the new version (`contents.version`).
-                version: self.version,
+                // The diff was made between the before version (this) and the after version (`ccfw.version`).
+                version: before_version,
             }),
-            version: ccfw.version,
+            version,
         }
     }
 
@@ -1001,32 +1012,64 @@ impl TranslationTask {
                     None => None,
                     Some(cfw) => match codechat_for_web_to_source(&cfw) {
                         Ok(new_source_code) => {
-                            // Translate back to the Client to see if there are any changes after this conversion.
-                            if let Ok(ccfws) = source_to_codechat_for_web_string(
-                                &new_source_code,
-                                &clean_file_path,
-                                cfw.version,
-                                false,
-                            ) && let TranslationResultsString::CodeChat(ref ccfw) = ccfws.0
+                            // Update the stored CodeMirror data structures with what we just received. This must be updated before we can translate back to check for changes (the next step).
+                            let CodeMirrorDiffable::Plain(code_mirror) = cfw.source else {
+                                // TODO: support diffable!
+                                panic!("Diff not supported.");
+                            };
+                            let debug_cm = code_mirror.clone();
+                            self.code_mirror_doc = code_mirror.doc;
+                            self.code_mirror_doc_blocks = Some(code_mirror.doc_blocks);
+                            // We may need to change this version if we send a diff back to the Client.
+                            let mut cfw_version = cfw.version;
+
+                            // Translate back to the Client to see if there are any changes after this conversion. Only check CodeChat documents, not Markdown docs.
+                            if cfw.metadata.mode != MARKDOWN_MODE
+                                && let Ok(ccfws) = source_to_codechat_for_web_string(
+                                    &new_source_code,
+                                    &clean_file_path,
+                                    cfw.version,
+                                    false,
+                                )
+                                && let TranslationResultsString::CodeChat(ccfw) = ccfws.0
                                 && let CodeMirrorDiffable::Plain(ref code_mirror_translated) =
                                     ccfw.source
                                 && self.sent_full
                             {
-                                // Compute the diff.
-                                let ccfw_client_diff =
-                                    self.wrap_translation(ccfw, code_mirror_translated);
-                                let CodeMirrorDiffable::Diff(client_contents) =
-                                    ccfw_client_diff.source
-                                else {
-                                    panic!("Expected diff.");
-                                };
-                                if !client_contents.doc.is_empty()
-                                    || !client_contents.doc_blocks.is_empty()
+                                // Determine if the re-translation includes changes (such as line wrapping in doc blocks which changes line numbering, creation of a new doc block from previous code block text, or updates from future document intelligence such as renamed headings, etc.) For doc blocks that haven't been edited by TinyMCE, this is easy; equality is sufficient. Doc blocks that have been edited are a different case: TinyMCE removes newlines, causing a lot of "changes" to re-insert these. Therefore, use the following approach:
+                                //
+                                // 1. Compare the `doc` values. If they differ, then the the Client needs an update.
+                                // 2. Compare each code block using simple equality. If this fails, compare the doc block text excluding newlines. If still different, then the Client needs an update.
+                                if code_mirror_translated.doc != self.code_mirror_doc
+                                    || !doc_block_compare(
+                                        &code_mirror_translated.doc_blocks,
+                                        self.code_mirror_doc_blocks.as_ref().unwrap(),
+                                    )
                                 {
-                                    // Translating back to the client produced a non-empty diff. Send this to the client.
-                                    println!(
-                                        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                                    cfw_version = random();
+                                    // The Client needs an update.
+                                    let client_contents = self.diff_code_mirror(
+                                        cfw.metadata.clone(),
+                                        cfw.version,
+                                        cfw_version,
+                                        code_mirror_translated,
                                     );
+                                    println!(
+                                        "Sending client re-translation update:\nBefore:\n{debug_cm:#?}\nAfter:\n{code_mirror_translated:#?}\nDiff:\n{client_contents:#?}"
+                                    );
+                                    queue_send_func!(self.to_client_tx.send(EditorMessage {
+                                        id: self.id,
+                                        message: EditorMessageContents::Update(
+                                            UpdateMessageContents {
+                                                file_path: update_message_contents.file_path,
+                                                contents: Some(client_contents),
+                                                // Don't change the current position, since the Client editing position should be left undisturbed.
+                                                cursor_position: None,
+                                                scroll_position: None
+                                            }
+                                        )
+                                    }));
+                                    self.id += MESSAGE_ID_INCREMENT;
                                 }
                             };
                             // Correct EOL endings for use with the
@@ -1043,7 +1086,7 @@ impl TranslationTask {
                                         doc_blocks: vec![],
                                         version: self.version,
                                     }),
-                                    version: cfw.version,
+                                    version: cfw_version,
                                 })
                             } else {
                                 Some(CodeChatForWeb {
@@ -1054,17 +1097,11 @@ impl TranslationTask {
                                         doc: new_source_code_eol.clone(),
                                         doc_blocks: vec![],
                                     }),
-                                    version: cfw.version,
+                                    version: cfw_version,
                                 })
                             };
-                            self.version = cfw.version;
+                            self.version = cfw_version;
                             self.source_code = new_source_code_eol;
-                            let CodeMirrorDiffable::Plain(cmd) = cfw.source else {
-                                // TODO: support diffable!
-                                panic!("Diff not supported.");
-                            };
-                            self.code_mirror_doc = cmd.doc;
-                            self.code_mirror_doc_blocks = Some(cmd.doc_blocks);
                             ccfw
                         }
                         Err(message) => {
@@ -1101,6 +1138,33 @@ fn eol_convert(s: String, eol_type: &EolType) -> String {
     }
 }
 
+// Given a vector of two doc blocks, compare them, ignoring newlines.
+fn doc_block_compare(a: &CodeMirrorDocBlockVec, b: &CodeMirrorDocBlockVec) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+
+    a.iter().zip(b).all(|el| {
+        let a = el.0;
+        let b = el.1;
+        a.from == b.from
+            && a.to == b.to
+            && a.indent == b.indent
+            && a.delimiter == b.delimiter
+            && (a.contents == b.contents
+                // TinyMCE replaces newlines inside paragraphs with a space; for a crude comparison, translate all newlines back to spaces, then ignore leading/trailing newlines.
+                || map_newlines_to_spaces(&a.contents).eq(map_newlines_to_spaces(&b.contents)))
+    })
+}
+
+fn map_newlines_to_spaces<'a>(
+    s: &'a str,
+) -> std::iter::Map<std::str::Chars<'a>, impl FnMut(char) -> char> {
+    s.trim()
+        .chars()
+        .map(|c: char| if c == '\n' { ' ' } else { c })
+}
+
 // Provide a simple debug function that prints only the first
 // `MAX_MESSAGE_LENGTH` characters of the provided value.
 fn debug_shorten<T: Debug>(val: T) -> String {
@@ -1114,5 +1178,31 @@ fn debug_shorten<T: Debug>(val: T) -> String {
         msg[..max_index].to_string()
     } else {
         "".to_string()
+    }
+}
+
+// Tests
+// -----
+#[cfg(test)]
+mod tests {
+    use crate::{processing::CodeMirrorDocBlock, translation::doc_block_compare};
+
+    #[test]
+    fn test_x1() {
+        let before = vec![CodeMirrorDocBlock {
+            from: 0,
+            to: 20,
+            indent: "".to_string(),
+            delimiter: "//".to_string(),
+            contents: "<p>Copyright (C) 2025 Bryan A. Jones.</p>\n<p>This file is part of the CodeChat Editor. The CodeChat Editor is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.</p>\n<p>The CodeChat Editor is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.</p>\n<p>You should have received a copy of the GNU General Public License along with the CodeChat Editor. If not, see <a href=\"http://www.gnu.org/licenses\">http://www.gnu.org/licenses</a>.</p>\n<h1><code>debug_enable.mts</code> -- Configure debug features</h1>\n<p>True to enable additional debug logging.</p>".to_string(),
+        }];
+        let after = vec![CodeMirrorDocBlock {
+            from: 0,
+            to: 20,
+            indent: "".to_string(),
+            delimiter: "//".to_string(),
+            contents: "<p>Copyright (C) 2025 Bryan A. Jones.</p>\n<p>This file is part of the CodeChat Editor. The CodeChat Editor is free\nsoftware: you can redistribute it and/or modify it under the terms of the GNU\nGeneral Public License as published by the Free Software Foundation, either\nversion 3 of the License, or (at your option) any later version.</p>\n<p>The CodeChat Editor is distributed in the hope that it will be useful, but\nWITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or\nFITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more\ndetails.</p>\n<p>You should have received a copy of the GNU General Public License along with\nthe CodeChat Editor. If not, see\n<a href=\"http://www.gnu.org/licenses\">http://www.gnu.org/licenses</a>.</p>\n<h1><code>debug_enable.mts</code> -- Configure debug features</h1>\n<p>True to enable additional debug logging.</p>\n".to_string(),
+        }];
+        assert!(doc_block_compare(&before, &after));
     }
 }
