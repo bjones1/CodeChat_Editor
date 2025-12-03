@@ -34,7 +34,10 @@ use super::{
 };
 use crate::{
     cast,
-    lexer::{CodeDocBlock, DocBlock, compile_lexers, supported_languages::get_language_lexer_vec},
+    lexer::{
+        CodeDocBlock, DocBlock, compile_lexers,
+        supported_languages::{MARKDOWN_MODE, get_language_lexer_vec},
+    },
     prep_test_dir,
     processing::{
         CodeDocBlockVecToSourceError, CodeMirrorDiffable, CodeMirrorDocBlockDelete,
@@ -510,7 +513,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("", &"md".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "markdown",
+            MARKDOWN_MODE,
             "",
             vec![]
         )))
@@ -526,7 +529,7 @@ fn test_source_to_codechat_for_web_1() {
             false,
         ),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "markdown",
+            MARKDOWN_MODE,
             &format!("<p>{lexer_spec}markdown</p>\n"),
             vec![]
         )))

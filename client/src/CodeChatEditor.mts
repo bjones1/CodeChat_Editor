@@ -66,10 +66,10 @@ import "graphviz-webcomponent";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
 import {
     CodeChatForWeb,
-    CodeMirrorDocBlockTuple,
     CodeMirrorDiffable,
     UpdateMessageContents,
     CodeMirror,
+    autosave_timeout_ms,
 } from "./shared_types.mjs";
 import { show_toast } from "./show_toast.mjs";
 
@@ -400,7 +400,7 @@ export const startAutosaveTimer = () => {
     autosaveTimeoutId = window.setTimeout(() => {
         console_log("CodeChat Editor Client: autosaving.");
         on_save();
-    }, 1000);
+    }, autosave_timeout_ms);
 };
 
 const clearAutosaveTimer = () => {

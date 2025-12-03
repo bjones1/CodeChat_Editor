@@ -56,6 +56,8 @@ use super::{
     StringDelimiterSpec, pest_parser,
 };
 
+pub const MARKDOWN_MODE: &str = "markdown";
+
 // Helper functions
 // -----------------------------------------------------------------------------
 //
@@ -543,7 +545,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         ),
         // ### Markdown
         make_language_lexer(
-            "markdown",
+            MARKDOWN_MODE,
             &["md"],
             &[],
             &[],

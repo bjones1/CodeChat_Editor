@@ -183,7 +183,7 @@ pub fn vscode_ide_core(
                         // Make sure it's the `Result` message with no errors.
                         let res =
                             // First, make sure the ID matches.
-                            if message.id != 0.0 {
+                            if message.id != RESERVED_MESSAGE_ID {
                                 Err(format!("Unexpected message ID {}.", message.id))
                             } else {
                                 match message.message {

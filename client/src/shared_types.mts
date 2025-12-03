@@ -16,6 +16,8 @@
 //
 // `shared_types.mts` -- Shared type definitions
 // =============================================
+// The time, in ms, to wait between the last user edit and sending updated data to the Server.
+export const autosave_timeout_ms = 300;
 //
 // ### Message types
 //

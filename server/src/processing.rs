@@ -59,7 +59,10 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 // ### Local
-use crate::lexer::{CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer};
+use crate::lexer::{
+    CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
+    supported_languages::MARKDOWN_MODE,
+};
 
 // Data structures
 // -----------------------------------------------------------------------------
@@ -426,7 +429,7 @@ pub fn codechat_for_web_to_source(
     };
 
     // If this is a Markdown-only document, handle this special case.
-    if *lexer.language_lexer.lexer_name == "markdown" {
+    if *lexer.language_lexer.lexer_name == MARKDOWN_MODE {
         // There should be no doc blocks.
         if !code_mirror.doc_blocks.is_empty() {
             return Err(CodechatForWebToSourceError::DocBlocksNotAllowed);
@@ -802,7 +805,7 @@ pub fn source_to_codechat_for_web(
             mode: lexer.language_lexer.lexer_name.to_string(),
         },
         version,
-        source: if lexer.language_lexer.lexer_name.as_str() == "markdown" {
+        source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
             // Document-only files are easy: just encode the contents.
             let html = markdown_to_html(file_contents);
             // TODO: process the HTML.

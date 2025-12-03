@@ -678,7 +678,7 @@ async fn test_server_core(
                 file_path: md_path_str.clone(),
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
-                        mode: "markdown".to_string()
+                        mode: MARKDOWN_MODE.to_string()
                     },
                     source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
                         doc: vec![StringDiff {

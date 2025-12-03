@@ -40,6 +40,7 @@ import { CodeChatEditorServer, initServer } from "./index";
 
 // ### Local packages
 import {
+    autosave_timeout_ms,
     EditorMessage,
     MessageResult,
     UpdateMessageContents,
@@ -600,7 +601,7 @@ const send_update = (this_is_dirty: boolean) => {
         if (idle_timer !== undefined) {
             clearTimeout(idle_timer);
         }
-        // ... schedule a render after 300 ms.
+        // ... schedule a render after an autosave timeout.
         idle_timer = setTimeout(async () => {
             if (can_render()) {
                 const ate = vscode.window.activeTextEditor!;
@@ -648,7 +649,7 @@ const send_update = (this_is_dirty: boolean) => {
                     scroll_position,
                 );
             }
-        }, 300);
+        }, autosave_timeout_ms);
     }
 };
 
