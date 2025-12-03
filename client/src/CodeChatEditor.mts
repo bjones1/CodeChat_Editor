@@ -70,6 +70,7 @@ import {
     UpdateMessageContents,
     CodeMirror,
     autosave_timeout_ms,
+    rand,
 } from "./shared_types.mjs";
 import { show_toast } from "./show_toast.mjs";
 
@@ -348,7 +349,7 @@ const save_lp = (is_dirty: boolean) => {
         update.contents = {
             metadata: current_metadata,
             source: code_mirror_diffable,
-            version: Math.random(),
+            version: rand(),
         };
     }
 

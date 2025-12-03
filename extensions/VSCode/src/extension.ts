@@ -43,6 +43,7 @@ import {
     autosave_timeout_ms,
     EditorMessage,
     MessageResult,
+    rand,
     UpdateMessageContents,
 } from "../../../client/src/shared_types.mjs";
 import {
@@ -648,7 +649,7 @@ const send_update = (this_is_dirty: boolean) => {
                 const file_path = ate.document.fileName;
                 // Send contents only if necessary.
                 const option_contents: null | [string, number] = is_dirty
-                    ? [ate.document.getText(), (version = Math.random())]
+                    ? [ate.document.getText(), (version = rand())]
                     : null;
                 is_dirty = false;
                 console_log(

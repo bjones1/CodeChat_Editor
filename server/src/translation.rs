@@ -1046,7 +1046,8 @@ impl TranslationTask {
                                         self.code_mirror_doc_blocks.as_ref().unwrap(),
                                     )
                                 {
-                                    cfw_version = random();
+                                    // Use a whole number to avoid encoding differences with fractional values.
+                                    cfw_version = random::<u64>() as f64;
                                     // The Client needs an update.
                                     let client_contents = self.diff_code_mirror(
                                         cfw.metadata.clone(),

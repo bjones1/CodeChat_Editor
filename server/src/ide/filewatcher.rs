@@ -536,8 +536,8 @@ async fn processing_task(
                                                         doc: file_contents,
                                                         doc_blocks: vec![],
                                                     }),
-                                                    // The filewatcher doesn't store a version, since it only accepts plain (non-diff) results. Provide a version so the Client stays in sync with any diffs.
-                                                    version: random(),
+                                                    // The filewatcher doesn't store a version, since it only accepts plain (non-diff) results. Provide a version so the Client stays in sync with any diffs. Produce a whole number to avoid encoding difference with fractional values.
+                                                    version: random::<u64>() as f64,
                                                 }),
                                                 cursor_position: None,
                                                 scroll_position: None,
