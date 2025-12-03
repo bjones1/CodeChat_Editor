@@ -72,10 +72,10 @@ use tokio::time::sleep;
 use code_chat_editor::{
     cast,
     ide::CodeChatEditorServer,
+    lexer::supported_languages::MARKDOWN_MODE,
     prep_test_dir,
     processing::{
-        CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata,
-        StringDiff,
+        CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
     },
     webserver::{
         EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID, MESSAGE_ID_INCREMENT,
@@ -193,7 +193,7 @@ macro_rules! harness {
 
                 // Get the resulting web page text.
                 let opened_id = codechat_server.send_message_opened(true).await.unwrap();
-                assert_eq!(
+                pretty_assertions::assert_eq!(
                     codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
                     EditorMessage {
                         id: opened_id,
@@ -259,7 +259,6 @@ fn get_version(msg: &EditorMessage) -> f64 {
 // CodeChat, plain, PDF), use hyperlinks, perform edits on code and doc blocks.
 mod test1 {
     use super::*;
-    use pretty_assertions::assert_eq;
     harness!(test_server_core);
 }
 
@@ -888,7 +887,6 @@ async fn test_server_core(
 // all pass.
 mod test2 {
     use super::*;
-    use pretty_assertions::assert_eq;
     harness!(test_client_core);
 }
 
@@ -1038,7 +1036,6 @@ async fn test_client_core(
 
 mod test3 {
     use super::*;
-    use pretty_assertions::assert_eq;
     harness!(test_client_updates_core);
 }
 
