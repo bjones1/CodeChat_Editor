@@ -577,11 +577,10 @@ export const deactivate = async () => {
 // Format a complex data structure as a string when in debug mode.
 const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
-        // If the struct is `undefined`, print an empty string.
-        ? JSON.stringify(complex_data_structure ?? "").substring(
-              0,
-              MAX_MESSAGE_LENGTH,
-          )
+        ? JSON.stringify(
+              // If the struct is `undefined`, print an empty string.
+              complex_data_structure ?? "",
+          ).substring(0, MAX_MESSAGE_LENGTH)
         : "";
 
 // Send a result (a response to a message from the server) back to the server.
@@ -613,8 +612,8 @@ const send_update = (this_is_dirty: boolean) => {
         // ... schedule a render after an autosave timeout.
         idle_timer = setTimeout(async () => {
             if (can_render()) {
-                const ate = vscode.window.activeTextEditor!;
-                if (ate !== current_editor) {
+                const ate = vscode.window.activeTextEditor;
+                if (ate !== undefined && ate !== current_editor) {
                     // Send a new current file after a short delay; this allows
                     // the user to rapidly cycle through several editors without
                     // needing to reload the Client with each cycle.
@@ -644,12 +643,14 @@ const send_update = (this_is_dirty: boolean) => {
                 // CodeMirror
                 // [Text.line](https://codemirror.net/docs/ref/#state.Text.line)
                 // is 1-based.
-                const cursor_position = ate.selection.active.line + 1;
-                const scroll_position = ate.visibleRanges[0].start.line + 1;
-                const file_path = ate.document.fileName;
+                const cursor_position =
+                    current_editor!.selection.active.line + 1;
+                const scroll_position =
+                    current_editor!.visibleRanges[0].start.line + 1;
+                const file_path = current_editor!.document.fileName;
                 // Send contents only if necessary.
                 const option_contents: null | [string, number] = is_dirty
-                    ? [ate.document.getText(), (version = rand())]
+                    ? [current_editor!.document.getText(), (version = rand())]
                     : null;
                 is_dirty = false;
                 console_log(
@@ -714,8 +715,10 @@ const show_error = (message: string) => {
 // client, and the webview is visible.
 const can_render = () => {
     return (
-        vscode.window.activeTextEditor !== undefined &&
+        (vscode.window.activeTextEditor !== undefined ||
+            current_editor !== undefined) &&
         codeChatEditorServer !== undefined &&
+        // TODO: I don't think these matter -- the Server is in charge of sending output to the Client.
         (codechat_client_location === CodeChatEditorClientLocation.browser ||
             webview_panel !== undefined)
     );
