@@ -170,6 +170,9 @@ class WebSocketComm {
                                     contents.source.Diff.version !==
                                     this.version
                                 ) {
+                                    report_error(
+                                        `Out of sync: Client version ${this.version} !== incoming version ${contents.source.Diff.version}.`,
+                                    );
                                     this.send_result(id, "OutOfSync");
                                     return;
                                 }

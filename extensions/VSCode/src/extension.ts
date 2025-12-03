@@ -327,7 +327,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 value as UpdateMessageContents;
                             const doc = get_document(current_update.file_path);
                             if (doc === undefined) {
-                                sendResult(id, {
+                                await sendResult(id, {
                                     NoOpenDocument: current_update.file_path,
                                 });
                                 break;
@@ -358,7 +358,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     assert("Diff" in source);
                                     // If this diff was not made against the text we currently have, reject it.
                                     if (source.Diff.version !== version) {
-                                        sendResult(id, "OutOfSync");
+                                        await sendResult(id, "OutOfSync");
                                         // Send an `Update` with the full text to re-sync the Client.
                                         send_update(true);
                                         break;
@@ -437,7 +437,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     ),
                                 ];
                             }
-                            sendResult(id);
+                            await sendResult(id);
                             break;
                         }
 
@@ -452,7 +452,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             current_file,
                                         );
                                 } catch (e) {
-                                    sendResult(id, {
+                                    await sendResult(id, {
                                         OpenFileFailed: [
                                             current_file,
                                             (e as Error).toString(),
@@ -467,7 +467,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         current_editor?.viewColumn,
                                     );
                                 ignore_active_editor_change = false;
-                                sendResult(id);
+                                await sendResult(id);
                             } else {
                                 // TODO: open using a custom document editor.
                                 // See
@@ -489,9 +489,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             },
                                         )
                                         .then(
-                                            () => sendResult(id),
-                                            (reason) =>
-                                                sendResult(id, {
+                                            async () => await sendResult(id),
+                                            async (reason) =>
+                                                await sendResult(id, {
                                                     OpenFileFailed: [
                                                         current_file,
                                                         reason,
@@ -499,7 +499,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                                 }),
                                         );
                                 }
-                                sendResult(id);
+                                await sendResult(id);
                             }
                             break;
                         }
@@ -530,7 +530,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             console_log(
                                 `CodeChat Editor extension: Result(LoadFile(${format_struct(load_file_result)}))`,
                             );
-                            codeChatEditorServer.sendResultLoadfile(
+                            await codeChatEditorServer.sendResultLoadfile(
                                 id,
                                 load_file_result,
                             );
@@ -541,7 +541,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const client_html = value as string;
                             assert(webview_panel !== undefined);
                             webview_panel.webview.html = client_html;
-                            sendResult(id);
+                            await sendResult(id);
                             // Now that the Client is loaded, send the editor's
                             // current file to the server.
                             send_update(false);
@@ -576,19 +576,27 @@ export const deactivate = async () => {
 // Format a complex data structure as a string when in debug mode.
 const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
-        ? JSON.stringify(complex_data_structure).substring(
+        // If the struct is `undefined`, print an empty string.
+        ? JSON.stringify(complex_data_structure ?? "").substring(
               0,
               MAX_MESSAGE_LENGTH,
           )
         : "";
 
 // Send a result (a response to a message from the server) back to the server.
-const sendResult = (id: number, result: ResultErrTypes | null = null) => {
+const sendResult = async (id: number, result?: ResultErrTypes) => {
     assert(codeChatEditorServer);
     console_log(
         `CodeChat Editor extension: sending Result(id = ${id}, ${format_struct(result)}).`,
     );
-    codeChatEditorServer.sendResult(id, JSON.stringify(result));
+    try {
+        await codeChatEditorServer.sendResult(
+            id,
+            result === undefined ? undefined : JSON.stringify(result),
+        );
+    } catch (e) {
+        show_error(`Error in sendResult for id ${id}: ${e}.`);
+    }
 };
 
 // This is called after an event such as an edit, when the CodeChat panel
@@ -614,9 +622,13 @@ const send_update = (this_is_dirty: boolean) => {
                     console_log(
                         `CodeChat Editor extension: sending CurrentFile(${current_file}}).`,
                     );
-                    await codeChatEditorServer!.sendMessageCurrentFile(
-                        current_file,
-                    );
+                    try {
+                        await codeChatEditorServer!.sendMessageCurrentFile(
+                            current_file,
+                        );
+                    } catch (e) {
+                        show_error(`Error sending CurrentFile message: ${e}.`);
+                    }
                     // Since we just requested a new file, the contents are
                     // clean by definition.
                     is_dirty = false;
