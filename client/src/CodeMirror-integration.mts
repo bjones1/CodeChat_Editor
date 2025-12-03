@@ -62,6 +62,7 @@ import {
 } from "@codemirror/view";
 import {
     ChangeDesc,
+    Compartment,
     EditorState,
     Extension,
     StateField,
@@ -101,14 +102,22 @@ import { show_toast } from "./show_toast.mjs";
 // -----------------------------------------------------------------------------
 let current_view: EditorView;
 let tinymce_singleton: Editor | undefined;
-// When true, don't update on the next call to `on_dirty`. See that function for
-// more info.
-let ignore_next_dirty = false;
+// When true, this is an IDE edit; when false, it's due to a user edit.
+//
+// There's an inherent cycle produced by edits; this variable breaks the cycle. There are two paths through the cycle: a user edit and an IDE edit. The cycle must be broken just before it loops in both cases; this variable therefore specifies where to break the cycle. The sequence is:
+//
+// 1. The user performs an edit **or** `DocBlockWidget.updateDom()` is called; if `is_ide_change` is false, this function returns; otherwise, it performs an edit.
+// 2. The `addEventListener("input")` for an indent or `TinyMCE.editor.on("Dirty")` callback is triggered, invoking `on_dirty()`.
+// 3. An IDE edit dispatches an `add/delete/updateDocBlock` **or** in `on_dirty()`, if `is_ide_change` is true, `on_dirty()` sets it to false then returns. Otherwise, `on_dirty()` dispatches `updateDocBlock`.
+// 5. This transaction invokes `docBlockField.update()`, which creates a `new DocBlockWidget()`. This loops back to step 1.
+let is_ide_change = false;
 // This indicates that a call to `on_dirty` is scheduled, but hasn't run yet.
 let on_dirty_scheduled = false;
 // True to ignore the next text selection change, since updates to the cursor or
 // scroll position from the Client trigged this change.
 let ignore_selection_change = false;
+// The compartment used to enable and disable the autosave extension.
+const autosaveCompartment = new Compartment();
 
 // Options used when creating a `Decoration`.
 const decorationOptions = {
@@ -417,9 +426,9 @@ class DocBlockWidget extends WidgetType {
 
     eq(other: DocBlockWidget) {
         return (
-            other.indent == this.indent &&
-            other.delimiter == this.delimiter &&
-            other.contents == this.contents
+            other.indent === this.indent &&
+            other.delimiter === this.delimiter &&
+            other.contents === this.contents
         );
     }
 
@@ -448,11 +457,8 @@ class DocBlockWidget extends WidgetType {
     // "Update a DOM element created by a widget of the same type (but
     // different, non-eq content) to reflect this widget."
     updateDOM(dom: HTMLElement, view: EditorView): boolean {
-        // See if this update was produced by a change in TinyMCE text, which
-        // means the DOM is already updated.
-        if ((dom as any).update_complete === true) {
-            // Yes, so clear this update flag before returning.
-            delete (dom as any).update_complete;
+        // If this change was produced by a user edit, then the DOM was already updated. Stop here.
+        if (!is_ide_change) {
             return true;
         }
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
@@ -462,9 +468,11 @@ class DocBlockWidget extends WidgetType {
         const [contents_div, is_tinymce] = get_contents(dom);
         window.MathJax.typesetClear(contents_div);
         if (is_tinymce) {
-            ignore_next_dirty = true;
+            // Save the cursor location before the update, then restore it afterwards.
+            const bm = tinymce.activeEditor!.selection.getBookmark();
             tinymce_singleton!.setContent(this.contents);
             tinymce_singleton!.save();
+            tinymce.activeEditor!.selection.moveToBookmark(bm);
         } else {
             contents_div.innerHTML = this.contents;
         }
@@ -568,14 +576,16 @@ const on_dirty = (
     // The div that's dirty. It must be a child of the doc block div.
     event_target: HTMLElement,
 ) => {
-    if (ignore_next_dirty) {
-        ignore_next_dirty = false;
+    // If this change was produced by an IDE edit, then the underlying state is updated. Stop here.
+    if (is_ide_change) {
+        is_ide_change = false;
         return;
     }
 
     if (on_dirty_scheduled) {
         return;
     }
+    on_dirty_scheduled = true;
 
     // Only run this after typesetting is done.
     window.MathJax.whenReady(() => {
@@ -605,11 +615,6 @@ const on_dirty = (
             : contents_div.innerHTML;
         // Although this is async, nothing following this call depends on its completion.
         mathJaxTypeset(contents_div);
-        // Sorta ugly hack: TinyMCE stores its data in the DOM. CodeMirror stores
-        // state in external structs. We need to update the CodeMirror state, but
-        // not overwrite the DOM with this "new" state, since the DOM is already
-        // updated. So, signal that this "update" is already done.
-        (target as any).update_complete = true;
         let effects: StateEffect<updateDocBlockType>[] = [
             updateDocBlock.of({
                 from,
@@ -817,7 +822,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
 
                         // Setting the content makes TinyMCE consider it dirty
                         // -- ignore this "dirty" event.
-                        ignore_next_dirty = true;
+                        is_ide_change = true;
                         tinymce_singleton!.setContent(contents_div.innerHTML);
                         tinymce_singleton!.save();
                         contents_div.remove();
@@ -1039,7 +1044,7 @@ export const CodeMirror_load = async (
                     parser,
                     basicSetup,
                     EditorView.lineWrapping,
-                    autosaveExtension,
+                    autosaveCompartment.of(autosaveExtension),
                     // Make tab an indent per the
                     // [docs](https://codemirror.net/examples/tab/). TODO:
                     // document a way to escape the tab key per the same docs.
@@ -1080,12 +1085,14 @@ export const CodeMirror_load = async (
                             return false;
                         }
                         // For some reason, calling this directly omits the most recent edit. Earlier versions of the code didn't have this problem. ???
-                        setTimeout(() => on_dirty(target_or_false));
+                        on_dirty(target_or_false);
                     });
                 },
             })
         )[0];
     } else {
+        // Disable autosave when performing these updates.
+        current_view.dispatch({ effects: autosaveCompartment.reconfigure([]) });
         // This contains a diff, instead of plain text. Apply the text diff.
         //
         // First, apply just the text edits. Use an annotation so that the doc
@@ -1121,7 +1128,12 @@ export const CodeMirror_load = async (
             }
         }
         // Update the view with these changes to the state.
+        is_ide_change = true;
         current_view.dispatch({ effects: stateEffects });
+        // Resume autosave.
+        current_view.dispatch({
+            effects: autosaveCompartment.reconfigure(autosaveExtension),
+        });
     }
     scroll_to_line(cursor_line, scroll_line);
 };
