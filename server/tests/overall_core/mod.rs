@@ -164,6 +164,8 @@ macro_rules! harness {
             // Start the webdriver.
             let server_url = "http://localhost:4444";
             let mut caps = DesiredCapabilities::chrome();
+            // Ensure the screen is wide enough for an 80-character line, used to word wrapping test in `test_client_updates`. Otherwise, this test send the End key to go to the end of the line...but it's not the end of the full line on a narrow screen.
+            caps.add_arg("--window-size=1920,768")?;
             caps.add_arg("--headless")?;
             // On Ubuntu CI, avoid failures, probably due to running Chrome as
             // root.
