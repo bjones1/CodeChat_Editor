@@ -26,12 +26,19 @@ Changelog
 * Send sync data when doc blocks receive focus.
 * Improve error handling.
 * Improve method used to keep Client and IDE contents in sync.
+* Correctly sync when IDE files are updated when editing in the Client.
+* Fix data corruption bug when creating new doc blocks in the Client --
+  whitespace was lost.
+* Update line numbering in the Client when word wraps occur in a doc block.
+* Avoid unnecessary saves from the Client just after receiving new data.
+* Reduce delay between Client edits and IDE updates.
+* Increase time errors messages are displayed in the Client.
 
 Version 0.1.41 -- 2025-Nov-17
 --------------------------------------------------------------------------------
 
 * Math now renders in the active doc block, as shown below.
-* Math is now protected from accidental edits in the Client:\
+* Math is now protected from accidental edits in the Client:
   ![](docs/changelog_0.1.41-math.png)
 * Improved synchronization between the cursor and scroll position of the Client
   and IDE.
