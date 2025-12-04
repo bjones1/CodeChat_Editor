@@ -1055,9 +1055,6 @@ impl TranslationTask {
                                         cfw_version,
                                         code_mirror_translated,
                                     );
-                                    println!(
-                                        "Sending client re-translation update:\nBefore:\n{debug_cm:#?}\nAfter:\n{code_mirror_translated:#?}\nDiff:\n{client_contents:#?}"
-                                    );
                                     queue_send_func!(self.to_client_tx.send(EditorMessage {
                                         id: self.id,
                                         message: EditorMessageContents::Update(
