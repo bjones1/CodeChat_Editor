@@ -1156,7 +1156,6 @@ async fn test_client_updates_core(
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
         }
     );
-    server_id += MESSAGE_ID_INCREMENT;
 
     // Insert a character to check the insertion point.
     let code_line_css = ".CodeChat-CodeMirror .cm-line";

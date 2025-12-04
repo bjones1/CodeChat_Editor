@@ -1017,7 +1017,6 @@ impl TranslationTask {
                                 // TODO: support diffable!
                                 panic!("Diff not supported.");
                             };
-                            let debug_cm = code_mirror.clone();
                             self.code_mirror_doc = code_mirror.doc;
                             self.code_mirror_doc_blocks = Some(code_mirror.doc_blocks);
                             // We may need to change this version if we send a diff back to the Client.
