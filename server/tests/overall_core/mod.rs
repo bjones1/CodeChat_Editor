@@ -535,7 +535,7 @@ async fn test_server_core(
     let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
     assert_eq!(
         doc_block_contents.inner_html().await.unwrap(),
-        "<p>Testfood</p>\n"
+        "<p>Testfood</p>"
     );
     let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
     assert_eq!(code_line.inner_html().await.unwrap(), "code()bark");
@@ -564,7 +564,7 @@ async fn test_server_core(
     let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
     assert_eq!(
         doc_block_contents.inner_html().await.unwrap(),
-        "<p>food</p>\n"
+        "<p>food</p>"
     );
     let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
     assert_eq!(code_line.inner_html().await.unwrap(), "bark");
@@ -578,33 +578,6 @@ async fn test_server_core(
         .send_message_current_file(md_path_str.clone())
         .await
         .unwrap();
-
-    // Before changing files, the current file will be updated.
-    client_id += MESSAGE_ID_INCREMENT;
-    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-    let client_version = get_version(&msg);
-    assert_eq!(
-        msg,
-        EditorMessage {
-            id: client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.clone(),
-                contents: Some(CodeChatForWeb {
-                    metadata: SourceFileMetadata {
-                        mode: "python".to_string()
-                    },
-                    source: CodeMirrorDiffable::Plain(CodeMirror {
-                        doc: " # food\nbark".to_string(),
-                        doc_blocks: vec![]
-                    }),
-                    version: client_version,
-                }),
-                cursor_position: Some(1),
-                scroll_position: Some(1.0),
-            })
-        }
-    );
-    codechat_server.send_result(client_id, None).await.unwrap();
 
     // These next two messages can come in either order. Work around this.
     expected_messages.insert(EditorMessage {
@@ -1126,6 +1099,7 @@ async fn test_client_updates_core(
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
         }
     );
+    server_id += MESSAGE_ID_INCREMENT * 2.0;
 
     // Target the iframe containing the Client.
     let codechat_iframe = driver_ref.find(By::Css("#CodeChat-iframe")).await.unwrap();
@@ -1174,6 +1148,15 @@ async fn test_client_updates_core(
         }
     );
     codechat_server.send_result(client_id, None).await.unwrap();
+    // The Server sends the Client a wrapped version of the text; the Client replies with a Result(Ok).
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    server_id += MESSAGE_ID_INCREMENT;
 
     // Insert a character to check the insertion point.
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
@@ -1209,8 +1192,8 @@ async fn test_client_updates_core(
                     },
                     source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
                         doc: vec![StringDiff {
-                            from: 115,
-                            to: Some(131),
+                            from: 100,
+                            to: Some(114),
                             insert: "    # A comment\n".to_string()
                         }],
                         doc_blocks: vec![],
