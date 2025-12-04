@@ -17,10 +17,10 @@
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
 # `Cargo.toml` -- Rust build/package management config for the server
-# ===================================================================
+# ==============================================================================
 #
 # General package configurations
-# ------------------------------
+# ------------------------------------------------------------------------------
 [package]
 authors = ["Bryan A. Jones", "Peter Loux"]
 categories = ["development-tools", "text-editors"]
@@ -32,14 +32,14 @@ license = "GPL-3.0-only"
 name = "codechat-editor-server"
 readme = "../README.md"
 repository = "https://github.com/bjones1/CodeChat_Editor"
-version = "0.1.41"
+version = "0.1.42"
 
 # This library allows other packages to use core CodeChat Editor features.
 [lib]
 name = "code_chat_editor"
 
 # Features
-# --------
+# ------------------------------------------------------------------------------
 #
 # See the [docs](https://doc.rust-lang.org/cargo/reference/features.html).
 [features]
@@ -51,7 +51,7 @@ lexer_explain = []
 int_tests = ["assert_fs", "assertables", "futures"]
 
 # Dependencies
-# ------------
+# ------------------------------------------------------------------------------
 [dependencies]
 actix-files = "0.6"
 actix-http = "3.9.0"
@@ -104,8 +104,7 @@ url = "2.5.2"
 urlencoding = "2"
 webbrowser = "1.0.5"
 
-# [Windows-only
-# dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
+# [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
 win_partitions = "0.3.0"
 
@@ -127,7 +126,7 @@ tokio-tungstenite = "0.28"
 #actix-rt = { path = "../../actix-net/actix-rt" }
 
 # Release
-# -------
+# ------------------------------------------------------------------------------
 #
 # Specify release-only features for pulldown. See the
 # [docs](https://docs.rs/crate/pulldown-cmark/latest).
@@ -138,7 +137,7 @@ panic = "abort"
 strip = "symbols"
 
 # Distribution
-# ------------
+# ------------------------------------------------------------------------------
 #
 # This uses [cargo dist](https://opensource.axo.dev/cargo-dist) to build
 # binaries across multiple platforms using github's CI/CD.

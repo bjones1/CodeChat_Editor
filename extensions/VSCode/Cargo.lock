@@ -522,7 +522,7 @@ checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
 
 [[package]]
 name = "codechat-editor-server"
-version = "0.1.41"
+version = "0.1.42"
 dependencies = [
  "actix-files",
  "actix-http",
@@ -570,7 +570,7 @@ dependencies = [
 
 [[package]]
 name = "codechat-editor-vscode-extension"
-version = "0.1.41"
+version = "0.1.42"
 dependencies = [
  "codechat-editor-server",
  "log",
@@ -1575,9 +1575,9 @@ checksum = "05015102dad0f7d61691ca347e9d9d9006685a64aefb3d79eecf62665de2153d"
 
 [[package]]
 name = "mio"
-version = "1.1.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69d83b0086dc8ecf3ce9ae2874b2d1290252e2a30720bea58a5c6639b0092873"
+checksum = "a69bcab0ad47271a0234d9422b131806bf3968021e5dc9328caf2d4cd58557fc"
 dependencies = [
  "libc",
  "log",

@@ -22,6 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
+* No changes.
+
+Version 0.1.42 -- 2025-Dec-04
+--------------------------------------------------------------------------------
+
 * Drag and drop of images creates a mess; disable drop and drop for this reason.
 * Send sync data when doc blocks receive focus.
 * Improve error handling.
