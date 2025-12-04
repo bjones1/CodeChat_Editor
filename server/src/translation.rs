@@ -14,7 +14,7 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `translation.rs` -- translate messages between the IDE and the Client
-/// =====================================================================
+/// ============================================================================
 ///
 /// The IDE extension client (IDE for short) and the CodeChat Editor Client (or
 /// Editor for short) exchange messages with each other, mediated by the
@@ -25,7 +25,7 @@
 /// the processing module.
 ///
 /// Overview
-/// --------
+/// ----------------------------------------------------------------------------
 ///
 /// ### Architecture
 ///
@@ -196,12 +196,12 @@
 /// each message. To achieve this, the Server uses IDs that are multiples of 3
 /// (0, 3, 6, ...), the Client multiples of 3 + 1 (1, 4, 7, ...) and the IDE
 /// multiples of 3 + 2 (2, 5, 8, ...). A double-precision floating point number
-/// (the standard [numeric
-/// type](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#number_type)
+/// (the standard
+/// [numeric type](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Data_structures#number_type)
 /// in JavaScript) has a 53-bit mantissa, meaning IDs won't wrap around for a
 /// very long time.
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{collections::HashMap, ffi::OsStr, fmt::Debug, path::PathBuf};
@@ -234,18 +234,18 @@ use crate::{
 };
 
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 //
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH: usize = 3000;
 
 lazy_static! {
-        /// A regex to determine the type of the first EOL. See 'PROCESSINGS`.
+        /// A regex to determine the type of the first EOL. See 'PROCESSINGS\`.
     pub static ref EOL_FINDER: Regex = Regex::new("[^\r\n]*(\r?\n)").unwrap();
 }
 
 // Data structures
-// ---------------
+// -----------------------------------------------------------------------------
 #[derive(Clone, Debug, PartialEq)]
 pub enum EolType {
     Lf,
@@ -253,7 +253,7 @@ pub enum EolType {
 }
 
 // Code
-// ----
+// -----------------------------------------------------------------------------
 pub fn find_eol_type(s: &str) -> EolType {
     match EOL_FINDER.captures(s) {
         // Assume a line type for strings with no newlines.
@@ -375,7 +375,8 @@ pub fn create_translation_queues(
     })
 }
 
-/// This holds the state used by the main loop of the translation task; this allows factoring out lengthy contents in the loop into subfunctions.
+/// This holds the state used by the main loop of the translation task; this
+/// allows factoring out lengthy contents in the loop into subfunctions.
 struct TranslationTask {
     // These parameters are passed to us.
     connection_id_raw: String,
@@ -388,44 +389,43 @@ struct TranslationTask {
     from_http_rx: Receiver<ProcessingTaskHttpRequest>,
 
     // These parameters are internal state.
-    //
     /// The file currently loaded in the Client.
     current_file: PathBuf,
     /// A map of `LoadFile` requests sent to the IDE, awaiting its response.
     load_file_requests: HashMap<u64, ProcessingTaskHttpRequest>,
-    /// The id for messages created by the server. Leave space for a server message during the init phase.
+    /// The id for messages created by the server. Leave space for a server
+    /// message during the init phase.
     id: f64,
-    /// The source code, provided by the IDE. It will use whatever the
-    /// IDE provides for EOLs, which is stored in `eol` below.
+    /// The source code, provided by the IDE. It will use whatever the IDE
+    /// provides for EOLs, which is stored in `eol` below.
     source_code: String,
     code_mirror_doc: String,
     eol: EolType,
-    /// Some means this contains valid HTML; None means don't use it
-    /// (since it would have contained Markdown).
+    /// Some means this contains valid HTML; None means don't use it (since it
+    /// would have contained Markdown).
     code_mirror_doc_blocks: Option<Vec<CodeMirrorDocBlock>>,
     prefix_str: String,
-    /// To support sending diffs, we must provide a way to determine if
-    /// the sender and receiver have the same file contents before
-    /// applying a diff. File contents can become unsynced due to:
+    /// To support sending diffs, we must provide a way to determine if the
+    /// sender and receiver have the same file contents before applying a diff.
+    /// File contents can become unsynced due to:
     ///
     /// 1. A dropped/lost message between the IDE and Client.
-    /// 2. Edits to file contents in two locations before updates from
-    ///    one location (the Client, for example) propagate to the other
-    ///    location (the IDE).
+    /// 2. Edits to file contents in two locations before updates from one
+    ///    location (the Client, for example) propagate to the other location
+    ///    (the IDE).
     ///
-    /// Therefore, assign each file a version number. All files are sent
-    /// with a unique, randomly-generated version number which define the
-    /// file's version after this update is applied. Diffs also include
-    /// the version number of the file before applying the diff; the
+    /// Therefore, assign each file a version number. All files are sent with a
+    /// unique, randomly-generated version number which define the file's
+    /// version after this update is applied. Diffs also include the version
+    /// number of the file before applying the diff; the
     // receiver's current version number must match with the sender's
-    /// pre-diff version number in order to apply the diff. When the
-    /// versions don't match, the IDE must send a full text file to the
-    /// Server and Client to re-sync. When a file is first loaded, its
-    /// version number is None, signaling that the sender must always
-    /// provide the full text, not a diff.
+    /// pre-diff version number in order to apply the diff. When the versions
+    /// don't match, the IDE must send a full text file to the Server and Client
+    /// to re-sync. When a file is first loaded, its version number is None,
+    /// signaling that the sender must always provide the full text, not a diff.
     version: f64,
-    /// Has the full (non-diff) version of the current file been sent?
-    /// Don't send diffs until this is sent.
+    /// Has the full (non-diff) version of the current file been sent? Don't
+    /// send diffs until this is sent.
     sent_full: bool,
 }
 
@@ -508,8 +508,8 @@ pub async fn translation_task(
                         EditorMessageContents::Result(_) => continue_loop = tt.ide_result(ide_message).await,
                         EditorMessageContents::Update(_) => continue_loop = tt.ide_update(ide_message).await,
 
-                        // Update the current file; translate it to a URL
-                        // then pass it to the Client.
+                        // Update the current file; translate it to a URL then
+                        // pass it to the Client.
                         EditorMessageContents::CurrentFile(file_path, _is_text) => {
                             debug!("Translating and forwarding it to the Client.");
                             match try_canonicalize(&file_path) {
@@ -570,7 +570,8 @@ pub async fn translation_task(
 
                         EditorMessageContents::Result(ref result) => {
                             debug!("Forwarding it to the IDE.");
-                            // If the Client can't read our diff, send the full text next time.
+                            // If the Client can't read our diff, send the full
+                            // text next time.
                             if matches!(result, Err(ResultErrTypes::OutOfSync)) {
                                 tt.sent_full = false;
                             }
@@ -579,8 +580,8 @@ pub async fn translation_task(
 
                         // Open a web browser when requested.
                         EditorMessageContents::OpenUrl(url) => {
-                            // This doesn't work in Codespaces. TODO: send
-                            // this back to the VSCode window, then call
+                            // This doesn't work in Codespaces. TODO: send this
+                            // back to the VSCode window, then call
                             // `vscode.env.openExternal(vscode.Uri.parse(url))`.
                             if let Err(err) = webbrowser::open(&url) {
                                 let err = ResultErrTypes::WebBrowserOpenFailed(err.to_string());
@@ -593,8 +594,8 @@ pub async fn translation_task(
 
                         EditorMessageContents::Update(_) => continue_loop = tt.client_update(client_message).await,
 
-                        // Update the current file; translate it to a URL
-                        // then pass it to the IDE.
+                        // Update the current file; translate it to a URL then
+                        // pass it to the IDE.
                         EditorMessageContents::CurrentFile(url_string, _is_text) => {
                             debug!("Forwarding translated path to IDE.");
                             let result = match url_to_path(&url_string, tt.prefix) {
@@ -603,9 +604,10 @@ pub async fn translation_task(
                                     match file_path.to_str() {
                                         None => Err(ResultErrTypes::NoPathToString(file_path)),
                                         Some(file_path_string) => {
-                                            // Use a [binary file
-                                            // sniffer](#binary-file-sniffer) to
-                                            // determine if the file is text or binary.
+                                            // Use a
+                                            // [binary file sniffer](#binary-file-sniffer)
+                                            // to determine if the file is text or
+                                            // binary.
                                             let is_text = if let Ok(mut fc) = File::open(&file_path).await {
                                                 try_read_as_text(&mut fc).await.is_some()
                                             } else {
@@ -616,7 +618,8 @@ pub async fn translation_task(
                                                 message: EditorMessageContents::CurrentFile(file_path_string.to_string(), Some(is_text))
                                             }));
                                             tt.current_file = file_path;
-                                            // Since this is a new file, the full text hasn't been sent yet.
+                                            // Since this is a new file, the full text
+                                            // hasn't been sent yet.
                                             tt.sent_full = false;
                                             Ok(())
                                         }
@@ -680,15 +683,13 @@ pub async fn translation_task(
 
 // These provide translation for messages passing through the Server.
 impl TranslationTask {
-    // Pass a `Result` message to the Client, unless
-    // it's a `LoadFile` result.
+    // Pass a `Result` message to the Client, unless it's a `LoadFile` result.
     async fn ide_result(&mut self, ide_message: EditorMessage) -> bool {
         let EditorMessageContents::Result(ref result) = ide_message.message else {
             panic!("Should only be called with a result.");
         };
         let is_loadfile = match result {
-            // See if this error was produced by a
-            // `LoadFile` result.
+            // See if this error was produced by a `LoadFile` result.
             Err(_) => self
                 .load_file_requests
                 .contains_key(&ide_message.id.to_bits()),
@@ -697,9 +698,8 @@ impl TranslationTask {
                 ResultOkTypes::LoadFile(_) => true,
             },
         };
-        // Pass the message to the client if this isn't
-        // a `LoadFile` result (the only type of result
-        // which the Server should handle).
+        // Pass the message to the client if this isn't a `LoadFile` result (the
+        // only type of result which the Server should handle).
         if !is_loadfile {
             debug!("Forwarding it to the Client.");
             // If the Server can't read our diff, send the full text next time.
@@ -709,8 +709,7 @@ impl TranslationTask {
             queue_send_func!(self.to_client_tx.send(ide_message));
             return true;
         }
-        // Ensure there's an HTTP request for this
-        // `LoadFile` result.
+        // Ensure there's an HTTP request for this `LoadFile` result.
         let Some(http_request) = self.load_file_requests.remove(&ide_message.id.to_bits()) else {
             error!(
                 "Error: no HTTP request found for LoadFile result ID {}.",
@@ -719,13 +718,13 @@ impl TranslationTask {
             return true;
         };
 
-        // Take ownership of the result after sending it
-        // above (which requires ownership).
+        // Take ownership of the result after sending it above (which requires
+        // ownership).
         let EditorMessageContents::Result(result) = ide_message.message else {
             panic!("Not a result.");
         };
-        // Get the file contents from a `LoadFile`
-        // result; otherwise, this is None.
+        // Get the file contents from a `LoadFile` result; otherwise, this is
+        // None.
         let file_contents_option = match result {
             Err(err) => {
                 error!("{err:?}");
@@ -737,15 +736,15 @@ impl TranslationTask {
             },
         };
 
-        // Process the file contents. Since VSCode
-        // doesn't have a PDF viewer, determine if this
-        // is a PDF file. (TODO: look at the magic
-        // number also -- "%PDF").
+        // Process the file contents. Since VSCode doesn't have a PDF viewer,
+        // determine if this is a PDF file. (TODO: look at the magic number also
+        // -- "%PDF").
         let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
         let ((simple_http_response, option_update), file_contents) = match file_contents_option {
             Some((file_contents, new_version)) => {
                 self.version = new_version;
-                // The IDE just sent the full contents; we're sending full contents to the Client.
+                // The IDE just sent the full contents; we're sending full
+                // contents to the Client.
                 self.sent_full = true;
                 (
                     file_to_response(
@@ -760,16 +759,16 @@ impl TranslationTask {
                 )
             }
             None => {
-                // The file wasn't available in the IDE.
-                // Look for it in the filesystem.
+                // The file wasn't available in the IDE. Look for it in the
+                // filesystem.
                 match File::open(&http_request.file_path).await {
                     Err(err) => (
                         (
                             SimpleHttpResponse::Err(SimpleHttpResponseError::Io(err)),
                             None,
                         ),
-                        // There's no file, so return empty
-                        // contents, which will be ignored.
+                        // There's no file, so return empty contents, which will
+                        // be ignored.
                         "".to_string(),
                     ),
                     Ok(mut fc) => {
@@ -783,8 +782,8 @@ impl TranslationTask {
                                 use_pdf_js,
                             )
                             .await,
-                            // If the file is binary, return empty
-                            // contents, which will be ignored.
+                            // If the file is binary, return empty contents,
+                            // which will be ignored.
                             option_file_contents.unwrap_or("".to_string()),
                         )
                     }
@@ -800,8 +799,7 @@ impl TranslationTask {
             };
             self.source_code = file_contents;
             self.eol = find_eol_type(&self.source_code);
-            // We must clone here, since the original is
-            // placed in the TX queue.
+            // We must clone here, since the original is placed in the TX queue.
             self.code_mirror_doc = plain.doc.clone();
             self.code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
 
@@ -847,9 +845,9 @@ impl TranslationTask {
                         match contents.source {
                             CodeMirrorDiffable::Diff(_diff) => Err(ResultErrTypes::TodoDiffSupport),
                             CodeMirrorDiffable::Plain(code_mirror) => {
-                                // If there are Windows newlines, replace
-                                // with Unix; this is reversed when the
-                                // file is sent back to the IDE.
+                                // If there are Windows newlines, replace with
+                                // Unix; this is reversed when the file is sent
+                                // back to the IDE.
                                 self.eol = find_eol_type(&code_mirror.doc);
                                 let doc_normalized_eols = code_mirror.doc.replace("\r\n", "\n");
                                 // Translate the file.
@@ -907,7 +905,8 @@ impl TranslationTask {
                                                 self.code_mirror_doc = code_mirror_translated.doc;
                                                 self.code_mirror_doc_blocks =
                                                     Some(code_mirror_translated.doc_blocks);
-                                                // Update to the version of the file just sent.
+                                                // Update to the version of the file just
+                                                // sent.
                                                 self.version = contents.version;
                                                 Ok(ResultOkTypes::Void)
                                             }
@@ -952,9 +951,8 @@ impl TranslationTask {
                 }
             }
         };
-        // If there's an error, then report it;
-        // otherwise, the message is passed to the
-        // Client, which will provide the result.
+        // If there's an error, then report it; otherwise, the message is passed
+        // to the Client, which will provide the result.
         if let Err(err) = &result {
             error!("{err:?}");
             send_response(&self.to_ide_tx, ide_message.id, result).await;
@@ -963,16 +961,21 @@ impl TranslationTask {
         true
     }
 
-    /// Return a `CodeChatForWeb` struct containing a diff between `self.code_mirror_doc` / `self.code_mirror_doc_blocks` and `code_mirror_translated`.
+    /// Return a `CodeChatForWeb` struct containing a diff between
+    /// `self.code_mirror_doc` / `self.code_mirror_doc_blocks` and
+    /// `code_mirror_translated`.
     fn diff_code_mirror(
         &self,
-        // The `metadata` and `version` fields will be copied from this to the returned `CodeChatForWeb` struct.
+        // The `metadata` and `version` fields will be copied from this to the
+        // returned `CodeChatForWeb` struct.
         metadata: SourceFileMetadata,
-        // The version number of the previous (before) data. Typically, `self.version`.
+        // The version number of the previous (before) data. Typically,
+        // `self.version`.
         before_version: f64,
         // The version number for the resulting return struct.
         version: f64,
-        // This provides the after data for the diff; before data comes from `self.code_mirror` / `self.code_mirror_doc`.
+        // This provides the after data for the diff; before data comes from
+        // `self.code_mirror` / `self.code_mirror_doc`.
         code_mirror_after: &CodeMirror,
     ) -> CodeChatForWeb {
         assert!(self.sent_full);
@@ -982,13 +985,13 @@ impl TranslationTask {
         };
         let doc_blocks_diff = diff_code_mirror_doc_blocks(cmdb, &code_mirror_after.doc_blocks);
         CodeChatForWeb {
-            // Clone needed here, so we can copy it
-            // later.
+            // Clone needed here, so we can copy it later.
             metadata,
             source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
                 doc: doc_diff,
                 doc_blocks: doc_blocks_diff,
-                // The diff was made between the before version (this) and the after version (`ccfw.version`).
+                // The diff was made between the before version (this) and the
+                // after version (`ccfw.version`).
                 version: before_version,
             }),
             version,
@@ -1012,17 +1015,23 @@ impl TranslationTask {
                     None => None,
                     Some(cfw) => match codechat_for_web_to_source(&cfw) {
                         Ok(new_source_code) => {
-                            // Update the stored CodeMirror data structures with what we just received. This must be updated before we can translate back to check for changes (the next step).
+                            // Update the stored CodeMirror data structures with
+                            // what we just received. This must be updated
+                            // before we can translate back to check for changes
+                            // (the next step).
                             let CodeMirrorDiffable::Plain(code_mirror) = cfw.source else {
                                 // TODO: support diffable!
                                 panic!("Diff not supported.");
                             };
                             self.code_mirror_doc = code_mirror.doc;
                             self.code_mirror_doc_blocks = Some(code_mirror.doc_blocks);
-                            // We may need to change this version if we send a diff back to the Client.
+                            // We may need to change this version if we send a
+                            // diff back to the Client.
                             let mut cfw_version = cfw.version;
 
-                            // Translate back to the Client to see if there are any changes after this conversion. Only check CodeChat documents, not Markdown docs.
+                            // Translate back to the Client to see if there are
+                            // any changes after this conversion. Only check
+                            // CodeChat documents, not Markdown docs.
                             if cfw.metadata.mode != MARKDOWN_MODE
                                 && let Ok(ccfws) = source_to_codechat_for_web_string(
                                     &new_source_code,
@@ -1035,17 +1044,34 @@ impl TranslationTask {
                                     ccfw.source
                                 && self.sent_full
                             {
-                                // Determine if the re-translation includes changes (such as line wrapping in doc blocks which changes line numbering, creation of a new doc block from previous code block text, or updates from future document intelligence such as renamed headings, etc.) For doc blocks that haven't been edited by TinyMCE, this is easy; equality is sufficient. Doc blocks that have been edited are a different case: TinyMCE removes newlines, causing a lot of "changes" to re-insert these. Therefore, use the following approach:
+                                // Determine if the re-translation includes
+                                // changes (such as line wrapping in doc blocks
+                                // which changes line numbering, creation of a
+                                // new doc block from previous code block text,
+                                // or updates from future document intelligence
+                                // such as renamed headings, etc.) For doc
+                                // blocks that haven't been edited by TinyMCE,
+                                // this is easy; equality is sufficient. Doc
+                                // blocks that have been edited are a different
+                                // case: TinyMCE removes newlines, causing a lot
+                                // of "changes" to re-insert these. Therefore,
+                                // use the following approach:
                                 //
-                                // 1. Compare the `doc` values. If they differ, then the the Client needs an update.
-                                // 2. Compare each code block using simple equality. If this fails, compare the doc block text excluding newlines. If still different, then the Client needs an update.
+                                // 1. Compare the `doc` values. If they differ,
+                                //    then the the Client needs an update.
+                                // 2. Compare each code block using simple
+                                //    equality. If this fails, compare the doc
+                                //    block text excluding newlines. If still
+                                //    different, then the Client needs an
+                                //    update.
                                 if code_mirror_translated.doc != self.code_mirror_doc
                                     || !doc_block_compare(
                                         &code_mirror_translated.doc_blocks,
                                         self.code_mirror_doc_blocks.as_ref().unwrap(),
                                     )
                                 {
-                                    // Use a whole number to avoid encoding differences with fractional values.
+                                    // Use a whole number to avoid encoding
+                                    // differences with fractional values.
                                     cfw_version = random::<u64>() as f64;
                                     // The Client needs an update.
                                     let client_contents = self.diff_code_mirror(
@@ -1060,7 +1086,9 @@ impl TranslationTask {
                                             UpdateMessageContents {
                                                 file_path: update_message_contents.file_path,
                                                 contents: Some(client_contents),
-                                                // Don't change the current position, since the Client editing position should be left undisturbed.
+                                                // Don't change the current position, since
+                                                // the Client editing position should be
+                                                // left undisturbed.
                                                 cursor_position: None,
                                                 scroll_position: None
                                             }
@@ -1069,8 +1097,7 @@ impl TranslationTask {
                                     self.id += MESSAGE_ID_INCREMENT;
                                 }
                             };
-                            // Correct EOL endings for use with the
-                            // IDE.
+                            // Correct EOL endings for use with the IDE.
                             let new_source_code_eol = eol_convert(new_source_code, &self.eol);
                             let ccfw = if self.sent_full && self.allow_source_diffs {
                                 Some(CodeChatForWeb {
@@ -1149,7 +1176,9 @@ fn doc_block_compare(a: &CodeMirrorDocBlockVec, b: &CodeMirrorDocBlockVec) -> bo
             && a.indent == b.indent
             && a.delimiter == b.delimiter
             && (a.contents == b.contents
-                // TinyMCE replaces newlines inside paragraphs with a space; for a crude comparison, translate all newlines back to spaces, then ignore leading/trailing newlines.
+                // TinyMCE replaces newlines inside paragraphs with a space; for
+                // a crude comparison, translate all newlines back to spaces,
+                // then ignore leading/trailing newlines.
                 || map_newlines_to_spaces(&a.contents).eq(map_newlines_to_spaces(&b.contents)))
     })
 }
@@ -1179,7 +1208,7 @@ fn debug_shorten<T: Debug>(val: T) -> String {
 }
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use crate::{processing::CodeMirrorDocBlock, translation::doc_block_compare};

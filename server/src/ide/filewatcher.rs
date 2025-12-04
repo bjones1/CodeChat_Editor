@@ -14,9 +14,9 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `filewatcher.rs` -- Implement the File Watcher "IDE"
-/// ====================================================
+/// ============================================================================
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
@@ -73,7 +73,7 @@ use crate::{
 };
 
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 lazy_static! {
     /// Matches a bare drive letter. Only needed on Windows.
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
@@ -82,7 +82,7 @@ lazy_static! {
 pub const FILEWATCHER_PATH_PREFIX: &[&str] = &["fw", "fsc"];
 
 /// File browser endpoints
-/// ----------------------
+/// ----------------------------------------------------------------------------
 ///
 /// The file browser provides a very crude interface, allowing a user to select
 /// a file from the local filesystem for editing. Long term, this should be
@@ -335,10 +335,10 @@ async fn processing_task(
     //
     // This is a CodeChat Editor file. Start up the Filewatcher IDE tasks:
     //
-    // 1.  A task to watch for changes to the file, notifying the CodeChat
-    //     Editor Client when the file should be reloaded.
-    // 2.  A task to receive and respond to messages from the CodeChat Editor
-    //     Client.
+    // 1. A task to watch for changes to the file, notifying the CodeChat Editor
+    //    Client when the file should be reloaded.
+    // 2. A task to receive and respond to messages from the CodeChat Editor
+    //    Client.
     //
     // First, allocate variables needed by these two tasks.
     //
@@ -536,7 +536,12 @@ async fn processing_task(
                                                         doc: file_contents,
                                                         doc_blocks: vec![],
                                                     }),
-                                                    // The filewatcher doesn't store a version, since it only accepts plain (non-diff) results. Provide a version so the Client stays in sync with any diffs. Produce a whole number to avoid encoding difference with fractional values.
+                                                    // The filewatcher doesn't store a version,
+                                                    // since it only accepts plain (non-diff)
+                                                    // results. Provide a version so the Client
+                                                    // stays in sync with any diffs. Produce a
+                                                    // whole number to avoid encoding
+                                                    // difference with fractional values.
                                                     version: random::<u64>() as f64,
                                                 }),
                                                 cursor_position: None,
@@ -693,7 +698,7 @@ pub fn get_connection_id_raw(app_state: &WebAppState) -> u32 {
 }
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use std::{
@@ -833,7 +838,7 @@ mod tests {
         let url_path = url_path.canonicalize().unwrap();
         assert_eq!(url_path, test_path);
 
-        // 2.  After fetching the file, we should get an update.
+        // 2. After fetching the file, we should get an update.
         //
         // Message ids: IDE - 1, Server - 2->3, Client - 0.
         let uri = format!(
@@ -871,8 +876,8 @@ mod tests {
         let from_client_tx = wq.from_websocket_tx;
         let mut to_client_rx = wq.to_websocket_rx;
 
-        // 1.  The initial web request for the Client framework produces a
-        //     `CurrentFile`.
+        // 1. The initial web request for the Client framework produces a
+        //    `CurrentFile`.
         //
         // Message ids: IDE - 0->1, Server - 2, Client - 0.
         let (id, (..)) = get_message_as!(
@@ -884,9 +889,9 @@ mod tests {
         assert_eq!(id, INITIAL_IDE_MESSAGE_ID);
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
-        // 2.  After fetching the file, we should get an update. The Server
-        //     sends a `LoadFile` to the IDE using message the next ID;
-        //     therefore, this consumes two IDs.
+        // 2. After fetching the file, we should get an update. The Server sends
+        //    a `LoadFile` to the IDE using message the next ID; therefore, this
+        //    consumes two IDs.
         //
         // Message ids: IDE - 1, Server - 2->3, Client - 0.
         let mut file_path = test_dir.clone();
@@ -906,7 +911,7 @@ mod tests {
         assert_eq!(id, INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT);
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
-        // 3.  Send an update message with no contents.
+        // 3. Send an update message with no contents.
         //
         // Message ids: IDE - 1, Server - 3, Client - 0->1.
         from_client_tx
@@ -928,7 +933,7 @@ mod tests {
             (INITIAL_CLIENT_MESSAGE_ID, Ok(ResultOkTypes::Void))
         );
 
-        // 4.  Send invalid messages.
+        // 4. Send invalid messages.
         //
         // Message ids: IDE - 1, Server - 3, Client - 1->4.
         for (id, msg) in [
@@ -954,7 +959,7 @@ mod tests {
             matches!(cast!(&msg_rx, Err), ResultErrTypes::ClientIllegalMessage);
         }
 
-        // 5.  Send an update message with no path.
+        // 5. Send an update message with no path.
         //
         // Message ids: IDE - 1, Server - 3, Client - 4->5.
         from_client_tx
@@ -984,7 +989,7 @@ mod tests {
         assert_eq!(id, INITIAL_CLIENT_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT);
         cast!(cast!(err_msg, Err), ResultErrTypes::WrongFileUpdate, _a, _b);
 
-        // 6.  Send an update message with unknown source language.
+        // 6. Send an update message with unknown source language.
         //
         // Message ids: IDE - 1, Server - 3, Client - 5->6.
         from_client_tx
@@ -1017,7 +1022,7 @@ mod tests {
         );
         cast!(cast!(msg, Err), ResultErrTypes::CannotTranslateCodeChat);
 
-        // 7.  Send a valid message.
+        // 7. Send a valid message.
         //
         // Message ids: IDE - 1, Server - 3, Client - 6->7.
         from_client_tx
@@ -1053,7 +1058,7 @@ mod tests {
         let mut s = fs::read_to_string(&file_path).unwrap();
         assert_eq!(s, "testing()");
 
-        // 8.  Change this file and verify that this produces an update.
+        // 8. Change this file and verify that this produces an update.
         //
         // Message ids: IDE - 1->2, Server - 3, Client - 7.
         s.push_str("123");
@@ -1091,8 +1096,8 @@ mod tests {
         )
         .await;
 
-        // 9.  Rename it and check for an close (the file watcher can't detect
-        //     the destination file, so it's treated as the file is deleted).
+        // 9. Rename it and check for an close (the file watcher can't detect
+        //    the destination file, so it's treated as the file is deleted).
         //
         // Message ids: IDE - 2->3, Server - 3, Client - 7.
         let mut dest = PathBuf::from(&file_path).parent().unwrap().to_path_buf();

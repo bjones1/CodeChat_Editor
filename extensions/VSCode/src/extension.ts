@@ -335,8 +335,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                             }
                             if (current_update.contents !== undefined) {
                                 const source = current_update.contents.source;
-                                // This will
-                                // produce a change event, which we'll ignore. The change may also produce a selection change, which should also be ignored.
+                                // This will produce a change event, which we'll
+                                // ignore. The change may also produce a
+                                // selection change, which should also be
+                                // ignored.
                                 ignore_text_document_change = true;
                                 ignore_selection_change = true;
                                 // Use a workspace edit, since calls to
@@ -359,10 +361,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     );
                                 } else {
                                     assert("Diff" in source);
-                                    // If this diff was not made against the text we currently have, reject it.
+                                    // If this diff was not made against the
+                                    // text we currently have, reject it.
                                     if (source.Diff.version !== version) {
                                         await sendResult(id, "OutOfSync");
-                                        // Send an `Update` with the full text to re-sync the Client.
+                                        // Send an `Update` with the full text to
+                                        // re-sync the Client.
                                         send_update(true);
                                         break;
                                     }
@@ -395,7 +399,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     ignore_text_document_change = false;
                                     ignore_selection_change = false;
                                 });
-                                // Now that we've updated our text, update the associated version as well.
+                                // Now that we've updated our text, update the
+                                // associated version as well.
                                 version = current_update.contents.version;
                             }
 
@@ -720,7 +725,8 @@ const can_render = () => {
         (vscode.window.activeTextEditor !== undefined ||
             current_editor !== undefined) &&
         codeChatEditorServer !== undefined &&
-        // TODO: I don't think these matter -- the Server is in charge of sending output to the Client.
+        // TODO: I don't think these matter -- the Server is in charge of
+        // sending output to the Client.
         (codechat_client_location === CodeChatEditorClientLocation.browser ||
             webview_panel !== undefined)
     );

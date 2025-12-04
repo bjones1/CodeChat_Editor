@@ -81,8 +81,8 @@ class WebSocketComm {
     // IDE and passed back to it, but not otherwise used by the Framework.
     current_filename: string | undefined = undefined;
 
-    // The version number of the current file. This default value will be overwritten when
-    // the first `Update` is sent.
+    // The version number of the current file. This default value will be
+    // overwritten when the first `Update` is sent.
     version = 0.0;
 
     // True when the iframe is loading, so that an `Update` should be postponed
@@ -164,7 +164,9 @@ class WebSocketComm {
                         const contents = current_update.contents;
                         const cursor_position = current_update.cursor_position;
                         if (contents !== undefined) {
-                            // Check and update the version. If this is a diff, ensure the diff was made against the version of the file we have.
+                            // Check and update the version. If this is a diff,
+                            // ensure the diff was made against the version of
+                            // the file we have.
                             if ("Diff" in contents.source) {
                                 if (
                                     contents.source.Diff.version !==

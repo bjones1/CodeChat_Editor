@@ -948,8 +948,8 @@ pub fn source_to_codechat_for_web_string(
                 TranslationResults::CodeChat(codechat_for_web) => {
                     if is_toc {
                         // For the table of contents sidebar, which is pure
-                        // markdown, just return the resulting HTML, rather than the
-                        // editable CodeChat for web format.
+                        // markdown, just return the resulting HTML, rather than
+                        // the editable CodeChat for web format.
                         let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
                             panic!("No diff!");
                         };

@@ -15,14 +15,14 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `vscode.rs` -- Implement server-side functionality for the Visual Studio
 /// Code IDE
-/// ========================================================================
+/// ============================================================================
 // Modules
-// -------
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 pub mod tests;
 
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 //
@@ -52,12 +52,12 @@ use crate::{
 };
 
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 const VSCODE_PATH_PREFIX: &[&str] = &["vsc", "fs"];
 const VSC: &str = "vsc-";
 
 // Code
-// ----
+// -----------------------------------------------------------------------------
 #[get("/vsc/ws-ide/{connection_id_raw}")]
 pub async fn vscode_ide_websocket(
     connection_id_raw: web::Path<String>,

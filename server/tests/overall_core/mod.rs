@@ -14,7 +14,7 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `overall_core/mod.rs` - test the overall system
-/// ===============================================
+/// ============================================================================
 ///
 /// These are functional tests of the overall system, performed by attaching a
 /// testing IDE to generate commands then observe results, along with a browser
@@ -30,8 +30,8 @@
 /// must be gated on the `int_tests` feature, since this code fails to compile
 /// without that feature's crates enabled. Tests are implemented here, then
 /// `use`d in `overall.rs`, so that a single `#[cfg(feature = "int_tests")]`
-/// statement there gates everything in this file. See the [test
-/// docs](https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests)
+/// statement there gates everything in this file. See the
+/// [test docs](https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests)
 /// for the correct file and directory names.
 ///
 /// A second challenge revolves around the lack of an async `Drop` trait: the
@@ -40,16 +40,16 @@
 /// initialized before a test then stopped at the end of that test. Both are
 /// ideal for this missing Drop trait. As a workaround:
 ///
-/// *   The web driver server relies on the C `atexit` call to stop the server.
-///     However, when tests fail, this doesn't get called, leaving the server
-///     running. This causes the server to fail to start on the next test run,
-///     since it's still running. Therefore, errors when starting the web driver
-///     server are ignored by design.
-/// *   Tests are run in an async block, and any panics produced inside it are
-///     caught using `catch_unwind()`. The driver is shut down before returning
-///     an error due to the panic.
+/// * The web driver server relies on the C `atexit` call to stop the server.
+///   However, when tests fail, this doesn't get called, leaving the server
+///   running. This causes the server to fail to start on the next test run,
+///   since it's still running. Therefore, errors when starting the web driver
+///   server are ignored by design.
+/// * Tests are run in an async block, and any panics produced inside it are
+///   caught using `catch_unwind()`. The driver is shut down before returning an
+///   error due to the panic.
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
@@ -84,7 +84,7 @@ use code_chat_editor::{
 };
 
 // Utilities
-// ---------
+// -----------------------------------------------------------------------------
 //
 // Not all messages produced by the server are ordered. To accommodate
 // out-of-order messages, this class provides a way to `insert` expected
@@ -164,7 +164,10 @@ macro_rules! harness {
             // Start the webdriver.
             let server_url = "http://localhost:4444";
             let mut caps = DesiredCapabilities::chrome();
-            // Ensure the screen is wide enough for an 80-character line, used to word wrapping test in `test_client_updates`. Otherwise, this test send the End key to go to the end of the line...but it's not the end of the full line on a narrow screen.
+            // Ensure the screen is wide enough for an 80-character line, used
+            // to word wrapping test in `test_client_updates`. Otherwise, this
+            // test send the End key to go to the end of the line...but it's not
+            // the end of the full line on a narrow screen.
             caps.add_arg("--window-size=1920,768")?;
             caps.add_arg("--headless")?;
             // On Ubuntu CI, avoid failures, probably due to running Chrome as
@@ -253,7 +256,7 @@ fn get_version(msg: &EditorMessage) -> f64 {
 }
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 //
 // ### Server-side test
 //
@@ -357,7 +360,8 @@ async fn test_server_core(
 
     // Focus it.
     doc_block_contents.click().await.unwrap();
-    // The click produces an updated cursor/scroll location after an autosave delay.
+    // The click produces an updated cursor/scroll location after an autosave
+    // delay.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
@@ -379,7 +383,8 @@ async fn test_server_core(
 
     // Verify the updated text.
     client_id += MESSAGE_ID_INCREMENT;
-    // Update the version from the value provided by the client, which varies randomly.
+    // Update the version from the value provided by the client, which varies
+    // randomly.
     let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     let client_version = get_version(&msg);
     assert_eq!(
@@ -1166,7 +1171,8 @@ async fn test_client_updates_core(
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
 
-    // The Server sends the Client a wrapped version of the text; the Client replies with a Result(Ok).
+    // The Server sends the Client a wrapped version of the text; the Client
+    // replies with a Result(Ok).
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
@@ -1198,7 +1204,8 @@ async fn test_client_updates_core(
         .send_keys("4" + Key::Enter)
         .await
         .unwrap();
-    // The cursor movement produces a cursor/scroll position update after an autosave delay.
+    // The cursor movement produces a cursor/scroll position update after an
+    // autosave delay.
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {

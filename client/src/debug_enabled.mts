@@ -15,9 +15,10 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `debug_enable.mts` -- Configure debug features
-// ==============================================
+// =============================================================================
 // True to enable additional debug logging.
 export const DEBUG_ENABLED = false;
 
-// The max length of a message to show in the console when debug logging is enabled.
+// The max length of a message to show in the console when debug logging is
+// enabled.
 export const MAX_MESSAGE_LENGTH = 20000;

@@ -14,12 +14,12 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `ide.rs` -- Provide interfaces with common IDEs
-/// ===============================================
+/// ============================================================================
 pub mod filewatcher;
 pub mod vscode;
 
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
@@ -57,7 +57,7 @@ use crate::{
 };
 
 // Code
-// ----
+// -----------------------------------------------------------------------------
 //
 // Using this macro is critical -- otherwise, the Actix system doesn't get
 // correctly initialized, which makes calls to `actix_rt::spawn` fail. In

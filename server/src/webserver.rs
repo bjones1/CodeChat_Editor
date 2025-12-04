@@ -247,8 +247,8 @@ pub type MessageResult = Result<
 pub enum ResultOkTypes {
     /// Most messages have no result.
     Void,
-    /// The `LoadFile` message provides file contents and a revision number, if available. This
-    /// message may only be sent from the IDE to the Server.
+    /// The `LoadFile` message provides file contents and a revision number, if
+    /// available. This message may only be sent from the IDE to the Server.
     LoadFile(Option<(String, f64)>),
 }
 

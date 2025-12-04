@@ -119,7 +119,8 @@ declare global {
 // When this is included in a transaction, don't update from/to of doc blocks.
 const docBlockFreezeAnnotation = Annotation.define<boolean>();
 
-// When this is included in a transaction, don't send autosave scroll/cursor location updates.
+// When this is included in a transaction, don't send autosave scroll/cursor
+// location updates.
 const noAutosaveAnnotation = Annotation.define<boolean>();
 
 // Doc blocks in CodeMirror
@@ -276,7 +277,8 @@ export const docBlockField = StateField.define<DecorationSet>({
                                           prev.spec.widget.contents,
                                           effect.value.contents,
                                       ),
-                                // Assume this isn't a user change unless it's specified.
+                                // Assume this isn't a user change unless it's
+                                // specified.
                                 effect.value.is_user_change ?? false,
                             ),
                             ...decorationOptions,
@@ -373,7 +375,8 @@ type updateDocBlockType = {
     indent?: string;
     delimiter?: string;
     contents: string | StringDiff[];
-    // True if this update comes from a user change, as opposed to an update received from the IDE.
+    // True if this update comes from a user change, as opposed to an update
+    // received from the IDE.
     is_user_change?: boolean;
 };
 
@@ -447,7 +450,8 @@ class DocBlockWidget extends WidgetType {
             `<div class="CodeChat-doc-contents" spellcheck contenteditable>` +
             this.contents +
             "</div>";
-        // TODO: this is an async call. However, CodeMirror doesn't provide async support.
+        // TODO: this is an async call. However, CodeMirror doesn't provide
+        // async support.
         mathJaxTypeset(wrap);
         return wrap;
     }
@@ -457,7 +461,8 @@ class DocBlockWidget extends WidgetType {
     // "Update a DOM element created by a widget of the same type (but
     // different, non-eq content) to reflect this widget."
     updateDOM(dom: HTMLElement, _view: EditorView): boolean {
-        // If this change was produced by a user edit, then the DOM was already updated. Stop here.
+        // If this change was produced by a user edit, then the DOM was already
+        // updated. Stop here.
         if (this.is_user_change) {
             console.log("user change -- skipping DOM update.");
             return true;
@@ -469,7 +474,8 @@ class DocBlockWidget extends WidgetType {
         const [contents_div, is_tinymce] = get_contents(dom);
         window.MathJax.typesetClear(contents_div);
         if (is_tinymce) {
-            // Save the cursor location before the update, then restore it afterwards, if TinyMCE has focus.
+            // Save the cursor location before the update, then restore it
+            // afterwards, if TinyMCE has focus.
             const sel = tinymce_singleton!.hasFocus()
                 ? saveSelection()
                 : undefined;
@@ -482,7 +488,8 @@ class DocBlockWidget extends WidgetType {
         }
         mathJaxTypeset(contents_div);
 
-        // Indicate the update was successful. TODO: but, contents are still pending...
+        // Indicate the update was successful. TODO: but, contents are still
+        // pending...
         return true;
     }
 
@@ -513,27 +520,22 @@ class DocBlockWidget extends WidgetType {
 }
 
 const saveSelection = () => {
-    // Changing the text inside TinyMCE causes it to loose a selection
-    // tied to a specific node. So, instead store the
-    // selection as an array of indices in the childNodes
-    // array of each element: for example, a given selection
-    // is element 10 of the root TinyMCE div's children
-    // (selecting an ol tag), element 5 of the ol's children
-    // (selecting the last li tag), element 0 of the li's
-    // children (a text node where the actual click landed;
-    // the offset in this node is placed in
-    // `selection_offset`.)
+    // Changing the text inside TinyMCE causes it to loose a selection tied to a
+    // specific node. So, instead store the selection as an array of indices in
+    // the childNodes array of each element: for example, a given selection is
+    // element 10 of the root TinyMCE div's children (selecting an ol tag),
+    // element 5 of the ol's children (selecting the last li tag), element 0 of
+    // the li's children (a text node where the actual click landed; the offset
+    // in this node is placed in `selection_offset`.)
     const sel = window.getSelection();
     let selection_path = [];
     const selection_offset = sel?.anchorOffset;
     if (sel?.anchorNode) {
-        // Find a path from the selection back to the
-        // containing div.
+        // Find a path from the selection back to the containing div.
         for (
             let current_node = sel.anchorNode, is_first = true;
-            // Continue until we find the div which contains
-            // the doc block contents: either it's not an
-            // element (such as a div), ...
+            // Continue until we find the div which contains the doc block
+            // contents: either it's not an element (such as a div), ...
             current_node.nodeType !== Node.ELEMENT_NODE ||
             // or it's not the doc block contents div.
             !(current_node as Element).classList.contains(
@@ -541,16 +543,13 @@ const saveSelection = () => {
             );
             current_node = current_node.parentNode!, is_first = false
         ) {
-            // Store the index of this node in its' parent
-            // list of child nodes/children. Use
-            // `childNodes` on the first iteration, since
-            // the selection is often in a text node, which
-            // isn't in the `parents` list. However, using
-            // `childNodes` all the time causes trouble when
-            // reversing the selection -- sometimes, the
-            // `childNodes` change based on whether text
-            // nodes (such as a newline) are included are
-            // not after tinyMCE parses the content.
+            // Store the index of this node in its' parent list of child
+            // nodes/children. Use `childNodes` on the first iteration, since
+            // the selection is often in a text node, which isn't in the
+            // `parents` list. However, using `childNodes` all the time causes
+            // trouble when reversing the selection -- sometimes, the
+            // `childNodes` change based on whether text nodes (such as a
+            // newline) are included are not after tinyMCE parses the content.
             let p = current_node.parentNode!;
             selection_path.unshift(
                 Array.prototype.indexOf.call(
@@ -563,7 +562,8 @@ const saveSelection = () => {
     return { selection_path, selection_offset };
 };
 
-// Restore the selection produced by `saveSelection` to the active TinyMCE instance.
+// Restore the selection produced by `saveSelection` to the active TinyMCE
+// instance.
 const restoreSelection = ({
     selection_path,
     selection_offset,
@@ -571,20 +571,19 @@ const restoreSelection = ({
     selection_path: number[];
     selection_offset?: number;
 }) => {
-    // Copy the selection over to TinyMCE by indexing the
-    // selection path to find the selected node.
+    // Copy the selection over to TinyMCE by indexing the selection path to find
+    // the selected node.
     if (selection_path.length && typeof selection_offset === "number") {
         let selection_node = tinymce_singleton!.getContentAreaContainer();
         for (
             ;
             selection_path.length &&
-            // If something goes wrong, bail out instead of producing exceptions.
+            // If something goes wrong, bail out instead of producing
+            // exceptions.
             selection_node !== undefined;
             selection_node =
-                // As before, use the more-consistent
-                // `children` except for the last element,
-                // where we might be selecting a `text`
-                // node.
+                // As before, use the more-consistent `children` except for the
+                // last element, where we might be selecting a `text` node.
                 (
                     selection_path.length > 1
                         ? selection_node.children
@@ -662,8 +661,8 @@ const element_is_in_doc_block = (
 //    untypeset, then the dirty ignored.
 // 3. When MathJax typesets math on a TinyMCE focus out event, the dirty flag
 //    gets set. This should be ignored. However, typesetting is an async
-//    operation, so we assume it's OK to await the typeset completion.
-//    This will lead to nasty bugs at some point.
+//    operation, so we assume it's OK to await the typeset completion. This will
+//    lead to nasty bugs at some point.
 // 4. When an HTML doc block is assigned to the TinyMCE instance for editing,
 //    the dirty flag is set. This must be ignored.
 const on_dirty = (
@@ -684,8 +683,8 @@ const on_dirty = (
             ".CodeChat-doc",
         )! as HTMLDivElement;
 
-        // We can only get the position (the `from` value) for the doc block. Use
-        // this to find the `to` value for the doc block.
+        // We can only get the position (the `from` value) for the doc block.
+        // Use this to find the `to` value for the doc block.
         let from;
         try {
             from = current_view.posAtDOM(target);
@@ -698,7 +697,8 @@ const on_dirty = (
         const indent = indent_div.innerHTML;
         const delimiter = indent_div.getAttribute("data-delimiter")!;
         const [contents_div, is_tinymce] = get_contents(target);
-        // I'd like to extract this string, then untypeset only that string, not the actual div. But I don't know how.
+        // I'd like to extract this string, then untypeset only that string, not
+        // the actual div. But I don't know how.
         mathJaxUnTypeset(contents_div);
         const contents = is_tinymce
             ? tinymce_singleton!.save()
@@ -828,7 +828,8 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     // cursor position (the selection) to be set in the
                     // contenteditable div. Then, save that location.
                     setTimeout(async () => {
-                        // Untypeset math in the old doc block and the current doc block before moving its contents around.
+                        // Untypeset math in the old doc block and the current
+                        // doc block before moving its contents around.
                         const tinymce_div =
                             document.getElementById("TinyMCE-inst")!;
                         mathJaxUnTypeset(tinymce_div);
@@ -854,7 +855,8 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             old_contents_div,
                             null,
                         );
-                        // The previous content edited by TinyMCE is now a div. Retypeset this after the transition.
+                        // The previous content edited by TinyMCE is now a div.
+                        // Retypeset this after the transition.
                         await mathJaxTypeset(old_contents_div);
                         // Move TinyMCE to the new location, then remove the old
                         // div it will replace.
@@ -1065,9 +1067,11 @@ export const CodeMirror_load = async (
                     // [docs](https://codemirror.net/examples/tab/). TODO:
                     // document a way to escape the tab key per the same docs.
                     keymap.of([indentWithTab]),
-                    // Change the font size. See [this post](https://discuss.codemirror.net/t/changing-the-font-size-of-cm6/2935/6).
+                    // Change the font size. See
+                    // [this post](https://discuss.codemirror.net/t/changing-the-font-size-of-cm6/2935/6).
                     [
-                        // TODO: get these values from the IDE, so we match its size.
+                        // TODO: get these values from the IDE, so we match its
+                        // size.
                         EditorView.theme({
                             "&": {
                                 fontSize: "14px",
@@ -1092,7 +1096,8 @@ export const CodeMirror_load = async (
             await init({
                 selector: "#TinyMCE-inst",
                 setup: (editor: Editor) => {
-                    // See the [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
+                    // See the
+                    // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
                     editor.on("Dirty", (event: any) => {
                         // Get the div TinyMCE stores edits in. TODO: find
                         // documentation for `event.target.bodyElement`.
@@ -1158,7 +1163,9 @@ export const scroll_to_line = (cursor_line?: number, scroll_line?: number) => {
         return;
     }
 
-    // Create a transaction to set the cursor and scroll position. Avoid an autosave that sends updated cursor/scroll positions produced by this transaction.
+    // Create a transaction to set the cursor and scroll position. Avoid an
+    // autosave that sends updated cursor/scroll positions produced by this
+    // transaction.
     const dispatch_data: TransactionSpec = {
         annotations: noAutosaveAnnotation.of(true),
     };
