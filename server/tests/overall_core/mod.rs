@@ -1163,7 +1163,15 @@ async fn test_client_updates_core(
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
     let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
     code_line
-        .send_keys(Key::Alt + Key::Control + "g")
+        .send_keys(
+            Key::Alt
+                + if cfg!(target_os = "macos") {
+                    Key::Command
+                } else {
+                    Key::Control
+                }
+                + "g",
+        )
         .await
         .unwrap();
     // Enter a line in the dialog that pops up.
