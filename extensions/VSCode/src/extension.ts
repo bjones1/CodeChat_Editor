@@ -335,13 +335,15 @@ export const activate = (context: vscode.ExtensionContext) => {
                             }
                             if (current_update.contents !== undefined) {
                                 const source = current_update.contents.source;
-                                // Is this plain text, or a diff? This will
-                                // produce a change event, which we'll ignore.
+                                // This will
+                                // produce a change event, which we'll ignore. The change may also produce a selection change, which should also be ignored.
                                 ignore_text_document_change = true;
+                                ignore_selection_change = true;
                                 // Use a workspace edit, since calls to
                                 // `TextEditor.edit` must be made to the active
                                 // editor only.
                                 const wse = new vscode.WorkspaceEdit();
+                                // Is this plain text, or a diff?
                                 if ("Plain" in source) {
                                     wse.replace(
                                         doc.uri,
@@ -389,12 +391,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         }
                                     }
                                 }
-                                vscode.workspace
-                                    .applyEdit(wse)
-                                    .then(
-                                        () =>
-                                            (ignore_text_document_change = false),
-                                    );
+                                vscode.workspace.applyEdit(wse).then(() => {
+                                    ignore_text_document_change = false;
+                                    ignore_selection_change = false;
+                                });
                                 // Now that we've updated our text, update the associated version as well.
                                 version = current_update.contents.version;
                             }
@@ -420,6 +420,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     // viewport, but a bit below it.
                                     TextEditorRevealType.AtTop,
                                 );
+                                ignore_selection_change = false;
                             }
 
                             let cursor_line = current_update.cursor_position;
@@ -437,6 +438,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         cursor_position,
                                     ),
                                 ];
+                                ignore_selection_change = false;
                             }
                             await sendResult(id);
                             break;
