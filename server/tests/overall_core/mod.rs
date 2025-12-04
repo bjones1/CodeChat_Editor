@@ -357,14 +357,28 @@ async fn test_server_core(
 
     // Focus it.
     doc_block_contents.click().await.unwrap();
-    sleep(Duration::from_millis(100)).await;
+    // The click produces an updated cursor/scroll location after an autosave delay.
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: None,
+                cursor_position: Some(1),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+
     // Refind it, since it's now switched with a TinyMCE editor.
     let tinymce_contents = driver_ref.find(By::Id("TinyMCE-inst")).await.unwrap();
     // Make an edit.
     tinymce_contents.send_keys("foo").await.unwrap();
 
     // Verify the updated text.
-    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    client_id += MESSAGE_ID_INCREMENT;
     // Update the version from the value provided by the client, which varies randomly.
     let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     let client_version = get_version(&msg);
@@ -1150,6 +1164,8 @@ async fn test_client_updates_core(
         }
     );
     codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
     // The Server sends the Client a wrapped version of the text; the Client replies with a Result(Ok).
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
@@ -1182,13 +1198,27 @@ async fn test_client_updates_core(
         .send_keys("4" + Key::Enter)
         .await
         .unwrap();
+    // The cursor movement produces a cursor/scroll position update after an autosave delay.
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: None,
+                cursor_position: Some(4),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+    client_id += MESSAGE_ID_INCREMENT;
+
     // Add an indented comment.
     code_line.send_keys(Key::Home + "# ").await.unwrap();
     // This should edit the (new) third line of the file after word wrap: `def
     // foo():`.
     let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     let new_client_version = get_version(&msg);
-    client_id += MESSAGE_ID_INCREMENT;
     assert_eq!(
         msg,
         EditorMessage {
