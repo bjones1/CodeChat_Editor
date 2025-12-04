@@ -37,7 +37,11 @@ use code_chat_editor::{ide, webserver};
 pub fn init_server(extension_base_path: String) -> Result<(), Error> {
     webserver::init_server(
         Some(&PathBuf::from(extension_base_path)),
-        LevelFilter::Debug,
+        if cfg!(debug_assertions) {
+            LevelFilter::Debug
+        } else {
+            LevelFilter::Warn
+        },
     )
     .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))
 }
