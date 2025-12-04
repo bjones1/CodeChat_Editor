@@ -62,7 +62,6 @@ import {
 } from "@codemirror/view";
 import {
     ChangeDesc,
-    Compartment,
     EditorState,
     Extension,
     StateField,
@@ -102,15 +101,8 @@ import { show_toast } from "./show_toast.mjs";
 // -----------------------------------------------------------------------------
 let current_view: EditorView;
 let tinymce_singleton: Editor | undefined;
-// True if the change was produce by a user edit, not an IDE update.
-let is_user_change = false;
 // This indicates that a call to `on_dirty` is scheduled, but hasn't run yet.
 let on_dirty_scheduled = false;
-// True to ignore the next text selection change, since updates to the cursor or
-// scroll position from the Client trigged this change.
-let ignore_selection_change = false;
-// The compartment used to enable and disable the autosave extension.
-const autosaveCompartment = new Compartment();
 
 // Options used when creating a `Decoration`.
 const decorationOptions = {
@@ -124,7 +116,11 @@ declare global {
     }
 }
 
+// When this is included in a transaction, don't update from/to of doc blocks.
 const docBlockFreezeAnnotation = Annotation.define<boolean>();
+
+// When this is included in a transaction, don't send autosave scroll/cursor location updates.
+const noAutosaveAnnotation = Annotation.define<boolean>();
 
 // Doc blocks in CodeMirror
 // -----------------------------------------------------------------------------
@@ -193,6 +189,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                                 effect.value.indent,
                                 effect.value.delimiter,
                                 effect.value.content,
+                                false,
                             ),
                             ...decorationOptions,
                         }).range(effect.value.from, effect.value.to),
@@ -279,6 +276,8 @@ export const docBlockField = StateField.define<DecorationSet>({
                                           prev.spec.widget.contents,
                                           effect.value.contents,
                                       ),
+                                // Assume this isn't a user change unless it's specified.
+                                effect.value.is_user_change ?? false,
                             ),
                             ...decorationOptions,
                         }).range(from, to),
@@ -329,7 +328,12 @@ export const docBlockField = StateField.define<DecorationSet>({
                     contents,
                 ]: CodeMirrorDocBlockTuple) =>
                     Decoration.replace({
-                        widget: new DocBlockWidget(indent, delimiter, contents),
+                        widget: new DocBlockWidget(
+                            indent,
+                            delimiter,
+                            contents,
+                            false,
+                        ),
                         ...decorationOptions,
                     }).range(from, to),
             ),
@@ -369,6 +373,8 @@ type updateDocBlockType = {
     indent?: string;
     delimiter?: string;
     contents: string | StringDiff[];
+    // True if this update comes from a user change, as opposed to an update received from the IDE.
+    is_user_change?: boolean;
 };
 
 // Define an update.
@@ -411,6 +417,7 @@ class DocBlockWidget extends WidgetType {
         readonly indent: string,
         readonly delimiter: string,
         readonly contents: string,
+        readonly is_user_change: boolean,
     ) {
         // TODO: I don't understand why I don't need to store the provided
         // parameters in the object: `this.indent = indent;`, etc.
@@ -449,10 +456,10 @@ class DocBlockWidget extends WidgetType {
     // [docs](https://codemirror.net/docs/ref/#view.WidgetType.updateDOM),
     // "Update a DOM element created by a widget of the same type (but
     // different, non-eq content) to reflect this widget."
-    updateDOM(dom: HTMLElement, view: EditorView): boolean {
+    updateDOM(dom: HTMLElement, _view: EditorView): boolean {
         // If this change was produced by a user edit, then the DOM was already updated. Stop here.
-        if (is_user_change) {
-            is_user_change = false;
+        if (this.is_user_change) {
+            console.log("user change -- skipping DOM update.");
             return true;
         }
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
@@ -462,10 +469,14 @@ class DocBlockWidget extends WidgetType {
         const [contents_div, is_tinymce] = get_contents(dom);
         window.MathJax.typesetClear(contents_div);
         if (is_tinymce) {
-            // Save the cursor location before the update, then restore it afterwards.
-            const sel = saveSelection();
+            // Save the cursor location before the update, then restore it afterwards, if TinyMCE has focus.
+            const sel = tinymce_singleton!.hasFocus()
+                ? saveSelection()
+                : undefined;
             tinymce_singleton!.setContent(this.contents);
-            restoreSelection(sel);
+            if (sel !== undefined) {
+                restoreSelection(sel);
+            }
         } else {
             contents_div.innerHTML = this.contents;
         }
@@ -552,7 +563,7 @@ const saveSelection = () => {
     return { selection_path, selection_offset };
 };
 
-// Restore the selection produced by `saveSelection`.
+// Restore the selection produced by `saveSelection` to the active TinyMCE instance.
 const restoreSelection = ({
     selection_path,
     selection_offset,
@@ -651,24 +662,22 @@ const element_is_in_doc_block = (
 //    untypeset, then the dirty ignored.
 // 3. When MathJax typesets math on a TinyMCE focus out event, the dirty flag
 //    gets set. This should be ignored. However, typesetting is an async
-//    operation, so we assume it's OK to await the typeset completion, then
-//    clear the `ignore_next_dirty flag`. This will lead to nasty bugs at some
-//    point.
+//    operation, so we assume it's OK to await the typeset completion.
+//    This will lead to nasty bugs at some point.
 // 4. When an HTML doc block is assigned to the TinyMCE instance for editing,
 //    the dirty flag is set. This must be ignored.
 const on_dirty = (
     // The div that's dirty. It must be a child of the doc block div.
     event_target: HTMLElement,
 ) => {
-    is_user_change = true;
-
     if (on_dirty_scheduled) {
         return;
     }
     on_dirty_scheduled = true;
 
     // Only run this after typesetting is done.
-    window.MathJax.whenReady(() => {
+    window.MathJax.whenReady(async () => {
+        console.log("Starting update for user change.");
         on_dirty_scheduled = false;
         // Find the doc block parent div.
         const target = (event_target as HTMLDivElement).closest(
@@ -694,18 +703,17 @@ const on_dirty = (
         const contents = is_tinymce
             ? tinymce_singleton!.save()
             : contents_div.innerHTML;
-        // Although this is async, nothing following this call depends on its completion.
-        mathJaxTypeset(contents_div);
-        let effects: StateEffect<updateDocBlockType>[] = [
-            updateDocBlock.of({
-                from,
-                indent,
-                delimiter,
-                contents,
-            }),
-        ];
-
-        current_view.dispatch({ effects });
+        await mathJaxTypeset(contents_div);
+        current_view.dispatch({
+            effects: [
+                updateDocBlock.of({
+                    from,
+                    indent,
+                    delimiter,
+                    contents,
+                }),
+            ],
+        });
     });
 };
 
@@ -819,7 +827,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     // Wait until the focus event completes; this causes the
                     // cursor position (the selection) to be set in the
                     // contenteditable div. Then, save that location.
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         // Untypeset math in the old doc block and the current doc block before moving its contents around.
                         const tinymce_div =
                             document.getElementById("TinyMCE-inst")!;
@@ -847,7 +855,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             null,
                         );
                         // The previous content edited by TinyMCE is now a div. Retypeset this after the transition.
-                        mathJaxTypeset(old_contents_div);
+                        await mathJaxTypeset(old_contents_div);
                         // Move TinyMCE to the new location, then remove the old
                         // div it will replace.
                         target.insertBefore(tinymce_div, null);
@@ -857,7 +865,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         tinymce_singleton!.setContent(contents_div.innerHTML);
                         contents_div.remove();
                         // The new div is now a TinyMCE editor. Retypeset this.
-                        mathJaxTypeset(tinymce_div);
+                        await mathJaxTypeset(tinymce_div);
 
                         // This process causes TinyMCE to lose focus. Restore
                         // that. However, this causes TinyMCE to lose the
@@ -895,6 +903,15 @@ const autosaveExtension = EditorView.updateListener.of(
     // [ViewUpdate](https://codemirror.net/docs/ref/#view.ViewUpdate) which
     // describes a change being made to the document.
     (v: ViewUpdate) => {
+        // Ignore any transaction group marked with a `noAutosaveAnnotation`.
+        if (
+            v.transactions.some(
+                (tr) => tr.annotation(noAutosaveAnnotation) === true,
+            )
+        ) {
+            return true;
+        }
+
         // The
         // [docChanged](https://codemirror.net/docs/ref/#view.ViewUpdate.docChanged)
         // flag is the relevant part of this change description. However, this
@@ -919,10 +936,6 @@ const autosaveExtension = EditorView.updateListener.of(
             set_is_dirty();
             startAutosaveTimer();
         } else if (v.selectionSet) {
-            if (ignore_selection_change) {
-                ignore_selection_change = false;
-                return;
-            }
             // Send an update if only the selection changed.
             startAutosaveTimer();
         }
@@ -1047,7 +1060,7 @@ export const CodeMirror_load = async (
                     parser,
                     basicSetup,
                     EditorView.lineWrapping,
-                    autosaveCompartment.of(autosaveExtension),
+                    autosaveExtension,
                     // Make tab an indent per the
                     // [docs](https://codemirror.net/examples/tab/). TODO:
                     // document a way to escape the tab key per the same docs.
@@ -1093,8 +1106,6 @@ export const CodeMirror_load = async (
             })
         )[0];
     } else {
-        // Disable autosave when performing these updates.
-        current_view.dispatch({ effects: autosaveCompartment.reconfigure([]) });
         // This contains a diff, instead of plain text. Apply the text diff.
         //
         // First, apply just the text edits. Use an annotation so that the doc
@@ -1102,7 +1113,10 @@ export const CodeMirror_load = async (
         // from/to values of doc blocks are changed by unfrozen text edits).
         current_view.dispatch({
             changes: codechat_for_web.source.Diff.doc,
-            annotations: docBlockFreezeAnnotation.of(true),
+            annotations: [
+                docBlockFreezeAnnotation.of(true),
+                noAutosaveAnnotation.of(true),
+            ],
         });
         // Now, apply the diff in a separate transaction. Applying them in the
         // same transaction causes the text edits to modify from/to values in
@@ -1130,10 +1144,9 @@ export const CodeMirror_load = async (
             }
         }
         // Update the view with these changes to the state.
-        current_view.dispatch({ effects: stateEffects });
-        // Resume autosave.
         current_view.dispatch({
-            effects: autosaveCompartment.reconfigure(autosaveExtension),
+            effects: stateEffects,
+            annotations: noAutosaveAnnotation.of(true),
         });
     }
     scroll_to_line(cursor_line, scroll_line);
@@ -1145,8 +1158,10 @@ export const scroll_to_line = (cursor_line?: number, scroll_line?: number) => {
         return;
     }
 
-    // Create a transaction to set the cursor and scroll position.
-    const dispatch_data: TransactionSpec = {};
+    // Create a transaction to set the cursor and scroll position. Avoid an autosave that sends updated cursor/scroll positions produced by this transaction.
+    const dispatch_data: TransactionSpec = {
+        annotations: noAutosaveAnnotation.of(true),
+    };
     if (cursor_line !== undefined) {
         // Translate the line numbers to a position.
         const cursor_pos = current_view?.state.doc.line(cursor_line).from;
@@ -1169,7 +1184,6 @@ export const scroll_to_line = (cursor_line?: number, scroll_line?: number) => {
     }
 
     // Run it.
-    ignore_selection_change = true;
     current_view?.dispatch(dispatch_data);
 };
 
