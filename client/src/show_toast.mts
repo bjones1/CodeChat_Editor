@@ -22,7 +22,7 @@ import "toastify-js/src/toastify.css";
 export const show_toast = (text: string) =>
     Toastify({
         text,
-        duration: 3000,
+        duration: 10000,
         newWindow: true,
         close: true,
         gravity: "top",
