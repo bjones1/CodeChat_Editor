@@ -1064,7 +1064,7 @@ mod tests {
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         // Wait for the filewatcher to debounce this file write.
-        sleep(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(3)).await;
         // The version is random; don't check it with a fixed value.
         let msg = get_message_as!(to_client_rx, EditorMessageContents::Update);
         assert_eq!(

@@ -182,6 +182,8 @@ macro_rules! harness {
                 // running.
                 eprintln!("Failed to start the webdriver process: {err:#?}");
             }
+            // Wait for the driver to start up.
+            sleep(Duration::from_millis(500)).await;
             let driver = WebDriver::new(server_url, caps).await?;
             let driver_clone = driver.clone();
             let driver_ref = &driver_clone;
