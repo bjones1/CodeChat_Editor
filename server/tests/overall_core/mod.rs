@@ -257,6 +257,54 @@ fn get_version(msg: &EditorMessage) -> f64 {
         .version
 }
 
+async fn goto_line(
+    codechat_server: &CodeChatEditorServer,
+    driver_ref: &WebDriver,
+    client_id: &mut f64,
+    path_str: &str,
+    line: u32,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let code_line_css = ".CodeChat-CodeMirror .cm-line";
+    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
+    code_line
+        .send_keys(
+            Key::Alt
+                + if cfg!(target_os = "macos") {
+                    Key::Command
+                } else {
+                    Key::Control
+                }
+                + "g",
+        )
+        .await
+        .unwrap();
+    // Enter a line in the dialog that pops up.
+    driver_ref
+        .find(By::Css("input.cm-textfield"))
+        .await
+        .unwrap()
+        .send_keys(line.to_string() + Key::Enter)
+        .await
+        .unwrap();
+    // The cursor movement produces a cursor/scroll position update after an
+    // autosave delay.
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: *client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.to_string(),
+                contents: None,
+                cursor_position: Some(line),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+    codechat_server.send_result(*client_id, None).await.unwrap();
+    *client_id += MESSAGE_ID_INCREMENT;
+
+    Ok(())
+}
 // Tests
 // -----------------------------------------------------------------------------
 //
@@ -1183,46 +1231,13 @@ async fn test_client_updates_core(
         }
     );
 
-    // Insert a character to check the insertion point.
-    let code_line_css = ".CodeChat-CodeMirror .cm-line";
-    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
-    code_line
-        .send_keys(
-            Key::Alt
-                + if cfg!(target_os = "macos") {
-                    Key::Command
-                } else {
-                    Key::Control
-                }
-                + "g",
-        )
+    goto_line(&codechat_server, driver_ref, &mut client_id, &path_str, 4)
         .await
         .unwrap();
-    // Enter a line in the dialog that pops up.
-    driver_ref
-        .find(By::Css("input.cm-textfield"))
-        .await
-        .unwrap()
-        .send_keys("4" + Key::Enter)
-        .await
-        .unwrap();
-    // The cursor movement produces a cursor/scroll position update after an
-    // autosave delay.
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.clone(),
-                contents: None,
-                cursor_position: Some(4),
-                scroll_position: Some(1.0)
-            })
-        }
-    );
-    client_id += MESSAGE_ID_INCREMENT;
 
     // Add an indented comment.
+    let code_line_css = ".CodeChat-CodeMirror .cm-line";
+    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
     code_line.send_keys(Key::Home + "# ").await.unwrap();
     // This should edit the (new) third line of the file after word wrap: `def
     // foo():`.
@@ -1250,6 +1265,140 @@ async fn test_client_updates_core(
                     version: new_client_version,
                 }),
                 cursor_position: Some(4),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+
+    Ok(())
+}
+
+mod test4 {
+    use super::*;
+    harness!(test_4_core);
+}
+
+#[tokio::test]
+async fn test_4() -> Result<(), Box<dyn Error + Send + Sync>> {
+    test4::harness(test_4_core, prep_test_dir!()).await
+}
+
+// Some of the thirtyfour calls are marked as deprecated, though they aren't
+// marked that way in the Selenium docs.
+#[allow(deprecated)]
+async fn test_4_core(
+    codechat_server: CodeChatEditorServer,
+    driver_ref: &WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let mut expected_messages = ExpectedMessages::new();
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let current_file_id = codechat_server
+        .send_message_current_file(path_str.clone())
+        .await
+        .unwrap();
+    // The ordering of these messages isn't fixed -- one can come first, or the
+    // other.
+    expected_messages.insert(EditorMessage {
+        id: current_file_id,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    });
+    let mut server_id = 6.0;
+    expected_messages.insert(EditorMessage {
+        id: server_id,
+        message: EditorMessageContents::LoadFile(path.clone()),
+    });
+    expected_messages
+        .assert_all_messages(&codechat_server, TIMEOUT)
+        .await;
+
+    // Respond to the load request.
+    let ide_version = 0.0;
+    codechat_server
+        .send_result_loadfile(
+            server_id,
+            Some((
+                indoc!(
+                    "
+                    # 1
+                    2
+                    # 3
+                    4
+                    # 5
+                    "
+                )
+                .to_string(),
+                ide_version,
+            )),
+        )
+        .await
+        .unwrap();
+    server_id += MESSAGE_ID_INCREMENT;
+
+    // The loadfile produces a message to the client, which comes back here. We
+    // don't need to acknowledge it.
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // Target the iframe containing the Client.
+    let codechat_iframe = driver_ref.find(By::Css("#CodeChat-iframe")).await.unwrap();
+    driver_ref
+        .switch_to()
+        .frame_element(&codechat_iframe)
+        .await
+        .unwrap();
+
+    // Switch from one doc block to another. It should produce an update with only cursor/scroll info (no contents).
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    let doc_blocks = driver_ref.find_all(By::Css(".CodeChat-doc")).await.unwrap();
+    doc_blocks[0].click().await.unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: None,
+                cursor_position: Some(1),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    doc_blocks[1].click().await.unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: None,
+                cursor_position: Some(3),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    doc_blocks[2].click().await.unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: None,
+                cursor_position: Some(5),
                 scroll_position: Some(1.0)
             })
         }
