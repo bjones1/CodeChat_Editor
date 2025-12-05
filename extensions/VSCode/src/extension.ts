@@ -163,7 +163,14 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 ignore_active_editor_change = false;
                                 return;
                             }
-                            send_update(false);
+                            // Skip an update if we've already sent a `CurrentFile` for this editor.
+                            if (
+                                current_editor ===
+                                vscode.window.activeTextEditor
+                            ) {
+                                return;
+                            }
+                            send_update(true);
                         }),
                     );
 
@@ -174,6 +181,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     ignore_selection_change = false;
                                     return;
                                 }
+                                console_log(
+                                    "CodeChat Editor extension: sending updated cursor/scroll position.",
+                                );
                                 send_update(false);
                             },
                         ),
@@ -246,19 +256,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                             webview_panel = undefined;
                             await stop_client();
                         });
-
-                        // Render when the webview panel is shown.
-                        webview_panel.onDidChangeViewState(
-                            (
-                                _event: vscode.WebviewPanelOnDidChangeViewStateEvent,
-                            ) => {
-                                // Only render if the webview was activated;
-                                // this event also occurs when it's deactivated.
-                                if (webview_panel?.active) {
-                                    send_update(true);
-                                }
-                            },
-                        );
                     }
                 }
 
@@ -367,6 +364,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         await sendResult(id, "OutOfSync");
                                         // Send an `Update` with the full text to
                                         // re-sync the Client.
+                                        console_log(
+                                            "CodeChat Editor extension: sending update because Client is out of sync.",
+                                        );
                                         send_update(true);
                                         break;
                                     }
@@ -395,10 +395,10 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         }
                                     }
                                 }
-                                vscode.workspace.applyEdit(wse).then(() => {
-                                    ignore_text_document_change = false;
-                                    ignore_selection_change = false;
-                                });
+                                await vscode.workspace.applyEdit(wse);
+                                ignore_text_document_change = false;
+                                ignore_selection_change = false;
+
                                 // Now that we've updated our text, update the
                                 // associated version as well.
                                 version = current_update.contents.version;
@@ -425,7 +425,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     // viewport, but a bit below it.
                                     TextEditorRevealType.AtTop,
                                 );
-                                ignore_selection_change = false;
                             }
 
                             let cursor_line = current_update.cursor_position;
@@ -443,7 +442,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         cursor_position,
                                     ),
                                 ];
-                                ignore_selection_change = false;
                             }
                             await sendResult(id);
                             break;
