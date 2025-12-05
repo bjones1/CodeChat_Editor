@@ -24,6 +24,12 @@ Changelog
 
 * No changes.
 
+Version 0.1.43 -- 2025-Dec-05
+--------------------------------------------------------------------------------
+
+* Fix cursor movement errors in the Client.
+* Prevent unnecessary saves of Client data to the IDE.
+
 Version 0.1.42 -- 2025-Dec-04
 --------------------------------------------------------------------------------
 
