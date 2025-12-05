@@ -464,7 +464,6 @@ class DocBlockWidget extends WidgetType {
         // If this change was produced by a user edit, then the DOM was already
         // updated. Stop here.
         if (this.is_user_change) {
-            console.log("user change -- skipping DOM update.");
             return true;
         }
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
@@ -676,7 +675,6 @@ const on_dirty = (
 
     // Only run this after typesetting is done.
     window.MathJax.whenReady(async () => {
-        console.log("Starting update for user change.");
         on_dirty_scheduled = false;
         // Find the doc block parent div.
         const target = (event_target as HTMLDivElement).closest(
@@ -1098,10 +1096,10 @@ export const CodeMirror_load = async (
                 setup: (editor: Editor) => {
                     // See the
                     // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
-                    editor.on("Dirty", (event: any) => {
+                    editor.on("input", (event: any) => {
                         // Get the div TinyMCE stores edits in. TODO: find
                         // documentation for `event.target.bodyElement`.
-                        const target_or_false = event.target?.bodyElement;
+                        const target_or_false = event.target as HTMLElement;
                         if (target_or_false == null) {
                             return false;
                         }
