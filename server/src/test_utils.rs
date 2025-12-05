@@ -62,7 +62,7 @@ macro_rules! cast {
         else {
             // If the variant and value mismatch, the macro will simply panic
             // and report the expected pattern.
-            panic!("mismatch variant when cast to {}", stringify!($pat));
+            panic!("mismatch variant when cast to {}; received {:?} instead.", stringify!($pat), $target);
         }
     }};
     // For an enum containing multiple values, return a tuple. I can't figure
@@ -73,7 +73,7 @@ macro_rules! cast {
             ($($tup,)*)
         }
         else {
-            panic!("mismatch variant when cast to {}", stringify!($pat));
+            panic!("mismatch variant when cast to {}; received {:?} instead.", stringify!($pat), $target);
         }
     }};
 }

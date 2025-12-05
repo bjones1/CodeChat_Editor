@@ -702,7 +702,8 @@ pub fn get_connection_id_raw(app_state: &WebAppState) -> u32 {
 #[cfg(test)]
 mod tests {
     use std::{
-        fs,
+        backtrace::Backtrace,
+        env, fs,
         path::{Path, PathBuf},
         str::FromStr,
         time::Duration,
@@ -779,7 +780,10 @@ mod tests {
                 println!("{} - {:?}", m.id, m.message);
                 m
             }
-            _ = sleep(Duration::from_secs(3)) => panic!("Timeout waiting for message")
+            _ = sleep(Duration::from_secs(3)) => {
+                // The backtrace shows what message the code was waiting for; otherwise, it's an unhelpful error message.
+                panic!("Timeout waiting for message:\n{}", Backtrace::force_capture());
+            }
         }
     }
 
@@ -860,7 +864,8 @@ mod tests {
             false,
             false,
         );
-        let codechat_for_web = cast!(cast!(translation_results, Ok), TranslationResults::CodeChat);
+        let tr = cast!(translation_results, Ok);
+        let codechat_for_web = cast!(tr, TranslationResults::CodeChat);
         assert_eq!(umc.contents, Some(codechat_for_web));
 
         // Report any errors produced when removing the temporary directory.
@@ -987,7 +992,12 @@ mod tests {
         // Check that it produces an error.
         let (id, err_msg) = get_message_as!(to_client_rx, EditorMessageContents::Result);
         assert_eq!(id, INITIAL_CLIENT_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT);
-        cast!(cast!(err_msg, Err), ResultErrTypes::WrongFileUpdate, _a, _b);
+        cast!(
+            err_msg.as_ref().unwrap_err(),
+            ResultErrTypes::WrongFileUpdate,
+            _a,
+            _b
+        );
 
         // 6. Send an update message with unknown source language.
         //
@@ -1020,7 +1030,10 @@ mod tests {
             msg_id,
             INITIAL_CLIENT_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT
         );
-        cast!(cast!(msg, Err), ResultErrTypes::CannotTranslateCodeChat);
+        cast!(
+            msg.as_ref().unwrap_err(),
+            ResultErrTypes::CannotTranslateCodeChat
+        );
 
         // 7. Send a valid message.
         //
@@ -1064,7 +1077,15 @@ mod tests {
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         // Wait for the filewatcher to debounce this file write.
-        sleep(Duration::from_secs(3)).await;
+        sleep(Duration::from_secs(
+            // Mac in CI seems to need a long delay here.
+            if cfg!(target_os = "macos") && env::var("CI") == Ok("true".to_string()) {
+                5
+            } else {
+                2
+            },
+        ))
+        .await;
         // The version is random; don't check it with a fixed value.
         let msg = get_message_as!(to_client_rx, EditorMessageContents::Update);
         assert_eq!(
