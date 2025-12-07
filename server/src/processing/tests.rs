@@ -24,6 +24,7 @@
 use std::{path::PathBuf, str::FromStr};
 
 // ### Third-party
+use indoc::indoc;
 use predicates::prelude::predicate::str;
 use pretty_assertions::assert_eq;
 
@@ -42,9 +43,10 @@ use crate::{
     processing::{
         CodeDocBlockVecToSourceError, CodeMirrorDiffable, CodeMirrorDocBlockDelete,
         CodeMirrorDocBlockTransaction, CodeMirrorDocBlockUpdate, CodechatForWebToSourceError,
-        SourceToCodeChatForWebError, byte_index_of, code_doc_block_vec_to_source,
-        code_mirror_to_code_doc_blocks, codechat_for_web_to_source, diff_code_mirror_doc_blocks,
-        diff_str, source_to_codechat_for_web,
+        HtmlToMarkdownWrapped, SourceToCodeChatForWebError, byte_index_of,
+        code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
+        dehydrate_html, diff_code_mirror_doc_blocks, diff_str, hydrate_html, markdown_to_html,
+        source_to_codechat_for_web,
     },
     test_utils::stringit,
 };
@@ -733,7 +735,7 @@ fn test_source_to_codechat_for_web_1() {
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<foo>\n"),
-                build_codemirror_doc_block(1, 2, " ", "//", "<p>Test</p>\n"),
+                build_codemirror_doc_block(1, 2, " ", "//", "<p>Test</p>\n</foo>"),
             ]
         )))
     );
@@ -752,8 +754,8 @@ fn test_source_to_codechat_for_web_1() {
             "c_cpp",
             "\n\n",
             vec![
-                build_codemirror_doc_block(0, 1, "", "//", "<pre>\n\n"),
-                build_codemirror_doc_block(1, 2, " ", "//", "<p><em>Test</em></p>\n"),
+                build_codemirror_doc_block(0, 1, "", "//", "<pre>\n"),
+                build_codemirror_doc_block(1, 2, " ", "//", "<p><em>Test</em></p>\n</pre>"),
             ]
         )))
     );
@@ -1232,5 +1234,154 @@ fn test_diff_2() {
                 contents: vec![]
             }),
         ]
+    );
+}
+
+#[test]
+fn test_hydrate_html_1() {
+    // These tests check the translation from Markdown to "wet" HTML (what the user provides) instead of dry -> wet HTML.
+    assert_eq!(
+        hydrate_html(&markdown_to_html(indoc!(
+            "```mermaid
+            flowchart LR
+                start --> stop
+            ```
+            "
+        )))
+        .unwrap(),
+        indoc!(
+            "
+            <wc-mermaid>flowchart LR
+                start --&gt; stop
+            </wc-mermaid>
+            "
+        )
+    );
+
+    assert_eq!(
+        hydrate_html(&markdown_to_html(indoc!(
+            "```graphviz
+            digraph {
+                start -> stop
+            }
+            ```
+            "
+        )))
+        .unwrap(),
+        indoc!(
+            "
+            <graphviz-graph>digraph {
+                start -&gt; stop
+            }
+            </graphviz-graph>
+            "
+        )
+    );
+
+    // Ensure math doesn't need escaping.
+    assert_eq!(
+        hydrate_html(&markdown_to_html(indoc!(
+            "
+            ${a}_1, b_{2}$
+            $a*1, b*2$
+            $[a](b)$
+            $3 <a> b$
+            $a \\; b$
+
+            $${a}_1, b_{2}, a*1, b*2, [a](b), 3 <a> b, a \\; b$$
+            "
+        )))
+        .unwrap(),
+        indoc!(
+            r#"
+            <p><span class="math math-inline">\({a}_1, b_{2}\)</span>
+            <span class="math math-inline">\(a*1, b*2\)</span>
+            <span class="math math-inline">\([a](b)\)</span>
+            <span class="math math-inline">\(3 &lt;a&gt; b\)</span>
+            <span class="math math-inline">\(a \; b\)</span></p>
+            <p><span class="math math-display">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
+            "#
+        )
+    );
+}
+
+#[test]
+fn test_dehydrate_html_1() {
+    let converter = HtmlToMarkdownWrapped::new();
+    assert_eq!(
+        converter
+            .convert(
+                &dehydrate_html(indoc!(
+                    "
+            <wc-mermaid>flowchart LR
+                start --&gt; stop
+            </wc-mermaid>
+            "
+                ))
+                .unwrap()
+            )
+            .unwrap(),
+        indoc!(
+            "
+            ```mermaid
+            flowchart LR
+                start --> stop
+            ```
+            "
+        )
+    );
+
+    assert_eq!(
+        converter
+            .convert(
+                &dehydrate_html(indoc!(
+                    "
+            <graphviz-graph>digraph {
+                start -&gt; stop
+            }
+            </graphviz-graph>
+            "
+                ))
+                .unwrap()
+            )
+            .unwrap(),
+        indoc!(
+            "
+            ```graphviz
+            digraph {
+                start -> stop
+            }
+            ```
+            "
+        )
+    );
+
+    assert_eq!(
+        converter
+            .convert(
+                &dehydrate_html(indoc!(
+                    r#"
+                    <p><span class="math math-inline">\({a}_1, b_{2}\)</span>
+                    <span class="math math-inline">\(a*1, b*2\)</span>
+                    <span class="math math-inline">\([a](b)\)</span>
+                    <span class="math math-inline">\(3 &lt;a&gt; b\)</span>
+                    <span class="math math-inline">\(a \; b\)</span></p>
+                    <p><span class="math math-display">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
+                    "#
+                ))
+                .unwrap()
+            )
+            .unwrap(),
+        indoc!(
+            "
+            ${a}_1, b_{2}$
+            $a*1, b*2$
+            $[a](b)$
+            $3 <a> b$
+            $a \\; b$
+
+            $${a}_1, b_{2}, a*1, b*2, [a](b), 3 <a> b, a \\; b$$
+            "
+        )
     );
 }

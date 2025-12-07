@@ -31,11 +31,14 @@ use std::rc::{Rc, Weak};
 */
 use std::{
     borrow::Cow,
+    cell::RefCell,
     cmp::{max, min},
     ffi::OsStr,
+    io,
     iter::Map,
     ops::Range,
     path::{Path, PathBuf},
+    rc::Rc,
     slice::Iter,
 };
 
@@ -51,8 +54,16 @@ use htmd::{
     HtmlToMarkdown,
     options::{LinkStyle, TranslationMode},
 };
+use html5ever::{
+    Attribute, LocalName, Namespace, ParseOpts, QualName, parse_document, serialize,
+    serialize::{SerializeOpts, TraversalScope},
+    tendril::TendrilSink,
+    tree_builder::TreeBuilderOpts,
+};
 use imara_diff::{Algorithm, Diff, Hunk, InternedInput, TokenSource};
 use lazy_static::lazy_static;
+use markup5ever_rcdom::{Node, NodeData, RcDom, SerializableHandle};
+use phf::phf_map;
 use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -254,7 +265,7 @@ lazy_static! {
         // Non-greedy wildcard -- match the first separator, so we don't munch
         // multiple `DOC_BLOCK_SEPARATOR_STRING`s in one replacement.
         ".*?",
-        "<CodeChatEditor-separator/>\n")).unwrap();
+        "<CodeChatEditor-separator></CodeChatEditor-separator>\n")).unwrap();
 }
 
 // Use this as a way to end unterminated fenced code blocks and specific types
@@ -285,14 +296,16 @@ const DOC_BLOCK_SEPARATOR_STRING: &str = concat!(
     r#"<CodeChatEditor-fence>
 ~~~~~~~~~~~~~~~~~~~~~~~
 </CodeChatEditor-fence>
-<CodeChatEditor-separator/>
+<CodeChatEditor-separator></CodeChatEditor-separator>
 
 "#
 );
 
 // After converting Markdown to HTML, this can be used to split doc blocks
-// apart.
-const DOC_BLOCK_SEPARATOR_SPLIT_STRING: &str = "<CodeChatEditor-separator/>\n";
+// apart. Since this is post hydration, the element names are normalized to
+// lower case.
+const DOC_BLOCK_SEPARATOR_SPLIT_STRING: &str =
+    "<codechateditor-separator></codechateditor-separator>\n";
 // Correctly terminated fenced code blocks produce this, which can be removed
 // from the HTML produced by Markdown conversion.
 const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
@@ -304,7 +317,8 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 </CodeChatEditor-fence>
 "#;
 // The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex.
-const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str = "</code></pre>\n<CodeChatEditor-separator/>\n";
+const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
+    "</code></pre>\n<CodeChatEditor-separator></CodeChatEditor-separator>\n";
 // <a class="fence-mending-end"></a>
 
 // The column at which to word wrap doc blocks.
@@ -401,6 +415,8 @@ pub enum CodechatForWebToSourceError {
     HtmlToMarkdownFailed(#[from] HtmlToMarkdownWrappedError),
     #[error("unable to translate CodeChat to source: {0}")]
     CannotTranslateCodeChat(#[from] CodeDocBlockVecToSourceError),
+    #[error("unable to parse HTML {0}")]
+    ParseFailed(#[from] io::Error),
 }
 
 // Transform `CodeChatForWeb` to source code
@@ -436,9 +452,10 @@ pub fn codechat_for_web_to_source(
         }
         // Translate the HTML document to Markdown.
         let converter = HtmlToMarkdownWrapped::new();
-        return converter
+        let wet_html = converter
             .convert(&code_mirror.doc)
-            .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed);
+            .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed)?;
+        return dehydrate_html(&wet_html).map_err(CodechatForWebToSourceError::ParseFailed);
     }
     let code_doc_block_vec_html = code_mirror_to_code_doc_blocks(code_mirror);
     let code_doc_block_vec = doc_block_html_to_markdown(code_doc_block_vec_html)
@@ -578,6 +595,8 @@ fn doc_block_html_to_markdown(
     let mut converter = HtmlToMarkdownWrapped::new();
     for code_doc_block in &mut code_doc_block_vec {
         if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
+            let contents = dehydrate_html(&doc_block.contents)?;
+
             // Compute a line wrap width based on the current indent. Set a
             // minimum of half the line wrap width, to prevent ridiculous
             // wrapping with large indents.
@@ -592,7 +611,7 @@ fn doc_block_html_to_markdown(
                         WORD_WRAP_COLUMN,
                     ),
             ));
-            doc_block.contents = converter.convert(&doc_block.contents)?;
+            doc_block.contents = converter.convert(&contents)?;
         }
     }
 
@@ -757,6 +776,9 @@ fn code_doc_block_vec_to_source(
 pub enum SourceToCodeChatForWebError {
     #[error("unknown lexer {0}")]
     UnknownLexer(String),
+    // Since we want `PartialEq`, we can't use `#[from] io::Error`; instead, convert the IO error to a string.
+    #[error("unable to parse HTML {0}")]
+    ParseFailed(String),
 }
 
 // Transform from source code to `CodeChatForWeb`
@@ -807,8 +829,9 @@ pub fn source_to_codechat_for_web(
         version,
         source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
             // Document-only files are easy: just encode the contents.
-            let html = markdown_to_html(file_contents);
-            // TODO: process the HTML.
+            let dry_html = markdown_to_html(file_contents);
+            let html = hydrate_html(&dry_html)
+                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             CodeMirrorDiffable::Plain(CodeMirror {
                 doc: html,
                 doc_blocks: vec![],
@@ -861,6 +884,9 @@ pub fn source_to_codechat_for_web(
                 .replace_all(&html, DOC_BLOCK_SEPARATOR_MENDED_FENCE);
             // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
+            // 3. Hydrate the cleaned HTML.
+            let html = hydrate_html(&html)
+                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 3. Split on the separator.
             let mut doc_block_contents_iter = html.split(DOC_BLOCK_SEPARATOR_SPLIT_STRING);
             // <a class="fence-mending-end"></a>
@@ -969,15 +995,250 @@ pub fn source_to_codechat_for_web_string(
 /// CommonMark spec.)
 fn markdown_to_html(markdown: &str) -> String {
     let mut options = Options::all();
-    // Turndown (which converts HTML back to Markdown) doesn't support smart
+    // htmd (which converts HTML back to Markdown) doesn't support smart
     // punctuation.
     options.remove(Options::ENABLE_SMART_PUNCTUATION);
-    options.remove(Options::ENABLE_MATH);
     let parser = Parser::new_ext(markdown, options);
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
     html_output
 }
+
+// A framework to transform HTML by parsing it to a DOM tree, walking the tree, then serializing the tree back to an HTML string.
+fn transform_html<T: FnOnce(Rc<Node>)>(html_in: &str, transform: T) -> io::Result<String> {
+    // The approach: transform the HTML to a DOM tree, then walk the three to apply these transformations.
+    //
+    // First, parse it to a DOM.
+    let dom = parse_document(
+        RcDom::default(),
+        ParseOpts {
+            tree_builder: TreeBuilderOpts {
+                scripting_enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .from_utf8()
+    .read_from(&mut html_in.as_bytes())?;
+
+    // Walk and transform the DOM.
+    transform(dom.document.clone());
+
+    // Serialize the transformed DOM back to a string.
+    let so = SerializeOpts {
+        // Don't include the body node in the output.
+        traversal_scope: TraversalScope::ChildrenOnly(None),
+        ..Default::default()
+    };
+    let mut bytes = vec![];
+    // HTML is:
+    // ```html
+    // <html>   <-- element 0
+    //  <head>...</head>
+    //  <body>...</body>  <-- element 1
+    // </html>
+    // ```
+    let body = dom.document.children.borrow()[0].children.borrow()[1].clone();
+    //println!("{:#?}", body);
+    serialize(&mut bytes, &SerializableHandle::from(body.clone()), so)?;
+    let html_out = String::from_utf8(bytes).map_err(io::Error::other)?;
+
+    Ok(html_out)
+}
+
+// HTML produced from Markdown needs additional processing, termed hydration:
+//
+// - Transform math, Mermaid, GraphViz, etc. nodes.
+// - (Eventually) record document structure information.
+// - (Eventually) assign a unique ID to all links that don't have one.
+// - (Eventually) fill in autocomplete fields.
+//
+fn hydrate_html(html: &str) -> io::Result<String> {
+    transform_html(html, hydrating_walk_node)
+}
+
+fn hydrating_walk_node(node: Rc<Node>) {
+    for child in node.children.borrow_mut().iter_mut() {
+        let possible_replacement_child =
+        // Look for a `<pre>` tag
+        if get_node_tag_name(child) == Some("pre")
+            // with no attributes
+            && let NodeData::Element {
+                attrs: ref_child_attrs, ..
+            } = &child.data
+            && ref_child_attrs.borrow().is_empty()
+            // with one `<code>` child
+            && let code_children = child.children.borrow()
+            && code_children.len() == 1
+            && let code_child = code_children.iter().next().unwrap()
+            && get_node_tag_name(code_child) == Some("code")
+            // with only a `class=language-mermaid` attribute
+            && let NodeData::Element {
+                attrs: ref_code_child_attrs, ..
+            } = &code_child.data
+            && let code_child_attrs = ref_code_child_attrs.borrow()
+            && code_child_attrs.len() == 1
+            && let Some(attr) = code_child_attrs.iter().next()
+            && *attr.name.local == *"class"
+            && let Some(element_name) = CODE_BLOCK_LANGUAGE_TO_CUSTOM_ELEMENT.get(&*attr.value)
+            // with only one Text child
+            && let text_children = &code_child.children.borrow()
+            && text_children.len() == 1
+            && let Some(text_child) = text_children.iter().next()
+            && let NodeData::Text { .. } = &text_child.data
+        {
+            // Make the parent node a `element_name` node, with the child's text.
+            let wc_mermaid = Node::new(NodeData::Element {
+                name: QualName::new(None, Namespace::from(""), LocalName::from(*element_name)),
+                attrs: RefCell::new(vec![]),
+                template_contents: RefCell::new(None),
+                mathml_annotation_xml_integration_point: false,
+            });
+            wc_mermaid.children.borrow_mut().push(text_child.clone());
+            Some(wc_mermaid)
+        } else {
+            // See if this is a math node to replace; if not, this returns `None`.
+            replace_math_node(child, true)
+        };
+
+        // Replace the child if we found a replacement; otherwise, walk it.
+        if let Some(replacement_child) = possible_replacement_child {
+            *child = replacement_child;
+        } else {
+            hydrating_walk_node(child.clone());
+        }
+    }
+}
+
+fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
+    // Look for math produced by pulldown-cmark: `<span class="math math-inline>...</span>`; add `\(...\)` inside the span. Perform a similar transformation for display math.
+    if get_node_tag_name(child) == Some("span")
+            && let NodeData::Element {
+                attrs: ref_child_attrs, ..
+            } = &child.data
+            && let child_attrs = ref_child_attrs.borrow()
+            && child_attrs.len() == 1
+            && let Some(attr) = child_attrs.iter().next()
+            && *attr.name.local == *"class"
+            && let attr_value = &attr.value
+            // with only one Text child
+            && let text_children = &child.children.borrow()
+            && text_children.len() == 1
+            && let Some(text_child) = text_children.iter().next()
+            && let NodeData::Text { contents } = &text_child.data
+    {
+        // Final test: if the class is correct, this is math; otherwise, perform no transformation.
+        let attr_value_str: &str = attr_value;
+        let delim = match attr_value_str {
+            "math math-inline" => Some(("\\(", "\\)")),
+            "math math-display" => Some(("$$", "$$")),
+            _ => None,
+        };
+
+        // Since we've already borrowed `child`, we can't `borrow_mut` to modify it. Instead, create a new `span` with delimited text and return that.
+        if let Some(delim) = delim {
+            let contents_str = &*contents.borrow();
+            let delimited_text_str = if is_hydrate { format!("{}{}{}", delim.0, contents_str, delim.1) } else {
+                // Only apply the dehydration is the delimiters are correct.
+                if !contents_str.starts_with(delim.0) || !contents_str.ends_with(delim.1) {
+                    return None;
+                }
+                // Return the contents without the beginning and ending delimiters.
+                contents_str[delim.0.len()..contents_str.len() - delim.1.len()].to_string()
+            };
+            let delimited_text_node = Node::new(NodeData::Text {
+                contents: RefCell::new(delimited_text_str.into()),
+            });
+            let span = Node::new(NodeData::Element {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("span")),
+                attrs: RefCell::new(vec![Attribute {
+                    name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
+                    value: attr_value.clone(),
+                }]),
+                template_contents: RefCell::new(None),
+                mathml_annotation_xml_integration_point: false,
+            });
+            span.children.borrow_mut().push(delimited_text_node);
+            Some(span)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+fn dehydrate_html(html: &str) -> io::Result<String> {
+    transform_html(html, dehydrating_walk_node)
+}
+
+fn dehydrating_walk_node(node: Rc<Node>) {
+    for child in node.children.borrow_mut().iter_mut() {
+        // Look for a custom element tag
+        let possible_replacement_child = if let Some(child_name) = get_node_tag_name(child)
+        && let Some(language_name) = CUSTOM_ELEMENT_TO_CODE_BLOCK_LANGUAGE.get(child_name)
+            // with no attributes
+            && let NodeData::Element {
+                attrs: ref_attrs, ..
+            } = &child.data
+            && ref_attrs.borrow().is_empty()
+            // and only one Text child
+            && let text_children = &child.children.borrow()
+            && text_children.len() == 1
+            && let Some(text_child) = text_children.iter().next()
+            && let NodeData::Text { .. } = &text_child.data
+        {
+            // Create `<pre><code class="from language_name">text_child contents</code></pre>`.
+            let pre = Node::new(NodeData::Element {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("pre")),
+                attrs: RefCell::new(vec![]),
+                template_contents: RefCell::new(None),
+                mathml_annotation_xml_integration_point: false,
+            });
+            let code = Node::new(NodeData::Element {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("code")),
+                attrs: RefCell::new(vec![Attribute {
+                    name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
+                    value: (*language_name).into(),
+                }]),
+                template_contents: RefCell::new(None),
+                mathml_annotation_xml_integration_point: false,
+            });
+            code.children.borrow_mut().push(text_child.clone());
+            pre.children.borrow_mut().push(code);
+            Some(pre)
+        } else {
+            replace_math_node(child, false)
+        };
+
+        // Replace the child if we found a replacement; otherwise, walk it.
+        if let Some(replacement_child) = possible_replacement_child {
+            *child = replacement_child;
+        } else {
+            dehydrating_walk_node(child.clone());
+        }
+    }
+}
+
+fn get_node_tag_name(node: &Rc<Node>) -> Option<&str> {
+    match &node.data {
+        NodeData::Document => Some("html"),
+        NodeData::Element { name, .. } => Some(&name.local),
+        _ => None,
+    }
+}
+
+// Translate from Markdown class names for code blocks to the appropriate HTML custom element.
+static CODE_BLOCK_LANGUAGE_TO_CUSTOM_ELEMENT: phf::Map<&'static str, &'static str> = phf_map! {
+    "language-mermaid" => "wc-mermaid",
+    "language-graphviz" => "graphviz-graph",
+};
+
+static CUSTOM_ELEMENT_TO_CODE_BLOCK_LANGUAGE: phf::Map<&'static str, &'static str> = phf_map! {
+    "wc-mermaid" => "language-mermaid",
+    "graphviz-graph" => "language-graphviz"
+};
 
 // ### Diff support
 //

@@ -466,9 +466,6 @@ const MATHJAX_TAGS: &str = concatdoc!(
                     obj.data.contentEditable = false;
                 }],
             },
-            tex: {
-                inlineMath: [['$', '$'], ['\\(', '\\)']]
-            },
         };
     </script>"#,
     // Per the
