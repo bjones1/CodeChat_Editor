@@ -102,23 +102,25 @@ window.CodeChatEditor_test = () => {
             test("GraphViz, Mathjax, Mermaid", async function () {
                 // Wait for the renderers to run.
                 await sleep(1500);
-                // Make sure GraphViz includes an SVG at the top of the shadow
-                // root.
-                assert.equal(
+                // Make sure GraphViz includes a `div` at the top of the shadow
+                // root, with a `svg` inside it.
+                const gv =
                     document.getElementsByTagName("graphviz-graph")[0]
-                        .shadowRoot!.children[0].tagName,
-                    "svg",
-                );
+                        .shadowRoot!.children[0];
+                assert.equal(gv.tagName, "DIV");
+                assert.equal(gv.children[0].tagName, "svg");
+
                 // Mermaid graphs start with a div.
-                assert.equal(
+                const mer =
                     document.getElementsByTagName("wc-mermaid")[0].shadowRoot!
-                        .children[0].tagName,
-                    "DIV",
-                );
+                        .children[0];
+                assert.equal(mer.tagName, "DIV");
+                assert.equal(mer.children[0].tagName, "svg");
+
                 // MathJax has its own stuff.
                 assert.equal(
                     document.getElementsByTagName("mjx-container").length,
-                    1,
+                    2,
                 );
             });
         });
