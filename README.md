@@ -111,62 +111,92 @@ Mathematics
 --------------------------------------------------------------------------------
 
 The CodeChat Editor uses [MathJax](https://www.mathjax.org/) to support typeset
-mathematics. Place the delimiters `$` or `\\(` and `\\)` immediately before and
-after in-line mathematics; place `$$` or `\\\[` and `\\\]` immediately before
+mathematics. Place the delimiters `$` immediately before and
+after in-line mathematics; place `$$` immediately before
 and after displayed mathematics. For example,
 
 | Source                                        | Rendered                                    |
 | --------------------------------------------- | ------------------------------------------- |
-| `$x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$` | $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$ |
-| `\\(a^2\\)`                                   | \\(a^2\\)                                   |
+| `$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$`    | $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$    |
 | `$$a^2$$`                                     | $$a^2$$                                     |
-| `\\\[a^2\\\]`                                 | \\\[a^2\\\]                                 |
 
 See [Latex Mathematics](https://en.wikibooks.org/wiki/LaTeX/Mathematics#Symbols)
 for the syntax used to write mathematics expressions.
-
-### Escaping
-
-Markdown recognizes several characters common in mathematical expressions; these
-must be backslash escaped when used in math expressions to avoid problems. The
-following characters should be escaped: `*`, `_`, `\`, `[`, `]`, `<`.
-
-| Wrong source     | Wrong rendered | Correct source     | Correctly Rendered |
-| ---------------- | -------------- | ------------------ | ------------------ |
-| `${a}_1, b_{2}$` | ${a}*1, b*{2}$ | `${a}\_1, b\_{2}$` | ${a}\_1, b\_{2}$   |
-| `$a*1, b*2$`     | $a*1, b*2$     | `$a\*1, b\*2$`     | $a\*1, b\*2$       |
-| `$[a](b)$`       | $[a](b)$       | `$\[a\](b)$`       | $\[a\](b)$         |
-| `$3 <a> b$`      | $3 <a>b$</a>   | `$3 \<a> b$`       | $3 \<a> b$         |
-| `$a \; b$`       | $a \; b$       | `$a \\; b$`        | $a \\; b$          |
 
 Diagrams
 --------------------------------------------------------------------------------
 
 ### Mermaid
 
-The CodeChat Editor contains rudimentary support for diagrams created by
+The CodeChat Editor supports diagrams created by
 [Mermaid](https://mermaid.js.org/). For example,
 
-| Source                                        | Rendered                                    |
-| --------------------------------------------- | ------------------------------------------- |
-| `<wc-mermaid>graph TD; A --> B;</wc-mermaid>` | <wc-mermaid>graph TD; A --> B;</wc-mermaid> |
+<table>
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Rendered</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
 
-To edit these diagrams, use an
-[HTML entity encoder/decoder](https://mothereff.in/html-entities) and the
-[Mermaid live editor](https://mermaid.live/).
+````markdown
+```mermaid
+graph TD; A --> B;
+```
+````
+
+</td><td>
+
+```mermaid
+graph TD; A --> B;
+```
+
+</td>
+    </tr>
+  </tbody>
+</table>
+
+The [Mermaid live editor](https://mermaid.live/) provide an focused environment for creating Mermaid chart.
 
 ### Graphviz
 
-The CodeChat Editor contains rudimentary support for diagrams created by
+The CodeChat Editor supports diagrams created by
 [Graphviz](https://graphviz.org/). For example,
 
-| Source                                                | Rendered                                            |
-| ----------------------------------------------------- | --------------------------------------------------- |
-| `<graphviz-graph>digraph { A -> B }</graphviz-graph>` | <graphviz-graph>digraph { A -> B }</graphviz-graph> |
 
-To edit these diagrams, use an
-[HTML entity encoder/decoder](https://mothereff.in/html-entities) and a Graphviz
-editor such as [Edotor](https://edotor.net/).
+<table>
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Rendered</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+
+````markdown
+```graphviz
+digraph { A -> B }
+```
+````
+
+</td><td>
+
+```graphviz
+digraph { A -> B }
+```
+
+</td>
+    </tr>
+  </tbody>
+</table>
+
+
+Several on-line tools, such as [Edotor](https://edotor.net/), provide a focused editing experience.
 
 ### PlantUML
 

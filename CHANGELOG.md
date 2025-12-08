@@ -29,6 +29,7 @@ Changelog
   change: you must manually remove Markdown escaping from math written before
   this release.
 * Fix failures when trying to edit a doc block which contains only diagrams.
+* Fix data corruption bug after sending a re-translation back to the Client.
 
 Version 0.1.43 -- 2025-Dec-05
 --------------------------------------------------------------------------------
