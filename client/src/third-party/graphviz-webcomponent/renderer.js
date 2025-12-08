@@ -1,4 +1,4 @@
-import { Graphviz } from '@hpcc-js/wasm/graphviz'
+import { Graphviz } from "@hpcc-js/wasm-graphviz";
 
 let graphviz
 let fatalError

@@ -62,7 +62,7 @@ import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 // This must be imported *after* the previous setup import, so it's placed here,
 // instead of in the third-party category above.
-import "graphviz-webcomponent";
+import "./third-party/graphviz-webcomponent/graph.js";
 import { tinymce, init, Editor } from "./tinymce-config.mjs";
 import {
     CodeChatForWeb,

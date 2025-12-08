@@ -143,10 +143,8 @@ export const init = async (
             "bold italic underline codeformat | quicklink h2 h3",
 
         // Needed to allow custom elements.
-        extended_valid_elements:
-            "graphviz-graph[scale],wc-mermaid",
-        custom_elements:
-            "graphviz-graph,wc-mermaid",
+        extended_valid_elements: "graphviz-graph[scale],wc-mermaid",
+        custom_elements: "graphviz-graph,wc-mermaid",
     });
 
     // Merge in additional setup code.

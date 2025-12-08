@@ -555,6 +555,7 @@ fn run_client_build(
         CLIENT_PATH,
         true,
     )?;
+
     // <a id="#pdf.js>The PDF viewer for use with VSCode. Built it separately,
     // since it's loaded apart from the rest of the Client.
     run_script(
@@ -579,6 +580,21 @@ fn run_client_build(
         format!("{CLIENT_PATH}/static/bundled/node_modules/pdfjs-dist/cmaps/"),
         None,
     )?;
+
+    // Build the graphviz rendering engine.
+    run_script(
+        &esbuild,
+        &[
+            "src/third-party/graphviz-webcomponent/renderer.js",
+            "--bundle",
+            "--outdir=./static/bundled",
+            distflag,
+            "--format=esm",
+        ],
+        CLIENT_PATH,
+        true,
+    )?;
+
     // The HashReader isn't bundled; instead, it's used to translate the JSON
     // metafile produced by the main esbuild run to the simpler format used by
     // the CodeChat Editor. TODO: rewrite this in Rust.
@@ -603,6 +619,7 @@ fn run_client_build(
             true,
         )?;
     }
+
     Ok(())
 }
 
