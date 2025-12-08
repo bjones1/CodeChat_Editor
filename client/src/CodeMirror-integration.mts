@@ -537,9 +537,11 @@ const saveSelection = () => {
             // contents: either it's not an element (such as a div), ...
             current_node.nodeType !== Node.ELEMENT_NODE ||
             // or it's not the doc block contents div.
-            !(current_node as Element).classList.contains(
+            (!(current_node as Element).classList.contains(
                 "CodeChat-doc-contents",
-            );
+            ) &&
+                // Sometimes, the parent of a custom node (`wc-mermaid`) skips the TinyMCE div and returns the overall div. I don't know why.
+                !(current_node as Element).classList.contains("CodeChat-doc"));
             current_node = current_node.parentNode!, is_first = false
         ) {
             // Store the index of this node in its' parent list of child
@@ -549,7 +551,14 @@ const saveSelection = () => {
             // trouble when reversing the selection -- sometimes, the
             // `childNodes` change based on whether text nodes (such as a
             // newline) are included are not after tinyMCE parses the content.
-            let p = current_node.parentNode!;
+            let p = current_node.parentNode;
+            // In case we go off the rails, give up if there are no more parents.
+            if (p === null) {
+                return {
+                    selection_path: [],
+                    selection_offset: 0,
+                };
+            }
             selection_path.unshift(
                 Array.prototype.indexOf.call(
                     is_first ? p.childNodes : p.children,
@@ -589,6 +598,10 @@ const restoreSelection = ({
                         : selection_node.childNodes
                 )[selection_path.shift()!]! as HTMLElement
         );
+        // Exit on failure.
+        if (selection_node === undefined) {
+            return;
+        }
         // Use that to set the selection.
         tinymce_singleton!.selection.setCursorLocation(
             selection_node,
