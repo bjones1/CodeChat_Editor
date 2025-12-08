@@ -64,7 +64,6 @@
         '@codemirror/view': '^6.38.8',
         '@mathjax/mathjax-newcm-font': '4.0.0',
         codemirror: '^6.0.2',
-        'graphviz-webcomponent': 'github:bjones1/graphviz-webcomponent#dist',
         mathjax: '4.0.0',
         mermaid: '^11.12.2',
         'npm-check-updates': '^19.1.2',

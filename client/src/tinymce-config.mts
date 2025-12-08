@@ -144,9 +144,9 @@ export const init = async (
 
         // Needed to allow custom elements.
         extended_valid_elements:
-            "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale],wc-mermaid",
+            "graphviz-graph[scale],wc-mermaid",
         custom_elements:
-            "graphviz-graph,graphviz-script-editor,graphviz-combined,wc-mermaid",
+            "graphviz-graph,wc-mermaid",
     });
 
     // Merge in additional setup code.
