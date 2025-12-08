@@ -152,7 +152,7 @@ macro_rules! harness {
     ($func: ident) => {
         pub async fn harness<
             'a,
-            F: FnOnce(CodeChatEditorServer, &'a WebDriver, PathBuf) -> Fut,
+            F: FnOnce(CodeChatEditorServer, &'a WebDriver, &'a Path) -> Fut,
             Fut: Future<Output = Result<(), WebDriverError>>,
         >(
             // The function which performs tests using thirtyfour. TODO: not
@@ -230,7 +230,7 @@ macro_rules! harness {
                 // lifetime (which contains the state referring to
                 // `driver_clone`) ends after the call to `f`, but don't know
                 // how.
-                $func(codechat_server, driver_ref, test_dir).await?;
+                $func(codechat_server, driver_ref, &test_dir).await?;
 
                 Ok(())
             })
@@ -253,6 +253,22 @@ macro_rules! harness {
     };
 }
 
+macro_rules! make_test {
+    // The name of the test function to call inside the harness.
+    ($test_name: ident, $test_core_name: ident) => {
+        mod $test_name {
+            use super::*;
+            harness!($test_core_name);
+        }
+
+        #[tokio::test]
+        async fn $test_name() -> Result<(), Box<dyn Error + Send + Sync>> {
+            $test_name::harness($test_core_name, prep_test_dir!()).await
+        }
+
+        // Some of the thirtyfour calls are marked as deprecated, though they aren't
+    };
+}
 // Given an `Update` message with contents, get the version.
 fn get_version(msg: &EditorMessage) -> f64 {
     cast!(&msg.message, EditorMessageContents::Update)
@@ -401,15 +417,7 @@ async fn select_codechat_iframe(driver_ref: &WebDriver) -> WebElement {
 //
 // Perform most functions a user would: open/switch documents (Markdown,
 // CodeChat, plain, PDF), use hyperlinks, perform edits on code and doc blocks.
-mod test1 {
-    use super::*;
-    harness!(test_server_core);
-}
-
-#[tokio::test]
-async fn test_server() -> Result<(), Box<dyn Error + Send + Sync>> {
-    test1::harness(test_server_core, prep_test_dir!()).await
-}
+make_test!(test_server, test_server_core);
 
 // Some of the thirtyfour calls are marked as deprecated, though they aren't
 // marked that way in the Selenium docs.
@@ -417,7 +425,7 @@ async fn test_server() -> Result<(), Box<dyn Error + Send + Sync>> {
 async fn test_server_core(
     codechat_server: CodeChatEditorServer,
     driver_ref: &WebDriver,
-    test_dir: PathBuf,
+    test_dir: &Path,
 ) -> Result<(), WebDriverError> {
     let mut expected_messages = ExpectedMessages::new();
     let path = canonicalize(test_dir.join("test.py")).unwrap();
@@ -425,7 +433,7 @@ async fn test_server_core(
     let mut version = 1.0;
     let mut server_id = perform_loadfile(
         &codechat_server,
-        &test_dir,
+        test_dir,
         "test.py",
         Some(("# Test\ncode()".to_string(), version)),
         true,
@@ -688,7 +696,7 @@ async fn test_server_core(
     let toc_path = canonicalize(test_dir.join("toc.md")).unwrap();
     server_id = perform_loadfile(
         &codechat_server,
-        &test_dir,
+        test_dir,
         "test.md",
         Some(("A **markdown** file.".to_string(), version)),
         true,
@@ -927,21 +935,7 @@ async fn test_server_core(
 //
 // This simply runs client-side tests written in TypeScript, verifying that they
 // all pass.
-mod test2 {
-    use super::*;
-    harness!(test_client_core);
-}
-
-#[tokio::test]
-async fn test_client() -> Result<(), Box<dyn Error + Send + Sync>> {
-    // If both thirtyfour tests start at the same time, both fail; perhaps
-    // there's some confusion when two requests care made to the same webserver
-    // from two clients within the same process? In order to avoid then, insert
-    // a delay to hopefully start this test at a different time than
-    // `test_server_core`.
-    sleep(Duration::from_millis(100)).await;
-    test2::harness(test_client_core, prep_test_dir!()).await
-}
+make_test!(test_client, test_client_core);
 
 // Some of the thirtyfour calls are marked as deprecated, though they aren't
 // marked that way in the Selenium docs.
@@ -949,10 +943,10 @@ async fn test_client() -> Result<(), Box<dyn Error + Send + Sync>> {
 async fn test_client_core(
     codechat_server: CodeChatEditorServer,
     driver_ref: &WebDriver,
-    test_dir: PathBuf,
+    test_dir: &Path,
 ) -> Result<(), WebDriverError> {
     let mut server_id =
-        perform_loadfile(&codechat_server, &test_dir, "test.py", None, true, 6.0).await;
+        perform_loadfile(&codechat_server, test_dir, "test.py", None, true, 6.0).await;
     let path = canonicalize(test_dir.join("test.py")).unwrap();
     let path_str = path.to_str().unwrap().to_string();
 
@@ -1022,34 +1016,17 @@ async fn test_client_core(
     Ok(())
 }
 
-mod test3 {
-    use super::*;
-    harness!(test_client_updates_core);
-}
+make_test!(test_client_updates, test_client_updates_core);
 
-#[tokio::test]
-async fn test_client_updates() -> Result<(), Box<dyn Error + Send + Sync>> {
-    // If both thirtyfour tests start at the same time, both fail; perhaps
-    // there's some confusion when two requests care made to the same webserver
-    // from two clients within the same process? In order to avoid then, insert
-    // a delay to hopefully start this test at a different time than
-    // `test_server_core`.
-    sleep(Duration::from_millis(100)).await;
-    test3::harness(test_client_updates_core, prep_test_dir!()).await
-}
-
-// Some of the thirtyfour calls are marked as deprecated, though they aren't
-// marked that way in the Selenium docs.
-#[allow(deprecated)]
 async fn test_client_updates_core(
     codechat_server: CodeChatEditorServer,
     driver_ref: &WebDriver,
-    test_dir: PathBuf,
+    test_dir: &Path,
 ) -> Result<(), WebDriverError> {
     let ide_version = 0.0;
     let server_id = perform_loadfile(
         &codechat_server,
-        &test_dir,
+        test_dir,
         "test.py",
         Some((
             indoc!(
@@ -1168,30 +1145,19 @@ async fn test_client_updates_core(
     Ok(())
 }
 
-mod test4 {
-    use super::*;
-    harness!(test_4_core);
-}
+make_test!(test_4, test_4_core);
 
-#[tokio::test]
-async fn test_4() -> Result<(), Box<dyn Error + Send + Sync>> {
-    test4::harness(test_4_core, prep_test_dir!()).await
-}
-
-// Some of the thirtyfour calls are marked as deprecated, though they aren't
-// marked that way in the Selenium docs.
-#[allow(deprecated)]
 async fn test_4_core(
     codechat_server: CodeChatEditorServer,
     driver_ref: &WebDriver,
-    test_dir: PathBuf,
+    test_dir: &Path,
 ) -> Result<(), WebDriverError> {
     let path = canonicalize(test_dir.join("test.py")).unwrap();
     let path_str = path.to_str().unwrap().to_string();
     let ide_version = 0.0;
     perform_loadfile(
         &codechat_server,
-        &test_dir,
+        test_dir,
         "test.py",
         Some((
             indoc!(
