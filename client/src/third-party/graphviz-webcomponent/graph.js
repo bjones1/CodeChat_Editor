@@ -37,7 +37,7 @@ function applyScale (element) {
 }
 
 function showImage (element, svg) {
-  element.shadowRoot.innerHTML = svg
+  element.shadowRoot.innerHTML = `<div>${svg}</div>`
   applyScale(element)
   triggerEvent(element, 'render', svg)
 }
