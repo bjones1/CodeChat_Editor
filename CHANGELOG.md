@@ -22,7 +22,13 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
-* No changes.
+* Update Graphviz to latest build; make all Graphviz output a block element, not
+  an inline element.
+* Allow creating Mermaid and Graphviz diagrams using simpler code block syntax.
+* Support math free of Markdown escaping. This is a backward-incompatible
+  change: you must manually remove Markdown escaping from math written before
+  this release.
+* Fix failures when trying to edit a doc block which contains only diagrams.
 
 Version 0.1.43 -- 2025-Dec-05
 --------------------------------------------------------------------------------
