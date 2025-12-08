@@ -1043,7 +1043,7 @@ impl TranslationTask {
                                     false,
                                 )
                                 && let TranslationResultsString::CodeChat(ccfw) = ccfws.0
-                                && let CodeMirrorDiffable::Plain(ref code_mirror_translated) =
+                                && let CodeMirrorDiffable::Plain(code_mirror_translated) =
                                     ccfw.source
                                 && self.sent_full
                             {
@@ -1081,8 +1081,9 @@ impl TranslationTask {
                                         cfw.metadata.clone(),
                                         cfw.version,
                                         cfw_version,
-                                        code_mirror_translated,
+                                        &code_mirror_translated,
                                     );
+                                    debug!("Sending re-translation update back to the Client.");
                                     queue_send_func!(self.to_client_tx.send(EditorMessage {
                                         id: self.id,
                                         message: EditorMessageContents::Update(
@@ -1098,6 +1099,10 @@ impl TranslationTask {
                                         )
                                     }));
                                     self.id += MESSAGE_ID_INCREMENT;
+                                    // Update with what was just sent to the client.
+                                    self.code_mirror_doc = code_mirror_translated.doc;
+                                    self.code_mirror_doc_blocks =
+                                        Some(code_mirror_translated.doc_blocks);
                                 }
                             };
                             // Correct EOL endings for use with the IDE.
