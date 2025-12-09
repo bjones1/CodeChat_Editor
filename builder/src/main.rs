@@ -326,7 +326,7 @@ fn patch_client_libs() -> io::Result<()> {
     // inside these isn't removed by TinyMCE. However, this was removed in v6.0.
     // Therefore, manually patch TinyMCE instead.
     patch_file(
-        " wc-mermaid",
+        " wc-mermaid graphviz-graph",
         "const whitespaceElementsMap = createLookupTable('whitespace_elements', 'pre script noscript style textarea video audio iframe object code",
         &format!("{CLIENT_PATH}/node_modules/tinymce/tinymce.js"),
     )?;
@@ -350,12 +350,6 @@ fn patch_client_libs() -> io::Result<()> {
         format!("{CLIENT_PATH}/node_modules/@mathjax/mathjax-newcm-font/chtml/"),
         format!("{CLIENT_PATH}/static/mathjax-newcm-font/chtml"),
         None,
-    )?;
-    // Copy over the graphviz files needed.
-    quick_copy_dir(
-        format!("{CLIENT_PATH}/node_modules/graphviz-webcomponent/dist/"),
-        format!("{CLIENT_PATH}/static/graphviz-webcomponent"),
-        Some("renderer.min.js*".to_string()),
     )?;
 
     Ok(())
