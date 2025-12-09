@@ -23,6 +23,10 @@ name: Check
 on:
   pull_request:
 
+env:
+  # Always display a backtrace, to help track down errors.
+  RUST_BACKTRACE: 1
+
 jobs:
   check:
     strategy:
