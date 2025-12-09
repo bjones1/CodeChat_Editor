@@ -1024,23 +1024,21 @@ async fn test_client_updates_core(
     driver_ref: &WebDriver,
     test_dir: &Path,
 ) -> Result<(), WebDriverError> {
-    let ide_version = 0.0;
-    let server_id = perform_loadfile(
+    let mut ide_version = 0.0;
+    let orig_text = indoc!(
+        "
+        # Test updates in the client that modify the client after appending to a line.
+        def foo():
+            A comment
+            print()
+        "
+    )
+    .to_string();
+    let mut server_id = perform_loadfile(
         &codechat_server,
         test_dir,
         "test.py",
-        Some((
-            indoc!(
-                "
-                    # Test updates in the client that modify the client after appending to a line.
-                    def foo():
-                        A comment
-                        print()
-                    "
-            )
-            .to_string(),
-            ide_version,
-        )),
+        Some((orig_text.clone(), ide_version)),
         true,
         6.0,
     )
@@ -1102,6 +1100,7 @@ async fn test_client_updates_core(
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
         }
     );
+    server_id += MESSAGE_ID_INCREMENT;
 
     goto_line(&codechat_server, driver_ref, &mut client_id, &path_str, 4)
         .await
@@ -1137,6 +1136,72 @@ async fn test_client_updates_core(
                     version: new_client_version,
                 }),
                 cursor_position: Some(4),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // The Server sends the Client a re-translated version of the text with the new doc block; the Client
+    // replies with a Result(Ok).
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    //server_id += MESSAGE_ID_INCREMENT;
+
+    // Send the original text back, to ensure the re-translation correctly updated the Client.
+    ide_version = 1.0;
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            path_str.clone(),
+            Some((orig_text, ide_version)),
+            Some(1),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    sleep(Duration::from_secs(1000)).await;
+
+    // Trigger a client edit to send the Client contents back.
+    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
+    code_line.send_keys(" ").await.unwrap();
+
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let new_client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 79,
+                            to: Some(90),
+                            insert: "def foo(): \n".to_string()
+                        }],
+                        doc_blocks: vec![],
+                        version: ide_version,
+                    }),
+                    version: new_client_version,
+                }),
+                cursor_position: Some(2),
                 scroll_position: Some(1.0)
             })
         }
@@ -1236,6 +1301,7 @@ async fn test_4_core(
 
 make_test!(test_5, test_5_core);
 
+// Verify that newlines in Mermaid and Graphviz diagrams aren't removed.
 async fn test_5_core(
     codechat_server: CodeChatEditorServer,
     driver_ref: &WebDriver,
@@ -1250,12 +1316,14 @@ async fn test_5_core(
         #
         # ```graphviz
         # digraph g {
-        #     A -> B
+        #   A -> B
         # }
         # ```
         #
-        # Test.
-        test()
+        # ```mermaid
+        # graph TD
+        #   A --> B
+        # ```
         "
     )
     .to_string();
@@ -1409,6 +1477,17 @@ async fn test_5_core(
     //let version = client_version;
     codechat_server.send_result(client_id, None).await.unwrap();
     //client_id += MESSAGE_ID_INCREMENT;
+
+    // The Server sends the Client a wrapped version of the text; the Client
+    // replies with a Result(Ok).
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    //server_id += MESSAGE_ID_INCREMENT;
 
     Ok(())
 }
