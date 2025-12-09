@@ -390,9 +390,10 @@ async fn perform_loadfile(
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
         }
     );
+    server_id += MESSAGE_ID_INCREMENT;
 
     if has_toc {
-        server_id + 2.0 * MESSAGE_ID_INCREMENT
+        server_id + MESSAGE_ID_INCREMENT
     } else {
         server_id
     }
@@ -1229,6 +1230,185 @@ async fn test_4_core(
         }
     );
     codechat_server.send_result(client_id, None).await.unwrap();
+
+    Ok(())
+}
+
+make_test!(test_5, test_5_core);
+
+async fn test_5_core(
+    codechat_server: CodeChatEditorServer,
+    driver_ref: &WebDriver,
+    test_dir: &Path,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let version = 0.0;
+    let orig_text = indoc!(
+        "
+        # Test.
+        #
+        # ```graphviz
+        # digraph g {
+        #     A -> B
+        # }
+        # ```
+        #
+        # Test.
+        test()
+        "
+    )
+    .to_string();
+    let server_id = perform_loadfile(
+        &codechat_server,
+        test_dir,
+        "test.py",
+        Some((orig_text.clone(), version)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(driver_ref).await;
+
+    // Focus it.
+    let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
+    let doc_block_contents = driver_ref.find(By::Css(contents_css)).await.unwrap();
+    doc_block_contents.click().await.unwrap();
+    // The click produces an updated cursor/scroll location after an autosave
+    // delay.
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: None,
+                cursor_position: Some(1),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Refind it, since it's now switched with a TinyMCE editor.
+    let tinymce_contents = driver_ref.find(By::Id("TinyMCE-inst")).await.unwrap();
+    // Make an edit.
+    tinymce_contents.send_keys("foo").await.unwrap();
+
+    // Verify the updated text.
+    //
+    // Update the version from the value provided by the client, which varies
+    // randomly.
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![
+                            StringDiff {
+                                from: 0,
+                                to: Some(8),
+                                insert: "# fooTest.\n".to_string(),
+                            },
+                            StringDiff {
+                                from: 24,
+                                to: Some(55,),
+                                insert: "# digraph g { A -> B }\n".to_string(),
+                            }
+                        ],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
+                }),
+                cursor_position: Some(1),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+    let version = client_version;
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // The Server sends the Client a wrapped version of the text; the Client
+    // replies with a Result(Ok).
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    //server_id += MESSAGE_ID_INCREMENT;
+
+    // Send new text, which turns into a diff.
+    let ide_id = codechat_server
+        .send_message_update_plain(path_str.clone(), Some((orig_text, version)), Some(1), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // Make another edit, to push any corrupted text back.
+    tinymce_contents.send_keys("bar").await.unwrap();
+    // Verify the updated text.
+    //
+    // Update the version from the value provided by the client, which varies
+    // randomly.
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![
+                            StringDiff {
+                                from: 0,
+                                to: Some(8),
+                                insert: "# Tesbart.\n".to_string(),
+                            },
+                            StringDiff {
+                                from: 24,
+                                to: Some(55,),
+                                insert: "# digraph g { A -> B }\n".to_string(),
+                            }
+                        ],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
+                }),
+                cursor_position: Some(1),
+                scroll_position: Some(1.0)
+            })
+        }
+    );
+    //let version = client_version;
+    codechat_server.send_result(client_id, None).await.unwrap();
+    //client_id += MESSAGE_ID_INCREMENT;
 
     Ok(())
 }
