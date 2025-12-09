@@ -199,15 +199,19 @@ async fn _prep_test(
     // Ensure the webserver is running.
     let _ = &*WEBSERVER_HANDLE;
     let now = SystemTime::now();
-    while now.elapsed().unwrap().as_millis() < 100 {
+    let mut started = false;
+    while now.elapsed().unwrap().as_millis() < 500 {
         if minreq::get(format!("http://127.0.0.1:{IP_PORT}/ping",))
             .send()
             .is_ok_and(|response| response.as_bytes() == b"pong")
         {
+            started = true;
             break;
         }
         sleep(Duration::from_millis(10)).await;
     }
+
+    assert!(started, "Webserver failed to start.");
 
     // Connect to the VSCode IDE websocket.
     let ws_ide = connect_async_ide(connection_id).await;
