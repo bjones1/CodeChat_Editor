@@ -57,7 +57,7 @@ importers:
         specifier: ^6.5.2
         version: 6.5.2
       '@codemirror/view':
-        specifier: ^6.38.8
+        specifier: =6.38.8
         version: 6.38.8
       '@hpcc-js/wasm-graphviz':
         specifier: ^1.16.0
