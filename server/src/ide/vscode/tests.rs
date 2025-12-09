@@ -202,7 +202,7 @@ async fn _prep_test(
     while now.elapsed().unwrap().as_millis() < 100 {
         if minreq::get(format!("http://127.0.0.1:{IP_PORT}/ping",))
             .send()
-            .is_ok()
+            .is_ok_and(|response| response.as_bytes() == b"pong")
         {
             break;
         }
