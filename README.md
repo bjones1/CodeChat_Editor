@@ -111,14 +111,14 @@ Mathematics
 --------------------------------------------------------------------------------
 
 The CodeChat Editor uses [MathJax](https://www.mathjax.org/) to support typeset
-mathematics. Place the delimiters `$` immediately before and
-after in-line mathematics; place `$$` immediately before
-and after displayed mathematics. For example,
+mathematics. Place the delimiters `$` immediately before and after in-line
+mathematics; place `$$` immediately before and after displayed mathematics. For
+example,
 
-| Source                                        | Rendered                                    |
-| --------------------------------------------- | ------------------------------------------- |
-| `$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$`    | $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$    |
-| `$$a^2$$`                                     | $$a^2$$                                     |
+| Source                                     | Rendered                                 |
+| ------------------------------------------ | ---------------------------------------- |
+| `$x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$` | $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$ |
+| `$$a^2$$`                                  | $$a^2$$                                  |
 
 See [Latex Mathematics](https://en.wikibooks.org/wiki/LaTeX/Mathematics#Symbols)
 for the syntax used to write mathematics expressions.

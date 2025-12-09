@@ -30,6 +30,7 @@ Changelog
   this release.
 * Fix failures when trying to edit a doc block which contains only diagrams.
 * Fix data corruption bug after sending a re-translation back to the Client.
+* Correct incorrect whitespace removal in Graphviz and Mermaid diagrams.
 
 Version 0.1.43 -- 2025-Dec-05
 --------------------------------------------------------------------------------
