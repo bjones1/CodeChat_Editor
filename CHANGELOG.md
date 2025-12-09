@@ -22,6 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
+* No changes.
+
+Version 0.1.44 -- 2025-Dec-09
+--------------------------------------------------------------------------------
+
 * Update Graphviz to latest build; make Graphviz output a block element, not an
   inline element.
 * Allow creating Mermaid and Graphviz diagrams using simpler code block syntax.
