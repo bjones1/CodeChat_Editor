@@ -452,10 +452,11 @@ pub fn codechat_for_web_to_source(
         }
         // Translate the HTML document to Markdown.
         let converter = HtmlToMarkdownWrapped::new();
-        let wet_html = converter
-            .convert(&code_mirror.doc)
-            .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed)?;
-        return dehydrate_html(&wet_html).map_err(CodechatForWebToSourceError::ParseFailed);
+        let dry_html =
+            dehydrate_html(&code_mirror.doc).map_err(CodechatForWebToSourceError::ParseFailed)?;
+        return converter
+            .convert(&dry_html)
+            .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed);
     }
     let code_doc_block_vec_html = code_mirror_to_code_doc_blocks(code_mirror);
     let code_doc_block_vec = doc_block_html_to_markdown(code_doc_block_vec_html)
