@@ -16,6 +16,7 @@
 //
 // `debug_enable.mts` -- Configure debug features
 // =============================================================================
+//
 // True to enable additional debug logging.
 export const DEBUG_ENABLED = false;
 

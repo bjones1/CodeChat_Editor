@@ -1172,7 +1172,6 @@ async fn test_client_updates_core(
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
         }
     );
-    sleep(Duration::from_secs(1000)).await;
 
     // Trigger a client edit to send the Client contents back.
     let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
@@ -1327,7 +1326,7 @@ async fn test_5_core(
         "
     )
     .to_string();
-    let server_id = perform_loadfile(
+    let mut server_id = perform_loadfile(
         &codechat_server,
         test_dir,
         "test.py",
@@ -1383,18 +1382,11 @@ async fn test_5_core(
                         mode: "python".to_string(),
                     },
                     source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                        doc: vec![
-                            StringDiff {
-                                from: 0,
-                                to: Some(8),
-                                insert: "# fooTest.\n".to_string(),
-                            },
-                            StringDiff {
-                                from: 24,
-                                to: Some(55,),
-                                insert: "# digraph g { A -> B }\n".to_string(),
-                            }
-                        ],
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(8),
+                            insert: "# fooTest.\n".to_string(),
+                        },],
                         doc_blocks: vec![],
                         version,
                     }),
@@ -1418,7 +1410,7 @@ async fn test_5_core(
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
         }
     );
-    //server_id += MESSAGE_ID_INCREMENT;
+    server_id += MESSAGE_ID_INCREMENT;
 
     // Send new text, which turns into a diff.
     let ide_id = codechat_server
@@ -1452,18 +1444,11 @@ async fn test_5_core(
                         mode: "python".to_string(),
                     },
                     source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                        doc: vec![
-                            StringDiff {
-                                from: 0,
-                                to: Some(8),
-                                insert: "# Tesbart.\n".to_string(),
-                            },
-                            StringDiff {
-                                from: 24,
-                                to: Some(55,),
-                                insert: "# digraph g { A -> B }\n".to_string(),
-                            }
-                        ],
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(8),
+                            insert: "# Tesbart.\n".to_string(),
+                        },],
                         doc_blocks: vec![],
                         version,
                     }),

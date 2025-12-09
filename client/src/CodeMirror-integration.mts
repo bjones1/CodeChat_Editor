@@ -326,11 +326,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                     contents,
                 ]: CodeMirrorDocBlockTuple) =>
                     Decoration.replace({
-                        widget: new DocBlockWidget(
-                            indent,
-                            delimiter,
-                            contents,
-                        ),
+                        widget: new DocBlockWidget(indent, delimiter, contents),
                         ...decorationOptions,
                     }).range(from, to),
             ),
