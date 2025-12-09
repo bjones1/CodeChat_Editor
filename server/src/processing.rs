@@ -1139,7 +1139,9 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
         // Since we've already borrowed `child`, we can't `borrow_mut` to modify it. Instead, create a new `span` with delimited text and return that.
         if let Some(delim) = delim {
             let contents_str = &*contents.borrow();
-            let delimited_text_str = if is_hydrate { format!("{}{}{}", delim.0, contents_str, delim.1) } else {
+            let delimited_text_str = if is_hydrate {
+                format!("{}{}{}", delim.0, contents_str, delim.1)
+            } else {
                 // Only apply the dehydration is the delimiters are correct.
                 if !contents_str.starts_with(delim.0) || !contents_str.ends_with(delim.1) {
                     return None;
