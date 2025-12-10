@@ -41,7 +41,7 @@
         "type": "git",
         "url": "https://github.com/bjones1/CodeChat_Editor"
     },
-    "version": "0.1.44",
+    "version": "0.1.45",
     "activationEvents": [
         "onCommand:extension.codeChatEditorActivate",
         "onCommand:extension.codeChatEditorDeactivate"
@@ -86,7 +86,7 @@
         "@napi-rs/cli": "^3.5.0",
         "@tybys/wasm-util": "^0.10.1",
         "@types/escape-html": "^1.0.4",
-        "@types/node": "^24.10.2",
+        "@types/node": "^24.10.3",
         "@types/vscode": "1.61.0",
         "@typescript-eslint/eslint-plugin": "^8.49.0",
         "@typescript-eslint/parser": "^8.49.0",
