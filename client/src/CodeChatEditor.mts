@@ -255,17 +255,19 @@ const _open_lp = async (
             });
             tinymce.activeEditor!.focus();
         } else {
-            // Save and restore cursor/scroll location after an update per the
-            // [docs](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.dom.bookmarkmanager).
-            // However, this doesn't seem to work for the cursor location.
-            // Perhaps when TinyMCE normalizes the document, this gets lost?
-            const bm = tinymce.activeEditor!.selection.getBookmark();
+            // Save the cursor location before the update, then restore it
+            // afterwards, if TinyMCE has focus.
+            const sel = tinymce.activeEditor!.hasFocus()
+                ? saveSelection()
+                : undefined;
             doc_content =
                 "Plain" in source
                     ? source.Plain.doc
                     : apply_diff_str(doc_content, source.Diff.doc);
             tinymce.activeEditor!.setContent(doc_content);
-            tinymce.activeEditor!.selection.moveToBookmark(bm);
+            if (sel !== undefined) {
+                restoreSelection(sel);
+            }
         }
         mathJaxTypeset(codechat_body);
         scroll_to_line(cursor_line, scroll_line);
@@ -334,6 +336,102 @@ const save_lp = (is_dirty: boolean) => {
     }
 
     return update;
+};
+
+export const saveSelection = () => {
+    // Changing the text inside TinyMCE causes it to loose a selection tied to a
+    // specific node. So, instead store the selection as an array of indices in
+    // the childNodes array of each element: for example, a given selection is
+    // element 10 of the root TinyMCE div's children (selecting an ol tag),
+    // element 5 of the ol's children (selecting the last li tag), element 0 of
+    // the li's children (a text node where the actual click landed; the offset
+    // in this node is placed in `selection_offset`.)
+    const sel = window.getSelection();
+    const selection_path = [];
+    const selection_offset = sel?.anchorOffset;
+    if (sel?.anchorNode) {
+        // Find a path from the selection back to the containing div.
+        for (
+            let current_node = sel.anchorNode, is_first = true;
+            // Continue until we find the div which contains the doc block
+            // contents: either it's not an element (such as a div), ...
+            current_node.nodeType !== Node.ELEMENT_NODE ||
+            // or it's not the doc block contents div.
+            (!(current_node as Element).classList.contains(
+                "CodeChat-doc-contents",
+            ) &&
+                // Sometimes, the parent of a custom node (`wc-mermaid`) skips the TinyMCE div and returns the overall div. I don't know why.
+                !(current_node as Element).classList.contains("CodeChat-doc"));
+            current_node = current_node.parentNode!, is_first = false
+        ) {
+            // Store the index of this node in its' parent list of child
+            // nodes/children. Use `childNodes` on the first iteration, since
+            // the selection is often in a text node, which isn't in the
+            // `parents` list. However, using `childNodes` all the time causes
+            // trouble when reversing the selection -- sometimes, the
+            // `childNodes` change based on whether text nodes (such as a
+            // newline) are included are not after tinyMCE parses the content.
+            const p = current_node.parentNode;
+            // In case we go off the rails, give up if there are no more parents.
+            if (p === null) {
+                return {
+                    selection_path: [],
+                    selection_offset: 0,
+                };
+            }
+            selection_path.unshift(
+                Array.prototype.indexOf.call(
+                    is_first ? p.childNodes : p.children,
+                    current_node,
+                ),
+            );
+        }
+    }
+    return { selection_path, selection_offset };
+};
+
+// Restore the selection produced by `saveSelection` to the active TinyMCE
+// instance.
+export const restoreSelection = ({
+    selection_path,
+    selection_offset,
+}: {
+    selection_path: number[];
+    selection_offset?: number;
+}) => {
+    // Copy the selection over to TinyMCE by indexing the selection path to find
+    // the selected node.
+    if (selection_path.length && typeof selection_offset === "number") {
+        let selection_node = tinymce.activeEditor!.getContentAreaContainer();
+        for (
+            ;
+            selection_path.length &&
+            // If something goes wrong, bail out instead of producing
+            // exceptions.
+            selection_node !== undefined;
+            selection_node =
+                // As before, use the more-consistent `children` except for the
+                // last element, where we might be selecting a `text` node.
+                (
+                    selection_path.length > 1
+                        ? selection_node.children
+                        : selection_node.childNodes
+                )[selection_path.shift()!]! as HTMLElement
+        );
+        // Exit on failure.
+        if (selection_node === undefined) {
+            return;
+        }
+        // Use that to set the selection.
+        tinymce.activeEditor!.selection.setCursorLocation(
+            selection_node,
+            // In case of edits, avoid an offset past the end of the node.
+            Math.min(
+                selection_offset,
+                selection_node.nodeValue?.length ?? Number.MAX_VALUE,
+            ),
+        );
+    }
 };
 
 // Per

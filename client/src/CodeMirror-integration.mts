@@ -85,7 +85,12 @@ import { yaml } from "@codemirror/lang-yaml";
 import { Editor, init, tinymce } from "./tinymce-config.mjs";
 
 // ### Local
-import { set_is_dirty, startAutosaveTimer } from "./CodeChatEditor.mjs";
+import {
+    set_is_dirty,
+    startAutosaveTimer,
+    saveSelection,
+    restoreSelection,
+} from "./CodeChatEditor.mjs";
 import {
     CodeChatForWeb,
     CodeMirror,
@@ -100,7 +105,6 @@ import { show_toast } from "./show_toast.mjs";
 // Globals
 // -----------------------------------------------------------------------------
 let current_view: EditorView;
-let tinymce_singleton: Editor | undefined;
 // This indicates that a call to `on_dirty` is scheduled, but hasn't run yet.
 let on_dirty_scheduled = false;
 
@@ -461,10 +465,10 @@ class DocBlockWidget extends WidgetType {
         if (is_tinymce) {
             // Save the cursor location before the update, then restore it
             // afterwards, if TinyMCE has focus.
-            const sel = tinymce_singleton!.hasFocus()
+            const sel = tinymce.activeEditor!.hasFocus()
                 ? saveSelection()
                 : undefined;
-            tinymce_singleton!.setContent(this.contents);
+            tinymce.activeEditor!.setContent(this.contents);
             if (sel !== undefined) {
                 restoreSelection(sel);
             }
@@ -503,102 +507,6 @@ class DocBlockWidget extends WidgetType {
         }
     }
 }
-
-const saveSelection = () => {
-    // Changing the text inside TinyMCE causes it to loose a selection tied to a
-    // specific node. So, instead store the selection as an array of indices in
-    // the childNodes array of each element: for example, a given selection is
-    // element 10 of the root TinyMCE div's children (selecting an ol tag),
-    // element 5 of the ol's children (selecting the last li tag), element 0 of
-    // the li's children (a text node where the actual click landed; the offset
-    // in this node is placed in `selection_offset`.)
-    const sel = window.getSelection();
-    const selection_path = [];
-    const selection_offset = sel?.anchorOffset;
-    if (sel?.anchorNode) {
-        // Find a path from the selection back to the containing div.
-        for (
-            let current_node = sel.anchorNode, is_first = true;
-            // Continue until we find the div which contains the doc block
-            // contents: either it's not an element (such as a div), ...
-            current_node.nodeType !== Node.ELEMENT_NODE ||
-            // or it's not the doc block contents div.
-            (!(current_node as Element).classList.contains(
-                "CodeChat-doc-contents",
-            ) &&
-                // Sometimes, the parent of a custom node (`wc-mermaid`) skips the TinyMCE div and returns the overall div. I don't know why.
-                !(current_node as Element).classList.contains("CodeChat-doc"));
-            current_node = current_node.parentNode!, is_first = false
-        ) {
-            // Store the index of this node in its' parent list of child
-            // nodes/children. Use `childNodes` on the first iteration, since
-            // the selection is often in a text node, which isn't in the
-            // `parents` list. However, using `childNodes` all the time causes
-            // trouble when reversing the selection -- sometimes, the
-            // `childNodes` change based on whether text nodes (such as a
-            // newline) are included are not after tinyMCE parses the content.
-            const p = current_node.parentNode;
-            // In case we go off the rails, give up if there are no more parents.
-            if (p === null) {
-                return {
-                    selection_path: [],
-                    selection_offset: 0,
-                };
-            }
-            selection_path.unshift(
-                Array.prototype.indexOf.call(
-                    is_first ? p.childNodes : p.children,
-                    current_node,
-                ),
-            );
-        }
-    }
-    return { selection_path, selection_offset };
-};
-
-// Restore the selection produced by `saveSelection` to the active TinyMCE
-// instance.
-const restoreSelection = ({
-    selection_path,
-    selection_offset,
-}: {
-    selection_path: number[];
-    selection_offset?: number;
-}) => {
-    // Copy the selection over to TinyMCE by indexing the selection path to find
-    // the selected node.
-    if (selection_path.length && typeof selection_offset === "number") {
-        let selection_node = tinymce_singleton!.getContentAreaContainer();
-        for (
-            ;
-            selection_path.length &&
-            // If something goes wrong, bail out instead of producing
-            // exceptions.
-            selection_node !== undefined;
-            selection_node =
-                // As before, use the more-consistent `children` except for the
-                // last element, where we might be selecting a `text` node.
-                (
-                    selection_path.length > 1
-                        ? selection_node.children
-                        : selection_node.childNodes
-                )[selection_path.shift()!]! as HTMLElement
-        );
-        // Exit on failure.
-        if (selection_node === undefined) {
-            return;
-        }
-        // Use that to set the selection.
-        tinymce_singleton!.selection.setCursorLocation(
-            selection_node,
-            // In case of edits, avoid an offset past the end of the node.
-            Math.min(
-                selection_offset,
-                selection_node.nodeValue?.length ?? Number.MAX_VALUE,
-            ),
-        );
-    }
-};
 
 // Typeset the provided node; taken from the
 // [MathJax docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
@@ -700,7 +608,7 @@ const on_dirty = (
         // the actual div. But I don't know how.
         mathJaxUnTypeset(contents_div);
         const contents = is_tinymce
-            ? tinymce_singleton!.save()
+            ? tinymce.activeEditor!.save()
             : contents_div.innerHTML;
         await mathJaxTypeset(contents_div);
         current_view.dispatch({
@@ -847,7 +755,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         old_contents_div.className = "CodeChat-doc-contents";
                         old_contents_div.contentEditable = "true";
                         old_contents_div.replaceChildren(
-                            ...tinymce_singleton!.getContentAreaContainer()
+                            ...tinymce.activeEditor!.getContentAreaContainer()
                                 .childNodes,
                         );
                         tinymce_div.parentNode!.insertBefore(
@@ -863,7 +771,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
 
                         // Setting the content makes TinyMCE consider it dirty
                         // -- ignore this "dirty" event.
-                        tinymce_singleton!.setContent(contents_div.innerHTML);
+                        tinymce.activeEditor!.setContent(
+                            contents_div.innerHTML,
+                        );
                         contents_div.remove();
                         // The new div is now a TinyMCE editor. Retypeset this.
                         await mathJaxTypeset(tinymce_div);
@@ -871,7 +781,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         // This process causes TinyMCE to lose focus. Restore
                         // that. However, this causes TinyMCE to lose the
                         // selection, which the next bit of code then restores.
-                        tinymce_singleton!.focus(false);
+                        tinymce.activeEditor!.focus(false);
 
                         // Copy the selection over to TinyMCE by indexing the
                         // selection path to find the selected node.
@@ -1091,22 +1001,21 @@ export const CodeMirror_load = async (
             state,
             scrollTo: scrollSnapshot,
         });
-        tinymce_singleton = (
-            await init({
-                selector: "#TinyMCE-inst",
-                setup: (editor: Editor) => {
-                    // See the
-                    // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
-                    editor.on("input", (event: Event) => {
-                        const target_or_false = event.target as HTMLElement;
-                        if (target_or_false == null) {
-                            return;
-                        }
-                        setTimeout(() => on_dirty(target_or_false));
-                    });
-                },
-            })
-        )[0];
+
+        await init({
+            selector: "#TinyMCE-inst",
+            setup: (editor: Editor) => {
+                // See the
+                // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
+                editor.on("input", (event: Event) => {
+                    const target_or_false = event.target as HTMLElement;
+                    if (target_or_false == null) {
+                        return;
+                    }
+                    setTimeout(() => on_dirty(target_or_false));
+                });
+            },
+        });
     } else {
         // This contains a diff, instead of plain text. Apply the text diff.
         //
