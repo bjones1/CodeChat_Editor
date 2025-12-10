@@ -22,7 +22,9 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
-* No changes.
+* Fix loss of editing in the Client when in document-only mode.
+* Correctly retain Client cursor position during IDE edits.
+* Correctly translate tables cells containing blocks from HTML to Markdown.
 
 Version 0.1.44 -- 2025-Dec-09
 --------------------------------------------------------------------------------
