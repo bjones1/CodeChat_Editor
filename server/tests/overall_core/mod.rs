@@ -1476,3 +1476,112 @@ async fn test_5_core(
 
     Ok(())
 }
+
+make_test!(test_6, test_6_core);
+
+// Verify that edits in document-only mode don't result in data corruption.
+async fn test_6_core(
+    codechat_server: CodeChatEditorServer,
+    driver_ref: &WebDriver,
+    test_dir: &Path,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.md")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let version = 0.0;
+    let orig_text = indoc!(
+        "
+        * a
+
+        b
+        "
+    )
+    .to_string();
+    perform_loadfile(
+        &codechat_server,
+        test_dir,
+        "test.md",
+        Some((orig_text.clone(), version)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(driver_ref).await;
+
+    // Check the content.
+    let body_css = "#CodeChat-body .CodeChat-doc-contents";
+    let body_content = driver_ref.find(By::Css(body_css)).await.unwrap();
+
+    // Perform edits.
+    body_content.send_keys("a").await.unwrap();
+    let client_id = INITIAL_CLIENT_MESSAGE_ID;
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "markdown".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(4),
+                            insert: "* aa\n".to_string(),
+                        },],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
+                }),
+                cursor_position: None,
+                scroll_position: None
+            })
+        }
+    );
+    let version = client_version;
+    codechat_server.send_result(client_id, None).await.unwrap();
+    //client_id += MESSAGE_ID_INCREMENT;
+
+    // Send new text, which turns into a diff.
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            path_str.clone(),
+            Some((
+                indoc!(
+                    "
+                    * aaa
+
+                    b
+                    "
+                )
+                .to_string(),
+                version,
+            )),
+            Some(1),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    //ide_id += MESSAGE_ID_INCREMENT;
+
+    // Verify the updated text.
+    assert_eq!(
+        body_content.inner_html().await.unwrap(),
+        "<ul><li>aaa</li></ul><p>b</p>"
+    );
+
+    Ok(())
+}

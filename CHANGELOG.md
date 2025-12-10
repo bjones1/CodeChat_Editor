@@ -23,8 +23,10 @@ Changelog
 --------------------------------------------------------------------------------
 
 * Fix loss of editing in the Client when in document-only mode.
+* Fix data corruption in the Client when in document-only mode and edits are
+  made in both the IDE and Client.
 * Correctly retain Client cursor position during IDE edits.
-* Correctly translate tables cells containing blocks from HTML to Markdown.
+* Correctly translate table cells containing blocks from HTML to Markdown.
 
 Version 0.1.44 -- 2025-Dec-09
 --------------------------------------------------------------------------------

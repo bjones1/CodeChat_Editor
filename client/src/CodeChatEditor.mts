@@ -312,14 +312,14 @@ const save_lp = (is_dirty: boolean) => {
             ) as HTMLDivElement;
             mathJaxUnTypeset(codechat_body);
             // To save a document only, simply get the HTML from the only Tiny
-            // MCE div.
-            const html = tinymce.activeEditor!.save();
+            // MCE div. Update the `doc_contents` to stay in sync with the Server.
+            doc_content = tinymce.activeEditor!.save();
             (
                 code_mirror_diffable as {
                     Plain: CodeMirror;
                 }
             ).Plain = {
-                doc: html,
+                doc: doc_content,
                 doc_blocks: [],
             };
             // Retypeset all math after saving the document.
