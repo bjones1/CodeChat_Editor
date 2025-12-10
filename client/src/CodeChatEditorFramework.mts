@@ -100,7 +100,7 @@ class WebSocketComm {
         // The `ReconnectingWebSocket` doesn't provide ALL the `WebSocket`
         // methods. Ignore this, since we can't use `ReconnectingWebSocket` as a
         // type.
-        /// @ts-ignore
+        /// @ts-expect-error("This is legacy, third-party code.")
         this.ws = new ReconnectingWebSocket!(ws_url);
         // Identify this client on connection.
         this.ws.onopen = () => {
@@ -139,7 +139,7 @@ class WebSocketComm {
 
             // Process this message.
             switch (key) {
-                case "Update":
+                case "Update": {
                     // Load this data in.
                     const current_update = value as UpdateMessageContents;
                     // The rest of this should run after all other messages have
@@ -228,8 +228,9 @@ class WebSocketComm {
                         this.send_result(id);
                     });
                     break;
+                }
 
-                case "CurrentFile":
+                case "CurrentFile": {
                     // Note that we can ignore `value[1]` (if the file is text
                     // or binary); the server only sends text files here.
                     const current_file = value[0] as string;
@@ -263,8 +264,9 @@ class WebSocketComm {
                         this.send_result(id);
                     });
                     break;
+                }
 
-                case "Result":
+                case "Result": {
                     // Cancel the timer for this message and remove it from
                     // `pending_messages`.
                     const pending_message = this.pending_messages[id];
@@ -284,8 +286,9 @@ class WebSocketComm {
                         );
                     }
                     break;
+                }
 
-                default:
+                default: {
                     const msg = `Received unhandled message ${key}(${format_struct(
                         value,
                     )})`;
@@ -296,11 +299,14 @@ class WebSocketComm {
                         )})`,
                     });
                     break;
+                }
             }
         };
     }
 
+    /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
     send = (data: any) => this.ws.send(data);
+    /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
     close = (...args: any) => this.ws.close(...args);
 
     set_root_iframe_src = (url: string) => {
@@ -408,7 +414,7 @@ const set_content = async (
     cursor_line?: number,
     scroll_line?: number,
 ) => {
-    let client = get_client();
+    const client = get_client();
     if (client === undefined) {
         // See if this is the [simple viewer](#Client-simple-viewer). Otherwise,
         // it's just the bare document to replace.
@@ -475,7 +481,7 @@ declare global {
         CodeChatEditorFramework: {
             webSocketComm: WebSocketComm;
         };
-        CodeChatEditor_test: any;
+        CodeChatEditor_test: unknown;
     }
 }
 
@@ -488,6 +494,7 @@ const show_toast = (text: string) => {
 };
 
 // Format a complex data structure as a string when in debug mode.
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
 export const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
         ? JSON.stringify(complex_data_structure).substring(
@@ -496,6 +503,7 @@ export const format_struct = (complex_data_structure: any): string =>
           )
         : "";
 
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
 const report_error = (text: string, ...objs: any) => {
     console.error(text);
     if (objs !== undefined) {

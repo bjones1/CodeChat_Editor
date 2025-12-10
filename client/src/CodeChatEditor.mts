@@ -58,7 +58,6 @@ import {
     scroll_to_line as codemirror_scroll_to_line,
     set_CodeMirror_positions,
 } from "./CodeMirror-integration.mjs";
-import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 // This must be imported *after* the previous setup import, so it's placed here,
 // instead of in the third-party category above.
@@ -95,22 +94,6 @@ enum EditorMode {
     raw,
 }
 
-// Since this is experimental, TypeScript doesn't define it. See the
-// [docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
-interface NavigateEvent extends Event {
-    canIntercept: boolean;
-    destination: any;
-    downloadRequest: String | null;
-    formData: any;
-    hashChange: boolean;
-    info: any;
-    navigationType: String;
-    signal: AbortSignal;
-    userInitiated: boolean;
-    intercept: any;
-    scroll: any;
-}
-
 // Tell TypeScript about the global namespace this program defines.
 declare global {
     interface Window {
@@ -129,7 +112,7 @@ declare global {
             show_toast: (text: string) => void;
             allow_navigation: boolean;
         };
-        CodeChatEditor_test: any;
+        CodeChatEditor_test: unknown;
     }
 }
 
@@ -223,7 +206,7 @@ const _open_lp = async (
     // This works, but TypeScript marks it as an error. Ignore this error by
     // including the
     // [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
-    /// @ts-ignore
+    /// @ts-expect-error("See above.")
     const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
 
     // Get the <code>[current_metadata](#current_metadata)</code> from the
@@ -264,10 +247,7 @@ const _open_lp = async (
                 // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
                 // this is how to create a TinyMCE event handler.
                 setup: (editor: Editor) => {
-                    // The
-                    // [editor core events list](https://www.tiny.cloud/docs/tinymce/6/events/#editor-core-events)
-                    // includes the`Dirty` event.
-                    editor.on("Dirty", (_event: Event) => {
+                    editor.on("input", (_event: Event) => {
                         is_dirty = true;
                         startAutosaveTimer();
                     });
@@ -309,7 +289,7 @@ const _open_lp = async (
 };
 
 const save_lp = (is_dirty: boolean) => {
-    let update: UpdateMessageContents = {
+    const update: UpdateMessageContents = {
         // The Framework will fill in this value.
         file_path: "",
     };
@@ -321,7 +301,7 @@ const save_lp = (is_dirty: boolean) => {
 
     // Add the contents only if the document is dirty.
     if (is_dirty) {
-        /// @ts-expect-error
+        /// @ts-expect-error("Declare here; it will be completed later.")
         let code_mirror_diffable: CodeMirrorDiffable = {};
         if (is_doc_only()) {
             // Untypeset all math before saving the document.
@@ -378,7 +358,7 @@ const on_save = async (only_if_dirty: boolean = false) => {
     console_log(
         "CodeChat Editor Client: sent Update - saving document/updating cursor location.",
     );
-    await new Promise(async (resolve) => {
+    await new Promise((resolve) => {
         webSocketComm.send_message({ Update: save_lp(is_dirty) }, () =>
             resolve(0),
         );
@@ -491,8 +471,7 @@ const on_click = (event: MouseEvent) => {
 const save_then_navigate = (codeChatEditorUrl: URL) => {
     on_save(true).then((_value) => {
         // Avoid recursion!
-        /// @ts-ignore
-        navigation.removeEventListener("navigate", on_navigate);
+        window.navigation.removeEventListener("navigate", on_navigate);
         parent.window.CodeChatEditorFramework.webSocketComm.current_file(
             codeChatEditorUrl,
         );
@@ -509,6 +488,7 @@ const scroll_to_line = (cursor_line?: number, scroll_line?: number) => {
     }
 };
 
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
 export const console_log = (...args: any) => {
     if (DEBUG_ENABLED) {
         console.log(...args);
@@ -534,12 +514,10 @@ export const on_error = (event: Event) => {
 // namespace.
 on_dom_content_loaded(async () => {
     // Intercept links in this document to save before following the link.
-    /// @ts-ignore
-    navigation.addEventListener("navigate", on_navigate);
+    window.navigation.addEventListener("navigate", on_navigate);
     const ccb = document.getElementById("CodeChat-sidebar") as
         | HTMLIFrameElement
         | undefined;
-    /// @ts-ignore
     ccb?.contentWindow?.navigation.addEventListener("navigate", on_navigate);
     document.addEventListener("click", on_click);
     // Provide basic error reporting for uncaught errors.

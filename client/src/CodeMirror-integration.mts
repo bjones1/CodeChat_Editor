@@ -112,6 +112,8 @@ const decorationOptions = {
 
 declare global {
     interface Window {
+        // Tye `#types/MathJax` definitions are out of date.
+        /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
         MathJax: any;
     }
 }
@@ -145,7 +147,7 @@ export const docBlockField = StateField.define<DecorationSet>({
     // the initial value for the field, which is an empty set (no doc blocks).
     // Therefore, simply return an empty DecorationSet (oddly, the type of
     // [Decoration.none](https://codemirror.net/docs/ref/#view.Decoration^none)).
-    create(state: EditorState) {
+    create(_state: EditorState) {
         return Decoration.none;
     },
 
@@ -163,7 +165,7 @@ export const docBlockField = StateField.define<DecorationSet>({
         }
         // See [is](https://codemirror.net/docs/ref/#state.StateEffect.is). Add
         // a doc block, as requested by this effect.
-        for (let effect of tr.effects)
+        for (const effect of tr.effects)
             if (effect.is(addDocBlock)) {
                 // Check that we're not overwriting text.
                 const newlines = current_view.state.doc
@@ -259,7 +261,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
-                    filter: (from, to, value) => from !== effect.value.from,
+                    filter: (from, _to, _value) => from !== effect.value.from,
                     filterFrom: effect.value.from,
                     filterTo: effect.value.from,
                     // This adds the replacement doc block with updated
@@ -283,7 +285,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                 });
             } else if (effect.is(deleteDocBlock)) {
                 doc_blocks = doc_blocks.update({
-                    filter: (from, to, value) => from !== effect.value.from,
+                    filter: (from, _to, _value) => from !== effect.value.from,
                     filterFrom: effect.value.from,
                     filterTo: effect.value.from,
                 });
@@ -304,8 +306,8 @@ export const docBlockField = StateField.define<DecorationSet>({
     // This provides a straightforward path to transform the entire editor's
     // contents (including these doc blocks) to JSON, which can then be sent
     // back to the server for reassembly into a source file.
-    toJSON: (value: DecorationSet, state: EditorState) => {
-        let json = [];
+    toJSON: (value: DecorationSet, _state: EditorState) => {
+        const json = [];
         for (const iter = value.iter(); iter.value !== null; iter.next()) {
             const w = iter.value.spec.widget;
             json.push([iter.from, iter.to, w.indent, w.delimiter, w.contents]);
@@ -315,7 +317,7 @@ export const docBlockField = StateField.define<DecorationSet>({
 
     // For loading a file from the server back into the editor, use
     // [fromJSON](https://codemirror.net/docs/ref/#state.StateField^define^config.fromJSON).
-    fromJSON: (json: any, state: EditorState) =>
+    fromJSON: (json: [CodeMirrorDocBlockTuple], _state: EditorState) =>
         Decoration.set(
             json.map(
                 ([
@@ -425,7 +427,7 @@ class DocBlockWidget extends WidgetType {
     // See [toDom](https://codemirror.net/docs/ref/#view.WidgetType.toDOM).
     toDOM() {
         // Wrap this in an enclosing div.
-        let wrap = document.createElement("div");
+        const wrap = document.createElement("div");
         wrap.className = "CodeChat-doc";
         wrap.innerHTML =
             // This doc block's indent. TODO: allow paste, but must only allow
@@ -511,7 +513,7 @@ const saveSelection = () => {
     // the li's children (a text node where the actual click landed; the offset
     // in this node is placed in `selection_offset`.)
     const sel = window.getSelection();
-    let selection_path = [];
+    const selection_path = [];
     const selection_offset = sel?.anchorOffset;
     if (sel?.anchorNode) {
         // Find a path from the selection back to the containing div.
@@ -535,7 +537,7 @@ const saveSelection = () => {
             // trouble when reversing the selection -- sometimes, the
             // `childNodes` change based on whether text nodes (such as a
             // newline) are included are not after tinyMCE parses the content.
-            let p = current_node.parentNode;
+            const p = current_node.parentNode;
             // In case we go off the rails, give up if there are no more parents.
             if (p === null) {
                 return {
@@ -606,6 +608,7 @@ export const mathJaxTypeset = async (
 ) => {
     try {
         await window.MathJax.typesetPromise([node]);
+        /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
     } catch (err: any) {
         report_error(`Typeset failed: ${err.message}`);
     }
@@ -615,6 +618,7 @@ export const mathJaxTypeset = async (
 export const mathJaxUnTypeset = (node: HTMLElement) => {
     window.MathJax.startup.document
         .getMathItemsWithin(node)
+        /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
         .forEach((item: any) => {
             item.removeFromDocument(true);
         });
@@ -683,7 +687,7 @@ const on_dirty = (
         let from;
         try {
             from = current_view.posAtDOM(target);
-        } catch (e) {
+        } catch (_e) {
             console.error("Unable to get position from DOM.", target);
             return;
         }
@@ -714,7 +718,7 @@ const on_dirty = (
 
 export const DocBlockPlugin = ViewPlugin.fromClass(
     class {
-        constructor(view: EditorView) {}
+        constructor(_view: EditorView) {}
         update(update: ViewUpdate) {
             // If the editor doesn't have focus, ignore selection changes. This
             // avoid the case where cursor movement in the IDE produces
@@ -729,7 +733,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     .between(
                         main_selection.from,
                         main_selection.to,
-                        (from: number, to: number, value: Decoration) => {
+                        (from: number, _to: number, _value: Decoration) => {
                             // Is this range contained within this doc block? If
                             // the ranges also contains element outside it, then
                             // don't capture focus. TODO: not certain on the
@@ -764,7 +768,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
             // so it can be edited. A simpler alternative is to do this in the
             // update() method above, but this is VERY slow, since update is
             // called frequently.
-            focusin: (event: FocusEvent, view: EditorView) => {
+            focusin: (event: FocusEvent, _view: EditorView) => {
                 const target_or_false = element_is_in_doc_block(event.target);
                 if (!target_or_false) {
                     return false;
@@ -919,8 +923,8 @@ const autosaveExtension = EditorView.updateListener.of(
         // detected for efficiency.
         if (!v.docChanged && v.transactions?.length) {
             // Check each effect of each transaction.
-            outer: for (let tr of v.transactions) {
-                for (let effect of tr.effects) {
+            outer: for (const tr of v.transactions) {
+                for (const effect of tr.effects) {
                     // Look for a change to a doc block.
                     if (effect.is(addDocBlock) || effect.is(updateDocBlock)) {
                         isChanged = true;
@@ -1093,12 +1097,10 @@ export const CodeMirror_load = async (
                 setup: (editor: Editor) => {
                     // See the
                     // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
-                    editor.on("input", (event: any) => {
-                        // Get the div TinyMCE stores edits in. TODO: find
-                        // documentation for `event.target.bodyElement`.
+                    editor.on("input", (event: Event) => {
                         const target_or_false = event.target as HTMLElement;
                         if (target_or_false == null) {
-                            return false;
+                            return;
                         }
                         setTimeout(() => on_dirty(target_or_false));
                     });
@@ -1122,7 +1124,7 @@ export const CodeMirror_load = async (
         // same transaction causes the text edits to modify from/to values in
         // the doc block effects, even when changes to the doc block state is
         // frozen.
-        const stateEffects: StateEffect<any>[] = [];
+        const stateEffects: StateEffect<unknown>[] = [];
         for (const transaction of codechat_for_web.source.Diff.doc_blocks) {
             if ("Add" in transaction) {
                 const add = transaction.Add;
@@ -1214,7 +1216,8 @@ export const CodeMirror_save = (): CodeMirrorDiffable => {
     const code_mirror: CodeMirror = current_view.state.toJSON(
         CodeMirror_JSON_fields,
     );
-    delete (code_mirror as any).selection;
+    /// @ts-expect-error("This does exist.")
+    delete code_mirror.selection;
 
     return { Plain: code_mirror };
 };

@@ -86,9 +86,9 @@ Implementation
         1.  [HashReader.mts](client/src/HashReader.mts)
         2.  client/package.json
         3.  [client/tsconfig.json](client/tsconfig.json)
-        4.  [client/.eslintrc.yml](client/.eslintrc.yml)
+        4.  [client/eslint.config.js](client/eslint.config.js)
         5.  [client/.prettierrc.json5](client/.prettierrc.json5)
-        6.  [extensions/VSCode/.eslintrc.yml](extensions/VSCode/.eslintrc.yml)
+        6.  [extensions/VSCode/eslint.config.js](extensions/VSCode/eslint.config.js)
         7.  [extensions/VSCode/tsconfig.json](extensions/VSCode/tsconfig.json)
         8.  [extensions/VSCode/jsconfig.json](extensions/VSCode/jsconfig.json)
         9.  [extensions/VSCode/.vscodeignore](extensions/VSCode/.vscodeignore)

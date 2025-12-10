@@ -36,7 +36,7 @@ import vscode, {
     TextEditor,
     TextEditorRevealType,
 } from "vscode";
-import { CodeChatEditorServer, initServer } from "./index";
+import { CodeChatEditorServer, initServer } from "./index.js";
 
 // ### Local packages
 import {
@@ -50,7 +50,7 @@ import {
     DEBUG_ENABLED,
     MAX_MESSAGE_LENGTH,
 } from "../../../client/src/debug_enabled.mjs";
-import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes";
+import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes.js";
 
 // Globals
 // -----------------------------------------------------------------------------
@@ -407,7 +407,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             // Update the cursor and scroll position if
                             // provided.
                             const editor = get_text_editor(doc);
-                            let scroll_line = current_update.scroll_position;
+                            const scroll_line = current_update.scroll_position;
                             if (scroll_line !== undefined && editor) {
                                 ignore_selection_change = true;
                                 const scroll_position = new vscode.Position(
@@ -427,7 +427,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 );
                             }
 
-                            let cursor_line = current_update.cursor_position;
+                            const cursor_line = current_update.cursor_position;
                             if (cursor_line !== undefined && editor) {
                                 ignore_selection_change = true;
                                 const cursor_position = new vscode.Position(
@@ -484,7 +484,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 // [Built-in Commands](https://code.visualstudio.com/api/references/commands).
                                 // For now, simply respond with an OK, since the
                                 // following doesn't work.
-                                if (false) {
+                                /**
                                     commands
                                         .executeCommand(
                                             "vscode.open",
@@ -504,7 +504,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                                     ],
                                                 }),
                                         );
-                                }
+                                */
                                 await sendResult(id);
                             }
                             break;
@@ -580,6 +580,7 @@ export const deactivate = async () => {
 // -----------------------------------------------------------------------------
 //
 // Format a complex data structure as a string when in debug mode.
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
 const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
         ? JSON.stringify(
@@ -765,6 +766,7 @@ const get_text_editor = (doc: TextDocument): TextEditor | undefined => {
     }
 };
 
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
 const console_log = (...args: any) => {
     if (DEBUG_ENABLED) {
         console.log(...args);

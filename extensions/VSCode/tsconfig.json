@@ -26,5 +26,5 @@
         "rootDirs": ["src", "../../client/src/*"],
         "allowJs": true
     },
-    "exclude": ["node_modules", ".vscode-test", "out", "server"]
+    "exclude": ["node_modules", ".vscode-test", "out", "server", "eslint.config.js"]
 }

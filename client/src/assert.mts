@@ -8,7 +8,7 @@
 // [this](https://github.com/micromark/micromark/issues/87#issuecomment-908924233)).
 // Taken from the TypeScript
 // [docs](https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#assertion-functions).
-export function assert(condition: any, msg?: string): asserts condition {
+export function assert(condition: boolean, msg?: string): asserts condition {
     if (!condition) {
         throw new Error(msg);
     }

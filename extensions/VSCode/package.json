@@ -19,6 +19,7 @@
         "CodeChat Editor",
         "Visual Studio Code extension"
     ],
+    "type": "commonjs",
     "license": "GPL-3.0-only",
     "main": "out/extension.js",
     "napi": {
@@ -81,6 +82,7 @@
     "devDependencies": {
         "@emnapi/core": "^1.7.1",
         "@emnapi/runtime": "^1.7.1",
+        "@eslint/js": "^9.39.1",
         "@napi-rs/cli": "^3.5.0",
         "@tybys/wasm-util": "^0.10.1",
         "@types/escape-html": "^1.0.4",
@@ -95,10 +97,12 @@
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-import": "^2.32.0",
         "eslint-plugin-node": "^11.1.0",
+        "eslint-plugin-prettier": "^5.5.4",
         "npm-run-all2": "^8.0.4",
         "ovsx": "^0.10.7",
         "prettier": "^3.7.4",
-        "typescript": "^5.9.3"
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.49.0"
     },
     "optionalDependencies": {
         "bufferutil": "^4.0.9"

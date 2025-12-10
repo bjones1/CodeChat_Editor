@@ -440,10 +440,10 @@ fn run_update() -> io::Result<()> {
 fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     // The `-D warnings` flag causes clippy to return a non-zero exit status if
     // it issues warnings.
-    let (clippy_check_only, check, prettier_check) = if check_only {
-        ("-Dwarnings", "--check", "--check")
+    let (clippy_check_only, check, eslint_check) = if check_only {
+        ("-Dwarnings", "--check", "")
     } else {
-        ("", "", "--write")
+        ("", "", "--fix")
     };
     run_cmd!(
         info "cargo clippy and fmt";
@@ -464,18 +464,12 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         info "VSCode extension: cargo sort";
         cargo sort $check;
     )?;
-    run_script(
-        "npx",
-        &["prettier", "src", prettier_check],
-        CLIENT_PATH,
-        true,
-    )?;
-    run_script(
-        "npx",
-        &["prettier", "src", prettier_check],
-        VSCODE_PATH,
-        true,
-    )
+    let mut eslint_args = vec!["eslint", "src"];
+    if !eslint_check.is_empty() {
+        eslint_args.push(eslint_check)
+    }
+    run_script("npx", &eslint_args, CLIENT_PATH, true)?;
+    run_script("npx", &eslint_args, VSCODE_PATH, true)
 }
 
 fn run_test() -> io::Result<()> {
