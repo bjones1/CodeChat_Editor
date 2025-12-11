@@ -83,6 +83,7 @@ import { rust } from "@codemirror/lang-rust";
 import { sql } from "@codemirror/lang-sql";
 import { yaml } from "@codemirror/lang-yaml";
 import { Editor, init, tinymce } from "./tinymce-config.mjs";
+import { EditorEvent, Events } from "tinymce";
 
 // ### Local
 import {
@@ -283,9 +284,8 @@ export const docBlockField = StateField.define<DecorationSet>({
                                           prev.spec.widget.contents,
                                           effect.value.contents,
                                       ),
-                                // Assume this isn't a user change unless it's
-                                // specified.
-                                effect.value.is_user_change ?? false,
+                                // If autosave is allowed (meaning no autosave is not true), then this data came from the user, not the IDE.
+                                tr.annotation(noAutosaveAnnotation) !== true,
                             ),
                             ...decorationOptions,
                         }).range(from, to),
@@ -1022,17 +1022,19 @@ export const CodeMirror_load = async (
                 // See the
                 // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
                 // This is triggered on edits (just as the `input` event), but also when applying formatting changes, inserting images, etc. that the above callback misses.
-                /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-                editor.on("Dirty", (event: any) => {
-                    // Get the div TinyMCE stores edits in. TODO: find
-                    // documentation for `event.target.bodyElement`.
-                    tinymce.activeEditor!.setDirty(false);
-                    const target_or_false = event.target?.bodyElement;
-                    if (target_or_false == null) {
-                        return;
-                    }
-                    setTimeout(() => on_dirty(target_or_false));
-                });
+                editor.on(
+                    "Dirty",
+                    (event: EditorEvent<Events.EditorEventMap["dirty"]>) => {
+                        // Get the div TinyMCE stores edits in. TODO: find
+                        // documentation for `event.target.bodyElement`.
+                        tinymce.activeEditor!.setDirty(false);
+                        const target_or_false = event.target?.bodyElement;
+                        if (target_or_false == null) {
+                            return;
+                        }
+                        setTimeout(() => on_dirty(target_or_false));
+                    },
+                );
             },
         });
     } else {
