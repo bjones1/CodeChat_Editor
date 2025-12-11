@@ -20,40 +20,11 @@
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
 ///
-/// Some subtleties of this approach: development dependencies aren't available
-/// to integration tests. Therefore, this crate's `Cargo.toml` file includes the
-/// `int_tests` feature, which enables crates needed only for integration
-/// testing, while keeping these out of the final binary when compiling for
-/// production. This means that the same crate appears both in
-/// `dev-dependencies` and in `dependencies`, so it's available for both unit
-/// tests and integration tests. In addition, any code used in integration tests
-/// must be gated on the `int_tests` feature, since this code fails to compile
-/// without that feature's crates enabled. Tests are implemented here, then
-/// `use`d in `overall.rs`, so that a single `#[cfg(feature = "int_tests")]`
-/// statement there gates everything in this file. See the
-/// [test docs](https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests)
-/// for the correct file and directory names.
-///
-/// A second challenge revolves around the lack of an async `Drop` trait: the
-/// web driver server should be started before any test, left running during all
-/// tests, then terminated as the test program exits. The web driver must be
-/// initialized before a test then stopped at the end of that test. Both are
-/// ideal for this missing Drop trait. As a workaround:
-///
-/// * The web driver server relies on the C `atexit` call to stop the server.
-///   However, when tests fail, this doesn't get called, leaving the server
-///   running. This causes the server to fail to start on the next test run,
-///   since it's still running. Therefore, errors when starting the web driver
-///   server are ignored by design.
-/// * Tests are run in an async block, and any panics produced inside it are
-///   caught using `catch_unwind()`. The driver is shut down before returning an
-///   error due to the panic.
 // Imports
 // -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
-    collections::HashMap,
     env,
     error::Error,
     panic::AssertUnwindSafe,
@@ -68,12 +39,18 @@ use futures::FutureExt;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 use thirtyfour::{
-    By, ChromiumLikeCapabilities, DesiredCapabilities, Key, WebDriver, WebElement,
-    error::WebDriverError, start_webdriver_process,
+    By, ChromiumLikeCapabilities, DesiredCapabilities, Key, WebDriver, error::WebDriverError,
+    start_webdriver_process,
 };
 use tokio::time::sleep;
 
 // ### Local
+use crate::{
+    make_test,
+    overall_common::{
+        ExpectedMessages, TIMEOUT, get_version, goto_line, perform_loadfile, select_codechat_iframe,
+    },
+};
 use code_chat_editor::{
     cast,
     ide::CodeChatEditorServer,
@@ -88,329 +65,6 @@ use code_chat_editor::{
     },
 };
 
-// Utilities
-// -----------------------------------------------------------------------------
-//
-// Not all messages produced by the server are ordered. To accommodate
-// out-of-order messages, this class provides a way to `insert` expected
-// messages, then wait until they're all be received (`assert_all_messages`).
-struct ExpectedMessages(HashMap<i64, EditorMessageContents>);
-
-impl ExpectedMessages {
-    fn new() -> ExpectedMessages {
-        ExpectedMessages(HashMap::new())
-    }
-
-    fn insert(&mut self, editor_message: EditorMessage) {
-        assert!(
-            self.0
-                .insert(editor_message.id as i64, editor_message.message)
-                .is_none()
-        );
-    }
-
-    fn check(&mut self, editor_message: EditorMessage) {
-        if let Some(editor_message_contents) = self.0.remove(&(editor_message.id as i64)) {
-            assert_eq!(editor_message.message, editor_message_contents);
-        } else {
-            panic!(
-                "Message not found: looked for \n{:#?}\nin:\n{:#?}",
-                editor_message, self.0
-            );
-        }
-    }
-
-    async fn _assert_message(&mut self, codechat_server: &CodeChatEditorServer, timeout: Duration) {
-        self.check(codechat_server.get_message_timeout(timeout).await.unwrap());
-    }
-
-    async fn assert_all_messages(
-        &mut self,
-        codechat_server: &CodeChatEditorServer,
-        timeout: Duration,
-    ) {
-        while !self.0.is_empty() {
-            self.check(codechat_server.get_message_timeout(timeout).await.unwrap());
-        }
-    }
-}
-
-// Time to wait for `ExpectedMessages`.
-const TIMEOUT: Duration = Duration::from_millis(2000);
-
-// ### Test harness
-//
-// A test harness. It runs the webdriver, the Server, opens the Client, then
-// runs provided tests. After testing finishes, it cleans up (handling panics
-// properly).
-//
-// The goal was to pass the harness a function which runs the tests. This
-// currently doesn't work, due to problems with lifetimes (see comments). So,
-// implement this as a macro instead (kludge!).
-macro_rules! harness {
-    // The name of the test function to call inside the harness.
-    ($func: ident) => {
-        pub async fn harness<
-            'a,
-            F: FnOnce(CodeChatEditorServer, &'a WebDriver, &'a Path) -> Fut,
-            Fut: Future<Output = Result<(), WebDriverError>>,
-        >(
-            // The function which performs tests using thirtyfour. TODO: not
-            // used.
-            _f: F,
-            // The output from calling `prep_test_dir!()`.
-            prep_test_dir: (TempDir, PathBuf),
-        ) -> Result<(), Box<dyn Error + Send + Sync>> {
-            let (temp_dir, test_dir) = prep_test_dir;
-            // The logger gets configured by (I think)
-            // `start_webdriver_process`, which delegates to `selenium-manager`.
-            // Set logging level here.
-            unsafe { env::set_var("RUST_LOG", "debug") };
-            // Start the webdriver.
-            let server_url = "http://localhost:4444";
-            let mut caps = DesiredCapabilities::chrome();
-            // Ensure the screen is wide enough for an 80-character line, used
-            // to word wrapping test in `test_client_updates`. Otherwise, this
-            // test send the End key to go to the end of the line...but it's not
-            // the end of the full line on a narrow screen.
-            caps.add_arg("--window-size=1920,768")?;
-            caps.add_arg("--headless")?;
-            // On Ubuntu CI, avoid failures, probably due to running Chrome as
-            // root.
-            #[cfg(target_os = "linux")]
-            if env::var("CI") == Ok("true".to_string()) {
-                caps.add_arg("--disable-gpu")?;
-                caps.add_arg("--no-sandbox")?;
-            }
-            if let Err(err) = start_webdriver_process(server_url, &caps, true) {
-                // Often, the "failure" is that the webdriver is already
-                // running.
-                eprintln!("Failed to start the webdriver process: {err:#?}");
-            }
-            // Wait for the driver to start up.
-            sleep(Duration::from_millis(500)).await;
-            let driver = WebDriver::new(server_url, caps).await?;
-            let driver_clone = driver.clone();
-            let driver_ref = &driver_clone;
-
-            // Run the test inside an async, so we can shut down the driver
-            // before returning an error. Mark the function as unwind safe.
-            // though I'm not certain this is correct. Hopefully, it's good
-            // enough for testing.
-            let ret = AssertUnwindSafe(async move {
-                // ### Setup
-                let p = env::current_exe().unwrap().parent().unwrap().join("../..");
-                set_root_path(Some(&p)).unwrap();
-                let codechat_server = CodeChatEditorServer::new().unwrap();
-
-                // Get the resulting web page text.
-                let opened_id = codechat_server.send_message_opened(true).await.unwrap();
-                pretty_assertions::assert_eq!(
-                    codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-                    EditorMessage {
-                        id: opened_id,
-                        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-                    }
-                );
-                let em_html = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-                codechat_server.send_result(em_html.id, None).await.unwrap();
-
-                // Parse out the address to use.
-                let client_html = cast!(&em_html.message, EditorMessageContents::ClientHtml);
-                let find_str = "<iframe src=\"";
-                let address_start = client_html.find(find_str).unwrap() + find_str.len();
-                let address_end = client_html[address_start..].find("\"").unwrap() + address_start;
-                let address = &client_html[address_start..address_end];
-
-                // Open the Client and send it a file to load.
-                driver_ref.goto(address).await.unwrap();
-                // I'd like to call `f` here, but can't: Rust reports that
-                // `driver_clone` doesn't live long enough. I don't know how to
-                // fix this lifetime issue -- I want to specify that `f`'s
-                // lifetime (which contains the state referring to
-                // `driver_clone`) ends after the call to `f`, but don't know
-                // how.
-                $func(codechat_server, driver_ref, &test_dir).await?;
-
-                Ok(())
-            })
-            // Catch any panics/assertions, again to ensure the driver shuts
-            // down cleanly.
-            .catch_unwind()
-            .await;
-
-            // Always explicitly close the browser.
-            driver.quit().await?;
-            // Report any errors produced when removing the temporary directory.
-            temp_dir.close()?;
-
-            ret.unwrap_or_else(|err|
-                    // Convert a panic to an error.
-                    Err::<(), Box<dyn Error + Send + Sync>>(Box::from(format!(
-                        "{err:#?}"
-                    ))))
-        }
-    };
-}
-
-macro_rules! make_test {
-    // The name of the test function to call inside the harness.
-    ($test_name: ident, $test_core_name: ident) => {
-        mod $test_name {
-            use super::*;
-            harness!($test_core_name);
-        }
-
-        #[tokio::test]
-        async fn $test_name() -> Result<(), Box<dyn Error + Send + Sync>> {
-            $test_name::harness($test_core_name, prep_test_dir!()).await
-        }
-
-        // Some of the thirtyfour calls are marked as deprecated, though they aren't
-    };
-}
-// Given an `Update` message with contents, get the version.
-fn get_version(msg: &EditorMessage) -> f64 {
-    cast!(&msg.message, EditorMessageContents::Update)
-        .contents
-        .as_ref()
-        .unwrap()
-        .version
-}
-
-async fn goto_line(
-    codechat_server: &CodeChatEditorServer,
-    driver_ref: &WebDriver,
-    client_id: &mut f64,
-    path_str: &str,
-    line: u32,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let code_line_css = ".CodeChat-CodeMirror .cm-line";
-    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
-    code_line
-        .send_keys(
-            Key::Alt
-                + if cfg!(target_os = "macos") {
-                    Key::Command
-                } else {
-                    Key::Control
-                }
-                + "g",
-        )
-        .await
-        .unwrap();
-    // Enter a line in the dialog that pops up.
-    driver_ref
-        .find(By::Css("input.cm-textfield"))
-        .await
-        .unwrap()
-        .send_keys(line.to_string() + Key::Enter)
-        .await
-        .unwrap();
-    // The cursor movement produces a cursor/scroll position update after an
-    // autosave delay.
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: *client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.to_string(),
-                contents: None,
-                cursor_position: Some(line),
-                scroll_position: Some(1.0)
-            })
-        }
-    );
-    codechat_server.send_result(*client_id, None).await.unwrap();
-    *client_id += MESSAGE_ID_INCREMENT;
-
-    Ok(())
-}
-
-async fn perform_loadfile(
-    codechat_server: &CodeChatEditorServer,
-    test_dir: &Path,
-    file_name: &str,
-    file_contents: Option<(String, f64)>,
-    has_toc: bool,
-    server_id: f64,
-) -> f64 {
-    let mut expected_messages = ExpectedMessages::new();
-    let path = canonicalize(test_dir.join(file_name)).unwrap();
-    let path_str = path.to_str().unwrap().to_string();
-    let current_file_id = codechat_server
-        .send_message_current_file(path_str.clone())
-        .await
-        .unwrap();
-    // The ordering of these messages isn't fixed -- one can come first, or the
-    // other.
-    expected_messages.insert(EditorMessage {
-        id: current_file_id,
-        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
-    });
-    expected_messages.insert(EditorMessage {
-        id: server_id,
-        message: EditorMessageContents::LoadFile(path.clone()),
-    });
-    expected_messages
-        .assert_all_messages(codechat_server, TIMEOUT)
-        .await;
-
-    // Respond to the load request.
-    codechat_server
-        .send_result_loadfile(server_id, file_contents)
-        .await
-        .unwrap();
-    let mut server_id = server_id + MESSAGE_ID_INCREMENT;
-
-    if has_toc {
-        // Respond to the load request for the TOC.
-        let toc_path = canonicalize(test_dir.join("toc.md")).unwrap();
-        server_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(
-            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-            EditorMessage {
-                id: server_id,
-                message: EditorMessageContents::LoadFile(toc_path),
-            }
-        );
-        codechat_server
-            .send_result_loadfile(server_id, None)
-            .await
-            .unwrap();
-        server_id -= MESSAGE_ID_INCREMENT;
-    }
-
-    // The loadfile produces a message to the client, which comes back here. We
-    // don't need to acknowledge it.
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: server_id,
-            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-        }
-    );
-    server_id += MESSAGE_ID_INCREMENT;
-
-    if has_toc {
-        server_id + MESSAGE_ID_INCREMENT
-    } else {
-        server_id
-    }
-}
-
-#[allow(deprecated)]
-async fn select_codechat_iframe(driver_ref: &WebDriver) -> WebElement {
-    // Target the iframe containing the Client.
-    let codechat_iframe = driver_ref.find(By::Css("#CodeChat-iframe")).await.unwrap();
-    driver_ref
-        .switch_to()
-        .frame_element(&codechat_iframe)
-        .await
-        .unwrap();
-
-    codechat_iframe
-}
 // Tests
 // -----------------------------------------------------------------------------
 //
@@ -1265,13 +919,25 @@ async fn test_4_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     doc_blocks[1].click().await.unwrap();
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                contents: None,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string()
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![],
+                        doc_blocks: vec![],
+                        version: ide_version,
+                    }),
+                    version: client_version
+                }),
                 cursor_position: Some(3),
                 scroll_position: Some(1.0)
             })
@@ -1281,18 +947,33 @@ async fn test_4_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     doc_blocks[2].click().await.unwrap();
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let version = client_version;
+    let client_version = get_version(&msg);
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                contents: None,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string()
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version
+                }),
                 cursor_position: Some(5),
                 scroll_position: Some(1.0)
             })
         }
     );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
     codechat_server.send_result(client_id, None).await.unwrap();
 
     Ok(())
