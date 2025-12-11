@@ -48,7 +48,8 @@ use tokio::time::sleep;
 use crate::{
     make_test,
     overall_common::{
-        ExpectedMessages, TIMEOUT, get_version, goto_line, perform_loadfile, select_codechat_iframe,
+        ExpectedMessages, TIMEOUT, assert_no_more_messages, get_empty_client_update, get_version,
+        goto_line, perform_loadfile, select_codechat_iframe,
     },
 };
 use code_chat_editor::{
@@ -583,6 +584,8 @@ async fn test_server_core(
             .starts_with("<iframe src=\"/static/pdfjs-main.html?")
     );
 
+    assert_no_more_messages(&codechat_server).await;
+
     Ok(())
 }
 
@@ -618,7 +621,7 @@ async fn test_client_core(
     let test_py = driver_ref.find(By::LinkText("test.py")).await.unwrap();
     test_py.click().await.unwrap();
 
-    // Respond to the current file, then load requests for the PDf and the TOC.
+    // Respond to the current file, then load requests for the PDF and the TOC.
     let client_id = INITIAL_CLIENT_MESSAGE_ID;
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
@@ -667,6 +670,18 @@ async fn test_client_core(
         .await
         .unwrap();
     assert_eq!(mocha_results.inner_html().await.unwrap(), "✓");
+
+    server_id -= MESSAGE_ID_INCREMENT;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    //server_id += 2.0 * MESSAGE_ID_INCREMENT;
+
+    assert_no_more_messages(&codechat_server).await;
 
     Ok(())
 }
@@ -861,6 +876,8 @@ async fn test_client_updates_core(
     );
     codechat_server.send_result(client_id, None).await.unwrap();
 
+    assert_no_more_messages(&codechat_server).await;
+
     Ok(())
 }
 
@@ -919,62 +936,31 @@ async fn test_4_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     doc_blocks[1].click().await.unwrap();
-    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-    let client_version = get_version(&msg);
-    assert_eq!(
-        msg,
-        EditorMessage {
-            id: client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.clone(),
-                contents: Some(CodeChatForWeb {
-                    metadata: SourceFileMetadata {
-                        mode: "python".to_string()
-                    },
-                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                        doc: vec![],
-                        doc_blocks: vec![],
-                        version: ide_version,
-                    }),
-                    version: client_version
-                }),
-                cursor_position: Some(3),
-                scroll_position: Some(1.0)
-            })
-        }
-    );
-    codechat_server.send_result(client_id, None).await.unwrap();
-    client_id += MESSAGE_ID_INCREMENT;
+    let mut client_version = 0.0;
+    get_empty_client_update(
+        &codechat_server,
+        &path_str,
+        &mut client_id,
+        &mut client_version,
+        "python",
+        3,
+        1.0,
+    )
+    .await;
 
     doc_blocks[2].click().await.unwrap();
-    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-    let version = client_version;
-    let client_version = get_version(&msg);
-    assert_eq!(
-        msg,
-        EditorMessage {
-            id: client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.clone(),
-                contents: Some(CodeChatForWeb {
-                    metadata: SourceFileMetadata {
-                        mode: "python".to_string()
-                    },
-                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                        doc: vec![],
-                        doc_blocks: vec![],
-                        version,
-                    }),
-                    version: client_version
-                }),
-                cursor_position: Some(5),
-                scroll_position: Some(1.0)
-            })
-        }
-    );
-    codechat_server.send_result(client_id, None).await.unwrap();
-    client_id += MESSAGE_ID_INCREMENT;
-    codechat_server.send_result(client_id, None).await.unwrap();
+    get_empty_client_update(
+        &codechat_server,
+        &path_str,
+        &mut client_id,
+        &mut client_version,
+        "python",
+        5,
+        1.0,
+    )
+    .await;
+
+    assert_no_more_messages(&codechat_server).await;
 
     Ok(())
 }
@@ -1155,6 +1141,8 @@ async fn test_5_core(
     );
     //server_id += MESSAGE_ID_INCREMENT;
 
+    assert_no_more_messages(&codechat_server).await;
+
     Ok(())
 }
 
@@ -1263,6 +1251,8 @@ async fn test_6_core(
         body_content.inner_html().await.unwrap(),
         "<ul><li>aaa</li></ul><p>b</p>"
     );
+
+    assert_no_more_messages(&codechat_server).await;
 
     Ok(())
 }
