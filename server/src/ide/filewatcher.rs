@@ -518,8 +518,8 @@ async fn processing_task(
 
                                         // Close the file if it can't be read as
                                         // Unicode text.
-                                        if read_ret.is_err() {
-                                            error!("Unable to read '{}': {}", cfp.to_string_lossy(), read_ret.unwrap_err());
+                                        if let Err(e) = read_ret {
+                                            error!("Unable to read '{}': {e}", cfp.to_string_lossy());
                                             break 'task;
                                         }
 

@@ -1472,10 +1472,7 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
     #[cfg(debug_assertions)]
     l4rs.push("server");
     let config_file = l4rs.join("log4rs.yml");
-    let mut config = match load_config_file(&config_file, Default::default()) {
-        Ok(c) => c,
-        Err(err) => return Err(err.into()),
-    };
+    let mut config = load_config_file(&config_file, Default::default())?;
     config.root_mut().set_level(level);
     log4rs::init_config(config)?;
     Ok(())
