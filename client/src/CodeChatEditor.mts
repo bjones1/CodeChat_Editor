@@ -247,7 +247,8 @@ const _open_lp = async (
                 // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
                 // this is how to create a TinyMCE event handler.
                 setup: (editor: Editor) => {
-                    editor.on("input", (_event: Event) => {
+                    editor.on("dirty", () => {
+                        tinymce.activeEditor!.setDirty(false);
                         is_dirty = true;
                         startAutosaveTimer();
                     });

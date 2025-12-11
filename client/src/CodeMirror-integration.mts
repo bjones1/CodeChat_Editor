@@ -754,10 +754,8 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         const old_contents_div = document.createElement("div")!;
                         old_contents_div.className = "CodeChat-doc-contents";
                         old_contents_div.contentEditable = "true";
-                        old_contents_div.replaceChildren(
-                            ...tinymce.activeEditor!.getContentAreaContainer()
-                                .childNodes,
-                        );
+                        old_contents_div.innerHTML =
+                            tinymce.activeEditor!.getContent();
                         tinymce_div.parentNode!.insertBefore(
                             old_contents_div,
                             null,
@@ -1007,8 +1005,13 @@ export const CodeMirror_load = async (
             setup: (editor: Editor) => {
                 // See the
                 // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
-                editor.on("input", (event: Event) => {
-                    const target_or_false = event.target as HTMLElement;
+                // This is triggered on edits (just as the `input` event), but also when applying formatting changes, inserting images, etc. that the above callback misses.
+                /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
+                editor.on("Dirty", (event: any) => {
+                    // Get the div TinyMCE stores edits in. TODO: find
+                    // documentation for `event.target.bodyElement`.
+                    tinymce.activeEditor!.setDirty(false);
+                    const target_or_false = event.target?.bodyElement;
                     if (target_or_false == null) {
                         return;
                     }
