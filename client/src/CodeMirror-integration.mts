@@ -196,6 +196,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                                 effect.value.indent,
                                 effect.value.delimiter,
                                 effect.value.content,
+                                false,
                             ),
                             ...decorationOptions,
                         }).range(effect.value.from, effect.value.to),
@@ -282,6 +283,9 @@ export const docBlockField = StateField.define<DecorationSet>({
                                           prev.spec.widget.contents,
                                           effect.value.contents,
                                       ),
+                                // Assume this isn't a user change unless it's
+                                // specified.
+                                effect.value.is_user_change ?? false,
                             ),
                             ...decorationOptions,
                         }).range(from, to),
@@ -332,7 +336,12 @@ export const docBlockField = StateField.define<DecorationSet>({
                     contents,
                 ]: CodeMirrorDocBlockTuple) =>
                     Decoration.replace({
-                        widget: new DocBlockWidget(indent, delimiter, contents),
+                        widget: new DocBlockWidget(
+                            indent,
+                            delimiter,
+                            contents,
+                            false,
+                        ),
                         ...decorationOptions,
                     }).range(from, to),
             ),
@@ -372,6 +381,9 @@ type updateDocBlockType = {
     indent?: string;
     delimiter?: string;
     contents: string | StringDiff[];
+    // True if this update comes from a user change, as opposed to an update
+    // received from the IDE.
+    is_user_change?: boolean;
 };
 
 // Define an update.
@@ -414,6 +426,7 @@ class DocBlockWidget extends WidgetType {
         readonly indent: string,
         readonly delimiter: string,
         readonly contents: string,
+        readonly is_user_change: boolean,
     ) {
         // TODO: I don't understand why I don't need to store the provided
         // parameters in the object: `this.indent = indent;`, etc.
@@ -456,6 +469,9 @@ class DocBlockWidget extends WidgetType {
     updateDOM(dom: HTMLElement, _view: EditorView): boolean {
         // If this change was produced by a user edit, then the DOM was already
         // updated. Stop here.
+        if (this.is_user_change) {
+            return true;
+        }
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
 
         // The contents div could be a TinyMCE instance, or just a plain div.
