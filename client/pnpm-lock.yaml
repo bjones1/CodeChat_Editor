@@ -63,8 +63,8 @@ importers:
         specifier: <6.39.0
         version: 6.38.8
       '@hpcc-js/wasm-graphviz':
-        specifier: ^1.16.0
-        version: 1.16.0
+        specifier: ^1.17.0
+        version: 1.17.0
       '@mathjax/mathjax-newcm-font':
         specifier: 4.0.0
         version: 4.0.0
@@ -428,8 +428,8 @@ packages:
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@hpcc-js/wasm-graphviz@1.16.0':
-    resolution: {integrity: sha512-N7IcFIF6Va9Ko3DT5+N3crI5AHE71BH/H+frxfqgo7fn2LxzGaWDHPSRUsLfCCt3cpAFqsdkyoIc//FA+HxKzw==}
+  '@hpcc-js/wasm-graphviz@1.17.0':
+    resolution: {integrity: sha512-EeQUvc41JrFU7AWkh3//KdgRT9waJrBxFA7H9m3uI/zAHzbvTgbw05tik+fxuDPD0sXRxc8g2kXqC5jMobWUQA==}
 
   '@humanfs/core@0.19.1':
     resolution: {integrity: sha512-5DyQ4+1JEUzejeK1JGICcideyfUbGixgS9jNgex5nqkW+cY7WZhxBigmieN5Qnw9ZosSNVC9KQKyb+GUaGyKUA==}
@@ -2439,7 +2439,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@hpcc-js/wasm-graphviz@1.16.0': {}
+  '@hpcc-js/wasm-graphviz@1.17.0': {}
 
   '@humanfs/core@0.19.1': {}
 
