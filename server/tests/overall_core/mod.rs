@@ -437,14 +437,20 @@ async fn test_server_core(
         .await
         .unwrap();
 
-    expected_messages.insert(EditorMessage {
-        id: current_file_id,
-        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
-    });
-    expected_messages.insert(EditorMessage {
-        id: server_id,
-        message: EditorMessageContents::LoadFile(txt_path.clone()),
-    });
+    expected_messages.insert(
+        EditorMessage {
+            id: current_file_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+        false,
+    );
+    expected_messages.insert(
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(txt_path.clone()),
+        },
+        false,
+    );
     expected_messages
         .assert_all_messages(&codechat_server, TIMEOUT)
         .await;
@@ -943,8 +949,8 @@ async fn test_4_core(
         &mut client_id,
         &mut client_version,
         "python",
-        3,
-        1.0,
+        Some(3),
+        Some(1.0),
     )
     .await;
 
@@ -955,8 +961,8 @@ async fn test_4_core(
         &mut client_id,
         &mut client_version,
         "python",
-        5,
-        1.0,
+        Some(5),
+        Some(1.0),
     )
     .await;
 
@@ -1114,7 +1120,7 @@ async fn test_5_core(
                         doc: vec![StringDiff {
                             from: 0,
                             to: Some(8),
-                            insert: "# Tesbart.\n".to_string(),
+                            insert: "# foobarTest.\n".to_string(),
                         },],
                         doc_blocks: vec![],
                         version,

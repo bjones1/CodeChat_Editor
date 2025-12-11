@@ -76,24 +76,37 @@ use code_chat_editor::{
 // Not all messages produced by the server are ordered. To accommodate
 // out-of-order messages, this class provides a way to `insert` expected
 // messages, then wait until they're all be received (`assert_all_messages`).
-pub struct ExpectedMessages(HashMap<i64, EditorMessageContents>);
+pub struct ExpectedMessages(HashMap<i64, (EditorMessageContents, bool)>);
 
 impl ExpectedMessages {
     pub fn new() -> ExpectedMessages {
         ExpectedMessages(HashMap::new())
     }
 
-    pub fn insert(&mut self, editor_message: EditorMessage) {
+    pub fn insert(&mut self, editor_message: EditorMessage, is_dynamic: bool) {
         assert!(
             self.0
-                .insert(editor_message.id as i64, editor_message.message)
+                .insert(
+                    editor_message.id as i64,
+                    (editor_message.message, is_dynamic)
+                )
                 .is_none()
         );
     }
 
     pub fn check(&mut self, editor_message: EditorMessage) {
-        if let Some(editor_message_contents) = self.0.remove(&(editor_message.id as i64)) {
-            assert_eq!(editor_message.message, editor_message_contents);
+        if let Some((ref mut editor_message_contents, is_dynamic)) =
+            self.0.remove(&(editor_message.id as i64))
+        {
+            if is_dynamic
+                && let EditorMessageContents::Update(emc) = editor_message_contents
+                && let Some(contents) = &mut emc.contents
+            {
+                let version = get_version(&editor_message);
+                contents.version = version;
+            }
+            // Special case:
+            assert_eq!(&editor_message.message, editor_message_contents);
         } else {
             panic!(
                 "Message not found: looked for \n{:#?}\nin:\n{:#?}",
@@ -112,7 +125,14 @@ impl ExpectedMessages {
         timeout: Duration,
     ) {
         while !self.0.is_empty() {
-            self.check(codechat_server.get_message_timeout(timeout).await.unwrap());
+            if let Some(editor_message) = codechat_server.get_message_timeout(timeout).await {
+                self.check(editor_message);
+            } else {
+                panic!(
+                    "No matching messages found. Unmatched messages:\n{:#?}",
+                    self.0
+                );
+            }
         }
     }
 }
@@ -328,14 +348,20 @@ pub async fn perform_loadfile(
         .unwrap();
     // The ordering of these messages isn't fixed -- one can come first, or the
     // other.
-    expected_messages.insert(EditorMessage {
-        id: current_file_id,
-        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
-    });
-    expected_messages.insert(EditorMessage {
-        id: server_id,
-        message: EditorMessageContents::LoadFile(path.clone()),
-    });
+    expected_messages.insert(
+        EditorMessage {
+            id: current_file_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+        false,
+    );
+    expected_messages.insert(
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(path.clone()),
+        },
+        false,
+    );
     expected_messages
         .assert_all_messages(codechat_server, TIMEOUT)
         .await;
@@ -402,8 +428,8 @@ pub async fn get_empty_client_update(
     client_id: &mut f64,
     client_version: &mut f64,
     mode: &str,
-    cursor_position: u32,
-    scroll_position: f32,
+    cursor_position: Option<u32>,
+    scroll_position: Option<f32>,
 ) {
     let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     let version = *client_version;
@@ -425,8 +451,8 @@ pub async fn get_empty_client_update(
                     }),
                     version: *client_version
                 }),
-                cursor_position: Some(cursor_position),
-                scroll_position: Some(scroll_position)
+                cursor_position,
+                scroll_position
             })
         }
     );
