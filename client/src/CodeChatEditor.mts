@@ -427,10 +427,7 @@ export const restoreSelection = ({
         tinymce.activeEditor!.selection.setCursorLocation(
             selection_node,
             // In case of edits, avoid an offset past the end of the node.
-            Math.min(
-                selection_offset,
-                selection_node.nodeValue?.length ?? Number.MAX_VALUE,
-            ),
+            Math.min(selection_offset, selection_node.nodeValue?.length ?? 0),
         );
     }
 };
