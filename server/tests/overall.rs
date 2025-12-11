@@ -16,4 +16,7 @@
 /// `overall.rs` - test the overall system
 /// ======================================
 #[cfg(feature = "int_tests")]
+mod overall_common;
+
+#[cfg(feature = "int_tests")]
 mod overall_core;

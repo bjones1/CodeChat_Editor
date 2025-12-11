@@ -32,7 +32,7 @@ license = "GPL-3.0-only"
 name = "codechat-editor-server"
 readme = "../README.md"
 repository = "https://github.com/bjones1/CodeChat_Editor"
-version = "0.1.44"
+version = "0.1.45"
 
 # This library allows other packages to use core CodeChat Editor features.
 [lib]
@@ -75,7 +75,7 @@ dunce = "1.0.5"
 # This is also for integration testing.
 futures = { version = "0.3.31", optional = true }
 futures-util = "0.3.29"
-htmd = { git = "https://github.com/bjones1/htmd.git", branch = "math-support", version = "0.5" }
+htmd = { git = "https://github.com/bjones1/htmd.git", branch = "table-fix", version = "0.5" }
 html5ever = "0.36.1"
 imara-diff = { version = "0.2", features = [] }
 indoc = "2.0.5"

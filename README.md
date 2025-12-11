@@ -159,13 +159,13 @@ graph TD; A --> B;
   </tbody>
 </table>
 
-The [Mermaid live editor](https://mermaid.live/) provide an focused environment for creating Mermaid chart.
+The [Mermaid live editor](https://mermaid.live/) provide an focused environment
+for creating Mermaid chart.
 
 ### Graphviz
 
 The CodeChat Editor supports diagrams created by
 [Graphviz](https://graphviz.org/). For example,
-
 
 <table>
   <thead>
@@ -195,8 +195,8 @@ digraph { A -> B }
   </tbody>
 </table>
 
-
-Several on-line tools, such as [Edotor](https://edotor.net/), provide a focused editing experience.
+Several on-line tools, such as [Edotor](https://edotor.net/), provide a focused
+editing experience.
 
 ### PlantUML
 

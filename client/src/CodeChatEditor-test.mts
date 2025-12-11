@@ -27,7 +27,6 @@ import "mocha/mocha.js";
 import "mocha/mocha.css";
 import { EditorView } from "@codemirror/view";
 import { ChangeSpec, EditorState, EditorSelection } from "@codemirror/state";
-import { exportedForTesting } from "./CodeChatEditor.mjs";
 import { CodeMirror, CodeMirrorDocBlockTuple } from "./shared_types.mjs";
 import {
     DocBlockPlugin,
@@ -41,9 +40,6 @@ import {
 //
 // Nothing needed at present.
 //
-// Provide convenient access to all functions tested here.
-const {} = exportedForTesting;
-
 // From [SO](https://stackoverflow.com/a/39914235).
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -58,7 +54,7 @@ window.CodeChatEditor_test = () => {
         ui: "tdd",
         // This is required to use Mocha's global teardown from the browser,
         // AFAIK.
-        /// @ts-ignore
+        /// @ts-expect-error("See above.")
         globalTeardown: [
             () => {
                 // On teardown, put the Mocha div at the beginning of the body.

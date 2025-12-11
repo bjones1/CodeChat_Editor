@@ -311,15 +311,6 @@ fn patch_file(patch: &str, before_patch: &str, file_path: &str) -> io::Result<()
 }
 /// After updating files in the client's Node files, perform some fix-ups.
 fn patch_client_libs() -> io::Result<()> {
-    // Apply a the fixes described in [issue
-    // 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
-    patch_file(
-        "
-        selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)",
-        "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
-            hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));",
-        &format!("{CLIENT_PATH}/node_modules/@codemirror/view/dist/index.js")
-    )?;
     // In [older
     // releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options),
     // TinyMCE allowed users to change `whitespace_elements`; the whitespace
@@ -440,10 +431,10 @@ fn run_update() -> io::Result<()> {
 fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     // The `-D warnings` flag causes clippy to return a non-zero exit status if
     // it issues warnings.
-    let (clippy_check_only, check, prettier_check) = if check_only {
-        ("-Dwarnings", "--check", "--check")
+    let (clippy_check_only, check, eslint_check) = if check_only {
+        ("-Dwarnings", "--check", "")
     } else {
-        ("", "", "--write")
+        ("", "", "--fix")
     };
     run_cmd!(
         info "cargo clippy and fmt";
@@ -464,18 +455,12 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         info "VSCode extension: cargo sort";
         cargo sort $check;
     )?;
-    run_script(
-        "npx",
-        &["prettier", "src", prettier_check],
-        CLIENT_PATH,
-        true,
-    )?;
-    run_script(
-        "npx",
-        &["prettier", "src", prettier_check],
-        VSCODE_PATH,
-        true,
-    )
+    let mut eslint_args = vec!["eslint", "src"];
+    if !eslint_check.is_empty() {
+        eslint_args.push(eslint_check)
+    }
+    run_script("npx", &eslint_args, CLIENT_PATH, true)?;
+    run_script("npx", &eslint_args, VSCODE_PATH, true)
 }
 
 fn run_test() -> io::Result<()> {

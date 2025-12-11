@@ -67,7 +67,7 @@ const metafile: Metafile = JSON.parse(data);
 
 // Walk the file, looking for the names of specific entry points. Transform
 // those into paths used to import these files.
-let outputContents: Record<string, string> = {};
+const outputContents: Record<string, string> = {};
 let num_found = 0;
 for (const output in metafile.outputs) {
     const outputInfo = metafile.outputs[output];

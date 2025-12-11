@@ -24,6 +24,16 @@ Changelog
 
 * No changes.
 
+Version 0.1.45 -- 2025-Dec-11
+--------------------------------------------------------------------------------
+
+* Fix loss of editing in the Client when in document-only mode.
+* Fix data corruption in the Client when in document-only mode and edits are
+  made in both the IDE and Client.
+* Fix loss of autosave when making GUI-based edits in the Client.
+* Correctly retain Client cursor position during IDE edits.
+* Correctly translate table cells containing blocks from HTML to Markdown.
+
 Version 0.1.44 -- 2025-Dec-09
 --------------------------------------------------------------------------------
 
