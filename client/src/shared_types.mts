@@ -16,7 +16,12 @@
 //
 // `shared_types.mts` -- Shared type definitions
 // =============================================
-//
+// The time, in ms, to wait between the last user edit and sending updated data to the Server.
+export const autosave_timeout_ms = 300;
+
+// Produce a whole random number. Fractional numbers aren't consistently converted to the same number. Note that the mantissa of a JavaScript `Number` is 53 bits per the [docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number#number_encoding). To be certain, also round the result.
+export const rand = () => Math.round(Math.random() * 2 ** 53);
+
 // ### Message types
 //
 // These mirror the same definitions in the Rust webserver, so that the two can
@@ -31,9 +36,10 @@ import { StringDiff } from "./rust-types/StringDiff.js";
 import { CodeMirrorDocBlockTuple } from "./rust-types/CodeMirrorDocBlockTuple.js";
 import { UpdateMessageContents } from "./rust-types/UpdateMessageContents.js";
 import { ResultOkTypes } from "./rust-types/ResultOkTypes.js";
+import { ResultErrTypes } from "./rust-types/ResultErrTypes.js";
 
 // Manually define this, since `ts-rs` can't export `webserver.MessageResult`.
-type MessageResult = { Ok: ResultOkTypes } | { Err: string };
+type MessageResult = { Ok: ResultOkTypes } | { Err: ResultErrTypes };
 
 export type {
     EditorMessageContents,

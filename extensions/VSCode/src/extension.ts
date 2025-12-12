@@ -15,13 +15,13 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `extension.ts` - The CodeChat Editor Visual Studio Code extension
-// =================================================================
+// =============================================================================
 //
 // This extension creates a webview, then uses a websocket connection to the
 // CodeChat Editor Server and Client to render editor text in that webview.
 //
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Node.js packages
 import assert from "assert";
@@ -40,21 +40,24 @@ import { CodeChatEditorServer, initServer } from "./index";
 
 // ### Local packages
 import {
+    autosave_timeout_ms,
     EditorMessage,
     MessageResult,
+    rand,
     UpdateMessageContents,
 } from "../../../client/src/shared_types.mjs";
+import {
+    DEBUG_ENABLED,
+    MAX_MESSAGE_LENGTH,
+} from "../../../client/src/debug_enabled.mjs";
+import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes";
 
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 enum CodeChatEditorClientLocation {
     html,
     browser,
 }
-// The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH = 200;
-// True to enable additional debug logging.
-const DEBUG_ENABLED = true;
 
 // True on Windows, false on OS X / Linux.
 const is_windows = process.platform === "win32";
@@ -93,6 +96,8 @@ let quiet_next_error = false;
 // True if the editor contents have changed (are dirty) from the perspective of
 // the CodeChat Editor (not if the contents are saved to disk).
 let is_dirty = false;
+// The version of the current file.
+let version = 0.0;
 
 // An object to start/stop the CodeChat Editor Server.
 let codeChatEditorServer: CodeChatEditorServer | undefined;
@@ -105,137 +110,8 @@ let codeChatEditorServer: CodeChatEditorServer | undefined;
     initServer(ext.extensionPath);
 }
 
-// Types for talking to the Rust /capture endpoint.
-// This mirrors `CaptureEventWire` in webserver.rs.
-interface CaptureEventPayload {
-    user_id: string;
-    assignment_id?: string;
-    group_id?: string;
-    file_path?: string;
-    event_type: string;
-    data: any; // sent as JSON
-}
-
-// TODO: replace these with something real (e.g., VS Code settings)
-// For now, we hard-code to prove that the pipeline works end-to-end.
-const CAPTURE_USER_ID = "test-user";
-const CAPTURE_ASSIGNMENT_ID = "demo-assignment";
-const CAPTURE_GROUP_ID = "demo-group";
-
-// Base URL for the CodeChat server's /capture endpoint.
-// NOTE: keep this in sync with whatever port your server actually uses.
-const CAPTURE_SERVER_BASE = "http://127.0.0.1:8080";
-
-// Simple classification of what the user is currently doing.
-type ActivityKind = "doc" | "code" | "other";
-
-// Language IDs that we treat as "documentation" for the dissertation metrics.
-// You can refine this later if you want.
-const DOC_LANG_IDS = new Set<string>([
-    "markdown",
-    "plaintext",
-    "latex",
-    "restructuredtext",
-]);
-
-// Track the last activity kind and when a reflective-writing (doc) session started.
-let lastActivityKind: ActivityKind = "other";
-let docSessionStart: number | null = null;
-
-// Heuristic: classify a document as documentation vs. code vs. other.
-function classifyDocument(
-    doc: vscode.TextDocument | undefined,
-): ActivityKind {
-    if (!doc) {
-        return "other";
-    }
-    if (DOC_LANG_IDS.has(doc.languageId)) {
-        return "doc";
-    }
-    // Everything else we treat as code for now.
-    return "code";
-}
-
-// Update activity state, emit switch + doc_session events as needed.
-function noteActivity(kind: ActivityKind, filePath?: string) {
-    const now = Date.now();
-
-    // Handle entering / leaving a "doc" session.
-    if (kind === "doc") {
-        if (docSessionStart === null) {
-            // Starting a new reflective-writing session.
-            docSessionStart = now;
-            void sendCaptureEvent(CAPTURE_SERVER_BASE, "session_start", filePath, {
-                mode: "doc",
-            });
-        }
-    } else {
-        if (docSessionStart !== null) {
-            // Ending a reflective-writing session.
-            const durationMs = now - docSessionStart;
-            docSessionStart = null;
-            void sendCaptureEvent(CAPTURE_SERVER_BASE, "doc_session", filePath, {
-                duration_ms: durationMs,
-                duration_seconds: durationMs / 1000.0,
-            });
-            void sendCaptureEvent(CAPTURE_SERVER_BASE, "session_end", filePath, {
-                mode: "doc",
-            });
-        }
-    }
-
-    // If we switched between doc and code, log a switch_pane event.
-    const docOrCode = (k: ActivityKind) => k === "doc" || k === "code";
-    if (
-        docOrCode(lastActivityKind) &&
-        docOrCode(kind) &&
-        kind !== lastActivityKind
-    ) {
-        void sendCaptureEvent(CAPTURE_SERVER_BASE, "switch_pane", filePath, {
-            from: lastActivityKind,
-            to: kind,
-        });
-    }
-
-    lastActivityKind = kind;
-}
-
-// Helper to send a capture event to the Rust server.
-async function sendCaptureEvent(
-    serverBaseUrl: string, // e.g. "http://127.0.0.1:8080"
-    eventType: string,
-    filePath?: string,
-    data: any = {}
-): Promise<void> {
-    const payload: CaptureEventPayload = {
-        user_id: CAPTURE_USER_ID,
-        assignment_id: CAPTURE_ASSIGNMENT_ID,
-        group_id: CAPTURE_GROUP_ID,
-        file_path: filePath,
-        event_type: eventType,
-        data,
-    };
-
-    try {
-        const resp = await fetch(`${serverBaseUrl}/capture`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
-        });
-
-        if (!resp.ok) {
-            console.error("Capture event failed:", resp.status, await resp.text());
-        }
-    } catch (err) {
-        console.error("Error sending capture event:", err);
-    }
-}
-
-
 // Activation/deactivation
-// -----------------------
+// -----------------------------------------------------------------------------
 //
 // This is invoked when the extension is activated. It either creates a new
 // CodeChat Editor Server instance or reveals the currently running one.
@@ -249,18 +125,6 @@ export const activate = (context: vscode.ExtensionContext) => {
             "extension.codeChatEditorActivate",
             async () => {
                 console_log("CodeChat Editor extension: starting.");
-
-                // CAPTURE: mark the start of an editor session.
-                const active = vscode.window.activeTextEditor;
-                const startFilePath = active?.document.fileName;
-                void sendCaptureEvent(
-                    CAPTURE_SERVER_BASE,
-                    "session_start",
-                    startFilePath,
-                    {
-                        mode: "vscode_extension",
-                    },
-                );
 
                 if (!subscribed) {
                     subscribed = true;
@@ -283,31 +147,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     event.reason
                                 }, ${format_struct(event.contentChanges)}.`,
                             );
-
-                            // CAPTURE: classify this as documentation vs. code and log a write_* event.
-                            const doc = event.document;
-                            const kind = classifyDocument(doc);
-                            const filePath = doc.fileName;
-                            const charsTyped = event.contentChanges
-                                .map((c) => c.text.length)
-                                .reduce((a, b) => a + b, 0);
-
-                            if (kind === "doc") {
-                                void sendCaptureEvent(CAPTURE_SERVER_BASE, "write_doc", filePath, {
-                                    chars_typed: charsTyped,
-                                    languageId: doc.languageId,
-                                });
-                            } else if (kind === "code") {
-                                void sendCaptureEvent(CAPTURE_SERVER_BASE, "write_code", filePath, {
-                                    chars_typed: charsTyped,
-                                    languageId: doc.languageId,
-                                });
-                            }
-
-                            // Update our notion of current activity + doc session.
-                            noteActivity(kind, filePath);
-
-                            // Existing behavior: trigger CodeChat render.
                             send_update(true);
                         }),
                     );
@@ -324,92 +163,32 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 ignore_active_editor_change = false;
                                 return;
                             }
-
-                            // CAPTURE: update activity + possible switch_pane/doc_session.
-                            const doc = event.document;
-                            const kind = classifyDocument(doc);
-                            const filePath = doc.fileName;
-                            noteActivity(kind, filePath);
-
-                            send_update(false);
+                            // Skip an update if we've already sent a `CurrentFile` for this editor.
+                            if (
+                                current_editor ===
+                                vscode.window.activeTextEditor
+                            ) {
+                                return;
+                            }
+                            send_update(true);
                         }),
                     );
 
                     context.subscriptions.push(
                         vscode.window.onDidChangeTextEditorSelection(
-                            (event) => {
+                            (_event) => {
                                 if (ignore_selection_change) {
                                     ignore_selection_change = false;
                                     return;
                                 }
-
-                                // CAPTURE: treat a selection change as "activity" in this document.
-                                const doc = event.textEditor.document;
-                                const kind = classifyDocument(doc);
-                                const filePath = doc.fileName;
-                                noteActivity(kind, filePath);
-
+                                console_log(
+                                    "CodeChat Editor extension: sending updated cursor/scroll position.",
+                                );
                                 send_update(false);
                             },
                         ),
                     );
-                    // Capture event: listen for file saves (dissertation instrumentation)
-                    context.subscriptions.push(
-                        vscode.workspace.onDidSaveTextDocument((doc) => {
-                            // This is the first full end-to-end capture test.
-                            // When a document is saved, send an event to the Rust server.
-
-                            void sendCaptureEvent(
-                                "http://127.0.0.1:8080", // <-- update if your server uses a different port
-                                "save",
-                                doc.fileName,
-                                {
-                                    reason: "manual_save",
-                                    languageId: doc.languageId,
-                                    lineCount: doc.lineCount,
-                                },
-                            );
-                        }),
-                    );
-
-                    // Capture: start of a debug/run session.
-                    context.subscriptions.push(
-                        vscode.debug.onDidStartDebugSession((session) => {
-                            const active = vscode.window.activeTextEditor;
-                            const filePath = active?.document.fileName;
-                            void sendCaptureEvent(
-                                CAPTURE_SERVER_BASE,
-                                "run",
-                                filePath,
-                                {
-                                    sessionName: session.name,
-                                    sessionType: session.type,
-                                },
-                            );
-                        }),
-                    );
-
-                    // Capture: compile/build events via VS Code tasks.
-                    context.subscriptions.push(
-                        vscode.tasks.onDidStartTaskProcess((e) => {
-                            const active = vscode.window.activeTextEditor;
-                            const filePath = active?.document.fileName;
-                            const task = e.execution.task;
-                            void sendCaptureEvent(
-                                CAPTURE_SERVER_BASE,
-                                "compile",
-                                filePath,
-                                {
-                                    taskName: task.name,
-                                    taskSource: task.source,
-                                    definition: task.definition,
-                                    processId: e.processId,
-                                },
-                            );
-                        }),
-                    );
-
-                } // if subscribed
+                }
 
                 // Get the CodeChat Client's location from the VSCode
                 // configuration.
@@ -477,19 +256,6 @@ export const activate = (context: vscode.ExtensionContext) => {
                             webview_panel = undefined;
                             await stop_client();
                         });
-
-                        // Render when the webview panel is shown.
-                        webview_panel.onDidChangeViewState(
-                            (
-                                _event: vscode.WebviewPanelOnDidChangeViewStateEvent,
-                            ) => {
-                                // Only render if the webview was activated;
-                                // this event also occurs when it's deactivated.
-                                if (webview_panel?.active) {
-                                    send_update(true);
-                                }
-                            },
-                        );
                     }
                 }
 
@@ -559,21 +325,24 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 value as UpdateMessageContents;
                             const doc = get_document(current_update.file_path);
                             if (doc === undefined) {
-                                sendResult(
-                                    id,
-                                    `No open document for ${current_update.file_path}`,
-                                );
+                                await sendResult(id, {
+                                    NoOpenDocument: current_update.file_path,
+                                });
                                 break;
                             }
                             if (current_update.contents !== undefined) {
                                 const source = current_update.contents.source;
-                                // Is this plain text, or a diff? This will
-                                // produce a change event, which we'll ignore.
+                                // This will produce a change event, which we'll
+                                // ignore. The change may also produce a
+                                // selection change, which should also be
+                                // ignored.
                                 ignore_text_document_change = true;
+                                ignore_selection_change = true;
                                 // Use a workspace edit, since calls to
                                 // `TextEditor.edit` must be made to the active
                                 // editor only.
                                 const wse = new vscode.WorkspaceEdit();
+                                // Is this plain text, or a diff?
                                 if ("Plain" in source) {
                                     wse.replace(
                                         doc.uri,
@@ -589,6 +358,18 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     );
                                 } else {
                                     assert("Diff" in source);
+                                    // If this diff was not made against the
+                                    // text we currently have, reject it.
+                                    if (source.Diff.version !== version) {
+                                        await sendResult(id, "OutOfSync");
+                                        // Send an `Update` with the full text to
+                                        // re-sync the Client.
+                                        console_log(
+                                            "CodeChat Editor extension: sending update because Client is out of sync.",
+                                        );
+                                        send_update(true);
+                                        break;
+                                    }
                                     const diffs = source.Diff.doc;
                                     for (const diff of diffs) {
                                         // Convert from character offsets from the
@@ -614,39 +395,55 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         }
                                     }
                                 }
-                                vscode.workspace
-                                    .applyEdit(wse)
-                                    .then(
-                                        () =>
-                                            (ignore_text_document_change = false),
-                                    );
+                                await vscode.workspace.applyEdit(wse);
+                                ignore_text_document_change = false;
+                                ignore_selection_change = false;
+
+                                // Now that we've updated our text, update the
+                                // associated version as well.
+                                version = current_update.contents.version;
                             }
-                            // Update the cursor position if provided.
-                            let line = current_update.cursor_position;
-                            if (line !== undefined) {
-                                const editor = get_text_editor(doc);
-                                if (editor) {
-                                    ignore_selection_change = true;
+
+                            // Update the cursor and scroll position if
+                            // provided.
+                            const editor = get_text_editor(doc);
+                            let scroll_line = current_update.scroll_position;
+                            if (scroll_line !== undefined && editor) {
+                                ignore_selection_change = true;
+                                const scroll_position = new vscode.Position(
                                     // The VSCode line is zero-based; the
                                     // CodeMirror line is one-based.
-                                    line -= 1;
-                                    const position = new vscode.Position(
-                                        line,
-                                        line,
-                                    );
-                                    editor.selections = [
-                                        new vscode.Selection(
-                                            position,
-                                            position,
-                                        ),
-                                    ];
-                                    editor.revealRange(
-                                        new vscode.Range(position, position),
-                                        TextEditorRevealType.InCenter,
-                                    );
-                                }
+                                    scroll_line - 1,
+                                    0,
+                                );
+                                editor.revealRange(
+                                    new vscode.Range(
+                                        scroll_position,
+                                        scroll_position,
+                                    ),
+                                    // This is still not the top of the
+                                    // viewport, but a bit below it.
+                                    TextEditorRevealType.AtTop,
+                                );
                             }
-                            sendResult(id);
+
+                            let cursor_line = current_update.cursor_position;
+                            if (cursor_line !== undefined && editor) {
+                                ignore_selection_change = true;
+                                const cursor_position = new vscode.Position(
+                                    // The VSCode line is zero-based; the
+                                    // CodeMirror line is one-based.
+                                    cursor_line - 1,
+                                    0,
+                                );
+                                editor.selections = [
+                                    new vscode.Selection(
+                                        cursor_position,
+                                        cursor_position,
+                                    ),
+                                ];
+                            }
+                            await sendResult(id);
                             break;
                         }
 
@@ -661,10 +458,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             current_file,
                                         );
                                 } catch (e) {
-                                    sendResult(
-                                        id,
-                                        `Error: unable to open file ${current_file}: ${e}`,
-                                    );
+                                    await sendResult(id, {
+                                        OpenFileFailed: [
+                                            current_file,
+                                            (e as Error).toString(),
+                                        ],
+                                    });
                                     continue;
                                 }
                                 ignore_active_editor_change = true;
@@ -674,15 +473,15 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         current_editor?.viewColumn,
                                     );
                                 ignore_active_editor_change = false;
-                                sendResult(id);
+                                await sendResult(id);
                             } else {
                                 // TODO: open using a custom document editor.
                                 // See
                                 // [openCustomDocument](https://code.visualstudio.com/api/references/vscode-api#CustomEditorProvider.openCustomDocument),
                                 // which can evidently be called
                                 // [indirectly](https://stackoverflow.com/a/65101181/4374935).
-                                // See also [Built-in
-                                // Commands](https://code.visualstudio.com/api/references/commands).
+                                // See also
+                                // [Built-in Commands](https://code.visualstudio.com/api/references/commands).
                                 // For now, simply respond with an OK, since the
                                 // following doesn't work.
                                 if (false) {
@@ -696,15 +495,17 @@ export const activate = (context: vscode.ExtensionContext) => {
                                             },
                                         )
                                         .then(
-                                            () => sendResult(id),
-                                            (reason) =>
-                                                sendResult(
-                                                    id,
-                                                    `Error: unable to open file ${current_file}: ${reason}`,
-                                                ),
+                                            async () => await sendResult(id),
+                                            async (reason) =>
+                                                await sendResult(id, {
+                                                    OpenFileFailed: [
+                                                        current_file,
+                                                        reason,
+                                                    ],
+                                                }),
                                         );
                                 }
-                                sendResult(id);
+                                await sendResult(id);
                             }
                             break;
                         }
@@ -725,12 +526,17 @@ export const activate = (context: vscode.ExtensionContext) => {
                             // Look through all open documents to see if we have
                             // the requested file.
                             const doc = get_document(load_file);
-                            const load_file_result =
-                                doc === undefined ? null : doc.getText();
+                            const load_file_result: null | [string, number] =
+                                doc === undefined
+                                    ? null
+                                    : [
+                                          doc.getText(),
+                                          (version = Math.random()),
+                                      ];
                             console_log(
                                 `CodeChat Editor extension: Result(LoadFile(${format_struct(load_file_result)}))`,
                             );
-                            codeChatEditorServer.sendResultLoadfile(
+                            await codeChatEditorServer.sendResultLoadfile(
                                 id,
                                 load_file_result,
                             );
@@ -741,7 +547,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const client_html = value as string;
                             assert(webview_panel !== undefined);
                             webview_panel.webview.html = client_html;
-                            sendResult(id);
+                            await sendResult(id);
                             // Now that the Client is loaded, send the editor's
                             // current file to the server.
                             send_update(false);
@@ -765,43 +571,37 @@ export const activate = (context: vscode.ExtensionContext) => {
 // On deactivation, close everything down.
 export const deactivate = async () => {
     console_log("CodeChat Editor extension: deactivating.");
-
-    // CAPTURE: mark the end of an editor session.
-    const active = vscode.window.activeTextEditor;
-    const endFilePath = active?.document.fileName;
-    await sendCaptureEvent(
-        CAPTURE_SERVER_BASE,
-        "session_end",
-        endFilePath,
-        {
-            mode: "vscode_extension",
-        },
-    );
-
     await stop_client();
     webview_panel?.dispose();
     console_log("CodeChat Editor extension: deactivated.");
 };
 
 // Supporting functions
-// --------------------
+// -----------------------------------------------------------------------------
 //
 // Format a complex data structure as a string when in debug mode.
 const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
-        ? JSON.stringify(complex_data_structure).substring(
-              0,
-              MAX_MESSAGE_LENGTH,
-          )
+        ? JSON.stringify(
+              // If the struct is `undefined`, print an empty string.
+              complex_data_structure ?? "",
+          ).substring(0, MAX_MESSAGE_LENGTH)
         : "";
 
 // Send a result (a response to a message from the server) back to the server.
-const sendResult = (id: number, result: string | null = null) => {
+const sendResult = async (id: number, result?: ResultErrTypes) => {
     assert(codeChatEditorServer);
     console_log(
-        `CodeChat Editor extension: sending result ${id}, ${format_struct(result)}.`,
+        `CodeChat Editor extension: sending Result(id = ${id}, ${format_struct(result)}).`,
     );
-    codeChatEditorServer.sendResult(id, result);
+    try {
+        await codeChatEditorServer.sendResult(
+            id,
+            result === undefined ? undefined : JSON.stringify(result),
+        );
+    } catch (e) {
+        show_error(`Error in sendResult for id ${id}: ${e}.`);
+    }
 };
 
 // This is called after an event such as an edit, when the CodeChat panel
@@ -814,11 +614,11 @@ const send_update = (this_is_dirty: boolean) => {
         if (idle_timer !== undefined) {
             clearTimeout(idle_timer);
         }
-        // ... schedule a render after 300 ms.
+        // ... schedule a render after an autosave timeout.
         idle_timer = setTimeout(async () => {
             if (can_render()) {
-                const ate = vscode.window.activeTextEditor!;
-                if (ate !== current_editor) {
+                const ate = vscode.window.activeTextEditor;
+                if (ate !== undefined && ate !== current_editor) {
                     // Send a new current file after a short delay; this allows
                     // the user to rapidly cycle through several editors without
                     // needing to reload the Client with each cycle.
@@ -827,9 +627,13 @@ const send_update = (this_is_dirty: boolean) => {
                     console_log(
                         `CodeChat Editor extension: sending CurrentFile(${current_file}}).`,
                     );
-                    await codeChatEditorServer!.sendMessageCurrentFile(
-                        current_file,
-                    );
+                    try {
+                        await codeChatEditorServer!.sendMessageCurrentFile(
+                            current_file,
+                        );
+                    } catch (e) {
+                        show_error(`Error sending CurrentFile message: ${e}.`);
+                    }
                     // Since we just requested a new file, the contents are
                     // clean by definition.
                     is_dirty = false;
@@ -844,25 +648,27 @@ const send_update = (this_is_dirty: boolean) => {
                 // CodeMirror
                 // [Text.line](https://codemirror.net/docs/ref/#state.Text.line)
                 // is 1-based.
-                const current_line = ate.selection.active.line + 1;
-                const file_path = ate.document.fileName;
-                const cursor_position = current_line;
+                const cursor_position =
+                    current_editor!.selection.active.line + 1;
+                const scroll_position =
+                    current_editor!.visibleRanges[0].start.line + 1;
+                const file_path = current_editor!.document.fileName;
                 // Send contents only if necessary.
-                const option_contents = is_dirty
-                    ? ate.document.getText()
+                const option_contents: null | [string, number] = is_dirty
+                    ? [current_editor!.document.getText(), (version = rand())]
                     : null;
                 is_dirty = false;
                 console_log(
-                    `CodeChat Editor extension: sending Update(${file_path}, ${cursor_position}, ${format_struct(cursor_position)})`,
+                    `CodeChat Editor extension: sending Update(${file_path}, ${cursor_position}, ${scroll_position}, ${format_struct(option_contents)})`,
                 );
                 await codeChatEditorServer!.sendMessageUpdatePlain(
                     file_path,
                     option_contents,
                     cursor_position,
-                    null,
+                    scroll_position,
                 );
             }
-        }, 300);
+        }, autosave_timeout_ms);
     }
 };
 
@@ -914,8 +720,11 @@ const show_error = (message: string) => {
 // client, and the webview is visible.
 const can_render = () => {
     return (
-        vscode.window.activeTextEditor !== undefined &&
+        (vscode.window.activeTextEditor !== undefined ||
+            current_editor !== undefined) &&
         codeChatEditorServer !== undefined &&
+        // TODO: I don't think these matter -- the Server is in charge of
+        // sending output to the Client.
         (codechat_client_location === CodeChatEditorClientLocation.browser ||
             webview_panel !== undefined)
     );
@@ -928,8 +737,8 @@ const get_document = (file_path: string) => {
         // are case-insensitive; I don't know how to easily determine the
         // case-sensitivity of the current filesystem without extra probing code
         // (write a file in mixed case, try to open it in another mixed case.)
-        // Per [How to Work with Different
-        // Filesystems](https://nodejs.org/en/learn/manipulating-files/working-with-different-filesystems#filesystem-behavior),
+        // Per
+        // [How to Work with Different Filesystems](https://nodejs.org/en/learn/manipulating-files/working-with-different-filesystems#filesystem-behavior),
         // "Be wary of inferring filesystem behavior from `process.platform`.
         // For example, do not assume that because your program is running on
         // Darwin that you are therefore working on a case-insensitive

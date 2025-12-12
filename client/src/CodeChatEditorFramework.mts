@@ -15,7 +15,7 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `CodeChatEditorFramework.mts` -- the CodeChat Editor Client Framework
-// =====================================================================
+// =============================================================================
 //
 // This maintains a websocket connection between the CodeChat Editor Server. The
 // accompanying HTML is a full-screen iframe, allowing the Framework to change
@@ -24,7 +24,7 @@
 // location changes.
 //
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Third-party
 import ReconnectingWebSocket from "./third-party/ReconnectingWebSocket.cjs";
@@ -32,6 +32,7 @@ import { show_toast as show_toast_core } from "./show_toast.mjs";
 
 // ### Local
 import { assert } from "./assert.mjs";
+import { DEBUG_ENABLED, MAX_MESSAGE_LENGTH } from "./debug_enabled.mjs";
 import {
     CodeChatForWeb,
     EditorMessage,
@@ -41,19 +42,17 @@ import {
 } from "./shared_types.mjs";
 import {
     console_log,
-    DEBUG_ENABLED,
     on_error,
     on_dom_content_loaded,
 } from "./CodeChatEditor.mjs";
+import { ResultErrTypes } from "./rust-types/ResultErrTypes.js";
 
 // Websocket
-// ---------
+// -----------------------------------------------------------------------------
 //
 // This code communicates with the CodeChat Editor Server via its websocket
 // interface.
 //
-// The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH = 200;
 // The timeout for a websocket `Response`, in ms.
 const RESPONSE_TIMEOUT_MS = 15000;
 
@@ -81,6 +80,10 @@ class WebSocketComm {
     // The current filename of the file being edited. This is provided by the
     // IDE and passed back to it, but not otherwise used by the Framework.
     current_filename: string | undefined = undefined;
+
+    // The version number of the current file. This default value will be
+    // overwritten when the first `Update` is sent.
+    version = 0.0;
 
     // True when the iframe is loading, so that an `Update` should be postponed
     // until the page load is finished. Otherwise, the page is fully loaded, so
@@ -150,12 +153,33 @@ class WebSocketComm {
                         ) {
                             const msg = `Ignoring update for ${current_update.file_path} because it's not the current file ${this.current_filename}.`;
                             report_error(msg);
-                            this.send_result(id, msg);
+                            this.send_result(id, {
+                                IgnoredUpdate: [
+                                    current_update.file_path,
+                                    this.current_filename,
+                                ],
+                            });
                             return;
                         }
                         const contents = current_update.contents;
                         const cursor_position = current_update.cursor_position;
                         if (contents !== undefined) {
+                            // Check and update the version. If this is a diff,
+                            // ensure the diff was made against the version of
+                            // the file we have.
+                            if ("Diff" in contents.source) {
+                                if (
+                                    contents.source.Diff.version !==
+                                    this.version
+                                ) {
+                                    report_error(
+                                        `Out of sync: Client version ${this.version} !== incoming version ${contents.source.Diff.version}.`,
+                                    );
+                                    this.send_result(id, "OutOfSync");
+                                    return;
+                                }
+                            }
+                            this.version = contents.version;
                             // I'd prefer to use a system-maintained value to
                             // determine the ready state of the iframe, such as
                             // [readyState](https://developer.mozilla.org/en-US/docs/Web/API/Document/readyState).
@@ -185,21 +209,23 @@ class WebSocketComm {
                                             await set_content(
                                                 contents,
                                                 current_update.cursor_position,
+                                                current_update.scroll_position,
                                             );
                                             resolve();
                                         }),
                                 );
                             }
-                        } else if (cursor_position !== undefined) {
+                        } else {
                             // We might receive a message while the Client is
                             // reloading; during this period, `scroll_to_line`
                             // isn't defined.
                             root_iframe!.contentWindow?.CodeChatEditor?.scroll_to_line?.(
                                 cursor_position,
+                                current_update.scroll_position,
                             );
                         }
 
-                        this.send_result(id, null);
+                        this.send_result(id);
                     });
                     break;
 
@@ -234,7 +260,7 @@ class WebSocketComm {
                         // `current_filename` should be set on the next `Update`
                         // message.
                         this.current_filename = undefined;
-                        this.send_result(id, null);
+                        this.send_result(id);
                     });
                     break;
 
@@ -264,7 +290,11 @@ class WebSocketComm {
                         value,
                     )})`;
                     report_error(msg);
-                    this.send_result(id, msg);
+                    this.send_result(id, {
+                        ClientIllegalMessageReceived: `${key}(${format_struct(
+                            value,
+                        )})`,
+                    });
                     break;
             }
         };
@@ -303,6 +333,8 @@ class WebSocketComm {
         if (typeof message == "object" && "Update" in message) {
             assert(this.current_filename !== undefined);
             message.Update.file_path = this.current_filename!;
+            // Update the version of this file if it's provided.
+            this.version = message.Update.contents?.version ?? this.version;
         }
         console_log(
             `CodeChat Editor Client: sent message ${id}, ${format_struct(message)}`,
@@ -348,9 +380,9 @@ class WebSocketComm {
 
     // Send a result (a response to a message from the server) back to the
     // server.
-    send_result = (id: number, result: string | null = null) => {
+    send_result = (id: number, result?: ResultErrTypes) => {
         const message: EditorMessageContents = {
-            Result: result === null ? { Ok: "Void" } : { Err: result },
+            Result: result === undefined ? { Ok: "Void" } : { Err: result },
         };
         console_log(
             `CodeChat Client: sending result id = ${id}, message = ${format_struct(message)}`,
@@ -373,7 +405,8 @@ const get_client = () => root_iframe?.contentWindow?.CodeChatEditor;
 // in the `root_iframe`.
 const set_content = async (
     contents: CodeChatForWeb,
-    cursor_position?: number,
+    cursor_line?: number,
+    scroll_line?: number,
 ) => {
     let client = get_client();
     if (client === undefined) {
@@ -392,7 +425,8 @@ const set_content = async (
     } else {
         await root_iframe!.contentWindow!.CodeChatEditor.open_lp(
             contents,
-            cursor_position,
+            cursor_line,
+            scroll_line,
         );
     }
 };
@@ -406,9 +440,9 @@ let testMode = false;
 // Load the dynamic content into the static page.
 export const page_init = (
     // The pathname for the websocket to use. The remainder of the URL is
-    // derived from the hosting page's URL. See the [Location
-    // docs](https://developer.mozilla.org/en-US/docs/Web/API/Location) for a
-    // nice, interactive definition of the components of a URL.
+    // derived from the hosting page's URL. See the
+    // [Location docs](https://developer.mozilla.org/en-US/docs/Web/API/Location)
+    // for a nice, interactive definition of the components of a URL.
     ws_pathname: string,
     // Test mode flag
     testMode_: boolean,

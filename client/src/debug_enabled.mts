@@ -14,21 +14,12 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// `show_toast.mts` -- Show a toast message
+// `debug_enable.mts` -- Configure debug features
 // =============================================================================
-import Toastify from "toastify-js";
-import "toastify-js/src/toastify.css";
+//
+// True to enable additional debug logging.
+export const DEBUG_ENABLED = false;
 
-export const show_toast = (text: string) =>
-    Toastify({
-        text,
-        duration: 10000,
-        newWindow: true,
-        close: true,
-        gravity: "top",
-        position: "right",
-        stopOnFocus: true,
-        style: {
-            background: "linear-gradient(to right, #b00049ff, #e76d8bff)",
-        },
-    }).showToast();
+// The max length of a message to show in the console when debug logging is
+// enabled.
+export const MAX_MESSAGE_LENGTH = 20000;

@@ -2,12 +2,21 @@
 code()
 # Graphviz:
 #
-# <graphviz-graph>digraph { A -&gt; B }</graphviz-graph>
+# ```graphviz
+# digraph {
+#   A -> B
+# }
+# ```
 #
 # Mermaid:
 #
-# <wc-mermaid>graph TD; A --&gt; B;</wc-mermaid>
+# ```mermaid
+# graph TD
+#   A --> B
+# ```
 #
 # MathJax:
 #
 # $x^2$
+#
+# $$x^3$$

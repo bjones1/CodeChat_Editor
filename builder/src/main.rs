@@ -121,6 +121,7 @@ struct TypeScriptBuildOptions {
 static VSCODE_PATH: &str = "../extensions/VSCode";
 static CLIENT_PATH: &str = "../client";
 static BUILDER_PATH: &str = "../builder";
+static NAPI_TARGET: &str = "NAPI_TARGET";
 
 // Code
 // ----
@@ -325,7 +326,7 @@ fn patch_client_libs() -> io::Result<()> {
     // inside these isn't removed by TinyMCE. However, this was removed in v6.0.
     // Therefore, manually patch TinyMCE instead.
     patch_file(
-        " wc-mermaid",
+        " wc-mermaid graphviz-graph",
         "const whitespaceElementsMap = createLookupTable('whitespace_elements', 'pre script noscript style textarea video audio iframe object code",
         &format!("{CLIENT_PATH}/node_modules/tinymce/tinymce.js"),
     )?;
@@ -349,12 +350,6 @@ fn patch_client_libs() -> io::Result<()> {
         format!("{CLIENT_PATH}/node_modules/@mathjax/mathjax-newcm-font/chtml/"),
         format!("{CLIENT_PATH}/static/mathjax-newcm-font/chtml"),
         None,
-    )?;
-    // Copy over the graphviz files needed.
-    quick_copy_dir(
-        format!("{CLIENT_PATH}/node_modules/graphviz-webcomponent/dist/"),
-        format!("{CLIENT_PATH}/static/graphviz-webcomponent"),
-        Some("renderer.min.js*".to_string()),
     )?;
 
     Ok(())
@@ -509,8 +504,6 @@ fn run_build() -> io::Result<()> {
         cargo build --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "cargo build";
         cargo build;
-        info "cargo test export_bindings";
-        cargo test export_bindings;
     )?;
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists(format!("{CLIENT_PATH}/static/bundled"))?;
@@ -527,7 +520,7 @@ fn run_client_build(
     // checks.
     skip_check_errors: bool,
 ) -> io::Result<()> {
-    // Ensure the JavaScript data structured generated from Rust are up to date.
+    // Ensure the JavaScript data structures generated from Rust are up to date.
     run_cmd!(
         info "cargo test export_bindings";
         cargo test export_bindings;
@@ -556,6 +549,7 @@ fn run_client_build(
         CLIENT_PATH,
         true,
     )?;
+
     // <a id="#pdf.js>The PDF viewer for use with VSCode. Built it separately,
     // since it's loaded apart from the rest of the Client.
     run_script(
@@ -580,6 +574,21 @@ fn run_client_build(
         format!("{CLIENT_PATH}/static/bundled/node_modules/pdfjs-dist/cmaps/"),
         None,
     )?;
+
+    // Build the graphviz rendering engine.
+    run_script(
+        &esbuild,
+        &[
+            "src/third-party/graphviz-webcomponent/renderer.js",
+            "--bundle",
+            "--outdir=./static/bundled",
+            distflag,
+            "--format=esm",
+        ],
+        CLIENT_PATH,
+        true,
+    )?;
+
     // The HashReader isn't bundled; instead, it's used to translate the JSON
     // metafile produced by the main esbuild run to the simpler format used by
     // the CodeChat Editor. TODO: rewrite this in Rust.
@@ -604,6 +613,7 @@ fn run_client_build(
             true,
         )?;
     }
+
     Ok(())
 }
 
@@ -623,7 +633,19 @@ fn run_extensions_build(
     if dist {
         napi_args.push("--release");
     }
+    // See if this is a cross-platform build -- if so, add in the specified target.
+    let target;
+    if let Ok(tmp) = env::var(NAPI_TARGET) {
+        target = tmp;
+        napi_args.extend(["--target", &target]);
+    }
     run_script("npx", &napi_args, VSCODE_PATH, true)?;
+
+    // Ensure the JavaScript data structures generated from Rust are up to date.
+    run_cmd!(
+        info "cargo test export_bindings";
+        cargo test export_bindings;
+    )?;
 
     // The main build for the extension.
     run_script(
@@ -707,6 +729,10 @@ fn run_postrelease(target: &str) -> io::Result<()> {
         "aarch64-apple-darwin" => "darwin-arm64",
         _ => panic!("Unsupported platform {target}."),
     };
+    // `vsce` will invoke this program's `ext_build`; however, it doesn't provide a way to pass the target when cross-compiling. Use an environment variable instead.
+    unsafe {
+        env::set_var(NAPI_TARGET, target);
+    }
     run_script(
         "npx",
         &[

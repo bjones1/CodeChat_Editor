@@ -17,16 +17,16 @@
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
 # `.eslintrc.yml` - Configure ESLint for this project
-# ===================================================
+# ==============================================================================
 env:
     commonjs: true
     node: true
 extends:
     - standard
-    # See the [ESLint config prettier
-    # docs](https://github.com/prettier/eslint-config-prettier#installation) and
-    # its parent link, [integrating Prettier with
-    # linters](https://prettier.io/docs/en/integrating-with-linters.html).
+    # See the
+    # [ESLint config prettier docs](https://github.com/prettier/eslint-config-prettier#installation)
+    # and its parent link,
+    # [integrating Prettier with linters](https://prettier.io/docs/en/integrating-with-linters.html).
     - prettier
 parser: "@typescript-eslint/parser"
 parserOptions:
@@ -36,6 +36,6 @@ plugins:
 rules:
     camelcase: off
     # TypeScript already enforces this; otherwise, eslint complains that
-    # `NodeJS` is undefined. See [this GitHub
-    # issue](https://github.com/Chatie/eslint-config/issues/45#issuecomment-1003990077).
+    # `NodeJS` is undefined. See
+    # [this GitHub issue](https://github.com/Chatie/eslint-config/issues/45#issuecomment-1003990077).
     no-undef: off

@@ -42,7 +42,7 @@ import {
 // Nothing needed at present.
 //
 // Provide convenient access to all functions tested here.
-const { codechat_html_to_markdown } = exportedForTesting;
+const {} = exportedForTesting;
 
 // From [SO](https://stackoverflow.com/a/39914235).
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -74,55 +74,6 @@ window.CodeChatEditor_test = () => {
     // Define some tests. See the [Mocha TDD docs](https://mochajs.org/#tdd) and
     // the [Chai assert API](https://www.chaijs.com/api/assert/).
     suite("CodeChatEditor.mts", function () {
-        suite("codechat_html_to_markdown", function () {
-            test("Translate an empty comment", async function () {
-                const db: [CodeMirrorDocBlockTuple] = [[0, 0, "", "//", ""]];
-                codechat_html_to_markdown(db);
-                assert.deepEqual(db, [[0, 0, "", "//", "\n"]]);
-            });
-
-            test("Translate non-breaking space", async function () {
-                const db: [CodeMirrorDocBlockTuple] = [
-                    [0, 0, "", "//", "&nbsp;"],
-                ];
-                codechat_html_to_markdown(db);
-                assert.deepEqual(db, [[0, 0, "", "//", "\n"]]);
-            });
-
-            test("Translate two empty comments", async function () {
-                const db: CodeMirrorDocBlockTuple[] = [
-                    [0, 0, "", "//", ""],
-                    [2, 2, "", "//", ""],
-                ];
-                const source = {
-                    doc_blocks: db,
-                };
-                codechat_html_to_markdown(db);
-                assert.deepEqual(db, [
-                    [0, 0, "", "//", "\n"],
-                    [2, 2, "", "//", "\n"],
-                ]);
-            });
-
-            test("Translate unclosed HTML", async function () {
-                const db: CodeMirrorDocBlockTuple[] = [
-                    [0, 0, "", "//", "<h1><u>A<u></h1>\n"],
-                    [2, 2, "", "//", "<h2>Ax</h2>"],
-                ];
-                codechat_html_to_markdown(db);
-                assert.deepEqual(db, [
-                    [
-                        0,
-                        0,
-                        "",
-                        "//",
-                        "<u>A<u></u></u>\n===============\n\n<u><u></u></u>\n",
-                    ],
-                    [2, 2, "", "//", "Ax\n--\n"],
-                ]);
-            });
-        });
-
         suite("CodeMirror checks", function () {
             test("insert/delete/replace expectations", function () {
                 // Create a div to hold an editor.
@@ -151,23 +102,25 @@ window.CodeChatEditor_test = () => {
             test("GraphViz, Mathjax, Mermaid", async function () {
                 // Wait for the renderers to run.
                 await sleep(1500);
-                // Make sure GraphViz includes an SVG at the top of the shadow
-                // root.
-                assert.equal(
+                // Make sure GraphViz includes a `div` at the top of the shadow
+                // root, with a `svg` inside it.
+                const gv =
                     document.getElementsByTagName("graphviz-graph")[0]
-                        .shadowRoot!.children[0].tagName,
-                    "svg",
-                );
+                        .shadowRoot!.children[0];
+                assert.equal(gv.tagName, "DIV");
+                assert.equal(gv.children[0].tagName, "svg");
+
                 // Mermaid graphs start with a div.
-                assert.equal(
+                const mer =
                     document.getElementsByTagName("wc-mermaid")[0].shadowRoot!
-                        .children[0].tagName,
-                    "DIV",
-                );
+                        .children[0];
+                assert.equal(mer.tagName, "DIV");
+                assert.equal(mer.children[0].tagName, "svg");
+
                 // MathJax has its own stuff.
                 assert.equal(
                     document.getElementsByTagName("mjx-container").length,
-                    1,
+                    2,
                 );
             });
         });

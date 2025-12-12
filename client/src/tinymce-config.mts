@@ -16,7 +16,7 @@
 //
 // `tinymce-config.ts` -- integrate and configure the TinyMCE editor for use
 // with the CodeChat Editor
-// =========================================================================
+// =============================================================================
 //
 // Import TinyMCE.
 import {
@@ -47,7 +47,6 @@ import "tinymce/models/dom/index.js";
 import "tinymce/plugins/advlist/index.js";
 import "tinymce/plugins/anchor/index.js";
 import "tinymce/plugins/charmap/index.js";
-import "tinymce/plugins/code/index.js";
 import "tinymce/plugins/directionality/index.js";
 import "tinymce/plugins/emoticons/index.js";
 import "tinymce/plugins/emoticons/js/emojis.js";
@@ -59,8 +58,6 @@ import "tinymce/plugins/image/index.js";
 import "tinymce/plugins/link/index.js";
 import "tinymce/plugins/lists/index.js";
 import "tinymce/plugins/media/index.js";
-import "tinymce/plugins/nonbreaking/index.js";
-import "tinymce/plugins/pagebreak/index.js";
 import "tinymce/plugins/quickbars/index.js";
 import "tinymce/plugins/searchreplace/index.js";
 import "tinymce/plugins/table/index.js";
@@ -85,12 +82,12 @@ export const init = async (
         // [plugins](https://www.tiny.cloud/docs/tinymce/6/plugins/). These must
         // be accompanied by the corresponding import above.
         plugins:
-            "advlist anchor charmap directionality emoticons help image link lists media nonbreaking pagebreak quickbars searchreplace table visualblocks visualchars",
+            "advlist anchor charmap directionality emoticons help image link lists media quickbars searchreplace table visualblocks visualchars",
         // The imports above apply the skins; don't try to dynamically load the
         // skin's CSS.
         skin: false,
-        // Enable the [browser-supplied
-        // spellchecker](https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck),
+        // Enable the
+        // [browser-supplied spellchecker](https://www.tiny.cloud/docs/tinymce/6/spelling/#browser_spellcheck),
         // since TinyMCE's spellchecker is a premium feature.
         browser_spellcheck: true,
         // Place the Tiny MCE menu bar at the top of the screen; otherwise, it
@@ -102,22 +99,28 @@ export const init = async (
         // When true, this still prevents hyperlinks to anchors on the current
         // page from working correctly. There's an onClick handler that prevents
         // links in the current page from working -- need to look into this. See
-        // also [a related GitHub
-        // issue](https://github.com/tinymce/tinymce/issues/3836).
+        // also
+        // [a related GitHub issue](https://github.com/tinymce/tinymce/issues/3836).
         //readonly: true  // Per the comment above, this is commented out.
         // Use relative URLs in hyperlinks.
         relative_urls: true,
-        // Disable the [TinyMCE toolbar
-        // buttons](https://www.tiny.cloud/blog/tinymce-toolbar/) to provide
-        // more real estate on the screen.
+        // Disable the
+        // [TinyMCE toolbar buttons](https://www.tiny.cloud/blog/tinymce-toolbar/)
+        // to provide more real estate on the screen.
         toolbar: false,
         // Don't show the file option on the
         // [menu](https://www.tiny.cloud/docs/tinymce/6/menus-configuration-options/#menubar),
         // which is useless.
         menubar: "edit insert view format table tools help",
-        // See [License
-        // key](https://www.tiny.cloud/docs/tinymce/latest/license-key).
+        // See
+        // [License key](https://www.tiny.cloud/docs/tinymce/latest/license-key).
         license_key: "gpl",
+        // Block drag-and-drop of unsupported images and files. See the
+        // [docs](https://www.tiny.cloud/docs/tinymce/latest/file-image-upload/#block_unsupported_drop).
+        block_unsupported_drop: true,
+        // Prevent drag-and-dropping images; this create a mess. See the
+        // [docs](https://www.tiny.cloud/docs/tinymce/latest/copy-and-paste/#paste_data_images).
+        paste_data_images: false,
 
         // ### Settings for plugins
         //
@@ -130,20 +133,18 @@ export const init = async (
         // useful, and also has the image insert, which is problematic
         // currently).
         quickbars_insert_toolbar: false,
-        // Put more buttons on the [quick
-        // toolbar](https://www.tiny.cloud/docs/tinymce/6/quickbars/) that
-        // appears when text is selected. TODO: add a button for code format
-        // (can't find this one -- it's only on the [list of menu
-        // items](https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items)
+        // Put more buttons on the
+        // [quick toolbar](https://www.tiny.cloud/docs/tinymce/6/quickbars/)
+        // that appears when text is selected. TODO: add a button for code
+        // format (can't find this one -- it's only on the
+        // [list of menu items](https://www.tiny.cloud/docs/tinymce/6/available-menu-items/#the-core-menu-items)
         // as `codeformat`).
         quickbars_selection_toolbar:
             "bold italic underline codeformat | quicklink h2 h3",
 
         // Needed to allow custom elements.
-        extended_valid_elements:
-            "graphviz-graph[graph|scale],graphviz-script-editor[value|tab],graphviz-combined[graph|scale],wc-mermaid",
-        custom_elements:
-            "graphviz-graph,graphviz-script-editor,graphviz-combined,wc-mermaid",
+        extended_valid_elements: "graphviz-graph[scale],wc-mermaid",
+        custom_elements: "graphviz-graph,wc-mermaid",
     });
 
     // Merge in additional setup code.

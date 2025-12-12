@@ -25,6 +25,6 @@
 // graphviz webcomponent; see the [ESBuild
 // docs](https://esbuild.github.io/content-types/#real-esm-imports).
 (window as any).graphvizWebComponent = {
-    rendererUrl: "/static/graphviz-webcomponent/renderer.min.js",
+    rendererUrl: "/static/bundled/renderer.js",
     delayWorkerLoading: true,
 };

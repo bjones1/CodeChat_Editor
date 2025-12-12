@@ -15,9 +15,9 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `processing.rs` -- Transform source code to its web-editable equivalent and
 /// back
-/// ===========================================================================
+/// ============================================================================
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 //
@@ -31,37 +31,62 @@ use std::rc::{Rc, Weak};
 */
 use std::{
     borrow::Cow,
-    cmp::max,
+    cell::RefCell,
+    cmp::{max, min},
     ffi::OsStr,
+    io,
     iter::Map,
     ops::Range,
     path::{Path, PathBuf},
+    rc::Rc,
     slice::Iter,
 };
 
 // ### Third-party
+use dprint_plugin_markdown::{
+    configuration::{
+        Configuration, ConfigurationBuilder, EmphasisKind, HeadingKind, StrongKind, TextWrap,
+        UnorderedListKind,
+    },
+    format_text,
+};
+use htmd::{
+    HtmlToMarkdown,
+    options::{LinkStyle, TranslationMode},
+};
+use html5ever::{
+    Attribute, LocalName, Namespace, ParseOpts, QualName, parse_document, serialize,
+    serialize::{SerializeOpts, TraversalScope},
+    tendril::TendrilSink,
+    tree_builder::TreeBuilderOpts,
+};
 use imara_diff::{Algorithm, Diff, Hunk, InternedInput, TokenSource};
 use lazy_static::lazy_static;
+use markup5ever_rcdom::{Node, NodeData, RcDom, SerializableHandle};
+use phf::phf_map;
 use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 // ### Local
-use crate::lexer::{CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer};
+use crate::lexer::{
+    CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
+    supported_languages::MARKDOWN_MODE,
+};
 
 // Data structures
-// ---------------
+// -----------------------------------------------------------------------------
 //
 // ### Translation between a local (traditional) source file and its web-editable, client-side representation
 //
 // There are three ways that a source file is represented:
 //
-// 1.  As traditional source code, in a plain text file.
-// 2.  As a alternating series of code and doc blocks, produced by the lexer.
-//     See `lexer.rs\CodeDocBlock`.
-// 3.  As a CodeMirror data structure, which consists of a single block of text,
-//     to which are attached doc blocks at specific character offsets.
+// 1. As traditional source code, in a plain text file.
+// 2. As a alternating series of code and doc blocks, produced by the lexer. See
+//    `lexer.rs\CodeDocBlock`.
+// 3. As a CodeMirror data structure, which consists of a single block of text,
+//    to which are attached doc blocks at specific character offsets.
 //
 // The lexer translates between items 1 and 2; `processing.rs` translates
 // between 2 and 3. The following data structures define the format for item 3.
@@ -73,6 +98,8 @@ use crate::lexer::{CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source
 pub struct CodeChatForWeb {
     pub metadata: SourceFileMetadata,
     pub source: CodeMirrorDiffable,
+    /// The version number after accepting this update.
+    pub version: f64,
 }
 
 /// Provide two options for sending CodeMirror data -- as the full contents
@@ -112,6 +139,8 @@ pub struct CodeMirrorDiff {
     /// A diff of the document being edited.
     pub doc: Vec<StringDiff>,
     pub doc_blocks: Vec<CodeMirrorDocBlockTransaction>,
+    /// The version number from which this diff was produced.
+    pub version: f64,
 }
 
 /// A transaction produced by the diff of the `CodeMirror` struct.
@@ -172,18 +201,17 @@ pub struct CodeMirrorDocBlockDelete {
 }
 
 /// Store the difference between a previous and current string; this is based on
-/// [CodeMirror's
-/// ChangeSpec](https://codemirror.net/docs/ref/#state.ChangeSpec).
+/// [CodeMirror's ChangeSpec](https://codemirror.net/docs/ref/#state.ChangeSpec).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export, optional_fields)]
 pub struct StringDiff {
-    /// The index into the previous `CodeMirrorDocBlockVec` of the start of the
-    /// change.
+    /// The index of the start of the change, in UTF-16 code units.
     pub from: usize,
     /// The index of the end of the change; defined for deletions and
-    /// replacements. See the [skip serializing field
-    /// docs](https://serde.rs/attr-skip-serializing.html); this must be
-    /// excluded from the JSON output if it's `None` to avoid CodeMirror errors.
+    /// replacements, in UTF-16 code units. See the
+    /// [skip serializing field docs](https://serde.rs/attr-skip-serializing.html);
+    /// this must be excluded from the JSON output if it's `None` to avoid
+    /// CodeMirror errors.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<usize>,
     /// The text to insert/replace; an empty string indicates deletion.
@@ -197,9 +225,6 @@ pub enum TranslationResults {
     /// This file is unknown to and therefore not supported by the CodeChat
     /// Editor.
     Unknown,
-    /// This is a CodeChat Editor file but it contains errors that prevent its
-    /// translation. The string contains the error message.
-    Err(String),
     /// A CodeChat Editor file; the struct contains the file's contents
     /// translated to CodeMirror.
     CodeChat(CodeChatForWeb),
@@ -214,9 +239,6 @@ pub enum TranslationResultsString {
     /// This file is unknown to the CodeChat Editor. It must be viewed raw or
     /// using the simple viewer.
     Unknown,
-    /// This is a CodeChat Editor file but it contains errors that prevent its
-    /// translation. The string contains the error message.
-    Err(String),
     /// A CodeChat Editor file; the struct contains the file's contents
     /// translated to CodeMirror.
     CodeChat(CodeChatForWeb),
@@ -227,7 +249,7 @@ pub enum TranslationResultsString {
 // On save, the process is CodeChatForWeb -> Vec\<CodeDocBlocks> -> source code.
 //
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 lazy_static! {
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
@@ -243,15 +265,15 @@ lazy_static! {
         // Non-greedy wildcard -- match the first separator, so we don't munch
         // multiple `DOC_BLOCK_SEPARATOR_STRING`s in one replacement.
         ".*?",
-        "<CodeChatEditor-separator/>\n")).unwrap();
+        "<CodeChatEditor-separator></CodeChatEditor-separator>\n")).unwrap();
 }
 
 // Use this as a way to end unterminated fenced code blocks and specific types
 // of HTML blocks. (The remaining types of HTML blocks are terminated by a blank
 // line, which this also provides.)
 const DOC_BLOCK_SEPARATOR_STRING: &str = concat!(
-    // If an HTML block with specific start conditions (see the [section 4.6 of
-    // the commonmark spec](https://spec.commonmark.org/0.31.2/#html-blocks),
+    // If an HTML block with specific start conditions (see the
+    // [section 4.6 of the commonmark spec](https://spec.commonmark.org/0.31.2/#html-blocks),
     // items 1-5) doesn't have a matching end condition, provide one here.
     // Otherwise, hide these end conditions inside a raw HTML block, so that it
     // doesn't get processed by the Markdown parser. Note that this only
@@ -274,14 +296,16 @@ const DOC_BLOCK_SEPARATOR_STRING: &str = concat!(
     r#"<CodeChatEditor-fence>
 ~~~~~~~~~~~~~~~~~~~~~~~
 </CodeChatEditor-fence>
-<CodeChatEditor-separator/>
+<CodeChatEditor-separator></CodeChatEditor-separator>
 
 "#
 );
 
 // After converting Markdown to HTML, this can be used to split doc blocks
-// apart.
-const DOC_BLOCK_SEPARATOR_SPLIT_STRING: &str = "<CodeChatEditor-separator/>\n";
+// apart. Since this is post hydration, the element names are normalized to
+// lower case.
+const DOC_BLOCK_SEPARATOR_SPLIT_STRING: &str =
+    "<codechateditor-separator></codechateditor-separator>\n";
 // Correctly terminated fenced code blocks produce this, which can be removed
 // from the HTML produced by Markdown conversion.
 const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
@@ -293,11 +317,18 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 </CodeChatEditor-fence>
 "#;
 // The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex.
-const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str = "</code></pre>\n<CodeChatEditor-separator/>\n";
+const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
+    "</code></pre>\n<CodeChatEditor-separator></CodeChatEditor-separator>\n";
 // <a class="fence-mending-end"></a>
 
+// The column at which to word wrap doc blocks.
+const WORD_WRAP_COLUMN: usize = 80;
+// The minimum width for doc block word wrap, since large indents may leave
+// little space for word wrapping.
+const WORD_WRAP_MIN_WIDTH: usize = 40;
+
 // Serialization for `CodeMirrorDocBlock`
-// --------------------------------------
+// -----------------------------------------------------------------------------
 #[derive(Serialize, Deserialize, TS)]
 #[ts(export)]
 struct CodeMirrorDocBlockTuple<'a>(
@@ -349,7 +380,7 @@ impl<'de> Deserialize<'de> for CodeMirrorDocBlock {
 }
 
 // Determine if the provided file is part of a project
-// ---------------------------------------------------
+// -----------------------------------------------------------------------------
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     // To determine if this source code is part of a project, look for a project
     // file by searching the current directory, then all its parents, for a file
@@ -372,29 +403,66 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum CodechatForWebToSourceError {
+    #[error("invalid lexer {0}")]
+    InvalidLexer(String),
+    #[error("doc blocks not allowed in Markdown documents")]
+    DocBlocksNotAllowed,
+    #[error("TODO: diffs not supported")]
+    TodoDiff,
+    #[error("unable to convert from HTML to Markdown: {0}")]
+    HtmlToMarkdownFailed(#[from] HtmlToMarkdownWrappedError),
+    #[error("unable to translate CodeChat to source: {0}")]
+    CannotTranslateCodeChat(#[from] CodeDocBlockVecToSourceError),
+    #[error("unable to parse HTML {0}")]
+    ParseFailed(#[from] io::Error),
+}
+
 // Transform `CodeChatForWeb` to source code
-// -----------------------------------------
+// -----------------------------------------------------------------------------
 /// This function takes in a source file in web-editable format (the
 /// `CodeChatForWeb` struct) and transforms it into source code.
 pub fn codechat_for_web_to_source(
     // The file to save plus metadata, stored in the `LexedSourceFile`
     codechat_for_web: &CodeChatForWeb,
-) -> Result<String, String> {
+) -> Result<String, CodechatForWebToSourceError> {
+    let lexer_name = &codechat_for_web.metadata.mode;
     // Given the mode, find the lexer.
-    let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> = match LEXERS
-        .map_mode_to_lexer
-        .get(&codechat_for_web.metadata.mode)
-    {
-        Some(v) => v,
-        None => return Err("Invalid mode".to_string()),
+    let lexer: &std::sync::Arc<crate::lexer::LanguageLexerCompiled> =
+        match LEXERS.map_mode_to_lexer.get(lexer_name) {
+            Some(v) => v,
+            None => {
+                return Err(CodechatForWebToSourceError::InvalidLexer(
+                    lexer_name.clone(),
+                ));
+            }
+        };
+
+    // Extract the plain (not diffed) CodeMirror contents.
+    let CodeMirrorDiffable::Plain(ref code_mirror) = codechat_for_web.source else {
+        return Err(CodechatForWebToSourceError::TodoDiff);
     };
 
-    // Convert from `CodeMirror` to a `SortaCodeDocBlocks`.
-    let CodeMirrorDiffable::Plain(ref code_mirror) = codechat_for_web.source else {
-        panic!("No diff!");
-    };
-    let code_doc_block_vec = code_mirror_to_code_doc_blocks(code_mirror);
+    // If this is a Markdown-only document, handle this special case.
+    if *lexer.language_lexer.lexer_name == MARKDOWN_MODE {
+        // There should be no doc blocks.
+        if !code_mirror.doc_blocks.is_empty() {
+            return Err(CodechatForWebToSourceError::DocBlocksNotAllowed);
+        }
+        // Translate the HTML document to Markdown.
+        let converter = HtmlToMarkdownWrapped::new();
+        let dry_html =
+            dehydrate_html(&code_mirror.doc).map_err(CodechatForWebToSourceError::ParseFailed)?;
+        return converter
+            .convert(&dry_html)
+            .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed);
+    }
+    let code_doc_block_vec_html = code_mirror_to_code_doc_blocks(code_mirror);
+    let code_doc_block_vec = doc_block_html_to_markdown(code_doc_block_vec_html)
+        .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed)?;
     code_doc_block_vec_to_source(&code_doc_block_vec, lexer)
+        .map_err(CodechatForWebToSourceError::CannotTranslateCodeChat)
 }
 
 /// Return the byte index of `s[u16_16_index]`, where the indexing operation is
@@ -467,11 +535,101 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     code_doc_block_arr
 }
 
+/// This converts HTML to Markdown then word wraps the result.
+struct HtmlToMarkdownWrapped {
+    html_to_markdown: HtmlToMarkdown,
+    word_wrap_config: Configuration,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum HtmlToMarkdownWrappedError {
+    #[error("unable to convert from HTML to markdown")]
+    HtmlToMarkdownFailed(#[from] std::io::Error),
+    #[error("unable to word wrap Markdown")]
+    WordWrapFailed(#[from] anyhow::Error),
+}
+
+impl HtmlToMarkdownWrapped {
+    fn new() -> Self {
+        HtmlToMarkdownWrapped {
+            // Most of the options don't need to be specified here, since the
+            // line wrapper will override them.
+            html_to_markdown: HtmlToMarkdown::builder()
+                .options(htmd::options::Options {
+                    link_style: LinkStyle::Inlined,
+                    translation_mode: TranslationMode::Faithful,
+                    ..Default::default()
+                })
+                .build(),
+            // TODO: numbered list formatting should be improved in the dprint
+            // library.
+            word_wrap_config: ConfigurationBuilder::new()
+                .emphasis_kind(EmphasisKind::Asterisks)
+                .strong_kind(StrongKind::Asterisks)
+                .unordered_list_kind(UnorderedListKind::Asterisks)
+                .text_wrap(TextWrap::Always)
+                .heading_kind(HeadingKind::Setext)
+                .build(),
+        }
+    }
+    fn set_line_width(&mut self, line_width: usize) {
+        self.word_wrap_config.line_width = line_width as u32;
+    }
+
+    fn convert(&self, html: &str) -> Result<String, HtmlToMarkdownWrappedError> {
+        let converted = self.html_to_markdown.convert(html)?;
+        Ok(
+            format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
+                // A return value of `None` means the text was unchanged or
+                // ignored (by an
+                // [ignoreFileDirective](https://dprint.dev/plugins/markdown/config/)).
+                // Simply return the unchanged text in this case.
+                .unwrap_or_else(|| html.to_string()),
+        )
+    }
+}
+
+// Transform HTML in doc blocks to Markdown.
+fn doc_block_html_to_markdown(
+    mut code_doc_block_vec: Vec<CodeDocBlock>,
+) -> Result<Vec<CodeDocBlock>, HtmlToMarkdownWrappedError> {
+    let mut converter = HtmlToMarkdownWrapped::new();
+    for code_doc_block in &mut code_doc_block_vec {
+        if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
+            let contents = dehydrate_html(&doc_block.contents)?;
+
+            // Compute a line wrap width based on the current indent. Set a
+            // minimum of half the line wrap width, to prevent ridiculous
+            // wrapping with large indents.
+            converter.set_line_width(max(
+                WORD_WRAP_MIN_WIDTH,
+                // The +1 factor is for the space separating the delimiter and
+                // the comment text. Use `min` to avoid overflow with unsigned
+                // subtraction.
+                WORD_WRAP_COLUMN
+                    - min(
+                        doc_block.delimiter.chars().count() + 1 + doc_block.indent.chars().count(),
+                        WORD_WRAP_COLUMN,
+                    ),
+            ));
+            doc_block.contents = converter.convert(&contents)?;
+        }
+    }
+
+    Ok(code_doc_block_vec)
+}
+
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum CodeDocBlockVecToSourceError {
+    #[error("unknown comment opening delimiter '{0}'")]
+    UnknownCommentOpeningDelimiter(String),
+}
+
 // Turn this vec of CodeDocBlocks into a string of source code.
 fn code_doc_block_vec_to_source(
     code_doc_block_vec: &Vec<CodeDocBlock>,
     lexer: &LanguageLexerCompiled,
-) -> Result<String, String> {
+) -> Result<String, CodeDocBlockVecToSourceError> {
     let mut file_contents = String::new();
     for code_doc_block in code_doc_block_vec {
         match code_doc_block {
@@ -508,8 +666,8 @@ fn code_doc_block_vec_to_source(
                     // `split_inclusive` becomes an empty list, not `[""]`. Note
                     // that this mirrors what Python's
                     // [splitlines](https://docs.python.org/3/library/stdtypes.html#str.splitlines)
-                    // does, and is also the subject of a [Rust bug
-                    // report](https://github.com/rust-lang/rust/issues/111457).
+                    // does, and is also the subject of a
+                    // [Rust bug report](https://github.com/rust-lang/rust/issues/111457).
                     let lines: Vec<_> = doc_block.contents.split_inclusive('\n').collect();
                     let lines_fixed = if lines.is_empty() { vec![""] } else { lines };
                     for content_line in lines_fixed {
@@ -528,10 +686,11 @@ fn code_doc_block_vec_to_source(
                     {
                         Some(index) => &lexer.language_lexer.block_comment_delim_arr[index].closing,
                         None => {
-                            return Err(format!(
-                                "Unknown comment opening delimiter '{}'.",
-                                doc_block.delimiter
-                            ));
+                            return Err(
+                                CodeDocBlockVecToSourceError::UnknownCommentOpeningDelimiter(
+                                    doc_block.delimiter.clone(),
+                                ),
+                            );
                         }
                     };
 
@@ -585,12 +744,12 @@ fn code_doc_block_vec_to_source(
                             );
                         // Since this isn't a first line:
                         } else {
-                            // *   If this line is just a newline, include just
-                            //     the newline.
+                            // * If this line is just a newline, include just
+                            //   the newline.
                             if *content_line == "\n" {
                                 append_doc_block("", "", "\n");
-                            // *   Otherwise, include spaces in place of the
-                            //     delimiter.
+                            // * Otherwise, include spaces in place of the
+                            //   delimiter.
                             } else {
                                 append_doc_block(
                                     &doc_block.indent,
@@ -614,8 +773,17 @@ fn code_doc_block_vec_to_source(
     Ok(file_contents)
 }
 
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum SourceToCodeChatForWebError {
+    #[error("unknown lexer {0}")]
+    UnknownLexer(String),
+    // Since we want `PartialEq`, we can't use `#[from] io::Error`; instead, convert the IO error to a string.
+    #[error("unable to parse HTML {0}")]
+    ParseFailed(String),
+}
+
 // Transform from source code to `CodeChatForWeb`
-// ----------------------------------------------
+// -----------------------------------------------------------------------------
 //
 // Given the contents of a file, classify it and (for CodeChat Editor files)
 // convert it to the `CodeChatForWeb` format.
@@ -624,11 +792,13 @@ pub fn source_to_codechat_for_web(
     file_contents: &str,
     // The file's extension.
     file_ext: &String,
+    // The version of this file.
+    version: f64,
     // True if this file is a TOC.
     _is_toc: bool,
     // True if this file is part of a project.
     _is_project: bool,
-) -> TranslationResults {
+) -> Result<TranslationResults, SourceToCodeChatForWebError> {
     // Determine the lexer to use for this file.
     let lexer_name;
     // First, search for a lexer directive in the file contents.
@@ -637,10 +807,7 @@ pub fn source_to_codechat_for_web(
         match LEXERS.map_mode_to_lexer.get(&lexer_name) {
             Some(v) => v,
             None => {
-                return TranslationResults::Err(format!(
-                    "<p>Unknown lexer type {}.</p>",
-                    &lexer_name
-                ));
+                return Err(SourceToCodeChatForWebError::UnknownLexer(lexer_name));
             }
         }
     } else {
@@ -649,7 +816,7 @@ pub fn source_to_codechat_for_web(
             Some(llc) => llc.first().unwrap(),
             _ => {
                 // The file type is unknown; treat it as plain text.
-                return TranslationResults::Unknown;
+                return Ok(TranslationResults::Unknown);
             }
         }
     };
@@ -660,10 +827,12 @@ pub fn source_to_codechat_for_web(
         metadata: SourceFileMetadata {
             mode: lexer.language_lexer.lexer_name.to_string(),
         },
-        source: if lexer.language_lexer.lexer_name.as_str() == "markdown" {
+        version,
+        source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
             // Document-only files are easy: just encode the contents.
-            let html = markdown_to_html(file_contents);
-            // TODO: process the HTML.
+            let dry_html = markdown_to_html(file_contents);
+            let html = hydrate_html(&dry_html)
+                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             CodeMirrorDiffable::Plain(CodeMirror {
                 doc: html,
                 doc_blocks: vec![],
@@ -684,8 +853,8 @@ pub fn source_to_codechat_for_web(
             // Combine all the doc blocks into a single string, separated by a
             // delimiter. Transform this to markdown, then split the transformed
             // content back into the doc blocks they came from. This is
-            // necessary to allow [link reference
-            // definitions](https://spec.commonmark.org/0.31.2/#link-reference-definitions)
+            // necessary to allow
+            // [link reference definitions](https://spec.commonmark.org/0.31.2/#link-reference-definitions)
             // between doc blocks to work; for example, `[Link][1]` in one doc
             // block, then `[1]: http:/foo.org` in another doc block requires
             // both to be in the same Markdown document to translate correctly.
@@ -711,12 +880,15 @@ pub fn source_to_codechat_for_web(
 
             // <a class="fence-mending-start"></a>Break it back into doc blocks:
             //
-            // 1.  Mend broken fences.
+            // 1. Mend broken fences.
             let html = DOC_BLOCK_SEPARATOR_BROKEN_FENCE
                 .replace_all(&html, DOC_BLOCK_SEPARATOR_MENDED_FENCE);
-            // 2.  Remove good fences.
+            // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
-            // 3.  Split on the separator.
+            // 3. Hydrate the cleaned HTML.
+            let html = hydrate_html(&html)
+                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
+            // 3. Split on the separator.
             let mut doc_block_contents_iter = html.split(DOC_BLOCK_SEPARATOR_SPLIT_STRING);
             // <a class="fence-mending-end"></a>
 
@@ -753,7 +925,7 @@ pub fn source_to_codechat_for_web(
         },
     };
 
-    TranslationResults::CodeChat(codechat_for_web)
+    Ok(TranslationResults::CodeChat(codechat_for_web))
 }
 
 // Like `source_to_codechat_for_web`, translate a source file to the CodeChat
@@ -765,14 +937,19 @@ pub fn source_to_codechat_for_web_string(
     file_contents: &str,
     // The path to this file.
     file_path: &Path,
+    // The version to assign to this file.
+    version: f64,
     // True if this file is a TOC.
     is_toc: bool,
-) -> (
-    // The resulting translation.
-    TranslationResultsString,
-    // Path to the TOC, if found; otherwise, None.
-    Option<PathBuf>,
-) {
+) -> Result<
+    (
+        // The resulting translation.
+        TranslationResultsString,
+        // Path to the TOC, if found; otherwise, None.
+        Option<PathBuf>,
+    ),
+    SourceToCodeChatForWebError,
+> {
     // Determine the file's extension, in order to look up a lexer.
     let ext = &file_path
         .extension()
@@ -785,50 +962,295 @@ pub fn source_to_codechat_for_web_string(
     let path_to_toc = find_path_to_toc(file_path);
     let is_project = path_to_toc.is_some();
 
-    (
-        match source_to_codechat_for_web(file_contents, &ext.to_string(), is_toc, is_project) {
-            TranslationResults::CodeChat(codechat_for_web) => {
-                if is_toc {
-                    // For the table of contents sidebar, which is pure
-                    // markdown, just return the resulting HTML, rather than the
-                    // editable CodeChat for web format.
-                    let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
-                        panic!("No diff!");
-                    };
-                    TranslationResultsString::Toc(plain.doc)
-                } else {
-                    TranslationResultsString::CodeChat(codechat_for_web)
+    Ok((
+        match source_to_codechat_for_web(
+            file_contents,
+            &ext.to_string(),
+            version,
+            is_toc,
+            is_project,
+        ) {
+            Err(err) => return Err(err),
+            Ok(translation_results) => match translation_results {
+                TranslationResults::CodeChat(codechat_for_web) => {
+                    if is_toc {
+                        // For the table of contents sidebar, which is pure
+                        // markdown, just return the resulting HTML, rather than
+                        // the editable CodeChat for web format.
+                        let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
+                            panic!("No diff!");
+                        };
+                        TranslationResultsString::Toc(plain.doc)
+                    } else {
+                        TranslationResultsString::CodeChat(codechat_for_web)
+                    }
                 }
-            }
-            TranslationResults::Unknown => TranslationResultsString::Unknown,
-            TranslationResults::Err(err) => TranslationResultsString::Err(err),
+                TranslationResults::Unknown => TranslationResultsString::Unknown,
+            },
         },
         path_to_toc,
-    )
+    ))
 }
 
 /// Convert markdown to HTML. (This assumes the Markdown defined in the
 /// CommonMark spec.)
 fn markdown_to_html(markdown: &str) -> String {
     let mut options = Options::all();
-    // Turndown (which converts HTML back to Markdown) doesn't support smart
+    // htmd (which converts HTML back to Markdown) doesn't support smart
     // punctuation.
     options.remove(Options::ENABLE_SMART_PUNCTUATION);
-    options.remove(Options::ENABLE_MATH);
     let parser = Parser::new_ext(markdown, options);
     let mut html_output = String::new();
     html::push_html(&mut html_output, parser);
     html_output
 }
 
+// A framework to transform HTML by parsing it to a DOM tree, walking the tree, then serializing the tree back to an HTML string.
+fn transform_html<T: FnOnce(Rc<Node>)>(html_in: &str, transform: T) -> io::Result<String> {
+    // The approach: transform the HTML to a DOM tree, then walk the three to apply these transformations.
+    //
+    // First, parse it to a DOM.
+    let dom = parse_document(
+        RcDom::default(),
+        ParseOpts {
+            tree_builder: TreeBuilderOpts {
+                scripting_enabled: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
+    .from_utf8()
+    .read_from(&mut html_in.as_bytes())?;
+
+    // Walk and transform the DOM.
+    transform(dom.document.clone());
+
+    // Serialize the transformed DOM back to a string.
+    let so = SerializeOpts {
+        // Don't include the body node in the output.
+        traversal_scope: TraversalScope::ChildrenOnly(None),
+        ..Default::default()
+    };
+    let mut bytes = vec![];
+    // HTML is:
+    // ```html
+    // <html>   <-- element 0
+    //  <head>...</head>
+    //  <body>...</body>  <-- element 1
+    // </html>
+    // ```
+    let body = dom.document.children.borrow()[0].children.borrow()[1].clone();
+    //println!("{:#?}", body);
+    serialize(&mut bytes, &SerializableHandle::from(body.clone()), so)?;
+    let html_out = String::from_utf8(bytes).map_err(io::Error::other)?;
+
+    Ok(html_out)
+}
+
+// HTML produced from Markdown needs additional processing, termed hydration:
+//
+// - Transform math, Mermaid, GraphViz, etc. nodes.
+// - (Eventually) record document structure information.
+// - (Eventually) assign a unique ID to all links that don't have one.
+// - (Eventually) fill in autocomplete fields.
+//
+fn hydrate_html(html: &str) -> io::Result<String> {
+    transform_html(html, hydrating_walk_node)
+}
+
+fn hydrating_walk_node(node: Rc<Node>) {
+    for child in node.children.borrow_mut().iter_mut() {
+        let possible_replacement_child =
+        // Look for a `<pre>` tag
+        if get_node_tag_name(child) == Some("pre")
+            // with no attributes
+            && let NodeData::Element {
+                attrs: ref_child_attrs, ..
+            } = &child.data
+            && ref_child_attrs.borrow().is_empty()
+            // with one `<code>` child
+            && let code_children = child.children.borrow()
+            && code_children.len() == 1
+            && let code_child = code_children.iter().next().unwrap()
+            && get_node_tag_name(code_child) == Some("code")
+            // with only a `class=language-mermaid` attribute
+            && let NodeData::Element {
+                attrs: ref_code_child_attrs, ..
+            } = &code_child.data
+            && let code_child_attrs = ref_code_child_attrs.borrow()
+            && code_child_attrs.len() == 1
+            && let Some(attr) = code_child_attrs.iter().next()
+            && *attr.name.local == *"class"
+            && let Some(element_name) = CODE_BLOCK_LANGUAGE_TO_CUSTOM_ELEMENT.get(&*attr.value)
+            // with only one Text child
+            && let text_children = &code_child.children.borrow()
+            && text_children.len() == 1
+            && let Some(text_child) = text_children.iter().next()
+            && let NodeData::Text { .. } = &text_child.data
+        {
+            // Make the parent node a `element_name` node, with the child's text.
+            let wc_mermaid = Node::new(NodeData::Element {
+                name: QualName::new(None, Namespace::from(""), LocalName::from(*element_name)),
+                attrs: RefCell::new(vec![]),
+                template_contents: RefCell::new(None),
+                mathml_annotation_xml_integration_point: false,
+            });
+            wc_mermaid.children.borrow_mut().push(text_child.clone());
+            Some(wc_mermaid)
+        } else {
+            // See if this is a math node to replace; if not, this returns `None`.
+            replace_math_node(child, true)
+        };
+
+        // Replace the child if we found a replacement; otherwise, walk it.
+        if let Some(replacement_child) = possible_replacement_child {
+            *child = replacement_child;
+        } else {
+            hydrating_walk_node(child.clone());
+        }
+    }
+}
+
+fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
+    // Look for math produced by pulldown-cmark: `<span class="math math-inline>...</span>`; add `\(...\)` inside the span. Perform a similar transformation for display math.
+    if get_node_tag_name(child) == Some("span")
+            && let NodeData::Element {
+                attrs: ref_child_attrs, ..
+            } = &child.data
+            && let child_attrs = ref_child_attrs.borrow()
+            && child_attrs.len() == 1
+            && let Some(attr) = child_attrs.iter().next()
+            && *attr.name.local == *"class"
+            && let attr_value = &attr.value
+            // with only one Text child
+            && let text_children = &child.children.borrow()
+            && text_children.len() == 1
+            && let Some(text_child) = text_children.iter().next()
+            && let NodeData::Text { contents } = &text_child.data
+    {
+        // Final test: if the class is correct, this is math; otherwise, perform no transformation.
+        let attr_value_str: &str = attr_value;
+        let delim = match attr_value_str {
+            "math math-inline" => Some(("\\(", "\\)")),
+            "math math-display" => Some(("$$", "$$")),
+            _ => None,
+        };
+
+        // Since we've already borrowed `child`, we can't `borrow_mut` to modify it. Instead, create a new `span` with delimited text and return that.
+        if let Some(delim) = delim {
+            let contents_str = &*contents.borrow();
+            let delimited_text_str = if is_hydrate {
+                format!("{}{}{}", delim.0, contents_str, delim.1)
+            } else {
+                // Only apply the dehydration is the delimiters are correct.
+                if !contents_str.starts_with(delim.0) || !contents_str.ends_with(delim.1) {
+                    return None;
+                }
+                // Return the contents without the beginning and ending delimiters.
+                contents_str[delim.0.len()..contents_str.len() - delim.1.len()].to_string()
+            };
+            let delimited_text_node = Node::new(NodeData::Text {
+                contents: RefCell::new(delimited_text_str.into()),
+            });
+            let span = Node::new(NodeData::Element {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("span")),
+                attrs: RefCell::new(vec![Attribute {
+                    name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
+                    value: attr_value.clone(),
+                }]),
+                template_contents: RefCell::new(None),
+                mathml_annotation_xml_integration_point: false,
+            });
+            span.children.borrow_mut().push(delimited_text_node);
+            Some(span)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+fn dehydrate_html(html: &str) -> io::Result<String> {
+    transform_html(html, dehydrating_walk_node)
+}
+
+fn dehydrating_walk_node(node: Rc<Node>) {
+    for child in node.children.borrow_mut().iter_mut() {
+        // Look for a custom element tag
+        let possible_replacement_child = if let Some(child_name) = get_node_tag_name(child)
+        && let Some(language_name) = CUSTOM_ELEMENT_TO_CODE_BLOCK_LANGUAGE.get(child_name)
+            // with no attributes
+            && let NodeData::Element {
+                attrs: ref_attrs, ..
+            } = &child.data
+            && ref_attrs.borrow().is_empty()
+            // and only one Text child
+            && let text_children = &child.children.borrow()
+            && text_children.len() == 1
+            && let Some(text_child) = text_children.iter().next()
+            && let NodeData::Text { .. } = &text_child.data
+        {
+            // Create `<pre><code class="from language_name">text_child contents</code></pre>`.
+            let pre = Node::new(NodeData::Element {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("pre")),
+                attrs: RefCell::new(vec![]),
+                template_contents: RefCell::new(None),
+                mathml_annotation_xml_integration_point: false,
+            });
+            let code = Node::new(NodeData::Element {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("code")),
+                attrs: RefCell::new(vec![Attribute {
+                    name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
+                    value: (*language_name).into(),
+                }]),
+                template_contents: RefCell::new(None),
+                mathml_annotation_xml_integration_point: false,
+            });
+            code.children.borrow_mut().push(text_child.clone());
+            pre.children.borrow_mut().push(code);
+            Some(pre)
+        } else {
+            replace_math_node(child, false)
+        };
+
+        // Replace the child if we found a replacement; otherwise, walk it.
+        if let Some(replacement_child) = possible_replacement_child {
+            *child = replacement_child;
+        } else {
+            dehydrating_walk_node(child.clone());
+        }
+    }
+}
+
+fn get_node_tag_name(node: &Rc<Node>) -> Option<&str> {
+    match &node.data {
+        NodeData::Document => Some("html"),
+        NodeData::Element { name, .. } => Some(&name.local),
+        _ => None,
+    }
+}
+
+// Translate from Markdown class names for code blocks to the appropriate HTML custom element.
+static CODE_BLOCK_LANGUAGE_TO_CUSTOM_ELEMENT: phf::Map<&'static str, &'static str> = phf_map! {
+    "language-mermaid" => "wc-mermaid",
+    "language-graphviz" => "graphviz-graph",
+};
+
+static CUSTOM_ELEMENT_TO_CODE_BLOCK_LANGUAGE: phf::Map<&'static str, &'static str> = phf_map! {
+    "wc-mermaid" => "language-mermaid",
+    "graphviz-graph" => "language-graphviz"
+};
+
 // ### Diff support
 //
 // This section provides methods to diff the previous and current
-// `CodeMirrorDocBlockVec`.  The primary purpose is to fix a visual bug: if the
+// `CodeMirrorDocBlockVec`. The primary purpose is to fix a visual bug: if the
 // entire CodeMirror data structure is overwritten, then CodeMirror loses track
 // of the correct vertical scroll bar position, probably because it has build up
 // information on the size of each rendered doc block; these correct sizes are
-// reset when all data is overrwritten, causing unexpected scrolling. Therefore,
+// reset when all data is overwritten, causing unexpected scrolling. Therefore,
 // this approach is to modify only what changed, rather than changing
 // everything. As a secondary goal, this hopefully improves overall performance
 // by sending less data between the server and the client, in spite of the
@@ -837,16 +1259,15 @@ fn markdown_to_html(markdown: &str) -> String {
 // Fundamentally, diffs of a string and diff of this vector require different
 // approaches:
 //
-// *   The `CodeMirrorDocBlock` is a structure, with several fields. In
-//     particular, the contents is usually the largest element; the indent can
-//     also be large.
-// *   It should handle the following common cases well:
-//     1.  An update of a code block. This causes the from and to field of all
-//         following doc blocks to change, without changing the other fields.
-//     2.  An update to the contents of a doc block. For large doc blocks, this
-//         is more efficiently stored as a diff rather than the full doc block
-//         text.
-//     3.  Inserting or deleting a doc block.
+// * The `CodeMirrorDocBlock` is a structure, with several fields. In
+//   particular, the contents is usually the largest element; the indent can
+//   also be large.
+// * It should handle the following common cases well:
+//   1. An update of a code block. This causes the from and to field of all
+//      following doc blocks to change, without changing the other fields.
+//   2. An update to the contents of a doc block. For large doc blocks, this is
+//      more efficiently stored as a diff rather than the full doc block text.
+//   3. Inserting or deleting a doc block.
 //
 // The diff algorithm simply looks for equality between elements contained in
 // the before and after vectors provided it. However, this requires something
@@ -856,14 +1277,14 @@ fn markdown_to_html(markdown: &str) -> String {
 //
 // #### Overall approach
 //
-// 1.  Use the diff algorithm to find the minimal change set between a before
-//     and after `CodeMirrorDocBlocksVec`, which only looks at the `contents`.
-//     This avoids "noise" from changes in from/to fields from obscuring changes
-//     only to the `contents`.
-// 2.  For all before and after blocks whose `contents` were identical, compare
-//     the other fields, adding these to the change set, but not attempting to
-//     use the diff algorithm.
-// 3.  Represent changes to the `contents` as a `StringDiff`.
+// 1. Use the diff algorithm to find the minimal change set between a before and
+//    after `CodeMirrorDocBlocksVec`, which only looks at the `contents`. This
+//    avoids "noise" from changes in from/to fields from obscuring changes only
+//    to the `contents`.
+// 2. For all before and after blocks whose `contents` were identical, compare
+//    the other fields, adding these to the change set, but not attempting to
+//    use the diff algorithm.
+// 3. Represent changes to the `contents` as a `StringDiff`.
 //
 // #### String diff
 /// Given two strings, return a list of changes between them.
@@ -884,8 +1305,7 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
                     input.interner[line].chars().fold(
                         // Count offsets into the string in UTF-16 code units,
                         // since the offsets produced are used by the Client
-                        // ([JavaScript uses
-                        // UTF-16](https://developer.mozilla.org/en-US/docs/Glossary/UTF-16#utf-16_in_javascript),
+                        // ([JavaScript uses UTF-16](https://developer.mozilla.org/en-US/docs/Glossary/UTF-16#utf-16_in_javascript),
                         // as does
                         // [CodeMirror](https://codemirror.net/docs/guide/#document-offsets))
                         // and VSCode (also JavaScript).
@@ -1153,61 +1573,59 @@ pub fn diff_code_mirror_doc_blocks(
 // Goal: make it easy to update the data structure. We update on every
 // load/save, then do some accesses during those processes.
 //
-// Top-level data structures: a file HashSet<PathBuf, FileAnchor> and an id
-// HashMap<id, {Anchor, HashSet<referring\_id>}>. Some FileAnchors in the file
+// Top-level data structures: a file HashSet\<PathBuf, FileAnchor> and an id
+// HashMap\<id, {Anchor, HashSet\<referring\_id>}>. Some FileAnchors in the file
 // HashSet are also in a pending load list..
 //
-// *   To update a file:
-//     *   Remove the old file from the file HasHMap. Add an empty FileAnchor to
-//         the file HashMap.
-//     *   For each id, see if that id already exists.
-//         *   If the id exists: if it refers to an id in the old FileAnchor,
-//             replace it with the new one. If not, need to perform resolution
-//             on this id (we have a non-unique id; how to fix?).
-//         *   If the id doesn't exist: create a new one.
-//     *   For each hyperlink, see if that id already exists.
-//         *   If so, upsert the referring id. Check the metadata on the id to
-//             make sure that data is current. If not, add this to the pending
-//             hyperlinks list. If the file is missing, delete it from the
-//             cache.
-//         *   If not, create a new entry in the id HashSet and add the
-//             referring id to the HashSet. Add the file to a pending hyperlinks
-//             list.
-//     *   When the file is processed:
-//         *   Look for all entries in the pending file list that refer to the
-//             current file and resolve these. Start another task to load in all
-//             pending files.
-//         *   Look at the old file; remove each id that's still in the id
-//             HashMap. If the id was in the HashMap and it also was a
-//             Hyperlink, remove that from the HashSet.
-// *   To remove a file from the HashMap:
-//     *   Remove it from the file HashMap.
-//     *   For each hyperlink, remove it from the HashSet of referring links (if
-//         that id still exists).
-//     *   For each id, remove it from the id HashMap.
-// *   To add a file from the HashSet:
-//     *   Perform an update with an empty FileAnchor.
+// * To update a file:
+//   * Remove the old file from the file HasHMap. Add an empty FileAnchor to the
+//     file HashMap.
+//   * For each id, see if that id already exists.
+//     * If the id exists: if it refers to an id in the old FileAnchor, replace
+//       it with the new one. If not, need to perform resolution on this id (we
+//       have a non-unique id; how to fix?).
+//     * If the id doesn't exist: create a new one.
+//   * For each hyperlink, see if that id already exists.
+//     * If so, upsert the referring id. Check the metadata on the id to make
+//       sure that data is current. If not, add this to the pending hyperlinks
+//       list. If the file is missing, delete it from the cache.
+//     * If not, create a new entry in the id HashSet and add the referring id
+//       to the HashSet. Add the file to a pending hyperlinks list.
+//   * When the file is processed:
+//     * Look for all entries in the pending file list that refer to the current
+//       file and resolve these. Start another task to load in all pending
+//       files.
+//     * Look at the old file; remove each id that's still in the id HashMap. If
+//       the id was in the HashMap and it also was a Hyperlink, remove that from
+//       the HashSet.
+// * To remove a file from the HashMap:
+//   * Remove it from the file HashMap.
+//   * For each hyperlink, remove it from the HashSet of referring links (if
+//     that id still exists).
+//   * For each id, remove it from the id HashMap.
+// * To add a file from the HashSet:
+//   * Perform an update with an empty FileAnchor.
 //
 // Pending hyperlinks list: for each hyperlink,
 //
-// *   check if the id is now current in the cache. If so, add the referring id
-//     to the HashSet then move to the next hyperlink.
-// *   check if the file is now current in the cache. If not, load the file and
-//     update the cache, then go to step 1.
-// *   The id was not found, even in the expected file. Add the hyperlink to a
-//     broken links set?
+// * check if the id is now current in the cache. If so, add the referring id to
+//   the HashSet then move to the next hyperlink.
+// * check if the file is now current in the cache. If not, load the file and
+//   update the cache, then go to step 1.
+// * The id was not found, even in the expected file. Add the hyperlink to a
+//   broken links set?
 //
 // Global operations:
 //
-// *   Scan all files, then perform add/upsert/removes based on differences with
-//     the cache.
+// * Scan all files, then perform add/upsert/removes based on differences with
+//   the cache.
 //
 // Functions:
 //
-// *   Upsert an Anchor.
-// *   Upsert a Hyperlink.
-// *   Upsert a file.
-// *   Remove a file.
+// * Upsert an Anchor.
+// * Upsert a Hyperlink.
+// * Upsert a file.
+// * Remove a file.
 /*x
 /// There are two types of files that can serve as an anchor: these are file
 /// anchor targets.
@@ -1363,6 +1781,6 @@ fn html_analyze(
 */
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests;

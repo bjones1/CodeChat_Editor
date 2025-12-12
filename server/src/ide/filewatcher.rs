@@ -14,9 +14,9 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `filewatcher.rs` -- Implement the File Watcher "IDE"
-/// ====================================================
+/// ============================================================================
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
@@ -40,6 +40,7 @@ use notify_debouncer_full::{
     DebounceEventResult, new_debouncer,
     notify::{EventKind, RecursiveMode},
 };
+use rand::random;
 use regex::Regex;
 use tokio::{
     fs::DirEntry,
@@ -57,8 +58,8 @@ use crate::{
     processing::CodeMirrorDiffable,
     queue_send,
     webserver::{
-        INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT, ResultOkTypes, WebAppState,
-        filesystem_endpoint, get_test_mode, url_to_path,
+        INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT, ResultErrTypes, ResultOkTypes, WebAppState,
+        filesystem_endpoint, get_test_mode,
     },
 };
 use crate::{
@@ -72,7 +73,7 @@ use crate::{
 };
 
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 lazy_static! {
     /// Matches a bare drive letter. Only needed on Windows.
     static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
@@ -81,7 +82,7 @@ lazy_static! {
 pub const FILEWATCHER_PATH_PREFIX: &[&str] = &["fw", "fsc"];
 
 /// File browser endpoints
-/// ----------------------
+/// ----------------------------------------------------------------------------
 ///
 /// The file browser provides a very crude interface, allowing a user to select
 /// a file from the local filesystem for editing. Long term, this should be
@@ -334,10 +335,10 @@ async fn processing_task(
     //
     // This is a CodeChat Editor file. Start up the Filewatcher IDE tasks:
     //
-    // 1.  A task to watch for changes to the file, notifying the CodeChat
-    //     Editor Client when the file should be reloaded.
-    // 2.  A task to receive and respond to messages from the CodeChat Editor
-    //     Client.
+    // 1. A task to watch for changes to the file, notifying the CodeChat Editor
+    //    Client when the file should be reloaded.
+    // 2. A task to receive and respond to messages from the CodeChat Editor
+    //    Client.
     //
     // First, allocate variables needed by these two tasks.
     //
@@ -463,12 +464,12 @@ async fn processing_task(
                             for err in err_vec {
                                 // Report errors locally and to the CodeChat
                                 // Editor.
-                                let msg = format!("Watcher error: {err}");
-                                error!("{msg}");
+                                let err = ResultErrTypes::FileWatchingError(err.to_string());
+                                error!("{err:?}");
                                 // Send using an ID which indicates this isn't a
                                 // response to a message received from the
                                 // client.
-                                send_response(&from_ide_tx, RESERVED_MESSAGE_ID, Err(msg)).await;
+                                send_response(&from_ide_tx, RESERVED_MESSAGE_ID, Err(err)).await;
                             }
                         }
 
@@ -534,7 +535,14 @@ async fn processing_task(
                                                     source: crate::processing::CodeMirrorDiffable::Plain(CodeMirror {
                                                         doc: file_contents,
                                                         doc_blocks: vec![],
-                                                    })
+                                                    }),
+                                                    // The filewatcher doesn't store a version,
+                                                    // since it only accepts plain (non-diff)
+                                                    // results. Provide a version so the Client
+                                                    // stays in sync with any diffs. Produce a
+                                                    // whole number to avoid encoding
+                                                    // difference with fractional values.
+                                                    version: random::<u64>() as f64,
                                                 }),
                                                 cursor_position: None,
                                                 scroll_position: None,
@@ -556,10 +564,7 @@ async fn processing_task(
                                 // file. If `canonicalize` fails, then the files
                                 // don't match.
                                 if Some(Path::new(&update_message_contents.file_path).to_path_buf()) != current_filepath {
-                                    break 'process Err(format!(
-                                        "Update for file '{}' doesn't match current file '{current_filepath:?}'.",
-                                        update_message_contents.file_path
-                                    ));
+                                    break 'process Err(ResultErrTypes::WrongFileUpdate(update_message_contents.file_path, current_filepath.clone()));
                                 }
                                 // With code or a path, there's nothing to save.
                                 let codechat_for_web = match update_message_contents.contents {
@@ -578,60 +583,39 @@ async fn processing_task(
                                 // it, in order to avoid a watch notification
                                 // from this write.
                                 if let Err(err) = debounced_watcher.unwatch(cfp) {
-                                    let msg = format!(
-                                        "Unable to unwatch file '{}': {err}.",
-                                        cfp.to_string_lossy()
-                                    );
-                                    break 'process Err(msg);
+                                    break 'process Err(ResultErrTypes::FileUnwatchError(cfp.to_path_buf(), err.to_string()));
                                 }
                                 // Save this string to a file.
                                 if let Err(err) = fs::write(cfp.as_path(), plain.doc).await {
-                                    let msg = format!(
-                                        "Unable to save file '{}': {err}.",
-                                        cfp.to_string_lossy()
-                                    );
-                                    break 'process Err(msg);
+                                    break 'process Err(ResultErrTypes::SaveFileError(cfp.to_path_buf(), err.to_string()));
                                 }
                                 if let Err(err) = debounced_watcher.watch(cfp, RecursiveMode::NonRecursive) {
-                                    let msg = format!(
-                                        "Unable to watch file '{}': {err}.",
-                                        cfp.to_string_lossy()
-                                    );
-                                    break 'process Err(msg);
+                                    break 'process Err(ResultErrTypes::FileWatchError(cfp.to_path_buf(), err.to_string()));
                                 }
                                 Ok(ResultOkTypes::Void)
                             };
                             send_response(&from_ide_tx, m.id, result).await;
                         }
 
-                        EditorMessageContents::CurrentFile(url_string, _is_text) => {
-                            let result = match url_to_path(&url_string, FILEWATCHER_PATH_PREFIX) {
-                                Err(err) => Err(err),
-                                Ok(ref file_path) => 'err_exit: {
-                                    // We finally have the desired path! First,
-                                    // unwatch the old path.
-                                    if let Some(cfp) = &current_filepath
-                                        && let Err(err) = debounced_watcher.unwatch(cfp)
-                                    {
-                                        break 'err_exit Err(format!(
-                                            "Unable to unwatch file '{}': {err}.",
-                                            cfp.to_string_lossy()
-                                        ));
-                                    }
-                                    // Update to the new path.
-                                    current_filepath = Some(file_path.to_path_buf());
-
-                                    // Watch the new file.
-                                    if let Err(err) = debounced_watcher.watch(file_path, RecursiveMode::NonRecursive) {
-                                        break 'err_exit Err(format!(
-                                            "Unable to watch file '{}': {err}.",
-                                            file_path.to_string_lossy()
-                                        ));
-                                    }
-                                    // Indicate there was no error in the
-                                    // `Result` message.
-                                    Ok(ResultOkTypes::Void)
+                        EditorMessageContents::CurrentFile(file_path_str, _is_text) => {
+                            let file_path = PathBuf::from(file_path_str.clone());
+                            let result = 'err_exit: {
+                                // Unwatch the old path.
+                                if let Some(cfp) = &current_filepath
+                                    && let Err(err) = debounced_watcher.unwatch(cfp)
+                                {
+                                    break 'err_exit Err(ResultErrTypes::FileUnwatchError(cfp.to_path_buf(), err.to_string()));
                                 }
+                                // Update to the new path.
+                                current_filepath = Some(file_path.to_path_buf());
+
+                                // Watch the new file.
+                                if let Err(err) = debounced_watcher.watch(&file_path, RecursiveMode::NonRecursive) {
+                                    break 'err_exit Err(ResultErrTypes::FileWatchError(file_path.to_path_buf(), err.to_string()));
+                                }
+                                // Indicate there was no error in the `Result`
+                                // message.
+                                Ok(ResultOkTypes::Void)
                             };
                             send_response(&from_ide_tx, m.id, result).await;
                         },
@@ -660,9 +644,9 @@ async fn processing_task(
                         EditorMessageContents::OpenUrl(_) |
                         EditorMessageContents::ClientHtml(_) |
                         EditorMessageContents::RequestClose => {
-                            let msg = format!("Client sent unsupported message type {m:?}");
-                            error!("{msg}");
-                            send_response(&from_ide_tx, m.id, Err(msg)).await;
+                            let err = ResultErrTypes::ClientIllegalMessage;
+                            error!("{err:?}");
+                            send_response(&from_ide_tx, m.id, Err(err)).await;
                         }
                     }
                 }
@@ -714,11 +698,12 @@ pub fn get_connection_id_raw(app_state: &WebAppState) -> u32 {
 }
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use std::{
-        fs,
+        backtrace::Backtrace,
+        env, fs,
         path::{Path, PathBuf},
         str::FromStr,
         time::Duration,
@@ -731,7 +716,6 @@ mod tests {
         dev::{Service, ServiceResponse},
         test,
     };
-    use assertables::assert_starts_with;
     use dunce::simplified;
     use path_slash::PathExt;
     use pretty_assertions::assert_eq;
@@ -749,8 +733,8 @@ mod tests {
         webserver::{
             EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID,
             INITIAL_IDE_MESSAGE_ID, INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT,
-            ResultOkTypes, UpdateMessageContents, WebAppState, WebsocketQueues, configure_app,
-            drop_leading_slash, make_app_data, send_response, set_root_path,
+            ResultErrTypes, ResultOkTypes, UpdateMessageContents, WebAppState, WebsocketQueues,
+            configure_app, drop_leading_slash, make_app_data, send_response, set_root_path,
         },
     };
 
@@ -796,7 +780,10 @@ mod tests {
                 println!("{} - {:?}", m.id, m.message);
                 m
             }
-            _ = sleep(Duration::from_secs(3)) => panic!("Timeout waiting for message")
+            _ = sleep(Duration::from_secs(3)) => {
+                // The backtrace shows what message the code was waiting for; otherwise, it's an unhelpful error message.
+                panic!("Timeout waiting for message:\n{}", Backtrace::force_capture());
+            }
         }
     }
 
@@ -855,7 +842,7 @@ mod tests {
         let url_path = url_path.canonicalize().unwrap();
         assert_eq!(url_path, test_path);
 
-        // 2.  After fetching the file, we should get an update.
+        // 2. After fetching the file, we should get an update.
         //
         // Message ids: IDE - 1, Server - 2->3, Client - 0.
         let uri = format!(
@@ -870,8 +857,15 @@ mod tests {
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
         // Check the contents.
-        let translation_results = source_to_codechat_for_web("", &"py".to_string(), false, false);
-        let codechat_for_web = cast!(translation_results, TranslationResults::CodeChat);
+        let translation_results = source_to_codechat_for_web(
+            "",
+            &"py".to_string(),
+            umc.contents.as_ref().unwrap().version,
+            false,
+            false,
+        );
+        let tr = cast!(translation_results, Ok);
+        let codechat_for_web = cast!(tr, TranslationResults::CodeChat);
         assert_eq!(umc.contents, Some(codechat_for_web));
 
         // Report any errors produced when removing the temporary directory.
@@ -887,8 +881,8 @@ mod tests {
         let from_client_tx = wq.from_websocket_tx;
         let mut to_client_rx = wq.to_websocket_rx;
 
-        // 1.  The initial web request for the Client framework produces a
-        //     `CurrentFile`.
+        // 1. The initial web request for the Client framework produces a
+        //    `CurrentFile`.
         //
         // Message ids: IDE - 0->1, Server - 2, Client - 0.
         let (id, (..)) = get_message_as!(
@@ -900,9 +894,9 @@ mod tests {
         assert_eq!(id, INITIAL_IDE_MESSAGE_ID);
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
-        // 2.  After fetching the file, we should get an update. The Server
-        //     sends a `LoadFile` to the IDE using message the next ID;
-        //     therefore, this consumes two IDs.
+        // 2. After fetching the file, we should get an update. The Server sends
+        //    a `LoadFile` to the IDE using message the next ID; therefore, this
+        //    consumes two IDs.
         //
         // Message ids: IDE - 1, Server - 2->3, Client - 0.
         let mut file_path = test_dir.clone();
@@ -922,7 +916,7 @@ mod tests {
         assert_eq!(id, INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT);
         send_response(&from_client_tx, id, Ok(ResultOkTypes::Void)).await;
 
-        // 3.  Send an update message with no contents.
+        // 3. Send an update message with no contents.
         //
         // Message ids: IDE - 1, Server - 3, Client - 0->1.
         from_client_tx
@@ -944,7 +938,7 @@ mod tests {
             (INITIAL_CLIENT_MESSAGE_ID, Ok(ResultOkTypes::Void))
         );
 
-        // 4.  Send invalid messages.
+        // 4. Send invalid messages.
         //
         // Message ids: IDE - 1, Server - 3, Client - 1->4.
         for (id, msg) in [
@@ -967,10 +961,10 @@ mod tests {
                 .unwrap();
             let (id_rx, msg_rx) = get_message_as!(to_client_rx, EditorMessageContents::Result);
             assert_eq!(id, id_rx);
-            assert_starts_with!(cast!(&msg_rx, Err), "Client must not send this message.");
+            matches!(cast!(&msg_rx, Err), ResultErrTypes::ClientIllegalMessage);
         }
 
-        // 5.  Send an update message with no path.
+        // 5. Send an update message with no path.
         //
         // Message ids: IDE - 1, Server - 3, Client - 4->5.
         from_client_tx
@@ -986,6 +980,7 @@ mod tests {
                             doc: "".to_string(),
                             doc_blocks: vec![],
                         }),
+                        version: 0.0,
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -997,12 +992,14 @@ mod tests {
         // Check that it produces an error.
         let (id, err_msg) = get_message_as!(to_client_rx, EditorMessageContents::Result);
         assert_eq!(id, INITIAL_CLIENT_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT);
-        assert_starts_with!(
-            cast!(err_msg, Err),
-            "Update for file '' doesn't match current file"
+        cast!(
+            err_msg.as_ref().unwrap_err(),
+            ResultErrTypes::WrongFileUpdate,
+            _a,
+            _b
         );
 
-        // 6.  Send an update message with unknown source language.
+        // 6. Send an update message with unknown source language.
         //
         // Message ids: IDE - 1, Server - 3, Client - 5->6.
         from_client_tx
@@ -1018,6 +1015,7 @@ mod tests {
                             doc: "testing".to_string(),
                             doc_blocks: vec![],
                         }),
+                        version: 1.0,
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -1027,15 +1025,17 @@ mod tests {
             .unwrap();
 
         // Check that it produces an error.
+        let (msg_id, msg) = get_message_as!(to_client_rx, EditorMessageContents::Result);
         assert_eq!(
-            get_message_as!(to_client_rx, EditorMessageContents::Result),
-            (
-                INITIAL_CLIENT_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT,
-                Err("Unable to translate to source: Invalid mode".to_string())
-            )
+            msg_id,
+            INITIAL_CLIENT_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT
+        );
+        cast!(
+            msg.as_ref().unwrap_err(),
+            ResultErrTypes::CannotTranslateCodeChat
         );
 
-        // 7.  Send a valid message.
+        // 7. Send a valid message.
         //
         // Message ids: IDE - 1, Server - 3, Client - 6->7.
         from_client_tx
@@ -1051,6 +1051,7 @@ mod tests {
                             doc: "testing()".to_string(),
                             doc_blocks: vec![],
                         }),
+                        version: 2.0,
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -1070,15 +1071,25 @@ mod tests {
         let mut s = fs::read_to_string(&file_path).unwrap();
         assert_eq!(s, "testing()");
 
-        // 8.  Change this file and verify that this produces an update.
+        // 8. Change this file and verify that this produces an update.
         //
         // Message ids: IDE - 1->2, Server - 3, Client - 7.
         s.push_str("123");
         fs::write(&file_path, s).unwrap();
         // Wait for the filewatcher to debounce this file write.
-        sleep(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(
+            // Mac in CI seems to need a long delay here.
+            if cfg!(target_os = "macos") && env::var("CI") == Ok("true".to_string()) {
+                5
+            } else {
+                2
+            },
+        ))
+        .await;
+        // The version is random; don't check it with a fixed value.
+        let msg = get_message_as!(to_client_rx, EditorMessageContents::Update);
         assert_eq!(
-            get_message_as!(to_client_rx, EditorMessageContents::Update),
+            msg,
             (
                 INITIAL_IDE_MESSAGE_ID + MESSAGE_ID_INCREMENT,
                 UpdateMessageContents {
@@ -1091,6 +1102,7 @@ mod tests {
                             doc: "testing()123".to_string(),
                             doc_blocks: vec![],
                         }),
+                        version: msg.1.contents.as_ref().unwrap().version,
                     }),
                     cursor_position: None,
                     scroll_position: None,
@@ -1105,15 +1117,15 @@ mod tests {
         )
         .await;
 
-        // 9.  Rename it and check for an close (the file watcher can't detect
-        //     the destination file, so it's treated as the file is deleted).
+        // 9. Rename it and check for an close (the file watcher can't detect
+        //    the destination file, so it's treated as the file is deleted).
         //
         // Message ids: IDE - 2->3, Server - 3, Client - 7.
         let mut dest = PathBuf::from(&file_path).parent().unwrap().to_path_buf();
         dest.push("test2.py");
         fs::rename(file_path, dest.as_path()).unwrap();
         // Wait for the filewatcher to debounce this file write.
-        sleep(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(3)).await;
         let m = get_message(&mut to_client_rx).await;
         assert_eq!(m.id, INITIAL_IDE_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT);
         assert!(matches!(m.message, EditorMessageContents::Closed));

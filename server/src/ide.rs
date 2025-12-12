@@ -14,12 +14,12 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `ide.rs` -- Provide interfaces with common IDEs
-/// ===============================================
+/// ============================================================================
 pub mod filewatcher;
 pub mod vscode;
 
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
@@ -51,12 +51,13 @@ use crate::{
     translation::{CreatedTranslationQueues, create_translation_queues},
     webserver::{
         self, EditorMessage, EditorMessageContents, INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT,
-        REPLY_TIMEOUT_MS, ResultOkTypes, UpdateMessageContents, WebAppState, setup_server,
+        REPLY_TIMEOUT_MS, ResultErrTypes, ResultOkTypes, UpdateMessageContents, WebAppState,
+        setup_server,
     },
 };
 
 // Code
-// ----
+// -----------------------------------------------------------------------------
 //
 // Using this macro is critical -- otherwise, the Actix system doesn't get
 // correctly initialized, which makes calls to `actix_rt::spawn` fail. In
@@ -160,7 +161,7 @@ impl CodeChatEditorServer {
                 Some(
                     EditorMessage {
                         id,
-                        message: EditorMessageContents::Result(Err(format!("Timeout: message id {id} unacknowledged.")))
+                        message: EditorMessageContents::Result(Err(webserver::ResultErrTypes::MessageTimeout(id)))
                     }
                 ),
             else => None,
@@ -250,7 +251,7 @@ impl CodeChatEditorServer {
         &self,
         file_path: String,
         // `null` to send no source code; a string to send the source code.
-        option_contents: Option<String>,
+        option_contents: Option<(String, f64)>,
         cursor_position: Option<u32>,
         scroll_position: Option<f64>,
     ) -> std::io::Result<f64> {
@@ -261,9 +262,10 @@ impl CodeChatEditorServer {
                     mode: "".to_string(),
                 },
                 source: CodeMirrorDiffable::Plain(CodeMirror {
-                    doc: contents,
+                    doc: contents.0,
                     doc_blocks: vec![],
                 }),
+                version: contents.1,
             }),
             cursor_position,
             scroll_position: scroll_position.map(|x| x as f32),
@@ -271,11 +273,11 @@ impl CodeChatEditorServer {
         .await
     }
 
-    // Send either an Ok(Void) or an Error result to the Client.
+    /// Send either an Ok(Void) or an Error result to the Client.
     pub async fn send_result(
         &self,
         id: f64,
-        message_result: Option<String>,
+        message_result: Option<ResultErrTypes>,
     ) -> std::io::Result<()> {
         let editor_message = EditorMessage {
             id,
@@ -293,7 +295,7 @@ impl CodeChatEditorServer {
     pub async fn send_result_loadfile(
         &self,
         id: f64,
-        load_file: Option<String>,
+        load_file: Option<(String, f64)>,
     ) -> std::io::Result<()> {
         self.send_message_raw(EditorMessage {
             id,

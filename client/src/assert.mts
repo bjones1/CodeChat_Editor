@@ -1,6 +1,6 @@
 // `assert.mts`
 // ============
-////
+//
 // Provide a simple `assert` function to check conditions at runtime. Using
 // things like [assert](https://nodejs.org/api/assert.html) causes problems --
 // somehow, this indicates that the code is running in a development environment

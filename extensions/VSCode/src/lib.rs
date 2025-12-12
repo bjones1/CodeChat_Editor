@@ -37,7 +37,11 @@ use code_chat_editor::{ide, webserver};
 pub fn init_server(extension_base_path: String) -> Result<(), Error> {
     webserver::init_server(
         Some(&PathBuf::from(extension_base_path)),
-        LevelFilter::Debug,
+        if cfg!(debug_assertions) {
+            LevelFilter::Debug
+        } else {
+            LevelFilter::Warn
+        },
     )
     .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))
 }
@@ -86,7 +90,7 @@ impl CodeChatEditorServer {
         &self,
         file_path: String,
         // `null` to send no source code; a string to send the source code.
-        option_contents: Option<String>,
+        option_contents: Option<(String, f64)>,
         cursor_position: Option<u32>,
         scroll_position: Option<f64>,
     ) -> std::io::Result<f64> {
@@ -99,16 +103,25 @@ impl CodeChatEditorServer {
     pub async fn send_result(
         &self,
         id: f64,
+        // If provided, a JSON-encoded `ResultErrTypes`.
         message_result: Option<String>,
     ) -> std::io::Result<()> {
-        self.0.send_result(id, message_result).await
+        let message = if let Some(err_json) = message_result {
+            match serde_json::from_str(&err_json) {
+                Ok(v) => Some(v),
+                Err(err) => return Err(std::io::Error::other(err.to_string())),
+            }
+        } else {
+            None
+        };
+        self.0.send_result(id, message).await
     }
 
     #[napi]
     pub async fn send_result_loadfile(
         &self,
         id: f64,
-        load_file: Option<String>,
+        load_file: Option<(String, f64)>,
     ) -> std::io::Result<()> {
         self.0.send_result_loadfile(id, load_file).await
     }
