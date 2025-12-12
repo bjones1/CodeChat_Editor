@@ -1303,6 +1303,19 @@ fn test_hydrate_html_1() {
             "#
         )
     );
+
+    assert_eq!(
+        hydrate_html(&markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;")).unwrap(),
+        indoc!(
+            "
+            <ol>
+            <li>foo&nbsp;</li>
+            <li>bar</li>
+            <li>baz </li>
+            </ol>
+            "
+        )
+    );
 }
 
 #[test]
@@ -1379,5 +1392,21 @@ fn test_dehydrate_html_1() {
             $${a}_1, b_{2}, a*1, b*2, [a](b), 3 <a> b, a \\; b$$
             "
         )
+    );
+
+    assert_eq!(
+        converter
+            .convert(
+                &dehydrate_html(indoc!(
+                    "
+                    <ol>
+                    <li>foo&nbsp;</li>
+                    </ol>
+                    "
+                ))
+                .unwrap()
+            )
+            .unwrap(),
+        "1. foo\u{a0}\n"
     );
 }
