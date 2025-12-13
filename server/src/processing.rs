@@ -452,10 +452,10 @@ pub fn codechat_for_web_to_source(
         }
         // Translate the HTML document to Markdown.
         let converter = HtmlToMarkdownWrapped::new();
-        let dry_html =
-            dehydrate_html(&code_mirror.doc).map_err(CodechatForWebToSourceError::ParseFailed)?;
+        let tree = html_to_tree(&code_mirror.doc)?;
+        dehydrating_walk_node(&tree);
         return converter
-            .convert(&dry_html)
+            .convert(&tree)
             .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed);
     }
     let code_doc_block_vec_html = code_mirror_to_code_doc_blocks(code_mirror);
@@ -576,15 +576,15 @@ impl HtmlToMarkdownWrapped {
         self.word_wrap_config.line_width = line_width as u32;
     }
 
-    fn convert(&self, html: &str) -> Result<String, HtmlToMarkdownWrappedError> {
-        let converted = self.html_to_markdown.convert(html)?;
+    fn convert(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
+        let converted = self.html_to_markdown.tree_to_markdown(tree)?;
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
                 // A return value of `None` means the text was unchanged or
                 // ignored (by an
                 // [ignoreFileDirective](https://dprint.dev/plugins/markdown/config/)).
                 // Simply return the unchanged text in this case.
-                .unwrap_or_else(|| html.to_string()),
+                .unwrap_or_else(|| converted.to_string()),
         )
     }
 }
@@ -596,7 +596,8 @@ fn doc_block_html_to_markdown(
     let mut converter = HtmlToMarkdownWrapped::new();
     for code_doc_block in &mut code_doc_block_vec {
         if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
-            let contents = dehydrate_html(&doc_block.contents)?;
+            let tree = html_to_tree(&doc_block.contents)?;
+            dehydrating_walk_node(&tree);
 
             // Compute a line wrap width based on the current indent. Set a
             // minimum of half the line wrap width, to prevent ridiculous
@@ -612,7 +613,7 @@ fn doc_block_html_to_markdown(
                         WORD_WRAP_COLUMN,
                     ),
             ));
-            doc_block.contents = converter.convert(&contents)?;
+            doc_block.contents = converter.convert(&tree)?;
         }
     }
 
@@ -1005,11 +1006,8 @@ fn markdown_to_html(markdown: &str) -> String {
     html_output
 }
 
-// A framework to transform HTML by parsing it to a DOM tree, walking the tree, then serializing the tree back to an HTML string.
-fn transform_html<T: FnOnce(Rc<Node>)>(html_in: &str, transform: T) -> io::Result<String> {
-    // The approach: transform the HTML to a DOM tree, then walk the three to apply these transformations.
-    //
-    // First, parse it to a DOM.
+// Use html5ever to parse a string containing HTML to a DOM tree.
+fn html_to_tree(html: &str) -> io::Result<Rc<Node>> {
     let dom = parse_document(
         RcDom::default(),
         ParseOpts {
@@ -1021,10 +1019,22 @@ fn transform_html<T: FnOnce(Rc<Node>)>(html_in: &str, transform: T) -> io::Resul
         },
     )
     .from_utf8()
-    .read_from(&mut html_in.as_bytes())?;
+    .read_from(&mut html.as_bytes())?;
 
-    // Walk and transform the DOM.
-    transform(dom.document.clone());
+    // TODO: should we report parse errors? If so, how and where?
+    /*
+    if let Some(err) = dom.errors.borrow().first() {
+        //return Err(io::Error::other(err.to_string()));
+    }
+    */
+
+    Ok(dom.document)
+}
+
+// A framework to transform HTML by parsing it to a DOM tree, walking the tree, then serializing the tree back to an HTML string.
+fn transform_html<T: FnOnce(Rc<Node>)>(html: &str, transform: T) -> io::Result<String> {
+    let tree = html_to_tree(html)?;
+    transform(tree.clone());
 
     // Serialize the transformed DOM back to a string.
     let so = SerializeOpts {
@@ -1040,8 +1050,7 @@ fn transform_html<T: FnOnce(Rc<Node>)>(html_in: &str, transform: T) -> io::Resul
     //  <body>...</body>  <-- element 1
     // </html>
     // ```
-    let body = dom.document.children.borrow()[0].children.borrow()[1].clone();
-    //println!("{:#?}", body);
+    let body = tree.children.borrow()[0].children.borrow()[1].clone();
     serialize(&mut bytes, &SerializableHandle::from(body.clone()), so)?;
     let html_out = String::from_utf8(bytes).map_err(io::Error::other)?;
 
@@ -1105,6 +1114,7 @@ fn hydrating_walk_node(node: Rc<Node>) {
 
         // Replace the child if we found a replacement; otherwise, walk it.
         if let Some(replacement_child) = possible_replacement_child {
+            replacement_child.parent.set(Some(Rc::downgrade(&node)));
             *child = replacement_child;
         } else {
             hydrating_walk_node(child.clone());
@@ -1162,6 +1172,7 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
                 template_contents: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
             });
+            delimited_text_node.parent.set(Some(Rc::downgrade(&span)));
             span.children.borrow_mut().push(delimited_text_node);
             Some(span)
         } else {
@@ -1172,11 +1183,7 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
     }
 }
 
-fn dehydrate_html(html: &str) -> io::Result<String> {
-    transform_html(html, dehydrating_walk_node)
-}
-
-fn dehydrating_walk_node(node: Rc<Node>) {
+fn dehydrating_walk_node(node: &Rc<Node>) {
     for child in node.children.borrow_mut().iter_mut() {
         // Look for a custom element tag
         let possible_replacement_child = if let Some(child_name) = get_node_tag_name(child)
@@ -1208,6 +1215,7 @@ fn dehydrating_walk_node(node: Rc<Node>) {
                 template_contents: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
             });
+            code.parent.set(Some(Rc::downgrade(&pre)));
             code.children.borrow_mut().push(text_child.clone());
             pre.children.borrow_mut().push(code);
             Some(pre)
@@ -1219,7 +1227,7 @@ fn dehydrating_walk_node(node: Rc<Node>) {
         if let Some(replacement_child) = possible_replacement_child {
             *child = replacement_child;
         } else {
-            dehydrating_walk_node(child.clone());
+            dehydrating_walk_node(child);
         }
     }
 }

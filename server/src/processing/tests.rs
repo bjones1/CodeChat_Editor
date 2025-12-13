@@ -21,10 +21,11 @@
 // -------
 //
 // ### Standard library
-use std::{path::PathBuf, str::FromStr};
+use std::{io, path::PathBuf, rc::Rc, str::FromStr};
 
 // ### Third-party
 use indoc::indoc;
+use markup5ever_rcdom::Node;
 use predicates::prelude::predicate::str;
 use pretty_assertions::assert_eq;
 
@@ -45,8 +46,8 @@ use crate::{
         CodeMirrorDocBlockTransaction, CodeMirrorDocBlockUpdate, CodechatForWebToSourceError,
         HtmlToMarkdownWrapped, SourceToCodeChatForWebError, byte_index_of,
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
-        dehydrate_html, diff_code_mirror_doc_blocks, diff_str, hydrate_html, markdown_to_html,
-        source_to_codechat_for_web,
+        dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str, html_to_tree, hydrate_html,
+        markdown_to_html, source_to_codechat_for_web,
     },
     test_utils::stringit,
 };
@@ -1318,6 +1319,13 @@ fn test_hydrate_html_1() {
     );
 }
 
+fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
+    let tree = html_to_tree(html)?;
+    dehydrating_walk_node(&tree);
+    //println!("{:#?}", tree);
+    Ok(tree)
+}
+
 #[test]
 fn test_dehydrate_html_1() {
     let converter = HtmlToMarkdownWrapped::new();
@@ -1326,10 +1334,10 @@ fn test_dehydrate_html_1() {
             .convert(
                 &dehydrate_html(indoc!(
                     "
-            <wc-mermaid>flowchart LR
-                start --&gt; stop
-            </wc-mermaid>
-            "
+                    <wc-mermaid>flowchart LR
+                        start --&gt; stop
+                    </wc-mermaid>
+                    "
                 ))
                 .unwrap()
             )
@@ -1349,11 +1357,11 @@ fn test_dehydrate_html_1() {
             .convert(
                 &dehydrate_html(indoc!(
                     "
-            <graphviz-graph>digraph {
-                start -&gt; stop
-            }
-            </graphviz-graph>
-            "
+                    <graphviz-graph>digraph {
+                        start -&gt; stop
+                    }
+                    </graphviz-graph>
+                    "
                 ))
                 .unwrap()
             )
