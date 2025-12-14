@@ -15,24 +15,24 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 
 /// `capture.rs` -- Capture CodeChat Editor Events
-/// ==============================================
+/// ============================================================================
 ///
 /// This module provides an asynchronous event capture facility backed by a
 /// PostgreSQL database. It is designed to support the dissertation study by
 /// recording process-level data such as:
 ///
-/// *   Frequency and timing of writing entries
-/// *   Edits to documentation and code
-/// *   Switches between documentation and coding activity
-/// *   Duration of engagement with reflective writing
-/// *   Save, compile, and run events
+/// * Frequency and timing of writing entries
+/// * Edits to documentation and code
+/// * Switches between documentation and coding activity
+/// * Duration of engagement with reflective writing
+/// * Save, compile, and run events
 ///
 /// Events are sent from the client (browser and/or VS Code extension) to the
 /// server as JSON. The server enqueues events into an asynchronous worker which
 /// performs batched inserts into the `events` table.
 ///
 /// Database schema
-/// ---------------
+/// ----------------------------------------------------------------------------
 ///
 /// The following SQL statement creates the `events` table used by this module:
 ///
@@ -49,13 +49,13 @@
 /// );
 /// ```
 ///
-/// *   `user_id` – participant identifier (student id, pseudonym, etc.).
-/// *   `assignment_id` – logical assignment / lab identifier.
-/// *   `group_id` – optional grouping (treatment / comparison, section).
-/// *   `file_path` – logical path of the file being edited.
-/// *   `event_type` – coarse event type (see `event_type` constants below).
-/// *   `timestamp` – RFC3339 timestamp (in UTC).
-/// *   `data` – JSON payload with event-specific details.
+/// * `user_id` – participant identifier (student id, pseudonym, etc.).
+/// * `assignment_id` – logical assignment / lab identifier.
+/// * `group_id` – optional grouping (treatment / comparison, section).
+/// * `file_path` – logical path of the file being edited.
+/// * `event_type` – coarse event type (see `event_type` constants below).
+/// * `timestamp` – RFC3339 timestamp (in UTC).
+/// * `data` – JSON payload with event-specific details.
 
 use std::io;
 
@@ -64,6 +64,7 @@ use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio_postgres::{Client, NoTls};
+use std::error::Error;
 
 /// Canonical event type strings. Keep these stable for analysis.
 pub mod event_types {
@@ -234,20 +235,30 @@ impl EventCapture {
 
                     info!("Capture: event channel closed; background worker exiting.");
                 }
-                Err(err) => {
-                    // NOTE: we *don't* pass `err` twice here; `{err}` in the format
-                    // string already grabs the local `err` binding.
-                    error!(
-                        "Capture: FAILED to connect to PostgreSQL (host={}, dbname={}, user={}): {err}",
-                        config.host,
-                        config.dbname,
-                        config.user,
-                    );
-                    // Drain and drop any events so we don't hold the sender.
-                    warn!("Capture: draining pending events after failed DB connection.");
-                    while rx.recv().await.is_some() {}
-                    warn!("Capture: all pending events dropped due to connection failure.");
-                }
+
+Err(err) => {
+    let ctx = format!(
+        "Capture: FAILED to connect to PostgreSQL (host={}, dbname={}, user={})",
+        config.host, config.dbname, config.user
+    );
+
+    log_pg_connect_error(&ctx, &err);
+
+    // Drain and drop any events so we don't hold the sender.
+    warn!("Capture: draining pending events after failed DB connection.");
+    while rx.recv().await.is_some() {}
+    warn!("Capture: all pending events dropped due to connection failure.");
+}
+
+                // Err(err) => { // NOTE: we *don't* pass `err` twice here;
+                // `{err}` in the format // string already grabs the local `err`
+                // binding. error!( "Capture: FAILED to connect to PostgreSQL
+                // (host={}, dbname={}, user={}): {err}", config.host,
+                // config.dbname, config.user, ); // Drain and drop any events
+                // so we don't hold the sender. warn!("Capture: draining pending
+                // events after failed DB connection."); while
+                // rx.recv().await.is\_some() {} warn!("Capture: all pending
+                // events dropped due to connection failure."); }
             }
         });
 
@@ -270,6 +281,47 @@ impl EventCapture {
         }
     }
 }
+
+fn log_pg_connect_error(context: &str, err: &tokio_postgres::Error) {
+    // If Postgres returned a structured DbError, log it ONCE and bail.
+    if let Some(db) = err.as_db_error() {
+        // Example: 28P01 = invalid\_password
+        error!(
+            "{context}: PostgreSQL {} (SQLSTATE {})",
+            db.message(),
+            db.code().code()
+        );
+
+        if let Some(detail) = db.detail() {
+            error!("{context}: detail: {detail}");
+        }
+        if let Some(hint) = db.hint() {
+            error!("{context}: hint: {hint}");
+        }
+        return;
+    }
+
+    // Otherwise, try to find an underlying std::io::Error (refused, timed out,
+    // DNS, etc.)
+    let mut current: &(dyn Error + 'static) = err;
+    while let Some(source) = current.source() {
+        if let Some(ioe) = source.downcast_ref::<std::io::Error>() {
+            error!(
+                "{context}: I/O error kind={:?} raw_os_error={:?} msg={}",
+                ioe.kind(),
+                ioe.raw_os_error(),
+                ioe
+            );
+            return;
+        }
+        current = source;
+    }
+
+    // Fallback: log once (Display)
+    error!("{context}: {err}");
+}
+
+
 
 /// Insert a single event into the `events` table.
 async fn insert_event(client: &Client, event: &CaptureEvent) -> Result<u64, tokio_postgres::Error> {
@@ -315,7 +367,8 @@ mod tests {
         };
 
         let conn = cfg.to_conn_str();
-        // Very simple checks: we don't care about ordering beyond what we format.
+        // Very simple checks: we don't care about ordering beyond what we
+        // format.
         assert!(conn.contains("host=localhost"));
         assert!(conn.contains("user=alice"));
         assert!(conn.contains("password=secret"));
@@ -394,29 +447,29 @@ mod tests {
     }
 
     use std::fs;
-    use tokio::time::{sleep, Duration};
+    //use tokio::time::{sleep, Duration};
 
-    /// Integration-style test: verify that EventCapture actually inserts into the DB.
+    /// Integration-style test: verify that EventCapture actually inserts into
+    /// the DB.
     ///
-    /// Reads connection parameters from `capture_config.json` in the current working directory.
-    /// Logs the config and connection details via log4rs so you can confirm what is used.
+    /// Reads connection parameters from `capture_config.json` in the current
+    /// working directory. Logs the config and connection details via log4rs so
+    /// you can confirm what is used.
     ///
-    /// Run this test with:
-    ///     cargo test event_capture_inserts_event_into_db -- --ignored --nocapture
+    /// Run this test with: cargo test event\_capture\_inserts\_event\_into\_db
+    /// -- --ignored --nocapture
     ///
-    /// You must have a PostgreSQL database and a `capture_config.json` file such as:
-    /// {
-    ///     "host": "localhost",
-    ///     "user": "codechat_test_user",
-    ///     "password": "codechat_test_password",
-    ///     "dbname": "codechat_capture_test",
-    ///     "app_id": "integration-test"
-    /// }
+    /// You must have a PostgreSQL database and a `capture_config.json` file
+    /// such as: { "host": "localhost", "user": "codechat\_test\_user",
+    /// "password": "codechat\_test\_password", "dbname":
+    /// "codechat\_capture\_test", "app\_id": "integration-test" }
     #[tokio::test]
     #[ignore]
     async fn event_capture_inserts_event_into_db() -> Result<(), Box<dyn std::error::Error>> {
-        // Initialize logging for this test, using the same log4rs.yml as the server.
-        // If logging is already initialized, this will just return an error which we ignore.
+
+        // Initialize logging for this test, using the same log4rs.yml as the
+        // server. If logging is already initialized, this will just return an
+        // error which we ignore.
         let _ = log4rs::init_file("log4rs.yml", Default::default());
 
         // 1. Load the capture configuration from file.
@@ -444,23 +497,52 @@ mod tests {
             }
         });
 
-        // 3. Ensure the `events` table exists and is empty.
-        client
-            .batch_execute(
-                "CREATE TABLE IF NOT EXISTS events (
-                     id            SERIAL PRIMARY KEY,
-                     user_id       TEXT NOT NULL,
-                     assignment_id TEXT,
-                     group_id      TEXT,
-                     file_path     TEXT,
-                     event_type    TEXT NOT NULL,
-                     timestamp     TEXT NOT NULL,
-                     data          TEXT
-                 );
-                 TRUNCATE TABLE events;",
+        // Verify the events table already exists
+        let row = client
+            .query_one(
+                r#"
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                    AND table_name   = 'events'
+                ) AS exists
+                "#,
+                &[],
             )
             .await?;
-        log::info!("TEST: events table ensured and truncated.");
+
+        let exists: bool = row.get("exists");
+        assert!(
+            exists,
+            "TEST SETUP ERROR: public.events table does not exist. \
+            It must be created by a migration or admin step."
+        );
+
+        // Insert a single test row (this is what the app really needs)
+        let test_user_id = format!(
+            "TEST_USER_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+
+        let insert_row = client
+            .query_one(
+                r#"
+                INSERT INTO public.events
+                    (user_id, assignment_id, group_id, file_path, event_type, timestamp, data)
+                VALUES
+                    ($1, NULL, NULL, NULL, 'test_event', $2, '{"test":true}')
+                RETURNING id
+                "#,
+                &[&test_user_id, &format!("{:?}", std::time::SystemTime::now())],
+            )
+            .await?;
+
+        let inserted_id: i32 = insert_row.get("id");
+        info!("TEST: inserted event id={}", inserted_id);
 
         // 4. Start the EventCapture worker using the loaded config.
         let capture = EventCapture::new(cfg.clone())?;
@@ -480,19 +562,35 @@ mod tests {
         log::info!("TEST: logging a test capture event.");
         capture.log(event);
 
-        // 6. Give the background worker time to insert the event.
-        sleep(Duration::from_millis(300)).await;
+        // 6. Wait (deterministically) for the background worker to insert the event,
+        // then fetch THAT row (instead of "latest row in the table").
+        use tokio::time::{sleep, Duration, Instant};
 
-        // 7. Verify the inserted record.
-        let row = client
-            .query_one(
-                "SELECT user_id, assignment_id, group_id, file_path, event_type, data
-                 FROM events
-                 ORDER BY id DESC
-                 LIMIT 1",
-                &[],
-            )
-            .await?;
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        let row = loop {
+            match client
+                .query_one(
+                    r#"
+                    SELECT user_id, assignment_id, group_id, file_path, event_type, data
+                    FROM events
+                    WHERE user_id = $1 AND event_type = $2
+                    ORDER BY id DESC
+                    LIMIT 1
+                    "#,
+                    &[&"test-user", &event_types::WRITE_DOC],
+                )
+                .await
+            {
+                Ok(row) => break row, // found it
+                Err(_) => {
+                    if Instant::now() >= deadline {
+                        return Err("Timed out waiting for EventCapture insert".into());
+                    }
+                    sleep(Duration::from_millis(50)).await;
+                }
+            }
+        };
 
         let user_id: String = row.get(0);
         let assignment_id: Option<String> = row.get(1);
