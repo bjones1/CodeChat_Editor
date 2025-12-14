@@ -282,6 +282,8 @@ pub fn get_version(msg: &EditorMessage) -> f64 {
         .version
 }
 
+// Used in one of the common tests, but not in the other...so we get a clippy lint.
+#[allow(dead_code)]
 pub async fn goto_line(
     codechat_server: &CodeChatEditorServer,
     driver_ref: &WebDriver,
@@ -422,6 +424,8 @@ pub async fn select_codechat_iframe(driver_ref: &WebDriver) -> WebElement {
     codechat_iframe
 }
 
+// Used in one of the common tests, but not in the other...so we get a clippy lint.
+#[allow(dead_code)]
 pub async fn get_empty_client_update(
     codechat_server: &CodeChatEditorServer,
     path_str: &str,

@@ -19,4 +19,4 @@
 mod overall_common;
 
 #[cfg(feature = "int_tests")]
-mod overall_core;
+mod overall_2_core;
