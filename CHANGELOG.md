@@ -24,6 +24,13 @@ Changelog
 
 * No changes.
 
+Version 0.1.46 -- 2025-Dec-15
+--------------------------------------------------------------------------------
+
+* Avoid spaces disappearing in Client when editing lists.
+* Improve speed of convert
+* Improve Client error reporting.
+
 Version 0.1.45 -- 2025-Dec-11
 --------------------------------------------------------------------------------
 
