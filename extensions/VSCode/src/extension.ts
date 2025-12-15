@@ -30,7 +30,6 @@ import process from "node:process";
 // ### Third-party packages
 import escape from "escape-html";
 import vscode, {
-    commands,
     Range,
     TextDocument,
     TextEditor,
