@@ -576,7 +576,8 @@ impl HtmlToMarkdownWrapped {
         self.word_wrap_config.line_width = line_width as u32;
     }
 
-    fn convert(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
+    /// Convert one item in a stream of HTML to markdown. The HTML must be start at the root, not continue a previous incomplete section of the DOM.
+    fn next(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
         let converted = self.html_to_markdown.tree_to_markdown(tree)?;
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
@@ -586,6 +587,25 @@ impl HtmlToMarkdownWrapped {
                 // Simply return the unchanged text in this case.
                 .unwrap_or_else(|| converted.to_string()),
         )
+    }
+
+    fn last(&self) -> Result<String, HtmlToMarkdownWrappedError> {
+        let converted = self.html_to_markdown.finalize_conversion()?;
+        Ok(
+            format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
+                // A return value of `None` means the text was unchanged or
+                // ignored (by an
+                // [ignoreFileDirective](https://dprint.dev/plugins/markdown/config/)).
+                // Simply return the unchanged text in this case.
+                .unwrap_or_else(|| converted.to_string()),
+        )
+    }
+
+    /// Convert HTML to markdown.
+    fn convert(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
+        let mut converted = self.next(tree)?;
+        converted.push_str(&self.last()?);
+        Ok(converted)
     }
 }
 
@@ -613,8 +633,16 @@ fn doc_block_html_to_markdown(
                         WORD_WRAP_COLUMN,
                     ),
             ));
-            doc_block.contents = converter.convert(&tree)?;
+            doc_block.contents = converter.next(&tree)?;
         }
+    }
+
+    // Output the finalized conversion.
+    if let Some(code_doc_block) = code_doc_block_vec.last_mut()
+        && let CodeDocBlock::DocBlock(doc_block) = code_doc_block
+    {
+        let last = converter.last()?;
+        doc_block.contents.push_str(&last);
     }
 
     Ok(code_doc_block_vec)
