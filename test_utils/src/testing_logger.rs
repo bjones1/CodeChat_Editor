@@ -48,7 +48,7 @@
 //! #[macro_use]
 //! extern crate log;
 //! use log::Level;
-//! use code_chat_editor::testing_logger;
+//! use test_utils::testing_logger;
 //!
 //! # fn main() { test_something();}
 //! # /* Don't put #[test] in code when running doc tests but DO put it in the documentation
@@ -70,7 +70,7 @@
 //! # #[macro_use]
 //! # extern crate log;
 //! # use log::Level;
-//! # use code_chat_editor::testing_logger;
+//! # use test_utils::testing_logger;
 //! # fn main() { test_target();}
 //! # /* Don't put #[test] in code when running doc tests but DO put it in the documentation
 //! #[test]

@@ -30,12 +30,9 @@ use std::path::MAIN_SEPARATOR_STR;
 use std::path::PathBuf;
 
 // ### Third-party
+use assert_fs::{TempDir, fixture::PathCopy};
+use assertables::assert_le;
 use log::Level;
-#[cfg(any(feature = "int_tests", test))]
-use {
-    assert_fs::{TempDir, fixture::PathCopy},
-    assertables::assert_le,
-};
 
 // ### Local
 use crate::testing_logger;

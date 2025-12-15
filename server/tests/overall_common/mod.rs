@@ -20,20 +20,6 @@
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
 ///
-/// Some subtleties of this approach: development dependencies aren't available
-/// to integration tests. Therefore, this crate's `Cargo.toml` file includes the
-/// `int_tests` feature, which enables crates needed only for integration
-/// testing, while keeping these out of the final binary when compiling for
-/// production. This means that the same crate appears both in
-/// `dev-dependencies` and in `dependencies`, so it's available for both unit
-/// tests and integration tests. In addition, any code used in integration tests
-/// must be gated on the `int_tests` feature, since this code fails to compile
-/// without that feature's crates enabled. Tests are implemented here, then
-/// `use`d in `overall.rs`, so that a single `#[cfg(feature = "int_tests")]`
-/// statement there gates everything in this file. See the
-/// [test docs](https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests)
-/// for the correct file and directory names.
-///
 /// A second challenge revolves around the lack of an async `Drop` trait: the
 /// web driver server should be started before any test, left running during all
 /// tests, then terminated as the test program exits. The web driver must be
@@ -61,7 +47,6 @@ use thirtyfour::{By, Key, WebDriver, WebElement};
 
 // ### Local
 use code_chat_editor::{
-    cast,
     ide::CodeChatEditorServer,
     processing::{CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata},
     webserver::{
@@ -69,6 +54,7 @@ use code_chat_editor::{
         UpdateMessageContents,
     },
 };
+use test_utils::cast;
 
 // Utilities
 // -----------------------------------------------------------------------------

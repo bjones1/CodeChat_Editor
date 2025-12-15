@@ -29,11 +29,8 @@ use assertables::{assert_ends_with, assert_not_contains, assert_starts_with};
 
 // ### Local
 use super::{path_to_url, url_to_path};
-use crate::prep_test_dir;
-use crate::{
-    cast,
-    ide::{filewatcher::FILEWATCHER_PATH_PREFIX, vscode::tests::IP_PORT},
-};
+use crate::ide::{filewatcher::FILEWATCHER_PATH_PREFIX, vscode::tests::IP_PORT};
+use test_utils::{cast, prep_test_dir};
 
 // Support functions
 // -----------------

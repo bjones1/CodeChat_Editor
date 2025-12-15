@@ -23,12 +23,6 @@ name = "builder"
 version = "0.1.0"
 edition = "2024"
 
-# To make VSCode happy, create a unused `int_test` feature, then enable this
-# feature in the VSCode Rust language server for a better experience. See
-# `server/Cargo.toml` for its actual use.
-[features]
-int_tests = []
-
 [dependencies]
 clap = { version = "4.5.19", features = ["derive"] }
 cmd_lib = "2.0.0"

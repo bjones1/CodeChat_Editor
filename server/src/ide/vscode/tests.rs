@@ -52,17 +52,19 @@ use crate::webserver::{
     INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT, ResultErrTypes,
 };
 use crate::{
-    cast,
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockTransaction, SourceFileMetadata, StringDiff,
     },
-    test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
     webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
 };
 use crate::{
     translation::{EolType, find_eol_type},
     webserver::main,
+};
+use test_utils::{
+    cast,
+    test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
 };
 
 // Globals
@@ -225,7 +227,7 @@ async fn _prep_test(
 /// `_prep_test` would give the wrong name.
 macro_rules! prep_test {
     ($connection_id: ident) => {{
-        use crate::function_name;
+        use test_utils::function_name;
         _prep_test($connection_id, function_name!())
     }};
 }
