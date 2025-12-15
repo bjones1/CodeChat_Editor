@@ -207,7 +207,7 @@ const _open_lp = async (
     // including the
     // [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
     /// @ts-expect-error("See above.")
-    const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
+    const _editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
 
     // Get the <code>[current_metadata](#current_metadata)</code> from the
     // provided `code_chat_for_web` struct and store it as a global variable.
@@ -436,7 +436,7 @@ export const restoreSelection = ({
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
 // here's the least bad way to choose between the control key and the command
 // key.
-const os_is_osx =
+const _os_is_osx =
     navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
         ? true
         : false;

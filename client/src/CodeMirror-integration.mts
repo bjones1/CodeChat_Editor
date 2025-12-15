@@ -130,6 +130,12 @@ const docBlockFreezeAnnotation = Annotation.define<boolean>();
 // location updates.
 const noAutosaveAnnotation = Annotation.define<boolean>();
 
+// Define a facet called when extensions produce an error.
+const exceptionSink = EditorView.exceptionSink.of((exception) => {
+    show_toast(`Error: ${exception}`);
+    console.error(exception);
+});
+
 // Doc blocks in CodeMirror
 // -----------------------------------------------------------------------------
 //
@@ -988,6 +994,7 @@ export const CodeMirror_load = async (
                     parser,
                     basicSetup,
                     EditorView.lineWrapping,
+                    exceptionSink,
                     autosaveExtension,
                     // Make tab an indent per the
                     // [docs](https://codemirror.net/examples/tab/). TODO:
