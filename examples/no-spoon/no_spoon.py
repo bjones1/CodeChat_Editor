@@ -31,7 +31,7 @@ height = int(input())
 # ```
 #
 # Store this an an array of lines; each lines contains these characters.
-# Therefore, `line[y][x]` gives the cell at the coordinate $(𝑥,𝑦)$ (note the
+# Therefore, `line[y][x]` gives the cell at the coordinate $(𝑥,𝑦)$ (note the
 # reversed order).
 line = []
 for y in range(height):
@@ -66,10 +66,10 @@ for y in range(height):
 #
 # * Loop through each cell. If it's occupied (a node):
 #
-#   * Look for a node to its right; if not found, return coorindates of
-#     $(-1,-1)$.
-#   * Look for a node to the bottom; if not found, return coorindates
-#     of $(−1,−1)$.
+#   * Look for a node to its right; if not found, return coordinates of
+#     $(−1,−1)$.
+#   * Look for a node to the bottom; if not found, return coordinates of
+#     $(−1,−1)$.
 for x1 in range(width):
     for y1 in range(height):
         if line[y1][x1] == "0":
