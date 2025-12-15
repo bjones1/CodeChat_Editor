@@ -657,14 +657,14 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     .between(
                         main_selection.from,
                         main_selection.to,
-                        (from: number, _to: number, _value: Decoration) => {
+                        (from: number, to: number, _value: Decoration) => {
                             // Is this range contained within this doc block? If
                             // the ranges also contains element outside it, then
                             // don't capture focus. TODO: not certain on the
                             // bounds -- should I use <= or <, etc.?
                             if (
                                 main_selection.from < from ||
-                                main_selection.to > main_selection.to
+                                main_selection.to > to
                             ) {
                                 return;
                             }
@@ -675,11 +675,14 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             const dom = dom_at_pos.node.childNodes[
                                 dom_at_pos.offset
                             ] as HTMLDivElement | null;
-                            if (dom == null) {
+                            if (
+                                dom == null ||
+                                dom.className !== "CodeChat-doc"
+                            ) {
                                 return;
                             }
 
-                            // Give focus to the contents of the doc block.
+                            // TODO: current, posToDom never gives us a doc block, even when the from/to is correct. So, we never get here.
                             (dom.childNodes[1] as HTMLElement).focus();
                         },
                     );

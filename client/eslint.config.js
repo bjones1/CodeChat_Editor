@@ -35,9 +35,18 @@ export default defineConfig(
         {
             name: "local",
             rules: {
+                "no-unused-vars": "off",
                 "@typescript-eslint/no-unused-vars": [
-                    "off",
-                    { argsIgnorePattern: "^_" },
+                    "error",
+                    {
+                        args: "all",
+                        argsIgnorePattern: "^_",
+                        caughtErrors: "all",
+                        caughtErrorsIgnorePattern: "^_",
+                        destructuredArrayIgnorePattern: "^_",
+                        varsIgnorePattern: "^_",
+                        ignoreRestSiblings: true,
+                    },
                 ],
             },
         },
