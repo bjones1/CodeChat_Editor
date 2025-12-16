@@ -15,18 +15,19 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// `test_macros.rs` -- Reusable macros for testing
-/// ===============================================
+/// ============================================================================
 ///
 /// Placing this file in the `tests/` directory prevents me from importing it
 /// outside that directory tree; the desire was to import this for unit tests in
 /// the `src/` directory tree. So, it's instead placed here, then conditionally
 /// imported in `lib.rs`.
 // Imports
-// -------
+// -----------------------------------------------------------------------------
+//
 // None.
 //
 // Macros
-// ------
+// -----------------------------------------------------------------------------
 //
 // Extract a known enum variant or fail. More concise than the alternative (`if
 // let`, or `let else`). From [SO](https://stackoverflow.com/a/69324393). The
@@ -36,8 +37,8 @@ macro_rules! cast {
     // For an enum containing a single value (the typical case).
     ($target: expr, $pat: path) => {{
         // The `if let` exploits recent Rust compiler's smart pattern matching.
-        // Contrary to other solutions like `into_variant` and friends, this
-        // one macro covers all ownership usage like `self`, `&self` and `&mut
+        // Contrary to other solutions like `into_variant` and friends, this one
+        // macro covers all ownership usage like `self`, `&self` and `&mut
         // self`. On the other hand `{into,as,as_mut}_{variant}` solution
         // usually needs 3 \* N method definitions where N is the number of
         // variants.
