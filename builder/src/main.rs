@@ -312,7 +312,15 @@ fn patch_file(patch: &str, before_patch: &str, file_path: &str) -> io::Result<()
 }
 /// After updating files in the client's Node files, perform some fix-ups.
 fn patch_client_libs() -> io::Result<()> {
-    // In [older
+    // Apply a the fixes described in [issue
+    // 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
+    patch_file(
+        "
+        selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)",
+        "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
+            hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));",
+        &format!("{CLIENT_PATH}/node_modules/@codemirror/view/dist/index.js")
+    )?;    // In [older
     // releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options),
     // TinyMCE allowed users to change `whitespace_elements`; the whitespace
     // inside these isn't removed by TinyMCE. However, this was removed in v6.0.
