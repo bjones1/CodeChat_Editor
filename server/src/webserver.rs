@@ -254,8 +254,8 @@ pub enum ResultOkTypes {
 
 #[derive(Debug, Serialize, Deserialize, TS, PartialEq, thiserror::Error)]
 pub enum ResultErrTypes {
-    #[error("File out of sync; update rejected")]
-    OutOfSync,
+    #[error("File out of sync; update rejected. Expected version {0} but saw version {1}")]
+    OutOfSync(f64, f64),
     #[error("IDE must not send this message")]
     IdeIllegalMessage,
     #[error("Client not allowed to send this message")]
@@ -425,19 +425,6 @@ pub const INITIAL_IDE_MESSAGE_ID: f64 = INITIAL_CLIENT_MESSAGE_ID + 1.0;
 /// bit, 2^54 seconds = 574 million years before the message ID wraps around
 /// assuming an average of 1 message/second.)
 pub const MESSAGE_ID_INCREMENT: f64 = 3.0;
-
-/// Synchronization state between the Client, Server, and IDE.
-#[derive(PartialEq)]
-pub enum SyncState {
-    /// Indicates the Client, IDE, and server's documents are identical.
-    InSync,
-    /// An Update message is in flight; the documents are out of sync until the
-    /// response to the Update is received.
-    Pending(f64),
-    /// A CurrentFile message was sent, guaranteeing that documents are out of
-    /// sync.
-    OutOfSync,
-}
 
 const MATHJAX_TAGS: &str = concatdoc!(
     r#"

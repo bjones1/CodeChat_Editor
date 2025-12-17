@@ -360,7 +360,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     // If this diff was not made against the
                                     // text we currently have, reject it.
                                     if (source.Diff.version !== version) {
-                                        await sendResult(id, "OutOfSync");
+                                        await sendResult(id, {
+                                            OutOfSync: [
+                                                version,
+                                                source.Diff.version,
+                                            ],
+                                        });
                                         // Send an `Update` with the full text to
                                         // re-sync the Client.
                                         console_log(
@@ -514,7 +519,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const result_contents = value as MessageResult;
                             if ("Err" in result_contents) {
                                 show_error(
-                                    `Error in message ${id}: ${result_contents.Err}`,
+                                    `Error in message ${id}: ${JSON.stringify(result_contents.Err)}`,
                                 );
                             }
                             break;
