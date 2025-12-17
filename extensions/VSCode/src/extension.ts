@@ -41,6 +41,8 @@ import { CodeChatEditorServer, initServer } from "./index.js";
 import {
     autosave_timeout_ms,
     EditorMessage,
+    EditorMessageContents,
+    KeysOfRustEnum,
     MessageResult,
     rand,
     UpdateMessageContents,
@@ -314,7 +316,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                     }
                     const keys = Object.keys(message);
                     assert(keys.length === 1);
-                    const key = keys[0];
+                    const key =
+                        keys[0] as KeysOfRustEnum<EditorMessageContents>;
                     const value = Object.values(message)[0];
 
                     // Process this message.
@@ -526,14 +529,21 @@ export const activate = (context: vscode.ExtensionContext) => {
                         }
 
                         case "LoadFile": {
-                            const load_file = value as string;
+                            const [load_file, is_toc] = value as [
+                                string,
+                                boolean,
+                            ];
                             // Look through all open documents to see if we have
                             // the requested file.
                             const doc = get_document(load_file);
+                            // If the request is for the TOC as a TOC (not as an editable file), don't create a new version; the value we send won't be used and doesn't matter.
+                            if (!is_toc) {
+                                version = rand();
+                            }
                             const load_file_result: null | [string, number] =
                                 doc === undefined
                                     ? null
-                                    : [doc.getText(), (version = rand())];
+                                    : [doc.getText(), version];
                             console_log(
                                 `CodeChat Editor extension: Result(LoadFile(${format_struct(load_file_result)}))`,
                             );

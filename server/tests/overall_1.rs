@@ -446,7 +446,7 @@ async fn test_server_core(
     expected_messages.insert(
         EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(txt_path.clone()),
+            message: EditorMessageContents::LoadFile(txt_path.clone(), false),
         },
         false,
     );
@@ -465,11 +465,13 @@ async fn test_server_core(
     // request for the TOC. The ordering isn't fixed; accommodate this.
     let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     assert_eq!(msg.id, server_id);
-    let msg_contents = cast!(msg.message, EditorMessageContents::LoadFile);
-    let next_path = if msg_contents == toc_path.clone() {
-        txt_path.clone()
+    let (msg_contents, is_toc) = cast!(msg.message, EditorMessageContents::LoadFile, a, b);
+    let (next_path, next_is_toc) = if msg_contents == toc_path.clone() {
+        assert_eq!(is_toc, true);
+        (txt_path.clone(), false)
     } else if msg_contents == txt_path.clone() {
-        toc_path.clone()
+        assert_eq!(is_toc, false);
+        (toc_path.clone(), true)
     } else {
         panic!("Unexpected path {msg_contents:?}.");
     };
@@ -482,7 +484,7 @@ async fn test_server_core(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(next_path),
+            message: EditorMessageContents::LoadFile(next_path, next_is_toc),
         }
     );
     codechat_server
@@ -535,7 +537,7 @@ async fn test_server_core(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(pdf_path.clone())
+            message: EditorMessageContents::LoadFile(pdf_path.clone(), false)
         }
     );
     codechat_server
@@ -547,7 +549,7 @@ async fn test_server_core(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(toc_path)
+            message: EditorMessageContents::LoadFile(toc_path, true)
         }
     );
     codechat_server
@@ -560,7 +562,7 @@ async fn test_server_core(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(pdf_path)
+            message: EditorMessageContents::LoadFile(pdf_path, false)
         }
     );
     codechat_server
@@ -640,7 +642,7 @@ async fn test_client_core(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(path.clone())
+            message: EditorMessageContents::LoadFile(path.clone(), false)
         }
     );
     codechat_server
@@ -653,7 +655,7 @@ async fn test_client_core(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(toc_path)
+            message: EditorMessageContents::LoadFile(toc_path, true)
         }
     );
     codechat_server

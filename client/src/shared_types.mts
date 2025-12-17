@@ -41,14 +41,18 @@ import { ResultErrTypes } from "./rust-types/ResultErrTypes.js";
 // Manually define this, since `ts-rs` can't export `webserver.MessageResult`.
 type MessageResult = { Ok: ResultOkTypes } | { Err: ResultErrTypes };
 
+// Modified from [SO](https://stackoverflow.com/a/79050131). If the value is a string, use it; otherwise, assume it's a dict and use its key.
+type KeysOfRustEnum<T> = T extends T ? (T extends string ? T : keyof T) : never;
+
 export type {
-    EditorMessageContents,
     CodeMirror,
+    CodeMirrorDiffable,
     CodeMirrorDocBlockTuple,
     CodeChatForWeb,
-    StringDiff,
-    CodeMirrorDiffable,
-    UpdateMessageContents,
     EditorMessage,
+    EditorMessageContents,
+    KeysOfRustEnum,
     MessageResult,
+    StringDiff,
+    UpdateMessageContents,
 };

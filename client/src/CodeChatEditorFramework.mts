@@ -37,6 +37,7 @@ import {
     CodeChatForWeb,
     EditorMessage,
     EditorMessageContents,
+    KeysOfRustEnum,
     MessageResult,
     UpdateMessageContents,
 } from "./shared_types.mjs";
@@ -134,7 +135,7 @@ class WebSocketComm {
             assert(message !== undefined);
             const keys = Object.keys(message);
             assert(keys.length === 1);
-            const key = keys[0];
+            const key = keys[0] as KeysOfRustEnum<EditorMessageContents>;
             const value = Object.values(message)[0];
 
             // Process this message.

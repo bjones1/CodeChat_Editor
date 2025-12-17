@@ -229,10 +229,10 @@ use crate::{
     queue_send, queue_send_func,
     webserver::{
         EditorMessage, EditorMessageContents, INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
-        ProcessingTaskHttpRequest, ResultErrTypes, ResultOkTypes, SimpleHttpResponse,
-        SimpleHttpResponseError, UpdateMessageContents, WebAppState, WebsocketQueues,
-        file_to_response, path_to_url, send_response, try_canonicalize, try_read_as_text,
-        url_to_path,
+        ProcessingTaskHttpRequest, ProcessingTaskHttpRequestFlags, ResultErrTypes, ResultOkTypes,
+        SimpleHttpResponse, SimpleHttpResponseError, UpdateMessageContents, WebAppState,
+        WebsocketQueues, file_to_response, path_to_url, send_response, try_canonicalize,
+        try_read_as_text, url_to_path,
     },
 };
 
@@ -494,7 +494,7 @@ pub async fn translation_task(
                         // Handle messages that the IDE must not send.
                         EditorMessageContents::Opened(_) |
                         EditorMessageContents::OpenUrl(_) |
-                        EditorMessageContents::LoadFile(_) |
+                        EditorMessageContents::LoadFile(..) |
                         EditorMessageContents::ClientHtml(_) => {
                             let err = ResultErrTypes::IdeIllegalMessage;
                             error!("{err:?}");
@@ -543,7 +543,10 @@ pub async fn translation_task(
                     // Convert the request into a `LoadFile` message.
                     queue_send!(tt.to_ide_tx.send(EditorMessage {
                         id: tt.id,
-                        message: EditorMessageContents::LoadFile(http_request.file_path.clone())
+                        message: EditorMessageContents::LoadFile
+                            (http_request.file_path.clone(),
+                            http_request.flags == ProcessingTaskHttpRequestFlags::Toc
+                        )
                     }));
                     // Store the ID and request, which are needed to send a
                     // response when the `LoadFile` result is received.
@@ -557,7 +560,7 @@ pub async fn translation_task(
                     match client_message.message {
                         // Handle messages that the client must not send.
                         EditorMessageContents::Opened(_) |
-                        EditorMessageContents::LoadFile(_) |
+                        EditorMessageContents::LoadFile(..) |
                         EditorMessageContents::RequestClose |
                         EditorMessageContents::ClientHtml(_) => {
                             let err = ResultErrTypes::ClientIllegalMessage;
@@ -575,7 +578,7 @@ pub async fn translation_task(
                             debug!("Forwarding it to the IDE.");
                             // If the Client can't read our diff, send the full
                             // text next time.
-                            if matches!(result, Err(ResultErrTypes::OutOfSync)) {
+                            if matches!(result, Err(ResultErrTypes::OutOfSync(..))) {
                                 tt.sent_full = false;
                             }
                             queue_send!(tt.to_ide_tx.send(client_message))
@@ -706,7 +709,7 @@ impl TranslationTask {
         if !is_loadfile {
             debug!("Forwarding it to the Client.");
             // If the Server can't read our diff, send the full text next time.
-            if matches!(result, Err(ResultErrTypes::OutOfSync)) {
+            if matches!(result, Err(ResultErrTypes::OutOfSync(..))) {
                 self.sent_full = false;
             }
             queue_send_func!(self.to_client_tx.send(ide_message));
@@ -745,7 +748,10 @@ impl TranslationTask {
         let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
         let ((simple_http_response, option_update), file_contents) = match file_contents_option {
             Some((file_contents, new_version)) => {
-                self.version = new_version;
+                // Only pay attention to the version if this is an editable Client file.
+                if http_request.flags == ProcessingTaskHttpRequestFlags::None {
+                    self.version = new_version;
+                }
                 // The IDE just sent the full contents; we're sending full
                 // contents to the Client.
                 self.sent_full = true;

@@ -300,7 +300,7 @@ async fn test_5_core(
                         doc: vec![StringDiff {
                             from: 0,
                             to: Some(8),
-                            insert: "# foobarTest.\n".to_string(),
+                            insert: "# Tesbart.\n".to_string(),
                         },],
                         doc_blocks: vec![],
                         version,

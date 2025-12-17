@@ -116,7 +116,7 @@ pub struct ProcessingTaskHttpRequest {
     /// The path of the file requested.
     pub file_path: PathBuf,
     /// Flags for this file: none, TOC, raw.
-    flags: ProcessingTaskHttpRequestFlags,
+    pub flags: ProcessingTaskHttpRequestFlags,
     /// True if test mode is enabled.
     is_test_mode: bool,
     /// A queue to send the response back to the HTTP task.
@@ -124,7 +124,7 @@ pub struct ProcessingTaskHttpRequest {
 }
 
 #[derive(Debug, PartialEq)]
-enum ProcessingTaskHttpRequestFlags {
+pub enum ProcessingTaskHttpRequestFlags {
     // No flags provided.
     None,
     // This file is a TOC.
@@ -216,9 +216,11 @@ pub enum EditorMessageContents {
     // #### These messages may only be sent by the Server.
     /// Ask the IDE if the provided file is loaded. If so, the IDE should
     /// respond by sending a `LoadFile` with the requested file. If not, the
-    /// returned `Result` should indicate the error "not loaded". Valid
-    /// destinations: IDE.
-    LoadFile(PathBuf),
+    /// returned `Result` should indicate the error "not loaded". The boolean
+    /// indicates if the request is for the non-editable sidebar TOC file, or
+    /// for an editable Client file (which still may be the TOC, if that's being
+    /// edited). Valid destinations: IDE.
+    LoadFile(PathBuf, bool),
     /// This may only be used to respond to an `Opened` message; it contains the
     /// HTML for the CodeChat Editor Client to display in its built-in browser.
     /// Valid destinations: IDE.
@@ -249,6 +251,8 @@ pub enum ResultOkTypes {
     Void,
     /// The `LoadFile` message provides file contents and a revision number, if
     /// available. This message may only be sent from the IDE to the Server.
+    /// If this is sent in response to a `LoadFile` where the toc boolean is false,
+    /// this value will be ignored.
     LoadFile(Option<(String, f64)>),
 }
 
@@ -1218,7 +1222,7 @@ pub fn client_websocket(
                                             // can send.
                                             match &joint_message.message {
                                                 // Check for an invalid message.
-                                                EditorMessageContents::LoadFile(_) |
+                                                EditorMessageContents::LoadFile(..) |
                                                 EditorMessageContents::ClientHtml(_) |
                                                 EditorMessageContents::Closed => {
                                                     let err = ResultErrTypes::ClientIllegalMessage;

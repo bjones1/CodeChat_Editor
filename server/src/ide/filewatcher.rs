@@ -634,7 +634,7 @@ async fn processing_task(
                             break;
                         }
 
-                        EditorMessageContents::LoadFile(_)  => {
+                        EditorMessageContents::LoadFile(..)  => {
                             // We never have the requested file loaded in this
                             // "IDE". Intead, it's always on disk.
                             send_response(&from_ide_tx, m.id, Ok(ResultOkTypes::LoadFile(None))).await;
