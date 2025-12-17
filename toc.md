@@ -46,7 +46,7 @@ Implementation
       5. Processing [tests.rs](server/src/processing/tests.rs)
       6. [cli.rs](server/tests/cli.rs)
    9. [Cargo.toml](server/Cargo.toml)
-2. Client
+2. [Client](client/readme.md)
    1. Editor
       1. [CodeChatEditorFramework.mts](client/src/CodeChatEditorFramework.mts)
       2. [CodeChatEditor.mts](client/src/CodeChatEditor.mts)
@@ -68,7 +68,7 @@ Implementation
       1. [CodeChatEditor-test.mts](client/src/CodeChatEditor-test.mts)
          1. [Run tests](README.md?test)
       2. [HTML to Markdown conversion test document](docs/Markdown_HTML.js)
-3. Extensions
+3. [Extensions](extensions/)
    1. Visual Studio Code
       1. [extension.ts](extensions/VSCode/src/extension.ts)
       2. [lib.rs](extensions/VSCode/src/lib.rs)

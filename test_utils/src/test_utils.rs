@@ -16,11 +16,6 @@
 ///
 /// `test_utils.rs` -- Reusable routines for testing.
 /// ============================================================================
-///
-/// Placing this file in the `tests/` directory prevents me from importing it
-/// outside that directory tree; the desire was to import this for unit tests in
-/// the `src/` directory tree. So, it's instead placed here, then conditionally
-/// imported in `lib.rs`.
 // Imports
 // -----------------------------------------------------------------------------
 //

@@ -320,7 +320,8 @@ fn patch_client_libs() -> io::Result<()> {
         "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
             hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));",
         &format!("{CLIENT_PATH}/node_modules/@codemirror/view/dist/index.js")
-    )?;    // In [older
+    )?;
+    // In [older
     // releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options),
     // TinyMCE allowed users to change `whitespace_elements`; the whitespace
     // inside these isn't removed by TinyMCE. However, this was removed in v6.0.
