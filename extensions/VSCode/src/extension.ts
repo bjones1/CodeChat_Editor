@@ -528,10 +528,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const load_file_result: null | [string, number] =
                                 doc === undefined
                                     ? null
-                                    : [
-                                          doc.getText(),
-                                          (version = Math.random()),
-                                      ];
+                                    : [doc.getText(), (version = rand())];
                             console_log(
                                 `CodeChat Editor extension: Result(LoadFile(${format_struct(load_file_result)}))`,
                             );
