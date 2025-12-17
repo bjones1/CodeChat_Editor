@@ -82,8 +82,8 @@ import { python } from "@codemirror/lang-python";
 import { rust } from "@codemirror/lang-rust";
 import { sql } from "@codemirror/lang-sql";
 import { yaml } from "@codemirror/lang-yaml";
-import { Editor, init, tinymce } from "./tinymce-config.mjs";
-import { EditorEvent, Events } from "tinymce";
+import { tinymce, init } from "./tinymce-config.mjs";
+import { Editor, EditorEvent, Events } from "tinymce";
 
 // ### Local
 import {
@@ -1035,10 +1035,10 @@ export const CodeMirror_load = async (
                 editor.on(
                     "Dirty",
                     (event: EditorEvent<Events.EditorEventMap["dirty"]>) => {
-                        // Get the div TinyMCE stores edits in. TODO: find
-                        // documentation for `event.target.bodyElement`.
-                        tinymce.activeEditor!.setDirty(false);
-                        const target_or_false = event.target?.bodyElement;
+                        // Sometimes, `tinymce.activeEditor` is null (perhaps when it's not focused). Use the `event` data instead.
+                        event.target.setDirty(false);
+                        // Get the div TinyMCE stores edits in.
+                        const target_or_false = event.target.bodyElement;
                         if (target_or_false == null) {
                             return;
                         }

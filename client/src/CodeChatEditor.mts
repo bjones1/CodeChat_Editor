@@ -62,7 +62,8 @@ import "./graphviz-webcomponent-setup.mts";
 // This must be imported *after* the previous setup import, so it's placed here,
 // instead of in the third-party category above.
 import "./third-party/graphviz-webcomponent/graph.js";
-import { tinymce, init, Editor } from "./tinymce-config.mjs";
+import { init, tinymce } from "./tinymce-config.mjs";
+import { Editor, EditorEvent, Events } from "tinymce";
 import {
     CodeChatForWeb,
     CodeMirrorDiffable,
@@ -247,11 +248,17 @@ const _open_lp = async (
                 // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
                 // this is how to create a TinyMCE event handler.
                 setup: (editor: Editor) => {
-                    editor.on("dirty", () => {
-                        tinymce.activeEditor!.setDirty(false);
-                        is_dirty = true;
-                        startAutosaveTimer();
-                    });
+                    editor.on(
+                        "dirty",
+                        (
+                            event: EditorEvent<Events.EditorEventMap["dirty"]>,
+                        ) => {
+                            // Sometimes, `tinymce.activeEditor` is null (perhaps when it's not focused). Use the `event` data instead.
+                            event.target.setDirty(false);
+                            is_dirty = true;
+                            startAutosaveTimer();
+                        },
+                    );
                 },
             });
             tinymce.activeEditor!.focus();
