@@ -288,7 +288,8 @@ class WebSocketComm {
                     const result_contents = value as MessageResult;
                     if ("Err" in result_contents) {
                         report_error(
-                            `Error in message ${id}: ${result_contents.Err}.`,
+                            `Error in message ${id}: ${JSON.stringify(result_contents.Err)}.`,
+                            result_contents.Err,
                         );
                     }
                     break;
