@@ -919,7 +919,7 @@ export const CodeMirror_load = async (
             case "sh":
                 parser = cpp();
                 break;
-            case "c_cpp":
+            case "cpp":
                 parser = cpp();
                 break;
             case "csharp":

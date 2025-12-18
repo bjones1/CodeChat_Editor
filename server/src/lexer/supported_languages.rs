@@ -147,7 +147,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
         ),
         // ### C/C++
         make_language_lexer(
-            "c_cpp",
+            "cpp",
             // Unusual extensions:
             //
             // * The `.ino` extension is for Arduino source files.
