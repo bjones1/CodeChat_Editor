@@ -97,9 +97,9 @@ use crate::lexer::{
 #[ts(export)]
 pub struct CodeChatForWeb {
     pub metadata: SourceFileMetadata,
-    pub source: CodeMirrorDiffable,
     /// The version number after accepting this update.
     pub version: f64,
+    pub source: CodeMirrorDiffable,
 }
 
 /// Provide two options for sending CodeMirror data -- as the full contents
