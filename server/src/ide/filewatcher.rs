@@ -783,7 +783,8 @@ mod tests {
                 m
             }
             _ = sleep(Duration::from_secs(3)) => {
-                // The backtrace shows what message the code was waiting for; otherwise, it's an unhelpful error message.
+                // The backtrace shows what message the code was waiting for;
+                // otherwise, it's an unhelpful error message.
                 panic!("Timeout waiting for message:\n{}", Backtrace::force_capture());
             }
         }

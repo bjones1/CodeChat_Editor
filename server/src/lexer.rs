@@ -15,13 +15,13 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 mod pest_parser;
 /// `lexer.rs` -- Lex source code into code and doc blocks
-/// ======================================================
+/// ============================================================================
 // Submodule definitions
-// ---------------------
+// -----------------------------------------------------------------------------
 pub mod supported_languages;
 
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 #[cfg(feature = "lexer_explain")]
@@ -36,38 +36,34 @@ use regex::Regex;
 use supported_languages::get_language_lexer_vec;
 
 /// Data structures
-/// ---------------
+/// ----------------------------------------------------------------------------
 ///
 /// ### Language definition
 ///
 /// These data structures define everything the lexer needs in order to analyze
 /// a programming language:
 ///
-/// *   It defines block and inline comment delimiters; these (when correctly
-///     formatted) become doc blocks.
-/// *   It defines strings: what is the escape character? Are newlines allowed?
-///     If so, must newlines be escaped?
-/// *   It defines heredocs in a flexible form (see `HeredocDelim` for more
-///     details).
-/// *   It associates an Ace mode and filename extensions with the lexer.
+/// * It defines block and inline comment delimiters; these (when correctly
+///   formatted) become doc blocks.
+/// * It defines strings: what is the escape character? Are newlines allowed? If
+///   so, must newlines be escaped?
+/// * It defines heredocs in a flexible form (see `HeredocDelim` for more
+///   details).
+/// * It associates an Ace mode and filename extensions with the lexer.
 ///
 /// This lexer ignores line continuation characters; in C/C++/Python, it's a `\`
-/// character followed immediately by a newline ([C
-/// reference](https://www.open-std.org/jtc1/sc22/WG14/www/docs/n1256.pdf#page22),
-/// [Python
-/// reference](https://docs.python.org/3/reference/lexical_analysis.html#explicit-line-joining)).
+/// character followed immediately by a newline
+/// ([C reference](https://www.open-std.org/jtc1/sc22/WG14/www/docs/n1256.pdf#page22),
+/// [Python reference](https://docs.python.org/3/reference/lexical_analysis.html#explicit-line-joining)).
 /// From a lexer perspective, supporting these adds little value:
 ///
-/// 1.  It would allow the lexer to recognize the following C/C++ snippet as a
-///     doc block:\
-///     `// This is an odd\`\
-///     `two-line inline comment.`\
-///     However, this such such unusual syntax (most authors would instead use
-///     either a block comment or another inline comment) that recognizing it
-///     adds little value.
-/// 2.  I'm unaware of any valid syntax in which ignoring a line continuation
-///     would cause the lexer to mis-recognize code as a comment. (Escaped
-///     newlines in strings, a separate case, are handled correctly).
+/// 1. It would allow the lexer to recognize the following C/C++ snippet as a
+///    doc block: `// This is an odd\` `two-line inline comment.` However, this
+///    such such unusual syntax (most authors would instead use either a block
+///    comment or another inline comment) that recognizing it adds little value.
+/// 2. I'm unaware of any valid syntax in which ignoring a line continuation
+///    would cause the lexer to mis-recognize code as a comment. (Escaped
+///    newlines in strings, a separate case, are handled correctly).
 ///
 /// This struct defines the delimiters for a block comment.
 #[derive(Clone)]
@@ -129,15 +125,14 @@ struct HeredocDelim {
 enum SpecialCase {
     /// There are no special cases for this language.
     None,
-    /// [Template
-    /// literal](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals)
+    /// [Template literal](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals)
     /// support (for languages such as JavaScript, TypeScript, etc.).
     TemplateLiteral,
-    /// C#'s verbatim string literal -- see [6.4.5.6 String
-    /// literals](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals).
+    /// C#'s verbatim string literal -- see
+    /// [6.4.5.6 String literals](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/language-specification/lexical-structure#6456-string-literals).
     CSharpVerbatimStringLiteral,
-    /// MATLAB [block
-    /// comments](https://www.mathworks.com/help/matlab/matlab_prog/comments.html)
+    /// MATLAB
+    /// [block comments](https://www.mathworks.com/help/matlab/matlab_prog/comments.html)
     /// must start and end on a blank line.
     Matlab,
 }
@@ -265,10 +260,10 @@ pub enum CodeDocBlock {
 }
 
 // Globals
-// -------
+// -----------------------------------------------------------------------------
 //
-// Create constant regexes needed by the lexer, following the [Regex docs
-// recommendation](https://docs.rs/regex/1.6.0/regex/index.html#example-avoid-compiling-the-same-regex-in-a-loop).
+// Create constant regexes needed by the lexer, following the
+// [Regex docs recommendation](https://docs.rs/regex/1.6.0/regex/index.html#example-avoid-compiling-the-same-regex-in-a-loop).
 lazy_static! {
     static ref WHITESPACE_ONLY_REGEX: Regex = Regex::new("^[[:space:]]*$").unwrap();
     /// TODO: This regex should also allow termination on an unescaped `${`
@@ -276,8 +271,7 @@ lazy_static! {
     /// expression.
     static ref TEMPLATE_LITERAL_CLOSING_REGEX: Regex = Regex::new(
         // Allow `.` to match *any* character, including a newline. See the
-        // [regex
-        // docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
+        // [regex docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
         &("(?s)".to_string() +
         // Start at the beginning of the string, and require a match of every
         // character. Allowing the regex to start matching in the middle means
@@ -412,8 +406,8 @@ fn build_lexer_regex(
             // Escaped newlines or terminators should be included in the string.
             (true, NewlineSupport::Escaped) => Regex::new(
                 // Allow `.` to match *any* character, including a newline. See
-                // the [regex
-                // docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
+                // the
+                // [regex docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
                 &("(?s)".to_string() +
                 // Start at the beginning of the string, and require a match of
                 // every character. Allowing the regex to start matching in the
@@ -462,8 +456,8 @@ fn build_lexer_regex(
             // Even simpler: look for an unescaped string delimiter.
             (true, NewlineSupport::Unescaped) => Regex::new(
                 // Allow `.` to match *any* character, including a newline. See
-                // the [regex
-                // docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
+                // the
+                // [regex docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
                 &("(?s)".to_string() +
                 // Start at the beginning of the string, and require a match of
                 // every character. Allowing the regex to start matching in the
@@ -547,8 +541,8 @@ fn build_lexer_regex(
                 // To match on a line which consists only of leading and
                 // trailing whitespace plus the opening comment delimiter, put
                 // these inside a `(?m:exp)` block, so that `^` and `$` will
-                // match on any newline in the string; see the [regex
-                // docs](https://docs.rs/regex/latest/regex/#grouping-and-flags).
+                // match on any newline in the string; see the
+                // [regex docs](https://docs.rs/regex/latest/regex/#grouping-and-flags).
                 // This also functions as a non-capturing group, to avoid
                 // whitespace capture as discussed earlier.
                 "(?m:" +
@@ -602,7 +596,7 @@ fn build_lexer_regex(
 }
 
 // Compile lexers
-// --------------
+// -----------------------------------------------------------------------------
 pub fn compile_lexers(language_lexer_arr: Vec<LanguageLexer>) -> LanguageLexersCompiled {
     let mut language_lexers_compiled = LanguageLexersCompiled {
         language_lexer_compiled_vec: Vec::new(),
@@ -640,7 +634,7 @@ pub fn compile_lexers(language_lexer_arr: Vec<LanguageLexer>) -> LanguageLexersC
 }
 
 /// Source lexer
-/// ------------
+/// ----------------------------------------------------------------------------
 ///
 /// This lexer categorizes source code into code blocks or doc blocks.
 ///
@@ -657,16 +651,15 @@ pub fn source_lexer(
     // to categorize all the source code into code blocks or doc blocks. To do
     // it, it only needs to:
     //
-    // *   Recognize where comments can't be—inside strings or string-like
-    //     syntax, such as [here
-    //     text](https://en.wikipedia.org/wiki/Here_document) or [template
-    //     literals](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals).
-    //     These are always part of a code block and can never contain a comment
-    //     or (by implication) a doc block.
-    // *   Outside of these special cases, look for inline or block comments,
-    //     categorizing everything else as plain code.
-    // *   After finding either an inline or block comment, determine if this is
-    //     a doc block.
+    // * Recognize where comments can't be—inside strings or string-like syntax,
+    //   such as [here text](https://en.wikipedia.org/wiki/Here_document) or
+    //   [template literals](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals).
+    //   These are always part of a code block and can never contain a comment
+    //   or (by implication) a doc block.
+    // * Outside of these special cases, look for inline or block comments,
+    //   categorizing everything else as plain code.
+    // * After finding either an inline or block comment, determine if this is a
+    //   doc block.
     //
     // ### Lexer operation
     //
@@ -676,18 +669,18 @@ pub fn source_lexer(
     // `language_lexer_compiled.map`. These divides source code into two
     // categories: plain code and special cases. The special cases consist of:
     //
-    // *   String-like code (strings, here text, template literals). In this
-    //     case, the lexer must find the end of the string-like element before
-    //     it can return to plain code.
-    // *   Comments (inline or block). In this case, the lexer must find the end
-    //     of the comment before it can return to plain code.
+    // * String-like code (strings, here text, template literals). In this case,
+    //   the lexer must find the end of the string-like element before it can
+    //   return to plain code.
+    // * Comments (inline or block). In this case, the lexer must find the end
+    //   of the comment before it can return to plain code.
     //
     // This regex assumes the string it analyzes was preceded by plain code; its
     // purpose is to identify the start of the next special case. **This code
     // makes heavy use of regexes -- read the previous link thoroughly.**
     //
-    // To better explain the operation of the lexer, see the [lexer
-    // walkthrough](lexer/lexer-walkthrough.md).
+    // To better explain the operation of the lexer, see the
+    // [lexer walkthrough](lexer/lexer-walkthrough.md).
     //
     // ### Helper function
     //
@@ -897,13 +890,13 @@ pub fn source_lexer(
                         // **Next**, determine if this comment is a doc block.
                         // Criteria for doc blocks for an inline comment:
                         //
-                        // 1.  All characters preceding the comment on the line
-                        //     containing the comment must be whitespace.
-                        // 2.  Either:
-                        //     1.  The inline comment delimiter is immediately
-                        //         followed by a space, or
-                        //     2.  the inline comment delimiter is followed by a
-                        //         newline or the end of the file.
+                        // 1. All characters preceding the comment on the line
+                        //    containing the comment must be whitespace.
+                        // 2. Either:
+                        //    1. The inline comment delimiter is immediately
+                        //       followed by a space, or
+                        //    2. the inline comment delimiter is followed by a
+                        //       newline or the end of the file.
                         //
                         // With this last line located, apply the doc block
                         // criteria.
@@ -988,23 +981,22 @@ pub fn source_lexer(
                         // as a potential doc block; everything else is treated
                         // as code. The rationale:
                         //
-                        // 1.  Typically, nested comments are used to comment
-                        //     out a block of code, which may already contain
-                        //     "real" comments (as opposed to commented-out
-                        //     code). Therefore, we assume that only these
-                        //     innermost comments are true comments, while
-                        //     everything else is code. I can't think of any
-                        //     reason to nest true comments. Assuming a
-                        //     legitimate use for nested comments, what criteria
-                        //     would distinguish a nested comment from a
-                        //     commented-out code block?
-                        // 2.  The CodeChat Editor data structures don't support
-                        //     nested doc blocks. So, while we might be able to
-                        //     correctly parse nested comments as doc blocks,
-                        //     the code that transforms these back to code would
-                        //     remove the nesting.
-                        // 3.  We lack criteria that would distinguish a nested
-                        //     doc block from commented-out code.
+                        // 1. Typically, nested comments are used to comment out
+                        //    a block of code, which may already contain "real"
+                        //    comments (as opposed to commented-out code).
+                        //    Therefore, we assume that only these innermost
+                        //    comments are true comments, while everything else
+                        //    is code. I can't think of any reason to nest true
+                        //    comments. Assuming a legitimate use for nested
+                        //    comments, what criteria would distinguish a nested
+                        //    comment from a commented-out code block?
+                        // 2. The CodeChat Editor data structures don't support
+                        //    nested doc blocks. So, while we might be able to
+                        //    correctly parse nested comments as doc blocks, the
+                        //    code that transforms these back to code would
+                        //    remove the nesting.
+                        // 3. We lack criteria that would distinguish a nested
+                        //    doc block from commented-out code.
                         //
                         // With these assumptions, we need to know if the
                         // current comment is the innermost or not. If the last
@@ -1211,20 +1203,20 @@ pub fn source_lexer(
                                 // Next, determine if this is a doc block.
                                 // Criteria for doc blocks for a block comment:
                                 //
-                                // 1.  Must have a space or newline after the
-                                //     opening delimiter.
-                                // 2.  Must not have anything besides whitespace
-                                //     before the opening comment delimiter on
-                                //     the same line. This whitespace becomes
-                                //     the indent.
-                                // 3.  Must not have anything besides whitespace
-                                //     after the closing comment delimiter on
-                                //     the same line. This whitespace is
-                                //     included, as if it were inside the block
-                                //     comment. Rationale: this avoids deleting
-                                //     text (or, in this case, whitespace);
-                                //     moving that whitespace around seems like
-                                //     a better alternative than deleting it.
+                                // 1. Must have a space or newline after the
+                                //    opening delimiter.
+                                // 2. Must not have anything besides whitespace
+                                //    before the opening comment delimiter on
+                                //    the same line. This whitespace becomes the
+                                //    indent.
+                                // 3. Must not have anything besides whitespace
+                                //    after the closing comment delimiter on the
+                                //    same line. This whitespace is included, as
+                                //    if it were inside the block comment.
+                                //    Rationale: this avoids deleting text (or,
+                                //    in this case, whitespace); moving that
+                                //    whitespace around seems like a better
+                                //    alternative than deleting it.
                                 if (comment_body.starts_with(' ') || comment_body.starts_with('\n'))
                                     && WHITESPACE_ONLY_REGEX.is_match(comment_line_prefix)
                                     && WHITESPACE_ONLY_REGEX.is_match(post_closing_delimiter_line)
@@ -1267,47 +1259,49 @@ pub fn source_lexer(
                                     //
                                     // There are several cases:
                                     //
-                                    // *   A single line: `/* comment */`. No
-                                    //     special handling needed.
-                                    // *   Multiple lines, in two styles.
-                                    //     *   Each line of the comment is not
-                                    //         consistently whitespace-indented. No
-                                    //         special handling needed. For example:
+                                    // * A single line: `/* comment */`. No
+                                    //   special handling needed.
+                                    // * Multiple lines, in two styles.
+                                    //   * Each line of the comment is not
+                                    //     consistently whitespace-indented. No
+                                    //     special handling needed. For example:
                                     //
-                                    //         ```C
-                                    //         /* This is
-                                    //           not
-                                    //            consistently indented. */
-                                    //         ```
+                                    //     ```C
+                                    //     /* This is
+                                    //       not
+                                    //        consistently indented. */
+                                    //     ```
                                     //
-                                    //     *   Each line of the comment is consistently
-                                    //         whitespace-indented; for example:
+                                    //   * Each line of the comment is
+                                    //     consistently whitespace-indented; for
+                                    //     example:
                                     //
-                                    //         ```C
-                                    //         /* This is
-                                    //            consistently indented. */
-                                    //         ```
+                                    //     ```C
+                                    //     /* This is
+                                    //        consistently indented. */
+                                    //     ```
                                     //
-                                    //         Consistently indented means the first
-                                    //         non-whitespace character on a line
-                                    //         aligns with, but never comes before, the
-                                    //         comment's start. Another example:
+                                    //     Consistently indented means the first
+                                    //     non-whitespace character on a line
+                                    //     aligns with, but never comes before,
+                                    //     the comment's start. Another example:
                                     //
-                                    //         ```C
-                                    //         /* This is
-                                    //            correct
+                                    //     ```C
+                                    //     /* This is
+                                    //        correct
                                     //
-                                    //            indentation.
-                                    //          */
-                                    //         ```
+                                    //        indentation.
+                                    //      */
+                                    //     ```
                                     //
-                                    //         Note that the third (blank) line doesn't
-                                    //         have an indent; since that line consists
-                                    //         only of whitespace, this is OK.
-                                    //         Likewise, the last line (containing the
-                                    //         closing comment delimiter of `*/`)
-                                    //         consists only of whitespace after the
-                                    //         comment delimiters are removed.
+                                    //     Note that the third (blank) line
+                                    //     doesn't have an indent; since that
+                                    //     line consists only of whitespace,
+                                    //     this is OK. Likewise, the last line
+                                    //     (containing the closing comment
+                                    //     delimiter of `*/`) consists only of
+                                    //     whitespace after the comment
+                                    //     delimiters are removed.
                                     //
                                     // Determine if this comment is indented.
                                     //
@@ -1447,10 +1441,10 @@ pub fn source_lexer(
 }
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 //
-// Rust [almost
-// mandates](https://doc.rust-lang.org/book/ch11-03-test-organization.html)
+// Rust
+// [almost mandates](https://doc.rust-lang.org/book/ch11-03-test-organization.html)
 // putting tests in the same file as the source, which I dislike. Here's a way
 // to place them in a separate file.
 #[cfg(test)]

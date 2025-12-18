@@ -214,12 +214,16 @@ pub enum EditorMessageContents {
     OpenUrl(String),
 
     // #### These messages may only be sent by the Server.
-    /// Ask the IDE if the provided file is already loaded. The IDE should always respond to this with a `ResultOkTypes::LoadFile` message. If the file was loaded, the IDE responds with `Some((` contents of file, version of file `))`; if the was isn't loaded, it responds with `None`. The boolean value accompanying this message
-    /// Valid destinations: IDE.
+    /// Ask the IDE if the provided file is already loaded. The IDE should
+    /// always respond to this with a `ResultOkTypes::LoadFile` message. If the
+    /// file was loaded, the IDE responds with `Some((` contents of file,
+    /// version of file `))`; if the was isn't loaded, it responds with `None`.
+    /// The boolean value accompanying this message Valid destinations: IDE.
     LoadFile(
         // Path to the file to load.
         PathBuf,
-        // `is_current` - true if this is the current file being edited/viewed by the Client.
+        // `is_current` - true if this is the current file being edited/viewed
+        // by the Client.
         bool,
     ),
     /// This may only be used to respond to an `Opened` message; it contains the
@@ -256,7 +260,8 @@ pub enum ResultOkTypes {
         Option<(
             // The text of the file.
             String,
-            // The version of the file; ignored if the corresponding `LoadFile` request's `is_current` value was false.
+            // The version of the file; ignored if the corresponding `LoadFile`
+            // request's `is_current` value was false.
             f64,
         )>,
     ),

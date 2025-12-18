@@ -576,7 +576,8 @@ impl HtmlToMarkdownWrapped {
         self.word_wrap_config.line_width = line_width as u32;
     }
 
-    /// Convert one item in a stream of HTML to markdown. The HTML must be start at the root, not continue a previous incomplete section of the DOM.
+    /// Convert one item in a stream of HTML to markdown. The HTML must be start
+    /// at the root, not continue a previous incomplete section of the DOM.
     fn next(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
         let converted = self.html_to_markdown.tree_to_markdown(tree)?;
         Ok(
@@ -806,7 +807,8 @@ fn code_doc_block_vec_to_source(
 pub enum SourceToCodeChatForWebError {
     #[error("unknown lexer {0}")]
     UnknownLexer(String),
-    // Since we want `PartialEq`, we can't use `#[from] io::Error`; instead, convert the IO error to a string.
+    // Since we want `PartialEq`, we can't use `#[from] io::Error`; instead,
+    // convert the IO error to a string.
     #[error("unable to parse HTML {0}")]
     ParseFailed(String),
 }
@@ -1050,16 +1052,17 @@ fn html_to_tree(html: &str) -> io::Result<Rc<Node>> {
     .read_from(&mut html.as_bytes())?;
 
     // TODO: should we report parse errors? If so, how and where?
-    /*
-    if let Some(err) = dom.errors.borrow().first() {
-        //return Err(io::Error::other(err.to_string()));
-    }
-    */
+    /* ```
+       if let Some(err) = dom.errors.borrow().first() {
+           //return Err(io::Error::other(err.to_string()));
+       }
+       ``` */
 
     Ok(dom.document)
 }
 
-// A framework to transform HTML by parsing it to a DOM tree, walking the tree, then serializing the tree back to an HTML string.
+// A framework to transform HTML by parsing it to a DOM tree, walking the tree,
+// then serializing the tree back to an HTML string.
 fn transform_html<T: FnOnce(Rc<Node>)>(html: &str, transform: T) -> io::Result<String> {
     let tree = html_to_tree(html)?;
     transform(tree.clone());
@@ -1072,6 +1075,7 @@ fn transform_html<T: FnOnce(Rc<Node>)>(html: &str, transform: T) -> io::Result<S
     };
     let mut bytes = vec![];
     // HTML is:
+    //
     // ```html
     // <html>   <-- element 0
     //  <head>...</head>
@@ -1087,11 +1091,10 @@ fn transform_html<T: FnOnce(Rc<Node>)>(html: &str, transform: T) -> io::Result<S
 
 // HTML produced from Markdown needs additional processing, termed hydration:
 //
-// - Transform math, Mermaid, GraphViz, etc. nodes.
-// - (Eventually) record document structure information.
-// - (Eventually) assign a unique ID to all links that don't have one.
-// - (Eventually) fill in autocomplete fields.
-//
+// * Transform math, Mermaid, GraphViz, etc. nodes.
+// * (Eventually) record document structure information.
+// * (Eventually) assign a unique ID to all links that don't have one.
+// * (Eventually) fill in autocomplete fields.
 fn hydrate_html(html: &str) -> io::Result<String> {
     transform_html(html, hydrating_walk_node)
 }
@@ -1126,7 +1129,8 @@ fn hydrating_walk_node(node: Rc<Node>) {
             && let Some(text_child) = text_children.iter().next()
             && let NodeData::Text { .. } = &text_child.data
         {
-            // Make the parent node a `element_name` node, with the child's text.
+            // Make the parent node a `element_name` node, with the child's
+            // text.
             let wc_mermaid = Node::new(NodeData::Element {
                 name: QualName::new(None, Namespace::from(""), LocalName::from(*element_name)),
                 attrs: RefCell::new(vec![]),
@@ -1136,7 +1140,8 @@ fn hydrating_walk_node(node: Rc<Node>) {
             wc_mermaid.children.borrow_mut().push(text_child.clone());
             Some(wc_mermaid)
         } else {
-            // See if this is a math node to replace; if not, this returns `None`.
+            // See if this is a math node to replace; if not, this returns
+            // `None`.
             replace_math_node(child, true)
         };
 
@@ -1151,7 +1156,9 @@ fn hydrating_walk_node(node: Rc<Node>) {
 }
 
 fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
-    // Look for math produced by pulldown-cmark: `<span class="math math-inline>...</span>`; add `\(...\)` inside the span. Perform a similar transformation for display math.
+    // Look for math produced by pulldown-cmark: `<span class="math
+    // math-inline>...</span>`; add `\(...\)` inside the span. Perform a similar
+    // transformation for display math.
     if get_node_tag_name(child) == Some("span")
             && let NodeData::Element {
                 attrs: ref_child_attrs, ..
@@ -1167,7 +1174,8 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
             && let Some(text_child) = text_children.iter().next()
             && let NodeData::Text { contents } = &text_child.data
     {
-        // Final test: if the class is correct, this is math; otherwise, perform no transformation.
+        // Final test: if the class is correct, this is math; otherwise, perform
+        // no transformation.
         let attr_value_str: &str = attr_value;
         let delim = match attr_value_str {
             "math math-inline" => Some(("\\(", "\\)")),
@@ -1175,7 +1183,8 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
             _ => None,
         };
 
-        // Since we've already borrowed `child`, we can't `borrow_mut` to modify it. Instead, create a new `span` with delimited text and return that.
+        // Since we've already borrowed `child`, we can't `borrow_mut` to modify
+        // it. Instead, create a new `span` with delimited text and return that.
         if let Some(delim) = delim {
             let contents_str = &*contents.borrow();
             let delimited_text_str = if is_hydrate {
@@ -1185,7 +1194,8 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
                 if !contents_str.starts_with(delim.0) || !contents_str.ends_with(delim.1) {
                     return None;
                 }
-                // Return the contents without the beginning and ending delimiters.
+                // Return the contents without the beginning and ending
+                // delimiters.
                 contents_str[delim.0.len()..contents_str.len() - delim.1.len()].to_string()
             };
             let delimited_text_node = Node::new(NodeData::Text {
@@ -1227,7 +1237,8 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
             && let Some(text_child) = text_children.iter().next()
             && let NodeData::Text { .. } = &text_child.data
         {
-            // Create `<pre><code class="from language_name">text_child contents</code></pre>`.
+            // Create `<pre><code class="from language_name">text_child
+            // contents</code></pre>`.
             let pre = Node::new(NodeData::Element {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("pre")),
                 attrs: RefCell::new(vec![]),
@@ -1268,7 +1279,8 @@ fn get_node_tag_name(node: &Rc<Node>) -> Option<&str> {
     }
 }
 
-// Translate from Markdown class names for code blocks to the appropriate HTML custom element.
+// Translate from Markdown class names for code blocks to the appropriate HTML
+// custom element.
 static CODE_BLOCK_LANGUAGE_TO_CUSTOM_ELEMENT: phf::Map<&'static str, &'static str> = phf_map! {
     "language-mermaid" => "wc-mermaid",
     "language-graphviz" => "graphviz-graph",
