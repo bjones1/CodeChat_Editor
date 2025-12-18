@@ -113,7 +113,8 @@ These form a set of high-level requirements to guide the project.
   * Files/anchors can be freely moved without breaking links. This requires all
     anchors to be globally unique. HTML allows upper/lowercase ASCII plus the
     hyphen and underscore for IDs, meaning that a 5-character string provides
-    >250 million unique anchors.
+
+    > 250 million unique anchors.
 * Make picking a file/anchor easy: provide a searchable, expanded TOC listing
   every anchor.
 

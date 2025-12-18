@@ -68,8 +68,8 @@ Implementation
       1. [CodeChatEditor-test.mts](client/src/CodeChatEditor-test.mts)
          1. [Run tests](README.md?test)
       2. [HTML to Markdown conversion test document](docs/Markdown_HTML.js)
-3. [Extensions](extensions/)
-   1. Visual Studio Code
+3. [Extensions](extensions/readme.md)
+   1. [Visual Studio Code](extensions/VSCode/developer.md)
       1. [extension.ts](extensions/VSCode/src/extension.ts)
       2. [lib.rs](extensions/VSCode/src/lib.rs)
       3. [Cargo.toml](extensions/VSCode/Cargo.toml)
