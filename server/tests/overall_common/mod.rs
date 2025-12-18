@@ -346,7 +346,7 @@ pub async fn perform_loadfile(
     expected_messages.insert(
         EditorMessage {
             id: server_id,
-            message: EditorMessageContents::LoadFile(path.clone(), false),
+            message: EditorMessageContents::LoadFile(path.clone(), true),
         },
         false,
     );
@@ -369,7 +369,7 @@ pub async fn perform_loadfile(
             codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
             EditorMessage {
                 id: server_id,
-                message: EditorMessageContents::LoadFile(toc_path, true),
+                message: EditorMessageContents::LoadFile(toc_path, false),
             }
         );
         codechat_server

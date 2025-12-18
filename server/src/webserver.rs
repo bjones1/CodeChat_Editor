@@ -214,13 +214,14 @@ pub enum EditorMessageContents {
     OpenUrl(String),
 
     // #### These messages may only be sent by the Server.
-    /// Ask the IDE if the provided file is loaded. If so, the IDE should
-    /// respond by sending a `LoadFile` with the requested file. If not, the
-    /// returned `Result` should indicate the error "not loaded". The boolean
-    /// indicates if the request is for the non-editable sidebar TOC file, or
-    /// for an editable Client file (which still may be the TOC, if that's being
-    /// edited). Valid destinations: IDE.
-    LoadFile(PathBuf, bool),
+    /// Ask the IDE if the provided file is already loaded. The IDE should always respond to this with a `ResultOkTypes::LoadFile` message. If the file was loaded, the IDE responds with `Some((` contents of file, version of file `))`; if the was isn't loaded, it responds with `None`. The boolean value accompanying this message
+    /// Valid destinations: IDE.
+    LoadFile(
+        // Path to the file to load.
+        PathBuf,
+        // `is_current` - true if this is the current file being edited/viewed by the Client.
+        bool,
+    ),
     /// This may only be used to respond to an `Opened` message; it contains the
     /// HTML for the CodeChat Editor Client to display in its built-in browser.
     /// Valid destinations: IDE.
@@ -251,9 +252,14 @@ pub enum ResultOkTypes {
     Void,
     /// The `LoadFile` message provides file contents and a revision number, if
     /// available. This message may only be sent from the IDE to the Server.
-    /// If this is sent in response to a `LoadFile` where the toc boolean is false,
-    /// this value will be ignored.
-    LoadFile(Option<(String, f64)>),
+    LoadFile(
+        Option<(
+            // The text of the file.
+            String,
+            // The version of the file; ignored if the corresponding `LoadFile` request's `is_current` value was false.
+            f64,
+        )>,
+    ),
 }
 
 #[derive(Debug, Serialize, Deserialize, TS, PartialEq, thiserror::Error)]

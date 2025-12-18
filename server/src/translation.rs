@@ -545,7 +545,9 @@ pub async fn translation_task(
                         id: tt.id,
                         message: EditorMessageContents::LoadFile
                             (http_request.file_path.clone(),
-                            http_request.flags == ProcessingTaskHttpRequestFlags::Toc
+                            // Assign a version to this `LoadFile` request only if it's the current file and loaded as the file to edit, not as the sidebar TOC. We can us a simple comparison, since both file names have already been canonicalized.
+                            http_request.file_path == tt.current_file &&
+                            http_request.flags == ProcessingTaskHttpRequestFlags::None
                         )
                     }));
                     // Store the ID and request, which are needed to send a
@@ -749,7 +751,9 @@ impl TranslationTask {
         let ((simple_http_response, option_update), file_contents) = match file_contents_option {
             Some((file_contents, new_version)) => {
                 // Only pay attention to the version if this is an editable Client file.
-                if http_request.flags == ProcessingTaskHttpRequestFlags::None {
+                if http_request.file_path == self.current_file
+                    && http_request.flags == ProcessingTaskHttpRequestFlags::None
+                {
                     self.version = new_version;
                 }
                 // The IDE just sent the full contents; we're sending full

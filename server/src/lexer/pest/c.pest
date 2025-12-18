@@ -170,4 +170,4 @@ vis_newline      =  { NEWLINE }
 not_newline_eoi  = _{ !(NEWLINE ~ EOI) }
 star_dedent      = _{ PEEK ~ " * " }
 
-/// CodeChat Editor lexer: c_cpp.
+/// CodeChat Editor lexer: cpp.

@@ -529,15 +529,15 @@ export const activate = (context: vscode.ExtensionContext) => {
                         }
 
                         case "LoadFile": {
-                            const [load_file, is_toc] = value as [
+                            const [load_file, is_current] = value as [
                                 string,
                                 boolean,
                             ];
                             // Look through all open documents to see if we have
                             // the requested file.
                             const doc = get_document(load_file);
-                            // If the request is for the TOC as a TOC (not as an editable file), don't create a new version; the value we send won't be used and doesn't matter.
-                            if (!is_toc) {
+                            // If we have this file and the request is for the current file to edit/view in the Client, assign a version.
+                            if (doc !== undefined && is_current) {
                                 version = rand();
                             }
                             const load_file_result: null | [string, number] =
@@ -545,7 +545,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     ? null
                                     : [doc.getText(), version];
                             console_log(
-                                `CodeChat Editor extension: Result(LoadFile(${format_struct(load_file_result)}))`,
+                                `CodeChat Editor extension: Result(LoadFile(id = ${id}, ${format_struct(load_file_result)}))`,
                             );
                             await codeChatEditorServer.sendResultLoadfile(
                                 id,
@@ -596,7 +596,7 @@ const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
         ? JSON.stringify(
               // If the struct is `undefined`, print an empty string.
-              complex_data_structure ?? "",
+              complex_data_structure ?? "null/undefined",
           ).substring(0, MAX_MESSAGE_LENGTH)
         : "";
 

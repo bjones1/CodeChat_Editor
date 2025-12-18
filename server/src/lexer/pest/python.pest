@@ -76,4 +76,4 @@ short_string = _{
 // --------
 dedenter = { unused }
 
-/// CodeChat Editor lexer: c_cpp.
+/// CodeChat Editor lexer: cpp.

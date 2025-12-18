@@ -245,7 +245,7 @@ fn test_codemirror_to_code_doc_blocks_cpp() {
     // Pass an inline comment.
     assert_eq!(
         run_test(
-            "c_cpp",
+            "cpp",
             "\n",
             vec![build_codemirror_doc_block(0, 1, "", "//", "Test")]
         ),
@@ -255,7 +255,7 @@ fn test_codemirror_to_code_doc_blocks_cpp() {
     // Pass a block comment.
     assert_eq!(
         run_test(
-            "c_cpp",
+            "cpp",
             "\n",
             vec![build_codemirror_doc_block(0, 1, "", "/*", "Test")]
         ),
@@ -265,7 +265,7 @@ fn test_codemirror_to_code_doc_blocks_cpp() {
     // Two back-to-back doc blocks.
     assert_eq!(
         run_test(
-            "c_cpp",
+            "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "Test 1"),
@@ -622,7 +622,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("//\n\n//\n\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", ""),
@@ -634,7 +634,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("// ~~~\n\n//\n\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre><code>\n</code></pre>\n"),
@@ -648,7 +648,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("; // σ\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "; // σ\n",
             vec![build_codemirror_doc_block(7, 8, "", "//", ""),]
         )))
@@ -658,7 +658,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("\"σ\";\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\"σ\";\n",
             vec![build_codemirror_doc_block(5, 6, "", "//", ""),]
         )))
@@ -675,7 +675,7 @@ fn test_source_to_codechat_for_web_1() {
             false
         ),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n\n",
             vec![
                 build_codemirror_doc_block(
@@ -699,7 +699,7 @@ fn test_source_to_codechat_for_web_1() {
             false
         ),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n\n",
             vec![
                 build_codemirror_doc_block(
@@ -717,7 +717,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("// ```\n // ~~~", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre><code>\n</code></pre>\n"),
@@ -730,7 +730,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("// <foo>\n // Test", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<foo>\n"),
@@ -750,7 +750,7 @@ fn test_source_to_codechat_for_web_1() {
             false
         ),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre>\n"),

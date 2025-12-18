@@ -83,4 +83,4 @@ not_newline = _{ !NEWLINE ~ ANY }
 // Indicates this token isn't used by the parser.
 unused = { "unused" }
 
-/// CodeChat Editor lexer: c_cpp.
+/// CodeChat Editor lexer: cpp.
