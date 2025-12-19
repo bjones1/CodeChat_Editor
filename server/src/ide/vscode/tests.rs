@@ -1053,7 +1053,7 @@ async fn test_vscode_ide_websocket4() {
     join_handle.join().unwrap();
 
     // What makes sense here? If the IDE didn't load the file, either the Client shouldn't edit it or the Client should switch to using a filewatcher for edits.
-    /*
+    /**
     // Send an update from the Client, which should produce a diff.
     //
     // Message ids: IDE - 0, Server - 4, Client - 0->1.
