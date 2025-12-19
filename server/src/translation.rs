@@ -242,7 +242,7 @@ use crate::{
 // -----------------------------------------------------------------------------
 //
 // The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH: usize = 3000;
+const MAX_MESSAGE_LENGTH: usize = 500;
 
 lazy_static! {
         /// A regex to determine the type of the first EOL. See 'PROCESSINGS\`.
@@ -893,17 +893,14 @@ impl TranslationTask {
                                                 };
                                                 // Send a diff if possible.
                                                 let client_contents = if self.sent_full {
-                                                    let diff = self.diff_code_mirror(
+                                                    self.diff_code_mirror(
                                                         ccfw.metadata.clone(),
                                                         self.version,
                                                         ccfw.version,
                                                         code_mirror_translated,
-                                                    );
-                                                    debug!("Sending diff update:\n{:#?}\n\n", diff);
-                                                    diff
+                                                    )
                                                 } else {
                                                     self.sent_full = true;
-                                                    debug!("Sending full update:\n{:#?}\n\n", ccfw);
                                                     ccfw.clone()
                                                 };
                                                 queue_send_func!(self.to_client_tx.send(EditorMessage {
@@ -1103,7 +1100,7 @@ impl TranslationTask {
                                         cfw_version,
                                         &code_mirror_translated,
                                     );
-                                    debug!("Sending re-translation update id = {} back to the Client:\n{client_contents:#?}\n", self.id);
+                                    debug!("Sending re-translation update id = {} back to the Client.", self.id);
                                     queue_send_func!(self.to_client_tx.send(EditorMessage {
                                         id: self.id,
                                         message: EditorMessageContents::Update(
@@ -1129,10 +1126,6 @@ impl TranslationTask {
                             // Correct EOL endings for use with the IDE.
                             let new_source_code_eol = eol_convert(new_source_code, &self.eol);
                             let ccfw = if self.sent_full && self.allow_source_diffs {
-                                debug!(
-                                    "Sending diff.\nBefore:\n{:#?}\n\nAfter:\n{:#?}\n\n",
-                                    self.source_code, new_source_code_eol
-                                );
                                 Some(CodeChatForWeb {
                                     metadata: cfw.metadata,
                                     source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
@@ -1169,7 +1162,7 @@ impl TranslationTask {
                         }
                     },
                 };
-                debug!("Sending update id = {}; full contents:\n{:#?}", client_message.id, codechat_for_web);
+                debug!("Sending update id = {}", client_message.id);
                 queue_send_func!(self.to_ide_tx.send(EditorMessage {
                     id: client_message.id,
                     message: EditorMessageContents::Update(UpdateMessageContents {

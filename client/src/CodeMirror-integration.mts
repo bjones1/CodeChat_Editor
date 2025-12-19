@@ -449,6 +449,7 @@ class DocBlockWidget extends WidgetType {
 
     // See [toDom](https://codemirror.net/docs/ref/#view.WidgetType.toDOM).
     toDOM() {
+        console.log("toDOM", this.delimiter, this.indent, this.contents);
         // Wrap this in an enclosing div.
         const wrap = document.createElement("div");
         wrap.className = "CodeChat-doc";
@@ -476,6 +477,7 @@ class DocBlockWidget extends WidgetType {
         // If this change was produced by a user edit, then the DOM was already
         // updated. Stop here.
         if (this.is_user_change) {
+            console.log("updateDom - user change ignored.");
             return true;
         }
         (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
@@ -599,6 +601,7 @@ const on_dirty = (
     // The div that's dirty. It must be a child of the doc block div.
     event_target: HTMLElement,
 ) => {
+    console.log("on_dirty target", event_target.innerHTML);
     if (on_dirty_scheduled) {
         return;
     }
@@ -792,8 +795,6 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         // div it will replace.
                         target.insertBefore(tinymce_div, null);
 
-                        // Setting the content makes TinyMCE consider it dirty
-                        // -- ignore this "dirty" event.
                         tinymce.activeEditor!.setContent(
                             contents_div.innerHTML,
                         );
@@ -1151,6 +1152,7 @@ export const apply_diff_str = (before: string, diffs: StringDiff[]) => {
 
 // Return the JSON data to save from the current CodeMirror-based document.
 export const CodeMirror_save = (): CodeMirrorDiffable => {
+    console.log("Saving...");
     // This is the data to write — the source code. First, transform the HTML
     // back into code and doc blocks.
     const code_mirror: CodeMirror = current_view.state.toJSON(
