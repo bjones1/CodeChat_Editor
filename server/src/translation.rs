@@ -96,8 +96,8 @@
 ///   IDE ->> Server: Result(String: OK)
 ///   note over IDE, Client: Open browser (Client framework HTML or URL)
 ///   loop
-///   Client -> Server: HTTP request(/static URL)
-///   Server -> Client: HTTP response(/static data)
+///     Client -> Server: HTTP request(/static URL)
+///     Server -> Client: HTTP response(/static data)
 ///   end
 ///   ```
 ///
@@ -111,40 +111,40 @@
 ///   participant Server
 ///   participant Client
 ///   alt IDE loads file
-///   IDE ->> Client: CurrentFile(String: Path of main.py)
-///   opt If Client document is dirty
-///   Client ->> IDE: Update(String: contents of main.py)
-///   IDE ->> Client: Response(OK)
-///   end
-///   Client ->> IDE: Response(OK)
+///     IDE ->> Client: CurrentFile(String: Path of main.py)
+///     opt If Client document is dirty
+///         Client ->> IDE: Update(String: contents of main.py)
+///         IDE ->> Client: Response(OK)
+///     end
+///     Client ->> IDE: Response(OK)
 ///   else Client loads file
-///   Client ->> IDE: CurrentFile(String: URL of main.py)
-///   IDE ->> Client: Response(OK)
+///     Client ->> IDE: CurrentFile(String: URL of main.py)
+///     IDE ->> Client: Response(OK)
 ///   end
 ///   Client ->> Server: HTTP request(URL of main.py)
 ///   Server ->> IDE: LoadFile(String: path to main.py)
 ///   IDE ->> Server: Response(LoadFile(String: file contents of main.py))
 ///   alt main.py is editable
-///   Server ->> Client: HTTP response(contents of Client)
-///   Server ->> Client: Update(String: contents of main.py)
-///   Client ->> Server: Response(OK)
-///   loop
-///   Client ->> Server: HTTP request(URL of supporting file in main.py)
-///   Server ->> IDE: LoadFile(String: path of supporting file)
-///   alt Supporting file in IDE
-///   IDE ->> Server: Response(LoadFile(contents of supporting file)
-///   Server ->> Client: HTTP response(contents of supporting file)
-///   else Supporting file not in IDE
-///   IDE ->> Server: Response(LoadFile(None))
-///   Server ->> Client: HTTP response(contents of supporting file from /// filesystem)
-///   end
-///   end
+///     Server ->> Client: HTTP response(contents of Client)
+///     Server ->> Client: Update(String: contents of main.py)
+///     Client ->> Server: Response(OK)
+///     loop
+///         Client ->> Server: HTTP request(URL of supporting file in main.py)
+///         Server ->> IDE: LoadFile(String: path of supporting file)
+///         alt Supporting file in IDE
+///             IDE ->> Server: Response(LoadFile(contents of supporting file)
+///             Server ->> Client: HTTP response(contents of supporting file)
+///         else Supporting file not in IDE
+///             IDE ->> Server: Response(LoadFile(None))
+///             Server ->> Client: HTTP response(contents of supporting file from /// filesystem)
+///         end
+///     end
 ///   else main.py not editable and not a project
-///   Server ->> Client: HTTP response(contents of main.py)
+///     Server ->> Client: HTTP response(contents of main.py)
 ///   else main.py not editable and is a project
-///   Server ->> Client: HTTP response(contents of Client Simple Viewer)
-///   Client ->> Server: HTTP request (URL?raw of main.py)
-///   Server ->> Client: HTTP response(contents of main.py)
+///     Server ->> Client: HTTP response(contents of Client Simple Viewer)
+///     Client ->> Server: HTTP request (URL?raw of main.py)
+///     Server ->> Client: HTTP response(contents of main.py)
 ///   end
 ///   ```
 ///
