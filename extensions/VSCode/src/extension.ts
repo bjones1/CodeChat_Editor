@@ -522,9 +522,25 @@ export const activate = (context: vscode.ExtensionContext) => {
                             // Report if this was an error.
                             const result_contents = value as MessageResult;
                             if ("Err" in result_contents) {
-                                show_error(
-                                    `Error in message ${id}: ${JSON.stringify(result_contents.Err)}`,
-                                );
+                                const err = result_contents[
+                                    "Err"
+                                ] as ResultErrTypes;
+                                if (
+                                    err instanceof Object &&
+                                    "OutOfSync" in err
+                                ) {
+                                    // Send an update to re-sync the Client.
+                                    console.warn(
+                                        "Client is out of sync; resyncing.",
+                                    );
+                                    send_update(true);
+                                } else {
+                                    // If the client is out of sync, re-sync it.
+                                    if (result_contents)
+                                        show_error(
+                                            `Error in message ${id}: ${JSON.stringify(err)}`,
+                                        );
+                                }
                             }
                             break;
                         }

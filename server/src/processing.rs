@@ -1177,7 +1177,8 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
         // Final test: if the class is correct, this is math; otherwise, perform
         // no transformation.
         //
-        // Add/remove the `mceNonEditable` class to prevent accidental edits of this span.
+        // Add/remove the `mceNonEditable` class to prevent accidental edits of
+        // this span.
         let attr_value_str: &str = attr_value;
         let delim = if is_hydrate {
             match attr_value_str {
