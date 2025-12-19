@@ -1176,11 +1176,21 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
     {
         // Final test: if the class is correct, this is math; otherwise, perform
         // no transformation.
+        //
+        // Add/remove the `mceNonEditable` class to prevent accidental edits of this span.
         let attr_value_str: &str = attr_value;
-        let delim = match attr_value_str {
-            "math math-inline" => Some(("\\(", "\\)")),
-            "math math-display" => Some(("$$", "$$")),
-            _ => None,
+        let delim = if is_hydrate {
+            match attr_value_str {
+                "math math-inline" => Some(("\\(", "\\)", "math math-inline mceNonEditable")),
+                "math math-display" => Some(("$$", "$$", "math math-display mceNonEditable")),
+                _ => None,
+            }
+        } else {
+            match attr_value_str {
+                "math math-inline mceNonEditable" => Some(("\\(", "\\)", "math math-inline")),
+                "math math-display mceNonEditable" => Some(("$$", "$$", "math math-display")),
+                _ => None,
+            }
         };
 
         // Since we've already borrowed `child`, we can't `borrow_mut` to modify
@@ -1205,7 +1215,7 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("span")),
                 attrs: RefCell::new(vec![Attribute {
                     name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
-                    value: attr_value.clone(),
+                    value: delim.2.into(),
                 }]),
                 template_contents: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
