@@ -52,17 +52,19 @@ use crate::webserver::{
     INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT, ResultErrTypes,
 };
 use crate::{
-    cast,
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockTransaction, SourceFileMetadata, StringDiff,
     },
-    test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
     webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
 };
 use crate::{
     translation::{EolType, find_eol_type},
     webserver::main,
+};
+use test_utils::{
+    cast,
+    test_utils::{_prep_test_dir, check_logger_errors, configure_testing_logger},
 };
 
 // Globals
@@ -225,7 +227,7 @@ async fn _prep_test(
 /// `_prep_test` would give the wrong name.
 macro_rules! prep_test {
     ($connection_id: ident) => {{
-        use crate::function_name;
+        use test_utils::function_name;
         _prep_test($connection_id, function_name!())
     }};
 }
@@ -351,10 +353,11 @@ async fn test_vscode_ide_websocket3() {
     //
     // Message ids: IDE - 0, Server - 1->2, Client - 0.
     let em = read_message(&mut ws_ide).await;
-    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    let (msg, is_current) = cast!(em.message, EditorMessageContents::LoadFile, a, b);
     // Compare these as strings -- we want to ensure the path separator is
     // correct for the current platform.
     assert_eq!(file_path.to_string_lossy(), msg.to_string_lossy());
+    assert_eq!(is_current, false);
     assert_eq!(em.id, INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT);
 
     // Reply to the `LoadFile` message -- the file isn't present.
@@ -413,7 +416,7 @@ async fn test_vscode_ide_websocket3a() {
     //
     // Message ids: IDE - 0, Server - 0->2, Client - 0.
     let em = read_message(&mut ws_ide).await;
-    cast!(em.message, EditorMessageContents::LoadFile);
+    cast!(em.message, EditorMessageContents::LoadFile, a, b);
     // Skip comparing the file names, due to the backslash encoding.
     assert_eq!(em.id, INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT);
 
@@ -508,11 +511,12 @@ async fn test_vscode_ide_websocket8() {
     //
     // Message ids: IDE - 1, Server - 1->2, Client - 0.
     let em = read_message(&mut ws_ide).await;
-    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    let (msg, is_current) = cast!(em.message, EditorMessageContents::LoadFile, a, b);
     assert_eq!(
         path::absolute(Path::new(&msg)).unwrap(),
         path::absolute(&file_path).unwrap()
     );
+    assert_eq!(is_current, true);
     assert_eq!(em.id, INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT);
 
     // Reply to the `LoadFile` message with the file's contents.
@@ -941,8 +945,9 @@ async fn test_vscode_ide_websocket4() {
     //
     // Message ids: IDE - 0, Server - 1->2, Client - 1.
     let em = read_message(&mut ws_ide).await;
-    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    let (msg, is_current) = cast!(em.message, EditorMessageContents::LoadFile, a, b);
     assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
+    assert_eq!(is_current, true);
     assert_eq!(em.id, INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT);
 
     // Reply to the `LoadFile` message: the IDE doesn't have the file.
@@ -1028,11 +1033,12 @@ async fn test_vscode_ide_websocket4() {
     //
     // Message ids: IDE - 0, Server - 3->4, Client - 0.
     let em = read_message(&mut ws_ide).await;
-    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    let (msg, is_current) = cast!(em.message, EditorMessageContents::LoadFile, a, b);
     assert_eq!(
         fs::canonicalize(&msg).unwrap(),
         fs::canonicalize(test_dir.join("toc.md")).unwrap()
     );
+    assert_eq!(is_current, false);
     assert_eq!(em.id, INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT);
 
     // Reply to the `LoadFile` message: the IDE doesn't have the file.
@@ -1047,7 +1053,7 @@ async fn test_vscode_ide_websocket4() {
     join_handle.join().unwrap();
 
     // What makes sense here? If the IDE didn't load the file, either the Client shouldn't edit it or the Client should switch to using a filewatcher for edits.
-    /*
+    /***
     // Send an update from the Client, which should produce a diff.
     //
     // Message ids: IDE - 0, Server - 4, Client - 0->1.
@@ -1208,8 +1214,9 @@ async fn test_vscode_ide_websocket4a() {
     //
     // Message ids: IDE - 0, Server - 1->2, Client - 1.
     let em = read_message(&mut ws_ide).await;
-    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    let (msg, is_current) = cast!(em.message, EditorMessageContents::LoadFile, a, b);
     assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
+    assert_eq!(is_current, true);
     assert_eq!(em.id, INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT);
 
     // Reply to the `LoadFile` message: the IDE doesn't have the file.
@@ -1322,8 +1329,9 @@ async fn test_vscode_ide_websocket4b() {
     //
     // Message ids: IDE - 0, Server - 1->2, Client - 1.
     let em = read_message(&mut ws_ide).await;
-    let msg = cast!(em.message, EditorMessageContents::LoadFile);
+    let (msg, is_current) = cast!(em.message, EditorMessageContents::LoadFile, a, b);
     assert_eq!(fs::canonicalize(&msg).unwrap(), file_path_temp);
+    assert_eq!(is_current, true);
     assert_eq!(em.id, INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT);
 
     // Reply to the `LoadFile` message: the IDE doesn't have the file.

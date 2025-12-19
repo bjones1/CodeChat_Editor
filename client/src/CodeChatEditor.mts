@@ -58,12 +58,12 @@ import {
     scroll_to_line as codemirror_scroll_to_line,
     set_CodeMirror_positions,
 } from "./CodeMirror-integration.mjs";
-import "./EditorComponents.mjs";
 import "./graphviz-webcomponent-setup.mts";
 // This must be imported *after* the previous setup import, so it's placed here,
 // instead of in the third-party category above.
 import "./third-party/graphviz-webcomponent/graph.js";
-import { tinymce, init, Editor } from "./tinymce-config.mjs";
+import { init, tinymce } from "./tinymce-config.mjs";
+import { Editor, EditorEvent, Events } from "tinymce";
 import {
     CodeChatForWeb,
     CodeMirrorDiffable,
@@ -95,22 +95,6 @@ enum EditorMode {
     raw,
 }
 
-// Since this is experimental, TypeScript doesn't define it. See the
-// [docs](https://developer.mozilla.org/en-US/docs/Web/API/NavigateEvent).
-interface NavigateEvent extends Event {
-    canIntercept: boolean;
-    destination: any;
-    downloadRequest: String | null;
-    formData: any;
-    hashChange: boolean;
-    info: any;
-    navigationType: String;
-    signal: AbortSignal;
-    userInitiated: boolean;
-    intercept: any;
-    scroll: any;
-}
-
 // Tell TypeScript about the global namespace this program defines.
 declare global {
     interface Window {
@@ -129,7 +113,7 @@ declare global {
             show_toast: (text: string) => void;
             allow_navigation: boolean;
         };
-        CodeChatEditor_test: any;
+        CodeChatEditor_test: unknown;
     }
 }
 
@@ -223,8 +207,8 @@ const _open_lp = async (
     // This works, but TypeScript marks it as an error. Ignore this error by
     // including the
     // [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
-    /// @ts-ignore
-    const editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
+    /// @ts-expect-error("See above.")
+    const _editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
 
     // Get the <code>[current_metadata](#current_metadata)</code> from the
     // provided `code_chat_for_web` struct and store it as a global variable.
@@ -264,28 +248,36 @@ const _open_lp = async (
                 // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
                 // this is how to create a TinyMCE event handler.
                 setup: (editor: Editor) => {
-                    // The
-                    // [editor core events list](https://www.tiny.cloud/docs/tinymce/6/events/#editor-core-events)
-                    // includes the`Dirty` event.
-                    editor.on("Dirty", (_event: Event) => {
-                        is_dirty = true;
-                        startAutosaveTimer();
-                    });
+                    editor.on(
+                        "dirty",
+                        (
+                            event: EditorEvent<Events.EditorEventMap["dirty"]>,
+                        ) => {
+                            // Sometimes, `tinymce.activeEditor` is null
+                            // (perhaps when it's not focused). Use the `event`
+                            // data instead.
+                            event.target.setDirty(false);
+                            is_dirty = true;
+                            startAutosaveTimer();
+                        },
+                    );
                 },
             });
             tinymce.activeEditor!.focus();
         } else {
-            // Save and restore cursor/scroll location after an update per the
-            // [docs](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.dom.bookmarkmanager).
-            // However, this doesn't seem to work for the cursor location.
-            // Perhaps when TinyMCE normalizes the document, this gets lost?
-            const bm = tinymce.activeEditor!.selection.getBookmark();
+            // Save the cursor location before the update, then restore it
+            // afterwards, if TinyMCE has focus.
+            const sel = tinymce.activeEditor!.hasFocus()
+                ? saveSelection()
+                : undefined;
             doc_content =
                 "Plain" in source
                     ? source.Plain.doc
                     : apply_diff_str(doc_content, source.Diff.doc);
             tinymce.activeEditor!.setContent(doc_content);
-            tinymce.activeEditor!.selection.moveToBookmark(bm);
+            if (sel !== undefined) {
+                restoreSelection(sel);
+            }
         }
         mathJaxTypeset(codechat_body);
         scroll_to_line(cursor_line, scroll_line);
@@ -309,7 +301,7 @@ const _open_lp = async (
 };
 
 const save_lp = (is_dirty: boolean) => {
-    let update: UpdateMessageContents = {
+    const update: UpdateMessageContents = {
         // The Framework will fill in this value.
         file_path: "",
     };
@@ -321,7 +313,7 @@ const save_lp = (is_dirty: boolean) => {
 
     // Add the contents only if the document is dirty.
     if (is_dirty) {
-        /// @ts-expect-error
+        /// @ts-expect-error("Declare here; it will be completed later.")
         let code_mirror_diffable: CodeMirrorDiffable = {};
         if (is_doc_only()) {
             // Untypeset all math before saving the document.
@@ -330,14 +322,15 @@ const save_lp = (is_dirty: boolean) => {
             ) as HTMLDivElement;
             mathJaxUnTypeset(codechat_body);
             // To save a document only, simply get the HTML from the only Tiny
-            // MCE div.
-            const html = tinymce.activeEditor!.save();
+            // MCE div. Update the `doc_contents` to stay in sync with the
+            // Server.
+            doc_content = tinymce.activeEditor!.save();
             (
                 code_mirror_diffable as {
                     Plain: CodeMirror;
                 }
             ).Plain = {
-                doc: html,
+                doc: doc_content,
                 doc_blocks: [],
             };
             // Retypeset all math after saving the document.
@@ -348,19 +341,115 @@ const save_lp = (is_dirty: boolean) => {
         }
         update.contents = {
             metadata: current_metadata,
-            source: code_mirror_diffable,
             version: rand(),
+            source: code_mirror_diffable,
         };
     }
 
     return update;
 };
 
+export const saveSelection = () => {
+    // Changing the text inside TinyMCE causes it to loose a selection tied to a
+    // specific node. So, instead store the selection as an array of indices in
+    // the childNodes array of each element: for example, a given selection is
+    // element 10 of the root TinyMCE div's children (selecting an ol tag),
+    // element 5 of the ol's children (selecting the last li tag), element 0 of
+    // the li's children (a text node where the actual click landed; the offset
+    // in this node is placed in `selection_offset`.)
+    const sel = window.getSelection();
+    const selection_path = [];
+    const selection_offset = sel?.anchorOffset;
+    if (sel?.anchorNode) {
+        // Find a path from the selection back to the containing div.
+        for (
+            let current_node = sel.anchorNode, is_first = true;
+            // Continue until we find the div which contains the doc block
+            // contents: either it's not an element (such as a div), ...
+            current_node.nodeType !== Node.ELEMENT_NODE ||
+            // or it's not the doc block contents div.
+            (!(current_node as Element).classList.contains(
+                "CodeChat-doc-contents",
+            ) &&
+                // Sometimes, the parent of a custom node (`wc-mermaid`) skips
+                // the TinyMCE div and returns the overall div. I don't know
+                // why.
+                !(current_node as Element).classList.contains("CodeChat-doc"));
+            current_node = current_node.parentNode!, is_first = false
+        ) {
+            // Store the index of this node in its' parent list of child
+            // nodes/children. Use `childNodes` on the first iteration, since
+            // the selection is often in a text node, which isn't in the
+            // `parents` list. However, using `childNodes` all the time causes
+            // trouble when reversing the selection -- sometimes, the
+            // `childNodes` change based on whether text nodes (such as a
+            // newline) are included are not after tinyMCE parses the content.
+            const p = current_node.parentNode;
+            // In case we go off the rails, give up if there are no more
+            // parents.
+            if (p === null) {
+                return {
+                    selection_path: [],
+                    selection_offset: 0,
+                };
+            }
+            selection_path.unshift(
+                Array.prototype.indexOf.call(
+                    is_first ? p.childNodes : p.children,
+                    current_node,
+                ),
+            );
+        }
+    }
+    return { selection_path, selection_offset };
+};
+
+// Restore the selection produced by `saveSelection` to the active TinyMCE
+// instance.
+export const restoreSelection = ({
+    selection_path,
+    selection_offset,
+}: {
+    selection_path: number[];
+    selection_offset?: number;
+}) => {
+    // Copy the selection over to TinyMCE by indexing the selection path to find
+    // the selected node.
+    if (selection_path.length && typeof selection_offset === "number") {
+        let selection_node = tinymce.activeEditor!.getContentAreaContainer();
+        for (
+            ;
+            selection_path.length &&
+            // If something goes wrong, bail out instead of producing
+            // exceptions.
+            selection_node !== undefined;
+            selection_node =
+                // As before, use the more-consistent `children` except for the
+                // last element, where we might be selecting a `text` node.
+                (
+                    selection_path.length > 1
+                        ? selection_node.children
+                        : selection_node.childNodes
+                )[selection_path.shift()!]! as HTMLElement
+        );
+        // Exit on failure.
+        if (selection_node === undefined) {
+            return;
+        }
+        // Use that to set the selection.
+        tinymce.activeEditor!.selection.setCursorLocation(
+            selection_node,
+            // In case of edits, avoid an offset past the end of the node.
+            Math.min(selection_offset, selection_node.nodeValue?.length ?? 0),
+        );
+    }
+};
+
 // Per
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/platform#examples),
 // here's the least bad way to choose between the control key and the command
 // key.
-const os_is_osx =
+const _os_is_osx =
     navigator.platform.indexOf("Mac") === 0 || navigator.platform === "iPhone"
         ? true
         : false;
@@ -378,7 +467,7 @@ const on_save = async (only_if_dirty: boolean = false) => {
     console_log(
         "CodeChat Editor Client: sent Update - saving document/updating cursor location.",
     );
-    await new Promise(async (resolve) => {
+    await new Promise((resolve) => {
         webSocketComm.send_message({ Update: save_lp(is_dirty) }, () =>
             resolve(0),
         );
@@ -491,8 +580,7 @@ const on_click = (event: MouseEvent) => {
 const save_then_navigate = (codeChatEditorUrl: URL) => {
     on_save(true).then((_value) => {
         // Avoid recursion!
-        /// @ts-ignore
-        navigation.removeEventListener("navigate", on_navigate);
+        window.navigation.removeEventListener("navigate", on_navigate);
         parent.window.CodeChatEditorFramework.webSocketComm.current_file(
             codeChatEditorUrl,
         );
@@ -509,6 +597,7 @@ const scroll_to_line = (cursor_line?: number, scroll_line?: number) => {
     }
 };
 
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
 export const console_log = (...args: any) => {
     if (DEBUG_ENABLED) {
         console.log(...args);
@@ -534,12 +623,10 @@ export const on_error = (event: Event) => {
 // namespace.
 on_dom_content_loaded(async () => {
     // Intercept links in this document to save before following the link.
-    /// @ts-ignore
-    navigation.addEventListener("navigate", on_navigate);
+    window.navigation.addEventListener("navigate", on_navigate);
     const ccb = document.getElementById("CodeChat-sidebar") as
         | HTMLIFrameElement
         | undefined;
-    /// @ts-ignore
     ccb?.contentWindow?.navigation.addEventListener("navigate", on_navigate);
     document.addEventListener("click", on_click);
     // Provide basic error reporting for uncaught errors.

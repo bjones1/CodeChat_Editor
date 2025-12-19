@@ -21,10 +21,11 @@
 // -------
 //
 // ### Standard library
-use std::{path::PathBuf, str::FromStr};
+use std::{io, path::PathBuf, rc::Rc, str::FromStr};
 
 // ### Third-party
 use indoc::indoc;
+use markup5ever_rcdom::Node;
 use predicates::prelude::predicate::str;
 use pretty_assertions::assert_eq;
 
@@ -34,22 +35,20 @@ use super::{
     TranslationResults, find_path_to_toc,
 };
 use crate::{
-    cast,
     lexer::{
         CodeDocBlock, DocBlock, compile_lexers,
         supported_languages::{MARKDOWN_MODE, get_language_lexer_vec},
     },
-    prep_test_dir,
     processing::{
         CodeDocBlockVecToSourceError, CodeMirrorDiffable, CodeMirrorDocBlockDelete,
         CodeMirrorDocBlockTransaction, CodeMirrorDocBlockUpdate, CodechatForWebToSourceError,
         HtmlToMarkdownWrapped, SourceToCodeChatForWebError, byte_index_of,
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
-        dehydrate_html, diff_code_mirror_doc_blocks, diff_str, hydrate_html, markdown_to_html,
-        source_to_codechat_for_web,
+        dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str, html_to_tree, hydrate_html,
+        markdown_to_html, source_to_codechat_for_web,
     },
-    test_utils::stringit,
 };
+use test_utils::{cast, prep_test_dir, test_utils::stringit};
 
 // Utilities
 // ---------
@@ -246,7 +245,7 @@ fn test_codemirror_to_code_doc_blocks_cpp() {
     // Pass an inline comment.
     assert_eq!(
         run_test(
-            "c_cpp",
+            "cpp",
             "\n",
             vec![build_codemirror_doc_block(0, 1, "", "//", "Test")]
         ),
@@ -256,7 +255,7 @@ fn test_codemirror_to_code_doc_blocks_cpp() {
     // Pass a block comment.
     assert_eq!(
         run_test(
-            "c_cpp",
+            "cpp",
             "\n",
             vec![build_codemirror_doc_block(0, 1, "", "/*", "Test")]
         ),
@@ -266,7 +265,7 @@ fn test_codemirror_to_code_doc_blocks_cpp() {
     // Two back-to-back doc blocks.
     assert_eq!(
         run_test(
-            "c_cpp",
+            "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "Test 1"),
@@ -623,7 +622,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("//\n\n//\n\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", ""),
@@ -635,7 +634,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("// ~~~\n\n//\n\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre><code>\n</code></pre>\n"),
@@ -649,7 +648,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("; // σ\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "; // σ\n",
             vec![build_codemirror_doc_block(7, 8, "", "//", ""),]
         )))
@@ -659,7 +658,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("\"σ\";\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\"σ\";\n",
             vec![build_codemirror_doc_block(5, 6, "", "//", ""),]
         )))
@@ -676,7 +675,7 @@ fn test_source_to_codechat_for_web_1() {
             false
         ),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n\n",
             vec![
                 build_codemirror_doc_block(
@@ -700,7 +699,7 @@ fn test_source_to_codechat_for_web_1() {
             false
         ),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n\n",
             vec![
                 build_codemirror_doc_block(
@@ -718,7 +717,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("// ```\n // ~~~", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre><code>\n</code></pre>\n"),
@@ -731,7 +730,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web("// <foo>\n // Test", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<foo>\n"),
@@ -751,7 +750,7 @@ fn test_source_to_codechat_for_web_1() {
             false
         ),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
-            "c_cpp",
+            "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre>\n"),
@@ -1294,15 +1293,35 @@ fn test_hydrate_html_1() {
         .unwrap(),
         indoc!(
             r#"
-            <p><span class="math math-inline">\({a}_1, b_{2}\)</span>
-            <span class="math math-inline">\(a*1, b*2\)</span>
-            <span class="math math-inline">\([a](b)\)</span>
-            <span class="math math-inline">\(3 &lt;a&gt; b\)</span>
-            <span class="math math-inline">\(a \; b\)</span></p>
-            <p><span class="math math-display">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
+            <p><span class="math math-inline mceNonEditable">\({a}_1, b_{2}\)</span>
+            <span class="math math-inline mceNonEditable">\(a*1, b*2\)</span>
+            <span class="math math-inline mceNonEditable">\([a](b)\)</span>
+            <span class="math math-inline mceNonEditable">\(3 &lt;a&gt; b\)</span>
+            <span class="math math-inline mceNonEditable">\(a \; b\)</span></p>
+            <p><span class="math math-display mceNonEditable">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
             "#
         )
     );
+
+    assert_eq!(
+        hydrate_html(&markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;")).unwrap(),
+        indoc!(
+            "
+            <ol>
+            <li>foo&nbsp;</li>
+            <li>bar</li>
+            <li>baz </li>
+            </ol>
+            "
+        )
+    );
+}
+
+fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
+    let tree = html_to_tree(html)?;
+    dehydrating_walk_node(&tree);
+    //println!("{:#?}", tree);
+    Ok(tree)
 }
 
 #[test]
@@ -1313,10 +1332,10 @@ fn test_dehydrate_html_1() {
             .convert(
                 &dehydrate_html(indoc!(
                     "
-            <wc-mermaid>flowchart LR
-                start --&gt; stop
-            </wc-mermaid>
-            "
+                    <wc-mermaid>flowchart LR
+                        start --&gt; stop
+                    </wc-mermaid>
+                    "
                 ))
                 .unwrap()
             )
@@ -1336,11 +1355,11 @@ fn test_dehydrate_html_1() {
             .convert(
                 &dehydrate_html(indoc!(
                     "
-            <graphviz-graph>digraph {
-                start -&gt; stop
-            }
-            </graphviz-graph>
-            "
+                    <graphviz-graph>digraph {
+                        start -&gt; stop
+                    }
+                    </graphviz-graph>
+                    "
                 ))
                 .unwrap()
             )
@@ -1361,12 +1380,12 @@ fn test_dehydrate_html_1() {
             .convert(
                 &dehydrate_html(indoc!(
                     r#"
-                    <p><span class="math math-inline">\({a}_1, b_{2}\)</span>
-                    <span class="math math-inline">\(a*1, b*2\)</span>
-                    <span class="math math-inline">\([a](b)\)</span>
-                    <span class="math math-inline">\(3 &lt;a&gt; b\)</span>
-                    <span class="math math-inline">\(a \; b\)</span></p>
-                    <p><span class="math math-display">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
+                    <p><span class="math math-inline mceNonEditable">\({a}_1, b_{2}\)</span>
+                    <span class="math math-inline mceNonEditable">\(a*1, b*2\)</span>
+                    <span class="math math-inline mceNonEditable">\([a](b)\)</span>
+                    <span class="math math-inline mceNonEditable">\(3 &lt;a&gt; b\)</span>
+                    <span class="math math-inline mceNonEditable">\(a \; b\)</span></p>
+                    <p><span class="math math-display mceNonEditable">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
                     "#
                 ))
                 .unwrap()
@@ -1379,5 +1398,21 @@ fn test_dehydrate_html_1() {
             $${a}_1, b_{2}, a*1, b*2, [a](b), 3 <a> b, a \\; b$$
             "
         )
+    );
+
+    assert_eq!(
+        converter
+            .convert(
+                &dehydrate_html(indoc!(
+                    "
+                    <ol>
+                    <li>foo&nbsp;</li>
+                    </ol>
+                    "
+                ))
+                .unwrap()
+            )
+            .unwrap(),
+        "1. foo\u{a0}\n"
     );
 }

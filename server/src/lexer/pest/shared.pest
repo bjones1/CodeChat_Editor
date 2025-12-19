@@ -15,11 +15,11 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `shared.pest` - Pest parser definition shared by all languages
-// ==============================================================
+// =============================================================================
 file = { SOI ~ (doc_block | code_block)* ~ EOI }
 
 // Inline comments
-// ---------------
+// -----------------------------------------------------------------------------
 //
 // Use this approach to match a group of inline comments with the same
 // whitespace indentation.
@@ -41,12 +41,12 @@ inline_comment_line = { (" " ~ inline_comment_body) | newline_eoi }
 //
 // becomes:
 //
-// *   inline\_comment\_body > logical\_line: `a\n`
-// *   inline\_comment\_body: `\n`
+// * inline\_comment\_body > logical\_line: `a\n`
+// * inline\_comment\_body: `\n`
 inline_comment_body = { inline_comment_char* ~ newline_eoi }
 
 // Block comments
-// --------------
+// -----------------------------------------------------------------------------
 //
 // Support multiple opening and closing delimiters using some repetition.
 block_comment_0   = _{
@@ -72,15 +72,15 @@ optional_space = { " "? }
 block_comment_ending = { newline_eoi }
 
 // Code blocks
-// -----------
+// -----------------------------------------------------------------------------
 code_block =  { code_line+ }
 code_line  = _{ (!doc_block ~ code_line_token* ~ NEWLINE) | (!doc_block ~ code_line_token+ ~ EOI) }
 
 // Other commonly-used tokens
-// --------------------------
+// -----------------------------------------------------------------------------
 newline_eoi = _{ NEWLINE | EOI }
 not_newline = _{ !NEWLINE ~ ANY }
 // Indicates this token isn't used by the parser.
 unused = { "unused" }
 
-/// CodeChat Editor lexer: c_cpp.
+/// CodeChat Editor lexer: cpp.

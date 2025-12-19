@@ -31,18 +31,19 @@ import process from "node:process";
 // ### Third-party packages
 import escape from "escape-html";
 import vscode, {
-    commands,
     Range,
     TextDocument,
     TextEditor,
     TextEditorRevealType,
 } from "vscode";
-import { CodeChatEditorServer, initServer } from "./index";
+import { CodeChatEditorServer, initServer } from "./index.js";
 
 // ### Local packages
 import {
     autosave_timeout_ms,
     EditorMessage,
+    EditorMessageContents,
+    KeysOfRustEnum,
     MessageResult,
     rand,
     UpdateMessageContents,
@@ -51,7 +52,7 @@ import {
     DEBUG_ENABLED,
     MAX_MESSAGE_LENGTH,
 } from "../../../client/src/debug_enabled.mjs";
-import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes";
+import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes.js";
 import * as os from "os";
 
 // Globals
@@ -358,9 +359,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 ignore_active_editor_change = false;
                                 return;
                             }
-
-                            // Skip an update if we've already sent a `CurrentFile` for this editor.
-                            if (current_editor === vscode.window.activeTextEditor) {
+                            // Skip an update if we've already sent a
+                            // `CurrentFile` for this editor.
+                            if (
+                                current_editor ===
+                                vscode.window.activeTextEditor
+                            ) {
                                 return;
                             }
 
@@ -538,7 +542,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                     }
                     const keys = Object.keys(message);
                     assert(keys.length === 1);
-                    const key = keys[0];
+                    const key =
+                        keys[0] as KeysOfRustEnum<EditorMessageContents>;
                     const value = Object.values(message)[0];
 
                     switch (key) {
@@ -571,7 +576,14 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     assert("Diff" in source);
 
                                     if (source.Diff.version !== version) {
-                                        await sendResult(id, "OutOfSync");
+                                        await sendResult(id, {
+                                            OutOfSync: [
+                                                version,
+                                                source.Diff.version,
+                                            ],
+                                        });
+                                        // Send an `Update` with the full text to
+                                        // re-sync the Client.
                                         console_log(
                                             "CodeChat Editor extension: sending update because Client is out of sync.",
                                         );
@@ -598,7 +610,7 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                             const editor = get_text_editor(doc);
 
-                            let scroll_line = current_update.scroll_position;
+                            const scroll_line = current_update.scroll_position;
                             if (scroll_line !== undefined && editor) {
                                 ignore_selection_change = true;
                                 const scroll_position = new vscode.Position(scroll_line - 1, 0);
@@ -608,7 +620,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 );
                             }
 
-                            let cursor_line = current_update.cursor_position;
+                            const cursor_line = current_update.cursor_position;
                             if (cursor_line !== undefined && editor) {
                                 ignore_selection_change = true;
                                 const cursor_position = new vscode.Position(cursor_line - 1, 0);
@@ -641,7 +653,16 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 ignore_active_editor_change = false;
                                 await sendResult(id);
                             } else {
-                                if (false) {
+                                // TODO: open using a custom document editor.
+                                // See
+                                // [openCustomDocument](https://code.visualstudio.com/api/references/vscode-api#CustomEditorProvider.openCustomDocument),
+                                // which can evidently be called
+                                // [indirectly](https://stackoverflow.com/a/65101181/4374935).
+                                // See also
+                                // [Built-in Commands](https://code.visualstudio.com/api/references/commands).
+                                // For now, simply respond with an OK, since the
+                                // following doesn't work.
+                                /**
                                     commands
                                         .executeCommand(
                                             "vscode.open",
@@ -655,7 +676,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                                     OpenFileFailed: [current_file, reason],
                                                 }),
                                         );
-                                }
+                                */
                                 await sendResult(id);
                             }
                             break;
@@ -664,22 +685,49 @@ export const activate = (context: vscode.ExtensionContext) => {
                         case "Result": {
                             const result_contents = value as MessageResult;
                             if ("Err" in result_contents) {
-                                show_error(
-                                    `Error in message ${id}: ${result_contents.Err}`,
-                                );
+                                const err = result_contents[
+                                    "Err"
+                                ] as ResultErrTypes;
+                                if (
+                                    err instanceof Object &&
+                                    "OutOfSync" in err
+                                ) {
+                                    // Send an update to re-sync the Client.
+                                    console.warn(
+                                        "Client is out of sync; resyncing.",
+                                    );
+                                    send_update(true);
+                                } else {
+                                    // If the client is out of sync, re-sync it.
+                                    if (result_contents)
+                                        show_error(
+                                            `Error in message ${id}: ${JSON.stringify(err)}`,
+                                        );
+                                }
                             }
                             break;
                         }
 
                         case "LoadFile": {
-                            const load_file = value as string;
+                            const [load_file, is_current] = value as [
+                                string,
+                                boolean,
+                            ];
+                            // Look through all open documents to see if we have
+                            // the requested file.
                             const doc = get_document(load_file);
+                            // If we have this file and the request is for the
+                            // current file to edit/view in the Client, assign a
+                            // version.
+                            if (doc !== undefined && is_current) {
+                                version = rand();
+                            }
                             const load_file_result: null | [string, number] =
-                                doc === undefined ? null : [doc.getText(), (version = rand())];
+                                doc === undefined
+                                    ? null
+                                    : [doc.getText(), version];
                             console_log(
-                                `CodeChat Editor extension: Result(LoadFile(${format_struct(
-                                    load_file_result,
-                                )}))`,
+                                `CodeChat Editor extension: Result(LoadFile(id = ${id}, ${format_struct(load_file_result)}))`,
                             );
                             await codeChatEditorServer.sendResultLoadfile(id, load_file_result);
                             break;
@@ -745,11 +793,12 @@ export const deactivate = async () => {
 // -----------------------------------------------------------------------------
 //
 // Format a complex data structure as a string when in debug mode.
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
 const format_struct = (complex_data_structure: any): string =>
     DEBUG_ENABLED
         ? JSON.stringify(
               // If the struct is `undefined`, print an empty string.
-              complex_data_structure ?? "",
+              complex_data_structure ?? "null/undefined",
           ).substring(0, MAX_MESSAGE_LENGTH)
         : "";
 
@@ -892,6 +941,7 @@ const get_text_editor = (doc: TextDocument): TextEditor | undefined => {
     }
 };
 
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
 const console_log = (...args: any) => {
     if (DEBUG_ENABLED) {
         console.log(...args);

@@ -14,15 +14,10 @@
 /// the CodeChat Editor. If not, see
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
-/// `test_utils.rs` -- Reusable routines for testing
-/// ================================================
-///
-/// Placing this file in the `tests/` directory prevents me from importing it
-/// outside that directory tree; the desire was to import this for unit tests in
-/// the `src/` directory tree. So, it's instead placed here, then conditionally
-/// imported in `lib.rs`.
+/// `test_utils.rs` -- Reusable routines for testing.
+/// ============================================================================
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::env;
@@ -30,18 +25,15 @@ use std::path::MAIN_SEPARATOR_STR;
 use std::path::PathBuf;
 
 // ### Third-party
+use assert_fs::{TempDir, fixture::PathCopy};
+use assertables::assert_le;
 use log::Level;
-#[cfg(any(feature = "int_tests", test))]
-use {
-    assert_fs::{TempDir, fixture::PathCopy},
-    assertables::assert_le,
-};
 
 // ### Local
 use crate::testing_logger;
 
 // Macros
-// ------
+// -----------------------------------------------------------------------------
 //
 // Extract a known enum variant or fail. More concise than the alternative (`if
 // let`, or `let else`). From [SO](https://stackoverflow.com/a/69324393). The
@@ -105,7 +97,7 @@ macro_rules! prep_test_dir {
 }
 
 // Code
-// ----
+// -----------------------------------------------------------------------------
 //
 // Use the `tests/fixtures` path (relative to the root of this Rust project) to
 // store files for testing. A subdirectory tree, named by the module path then
@@ -126,9 +118,8 @@ pub fn _prep_test_dir(
     // Switch from `::` to a filesystem path separator.
     let test_path = &test_path.replace("::", MAIN_SEPARATOR_STR);
 
-    // First, get the project root directory, based on the [location of the
-    // cargo.toml
-    // file](https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates).
+    // First, get the project root directory, based on the
+    // [location of the cargo.toml file](https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates).
     let root_dir = &env::var("CARGO_MANIFEST_DIR")
         .expect("Environment variable CARGO_MANIFEST_DIR not defined.");
     let mut source_path = PathBuf::from(root_dir);
@@ -166,13 +157,13 @@ pub fn _prep_test_dir(
 // straightforward. However, to sometimes simply log data and at other times
 // examine logs requires care:
 //
-// 1.  The global logger can only be configured once. Configuring it for one
-//     test for the production logger and for another test using the testing
-//     logger doesn't work.
-// 2.  Since tests are run by default in multiple threads, the logger used
-//     should keep each thread's logs separate.
-// 3.  The logger needs to be initialized for all tests and for production,
-//     preferably without adding code to each test.
+// 1. The global logger can only be configured once. Configuring it for one test
+//    for the production logger and for another test using the testing logger
+//    doesn't work.
+// 2. Since tests are run by default in multiple threads, the logger used should
+//    keep each thread's logs separate.
+// 3. The logger needs to be initialized for all tests and for production,
+//    preferably without adding code to each test.
 //
 // The modified `testing_logger` takes care of items 2 and 3. For item 3, I
 // don't have a way to auto-initialize the logger for all tests easily;

@@ -17,10 +17,10 @@
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
 # `Cargo.toml` -- Rust interface for the VSCode extension
-# =======================================================
+# ==============================================================================
 #
 # General package configurations
-# ------------------------------
+# ------------------------------------------------------------------------------
 [package]
 authors = ["Bryan A. Jones", "Peter Loux"]
 categories = ["development-tools", "text-editors"]
@@ -32,16 +32,10 @@ license = "GPL-3.0-only"
 name = "codechat-editor-vscode-extension"
 readme = "../README.md"
 repository = "https://github.com/bjones1/CodeChat_Editor"
-version = "0.1.44"
+version = "0.1.47"
 
 [lib]
 crate-type = ["cdylib"]
-
-# To make VSCode happy, create a unused `int_test` feature, then enable this
-# feature in the VSCode Rust language server for a better experience. See
-# `server/Cargo.toml` for its actual use.
-[features]
-int_tests = []
 
 [dependencies]
 codechat-editor-server = { path = "../../server" }

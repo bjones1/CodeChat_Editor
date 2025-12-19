@@ -15,7 +15,7 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `HashReader.mts` -- post-process esbuild output
-// ===============================================
+// =============================================================================
 //
 // This script reads the output produced by esbuild to determine the location of
 // the bundled files, which have hashes in their file names. It writes these
@@ -67,7 +67,7 @@ const metafile: Metafile = JSON.parse(data);
 
 // Walk the file, looking for the names of specific entry points. Transform
 // those into paths used to import these files.
-let outputContents: Record<string, string> = {};
+const outputContents: Record<string, string> = {};
 let num_found = 0;
 for (const output in metafile.outputs) {
     const outputInfo = metafile.outputs[output];

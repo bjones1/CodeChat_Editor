@@ -15,22 +15,22 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `c.pest` - Pest parser definition for the C language
-// ====================================================
+// =============================================================================
 //
 // Comments
-// --------
+// -----------------------------------------------------------------------------
 doc_block = _{ inline_comment | block_comment }
 
-// Per the [C standard, section
-// 6.4.3](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
+// Per the
+// [C standard, section 6.4.3](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
 // "white-space consists of: (space, horizontal tab, new-line, vertical tab, and
 // form-feed)." Omit newlines, since the rest of this parser uses these.
 vertical_tab = { "\x0B" }
 form_feed    = { "\x0C" }
 white_space  = { (" " | "\t" | vertical_tab | form_feed)* }
 
-// The [C standard, section
-// 6.4.9](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
+// The
+// [C standard, section 6.4.9](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=65),
 // defines inline and block comments.
 //
 // ### Inline comments
@@ -50,110 +50,106 @@ block_comment_closing_delim_1 =  { unused }
 block_comment_closing_delim_2 =  { unused }
 
 // Code
-// ----
+// -----------------------------------------------------------------------------
 //
-// Per the [C standard, section
-// 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
+// Per the
+// [C standard, section 5.1.1.2](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n3220.pdf#page=24),
 // if a line of code ends with a backslash, it continues on the next line. This
 // is a logical line; treat it as a single line. Therefore, consider a
 // backslash-newline (or anything that's not a newline) a part of the current
 // logical line. Note that this parser doesn't apply this rule to comments
 // (which, per the spec, it should) for several reasons:
 //
-// 1.  Comments continued onto another line don't look like a comment; this
-//     would confuse most developers.
+// 1. Comments continued onto another line don't look like a comment; this would
+//    confuse most developers.
 //
-// 2.  The backslash-newline in a comment creates a [hard line
-//     break](https://spec.commonmark.org/0.31.2/#hard-line-breaks) in Markdown,
-//     which means inserting a hard line break this way in an inline comment
-//     requires the next line to omit the inline comment delimiters. For
-//     example: 
+// 2. The backslash-newline in a comment creates a
+//    [hard line break](https://spec.commonmark.org/0.31.2/#hard-line-breaks) in
+//    Markdown, which means inserting a hard line break this way in an inline
+//    comment requires the next line to omit the inline comment delimiters. For
+//    example: 
 //
-//     ```C
-//     // This is a hard line break\
-//     followed by a comment which must not include the // inline comment
-//     // delimiter on the line after the line break, but which must
-//     include them on following lines.
-//     ```
+//    ```C
+//    // This is a hard line break\
+//    followed by a comment which must not include the // inline comment
+//    // delimiter on the line after the line break, but which must
+//    include them on following lines.
+//    ```
 //
-// 3.  The CodeChat Editor web-to-code function produces incorrect results in
-//     this case, adding a comment delimiter when it shouldn't. To fix this, it
-//     would have to look for a backslash newline only in C/C++-like languages.
+// 3. The CodeChat Editor web-to-code function produces incorrect results in
+//    this case, adding a comment delimiter when it shouldn't. To fix this, it
+//    would have to look for a backslash newline only in C/C++-like languages.
 logical_line_char   = _{ ("\\" ~ NEWLINE) | not_newline }
 code_line_token = _{ logical_line_char }
 
 // Dedenter
-// --------
+// -----------------------------------------------------------------------------
 //
 // This parser runs separately; it dedents block comments. There are several
 // cases:
 //
-// *   A single line: `/* comment */`. No special handling needed.
-// *   Multiple lines, in two styles.
-//     *   Each line of the comment is not consistently whitespace-indented. No
-//         special handling needed. For example:
+// * A single line: `/* comment */`. No special handling needed.
+// * Multiple lines, in two styles.
+//   * Each line of the comment is not consistently whitespace-indented. No
+//     special handling needed. For example:
 //
-//         ```C
-//         /* This is
-//           not
-//            consistently indented. */
-//         ```
+//     ```C
+//     /* This is
+//       not
+//        consistently indented. */
+//     ```
 //
-//     *   Each line of the comment is consistently whitespace-indented; for
-//         example:
+//   * Each line of the comment is consistently whitespace-indented; for
+//     example:
 //
-//         ```C
-//         /* This is
-//            consistently indented. */
-//         ```
+//     ```C
+//     /* This is
+//        consistently indented. */
+//     ```
 //
-//         Consistently indented means the first non-whitespace character on a
-//         line aligns with, but never comes before, the comment's start.
-//         Another example:
+//     Consistently indented means the first non-whitespace character on a line
+//     aligns with, but never comes before, the comment's start. Another
+//     example:
 //
-//         ```C
-//         /* This is
-//            correct
+//     ```C
+//     /* This is
+//        correct
 //
-//            indentation.
-//          */
-//         ```
+//        indentation.
+//      */
+//     ```
 //
-//         Note that the third (blank) line doesn't have an indent; since that
-//         line consists only of whitespace, this is OK. Likewise, the last line
-//         (containing the closing comment delimiter of `*/`) consists only of
-//         whitespace after the comment delimiters are removed.
+//     Note that the third (blank) line doesn't have an indent; since that line
+//     consists only of whitespace, this is OK. Likewise, the last line
+//     (containing the closing comment delimiter of `*/`) consists only of
+//     whitespace after the comment delimiters are removed.
 //
-//     *   Each line of the comment is consistently asterisk-indented; for
-//         example:
+//   * Each line of the comment is consistently asterisk-indented; for example:
 //
-//         ```C
-//         /* This is
-//          * correct
-//          *
-//          * indentation.
-//          */
-//         ```
+//     ```C
+//     /* This is
+//      * correct
+//      *
+//      * indentation.
+//      */
+//     ```
 //
-//         Note that in this case, no whitespace-only lines are allowed.
-//         Instead, the special case is lines which have a newline immediately
-//         after the `*`.
+//     Note that in this case, no whitespace-only lines are allowed. Instead,
+//     the special case is lines which have a newline immediately after the `*`.
 //
 // To implement this dedenting, we must have two paths to accepting the contents
 // of a block comment. Otherwise, this parser rejects the block (it cannot be
 // dedented). The approach:
 //
-// 1.  The space-indented path. This requires:
-//     1.  The first line ends with a newline. (`valid_first_line`)
-//     2.  Non-first lines with contents must be properly indented. If a
-//         non-first line ends in a newline, it must not be the last line.
-//         (`dedented_line`)
-//     3.  A whitespace-only line must not be the last line, unless it has
-//         exactly the indent needed to align the closing comment delimiter
-//         (`last_line`).
-// 2.  The asterisk-indented path. The requirements are the same as the
-//     space-indented path, though the proper indent includes an asterisk in the
-//     correct location.
+// 1. The space-indented path. This requires:
+//    1. The first line ends with a newline. (`valid_first_line`)
+//    2. Non-first lines with contents must be properly indented. If a non-first
+//       line ends in a newline, it must not be the last line. (`dedented_line`)
+//    3. A whitespace-only line must not be the last line, unless it has exactly
+//       the indent needed to align the closing comment delimiter (`last_line`).
+// 2. The asterisk-indented path. The requirements are the same as the
+//    space-indented path, though the proper indent includes an asterisk in the
+//    correct location.
 dedenter = {
     SOI ~ indent ~ valid_first_line ~ (valid_space_line+ | valid_star_line+) ~ DROP ~ EOI
 }
@@ -170,4 +166,4 @@ vis_newline      =  { NEWLINE }
 not_newline_eoi  = _{ !(NEWLINE ~ EOI) }
 star_dedent      = _{ PEEK ~ " * " }
 
-/// CodeChat Editor lexer: c_cpp.
+/// CodeChat Editor lexer: cpp.

@@ -15,17 +15,17 @@
 /// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 ///
 /// `test.rs` -- Unit tests for the lexer
-/// =====================================
+/// ============================================================================
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 use super::supported_languages::get_language_lexer_vec;
 use super::{CodeDocBlock, DocBlock, compile_lexers, source_lexer};
-use crate::test_utils::stringit;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
+use test_utils::test_utils::stringit;
 
 // Utilities
-// ---------
+// -----------------------------------------------------------------------------
 //
 // Provide a compact way to create a `CodeDocBlock`.
 fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBlock {
@@ -464,7 +464,7 @@ fn test_js() {
 #[test]
 fn test_cpp() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let cpp = llc.map_mode_to_lexer.get(&stringit("c_cpp")).unwrap();
+    let cpp = llc.map_mode_to_lexer.get(&stringit("cpp")).unwrap();
 
     // Try out a C++ heredoc.
     assert_eq!(
@@ -479,7 +479,7 @@ fn test_cpp() {
 #[test]
 fn test_c() {
     let llc = compile_lexers(get_language_lexer_vec());
-    let c = llc.map_mode_to_lexer.get(&stringit("c_cpp")).unwrap();
+    let c = llc.map_mode_to_lexer.get(&stringit("cpp")).unwrap();
 
     // Test logical lines.
     let s = indoc!(
@@ -731,10 +731,7 @@ fn test_compiler() {
 
     let c_ext_lexer_arr = llc.map_ext_to_lexer_vec.get(&stringit("c")).unwrap();
     assert_eq!(c_ext_lexer_arr.len(), 1);
-    assert_eq!(
-        c_ext_lexer_arr[0].language_lexer.lexer_name.as_str(),
-        "c_cpp"
-    );
+    assert_eq!(c_ext_lexer_arr[0].language_lexer.lexer_name.as_str(), "cpp");
     assert_eq!(
         llc.map_mode_to_lexer
             .get(&stringit("verilog"))

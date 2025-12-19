@@ -15,15 +15,16 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `graphviz-webcomponent-setup.mts` -- Configure graphviz webcomponent options
-// ============================================================================
+// =============================================================================
 //
 // Configure the Graphviz web component to load the (large) renderer only when a
 // Graphviz web component is found on a page. See the
 // [docs](https://github.com/prantlf/graphviz-webcomponent#configuration).
 //
 // Note that this must be in a separate module which is imported before the
-// graphviz webcomponent; see the [ESBuild
-// docs](https://esbuild.github.io/content-types/#real-esm-imports).
+// graphviz webcomponent; see the
+// [ESBuild docs](https://esbuild.github.io/content-types/#real-esm-imports).
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
 (window as any).graphvizWebComponent = {
     rendererUrl: "/static/bundled/renderer.js",
     delayWorkerLoading: true,

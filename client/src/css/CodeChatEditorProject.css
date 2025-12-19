@@ -17,10 +17,10 @@
    [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 
    `CodeChatEditorProject.css` -- Styles for the CodeChat Editor for projects
-   ==========================================================================
+   =============================================================================
 
-   This is used only to store a reused variable value. See the [CSS
-   docs](https://drafts.csswg.org/css-variables/). */
+   This is used only to store a reused variable value. See the
+   [CSS docs](https://drafts.csswg.org/css-variables/). */
 :root {
     --sidebar-width: 15rem;
     --body-padding: 0.2rem;

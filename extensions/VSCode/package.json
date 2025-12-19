@@ -19,6 +19,7 @@
         "CodeChat Editor",
         "Visual Studio Code extension"
     ],
+    "type": "commonjs",
     "license": "GPL-3.0-only",
     "main": "out/extension.js",
     "napi": {
@@ -40,7 +41,7 @@
         "type": "git",
         "url": "https://github.com/bjones1/CodeChat_Editor"
     },
-    "version": "0.1.44",
+    "version": "0.1.47",
     "activationEvents": [
         "onCommand:extension.codeChatEditorActivate",
         "onCommand:extension.codeChatEditorDeactivate"
@@ -81,27 +82,30 @@
     "devDependencies": {
         "@emnapi/core": "^1.7.1",
         "@emnapi/runtime": "^1.7.1",
+        "@eslint/js": "^9.39.2",
         "@napi-rs/cli": "^3.5.0",
         "@tybys/wasm-util": "^0.10.1",
         "@types/escape-html": "^1.0.4",
-        "@types/node": "^24.10.2",
+        "@types/node": "^24.10.4",
         "@types/vscode": "1.61.0",
-        "@typescript-eslint/eslint-plugin": "^8.49.0",
-        "@typescript-eslint/parser": "^8.49.0",
+        "@typescript-eslint/eslint-plugin": "^8.50.0",
+        "@typescript-eslint/parser": "^8.50.0",
         "@vscode/vsce": "^3.7.1",
         "chalk": "^5.6.2",
-        "esbuild": "^0.27.1",
-        "eslint": "^9.39.1",
+        "esbuild": "^0.27.2",
+        "eslint": "^9.39.2",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-import": "^2.32.0",
         "eslint-plugin-node": "^11.1.0",
+        "eslint-plugin-prettier": "^5.5.4",
         "npm-run-all2": "^8.0.4",
         "ovsx": "^0.10.7",
         "prettier": "^3.7.4",
-        "typescript": "^5.9.3"
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.50.0"
     },
     "optionalDependencies": {
-        "bufferutil": "^4.0.9"
+        "bufferutil": "^4.1.0"
     },
     "scripts": {
         "compile": "cargo run --manifest-path=../../builder/Cargo.toml ext-build",

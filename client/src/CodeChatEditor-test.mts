@@ -15,19 +15,18 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `CodeChatEditor-test.mts` -- Tests for the CodeChat Editor client
-// =================================================================
+// =============================================================================
 //
 // To run tests, add a `?test` to any web page served by the CodeChat Editor
 // server.
 //
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 import { assert } from "chai";
 import "mocha/mocha.js";
 import "mocha/mocha.css";
 import { EditorView } from "@codemirror/view";
 import { ChangeSpec, EditorState, EditorSelection } from "@codemirror/state";
-import { exportedForTesting } from "./CodeChatEditor.mjs";
 import { CodeMirror, CodeMirrorDocBlockTuple } from "./shared_types.mjs";
 import {
     DocBlockPlugin,
@@ -41,14 +40,11 @@ import {
 //
 // Nothing needed at present.
 //
-// Provide convenient access to all functions tested here.
-const {} = exportedForTesting;
-
 // From [SO](https://stackoverflow.com/a/39914235).
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 //
 // <a id="CodeChatEditor_test"></a>Defining this global variable signals the
 // CodeChat Editor to [run tests](CodeChatEditor.mts#CodeChatEditor_test).
@@ -58,7 +54,7 @@ window.CodeChatEditor_test = () => {
         ui: "tdd",
         // This is required to use Mocha's global teardown from the browser,
         // AFAIK.
-        /// @ts-ignore
+        /// @ts-expect-error("See above.")
         globalTeardown: [
             () => {
                 // On teardown, put the Mocha div at the beginning of the body.

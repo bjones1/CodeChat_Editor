@@ -518,8 +518,8 @@ async fn processing_task(
 
                                         // Close the file if it can't be read as
                                         // Unicode text.
-                                        if read_ret.is_err() {
-                                            error!("Unable to read '{}': {}", cfp.to_string_lossy(), read_ret.unwrap_err());
+                                        if let Err(e) = read_ret {
+                                            error!("Unable to read '{}': {e}", cfp.to_string_lossy());
                                             break 'task;
                                         }
 
@@ -634,7 +634,7 @@ async fn processing_task(
                             break;
                         }
 
-                        EditorMessageContents::LoadFile(_)  => {
+                        EditorMessageContents::LoadFile(..)  => {
                             // We never have the requested file loaded in this
                             // "IDE". Intead, it's always on disk.
                             send_response(&from_ide_tx, m.id, Ok(ResultOkTypes::LoadFile(None))).await;
@@ -724,18 +724,20 @@ mod tests {
 
     use super::FW;
     use crate::{
-        cast, prep_test_dir,
         processing::{
             CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata, TranslationResults,
             source_to_codechat_for_web,
         },
-        test_utils::{check_logger_errors, configure_testing_logger},
         webserver::{
             EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID,
             INITIAL_IDE_MESSAGE_ID, INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT,
             ResultErrTypes, ResultOkTypes, UpdateMessageContents, WebAppState, WebsocketQueues,
             configure_app, drop_leading_slash, make_app_data, send_response, set_root_path,
         },
+    };
+    use test_utils::{
+        cast, prep_test_dir,
+        test_utils::{check_logger_errors, configure_testing_logger},
     };
 
     async fn get_websocket_queues(
@@ -781,7 +783,8 @@ mod tests {
                 m
             }
             _ = sleep(Duration::from_secs(3)) => {
-                // The backtrace shows what message the code was waiting for; otherwise, it's an unhelpful error message.
+                // The backtrace shows what message the code was waiting for;
+                // otherwise, it's an unhelpful error message.
                 panic!("Timeout waiting for message:\n{}", Backtrace::force_capture());
             }
         }

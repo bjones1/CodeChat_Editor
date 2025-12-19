@@ -25,9 +25,12 @@ import {
     RawEditorOptions,
     TinyMCE,
 } from "tinymce";
-// TODO: The type of tinymce is broken; I don't know why. Here's a workaround.
-export const tinymce = tinymce_ as any as TinyMCE;
-export { Editor };
+// This is taken from the
+// [TinyMCE example code](https://github.com/tinymce/tinymce/blob/main/modules/tinymce/src/core/demo/ts/demo/TinyMceDemo.ts).
+// However, esbuild doesn't accept it.
+//export declare const tinymce: TinyMCE;
+// Here's a workaround.
+export const tinymce = tinymce_ as unknown as TinyMCE;
 
 // Default icons are required for TinyMCE 5.3 or above.
 import "tinymce/icons/default/index.js";
@@ -77,7 +80,7 @@ export const init = async (
     options: RawEditorOptions,
 ) => {
     // Merge the provided options with these default options.
-    let combinedOptions = Object.assign({}, options, {
+    const combinedOptions = Object.assign({}, options, {
         // See the list of
         // [plugins](https://www.tiny.cloud/docs/tinymce/6/plugins/). These must
         // be accompanied by the corresponding import above.
@@ -156,7 +159,7 @@ export const init = async (
             editor.ui.registry.addToggleButton("codeformat", {
                 text: "<>",
                 tooltip: "Format as code",
-                onAction: (_) =>
+                onAction: () =>
                     editor.execCommand("mceToggleFormat", false, "code"),
                 onSetup: (api) => {
                     const changed = editor.formatter.formatChanged(

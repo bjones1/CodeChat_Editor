@@ -21,34 +21,53 @@ Implementation
 
 ### System architecture
 
-<graphviz-graph graph="digraph {
+```graphviz
+digraph {
     bgcolor = transparent;
     compound = true;
     node [shape = box];
     subgraph cluster_text_editor {
-        label = &quot;Text editor/IDE&quot;
-        source_code [label = &quot;Source\ncode&quot;, style = dashed];
-        CodeChat_plugin [label = &quot;CodeChat\nEditor plugin&quot;];
+        label = "Text editor/IDE"
+        source_code [label = "Source\ncode", style = dashed];
+        CodeChat_plugin [label = "CodeChat\nEditor plugin"];
     }
     subgraph cluster_server {
         label = <CodeChat Editor Server>;
-        websocket_server [label = &quot;Websocket\nserver&quot;];
-        web_server [label = &quot;Web\nserver&quot;];
+        websocket_server [label = "Websocket\nserver"];
+        web_server [label = "Web\nserver"];
     }
     subgraph cluster_client_framework {
-        label = &quot;CodeChat Editor Client framework&quot;
+        label = "CodeChat Editor Client framework"
         subgraph cluster_client {
-            label = &quot;CodeChat Editor Client\n(Editor/Viewer/Simple Viewer)&quot;
-            rendered_code [label = &quot;Rendered code&quot;, style = dashed];
+            label = "CodeChat Editor Client"
+            rendered_code [label = "Rendered document", style = dashed];
         }
     }
-    CodeChat_plugin -> websocket_server [label = &quot;websocket&quot;, dir = both];
-    websocket_server -> rendered_code [label = &quot;websocket&quot;, dir = both, lhead = cluster_client_framework];
-    web_server -> rendered_code [label = &quot;HTTP&quot;, dir = both, lhead = cluster_client ];
-    }"></graphviz-graph>
+    CodeChat_plugin -> websocket_server [label = "NAPI-RS", dir = both, lhead = cluster_server];
+    websocket_server -> rendered_code [label = "websocket", dir = both, lhead = cluster_client_framework];
+    web_server -> rendered_code [label = "HTTP", dir = both, lhead = cluster_client ];
+}
+```
+
+Inside the client:
+
+* The Framework exchanges messages with the Server and loads the appropriate
+  Client (simple view, PDF view, editor, document-only editor).
+* The editor provides basic Client services and handles document-only mode.
+* The CodeMirror integration module embeds TinyMCE into CodeMirror, providing
+  the primary editing environment.
+
+The entire VSCode interface is contained in the extension, with the NAPI-RS glue
+in the corresponding library.
+
+Does this make more sense to place in the TOC? Or is it too wordy there? I think
+a diagram as an overview might be helpful. Perhaps the server, client, etc.
+should have its of readme files providing some of this.
 
 <a id="an-implementation"></a>Architecture
 --------------------------------------------------------------------------------
+
+Overall, the code is something like this:
 
 ### Client/server partitioning
 
@@ -246,14 +265,20 @@ So, this project contains Rust code to automate this process -- see the
 Misc topics
 --------------------------------------------------------------------------------
 
-### <a id="Client-simple-viewer"></a>CodeChat Editor Client Simple Viewer
+### <a id="Client-simple-viewer"></a>CodeChat Editor Client Viewer Types
 
-When in project mode, the CodeChat Editor cannot edit some files --
-miscellaneous text files, unsupported languages, images, video, etc. The simple
-viewer displays (without allowing editing) these files as raw text in the
-browser, though wrapped in the appropriate project structure (with a TOC on the
-left). For the Visual Studio Code extension, the simple viewer also provides
-support for viewing PDFs (which VSCode's built-in web browser doesn't support).
+The Client supports several classes of files:
+
+* Source files, rendered as intermingled code/doc blocks.
+* Document-only files -- these contain only Markdown and typically have a file
+  extension of `.md`.
+* Unsupported text files -- the CodeChat Editor cannot edit some files, such as
+  miscellaneous text files, unsupported languages, images, video, etc. The
+  simple viewer displays (without allowing editing) these files as raw text in
+  the browser, though wrapped in the appropriate project structure (with a TOC
+  on the left).
+* PDFs, where a plugin viewer for VSCode provides rendering, since the built-in
+  browser doesn't.
 
 ### Broken fences (Markdown challenges)
 
@@ -284,12 +309,11 @@ Future work
     headings. Implement numbering using CSS variables, which makes it easy for a
     style sheet to include or exclude section numbers:
 
-    `:root {` `--section-counter-reset: s1 4 s2 5;`
-    `--section-counter-content: counter(s1, numeric) '-' counter(s2, numeric);`
-    `}`
+    `:root {` `--section-counter-reset: s1 4 s2 5;` `--section-counter-content:
+    counter(s1, numeric) '-' counter(s2, numeric);` `}`
 
-    `h1::before {` `counter-reset: var(--section-counter-reset);`
-    `content: var(--section-counter-content);` `}`
+    `h1::before {` `counter-reset: var(--section-counter-reset);` `content:
+    var(--section-counter-content);` `}`
 
 ### Cached state
 
@@ -462,41 +486,43 @@ Organization
 As shown in the figure below, the CodeChat Editor Client starts with
 `client/package.json`, which tells
 [NPM](https://en.wikipedia.org/wiki/Npm_(software)) which JavaScript libraries
-are used in this project. Running `npm update` copies these libraries and all
+are used in this project. Running `npm update` copies these libraries and all
 their dependencies to the `client/node_modules` directory. The CodeChat Editor
 Client source code (see [CodeChatEditor.mts](../client/src/CodeChatEditor.mts))
 imports these libraries.
 
 Next, [esbuild](https://esbuild.github.io/) analyzes the CodeChat Editor client
-based by transforming any [TypeScript](https://www.typescriptlang.org/) into
+based by transforming any [TypeScript](https://www.typescriptlang.org/) into
 JavaScript then packaging all dependencies (JavaScript, CSS, images, etc.) into
 a smaller set of files. At a user's request, the CodeChat Editor Server
 generates HTML which creates an editor around the user-requested file. This HTML
 loads the packaged dependencies to create the CodeChat Editor Client webpage.
 
-<graphviz-graph graph="digraph {
-    JS_lib [label = &quot;JavaScript libraries&quot;]
-    &quot;package.json&quot; -> JS_lib [label = &quot;npm update&quot;]
+```graphviz
+digraph {
+    JS_lib [label = "JavaScript libraries"]
+    "package.json" -> JS_lib [label = "npm update"]
     JS_lib -> esbuild;
-    CCE_source [label = &quot;CodeChat Editor\nClient source&quot;]
-    JS_lib -> CCE_source [label = &quot;imports&quot;]
+    CCE_source [label = "CodeChat Editor\nClient source"]
+    JS_lib -> CCE_source [label = "imports"]
     CCE_source -> esbuild
-    esbuild -> &quot;Bundled JavaScript&quot;
-    esbuild -> &quot;Bundle metadata&quot;
-    &quot;Bundle metadata&quot; -> &quot;HashReader.mts&quot;
-    &quot;HashReader.mts&quot; -> server_HTML
-    CCE_webpage [label = &quot;CodeChat Editor\nClient webpage&quot;]
-    &quot;Bundled JavaScript&quot; -> CCE_webpage
-    server_HTML [label = &quot;CodeChat Editor\nServer-generated\nHTML&quot;]
+    esbuild -> "Bundled JavaScript"
+    esbuild -> "Bundle metadata"
+    "Bundle metadata" -> "HashReader.mts"
+    "HashReader.mts" -> server_HTML
+    CCE_webpage [label = "CodeChat Editor\nClient webpage"]
+    "Bundled JavaScript" -> CCE_webpage
+    server_HTML [label = "CodeChat Editor\nServer-generated\nHTML"]
     server_HTML -> CCE_webpage
-    }"></graphviz-graph>
+}
+```
 
 Note: to edit these diagrams, use an
 [HTML entity encoder/decoder](https://mothereff.in/html-entities) and a Graphviz
 editor such as [Edotor](https://edotor.net/).
 
-TODO: GUIs using TinyMCE. See
-the [how-to guide](https://www.tiny.cloud/docs/tinymce/6/dialog-components/#panel-components).
+TODO: GUIs using TinyMCE. See the
+[how-to guide](https://www.tiny.cloud/docs/tinymce/6/dialog-components/#panel-components).
 
 Code style
 --------------------------------------------------------------------------------

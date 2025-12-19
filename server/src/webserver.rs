@@ -122,7 +122,7 @@ pub struct ProcessingTaskHttpRequest {
     /// The path of the file requested.
     pub file_path: PathBuf,
     /// Flags for this file: none, TOC, raw.
-    flags: ProcessingTaskHttpRequestFlags,
+    pub flags: ProcessingTaskHttpRequestFlags,
     /// True if test mode is enabled.
     is_test_mode: bool,
     /// A queue to send the response back to the HTTP task.
@@ -130,7 +130,7 @@ pub struct ProcessingTaskHttpRequest {
 }
 
 #[derive(Debug, PartialEq)]
-enum ProcessingTaskHttpRequestFlags {
+pub enum ProcessingTaskHttpRequestFlags {
     // No flags provided.
     None,
     // This file is a TOC.
@@ -220,11 +220,18 @@ pub enum EditorMessageContents {
     OpenUrl(String),
 
     // #### These messages may only be sent by the Server.
-    /// Ask the IDE if the provided file is loaded. If so, the IDE should
-    /// respond by sending a `LoadFile` with the requested file. If not, the
-    /// returned `Result` should indicate the error "not loaded". Valid
-    /// destinations: IDE.
-    LoadFile(PathBuf),
+    /// Ask the IDE if the provided file is already loaded. The IDE should
+    /// always respond to this with a `ResultOkTypes::LoadFile` message. If the
+    /// file was loaded, the IDE responds with `Some((` contents of file,
+    /// version of file `))`; if the was isn't loaded, it responds with `None`.
+    /// The boolean value accompanying this message Valid destinations: IDE.
+    LoadFile(
+        // Path to the file to load.
+        PathBuf,
+        // `is_current` - true if this is the current file being edited/viewed
+        // by the Client.
+        bool,
+    ),
     /// This may only be used to respond to an `Opened` message; it contains the
     /// HTML for the CodeChat Editor Client to display in its built-in browser.
     /// Valid destinations: IDE.
@@ -255,13 +262,21 @@ pub enum ResultOkTypes {
     Void,
     /// The `LoadFile` message provides file contents and a revision number, if
     /// available. This message may only be sent from the IDE to the Server.
-    LoadFile(Option<(String, f64)>),
+    LoadFile(
+        Option<(
+            // The text of the file.
+            String,
+            // The version of the file; ignored if the corresponding `LoadFile`
+            // request's `is_current` value was false.
+            f64,
+        )>,
+    ),
 }
 
 #[derive(Debug, Serialize, Deserialize, TS, PartialEq, thiserror::Error)]
 pub enum ResultErrTypes {
-    #[error("File out of sync; update rejected")]
-    OutOfSync,
+    #[error("File out of sync; update rejected. Expected version {0} but saw version {1}")]
+    OutOfSync(f64, f64),
     #[error("IDE must not send this message")]
     IdeIllegalMessage,
     #[error("Client not allowed to send this message")]
@@ -447,19 +462,6 @@ pub const INITIAL_IDE_MESSAGE_ID: f64 = INITIAL_CLIENT_MESSAGE_ID + 1.0;
 /// bit, 2^54 seconds = 574 million years before the message ID wraps around
 /// assuming an average of 1 message/second.)
 pub const MESSAGE_ID_INCREMENT: f64 = 3.0;
-
-/// Synchronization state between the Client, Server, and IDE.
-#[derive(PartialEq)]
-pub enum SyncState {
-    /// Indicates the Client, IDE, and server's documents are identical.
-    InSync,
-    /// An Update message is in flight; the documents are out of sync until the
-    /// response to the Update is received.
-    Pending(f64),
-    /// A CurrentFile message was sent, guaranteeing that documents are out of
-    /// sync.
-    OutOfSync,
-}
 
 const MATHJAX_TAGS: &str = concatdoc!(
     r#"
@@ -1278,7 +1280,7 @@ pub fn client_websocket(
                                             // can send.
                                             match &joint_message.message {
                                                 // Check for an invalid message.
-                                                EditorMessageContents::LoadFile(_) |
+                                                EditorMessageContents::LoadFile(..) |
                                                 EditorMessageContents::ClientHtml(_) |
                                                 EditorMessageContents::Closed => {
                                                     let err = ResultErrTypes::ClientIllegalMessage;
@@ -1517,10 +1519,7 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
     #[cfg(debug_assertions)]
     l4rs.push("server");
     let config_file = l4rs.join("log4rs.yml");
-    let mut config = match load_config_file(&config_file, Default::default()) {
-        Ok(c) => c,
-        Err(err) => return Err(err.into()),
-    };
+    let mut config = load_config_file(&config_file, Default::default())?;
     config.root_mut().set_level(level);
     log4rs::init_config(config)?;
     Ok(())

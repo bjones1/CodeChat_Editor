@@ -33,22 +33,23 @@
 /// core processing needed to translate source code between a CodeChat Editor
 /// Client and an IDE client. The following diagram illustrates this approach:
 ///
-/// <graphviz-graph>digraph {
-/// ccc -&gt; client_task [ label = "websocket" dir = "both" ]
-/// ccc -&gt; http_task [ label = "HTTP\nrequest/response" dir = "both"]
-/// client_task -&gt; from_client
-/// http_task -&gt; http_to_client
-/// http_to_client -&gt; processing
-/// processing -&gt; http_from_client
-/// http_from_client -&gt; http_task
-/// from_client -&gt; processing
-/// processing -&gt; to_client
-/// to_client -&gt; client_task
-/// ide -&gt; ide_task [ dir = "both" ]
-/// ide_task -&gt; from_ide
-/// from_ide -&gt; processing
-/// processing -&gt; to_ide
-/// to_ide -&gt; ide_task
+/// ```graphviz
+/// digraph {
+/// ccc -> client_task [ label = "websocket" dir = "both" ]
+/// ccc -> http_task [ label = "HTTP\nrequest/response" dir = "both"]
+/// client_task -> from_client
+/// http_task -> http_to_client
+/// http_to_client -> processing
+/// processing -> http_from_client
+/// http_from_client -> http_task
+/// from_client -> processing
+/// processing -> to_client
+/// to_client -> client_task
+/// ide -> ide_task [ dir = "both" ]
+/// ide_task -> from_ide
+/// from_ide -> processing
+/// processing -> to_ide
+/// to_ide -> ide_task
 /// { rank = same; client_task; http_task }
 /// { rank = same; to_client; from_client; http_from_client; http_to_client }
 /// { rank = same; to_ide; from_ide }
@@ -65,7 +66,8 @@
 /// ide_task [ label = "IDE task" ]
 /// from_ide [ label = "queue from IDE" shape="rectangle" ]
 /// to_ide [ label = "queue to IDE" shape="rectangle" ]
-/// }</graphviz-graph>
+/// }
+/// ```
 ///
 /// The queues use multiple-sender, single receiver (mpsc) types. The exception
 /// to this pattern is the HTTP endpoint. This endpoint is invoked with each
@@ -80,100 +82,100 @@
 /// The following diagrams formally define the forwarding and translation
 /// protocol which this module implements.
 ///
-/// *   The startup phase loads the Client framework into a browser:
+/// * The startup phase loads the Client framework into a browser:
 ///
-///     <wc-mermaid>
-///     sequenceDiagram
-///     participant IDE
-///     participant Server
-///     participant Client
-///     note over IDE, Client: Startup
-///     IDE -&gt;&gt; Server: Opened(IdeType)
-///     Server -&gt;&gt; IDE: Result(String: OK)
-///     Server -&gt;&gt; IDE: ClientHtml(String: HTML or URL)
-///     IDE -&gt;&gt; Server: Result(String: OK)
-///     note over IDE, Client: Open browser (Client framework HTML or URL)
-///     loop
-///     Client -&gt; Server: HTTP request(/static URL)
-///     Server -&gt; Client: HTTP response(/static data)
-///     end
-///     </wc-mermaid>
+///   ```mermaid
+///   sequenceDiagram
+///   participant IDE
+///   participant Server
+///   participant Client
+///   note over IDE, Client: Startup
+///   IDE ->> Server: Opened(IdeType)
+///   Server ->> IDE: Result(String: OK)
+///   Server ->> IDE: ClientHtml(String: HTML or URL)
+///   IDE ->> Server: Result(String: OK)
+///   note over IDE, Client: Open browser (Client framework HTML or URL)
+///   loop
+///     Client -> Server: HTTP request(/static URL)
+///     Server -> Client: HTTP response(/static data)
+///   end
+///   ```
 ///
-/// *   If the current file in the IDE changes (including the initial startup,
-///     when the change is from no file to the current file), or a link is
-///     followed in the Client's iframe:
+/// * If the current file in the IDE changes (including the initial startup,
+///   when the change is from no file to the current file), or a link is
+///   followed in the Client's iframe:
 ///
-///     <wc-mermaid>
-///     sequenceDiagram
-///     participant IDE
-///     participant Server
-///     participant Client
-///     alt IDE loads file
-///     IDE -&gt;&gt; Client: CurrentFile(String: Path of main.py)
+///   ```mermaid
+///   sequenceDiagram
+///   participant IDE
+///   participant Server
+///   participant Client
+///   alt IDE loads file
+///     IDE ->> Client: CurrentFile(String: Path of main.py)
 ///     opt If Client document is dirty
-///     Client -&gt;&gt; IDE: Update(String: contents of main.py)
-///     IDE -&gt;&gt; Client: Response(OK)
+///         Client ->> IDE: Update(String: contents of main.py)
+///         IDE ->> Client: Response(OK)
 ///     end
-///     Client -&gt;&gt; IDE: Response(OK)
-///     else Client loads file
-///     Client -&gt;&gt; IDE: CurrentFile(String: URL of main.py)
-///     IDE -&gt;&gt; Client: Response(OK)
-///     end
-///     Client -&gt;&gt; Server: HTTP request(URL of main.py)
-///     Server -&gt;&gt; IDE: LoadFile(String: path to main.py)
-///     IDE -&gt;&gt; Server: Response(LoadFile(String: file contents of main.py))
-///     alt main.py is editable
-///     Server -&gt;&gt; Client: HTTP response(contents of Client)
-///     Server -&gt;&gt; Client: Update(String: contents of main.py)
-///     Client -&gt;&gt; Server: Response(OK)
+///     Client ->> IDE: Response(OK)
+///   else Client loads file
+///     Client ->> IDE: CurrentFile(String: URL of main.py)
+///     IDE ->> Client: Response(OK)
+///   end
+///   Client ->> Server: HTTP request(URL of main.py)
+///   Server ->> IDE: LoadFile(String: path to main.py)
+///   IDE ->> Server: Response(LoadFile(String: file contents of main.py))
+///   alt main.py is editable
+///     Server ->> Client: HTTP response(contents of Client)
+///     Server ->> Client: Update(String: contents of main.py)
+///     Client ->> Server: Response(OK)
 ///     loop
-///     Client -&gt;&gt; Server: HTTP request(URL of supporting file in main.py)
-///     Server -&gt;&gt; IDE: LoadFile(String: path of supporting file)
-///     alt Supporting file in IDE
-///     IDE -&gt;&gt; Server: Response(LoadFile(contents of supporting file)
-///     Server -&gt;&gt; Client: HTTP response(contents of supporting file)
-///     else Supporting file not in IDE
-///     IDE -&gt;&gt; Server: Response(LoadFile(None))
-///     Server -&gt;&gt; Client: HTTP response(contents of supporting file from /// filesystem)
+///         Client ->> Server: HTTP request(URL of supporting file in main.py)
+///         Server ->> IDE: LoadFile(String: path of supporting file)
+///         alt Supporting file in IDE
+///             IDE ->> Server: Response(LoadFile(contents of supporting file)
+///             Server ->> Client: HTTP response(contents of supporting file)
+///         else Supporting file not in IDE
+///             IDE ->> Server: Response(LoadFile(None))
+///             Server ->> Client: HTTP response(contents of supporting file from /// filesystem)
+///         end
 ///     end
-///     end
-///     else main.py not editable and not a project
-///     Server -&gt;&gt; Client: HTTP response(contents of main.py)
-///     else main.py not editable and is a project
-///     Server -&gt;&gt; Client: HTTP response(contents of Client Simple Viewer)
-///     Client -&gt;&gt; Server: HTTP request (URL?raw of main.py)
-///     Server -&gt;&gt; Client: HTTP response(contents of main.py)
-///     end
-///     </wc-mermaid>
+///   else main.py not editable and not a project
+///     Server ->> Client: HTTP response(contents of main.py)
+///   else main.py not editable and is a project
+///     Server ->> Client: HTTP response(contents of Client Simple Viewer)
+///     Client ->> Server: HTTP request (URL?raw of main.py)
+///     Server ->> Client: HTTP response(contents of main.py)
+///   end
+///   ```
 ///
-/// *   If the current file's contents in the IDE are edited:
+/// * If the current file's contents in the IDE are edited:
 ///
-///     <wc-mermaid>
-///     sequenceDiagram
-///     participant IDE
-///     participant Server
-///     participant Client
-///     IDE -&gt;&gt; Server: Update(String: new text contents)
-///     alt Main file is editable
-///     Server -&gt;&gt; Client: Update(String: new Client contents)
-///     else Main file is not editable
-///     Server -&gt;&gt; Client: Update(String: new text contents)
-///     end
-///     Client -&gt;&gt; IDE: Response(String: OK)<br>
-///     </wc-mermaid>
+///   ```mermaid
+///   sequenceDiagram
+///   participant IDE
+///   participant Server
+///   participant Client
+///   IDE ->> Server: Update(String: new text contents)
+///   alt Main file is editable
+///     Server ->> Client: Update(String: new Client contents)
+///   else Main file is not editable
+///     Server ->> Client: Update(String: new text contents)
+///   end
+///   Client ->> IDE: Response(String: OK)
+///   ```
 ///
-/// *   If the current file's contents in the Client are edited, the Client
-///     sends the IDE an `Update` with the revised contents.
+/// * If the current file's contents in the Client are edited, the Client sends
+///   the IDE an `Update` with the revised contents.
 ///
-/// *   When the PC goes to sleep then wakes up, the IDE client and the Editor
-///     client both reconnect to the websocket URL containing their assigned ID.
+/// * When the PC goes to sleep then wakes up, the IDE client and the Editor
+///   client both reconnect to the websocket URL containing their assigned ID.
 ///
-/// *   If the Editor client or the IDE client are closed, they close their
-///     websocket, which sends a `Close` message to the other websocket, causes
-///     it to also close and ending the session.
+/// * If the Editor client or the IDE client are closed, they close their
+///   websocket, which sends a `Close` message to the other websocket, causes it
+///   to also close and ending the session.
 ///
-/// *   If the server is stopped (or crashes), both clients shut down after
-///     several reconnect retries.
+/// * If the server is stopped (or crashes), both clients shut down after
+///   several reconnect retries.
 ///
 /// ### Editor-overlay filesystem
 ///
@@ -229,10 +231,10 @@ use crate::{
     queue_send, queue_send_func,
     webserver::{
         EditorMessage, EditorMessageContents, INITIAL_MESSAGE_ID, MESSAGE_ID_INCREMENT,
-        ProcessingTaskHttpRequest, ResultErrTypes, ResultOkTypes, SimpleHttpResponse,
-        SimpleHttpResponseError, UpdateMessageContents, WebAppState, WebsocketQueues,
-        file_to_response, path_to_url, send_response, try_canonicalize, try_read_as_text,
-        url_to_path,
+        ProcessingTaskHttpRequest, ProcessingTaskHttpRequestFlags, ResultErrTypes, ResultOkTypes,
+        SimpleHttpResponse, SimpleHttpResponseError, UpdateMessageContents, WebAppState,
+        WebsocketQueues, file_to_response, path_to_url, send_response, try_canonicalize,
+        try_read_as_text, url_to_path,
     },
 };
 
@@ -240,7 +242,7 @@ use crate::{
 // -----------------------------------------------------------------------------
 //
 // The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH: usize = 3000;
+const MAX_MESSAGE_LENGTH: usize = 500;
 
 lazy_static! {
         /// A regex to determine the type of the first EOL. See 'PROCESSINGS\`.
@@ -494,7 +496,7 @@ pub async fn translation_task(
                         // Handle messages that the IDE must not send.
                         EditorMessageContents::Opened(_) |
                         EditorMessageContents::OpenUrl(_) |
-                        EditorMessageContents::LoadFile(_) |
+                        EditorMessageContents::LoadFile(..) |
                         EditorMessageContents::ClientHtml(_) => {
                             let err = ResultErrTypes::IdeIllegalMessage;
                             error!("{err:?}");
@@ -543,7 +545,16 @@ pub async fn translation_task(
                     // Convert the request into a `LoadFile` message.
                     queue_send!(tt.to_ide_tx.send(EditorMessage {
                         id: tt.id,
-                        message: EditorMessageContents::LoadFile(http_request.file_path.clone())
+                        message: EditorMessageContents::LoadFile
+                            (http_request.file_path.clone(),
+                            // Assign a version to this `LoadFile` request only
+                            // if it's the current file and loaded as the file
+                            // to edit, not as the sidebar TOC. We can us a
+                            // simple comparison, since both file names have
+                            // already been canonicalized.
+                            http_request.file_path == tt.current_file &&
+                            http_request.flags == ProcessingTaskHttpRequestFlags::None
+                        )
                     }));
                     // Store the ID and request, which are needed to send a
                     // response when the `LoadFile` result is received.
@@ -557,7 +568,7 @@ pub async fn translation_task(
                     match client_message.message {
                         // Handle messages that the client must not send.
                         EditorMessageContents::Opened(_) |
-                        EditorMessageContents::LoadFile(_) |
+                        EditorMessageContents::LoadFile(..) |
                         EditorMessageContents::RequestClose |
                         EditorMessageContents::ClientHtml(_) => {
                             let err = ResultErrTypes::ClientIllegalMessage;
@@ -575,7 +586,7 @@ pub async fn translation_task(
                             debug!("Forwarding it to the IDE.");
                             // If the Client can't read our diff, send the full
                             // text next time.
-                            if matches!(result, Err(ResultErrTypes::OutOfSync)) {
+                            if matches!(result, Err(ResultErrTypes::OutOfSync(..))) {
                                 tt.sent_full = false;
                             }
                             queue_send!(tt.to_ide_tx.send(client_message))
@@ -706,7 +717,7 @@ impl TranslationTask {
         if !is_loadfile {
             debug!("Forwarding it to the Client.");
             // If the Server can't read our diff, send the full text next time.
-            if matches!(result, Err(ResultErrTypes::OutOfSync)) {
+            if matches!(result, Err(ResultErrTypes::OutOfSync(..))) {
                 self.sent_full = false;
             }
             queue_send_func!(self.to_client_tx.send(ide_message));
@@ -745,7 +756,13 @@ impl TranslationTask {
         let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
         let ((simple_http_response, option_update), file_contents) = match file_contents_option {
             Some((file_contents, new_version)) => {
-                self.version = new_version;
+                // Only pay attention to the version if this is an editable
+                // Client file.
+                if http_request.file_path == self.current_file
+                    && http_request.flags == ProcessingTaskHttpRequestFlags::None
+                {
+                    self.version = new_version;
+                }
                 // The IDE just sent the full contents; we're sending full
                 // contents to the Client.
                 self.sent_full = true;
@@ -806,7 +823,7 @@ impl TranslationTask {
             self.code_mirror_doc = plain.doc.clone();
             self.code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
 
-            debug!("Sending Update to Client, id = {}.", self.id);
+            debug!("Sending Update from LoadFile to Client, id = {}.", self.id);
             queue_send_func!(self.to_client_tx.send(EditorMessage {
                 id: self.id,
                 message: EditorMessageContents::Update(update)
@@ -1083,7 +1100,10 @@ impl TranslationTask {
                                         cfw_version,
                                         &code_mirror_translated,
                                     );
-                                    debug!("Sending re-translation update back to the Client.");
+                                    debug!(
+                                        "Sending re-translation update id = {} back to the Client.",
+                                        self.id
+                                    );
                                     queue_send_func!(self.to_client_tx.send(EditorMessage {
                                         id: self.id,
                                         message: EditorMessageContents::Update(
@@ -1099,7 +1119,8 @@ impl TranslationTask {
                                         )
                                     }));
                                     self.id += MESSAGE_ID_INCREMENT;
-                                    // Update with what was just sent to the client.
+                                    // Update with what was just sent to the
+                                    // client.
                                     self.code_mirror_doc = code_mirror_translated.doc;
                                     self.code_mirror_doc_blocks =
                                         Some(code_mirror_translated.doc_blocks);
@@ -1144,6 +1165,7 @@ impl TranslationTask {
                         }
                     },
                 };
+                debug!("Sending update id = {}", client_message.id);
                 queue_send_func!(self.to_ide_tx.send(EditorMessage {
                     id: client_message.id,
                     message: EditorMessageContents::Update(UpdateMessageContents {

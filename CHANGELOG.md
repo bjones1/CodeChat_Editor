@@ -24,6 +24,38 @@ Changelog
 
 * No changes.
 
+Version 0.1.47 -- 2025-Dec-19
+--------------------------------------------------------------------------------
+
+* Fix errors in Client when editing a file with adjacent doc blocks.
+* Fix out of sync errors when the table of contents file is open.
+* Fix incorrect version info sent by the VSCode extension.
+* Change lexer name for C/C++ code to avoid escaping when converting from HTML
+  to Markdown.
+* Fix Client so that edits produces updates to the IDE; previous, edits would
+  occasionally stop updating the IDE.
+* Prevent editing the `<span>` that wraps math expressions.
+* Automatically re-sync Client with IDE when out of sync.
+* Update to latest release of MathJax.
+* Add support for [Loci](https://github.com/EdwardALuke/loci) files.
+
+Version 0.1.46 -- 2025-Dec-15
+--------------------------------------------------------------------------------
+
+* Avoid spaces disappearing in Client when editing lists.
+* Improve speed of convert
+* Improve Client error reporting.
+
+Version 0.1.45 -- 2025-Dec-11
+--------------------------------------------------------------------------------
+
+* Fix loss of editing in the Client when in document-only mode.
+* Fix data corruption in the Client when in document-only mode and edits are
+  made in both the IDE and Client.
+* Fix loss of autosave when making GUI-based edits in the Client.
+* Correctly retain Client cursor position during IDE edits.
+* Correctly translate table cells containing blocks from HTML to Markdown.
+
 Version 0.1.44 -- 2025-Dec-09
 --------------------------------------------------------------------------------
 

@@ -14,9 +14,10 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `test.rs` -- Unit tests for the vscode interface
-/// ================================================
+/// ============================================================================
 // Imports
-// -------
+// -----------------------------------------------------------------------------
+//
 // ### Standard library
 use std::path::{MAIN_SEPARATOR_STR, PathBuf};
 #[cfg(not(target_os = "macos"))]
@@ -29,14 +30,11 @@ use assertables::{assert_ends_with, assert_not_contains, assert_starts_with};
 
 // ### Local
 use super::{path_to_url, url_to_path};
-use crate::prep_test_dir;
-use crate::{
-    cast,
-    ide::{filewatcher::FILEWATCHER_PATH_PREFIX, vscode::tests::IP_PORT},
-};
+use crate::ide::{filewatcher::FILEWATCHER_PATH_PREFIX, vscode::tests::IP_PORT};
+use test_utils::{cast, prep_test_dir};
 
 // Support functions
-// -----------------
+// -----------------------------------------------------------------------------
 //
 // The lint on using `cargo_bin` doesn't apply, since this is only available for
 // integration tests per the
@@ -54,7 +52,7 @@ fn get_server() -> Command {
 }
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 #[test]
 fn test_url_to_path() {
     let (temp_dir, test_dir) = prep_test_dir!();
@@ -131,15 +129,16 @@ fn test_path_to_url() {
     temp_dir.close().unwrap();
 }
 
-// Test startup outside the repo path. For some reason, this fails intermittently on Mac. Ignore these failures.
+// Test startup outside the repo path. For some reason, this fails
+// intermittently on Mac. Ignore these failures.
 #[cfg(not(target_os = "macos"))]
 #[test]
 fn test_other_path() {
     let (temp_dir, test_dir) = prep_test_dir!();
 
     // Start the server. Calling `output()` causes the program to hang; call
-    // `status()` instead. Since the `assert_cmd` crates doesn't offer this,
-    // use the std lib instead.
+    // `status()` instead. Since the `assert_cmd` crates doesn't offer this, use
+    // the std lib instead.
     std::process::Command::new(get_server().get_program())
         .args(["--port", "8083", "start"])
         .current_dir(&test_dir)
@@ -153,7 +152,7 @@ fn test_other_path() {
         .assert()
         .success();
 
-    // Wait for the server to exit, since it locks the temp_dir.
+    // Wait for the server to exit, since it locks the temp\_dir.
     sleep(Duration::from_millis(3000));
 
     // Report any errors produced when removing the temporary directory.
