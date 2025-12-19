@@ -52,6 +52,7 @@ import {
     MAX_MESSAGE_LENGTH,
 } from "../../../client/src/debug_enabled.mjs";
 import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes";
+import * as os from "os";
 
 // Globals
 // -----------------------------------------------------------------------------
@@ -128,7 +129,24 @@ interface CaptureEventPayload {
 
 // TODO: replace these with something real (e.g., VS Code settings)
 // For now, we hard-code to prove that the pipeline works end-to-end.
-const CAPTURE_USER_ID = "test-user";
+const CAPTURE_USER_ID: string = (() => {
+    try {
+        const u = os.userInfo().username;
+        if (u && u.trim().length > 0) {
+            return u.trim();
+        }
+    } catch (_) {
+        // fall through
+    }
+
+    // Fallbacks (should rarely be needed)
+    return (
+        process.env["USERNAME"] ||
+        process.env["USER"] ||
+        "unknown-user"
+    );
+})();
+
 const CAPTURE_ASSIGNMENT_ID = "demo-assignment";
 const CAPTURE_GROUP_ID = "demo-group";
 
@@ -879,3 +897,16 @@ const console_log = (...args: any) => {
         console.log(...args);
     }
 };
+
+function getCurrentUsername(): string {
+  try {
+    // Most reliable on Windows/macOS/Linux
+    const u = os.userInfo().username;
+    if (u && u.trim().length > 0) return u.trim();
+  } catch (_) {}
+
+  // Fallbacks
+  const envUser = process.env["USERNAME"] || process.env["USER"];
+  return (envUser && envUser.trim().length > 0) ? envUser.trim() : "unknown-user";
+}
+
