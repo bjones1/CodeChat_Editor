@@ -136,11 +136,11 @@ pub struct CodeMirror {
 /// A diff of the `CodeMirror` struct.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, TS)]
 pub struct CodeMirrorDiff {
+    /// The version number from which this diff was produced.
+    pub version: f64,
     /// A diff of the document being edited.
     pub doc: Vec<StringDiff>,
     pub doc_blocks: Vec<CodeMirrorDocBlockTransaction>,
-    /// The version number from which this diff was produced.
-    pub version: f64,
 }
 
 /// A transaction produced by the diff of the `CodeMirror` struct.
