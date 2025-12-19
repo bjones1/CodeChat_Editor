@@ -15,10 +15,10 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `lib.rs` -- Interface to the CodeChat Editor for VSCode
-// =======================================================
+// =============================================================================
 //
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::path::PathBuf;
@@ -32,7 +32,7 @@ use napi_derive::napi;
 use code_chat_editor::{ide, webserver};
 
 // Code
-// ----
+// -----------------------------------------------------------------------------
 #[napi]
 pub fn init_server(extension_base_path: String) -> Result<(), Error> {
     webserver::init_server(

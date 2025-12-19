@@ -14,12 +14,18 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// `shared_types.mts` -- Shared type definitions
-// =============================================
-// The time, in ms, to wait between the last user edit and sending updated data to the Server.
+// `shared_types.mts` -- Shared type definitionsz
+// =============================================================================
+//
+// The time, in ms, to wait between the last user edit and sending updated data
+// to the Server.
 export const autosave_timeout_ms = 300;
 
-// Produce a whole random number. Fractional numbers aren't consistently converted to the same number. Note that the mantissa of a JavaScript `Number` is 53 bits per the [docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number#number_encoding). To be certain, also round the result.
+// Produce a whole random number. Fractional numbers aren't consistently
+// converted to the same number. Note that the mantissa of a JavaScript `Number`
+// is 53 bits per the
+// [docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number#number_encoding).
+// To be certain, also round the result.
 export const rand = () => Math.round(Math.random() * 2 ** 53);
 
 // ### Message types
@@ -41,7 +47,8 @@ import { ResultErrTypes } from "./rust-types/ResultErrTypes.js";
 // Manually define this, since `ts-rs` can't export `webserver.MessageResult`.
 type MessageResult = { Ok: ResultOkTypes } | { Err: ResultErrTypes };
 
-// Modified from [SO](https://stackoverflow.com/a/79050131). If the value is a string, use it; otherwise, assume it's a dict and use its key.
+// Modified from [SO](https://stackoverflow.com/a/79050131). If the value is a
+// string, use it; otherwise, assume it's a dict and use its key.
 type KeysOfRustEnum<T> = T extends T ? (T extends string ? T : keyof T) : never;
 
 export type {

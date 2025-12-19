@@ -52,13 +52,11 @@ Implementation
       2. [CodeChatEditor.mts](client/src/CodeChatEditor.mts)
          1. [CodeMirror-integration.mts](client/src/CodeMirror-integration.mts)
          2. [tinymce-config.mts](client/src/tinymce-config.mts)
-         3. [EditorComponents.mts](client/src/EditorComponents.mts)
-         4. [graphviz-webcomponent-setup.mts](client/src/graphviz-webcomponent-setup.mts)
-         5. [Mermaid](client/src/wc-mermaid/developer.md)
-         6. [shared\_types.mts](client/src/shared_types.mts)
-         7. [assert.mts](client/src/assert.mts)
-         8. [show\_toast.mts](client/src/show_toast.mts)
-         9. [typings.d.ts](client/src/typings.d.ts)
+         3. [graphviz-webcomponent-setup.mts](client/src/graphviz-webcomponent-setup.mts)
+         4. [Mermaid](client/src/third-party/wc-mermaid/developer.md)
+         5. [shared\_types.mts](client/src/shared_types.mts)
+         6. [assert.mts](client/src/assert.mts)
+         7. [show\_toast.mts](client/src/show_toast.mts)
    2. Styles
       1. [CodeChatEditor.css](client/src/css/CodeChatEditor.css)
       2. [CodeChatEditorProject.css](client/src/css/CodeChatEditorProject.css)
@@ -76,8 +74,8 @@ Implementation
       4. [Developer documentation](extensions/VSCode/developer.md)
 4. Development tools
    1. Builder
-      1. [builder/Cargo.toml](builder/Cargo.toml)
-      2. [builder/src/main.rs](builder/src/main.rs)
+      1. [builder/Cargo.toml](Cargo.toml)
+      2. [builder/src/main.rs](main.rs)
    2. Git
       1. [server/.gitignore](server/.gitignore)
       2. [client/static/.gitignore](client/static/.gitignore)

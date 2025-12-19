@@ -14,9 +14,9 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `cli.rs` - Test the CLI interface
-/// =================================
+/// ============================================================================
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 //
@@ -31,7 +31,7 @@ use predicates::{prelude::predicate, str::contains};
 use tokio::task::spawn_blocking;
 
 // Support functions
-// -----------------
+// -----------------------------------------------------------------------------
 //
 // The lint on using `cargo_bin` doesn't apply, since this is only available for
 // integration tests per the
@@ -48,7 +48,7 @@ fn get_server() -> Command {
 }
 
 // Tests
-// -----
+// -----------------------------------------------------------------------------
 #[test]
 fn test_start_not_found() {
     let mut cmd = get_server();

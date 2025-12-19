@@ -1052,11 +1052,11 @@ fn html_to_tree(html: &str) -> io::Result<Rc<Node>> {
     .read_from(&mut html.as_bytes())?;
 
     // TODO: should we report parse errors? If so, how and where?
-    /* ```
+    /***
        if let Some(err) = dom.errors.borrow().first() {
            //return Err(io::Error::other(err.to_string()));
        }
-       ``` */
+    */
 
     Ok(dom.document)
 }

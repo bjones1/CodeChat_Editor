@@ -17,7 +17,7 @@
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
 # `dist.toml` - Configure [cargo-dist](https://opensource.axo.dev/cargo-dist/)
-# ============================================================================
+# ==============================================================================
 #
 # Config for 'dist'
 [dist]

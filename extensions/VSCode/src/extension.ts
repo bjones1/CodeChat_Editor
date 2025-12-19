@@ -164,7 +164,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 ignore_active_editor_change = false;
                                 return;
                             }
-                            // Skip an update if we've already sent a `CurrentFile` for this editor.
+                            // Skip an update if we've already sent a
+                            // `CurrentFile` for this editor.
                             if (
                                 current_editor ===
                                 vscode.window.activeTextEditor
@@ -536,7 +537,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                             // Look through all open documents to see if we have
                             // the requested file.
                             const doc = get_document(load_file);
-                            // If we have this file and the request is for the current file to edit/view in the Client, assign a version.
+                            // If we have this file and the request is for the
+                            // current file to edit/view in the Client, assign a
+                            // version.
                             if (doc !== undefined && is_current) {
                                 version = rand();
                             }

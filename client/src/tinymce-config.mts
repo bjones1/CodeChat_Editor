@@ -25,7 +25,9 @@ import {
     RawEditorOptions,
     TinyMCE,
 } from "tinymce";
-// This is taken from the [TinyMCE example code](https://github.com/tinymce/tinymce/blob/main/modules/tinymce/src/core/demo/ts/demo/TinyMceDemo.ts). However, esbuild doesn't accept it.
+// This is taken from the
+// [TinyMCE example code](https://github.com/tinymce/tinymce/blob/main/modules/tinymce/src/core/demo/ts/demo/TinyMceDemo.ts).
+// However, esbuild doesn't accept it.
 //export declare const tinymce: TinyMCE;
 // Here's a workaround.
 export const tinymce = tinymce_ as unknown as TinyMCE;

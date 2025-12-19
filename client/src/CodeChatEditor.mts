@@ -253,7 +253,9 @@ const _open_lp = async (
                         (
                             event: EditorEvent<Events.EditorEventMap["dirty"]>,
                         ) => {
-                            // Sometimes, `tinymce.activeEditor` is null (perhaps when it's not focused). Use the `event` data instead.
+                            // Sometimes, `tinymce.activeEditor` is null
+                            // (perhaps when it's not focused). Use the `event`
+                            // data instead.
                             event.target.setDirty(false);
                             is_dirty = true;
                             startAutosaveTimer();
@@ -320,7 +322,8 @@ const save_lp = (is_dirty: boolean) => {
             ) as HTMLDivElement;
             mathJaxUnTypeset(codechat_body);
             // To save a document only, simply get the HTML from the only Tiny
-            // MCE div. Update the `doc_contents` to stay in sync with the Server.
+            // MCE div. Update the `doc_contents` to stay in sync with the
+            // Server.
             doc_content = tinymce.activeEditor!.save();
             (
                 code_mirror_diffable as {
@@ -368,7 +371,9 @@ export const saveSelection = () => {
             (!(current_node as Element).classList.contains(
                 "CodeChat-doc-contents",
             ) &&
-                // Sometimes, the parent of a custom node (`wc-mermaid`) skips the TinyMCE div and returns the overall div. I don't know why.
+                // Sometimes, the parent of a custom node (`wc-mermaid`) skips
+                // the TinyMCE div and returns the overall div. I don't know
+                // why.
                 !(current_node as Element).classList.contains("CodeChat-doc"));
             current_node = current_node.parentNode!, is_first = false
         ) {
@@ -380,7 +385,8 @@ export const saveSelection = () => {
             // `childNodes` change based on whether text nodes (such as a
             // newline) are included are not after tinyMCE parses the content.
             const p = current_node.parentNode;
-            // In case we go off the rails, give up if there are no more parents.
+            // In case we go off the rails, give up if there are no more
+            // parents.
             if (p === null) {
                 return {
                     selection_path: [],

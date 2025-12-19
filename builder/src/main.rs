@@ -14,19 +14,19 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `main.rs` -- Entrypoint for the CodeChat Editor Builder
-/// =======================================================
+/// ============================================================================
 ///
 /// This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
 /// of the release process. To update the `./release.yaml` file this tool
 /// creates:
 ///
-/// 1.  Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
-/// 2.  Run `dist init` and accept the defaults, then run `dist generate`.
-/// 3.  Review changes to `./release.yaml`, reapplying hand edits.
-/// 4.  Revert the changes to `server/dist-workspace.toml`.
-/// 5.  Test
+/// 1. Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
+/// 2. Run `dist init` and accept the defaults, then run `dist generate`.
+/// 3. Review changes to `./release.yaml`, reapplying hand edits.
+/// 4. Revert the changes to `server/dist-workspace.toml`.
+/// 5. Test
 // Imports
-// -------
+// -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
@@ -50,7 +50,7 @@ use regex::Regex;
 // None
 //
 // Data structures
-// ---------------
+// -----------------------------------------------------------------------------
 //
 // The following defines the command-line interface for the CodeChat Editor.
 #[derive(Parser)]
@@ -117,7 +117,7 @@ struct TypeScriptBuildOptions {
 }
 
 // Constants
-// ---------
+// -----------------------------------------------------------------------------
 static VSCODE_PATH: &str = "../extensions/VSCode";
 static CLIENT_PATH: &str = "../client";
 static BUILDER_PATH: &str = "../builder";
@@ -125,7 +125,7 @@ static TEST_UTILS_PATH: &str = "../test_utils";
 static NAPI_TARGET: &str = "NAPI_TARGET";
 
 // Code
-// ----
+// -----------------------------------------------------------------------------
 //
 // ### Utilities
 //
@@ -242,8 +242,8 @@ fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Resu
         .status()?
         .code()
         .expect("Copy process terminated by signal");
-    // Per [these
-    // docs](https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/return-codes-used-robocopy-utility),
+    // Per
+    // [these docs](https://learn.microsoft.com/en-us/troubleshoot/windows-server/backup-and-storage/return-codes-used-robocopy-utility),
     // check the return code.
     if cfg!(windows) && exit_code >= 8 || !cfg!(windows) && exit_code != 0 {
         Err(io::Error::other(format!(
@@ -288,7 +288,7 @@ fn search_and_replace_file<
 }
 
 // Core routines
-// -------------
+// -----------------------------------------------------------------------------
 //
 // These functions simplify common build-focused development tasks and support
 // CI builds.
@@ -312,8 +312,8 @@ fn patch_file(patch: &str, before_patch: &str, file_path: &str) -> io::Result<()
 }
 /// After updating files in the client's Node files, perform some fix-ups.
 fn patch_client_libs() -> io::Result<()> {
-    // Apply a the fixes described in [issue
-    // 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
+    // Apply a the fixes described in
+    // [issue 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
     patch_file(
         "
         selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)",
@@ -321,8 +321,8 @@ fn patch_client_libs() -> io::Result<()> {
             hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));",
         &format!("{CLIENT_PATH}/node_modules/@codemirror/view/dist/index.js")
     )?;
-    // In [older
-    // releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options),
+    // In
+    // [older releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options),
     // TinyMCE allowed users to change `whitespace_elements`; the whitespace
     // inside these isn't removed by TinyMCE. However, this was removed in v6.0.
     // Therefore, manually patch TinyMCE instead.
@@ -385,8 +385,8 @@ fn run_install(dev: bool) -> io::Result<()> {
         #[cfg(not(windows))]
         // The original command had `'=https'`, but single quotes confused
         // `cmd_lib` and aren't needed to quote this. Note that `//` in the URL
-        // is a comment in Rust, so it must be [enclosed in
-        // quotes](https://github.com/rust-shell-script/rust_cmd_lib/issues/88).
+        // is a comment in Rust, so it must be
+        // [enclosed in quotes](https://github.com/rust-shell-script/rust_cmd_lib/issues/88).
         run_cmd! {
             curl -L --proto =https --tlsv1.2 -sSf "https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh" | bash;
         }?;
@@ -560,7 +560,7 @@ fn run_client_build(
         true,
     )?;
 
-    // <a id="#pdf.js>The PDF viewer for use with VSCode. Built it separately,
+    // \<a id="#pdf.js>The PDF viewer for use with VSCode. Built it separately,
     // since it's loaded apart from the rest of the Client.
     run_script(
         &esbuild,
@@ -643,7 +643,8 @@ fn run_extensions_build(
     if dist {
         napi_args.push("--release");
     }
-    // See if this is a cross-platform build -- if so, add in the specified target.
+    // See if this is a cross-platform build -- if so, add in the specified
+    // target.
     let target;
     if let Ok(tmp) = env::var(NAPI_TARGET) {
         target = tmp;
@@ -739,7 +740,9 @@ fn run_postrelease(target: &str) -> io::Result<()> {
         "aarch64-apple-darwin" => "darwin-arm64",
         _ => panic!("Unsupported platform {target}."),
     };
-    // `vsce` will invoke this program's `ext_build`; however, it doesn't provide a way to pass the target when cross-compiling. Use an environment variable instead.
+    // `vsce` will invoke this program's `ext_build`; however, it doesn't
+    // provide a way to pass the target when cross-compiling. Use an environment
+    // variable instead.
     unsafe {
         env::set_var(NAPI_TARGET, target);
     }
@@ -763,7 +766,7 @@ fn run_postrelease(target: &str) -> io::Result<()> {
 }
 
 // CLI implementation
-// ------------------
+// -----------------------------------------------------------------------------
 //
 // The following code implements the command-line interface for the CodeChat
 // Editor.
