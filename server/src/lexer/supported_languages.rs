@@ -155,7 +155,9 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             //   [Pest grammars](https://docs.rs/pest/latest/pest/#grammar).
             //   TODO: Pest doesn't support line continuations and allows
             //   multiline strings, so this is a inaccurate.
-            &["c", "cc", "cpp", "h", "hh", "hpp", "ino", "pest"],
+            // * The .`loci` extension is for
+            //   [Loci](https://github.com/EdwardALuke/loci) files.
+            &["c", "cc", "cpp", "h", "hh", "hpp", "ino", "pest", "loci"],
             &["//"],
             &[make_block_comment_delim("/*", "*/", false)],
             &[make_string_delimiter_spec(

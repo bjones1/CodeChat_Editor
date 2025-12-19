@@ -32,6 +32,7 @@ Changelog
 * Prevent editing the `<span>` that wraps math expressions.
 * Automatically re-sync Client with IDE when out of sync.
 * Update to latest release of MathJax.
+* Add support for [Loci](https://github.com/EdwardALuke/loci) files.
 
 Version 0.1.46 -- 2025-Dec-15
 --------------------------------------------------------------------------------
