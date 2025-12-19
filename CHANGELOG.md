@@ -29,6 +29,9 @@ Changelog
   to Markdown.
 * Fix Client so that edits produces updates to the IDE; previous, edits would
   occasionally stop updating the IDE.
+* Prevent editing the `<span>` that wraps math expressions.
+* Automatically re-sync Client with IDE when out of sync.
+* Update to latest release of MathJax.
 
 Version 0.1.46 -- 2025-Dec-15
 --------------------------------------------------------------------------------
