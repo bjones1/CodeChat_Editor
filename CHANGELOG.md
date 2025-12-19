@@ -22,6 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
+* No changes.
+
+Version 0.1.47 -- 2025-Dec-19
+--------------------------------------------------------------------------------
+
 * Fix errors in Client when editing a file with adjacent doc blocks.
 * Fix out of sync errors when the table of contents file is open.
 * Fix incorrect version info sent by the VSCode extension.
