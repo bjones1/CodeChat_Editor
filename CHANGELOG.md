@@ -22,7 +22,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
-* No changes.
+* Correctly re-translate Markdown documents.
 
 Version 0.1.47 -- 2025-Dec-19
 --------------------------------------------------------------------------------

@@ -1063,7 +1063,7 @@ fn html_to_tree(html: &str) -> io::Result<Rc<Node>> {
 
 // A framework to transform HTML by parsing it to a DOM tree, walking the tree,
 // then serializing the tree back to an HTML string.
-fn transform_html<T: FnOnce(Rc<Node>)>(html: &str, transform: T) -> io::Result<String> {
+pub fn transform_html<T: FnOnce(Rc<Node>)>(html: &str, transform: T) -> io::Result<String> {
     let tree = html_to_tree(html)?;
     transform(tree.clone());
 
