@@ -405,6 +405,23 @@ async fn test_server_core(
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
 
+    // Get the resulting cursor position update after the edit.
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: md_path_str.clone(),
+                contents: None,
+                cursor_position: None,
+                scroll_position: None
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
     // Perform an IDE edit.
     version = 5.0;
     let ide_id = codechat_server
