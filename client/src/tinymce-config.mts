@@ -174,5 +174,5 @@ export const init = async (
     // Use these combined options to
     // [init](https://www.tiny.cloud/docs/tinymce/6/apis/tinymce.root/#init)
     // TinyMCE.
-    return tinymce.init(combinedOptions);
+    return await tinymce.init(combinedOptions);
 };

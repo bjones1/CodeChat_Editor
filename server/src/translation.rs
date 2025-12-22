@@ -853,9 +853,10 @@ impl TranslationTask {
                             id: ide_message.id,
                             message: EditorMessageContents::Update(UpdateMessageContents {
                                 file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                contents: None,
                                 cursor_position: update.cursor_position,
                                 scroll_position: update.scroll_position,
+                                is_re_translation: false,
+                                contents: None,
                             }),
                         }));
                         Ok(ResultOkTypes::Void)
@@ -907,9 +908,10 @@ impl TranslationTask {
                                                     id: ide_message.id,
                                                     message: EditorMessageContents::Update(UpdateMessageContents {
                                                         file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                                        contents: Some(client_contents),
                                                         cursor_position: update.cursor_position,
                                                         scroll_position: update.scroll_position,
+                                                        is_re_translation: false,
+                                                        contents: Some(client_contents),
                                                     }),
                                                 }));
                                                 // Update to the latest code after
@@ -941,6 +943,9 @@ impl TranslationTask {
                                                     id: ide_message.id,
                                                     message: EditorMessageContents::Update(UpdateMessageContents {
                                                         file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                                                        cursor_position: update.cursor_position,
+                                                        scroll_position: update.scroll_position,
+                                                        is_re_translation: false,
                                                         contents: Some(CodeChatForWeb {
                                                             metadata: SourceFileMetadata {
                                                                 // Since this is raw data, `mode` doesn't
@@ -953,8 +958,6 @@ impl TranslationTask {
                                                             }),
                                                             version: contents.version
                                                         }),
-                                                        cursor_position: update.cursor_position,
-                                                        scroll_position: update.scroll_position,
                                                     }),
                                                 }));
                                                 Ok(ResultOkTypes::Void)
@@ -1070,15 +1073,24 @@ impl TranslationTask {
                                 // document intelligence such as renamed
                                 // headings, etc.). Note that strict HTML
                                 // comparison fails, since TinyMCE modifies
-                                // whitespace and some characters; for example, `👨‍👦` becomes `👨&zwj;👦` after processing by TinyMCE. Therefore, HTML processed by TinyMCE needs to be normalized before it can be compared.
+                                // whitespace and some characters; for example,
+                                // `👨‍👦` becomes `👨&zwj;👦` after processing by
+                                // TinyMCE. Therefore, HTML processed by TinyMCE
+                                // needs to be normalized before it can be
+                                // compared.
                                 //
                                 // 1. Document-only: HTML is stored in `.doc`;
                                 //    ignore `.doc_blocks`.
                                 // 2. Normal mode: HTML is stored in
                                 //    `.doc_blocks`; perform a binary compare of
-                                //    `.doc`, then an HTML comparison of `.doc_blocks`.
+                                //    `.doc`, then an HTML comparison of
+                                //    `.doc_blocks`.
                                 //
-                                // It looks like comparing HTML is risky, since TinyMCE (or something) store emojis differently. Perhaps we need to compare Markdown instead of HTML? Or HTML after processing? The second seems easier.
+                                // It looks like comparing HTML is risky, since
+                                // TinyMCE (or something) store emojis
+                                // differently. Perhaps we need to compare
+                                // Markdown instead of HTML? Or HTML after
+                                // processing? The second seems easier.
                                 let is_markdown_mode = cfw.metadata.mode == MARKDOWN_MODE;
                                 if (is_markdown_mode
                                     && !compare_html(
@@ -1111,12 +1123,13 @@ impl TranslationTask {
                                         message: EditorMessageContents::Update(
                                             UpdateMessageContents {
                                                 file_path: update_message_contents.file_path,
-                                                contents: Some(client_contents),
                                                 // Don't change the current position, since
                                                 // the Client editing position should be
                                                 // left undisturbed.
                                                 cursor_position: None,
-                                                scroll_position: None
+                                                scroll_position: None,
+                                                is_re_translation: true,
+                                                contents: Some(client_contents),
                                             }
                                         )
                                     }));
@@ -1172,9 +1185,10 @@ impl TranslationTask {
                     id: client_message.id,
                     message: EditorMessageContents::Update(UpdateMessageContents {
                         file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                        contents: codechat_for_web,
                         cursor_position: update_message_contents.cursor_position,
                         scroll_position: update_message_contents.scroll_position,
+                        is_re_translation: false,
+                        contents: codechat_for_web,
                     })
                 }));
             }
@@ -1194,14 +1208,19 @@ fn eol_convert(s: String, eol_type: &EolType) -> String {
     }
 }
 
-// TinyMCE replaces newlines inside paragraphs with a space and (I think) avoids surrogate pairs by breaking them into a series of UTF-16 characters. Therefore, to compare HTML, normalize HTML touched by TinyMCE first.
+// TinyMCE replaces newlines inside paragraphs with a space and (I think) avoids
+// surrogate pairs by breaking them into a series of UTF-16 characters.
+// Therefore, to compare HTML, normalize HTML touched by TinyMCE first.
 fn compare_html(
     // A string containing HTML that's been normalized by html5ever.
     normalized_html: &str,
-    // A string containing HTML that's not normalized; for example, data after processing by TinyMCE.
+    // A string containing HTML that's not normalized; for example, data after
+    // processing by TinyMCE.
     raw_html: &str,
 ) -> bool {
-    // The normalized HTML is word-wrapped, while the raw HTML is not. Use this to ignore the differences between newlines and spaces, in order to ignore these differences.
+    // The normalized HTML is word-wrapped, while the raw HTML is not. Use this
+    // to ignore the differences between newlines and spaces, in order to ignore
+    // these differences.
     fn map_newlines_to_spaces<'a>(
         s: &'a str,
     ) -> std::iter::Map<std::str::Chars<'a>, impl FnMut(char) -> char> {
@@ -1210,9 +1229,11 @@ fn compare_html(
             .map(|c: char| if c == '\n' { ' ' } else { c })
     }
 
-    // Transforming the HTML with an empty transform normalizes it but leave it otherwise unchanged.
+    // Transforming the HTML with an empty transform normalizes it but leave it
+    // otherwise unchanged.
     if let Ok(normalized_raw_html) = transform_html(raw_html, |_node| {}) {
-        // Ignore word wrapping and leading/trailing whitespace in the comparison.
+        // Ignore word wrapping and leading/trailing whitespace in the
+        // comparison.
         map_newlines_to_spaces(normalized_html).eq(map_newlines_to_spaces(&normalized_raw_html))
     } else {
         false
@@ -1232,7 +1253,8 @@ fn doc_block_compare(a: &CodeMirrorDocBlockVec, b: &CodeMirrorDocBlockVec) -> bo
             && a.to == b.to
             && a.indent == b.indent
             && a.delimiter == b.delimiter
-            // Most doc blocks haven't been touched by TinyMCE. Try a fast binary compare first.
+            // Most doc blocks haven't been touched by TinyMCE. Try a fast
+            // binary compare first.
             && (a.contents == b.contents ||
             compare_html(&a.contents, &b.contents))
     })

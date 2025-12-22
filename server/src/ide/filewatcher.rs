@@ -527,6 +527,9 @@ async fn processing_task(
                                             id,
                                             message: EditorMessageContents::Update(UpdateMessageContents {
                                                 file_path: current_filepath_str.to_string(),
+                                                cursor_position: None,
+                                                scroll_position: None,
+                                                is_re_translation: false,
                                                 contents: Some(CodeChatForWeb {
                                                     metadata: SourceFileMetadata {
                                                         // The IDE doesn't need to provide this.
@@ -544,8 +547,6 @@ async fn processing_task(
                                                     // difference with fractional values.
                                                     version: random::<u64>() as f64,
                                                 }),
-                                                cursor_position: None,
-                                                scroll_position: None,
                                             }),
                                         }));
                                         id += MESSAGE_ID_INCREMENT;
@@ -927,9 +928,10 @@ mod tests {
                 id: INITIAL_CLIENT_MESSAGE_ID,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     file_path: file_path.clone(),
-                    contents: None,
                     cursor_position: None,
                     scroll_position: None,
+                    is_re_translation: false,
+                    contents: None,
                 }),
             })
             .await
@@ -975,6 +977,9 @@ mod tests {
                 id: INITIAL_CLIENT_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     file_path: "".to_string(),
+                    cursor_position: None,
+                    scroll_position: None,
+                    is_re_translation: false,
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "".to_string(),
@@ -985,8 +990,6 @@ mod tests {
                         }),
                         version: 0.0,
                     }),
-                    cursor_position: None,
-                    scroll_position: None,
                 }),
             })
             .await
@@ -1010,6 +1013,9 @@ mod tests {
                 id: INITIAL_CLIENT_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     file_path: file_path.clone(),
+                    cursor_position: None,
+                    scroll_position: None,
+                    is_re_translation: false,
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "nope".to_string(),
@@ -1020,8 +1026,6 @@ mod tests {
                         }),
                         version: 1.0,
                     }),
-                    cursor_position: None,
-                    scroll_position: None,
                 }),
             })
             .await
@@ -1046,6 +1050,9 @@ mod tests {
                 id: INITIAL_CLIENT_MESSAGE_ID + 6.0 * MESSAGE_ID_INCREMENT,
                 message: EditorMessageContents::Update(UpdateMessageContents {
                     file_path: file_path.clone(),
+                    cursor_position: None,
+                    scroll_position: None,
+                    is_re_translation: false,
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1056,8 +1063,6 @@ mod tests {
                         }),
                         version: 2.0,
                     }),
-                    cursor_position: None,
-                    scroll_position: None,
                 }),
             })
             .await
@@ -1097,6 +1102,9 @@ mod tests {
                 INITIAL_IDE_MESSAGE_ID + MESSAGE_ID_INCREMENT,
                 UpdateMessageContents {
                     file_path: file_path.clone(),
+                    cursor_position: None,
+                    scroll_position: None,
+                    is_re_translation: false,
                     contents: Some(CodeChatForWeb {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
@@ -1107,8 +1115,6 @@ mod tests {
                         }),
                         version: msg.1.contents.as_ref().unwrap().version,
                     }),
-                    cursor_position: None,
-                    scroll_position: None,
                 }
             )
         );

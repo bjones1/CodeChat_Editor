@@ -262,9 +262,10 @@ async fn test_vscode_ide_websocket1() {
             id: INITIAL_IDE_MESSAGE_ID,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: "".to_string(),
-                contents: None,
                 cursor_position: None,
                 scroll_position: None,
+                is_re_translation: false,
+                contents: None,
             }),
         },
     )
@@ -542,6 +543,9 @@ async fn test_vscode_ide_websocket8() {
             id: INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -558,8 +562,6 @@ async fn test_vscode_ide_websocket8() {
                     }),
                     version: 0.0,
                 }),
-                cursor_position: None,
-                scroll_position: None,
             })
         }
     );
@@ -650,6 +652,9 @@ async fn test_vscode_ide_websocket7() {
             id: INITIAL_IDE_MESSAGE_ID,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -660,8 +665,6 @@ async fn test_vscode_ide_websocket7() {
                     }),
                     version: 0.0,
                 }),
-                cursor_position: None,
-                scroll_position: None,
             }),
         },
     )
@@ -672,6 +675,9 @@ async fn test_vscode_ide_websocket7() {
             id: INITIAL_IDE_MESSAGE_ID,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -688,8 +694,6 @@ async fn test_vscode_ide_websocket7() {
                     }),
                     version: 0.0,
                 }),
-                cursor_position: None,
-                scroll_position: None,
             })
         }
     );
@@ -718,6 +722,9 @@ async fn test_vscode_ide_websocket7() {
             id: INITIAL_IDE_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -734,8 +741,6 @@ async fn test_vscode_ide_websocket7() {
                     }),
                     version: 1.0,
                 }),
-                cursor_position: None,
-                scroll_position: None,
             }),
         },
     )
@@ -746,6 +751,9 @@ async fn test_vscode_ide_websocket7() {
             id: INITIAL_IDE_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -767,8 +775,6 @@ async fn test_vscode_ide_websocket7() {
                     }),
                     version: 1.0,
                 }),
-                cursor_position: None,
-                scroll_position: None,
             })
         }
     );
@@ -808,6 +814,9 @@ async fn test_vscode_ide_websocket6() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -824,8 +833,6 @@ async fn test_vscode_ide_websocket6() {
                     }),
                     version: 0.0,
                 }),
-                cursor_position: None,
-                scroll_position: None,
             }),
         },
     )
@@ -836,6 +843,9 @@ async fn test_vscode_ide_websocket6() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path,
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -846,8 +856,6 @@ async fn test_vscode_ide_websocket6() {
                     }),
                     version: 0.0,
                 }),
-                cursor_position: None,
-                scroll_position: None,
             })
         }
     );
@@ -973,6 +981,9 @@ async fn test_vscode_ide_websocket4() {
             id: INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -993,8 +1004,6 @@ async fn test_vscode_ide_websocket4() {
                         .unwrap()
                         .version,
                 }),
-                cursor_position: None,
-                scroll_position: None,
             })
         }
     );

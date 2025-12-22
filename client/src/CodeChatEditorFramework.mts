@@ -167,21 +167,27 @@ class WebSocketComm {
                         if (contents !== undefined) {
                             // Check and update the version. If this is a diff,
                             // ensure the diff was made against the version of
-                            // the file we have.
+                            // the file we have. Ignore re-translation version errors, instead ignoring the update.
                             if ("Diff" in contents.source) {
                                 if (
                                     contents.source.Diff.version !==
                                     this.version
                                 ) {
-                                    report_error(
-                                        `Out of sync: Client version ${this.version} !== incoming version ${contents.source.Diff.version}.`,
-                                    );
-                                    this.send_result(id, {
-                                        OutOfSync: [
-                                            this.version,
-                                            contents.source.Diff.version,
-                                        ],
-                                    });
+                                    if (current_update.is_re_translation) {
+                                        console_log(
+                                            `Ignoring out-of-sync re-translation update.`,
+                                        );
+                                    } else {
+                                        report_error(
+                                            `Out of sync: Client version ${this.version} !== incoming version ${contents.source.Diff.version}.`,
+                                        );
+                                        this.send_result(id, {
+                                            OutOfSync: [
+                                                this.version,
+                                                contents.source.Diff.version,
+                                            ],
+                                        });
+                                    }
                                     return;
                                 }
                             }
@@ -199,6 +205,7 @@ class WebSocketComm {
                                 // `on_dom_content_loaded` in the Client.
                                 await set_content(
                                     contents,
+                                    current_update.is_re_translation,
                                     current_update.cursor_position,
                                 );
                             } else {
@@ -214,6 +221,7 @@ class WebSocketComm {
                                             this.is_loading = false;
                                             await set_content(
                                                 contents,
+                                                current_update.is_re_translation,
                                                 current_update.cursor_position,
                                                 current_update.scroll_position,
                                             );
@@ -418,6 +426,7 @@ const get_client = () => root_iframe?.contentWindow?.CodeChatEditor;
 // in the `root_iframe`.
 const set_content = async (
     contents: CodeChatForWeb,
+    is_re_translation: boolean,
     cursor_line?: number,
     scroll_line?: number,
 ) => {
@@ -438,6 +447,7 @@ const set_content = async (
     } else {
         await root_iframe!.contentWindow!.CodeChatEditor.open_lp(
             contents,
+            is_re_translation,
             cursor_line,
             scroll_line,
         );

@@ -112,9 +112,10 @@ async fn test_4_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                contents: None,
                 cursor_position: Some(1),
-                scroll_position: Some(1.0)
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
             })
         }
     );
@@ -205,9 +206,10 @@ async fn test_5_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                contents: None,
                 cursor_position: Some(1),
-                scroll_position: Some(1.0)
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
             })
         }
     );
@@ -230,6 +232,9 @@ async fn test_5_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
+                cursor_position: Some(1),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -245,8 +250,6 @@ async fn test_5_core(
                     }),
                     version: client_version,
                 }),
-                cursor_position: Some(1),
-                scroll_position: Some(1.0)
             })
         }
     );
@@ -292,6 +295,9 @@ async fn test_5_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
+                cursor_position: Some(1),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -307,8 +313,6 @@ async fn test_5_core(
                     }),
                     version: client_version,
                 }),
-                cursor_position: Some(1),
-                scroll_position: Some(1.0)
             })
         }
     );
@@ -379,6 +383,9 @@ async fn test_6_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "markdown".to_string(),
@@ -394,8 +401,6 @@ async fn test_6_core(
                     }),
                     version: client_version,
                 }),
-                cursor_position: None,
-                scroll_position: None
             })
         }
     );

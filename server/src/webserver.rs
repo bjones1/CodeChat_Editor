@@ -340,9 +340,6 @@ pub struct UpdateMessageContents {
     /// transition times when the IDE and Client have different files loaded,
     /// guaranteeing to updates are still applied to the correct file.
     pub file_path: String,
-    /// The contents of this file.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub contents: Option<CodeChatForWeb>,
     /// The line in the file where the cursor is located. TODO: Selections are
     /// not yet supported.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -350,6 +347,12 @@ pub struct UpdateMessageContents {
     /// The line at the top of the screen.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scroll_position: Option<f32>,
+    /// True if this is a re-translation, which can be ignored if the receiver's
+    /// document is dirty. Therefore, this is written by the IDE and read by the Client and IDE; conversely, it's ignored by the Server. The IDE and Client should set this value to false.
+    pub is_re_translation: bool,
+    /// The contents of this file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contents: Option<CodeChatForWeb>,
 }
 
 /// ### Data structures used by the webserver
@@ -1017,9 +1020,10 @@ pub async fn file_to_response(
         // `simple_http_response` contains the Client.
         Some(UpdateMessageContents {
             file_path: file_path.to_string(),
-            contents: Some(codechat_for_web),
             cursor_position: None,
             scroll_position: None,
+            is_re_translation: false,
+            contents: Some(codechat_for_web),
         }),
     )
 }
