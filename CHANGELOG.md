@@ -22,7 +22,14 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
-* Re-translate Markdown documents as necessary.
+* Re-translate Markdown documents as necessary. This causes math written in the
+  Client to immediately be rendered, instead of needing to switch to the IDE and
+  perform an edit.
+* Ignore re-translations if the Client contents is dirty; overwrite Client
+  contents when dirty when an IDE update arrives. This prevents data corruption.
+* Correctly mark Client contents as clean after sending an update to the IDE,
+  instead of waiting until the IDE's response arrives. This prevents cases where
+  the Client edits didn't update IDE text.
 
 Version 0.1.47 -- 2025-Dec-19
 --------------------------------------------------------------------------------
@@ -37,7 +44,8 @@ Version 0.1.47 -- 2025-Dec-19
 * Prevent editing the `<span>` that wraps math expressions.
 * Automatically re-sync Client with IDE when out of sync.
 * Update to latest release of MathJax.
-* Add support for [Loci](https://github.com/EdwardALuke/loci) files.
+* Add support for
+  [Loci](https://www.simcenter.msstate.edu/software/luke/loci/index.html) files.
 
 Version 0.1.46 -- 2025-Dec-15
 --------------------------------------------------------------------------------
