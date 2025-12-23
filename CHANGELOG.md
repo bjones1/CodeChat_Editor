@@ -22,6 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 --------------------------------------------------------------------------------
 
+* No changes.
+
+Version 0.1.48 -- 2025-Dec-22
+--------------------------------------------------------------------------------
+
 * Re-translate Markdown documents as necessary. This causes math written in the
   Client to immediately be rendered, instead of needing to switch to the IDE and
   perform an edit.
