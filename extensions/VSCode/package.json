@@ -41,7 +41,7 @@
         "type": "git",
         "url": "https://github.com/bjones1/CodeChat_Editor"
     },
-    "version": "0.1.47",
+    "version": "0.1.48",
     "activationEvents": [
         "onCommand:extension.codeChatEditorActivate",
         "onCommand:extension.codeChatEditorDeactivate"
