@@ -873,7 +873,7 @@ pub async fn file_to_response(
     let (sidebar_iframe, sidebar_css) = if is_project {
         (
             format!(
-                r#"<iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe>"#,
+                r#"<nav id="CodeChat-sidebar-nav"><iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe></nav>"#,
                 path_to_toc.unwrap().to_slash_lossy()
             ),
             format!(
@@ -1001,15 +1001,19 @@ pub async fn file_to_response(
                 <body class="CodeChat-theme-light">
                     {sidebar_iframe}
                     <div id="CodeChat-contents">
-                        <div id="CodeChat-top">
-                            <div id="CodeChat-filename">
-                                <p>
-                                    {name} - {dir}
-                                </p>
+                        <header id="CodeChat-top">
+                            <div>
+                                <div id="CodeChat-filename">
+                                    <p>
+                                        {name} - {dir}
+                                    </p>
+                                </div>
+                                <div id="CodeChat-menu"></div>
                             </div>
-                            <div id="CodeChat-menu"></div>
-                        </div>
-                        <div id="CodeChat-body"></div>
+                        </header>
+                        <main>
+                            <div id="CodeChat-body"></div>
+                        </main>
                         <div id="CodeChat-bottom"></div>
                         <div id="mocha"></div>
                     </div>
