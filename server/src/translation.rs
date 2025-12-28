@@ -1229,12 +1229,15 @@ fn compare_html(
             .map(|c: char| if c == '\n' { ' ' } else { c })
     }
 
+    // Normalized `<br>` elements are followed by a newline; raw `<br>` elements aren't. Remove the newline.
+    let fixed_normalized_html = normalized_html.replace("<br>\n", "<br>");
+
     // Transforming the HTML with an empty transform normalizes it but leave it
     // otherwise unchanged.
     if let Ok(normalized_raw_html) = transform_html(raw_html, |_node| {}) {
         // Ignore word wrapping and leading/trailing whitespace in the
         // comparison.
-        map_newlines_to_spaces(normalized_html).eq(map_newlines_to_spaces(&normalized_raw_html))
+        map_newlines_to_spaces(&fixed_normalized_html).eq(map_newlines_to_spaces(&normalized_raw_html))
     } else {
         false
     }
