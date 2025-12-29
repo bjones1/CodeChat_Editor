@@ -348,7 +348,9 @@ pub struct UpdateMessageContents {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scroll_position: Option<f32>,
     /// True if this is a re-translation, which can be ignored if the receiver's
-    /// document is dirty. Therefore, this is written by the IDE and read by the Client and IDE; conversely, it's ignored by the Server. The IDE and Client should set this value to false.
+    /// document is dirty. Therefore, this is written by the IDE and read by the
+    /// Client and IDE; conversely, it's ignored by the Server. The IDE and
+    /// Client should set this value to false.
     pub is_re_translation: bool,
     /// The contents of this file.
     #[serde(skip_serializing_if = "Option::is_none")]
