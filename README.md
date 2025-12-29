@@ -7,7 +7,7 @@ its basic features and use. In contrast, the [style guide](docs/style_guide.cpp)
 provides strategies for effectively employing the CodeChat Editor to improve the
 software development process.
 
-<iframe title="YouTube video player" src="https://www.youtube.com/embed/sJ2oUgDatcE?si=_qoJxD7Oiu5NnAIR" width="560" height="315" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen="allowfullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+<iframe width="560" height="315" src="https://www.youtube.com/embed/videoseries?si=QNrYCiTLVCpxpAbD&amp;list=PLOJAqFa3UI2FJncc-OBRPhh17NJXQP6ve" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 Full manual
 --------------------------------------------------------------------------------
