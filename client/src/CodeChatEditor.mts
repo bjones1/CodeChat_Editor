@@ -264,14 +264,14 @@ const _open_lp = async (
         const codechat_body = document.getElementById(
             "CodeChat-body",
         ) as HTMLDivElement;
-        // Per the
-        // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
-        // "If you modify the page to remove content that contains typeset
-        // mathematics, you will need to tell MathJax about that so that it
-        // knows the typeset math that you are removing is no longer on the
-        // page."
-        window.MathJax.typesetClear(codechat_body);
         if (is_doc_only()) {
+            // Per the
+            // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
+            // "If you modify the page to remove content that contains typeset
+            // mathematics, you will need to tell MathJax about that so that it
+            // knows the typeset math that you are removing is no longer on the
+            // page."
+            window.MathJax.typesetClear(codechat_body);
             if (tinymce.activeEditor === null) {
                 // We shouldn't have a diff if the editor hasn't been
                 // initialized.
@@ -324,7 +324,7 @@ const _open_lp = async (
                     restoreSelection(sel);
                 }
             }
-            mathJaxTypeset(codechat_body);
+            await mathJaxTypeset(codechat_body);
             scroll_to_line(cursor_line, scroll_line);
         } else {
             if (is_dirty && "Diff" in source) {
@@ -349,7 +349,7 @@ const _open_lp = async (
             }
         }
     } finally {
-        // Use a `finally` block to ensure the cleanup code always run.
+        // Use a `finally` block to ensure the cleanup code always runs.
         //
         // Per the discussion at the beginning of this function, the dirty
         // contents have been overwritten by contents from the IDE. By the same
@@ -366,7 +366,7 @@ const _open_lp = async (
     }
 };
 
-const save_lp = (is_dirty: boolean) => {
+const save_lp = async (is_dirty: boolean) => {
     const update: UpdateMessageContents = {
         // The Framework will fill in this value.
         file_path: "",
@@ -401,7 +401,7 @@ const save_lp = (is_dirty: boolean) => {
                 doc_blocks: [],
             };
             // Retypeset all math after saving the document.
-            mathJaxTypeset(codechat_body);
+            await mathJaxTypeset(codechat_body);
         } else {
             code_mirror_diffable = CodeMirror_save();
             assert("Plain" in code_mirror_diffable);
@@ -534,7 +534,7 @@ const on_save = async (only_if_dirty: boolean = false) => {
         "CodeChat Editor Client: sent Update - saving document/updating cursor location.",
     );
     // Don't wait for a response to change `is_dirty`; this boogers up logic.
-    webSocketComm().send_message({ Update: save_lp(is_dirty) });
+    webSocketComm().send_message({ Update: await save_lp(is_dirty) });
     is_dirty = false;
 };
 

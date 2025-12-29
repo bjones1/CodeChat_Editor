@@ -760,6 +760,10 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     // cursor position (the selection) to be set in the
                     // contenteditable div. Then, save that location.
                     setTimeout(async () => {
+                        // Before untypesetting, make sure all other typesets finish.
+                        await new Promise((resolve) =>
+                            window.MathJax.whenReady(resolve(undefined)),
+                        );
                         // Untypeset math in the old doc block and the current
                         // doc block before moving its contents around.
                         const tinymce_div =
