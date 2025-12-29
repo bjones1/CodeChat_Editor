@@ -24,6 +24,16 @@ Changelog
 
 * No changes.
 
+Version 0.1.49 -- 2025-Dec-29
+--------------------------------------------------------------------------------
+
+* Added instructional videos to manual.
+* Improve accessibility by using content sectioning tags.
+* Avoid unnecessary re-translations of Markdown documents containing line break
+  elements.
+* Fix data corruption of math, in which an equation was stored as its rendered
+  form after a re-translation in the Client.
+
 Version 0.1.48 -- 2025-Dec-22
 --------------------------------------------------------------------------------
 
