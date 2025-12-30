@@ -2,11 +2,19 @@
 # ==============================================================================
 #
 # This file demonstrates the use of literate programming in solving the
-# ["There is no Spoon"](https://www.codingame.com/ide/puzzle/there-is-no-spoon-episode-1)
+# [There is no Spoon](https://www.codingame.com/ide/puzzle/there-is-no-spoon-episode-1)
 # programming challenge.
 #
+# Imports
+# ------------------------------------------------------------------------------
+
+import sys
+import math
+
 # Input
 # ------------------------------------------------------------------------------
+#
+# Don't let the machines win. You are humanity's last hope...
 #
 # First, read the input provided by the challenge:
 #
@@ -14,24 +22,22 @@
 width = int(input())
 # The number of cells on the Y axis.
 height = int(input())
-# Read the grid of cells:
+# Read in a grid of cell:
 #
 # * Each line is `width` characters.
 # * The characters are either `0` (occupied) or `.` (empty).
 #
 # From the website, here's an example grid:
 #
-# <img src="example_grid.png" alt="" width="50%" height="50%">
-#
-# The text which creates this grid is:
+# ![](example_grid.png)
 #
 # ```
 # 00
 # 0.
 # ```
 #
-# Store this an an array of lines; each lines contains these characters.
-# Therefore, `line[y][x]` gives the cell at the coordinate $(𝑥,𝑦)$ (note the
+# Store this an an array of lines; each line contains these characters.
+# Therefore, `line[y][x]` gives the cell at the coordinate $(x,y)$ (note the
 # reversed order).
 line = []
 for y in range(height):
