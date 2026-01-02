@@ -16,19 +16,14 @@
 /// `processing.rs` -- Transform source code to its web-editable equivalent and
 /// back
 /// ============================================================================
+// Modules
+// -----------------------------------------------------------------------------
+mod cache;
+
 // Imports
 // -----------------------------------------------------------------------------
 //
 // ### Standard library
-//
-// For commented-out caching code.
-/**
-use std::collections::{HashMap, HashSet};
-use std::fs::Metadata;
-use std::io;
-use std::ops::Deref;
-use std::rc::{Rc, Weak};
-*/
 use std::{
     borrow::Cow,
     cell::RefCell,
@@ -265,7 +260,12 @@ lazy_static! {
         // Non-greedy wildcard -- match the first separator, so we don't munch
         // multiple `DOC_BLOCK_SEPARATOR_STRING`s in one replacement.
         ".*?",
-        "<CodeChatEditor-separator></CodeChatEditor-separator>\n")).unwrap();
+        r#"<CodeChatEditor-separator>(\d+)</CodeChatEditor-separator>\n"#)).unwrap();
+    // After converting Markdown to HTML, this can be used to split doc blocks
+    // apart. Since this is post hydration, the element names are normalized to
+    // lower case.
+    static ref DOC_BLOCK_SEPARATOR_SPLIT_REGEX: Regex = Regex::new(
+        r#"<codechateditor-separator>\d+</codechateditor-separator>\n"#).unwrap();
 }
 
 // Use this as a way to end unterminated fenced code blocks and specific types
@@ -296,16 +296,11 @@ const DOC_BLOCK_SEPARATOR_STRING: &str = concat!(
     r#"<CodeChatEditor-fence>
 ~~~~~~~~~~~~~~~~~~~~~~~
 </CodeChatEditor-fence>
-<CodeChatEditor-separator></CodeChatEditor-separator>
+<CodeChatEditor-separator>{}</CodeChatEditor-separator>
 
 "#
 );
 
-// After converting Markdown to HTML, this can be used to split doc blocks
-// apart. Since this is post hydration, the element names are normalized to
-// lower case.
-const DOC_BLOCK_SEPARATOR_SPLIT_STRING: &str =
-    "<codechateditor-separator></codechateditor-separator>\n";
 // Correctly terminated fenced code blocks produce this, which can be removed
 // from the HTML produced by Markdown conversion.
 const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
@@ -316,9 +311,11 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 ~~~~~~~~~~~~~~~~~~~~~~~
 </CodeChatEditor-fence>
 "#;
-// The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex.
+// The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex. It
+// relies on the first capture group in that regex (`$1`) containing the index,
+// which it replaces here.
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
-    "</code></pre>\n<CodeChatEditor-separator></CodeChatEditor-separator>\n";
+    "</code></pre>\n<CodeChatEditor-separator>$1</CodeChatEditor-separator>\n";
 // <a class="fence-mending-end"></a>
 
 // The column at which to word wrap doc blocks.
@@ -893,18 +890,24 @@ pub fn source_to_codechat_for_web(
             // Walk through the code/doc blocks, ...
             let doc_contents = code_doc_block_arr
                 .iter()
+                .enumerate()
                 // ...selcting only the doc block contents...
-                .filter_map(|cdb| {
+                .filter_map(|(index, cdb)| {
                     if let CodeDocBlock::DocBlock(db) = cdb {
-                        Some(db.contents.as_str())
+                        Some((index, db.contents.as_str()))
                     } else {
                         None
                     }
                 })
-                // ...then collect them, separated by the doc block separator
-                // string.
-                .collect::<Vec<_>>()
-                .join(DOC_BLOCK_SEPARATOR_STRING);
+                // Add the doc block separator string between each doc block;
+                // the separator contains the index of this doc block.
+                .fold(String::new(), |mut acc: String, x: (usize, &str)| {
+                    if !acc.is_empty() {
+                        acc.push_str(&DOC_BLOCK_SEPARATOR_STRING.replace("{}", &x.0.to_string()));
+                    }
+                    acc.push_str(x.1);
+                    acc
+                });
 
             // Convert the Markdown to HTML.
             let html = markdown_to_html(&doc_contents);
@@ -920,7 +923,7 @@ pub fn source_to_codechat_for_web(
             let html = hydrate_html(&html)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 3. Split on the separator.
-            let mut doc_block_contents_iter = html.split(DOC_BLOCK_SEPARATOR_SPLIT_STRING);
+            let mut doc_block_contents_iter = DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&html);
             // <a class="fence-mending-end"></a>
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
