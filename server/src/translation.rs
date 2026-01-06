@@ -225,8 +225,8 @@ use crate::{
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockVec, SourceFileMetadata, TranslationResultsString,
-        codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
-        source_to_codechat_for_web_string, transform_html,
+        codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str, dom_to_html,
+        html_to_dom, source_to_codechat_for_web_string,
     },
     queue_send, queue_send_func,
     webserver::{
@@ -1235,7 +1235,10 @@ fn compare_html(
 
     // Transforming the HTML with an empty transform normalizes it but leave it
     // otherwise unchanged.
-    if let Ok(normalized_raw_html) = transform_html(raw_html, |_node| {}) {
+
+    if let Ok(dom) = html_to_dom(raw_html)
+        && let Ok(normalized_raw_html) = dom_to_html(dom)
+    {
         // Ignore word wrapping and leading/trailing whitespace in the
         // comparison.
         map_newlines_to_spaces(&fixed_normalized_html)

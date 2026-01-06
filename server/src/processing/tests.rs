@@ -32,7 +32,7 @@ use pretty_assertions::assert_eq;
 // ### Local
 use super::{
     CodeChatForWeb, CodeMirror, CodeMirrorDocBlock, SourceFileMetadata, StringDiff,
-    TranslationResults, find_path_to_toc,
+    find_path_to_toc,
 };
 use crate::{
     lexer::{
@@ -44,7 +44,7 @@ use crate::{
         CodeMirrorDocBlockTransaction, CodeMirrorDocBlockUpdate, CodechatForWebToSourceError,
         HtmlToMarkdownWrapped, SourceToCodeChatForWebError, byte_index_of,
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
-        dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str, html_to_tree, hydrate_html,
+        dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str, html_to_dom, hydrate_html,
         markdown_to_html, source_to_codechat_for_web,
     },
 };
@@ -491,7 +491,7 @@ fn test_source_to_codechat_for_web_1() {
     // text file.
     assert_eq!(
         source_to_codechat_for_web("", &".xxx".to_string(), 0.0, false, false),
-        Ok(TranslationResults::Unknown)
+        Err(SourceToCodeChatForWebError::NoLexer)
     );
 
     // A file with an invalid lexer specification. Obscure this, so that this
@@ -513,11 +513,11 @@ fn test_source_to_codechat_for_web_1() {
     // A CodeChat Editor document via filename.
     assert_eq!(
         source_to_codechat_for_web("", &"md".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             MARKDOWN_MODE,
             "",
             vec![]
-        )))
+        ))
     );
 
     // A CodeChat Editor document via lexer specification.
@@ -529,45 +529,45 @@ fn test_source_to_codechat_for_web_1() {
             false,
             false,
         ),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             MARKDOWN_MODE,
             &format!("<p>{lexer_spec}markdown</p>\n"),
             vec![]
-        )))
+        ))
     );
 
     // An empty source file.
     assert_eq!(
         source_to_codechat_for_web("", &"js".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "javascript",
             "",
             vec![]
-        )))
+        ))
     );
 
     // A zero doc block source file.
     assert_eq!(
         source_to_codechat_for_web("let a = 1;", &"js".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "javascript",
             "let a = 1;",
             vec![]
-        )))
+        ))
     );
 
     // One doc block source files.
     assert_eq!(
         source_to_codechat_for_web("// Test", &"js".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "javascript",
             "\n",
             vec![build_codemirror_doc_block(0, 1, "", "//", "<p>Test</p>\n")]
-        )))
+        ))
     );
     assert_eq!(
         source_to_codechat_for_web("let a = 1;\n// Test", &"js".to_string(), 0.0, false, false,),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "javascript",
             "let a = 1;\n\n",
             vec![build_codemirror_doc_block(
@@ -577,15 +577,15 @@ fn test_source_to_codechat_for_web_1() {
                 "//",
                 "<p>Test</p>\n"
             )]
-        )))
+        ))
     );
     assert_eq!(
         source_to_codechat_for_web("// Test\nlet a = 1;", &"js".to_string(), 0.0, false, false,),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "javascript",
             "\nlet a = 1;",
             vec![build_codemirror_doc_block(0, 1, "", "//", "<p>Test</p>\n")]
-        )))
+        ))
     );
 
     // A two doc block source file. This also tests references in one block to a
@@ -598,7 +598,7 @@ fn test_source_to_codechat_for_web_1() {
             false,
             false,
         ),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "javascript",
             "\nlet a = 1;\n\n",
             vec![
@@ -611,7 +611,7 @@ fn test_source_to_codechat_for_web_1() {
                 ),
                 build_codemirror_doc_block(12, 13, "", "/*", "")
             ]
-        )))
+        ))
     );
 
     // Trigger special cases:
@@ -621,7 +621,7 @@ fn test_source_to_codechat_for_web_1() {
     // *   A doc block with no trailing newline at the end of the file.
     assert_eq!(
         source_to_codechat_for_web("//\n\n//\n\n//", &"cpp".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "\n\n\n\n",
             vec![
@@ -629,11 +629,11 @@ fn test_source_to_codechat_for_web_1() {
                 build_codemirror_doc_block(2, 3, "", "//", ""),
                 build_codemirror_doc_block(4, 5, "", "//", "")
             ]
-        )))
+        ))
     );
     assert_eq!(
         source_to_codechat_for_web("// ~~~\n\n//\n\n//", &"cpp".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "\n\n\n\n",
             vec![
@@ -641,27 +641,27 @@ fn test_source_to_codechat_for_web_1() {
                 build_codemirror_doc_block(2, 3, "", "//", ""),
                 build_codemirror_doc_block(4, 5, "", "//", "")
             ]
-        )))
+        ))
     );
 
     // Test Unicode characters in code.
     assert_eq!(
         source_to_codechat_for_web("; // σ\n//", &"cpp".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "; // σ\n",
             vec![build_codemirror_doc_block(7, 8, "", "//", ""),]
-        )))
+        ))
     );
 
     // Test Unicode characters in strings.
     assert_eq!(
         source_to_codechat_for_web("\"σ\";\n//", &"cpp".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "\"σ\";\n",
             vec![build_codemirror_doc_block(5, 6, "", "//", ""),]
-        )))
+        ))
     );
 
     // Test a fenced code block that's unterminated. See [fence
@@ -674,7 +674,7 @@ fn test_source_to_codechat_for_web_1() {
             false,
             false
         ),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "\n\n\n",
             vec![
@@ -687,7 +687,7 @@ fn test_source_to_codechat_for_web_1() {
                 ),
                 build_codemirror_doc_block(2, 3, "", "//", "<p>Test</p>\n"),
             ]
-        )))
+        ))
     );
     // Test the other code fence character (the tilde).
     assert_eq!(
@@ -698,7 +698,7 @@ fn test_source_to_codechat_for_web_1() {
             false,
             false
         ),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "\n\n\n",
             vec![
@@ -711,32 +711,32 @@ fn test_source_to_codechat_for_web_1() {
                 ),
                 build_codemirror_doc_block(2, 3, "", "//", "<p>Test</p>\n"),
             ]
-        )))
+        ))
     );
     // Test multiple unterminated fenced code blocks.
     assert_eq!(
         source_to_codechat_for_web("// ```\n // ~~~", &"cpp".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre><code>\n</code></pre>\n"),
                 build_codemirror_doc_block(1, 2, " ", "//", "<pre><code></code></pre>\n"),
             ]
-        )))
+        ))
     );
 
     // Test an unterminated HTML block.
     assert_eq!(
         source_to_codechat_for_web("// <foo>\n // Test", &"cpp".to_string(), 0.0, false, false),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<foo>\n"),
                 build_codemirror_doc_block(1, 2, " ", "//", "<p>Test</p>\n</foo>"),
             ]
-        )))
+        ))
     );
 
     // Test an unterminated `<pre>` block. Ensure that markdown after this is
@@ -749,14 +749,14 @@ fn test_source_to_codechat_for_web_1() {
             false,
             false
         ),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre>\n"),
                 build_codemirror_doc_block(1, 2, " ", "//", "<p><em>Test</em></p>\n</pre>"),
             ]
-        )))
+        ))
     );
 }
 
@@ -1318,7 +1318,7 @@ fn test_hydrate_html_1() {
 }
 
 fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
-    let tree = html_to_tree(html)?;
+    let tree = html_to_dom(html)?;
     dehydrating_walk_node(&tree);
     //println!("{:#?}", tree);
     Ok(tree)
