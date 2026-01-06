@@ -751,7 +751,7 @@ mod tests {
     use super::FW;
     use crate::{
         processing::{
-            CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata, TranslationResults,
+            CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata, 
             source_to_codechat_for_web,
         },
         webserver::{
@@ -893,8 +893,7 @@ mod tests {
             false,
             false,
         );
-        let tr = cast!(translation_results, Ok);
-        let codechat_for_web = cast!(tr, TranslationResults::CodeChat);
+        let codechat_for_web = translation_results.unwrap();
         assert_eq!(umc.contents, Some(codechat_for_web));
 
         // Report any errors produced when removing the temporary directory.
