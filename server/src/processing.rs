@@ -213,18 +213,6 @@ pub struct StringDiff {
     pub insert: String,
 }
 
-/// This enum contains the results of translating a source file to the CodeChat
-/// Editor format.
-#[derive(Debug, PartialEq)]
-pub enum TranslationResults {
-    /// This file is unknown to and therefore not supported by the CodeChat
-    /// Editor.
-    Unknown,
-    /// A CodeChat Editor file; the struct contains the file's contents
-    /// translated to CodeMirror.
-    CodeChat(CodeChatForWeb),
-}
-
 /// This enum contains the results of translating a source file to a string
 /// rendering of the CodeChat Editor format.
 #[derive(Debug, PartialEq)]
@@ -449,7 +437,7 @@ pub fn codechat_for_web_to_source(
         }
         // Translate the HTML document to Markdown.
         let converter = HtmlToMarkdownWrapped::new();
-        let tree = html_to_tree(&code_mirror.doc)?;
+        let tree = html_to_dom(&code_mirror.doc)?;
         dehydrating_walk_node(&tree);
         return converter
             .convert(&tree)
@@ -614,7 +602,7 @@ fn doc_block_html_to_markdown(
     let mut converter = HtmlToMarkdownWrapped::new();
     for code_doc_block in &mut code_doc_block_vec {
         if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
-            let tree = html_to_tree(&doc_block.contents)?;
+            let tree = html_to_dom(&doc_block.contents)?;
             dehydrating_walk_node(&tree);
 
             // Compute a line wrap width based on the current indent. Set a
@@ -808,11 +796,28 @@ pub enum SourceToCodeChatForWebError {
     // convert the IO error to a string.
     #[error("unable to parse HTML {0}")]
     ParseFailed(String),
+    #[error("no lexer for this file")]
+    NoLexer,
 }
 
 // Transform from source code to `CodeChatForWeb`
 // -----------------------------------------------------------------------------
 //
+
+pub fn source_to_codedoc_blocks(
+    // The file's contents.
+    file_contents: &str,
+    // The file's extension.
+    file_ext: &String,
+    // The version of this file.
+    version: f64,
+    // True if this file is a TOC.
+    _is_toc: bool,
+    // True if this file is part of a project.
+    _is_project: bool,
+) -> Result<Vec<CodeDocBlock>, SourceToCodeChatForWebError> {
+    Err(SourceToCodeChatForWebError::NoLexer)
+}
 // Given the contents of a file, classify it and (for CodeChat Editor files)
 // convert it to the `CodeChatForWeb` format.
 pub fn source_to_codechat_for_web(
@@ -826,7 +831,7 @@ pub fn source_to_codechat_for_web(
     _is_toc: bool,
     // True if this file is part of a project.
     _is_project: bool,
-) -> Result<TranslationResults, SourceToCodeChatForWebError> {
+) -> Result<CodeChatForWeb, SourceToCodeChatForWebError> {
     // Determine the lexer to use for this file.
     let lexer_name;
     // First, search for a lexer directive in the file contents.
@@ -843,8 +848,8 @@ pub fn source_to_codechat_for_web(
         match LEXERS.map_ext_to_lexer_vec.get(file_ext) {
             Some(llc) => llc.first().unwrap(),
             _ => {
-                // The file type is unknown; treat it as plain text.
-                return Ok(TranslationResults::Unknown);
+                // The file type is unknown; we can't lex it.
+                return Err(SourceToCodeChatForWebError::NoLexer);
             }
         }
     };
@@ -959,7 +964,7 @@ pub fn source_to_codechat_for_web(
         },
     };
 
-    Ok(TranslationResults::CodeChat(codechat_for_web))
+    Ok(codechat_for_web)
 }
 
 // Like `source_to_codechat_for_web`, translate a source file to the CodeChat
@@ -1004,23 +1009,28 @@ pub fn source_to_codechat_for_web_string(
             is_toc,
             is_project,
         ) {
-            Err(err) => return Err(err),
-            Ok(translation_results) => match translation_results {
-                TranslationResults::CodeChat(codechat_for_web) => {
-                    if is_toc {
-                        // For the table of contents sidebar, which is pure
-                        // markdown, just return the resulting HTML, rather than
-                        // the editable CodeChat for web format.
-                        let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
-                            panic!("No diff!");
-                        };
-                        TranslationResultsString::Toc(plain.doc)
-                    } else {
-                        TranslationResultsString::CodeChat(codechat_for_web)
-                    }
+            Err(err) => {
+                // The no lexer error means we should treat this file type as unknown.
+                if err == SourceToCodeChatForWebError::NoLexer {
+                    TranslationResultsString::Unknown
+                } else {
+                    // Otherwise, this is an unhandleable error.
+                    return Err(err);
                 }
-                TranslationResults::Unknown => TranslationResultsString::Unknown,
-            },
+            }
+            Ok(codechat_for_web) => {
+                if is_toc {
+                    // For the table of contents sidebar, which is pure
+                    // markdown, just return the resulting HTML, rather than
+                    // the editable CodeChat for web format.
+                    let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
+                        panic!("No diff!");
+                    };
+                    TranslationResultsString::Toc(plain.doc)
+                } else {
+                    TranslationResultsString::CodeChat(codechat_for_web)
+                }
+            }
         },
         path_to_toc,
     ))
@@ -1040,7 +1050,7 @@ fn markdown_to_html(markdown: &str) -> String {
 }
 
 // Use html5ever to parse a string containing HTML to a DOM tree.
-fn html_to_tree(html: &str) -> io::Result<Rc<Node>> {
+pub fn html_to_dom(html: &str) -> io::Result<Rc<Node>> {
     let dom = parse_document(
         RcDom::default(),
         ParseOpts {
@@ -1064,12 +1074,7 @@ fn html_to_tree(html: &str) -> io::Result<Rc<Node>> {
     Ok(dom.document)
 }
 
-// A framework to transform HTML by parsing it to a DOM tree, walking the tree,
-// then serializing the tree back to an HTML string.
-pub fn transform_html<T: FnOnce(Rc<Node>)>(html: &str, transform: T) -> io::Result<String> {
-    let tree = html_to_tree(html)?;
-    transform(tree.clone());
-
+pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
     // Serialize the transformed DOM back to a string.
     let so = SerializeOpts {
         // Don't include the body node in the output.
@@ -1085,7 +1090,7 @@ pub fn transform_html<T: FnOnce(Rc<Node>)>(html: &str, transform: T) -> io::Resu
     //  <body>...</body>  <-- element 1
     // </html>
     // ```
-    let body = tree.children.borrow()[0].children.borrow()[1].clone();
+    let body = dom.children.borrow()[0].children.borrow()[1].clone();
     serialize(&mut bytes, &SerializableHandle::from(body.clone()), so)?;
     let html_out = String::from_utf8(bytes).map_err(io::Error::other)?;
 
@@ -1099,7 +1104,9 @@ pub fn transform_html<T: FnOnce(Rc<Node>)>(html: &str, transform: T) -> io::Resu
 // * (Eventually) assign a unique ID to all links that don't have one.
 // * (Eventually) fill in autocomplete fields.
 fn hydrate_html(html: &str) -> io::Result<String> {
-    transform_html(html, hydrating_walk_node)
+    let dom = html_to_dom(html)?;
+    hydrating_walk_node(dom.clone());
+    dom_to_html(dom)
 }
 
 fn hydrating_walk_node(node: Rc<Node>) {
