@@ -104,10 +104,9 @@ On load:
 * Classify the file; inputs are mutable global state (which, if present,
   indicates this is a project build), if the file is a TOC, the file's binary
   data, and the file's path. Output of the classification: binary, raw text, a
-  CodeChat document (a Markdown file), or a CodeChat file. The load processing
-  pipelines
+  CodeChat document (a Markdown file), or a CodeChat file.
 
-For CodeChat files:
+The load processing pipelines: for CodeChat files:
 
 * (CodeChat files only) Run pre-parse hooks: they receive source code, file
   metadata. Examples: code formatters. Skip if cache is up to date.
@@ -169,23 +168,40 @@ To think about:
    necessary.
 5. Update the search engine only when the user performs a search. So, I need to
    keep a list of targets that were changed since the last search.
-6. For an auto-titled link, how to specify if we want the contents of the
-   target, the numbering of the target, or both? If the contents of the link is
-   empty, it's auto-titled. Use query params on the link (?num, ?text); assume
-   text if unspecified.
-7. The text search engine needs to be able to search all text, even if not in
+6. The text search engine needs to be able to search all text, even if not in
    the cache. So, we need a way to walk the filesystem and cache all files.
+7. Hyperlinks that point to a special gathering element are tags. They can
+   optionally include start and end query parameters to include more than the
+   default chunk (the current doc block and the following code block, if the
+   following block is a code block). Challenge: if the linked file's cache is
+   old, indicating that the link isn't a tag gather, we have to re-process this
+   file.
+8. I need to index all files for a search and to ensure there are no global ID
+   conflicts. But I don't need it for keeping auto-titled text updated; that's
+   lazy.
 
 Code changes elsewhere:
 
 1. Longer-term: modify the pulldown-cmark HTML writer to preserve line numbers.
-2. Revise build pipeline to split at the point it has the DOM and code/doc
-   blocks available, but before CodeMirror processing.
-3. Write a driver function which calls upsert on the current file with
+2. Write a driver function which calls upsert on the current file with
    auto-titles enabled and passes on the resulting text, but then start threads
    to load missing data and sends and update when these complete, perhaps also
    updating x seconds after each thread completes.
-4. Revise the TOC loader to use mdbook's code to process and update the TOC.
+3. Revise the TOC loader to use mdbook's code to process and update the TOC.
+4. While hydrating, we capture HTML, but this means we're capturing
+   pre-hydration HTML. This is a problem: if the auto-titled text includes an
+   equation, then it won't be translated yet! This is even worse for tags:
+   diagrams are translated, etc. Probably need a multi-step process: hydrate;
+   update code/doc blocks; update cache. This means that an auto-titled target
+   whose text comes from another auto-titled item may not work; however, I think
+   this is reasonable.
+5. Steps
+   1. HTML transformations that don't depend on the cache have no ordering:
+      equations, diagrams. Perform these, storing contents for any targets
+      encountered. Add auto-titled text to a list of items to resolve.
+   2. After finishing HTML transformation, 
+   3. Update doc blocks with transformed and auto-titled text.
+   4. Use this to store tag information, then compute tags.
 
 ### IDE/editor integration
 

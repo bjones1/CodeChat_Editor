@@ -37,10 +37,8 @@ appenders:
 loggers:
   # This produces a massive amount of logging at the debug level. Avoid this.
   html5ever:
-    level: warn
+    level: error
 
 root:
-  level: info
   appenders:
     - console_appender
-    - file_appender

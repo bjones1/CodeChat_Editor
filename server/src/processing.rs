@@ -18,7 +18,7 @@
 /// ============================================================================
 // Modules
 // -----------------------------------------------------------------------------
-mod cache;
+pub mod cache;
 
 // Imports
 // -----------------------------------------------------------------------------
@@ -28,6 +28,7 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     cmp::{max, min},
+    collections::HashMap,
     ffi::OsStr,
     io,
     iter::Map,
@@ -35,6 +36,7 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     slice::Iter,
+    sync::{Arc, Mutex},
 };
 
 // ### Third-party
@@ -69,6 +71,7 @@ use crate::lexer::{
     CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
     supported_languages::MARKDOWN_MODE,
 };
+use cache::Cache;
 
 // Data structures
 // -----------------------------------------------------------------------------
@@ -824,14 +827,21 @@ pub fn source_to_codechat_for_web(
     // The file's contents.
     file_contents: &str,
     // The file's extension.
-    file_ext: &String,
+    file_path: &Path,
     // The version of this file.
     version: f64,
     // True if this file is a TOC.
     _is_toc: bool,
-    // True if this file is part of a project.
-    _is_project: bool,
+    // If provided, the cache for this project; otherwise, this file is not in a project.
+    cache: Option<Arc<Mutex<Cache>>>,
 ) -> Result<CodeChatForWeb, SourceToCodeChatForWebError> {
+    // Determine the file's extension, in order to look up a lexer.
+    let file_ext = &file_path
+        .extension()
+        .unwrap_or_else(|| OsStr::new(""))
+        .to_string_lossy()
+        .to_string();
+
     // Determine the lexer to use for this file.
     let lexer_name;
     // First, search for a lexer directive in the file contents.
@@ -855,6 +865,11 @@ pub fn source_to_codechat_for_web(
     };
 
     // Transform the provided file into the `CodeChatForWeb` structure.
+    let cache = if let Some(project_cache) = cache {
+        project_cache
+    } else {
+        Arc::new(Mutex::new(Cache::new()))
+    };
     let code_doc_block_arr;
     let codechat_for_web = CodeChatForWeb {
         metadata: SourceFileMetadata {
@@ -864,7 +879,7 @@ pub fn source_to_codechat_for_web(
         source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
             // Document-only files are easy: just encode the contents.
             let dry_html = markdown_to_html(file_contents);
-            let html = hydrate_html(&dry_html)
+            let html = hydrate_html(&dry_html, file_path, &mut *cache.lock().unwrap())
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             CodeMirrorDiffable::Plain(CodeMirror {
                 doc: html,
@@ -925,10 +940,13 @@ pub fn source_to_codechat_for_web(
             // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
             // 3. Hydrate the cleaned HTML.
-            let html = hydrate_html(&html)
+            let wet_html: String;
+            wet_html = hydrate_html(&html, file_path, &mut *cache.lock().unwrap())
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
-            // 3. Split on the separator.
-            let mut doc_block_contents_iter = DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&html);
+            // 4. Split on the separator.
+            let mut doc_block_contents_iter: regex::Split<'_, '_> =
+                DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&wet_html);
+            // 5. Cache updates. TODO.
             // <a class="fence-mending-end"></a>
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
@@ -980,6 +998,8 @@ pub fn source_to_codechat_for_web_string(
     version: f64,
     // True if this file is a TOC.
     is_toc: bool,
+    // The map of Caches.
+    cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
 ) -> Result<
     (
         // The resulting translation.
@@ -989,26 +1009,25 @@ pub fn source_to_codechat_for_web_string(
     ),
     SourceToCodeChatForWebError,
 > {
-    // Determine the file's extension, in order to look up a lexer.
-    let ext = &file_path
-        .extension()
-        .unwrap_or_else(|| OsStr::new(""))
-        .to_string_lossy();
-
     // To determine if this source code is part of a project, look for a project
     // file by searching the current directory, then all its parents, for a file
     // named `toc.md`.
     let path_to_toc = find_path_to_toc(file_path);
-    let is_project = path_to_toc.is_some();
+    let cache: Option<Arc<Mutex<Cache>>> = if let Some(ref path_to_toc) = path_to_toc {
+        Some(
+            cache
+                .lock()
+                .unwrap()
+                .entry(path_to_toc.to_path_buf())
+                .or_insert(Arc::new(Mutex::new(Cache::new())))
+                .clone(),
+        )
+    } else {
+        None
+    };
 
     Ok((
-        match source_to_codechat_for_web(
-            file_contents,
-            &ext.to_string(),
-            version,
-            is_toc,
-            is_project,
-        ) {
+        match source_to_codechat_for_web(file_contents, file_path, version, is_toc, cache) {
             Err(err) => {
                 // The no lexer error means we should treat this file type as unknown.
                 if err == SourceToCodeChatForWebError::NoLexer {
@@ -1074,6 +1093,7 @@ pub fn html_to_dom(html: &str) -> io::Result<Rc<Node>> {
     Ok(dom.document)
 }
 
+// Transform a DOM tree back to an HTML string.
 pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
     // Serialize the transformed DOM back to a string.
     let so = SerializeOpts {
@@ -1103,15 +1123,115 @@ pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
 // * (Eventually) record document structure information.
 // * (Eventually) assign a unique ID to all links that don't have one.
 // * (Eventually) fill in autocomplete fields.
-fn hydrate_html(html: &str) -> io::Result<String> {
+fn hydrate_html(html: &str, file: &Path, cache: &mut Cache) -> io::Result<String> {
     let dom = html_to_dom(html)?;
-    hydrating_walk_node(dom.clone());
+    let file_entry = cache.get_or_create_file(file);
+    // Clear existing targets since we're re-processing this file. FIXME: this needs more work to remove all the dependencies, backlinks, etc. for the file.
+    {
+        let mut f = file_entry.lock().unwrap();
+        f.target.clear();
+        f.h1 = None;
+        f.dependency.clear();
+    }
+    // This is storage for the state needed for walking the DOM.
+    let mut doc_block_index: usize = 0;
+    hydrating_walk_node(dom.clone(), file, cache, &file_entry, &mut doc_block_index);
     dom_to_html(dom)
 }
 
-fn hydrating_walk_node(node: Rc<Node>) {
+/// Get the value of an attribute on an element node.
+fn get_attr_value(node: &Rc<Node>, attr_name: &str) -> Option<String> {
+    if let NodeData::Element { attrs, .. } = &node.data {
+        attrs
+            .borrow()
+            .iter()
+            .find(|attr| &*attr.name.local == attr_name)
+            .map(|attr| attr.value.to_string())
+    } else {
+        None
+    }
+}
+
+/// Recursively collect all text content from a node and its children.
+/// FIXME: this should just get text content from the first-level children of a node.
+fn get_text_content(node: &Rc<Node>) -> String {
+    let mut text = String::new();
+    match &node.data {
+        NodeData::Text { contents } => text.push_str(&contents.borrow()),
+        _ => {
+            for child in node.children.borrow().iter() {
+                text.push_str(&get_text_content(child));
+            }
+        }
+    }
+    text
+}
+
+/// Parse a link href into (resolved file path, anchor, link options).
+/// Returns `None` for external links (http://, https://, mailto:, etc.). FIXME: use a library call to do this, don't reimplement.
+fn parse_link_href(
+    href: &str,
+    current_file: &Path,
+    _project_root: &Path,
+) -> Option<(PathBuf, String, cache::LinkOptions)> {
+    // FIXME: a better method to determine if this link is within the project or not.
+    //
+    // Skip external links.
+    if href.starts_with("http://")
+        || href.starts_with("https://")
+        || href.starts_with("mailto:")
+    {
+        return None;
+    }
+
+    // Split on '#' to get the file part and the fragment.
+    let (file_part, fragment) = match href.split_once('#') {
+        Some((f, frag)) => (f, frag),
+        None => (href, ""),
+    };
+
+    // Split the fragment on '?' to get the anchor and query parameters.
+    let (anchor, query) = match fragment.split_once('?') {
+        Some((a, q)) => (a, q),
+        None => (fragment, ""),
+    };
+
+    // Parse query parameters into LinkOptions.
+    let has_title = query.contains("title");
+    let has_number = query.contains("number");
+    let flags = match (has_title, has_number) {
+        (true, true) => cache::LinkOptions::AutoTitleAndNumber,
+        (true, false) => cache::LinkOptions::AutoTitle,
+        (false, true) => cache::LinkOptions::AutoNumber,
+        (false, false) => cache::LinkOptions::Plain,
+    };
+
+    // Resolve the file path relative to the current file's directory.
+    let resolved = if file_part.is_empty() {
+        current_file.to_path_buf()
+    } else {
+        current_file
+            .parent()
+            .unwrap_or(Path::new(""))
+            .join(file_part)
+    };
+
+    Some((resolved, anchor.to_string(), flags))
+}
+
+fn hydrating_walk_node(
+    node: Rc<Node>,
+    file: &Path,
+    cache: &mut Cache,
+    // FIXME: should pass just one or the other.
+    file_entry: &Arc<Mutex<cache::File>>,
+    // FIXME: not needed.
+    doc_block_index: &mut usize,
+) {
     for child in node.children.borrow_mut().iter_mut() {
         let possible_replacement_child =
+        // Perform replacements of GraphViz and Mermaid graphs:
+        //
         // Look for a `<pre>` tag
         if get_node_tag_name(child) == Some("pre")
             // with no attributes
@@ -1124,7 +1244,7 @@ fn hydrating_walk_node(node: Rc<Node>) {
             && code_children.len() == 1
             && let code_child = code_children.iter().next().unwrap()
             && get_node_tag_name(code_child) == Some("code")
-            // with only a `class=language-mermaid` attribute
+            // with only a `class=language-mermaid/graphviz` attribute
             && let NodeData::Element {
                 attrs: ref_code_child_attrs, ..
             } = &code_child.data
@@ -1155,13 +1275,158 @@ fn hydrating_walk_node(node: Rc<Node>) {
             replace_math_node(child, true)
         };
 
-        // Replace the child if we found a replacement; otherwise, walk it.
+        // Replace the child if we found a replacement.
         if let Some(replacement_child) = possible_replacement_child {
             replacement_child.parent.set(Some(Rc::downgrade(&node)));
             *child = replacement_child;
-        } else {
-            hydrating_walk_node(child.clone());
         }
+
+        // Analyze this node for cacheable data.
+        if let Some(tag_name) = get_node_tag_name(child) {
+            // Track doc block index from separator elements.
+            // FIXME: should be the exact text child, not a sum of all children.
+            if tag_name == "codechateditor-separator" {
+                if let Ok(index) = get_text_content(child).trim().parse::<usize>() {
+                    *doc_block_index = index;
+                }
+            }
+
+            // Detect headings (h1-h6) with id attributes.
+            let heading_level = match tag_name {
+                "h1" => Some(1u32),
+                "h2" => Some(2),
+                "h3" => Some(3),
+                "h4" => Some(4),
+                "h5" => Some(5),
+                "h6" => Some(6),
+                _ => None,
+            };
+            if let Some(level) = heading_level {
+                if let Some(id) = get_attr_value(child, "id") {
+                    let contents = get_text_content(child);
+                    let target = Arc::new(Mutex::new(cache::TargetCore {
+                        file: file_entry.clone(),
+                        anchor: id.clone(),
+                        line: 0,
+                        type_: cache::TargetType::Heading { level },
+                        contents,
+                    }));
+                    file_entry.lock().unwrap().target.push(target.clone());
+                    cache.anchor.insert(id, target.clone());
+                    if level == 1 {
+                        let mut file_lock = file_entry.lock().unwrap();
+                        if file_lock.h1.is_none() {
+                            file_lock.h1 = Some(target);
+                        }
+                    }
+                }
+            }
+
+            // Detect <a> elements: anchors (id without href) and links (href).
+            if tag_name == "a" {
+                let id = get_attr_value(child, "id");
+                let href = get_attr_value(child, "href");
+
+                // Pure anchor (id without href).
+                if let Some(ref id_val) = id {
+                    if href.is_none() {
+                        let contents = get_text_content(child);
+                        let target = Arc::new(Mutex::new(cache::TargetCore {
+                            file: file_entry.clone(),
+                            anchor: id_val.clone(),
+                            line: 0,
+                            type_: cache::TargetType::Anchor,
+                            contents,
+                        }));
+                        file_entry.lock().unwrap().target.push(target.clone());
+                        cache.anchor.insert(id_val.clone(), target);
+                    }
+                }
+
+                // Link (has href).
+                if let Some(ref href_val) = href {
+                    if let Some((link_file_path, anchor, flags)) =
+                        parse_link_href(href_val, file, &cache.root)
+                    {
+                        let contents = get_text_content(child);
+                        let is_auto_titled = contents.trim().is_empty();
+                        let link_file_entry = cache.get_or_create_file(&link_file_path);
+
+                        // Check if this link targets a gather tag.
+                        let is_gather = cache.anchor.get(&anchor).map_or(false, |t| {
+                            matches!(
+                                t.lock().unwrap().type_,
+                                cache::TargetType::GatherTag { .. }
+                            )
+                        });
+
+                        let target_type = if is_gather {
+                            cache::TargetType::Tag {
+                                file: link_file_entry,
+                                anchor: anchor.clone(),
+                                start: *doc_block_index,
+                                end: *doc_block_index + 1,
+                            }
+                        } else {
+                            cache::TargetType::Link {
+                                file: link_file_entry,
+                                anchor: anchor.clone(),
+                                flags,
+                            }
+                        };
+
+                        let link_anchor = id.clone().unwrap_or_default();
+                        let target = Arc::new(Mutex::new(cache::TargetCore {
+                            file: file_entry.clone(),
+                            anchor: link_anchor,
+                            line: 0,
+                            type_: target_type,
+                            contents,
+                        }));
+                        file_entry.lock().unwrap().target.push(target.clone());
+
+                        // Add to backlinks for the referenced anchor.
+                        if !anchor.is_empty() {
+                            cache
+                                .backlink
+                                .entry(anchor)
+                                .or_insert_with(Vec::new)
+                                .push(target.clone());
+                        }
+
+                        // If auto-titled or a gather tag reference, add to
+                        // dependencies.
+                        if is_auto_titled || is_gather {
+                            file_entry.lock().unwrap().dependency.push(target);
+                        }
+                    }
+                }
+            }
+
+            // Detect <cc-gather> elements.
+            if tag_name == "cc-gather" {
+                if let Some(id) = get_attr_value(child, "id") {
+                    let name = get_text_content(child);
+                    let target = Arc::new(Mutex::new(cache::TargetCore {
+                        file: file_entry.clone(),
+                        anchor: id.clone(),
+                        line: 0,
+                        type_: cache::TargetType::GatherTag {
+                            name: if name.is_empty() {
+                                id.clone()
+                            } else {
+                                name
+                            },
+                        },
+                        contents: String::new(),
+                    }));
+                    file_entry.lock().unwrap().target.push(target.clone());
+                    cache.anchor.insert(id, target);
+                }
+            }
+        }
+
+        hydrating_walk_node(child.clone(), file, cache, file_entry, doc_block_index);
     }
 }
 

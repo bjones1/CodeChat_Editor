@@ -21,7 +21,12 @@
 // -------
 //
 // ### Standard library
-use std::{io, path::PathBuf, rc::Rc, str::FromStr};
+use std::{
+    io,
+    path::{Path, PathBuf},
+    rc::Rc,
+    str::FromStr,
+};
 
 // ### Third-party
 use indoc::indoc;
@@ -42,7 +47,7 @@ use crate::{
     processing::{
         CodeDocBlockVecToSourceError, CodeMirrorDiffable, CodeMirrorDocBlockDelete,
         CodeMirrorDocBlockTransaction, CodeMirrorDocBlockUpdate, CodechatForWebToSourceError,
-        HtmlToMarkdownWrapped, SourceToCodeChatForWebError, byte_index_of,
+        HtmlToMarkdownWrapped, SourceToCodeChatForWebError, byte_index_of, cache::Cache,
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
         dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str, html_to_dom, hydrate_html,
         markdown_to_html, source_to_codechat_for_web,
@@ -490,7 +495,7 @@ fn test_source_to_codechat_for_web_1() {
     // A file with an unknown extension and no lexer, which is classified as a
     // text file.
     assert_eq!(
-        source_to_codechat_for_web("", &".xxx".to_string(), 0.0, false, false),
+        source_to_codechat_for_web("", &Path::new("foo.xxx"), 0.0, false, None),
         Err(SourceToCodeChatForWebError::NoLexer)
     );
 
@@ -500,10 +505,10 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web(
             &format!("{lexer_spec}unknown"),
-            &".xxx".to_string(),
+            &Path::new("foo.xxx"),
             0.0,
             false,
-            false,
+            None
         ),
         Err(SourceToCodeChatForWebError::UnknownLexer(
             "unknown".to_string()
@@ -512,22 +517,18 @@ fn test_source_to_codechat_for_web_1() {
 
     // A CodeChat Editor document via filename.
     assert_eq!(
-        source_to_codechat_for_web("", &"md".to_string(), 0.0, false, false),
-        Ok(build_codechat_for_web(
-            MARKDOWN_MODE,
-            "",
-            vec![]
-        ))
+        source_to_codechat_for_web("", &Path::new("foo.md"), 0.0, false, None),
+        Ok(build_codechat_for_web(MARKDOWN_MODE, "", vec![]))
     );
 
     // A CodeChat Editor document via lexer specification.
     assert_eq!(
         source_to_codechat_for_web(
             &format!("{lexer_spec}markdown"),
-            &"xxx".to_string(),
+            &Path::new("foo.xxx"),
             0.0,
             false,
-            false,
+            None
         ),
         Ok(build_codechat_for_web(
             MARKDOWN_MODE,
@@ -538,27 +539,19 @@ fn test_source_to_codechat_for_web_1() {
 
     // An empty source file.
     assert_eq!(
-        source_to_codechat_for_web("", &"js".to_string(), 0.0, false, false),
-        Ok(build_codechat_for_web(
-            "javascript",
-            "",
-            vec![]
-        ))
+        source_to_codechat_for_web("", &Path::new("foo.js"), 0.0, false, None),
+        Ok(build_codechat_for_web("javascript", "", vec![]))
     );
 
     // A zero doc block source file.
     assert_eq!(
-        source_to_codechat_for_web("let a = 1;", &"js".to_string(), 0.0, false, false),
-        Ok(build_codechat_for_web(
-            "javascript",
-            "let a = 1;",
-            vec![]
-        ))
+        source_to_codechat_for_web("let a = 1;", &Path::new("foo.js"), 0.0, false, None),
+        Ok(build_codechat_for_web("javascript", "let a = 1;", vec![]))
     );
 
     // One doc block source files.
     assert_eq!(
-        source_to_codechat_for_web("// Test", &"js".to_string(), 0.0, false, false),
+        source_to_codechat_for_web("// Test", &Path::new("foo.js"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "javascript",
             "\n",
@@ -566,7 +559,13 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
     assert_eq!(
-        source_to_codechat_for_web("let a = 1;\n// Test", &"js".to_string(), 0.0, false, false,),
+        source_to_codechat_for_web(
+            "let a = 1;\n// Test",
+            &Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "javascript",
             "let a = 1;\n\n",
@@ -580,7 +579,13 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
     assert_eq!(
-        source_to_codechat_for_web("// Test\nlet a = 1;", &"js".to_string(), 0.0, false, false,),
+        source_to_codechat_for_web(
+            "// Test\nlet a = 1;",
+            &Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
         Ok(build_codechat_for_web(
             "javascript",
             "\nlet a = 1;",
@@ -593,10 +598,10 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web(
             "// [Link][1]\nlet a = 1;\n/* [1]: http://b.org */",
-            &"js".to_string(),
+            &Path::new("foo.js"),
             0.0,
             false,
-            false,
+            None
         ),
         Ok(build_codechat_for_web(
             "javascript",
@@ -620,7 +625,7 @@ fn test_source_to_codechat_for_web_1() {
     // *   A doc block in the middle of the file
     // *   A doc block with no trailing newline at the end of the file.
     assert_eq!(
-        source_to_codechat_for_web("//\n\n//\n\n//", &"cpp".to_string(), 0.0, false, false),
+        source_to_codechat_for_web("//\n\n//\n\n//", Path::new("foo.cpp"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "cpp",
             "\n\n\n\n",
@@ -632,7 +637,7 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
     assert_eq!(
-        source_to_codechat_for_web("// ~~~\n\n//\n\n//", &"cpp".to_string(), 0.0, false, false),
+        source_to_codechat_for_web("// ~~~\n\n//\n\n//", Path::new("foo.cpp"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "cpp",
             "\n\n\n\n",
@@ -646,7 +651,7 @@ fn test_source_to_codechat_for_web_1() {
 
     // Test Unicode characters in code.
     assert_eq!(
-        source_to_codechat_for_web("; // σ\n//", &"cpp".to_string(), 0.0, false, false),
+        source_to_codechat_for_web("; // σ\n//", Path::new("foo.cpp"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "cpp",
             "; // σ\n",
@@ -656,7 +661,7 @@ fn test_source_to_codechat_for_web_1() {
 
     // Test Unicode characters in strings.
     assert_eq!(
-        source_to_codechat_for_web("\"σ\";\n//", &"cpp".to_string(), 0.0, false, false),
+        source_to_codechat_for_web("\"σ\";\n//", Path::new("foo.cpp"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "cpp",
             "\"σ\";\n",
@@ -669,10 +674,10 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web(
             "/* ``` foo\n*/\n// Test",
-            &"cpp".to_string(),
+            Path::new("foo.cpp"),
             0.0,
             false,
-            false
+            None
         ),
         Ok(build_codechat_for_web(
             "cpp",
@@ -693,10 +698,10 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web(
             "/* ~~~~~~~ foo\n*/\n// Test",
-            &"cpp".to_string(),
+            Path::new("foo.cpp"),
             0.0,
             false,
-            false
+            None
         ),
         Ok(build_codechat_for_web(
             "cpp",
@@ -715,7 +720,7 @@ fn test_source_to_codechat_for_web_1() {
     );
     // Test multiple unterminated fenced code blocks.
     assert_eq!(
-        source_to_codechat_for_web("// ```\n // ~~~", &"cpp".to_string(), 0.0, false, false),
+        source_to_codechat_for_web("// ```\n // ~~~", Path::new("foo.cpp"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "cpp",
             "\n\n",
@@ -728,7 +733,7 @@ fn test_source_to_codechat_for_web_1() {
 
     // Test an unterminated HTML block.
     assert_eq!(
-        source_to_codechat_for_web("// <foo>\n // Test", &"cpp".to_string(), 0.0, false, false),
+        source_to_codechat_for_web("// <foo>\n // Test", Path::new("foo.cpp"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "cpp",
             "\n\n",
@@ -744,10 +749,10 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web(
             "// <pre>\n // *Test*",
-            &"cpp".to_string(),
+            Path::new("foo.cpp"),
             0.0,
             false,
-            false
+            None
         ),
         Ok(build_codechat_for_web(
             "cpp",
@@ -1240,13 +1245,17 @@ fn test_diff_2() {
 fn test_hydrate_html_1() {
     // These tests check the translation from Markdown to "wet" HTML (what the user provides) instead of dry -> wet HTML.
     assert_eq!(
-        hydrate_html(&markdown_to_html(indoc!(
-            "```mermaid
+        hydrate_html(
+            &markdown_to_html(indoc!(
+                "```mermaid
             flowchart LR
                 start --> stop
             ```
             "
-        )))
+            )),
+            Path::new("foo.md"),
+            &Cache::new()
+        )
         .unwrap(),
         indoc!(
             "
@@ -1258,14 +1267,18 @@ fn test_hydrate_html_1() {
     );
 
     assert_eq!(
-        hydrate_html(&markdown_to_html(indoc!(
-            "```graphviz
+        hydrate_html(
+            &markdown_to_html(indoc!(
+                "```graphviz
             digraph {
                 start -> stop
             }
             ```
             "
-        )))
+            )),
+            Path::new("foo.md"),
+            &Cache::new()
+        )
         .unwrap(),
         indoc!(
             "
@@ -1279,8 +1292,9 @@ fn test_hydrate_html_1() {
 
     // Ensure math doesn't need escaping.
     assert_eq!(
-        hydrate_html(&markdown_to_html(indoc!(
-            "
+        hydrate_html(
+            &markdown_to_html(indoc!(
+                "
             ${a}_1, b_{2}$
             $a*1, b*2$
             $[a](b)$
@@ -1289,7 +1303,10 @@ fn test_hydrate_html_1() {
 
             $${a}_1, b_{2}, a*1, b*2, [a](b), 3 <a> b, a \\; b$$
             "
-        )))
+            )),
+            Path::new("foo.md"),
+            &Cache::new()
+        )
         .unwrap(),
         indoc!(
             r#"
@@ -1304,7 +1321,12 @@ fn test_hydrate_html_1() {
     );
 
     assert_eq!(
-        hydrate_html(&markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;")).unwrap(),
+        hydrate_html(
+            &markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;"),
+            Path::new("foo.md"),
+            &Cache::new()
+        )
+        .unwrap(),
         indoc!(
             "
             <ol>
