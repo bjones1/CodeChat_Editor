@@ -16,21 +16,80 @@
 /// `cache.rs` - Keep a cache used to store all targets in a project.
 /// ============================================================================
 ///
-/// The cache stores the location (file name and ID), numbering (of headings in
-/// the TOC and figures/equations/etc. on a page), and contents (title text or
-/// code/doc blocks for tags) of a target. Targets are HTML anchors (such as
-/// headings, figure titles, display equations, tags, etc.), hyperlinks, or
-/// files. The cache should be as lazy as possible, only performing work when
-/// requested.
+/// The cache stores the location (file name and anchor), numbering (of headings
+/// in the TOC and figures/equations/etc. on a page), and contents (title text
+/// or code/doc blocks for tags) of a target. Targets are HTML anchors (such as
+/// headings, figure titles, display equations, tags, etc.), hyperlinks, gather
+/// elements, or files.
 ///
-/// Goals:
+/// The goal of the cache is to support auto-titled links and gather elements,
+/// and to ensure that all anchors are unique within a project. This means that
+/// links persists across moving or renaming files, since the anchors will be
+/// found in the cache.
 ///
-/// * Given a file name and/or ID, retrieve the associated location, numbering,
-///   and contents.
-/// * Perform a search of the contents of all targets, returning a list of
-///   matching targets.
-/// * Given a file name and/or ID, provide a list of all targets in the
+/// Auto-titled links
+/// ----------------------------------------------------------------------------
+///
+/// A hyperlink with an empty title is auto-titled -- the contents of the anchor
+/// it references provide the contents of the link. For example, after
+/// processing, the link in the following Markdown
+///
+/// ```Markdown
+/// <h1 id="foo">Bar</h1>
+///
+/// [](#bar)
+/// ```
+///
+/// becomes `[Bar](#bar)`. This works even when the anchor is located in a
+/// different file. Auto-titled links don't support indirection: link A whose
+/// contents comes from link B whose contents comes from link C doesn't work.
+///
+/// Tags
+/// ----------------------------------------------------------------------------
+///
+/// A gather element such as `<cc-gather id="baz"/>` becomes a list of the
+/// contents of tags which reference it after processing by the cache. A tag is
+/// simply a link to a gather element, such as `[](#baz)`. The tag's content by
+/// default includes the contents of the current doc block and the contents of
+/// the next code/doc block. Tags can also include start and end query
+/// parameters to enclose a wider range of code/doc blocks.
+///
+/// Tag contents may not include a gather element. They do support indirection:
+/// gather element A includes contents from tag B, which contains an auto-titled
+/// link to target C. Changes to target C makes B and A dirty.
+///
+/// Backlinks
+/// ----------------------------------------------------------------------------
+///
+/// I want a way to create a list of backlinks to an anchor. This would provide
+/// a way to create an index, or show what references footnotes/endnotes, etc.
+/// Backlinks are like gather elements, but instead of capuring tag contents,
+/// they produce links, locations, and/or backlink contents. They are therefore
+/// very similar to a gather element; the difference is in which content is
+/// included. In addition, backlinks don't support indirect dependencies:
+/// backlink A, which link B refernces, doesn't depend on link B's auto-titled
+/// text from target C.
+///
+/// Search
+/// ----------------------------------------------------------------------------
+///
+/// The cache supports searching the contents of all Targets.
+///
+/// Goals
+/// ----------------------------------------------------------------------------
+///
+/// * Given a file name and/or anchor, retrieve the associated location,
+///   numbering, and contents.
+/// * Perform a search of all Target contents, returning a list of matching
+///   targets.
+/// * Given a file name and/or anchor, provide a list of all targets in the
 ///   containing file.
+/// * Given an anchor, retrieve all Targets which reference this anchor.
+/// * If a File is modified (becomes dirty in the cache), return a list of Files
+///   which depend (directly or indirectly) on this File.
+/// * After processing a file (so that it becomes clean in the cache), return a
+///   list of Files whose dependencies are all clean, meaning they should be
+///   processed.
 ///
 /// Supported operations:
 ///
@@ -41,13 +100,21 @@
 /// * Monitor the project for filesystem changes, performing lazy updates based
 ///   on these changes.
 /// * Keep the in-memory cache synchronized with the on-disk cache.
+///
+/// Thinking space:
+///
+/// * Any file can be submitted for a cache update. After the update finishes,
+///   the Server checks to see if this update was to the file currently being
+///   editing in the Client.
+/// * Non-project files support a subset of this functionality: basically, treat
+///   the project as a single file. Backlinks to other files work; tags and
+///   backlinks within the current file work.
 // Imports
 // -----------------------------------------------------------------------------
 //
 // ### Standard library
 use std::{
-    collections::HashMap,
-    fs::Metadata,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     rc::{Rc, Weak},
     sync::{Arc, Mutex},
@@ -66,11 +133,16 @@ use crate::lexer::CodeDocBlock;
 struct Cache {
     /// Provide rapid access to a file by its absolute path; it must be within
     /// the project's root directory.
-    path: HashMap<PathBuf, File>,
-    /// Provide rapid access to a `Target` by its unique ID.
-    id: HashMap<String, Target>,
-    /// A list of targets that have changed since the last search.
-    changed: Vec<Target>,
+    path: HashMap<PathBuf, Arc<Mutex<File>>>,
+    /// Provide rapid access to a `Target` by its unique anchor.
+    anchor: HashMap<String, Target>,
+    /// Backlinks: given an anchor, this contains all targets which reference
+    /// this anchor.
+    backlink: HashMap<String, Vec<Target>>,
+    /// Given a File, retrieve a list all files which depend on this it.
+    dependents: HashMap<File, Vec<File>>,
+    /// When this file becomes clean, provide a list of
+    dirty_dependents: HashMap<File, HashSet<File>>,
     /// The root directory of this project.
     root: PathBuf,
 }
@@ -83,10 +155,8 @@ struct File {
     /// directory. This file may not exist -- it could be created by a broken
     /// link.
     path: PathBuf,
-    /// This file's metadata, used to determine if the cached data in this page
-    /// is up to date by comparing with the file's current metadata. `None` if
-    /// this file doesn't exist.
-    metadata: Option<Metadata>,
+    /// The cache state of this item.
+    state: State,
     /// The TOC's numbering for this file; empty if it's either not in the TOC,
     /// or is a prefix/suffix chapter.
     toc: Vec<u32>,
@@ -97,6 +167,12 @@ struct File {
     /// All targets on this page which depend on data from another file within
     /// this project. Typically, these are auto-titled hyperlinks.
     dependency: Vec<Target>,
+}
+
+enum State {
+    Clean,
+    Dirty,
+    Pending,
 }
 
 /// Contains all information about a target.
@@ -132,15 +208,26 @@ enum TargetType {
         number: u32,
     },
     /// An HTML element with an id, which must be globally unique in this
-    /// project.
-    Id,
+    /// project. Termed an
+    /// [anchor](https://developer.mozilla.org/en-US/docs/Learn_web_development/Howto/Web_mechanics/What_is_a_URL#anchor)
+    /// or a document fragment identifier.
+    Anchor,
+    /// A tag, which is a link to a gathering tag.
     Tag {
-        /// The name of this tag.
-        name: String,
+        /// The file this hyperlink references.
+        file: File,
+        /// The ID this hyperlink references.
+        id: String,
         /// The index into this page's CodeDocBlock vec where the tag starts.
         start: usize,
         /// The index into this page's CodeDocBlock vec where the tag ends.
         end: usize,
+    },
+    /// A gathering tag.
+    GatherTag {
+        /// The name of this tag, used as the auto-title text for referencing
+        /// links.
+        name: String,
     },
     /// A numbered item, such as a figure caption, an equation, a table, etc.
     Numbered {
@@ -231,6 +318,124 @@ impl Cache {
         //       cache for that file is outdated, add the referring file to the
         //       map of dependencies.
         //    2. Update the auto-titled text using cached data; if not in the
-        //       cachem use the title "pending."
+        //       cache use the title "pending."
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        borrow::{Borrow, BorrowMut},
+        collections::HashMap,
+        rc::Weak,
+        sync::{Arc, Mutex},
+    };
+
+    use indoc::indoc;
+    use test_utils::prep_test_dir;
+
+    use crate::processing::cache::{Cache, File, TargetContents, TargetCore};
+
+    // Verify basic parsing
+    fn test_1() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let bar_cpp = indoc!(
+            r#"
+            // # Heading 1
+            //
+            // ## Heading 2
+            //
+            // <a id="anchor"></a>
+            //
+            // [File link](bar.cpp)
+            //
+            // [anchor link](bar.cpp#bonk)
+            //
+            // [][baz.cpp)
+            //
+            // [](baz.cpp#one)
+            //
+            // [](baz.cpp#one?number)
+            //
+            // [](baz.cpp#one?title&number)
+            //
+            // [][bar.cpp#gathering_tag)
+            code();
+            "#
+        );
+
+        let bar_cpp_path = test_dir.join("bar.cpp");
+        let file_bar_cpp = Arc::new(Mutex::new(File {
+            path: bar_cpp_path.clone(),
+            metadata: None,
+            toc: vec![1],
+            // Since we haven't parsed the file, the `h1` hasn't been found.
+            h1: None,
+            // Likewise, no dependencies have been found yet.
+            dependency: vec![],
+            // Same for targets.
+            target: vec![],
+        }));
+        let baz_cpp_path = test_dir.join("baz.cpp");
+
+        // Create a baz file that's been processed. It contains one heading.
+        let mut file_baz_cpp = Arc::new(Mutex::new(File {
+            path: baz_cpp_path.clone(),
+            metadata: Some(baz_cpp_path.metadata().unwrap()),
+            toc: vec![2],
+            // Since we haven't parsed the file, the `h1` hasn't been found.
+            h1: None,
+            // Likewise, no dependencies have been found yet.
+            dependency: vec![],
+            // Same for targets.
+            target: vec![],
+        }));
+        file_baz_cpp.borrow_mut().lock().unwrap().target = vec![
+            Arc::new(Mutex::new(TargetCore {
+                file: file_baz_cpp.clone(),
+                id: "one".to_string(),
+                node: Weak::new(),
+                line: 1,
+                type_: crate::processing::cache::TargetType::Heading {
+                    level: 1,
+                    number: 1,
+                },
+                contents: TargetContents::Html("Heading one".to_string()),
+            })),
+            Arc::new(Mutex::new(TargetCore {
+                file: file_baz_cpp.clone(),
+                id: "gathering_tag".to_string(),
+                node: Weak::new(),
+                line: 1,
+                type_: crate::processing::cache::TargetType::GatherTag {
+                    name: "gather".to_string(),
+                },
+                contents: TargetContents::Html("Heading one".to_string()),
+            })),
+        ];
+        let mut cache_path = HashMap::new();
+        cache_path.insert(bar_cpp_path, file_bar_cpp);
+        cache_path.insert(baz_cpp_path, file_baz_cpp.clone());
+        let mut cache_id = HashMap::new();
+        cache_id.insert(
+            "one".to_string(),
+            file_baz_cpp.lock().unwrap().target[0].clone(),
+        );
+        cache_id.insert(
+            "gathering_tag".to_string(),
+            file_baz_cpp.lock().unwrap().target[1].clone(),
+        );
+        let mut cache_anchor = HashMap::new();
+
+        let cache = Cache {
+            path: cache_path,
+            id: cache_id,
+            anchor: cache_anchor,
+            root: test_dir,
+        };
+
+        //cache.upsert_file_core(&bar_cpp_path, );
+
+        temp_dir.close().unwrap();
     }
 }

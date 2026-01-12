@@ -824,7 +824,7 @@ pub fn source_to_codechat_for_web(
     // The file's contents.
     file_contents: &str,
     // The file's extension.
-    file_ext: &String,
+    file_path: &Path,
     // The version of this file.
     version: f64,
     // True if this file is a TOC.
@@ -832,6 +832,13 @@ pub fn source_to_codechat_for_web(
     // True if this file is part of a project.
     _is_project: bool,
 ) -> Result<CodeChatForWeb, SourceToCodeChatForWebError> {
+    // Determine the file's extension, in order to look up a lexer.
+    let file_ext = &file_path
+        .extension()
+        .unwrap_or_else(|| OsStr::new(""))
+        .to_string_lossy()
+        .to_string();
+
     // Determine the lexer to use for this file.
     let lexer_name;
     // First, search for a lexer directive in the file contents.
@@ -864,7 +871,7 @@ pub fn source_to_codechat_for_web(
         source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
             // Document-only files are easy: just encode the contents.
             let dry_html = markdown_to_html(file_contents);
-            let html = hydrate_html(&dry_html)
+            let html = hydrate_html(&dry_html, file_path, &code_doc_block_arr)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             CodeMirrorDiffable::Plain(CodeMirror {
                 doc: html,
@@ -925,7 +932,7 @@ pub fn source_to_codechat_for_web(
             // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
             // 3. Hydrate the cleaned HTML.
-            let html = hydrate_html(&html)
+            let html = hydrate_html(&html, file_path, &code_doc_block_arr)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 3. Split on the separator.
             let mut doc_block_contents_iter = DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&html);
@@ -989,12 +996,6 @@ pub fn source_to_codechat_for_web_string(
     ),
     SourceToCodeChatForWebError,
 > {
-    // Determine the file's extension, in order to look up a lexer.
-    let ext = &file_path
-        .extension()
-        .unwrap_or_else(|| OsStr::new(""))
-        .to_string_lossy();
-
     // To determine if this source code is part of a project, look for a project
     // file by searching the current directory, then all its parents, for a file
     // named `toc.md`.
@@ -1074,6 +1075,7 @@ pub fn html_to_dom(html: &str) -> io::Result<Rc<Node>> {
     Ok(dom.document)
 }
 
+// Transform a DOM tree back to an HTML string.
 pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
     // Serialize the transformed DOM back to a string.
     let so = SerializeOpts {
@@ -1103,7 +1105,7 @@ pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
 // * (Eventually) record document structure information.
 // * (Eventually) assign a unique ID to all links that don't have one.
 // * (Eventually) fill in autocomplete fields.
-fn hydrate_html(html: &str) -> io::Result<String> {
+fn hydrate_html(html: &str, file: &Path, code_doc_block: &Vec<CodeDocBlock>) -> io::Result<String> {
     let dom = html_to_dom(html)?;
     hydrating_walk_node(dom.clone());
     dom_to_html(dom)
