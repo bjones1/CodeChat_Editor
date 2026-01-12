@@ -751,7 +751,7 @@ mod tests {
     use super::FW;
     use crate::{
         processing::{
-            CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata, 
+            CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata,
             source_to_codechat_for_web,
         },
         webserver::{
@@ -888,10 +888,10 @@ mod tests {
         // Check the contents.
         let translation_results = source_to_codechat_for_web(
             "",
-            &"py".to_string(),
+            &Path::new("foo.py"),
             umc.contents.as_ref().unwrap().version,
             false,
-            false,
+            None,
         );
         let codechat_for_web = translation_results.unwrap();
         assert_eq!(umc.contents, Some(codechat_for_web));
