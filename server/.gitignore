@@ -32,4 +32,5 @@ hashLocations.json
 
 config.json
 *.log
+.windows/
 # CodeChat Editor lexer: python. See TODO.
