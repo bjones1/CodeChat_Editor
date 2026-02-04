@@ -21,6 +21,10 @@ Changelog
 
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
+* No changes.
+
+Version 0.1.50 -- 2025-Feb-04
+-----------------------------
 
 * First and second-level heading underlines are now sized based on the heading's
   length, rather than fixed at 80 characters.
