@@ -103,7 +103,7 @@ webbrowser = "1.0.5"
 
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
-win_partitions = "0.3.0"
+windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 
 # ### Development-only dependencies
 [dev-dependencies]
