@@ -226,7 +226,7 @@ use crate::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockVec, SourceFileMetadata, TranslationResultsString,
         codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
-        source_to_codechat_for_web_string,
+        source_to_codechat_for_web_string, transform_html,
     },
     queue_send, queue_send_func,
     webserver::{
@@ -853,9 +853,10 @@ impl TranslationTask {
                             id: ide_message.id,
                             message: EditorMessageContents::Update(UpdateMessageContents {
                                 file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                contents: None,
                                 cursor_position: update.cursor_position,
                                 scroll_position: update.scroll_position,
+                                is_re_translation: false,
+                                contents: None,
                             }),
                         }));
                         Ok(ResultOkTypes::Void)
@@ -907,9 +908,10 @@ impl TranslationTask {
                                                     id: ide_message.id,
                                                     message: EditorMessageContents::Update(UpdateMessageContents {
                                                         file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                                                        contents: Some(client_contents),
                                                         cursor_position: update.cursor_position,
                                                         scroll_position: update.scroll_position,
+                                                        is_re_translation: false,
+                                                        contents: Some(client_contents),
                                                     }),
                                                 }));
                                                 // Update to the latest code after
@@ -941,6 +943,9 @@ impl TranslationTask {
                                                     id: ide_message.id,
                                                     message: EditorMessageContents::Update(UpdateMessageContents {
                                                         file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                                                        cursor_position: update.cursor_position,
+                                                        scroll_position: update.scroll_position,
+                                                        is_re_translation: false,
                                                         contents: Some(CodeChatForWeb {
                                                             metadata: SourceFileMetadata {
                                                                 // Since this is raw data, `mode` doesn't
@@ -953,8 +958,6 @@ impl TranslationTask {
                                                             }),
                                                             version: contents.version
                                                         }),
-                                                        cursor_position: update.cursor_position,
-                                                        scroll_position: update.scroll_position,
                                                     }),
                                                 }));
                                                 Ok(ResultOkTypes::Void)
@@ -1052,14 +1055,12 @@ impl TranslationTask {
                             // Translate back to the Client to see if there are
                             // any changes after this conversion. Only check
                             // CodeChat documents, not Markdown docs.
-                            if cfw.metadata.mode != MARKDOWN_MODE
-                                && let Ok(ccfws) = source_to_codechat_for_web_string(
-                                    &new_source_code,
-                                    &clean_file_path,
-                                    cfw.version,
-                                    false,
-                                )
-                                && let TranslationResultsString::CodeChat(ccfw) = ccfws.0
+                            if let Ok(ccfws) = source_to_codechat_for_web_string(
+                                &new_source_code,
+                                &clean_file_path,
+                                cfw.version,
+                                false,
+                            ) && let TranslationResultsString::CodeChat(ccfw) = ccfws.0
                                 && let CodeMirrorDiffable::Plain(code_mirror_translated) =
                                     ccfw.source
                                 && self.sent_full
@@ -1068,27 +1069,40 @@ impl TranslationTask {
                                 // changes (such as line wrapping in doc blocks
                                 // which changes line numbering, creation of a
                                 // new doc block from previous code block text,
-                                // or updates from future document intelligence
-                                // such as renamed headings, etc.) For doc
-                                // blocks that haven't been edited by TinyMCE,
-                                // this is easy; equality is sufficient. Doc
-                                // blocks that have been edited are a different
-                                // case: TinyMCE removes newlines, causing a lot
-                                // of "changes" to re-insert these. Therefore,
-                                // use the following approach:
+                                // insertion of math, or updates from future
+                                // document intelligence such as renamed
+                                // headings, etc.). Note that strict HTML
+                                // comparison fails, since TinyMCE modifies
+                                // whitespace and some characters; for example,
+                                // `👨‍👦` becomes `👨&zwj;👦` after processing by
+                                // TinyMCE. Therefore, HTML processed by TinyMCE
+                                // needs to be normalized before it can be
+                                // compared.
                                 //
-                                // 1. Compare the `doc` values. If they differ,
-                                //    then the the Client needs an update.
-                                // 2. Compare each code block using simple
-                                //    equality. If this fails, compare the doc
-                                //    block text excluding newlines. If still
-                                //    different, then the Client needs an
-                                //    update.
-                                if code_mirror_translated.doc != self.code_mirror_doc
-                                    || !doc_block_compare(
-                                        &code_mirror_translated.doc_blocks,
-                                        self.code_mirror_doc_blocks.as_ref().unwrap(),
-                                    )
+                                // 1. Document-only: HTML is stored in `.doc`;
+                                //    ignore `.doc_blocks`.
+                                // 2. Normal mode: HTML is stored in
+                                //    `.doc_blocks`; perform a binary compare of
+                                //    `.doc`, then an HTML comparison of
+                                //    `.doc_blocks`.
+                                //
+                                // It looks like comparing HTML is risky, since
+                                // TinyMCE (or something) store emojis
+                                // differently. Perhaps we need to compare
+                                // Markdown instead of HTML? Or HTML after
+                                // processing? The second seems easier.
+                                let is_markdown_mode = cfw.metadata.mode == MARKDOWN_MODE;
+                                if (is_markdown_mode
+                                    && !compare_html(
+                                        &code_mirror_translated.doc,
+                                        &self.code_mirror_doc,
+                                    ))
+                                    || (!is_markdown_mode
+                                        && (code_mirror_translated.doc != self.code_mirror_doc
+                                            || !doc_block_compare(
+                                                &code_mirror_translated.doc_blocks,
+                                                self.code_mirror_doc_blocks.as_ref().unwrap(),
+                                            )))
                                 {
                                     // Use a whole number to avoid encoding
                                     // differences with fractional values.
@@ -1109,12 +1123,13 @@ impl TranslationTask {
                                         message: EditorMessageContents::Update(
                                             UpdateMessageContents {
                                                 file_path: update_message_contents.file_path,
-                                                contents: Some(client_contents),
                                                 // Don't change the current position, since
                                                 // the Client editing position should be
                                                 // left undisturbed.
                                                 cursor_position: None,
-                                                scroll_position: None
+                                                scroll_position: None,
+                                                is_re_translation: true,
+                                                contents: Some(client_contents),
                                             }
                                         )
                                     }));
@@ -1170,9 +1185,10 @@ impl TranslationTask {
                     id: client_message.id,
                     message: EditorMessageContents::Update(UpdateMessageContents {
                         file_path: clean_file_path.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
-                        contents: codechat_for_web,
                         cursor_position: update_message_contents.cursor_position,
                         scroll_position: update_message_contents.scroll_position,
+                        is_re_translation: false,
+                        contents: codechat_for_web,
                     })
                 }));
             }
@@ -1192,6 +1208,43 @@ fn eol_convert(s: String, eol_type: &EolType) -> String {
     }
 }
 
+// TinyMCE replaces newlines inside paragraphs with a space and (I think) avoids
+// surrogate pairs by breaking them into a series of UTF-16 characters.
+// Therefore, to compare HTML, normalize HTML touched by TinyMCE first.
+fn compare_html(
+    // A string containing HTML that's been normalized by html5ever.
+    normalized_html: &str,
+    // A string containing HTML that's not normalized; for example, data after
+    // processing by TinyMCE.
+    raw_html: &str,
+) -> bool {
+    // The normalized HTML is word-wrapped, while the raw HTML is not. Use this
+    // to ignore the differences between newlines and spaces, in order to ignore
+    // these differences.
+    fn map_newlines_to_spaces<'a>(
+        s: &'a str,
+    ) -> std::iter::Map<std::str::Chars<'a>, impl FnMut(char) -> char> {
+        s.trim()
+            .chars()
+            .map(|c: char| if c == '\n' { ' ' } else { c })
+    }
+
+    // Normalized `<br>` elements are followed by a newline; raw `<br>` elements
+    // aren't. Remove the newline.
+    let fixed_normalized_html = normalized_html.replace("<br>\n", "<br>");
+
+    // Transforming the HTML with an empty transform normalizes it but leave it
+    // otherwise unchanged.
+    if let Ok(normalized_raw_html) = transform_html(raw_html, |_node| {}) {
+        // Ignore word wrapping and leading/trailing whitespace in the
+        // comparison.
+        map_newlines_to_spaces(&fixed_normalized_html)
+            .eq(map_newlines_to_spaces(&normalized_raw_html))
+    } else {
+        false
+    }
+}
+
 // Given a vector of two doc blocks, compare them, ignoring newlines.
 fn doc_block_compare(a: &CodeMirrorDocBlockVec, b: &CodeMirrorDocBlockVec) -> bool {
     if a.len() != b.len() {
@@ -1205,20 +1258,11 @@ fn doc_block_compare(a: &CodeMirrorDocBlockVec, b: &CodeMirrorDocBlockVec) -> bo
             && a.to == b.to
             && a.indent == b.indent
             && a.delimiter == b.delimiter
-            && (a.contents == b.contents
-                // TinyMCE replaces newlines inside paragraphs with a space; for
-                // a crude comparison, translate all newlines back to spaces,
-                // then ignore leading/trailing newlines.
-                || map_newlines_to_spaces(&a.contents).eq(map_newlines_to_spaces(&b.contents)))
+            // Most doc blocks haven't been touched by TinyMCE. Try a fast
+            // binary compare first.
+            && (a.contents == b.contents ||
+            compare_html(&a.contents, &b.contents))
     })
-}
-
-fn map_newlines_to_spaces<'a>(
-    s: &'a str,
-) -> std::iter::Map<std::str::Chars<'a>, impl FnMut(char) -> char> {
-    s.trim()
-        .chars()
-        .map(|c: char| if c == '\n' { ' ' } else { c })
 }
 
 // Provide a simple debug function that prints only the first

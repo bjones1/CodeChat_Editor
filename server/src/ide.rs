@@ -257,6 +257,9 @@ impl CodeChatEditorServer {
     ) -> std::io::Result<f64> {
         self.send_message_timeout(EditorMessageContents::Update(UpdateMessageContents {
             file_path,
+            cursor_position,
+            scroll_position: scroll_position.map(|x| x as f32),
+            is_re_translation: false,
             contents: option_contents.map(|contents| CodeChatForWeb {
                 metadata: SourceFileMetadata {
                     mode: "".to_string(),
@@ -267,8 +270,6 @@ impl CodeChatEditorServer {
                 }),
                 version: contents.1,
             }),
-            cursor_position,
-            scroll_position: scroll_position.map(|x| x as f32),
         }))
         .await
     }

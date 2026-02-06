@@ -307,9 +307,10 @@ pub async fn goto_line(
             id: *client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.to_string(),
-                contents: None,
                 cursor_position: Some(line),
-                scroll_position: Some(1.0)
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
             })
         }
     );
@@ -430,6 +431,9 @@ pub async fn get_empty_client_update(
             id: *client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.to_owned(),
+                cursor_position,
+                scroll_position,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: mode.to_string()
@@ -441,8 +445,6 @@ pub async fn get_empty_client_update(
                     }),
                     version: *client_version
                 }),
-                cursor_position,
-                scroll_position
             })
         }
     );

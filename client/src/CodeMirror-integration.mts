@@ -290,7 +290,9 @@ export const docBlockField = StateField.define<DecorationSet>({
                                           prev.spec.widget.contents,
                                           effect.value.contents,
                                       ),
-                                // If autosave is allowed (meaning no autosave is not true), then this data came from the user, not the IDE.
+                                // If autosave is allowed (meaning no autosave
+                                // is not true), then this data came from the
+                                // user, not the IDE.
                                 tr.annotation(noAutosaveAnnotation) !== true,
                             ),
                             ...decorationOptions,
@@ -688,7 +690,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                 return;
                             }
 
-                            // TODO: current, posToDom never gives us a doc block, even when the from/to is correct. So, we never get here.
+                            // TODO: current, posToDom never gives us a doc
+                            // block, even when the from/to is correct. So, we
+                            // never get here.
                             (dom.childNodes[1] as HTMLElement).focus();
                         },
                     );
@@ -760,6 +764,11 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     // cursor position (the selection) to be set in the
                     // contenteditable div. Then, save that location.
                     setTimeout(async () => {
+                        // Before untypesetting, make sure all other typesets
+                        // finish.
+                        await new Promise((resolve) =>
+                            window.MathJax.whenReady(resolve(undefined)),
+                        );
                         // Untypeset math in the old doc block and the current
                         // doc block before moving its contents around.
                         const tinymce_div =
@@ -1029,11 +1038,14 @@ export const CodeMirror_load = async (
             setup: (editor: Editor) => {
                 // See the
                 // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
-                // This is triggered on edits (just as the `input` event), but also when applying formatting changes, inserting images, etc. that the above callback misses.
+                // This is triggered on edits (just as the `input` event), but
+                // also when applying formatting changes, inserting images, etc.
+                // that the above callback misses.
                 editor.on(
                     "Dirty",
                     (event: EditorEvent<Events.EditorEventMap["dirty"]>) => {
-                        // Sometimes, `tinymce.activeEditor` is null (perhaps when it's not focused). Use the `event` data instead.
+                        // Sometimes, `tinymce.activeEditor` is null (perhaps
+                        // when it's not focused). Use the `event` data instead.
                         event.target.setDirty(false);
                         // Get the div TinyMCE stores edits in.
                         const target_or_false = event.target.bodyElement;

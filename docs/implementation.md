@@ -89,7 +89,8 @@ files. Therefore, the overall strategy is:
   which implement custom tags which only need local information. For example, a
   GraphViz custom tag renders graphs based on a description of the graph inside
   the tag. Likewise, MathJax interprets anything in matching math delimiters
-  ($...$, for example), then transforms it back to text before saving.
+  (<span class="math math-inline mceNonEditable">...</span>, for example), then
+  transforms it back to text before saving.
 * On save, the client sends its text back to the server, which de-transforms
   custom tags which depend on information from other pages. If de-transforms
   disagree with the provided text, then re-load the updated text after the save
@@ -100,16 +101,19 @@ files. Therefore, the overall strategy is:
 
 On load:
 
-* Classify the file; input are mutable global state (which, if present,
+* Classify the file; inputs are mutable global state (which, if present,
   indicates this is a project build), if the file is a TOC, the file's binary
   data, and the file's path. Output of the classification: binary, raw text, a
   CodeChat document (a Markdown file), or a CodeChat file. The load processing
-  pipelines For CodeChat files:
+  pipelines
+
+For CodeChat files:
+
 * (CodeChat files only) Run pre-parse hooks: they receive source code, file
   metadata. Examples: code formatters. Skip if cache is up to date.
 * (CodeChat files only) Lex the file into code and doc blocks.
 * Run post-parse hooks: they receive an array of code and doc blocks.
-  * Transform Markdown to HTML.
+* Transform Markdown to HTML.
 * Run HTML hooks:
   * Update the cache for the current file only if the current file's cache is
     stale. To do this, walk the DOM of each doc block. The hook specifies which
@@ -150,25 +154,112 @@ On save:
 * Save the file to disk.
 * If dirty, re-load the file.
 
-#### HTML to Markdown transformation
+### Table of contents
 
-Currently, Turndown translates HTML to Markdown and word-wraps the result. This
-has several problems:
+Ideas:
 
-* There are several bugs/open issues in Turndown; however, this package is no
-  longer maintained. I have a fork with fixes -- see the
-  [turndown](https://github.com/bjones1/turndown) and
-  [turndown-plugin-gfm](https://github.com/bjones1/turndown-plugin-gfm).
-* Turndown doesn't have a good way to deal with raw HTML intermingled with
-  Markdown; since raw HTML can change the meaning of HTML through styles, this
-  is hard to avoid. But it still produces ugly results.
-* Because both packages are written in Javascript, they run in the browser.
-  However, we need to run processing at the HTML level on the server first,
-  requiring some round trips between client and sever in the future. Therefore,
-  the next step is to switch to the Rust `htmd` crate, then port fixes from
-  Turndown to that.
+* Something that reflects the filesystem. Subdirectories are branches, files are
+  leaves in the TOC tree. Problems:
+  * Subdirectories should have content, such as a readme. Assume a readme file
+    titles and provides content for a subdirectory? Or provide a config file
+    setting to assign this?
+  * I'd like the ability to relocate files/directories. The means a config file
+    that tracks this movement.
+  * We need ignores.
+  * To reorder files in the TOC, need a config file per directory to store this
+    ordering.
+  * Pro: all files are automatically included, so adding a new file is
+    automatic. The hierarchy is mostly defined by the filesystem, which is nice.
+    A GUI with drag and drop would make this really simple to maintain.
+  * Con: a lot of work/rewrite.
+  * So: readme.md provides a title and contents for a subdirectory. A config
+    file in each directory specifies ordering of files, titles for non-CodeChat
+    files (PDFs, etc.), moves of files/directories from other directories, and
+    ignores.
+* Use mdbook's idea -- a very specific structure for a toc.md file. Simple, but
+  doesn't auto-update as files are added.
+* Current TOC isn't immediately useful. Too much flexibility.
 
-To build Turndown, simply execute `npm run build` or `npm run test`.
+Another topic: how to reconcile headings in a file with the TOC?
+
+* Separate them -- headings have orthogonal numbering to the TOC. I think this
+  is simplest. I just need the right way to display it; mdbook is reasonable in
+  this regard. I'll use this.
+* Combine them -- H1 is current number, H2 is a subhead, etc. But this means the
+  TOC's numbering requires reading the contents of all files referenced by the
+  TOC, which could be slow.
+
+### Cache data format
+
+The cache stores the location (file name and ID), numbering (of headings and
+figures/equations/etc.), and contents (title text or code/doc blocks for tags)
+of a target. Targets are HTML anchors (such as headings, figure titles, display
+equations, etc.) or tags.
+
+Goals:
+
+* Given a file name and/or ID, retrieve the associated location, numbering, and
+  contents.
+* Perform a search of the contents of all targets, returning a list of matching
+  targets.
+* Given a file name and/or ID, provide a list of all targets in the containing
+  file.
+
+Cache data structure:
+
+* A hashmap of (Path, target data structure). TBD: think about ownership. I
+  think a page is the owner of all targets.
+* A hashmap of (ID, target data structure). 
+
+Target data structure:
+
+* Location: the containing page and an `Option<String>` containing the ID, if
+  assigned.
+* Page numbering: `[Option<i32>, ...]` where each i32 in the list represents the
+  number of a H1..6 element (non-TOC) or the numbering of a list item (TOC);
+  `None` represents a missing level of the hierarchy (e.g. H1 following by and
+  H3, with no H2 between).
+* Type: page, heading, link, tag, caption, equation; numbered items (caption,
+  equation) also include the current number. Pages include the page data
+  structure.
+* Contents: either a string of HTML (would prefer Markdown) or a vec of code/doc
+  blocks. Page contents are an empty string.
+
+Page data structure:
+
+* Path: the path to this file.
+* File info: timestamp, etc. to compare with the filesystem in order to
+  determine if this cache entry is up to date or no. An option, in the case that
+  the file doesn't exist -- it's the target of a broken link.
+* TOC location: `[i32, ...]` gives the numbering of this page in the TOC; if
+  it's not in the TOC, this is an empty list.
+* Vector of targets on this page.
+* (Maybe) first ID on this page.
+
+Pseudocode:
+
+1. Create a hashmap of (file paths to index, list of links depending on this
+   file). Initialize it with the current file.
+2. For each file in the hashset:
+   1. If this is the first file, we already have its DOM. Otherwise, load the
+      file from disk and compute the DOM.
+   2. Given a file's DOM, first create its page data structure. Pre-existing
+      cache data provides the TOC numbering.
+   3. For each target in the DOM (non-TOC) / numbered item (TOC), add the
+      target's data structure to the page's vector of targets, updating the
+      current numbering if this is a numbered item (heading, caption, etc.) and
+      inserting the HTML to set its number in the DOM.
+   4. If this is the first file: for each link in the DOM, if the link is local
+      and autotitled, look for it in the cache. If it's not in the cache or if
+      the cache for that file is outdated, add the referring file to the hashset
+      of files to update if it's not in the hashmap; append this link to its
+      list of dependent links.
+   5. For each link in the list of links depending on this file, update it with
+      the loaded content.
+
+References:
+
+* Hyperlinks with no link text are auto-titled. Look up
 
 ### IDE/editor integration
 
@@ -225,31 +316,6 @@ Simplest IDE integration:
 More complex IDE integration: everything that the simple IDE does, plus the
 ability to toggle between the IDE's editor and the CodeChat Editor.
 
-### Improved IDE interface
-
-To improve the IDE interface, switch from websockets to calling the Server
-directly through a native interface. For example, [NAPI-RS](https://napi.rs/)
-provide a way to call Rust from Node.js; [JNI](https://docs.rs/jni/latest/jni/)
-allows calling Rust from Java.
-
-### Efficient websocket communication
-
-When an edit occurs, it's best to send only changed data, rather than the whole
-file. The diff crate provides easy access to determining a diff. The idea:
-
-1. In the server, save the current file contents. Ignore diffing if the file
-   name changes.
-2. When moving from IDE to client:
-   1. Code: diff the string containing code, then diff each doc block's
-      contents. The new code string is now an array of insert(start, stop,
-      string)/delete(start, stop) instructions.
-   2. Doc blocks: the format is \[ \[index, start?, end?, comment?,
-      \[insert/delete instructions\] \].
-3. From client to IDE:
-   1. I'd like to do something similar. WASM, perhaps? Then recover changes on
-      the server. If there's any way to mark doc blocks as dirty, that might
-      help.
-
 Build system
 --------------------------------------------------------------------------------
 
@@ -282,12 +348,12 @@ The Client supports several classes of files:
 
 ### Broken fences (Markdown challenges)
 
-All Markdown blocks are termined by a blank line followed by unindented content,
-except for fenced code blocks and some types of HTML blocks. To ensure that doc
-blocks containing an opening fence but no matching closing fence, or a start
-HTML tag but no closing tag, are properly closed (instead of affecting the
+All Markdown blocks are terminated by a blank line followed by unindented
+content, except for fenced code blocks and some types of HTML blocks. To ensure
+that doc blocks containing an opening fence but no matching closing fence, or a
+start HTML tag but no closing tag, are properly closed (instead of affecting the
 remainder of the doc blocks), the editor injects closing tags and fences after
-each doc block, then reapirs them (if needed, due to a missing closing fence) or
+each doc block, then repairs them (if needed, due to a missing closing fence) or
 removed them. This means that some HTML tags won't be properly closed, since the
 closing tags are removed from the HTML. This is fixed by later HTML processing
 steps (currently, by TinyMCE), which properly closes tags.
@@ -300,10 +366,13 @@ Future work
 * While the TOC file must be placed in the root of the project, it will be
   served alongside pages served from subdirectories. Therefore, place this in an
   iframe to avoid regenerating it for every page.
+
 * The TOC is just Markdown. Numbered sections are expressed as nested ordered
   lists, with links to each section inside these lists.
+
 * All numbering is stored internally as a number, instead of the corresponding
   marker (I, II, III, etc.). This allows styles to customize numbering easily.
+
   * Given an `a` element in the TOC, looking through its parents provides the
     section number. Given an array of section numbers, use CSS to style all the
     headings. Implement numbering using CSS variables, which makes it easy for a
@@ -314,92 +383,6 @@ Future work
 
     `h1::before {` `counter-reset: var(--section-counter-reset);` `content:
     var(--section-counter-content);` `}`
-
-### Cached state
-
-When hydrating a page (transforming all custom tags into standard HTML) on the
-server, all needed hydration data should be stored in the cache.
-
-#### Data and format
-
-What we need to know:
-
-* To generate the TOC, we need a way to find the linked file, then get a list of
-  all its headings.
-  * Problem: files can be moved. Better would be an invariant anchor, stored in
-    the file, which doesn't change. It would make sense to link to the only
-    \<h1> element...but there may not be one, or it may not be at the top of the
-    file. The easy solution would be an anchor tag at the beginning of the
-    file...but this would break shell scripts, for example. Another is including
-    an anchor tag somewhere in each document, but need authors to understand
-    what it is (and not delete it). Another possibility is to link to any anchor
-    in the file with a special query identifying it as link to the underlying
-    file.
-* To auto-title a link, need to look up an anchor and get its location (page
-  number, section number) and title.
-* For back links, need to look up all links to the given anchor, then get the
-  location and title of each link.
-* To generate the TOC containing all anchors, we need a list of all anchors on a
-  given page.
-
-Therefore, the cache must contain a `FileAnchor`, an enum of:
-
-* A `PlainFileAnchor` (a non-HTML file -- an image, PDF, etc.). Generate an ID
-  based on a checksum of the file. Basically, this provides some way to find the
-  (unmodified) file if it's moved/renamed. Cache data: |path, ID, file's
-  metadata|.
-* An `HtmlFileAnchor` (an HTML file). Store an ID as a comment in it somewhere,
-  probably at the end of the file. Cache data: |path, ID, file's metadata|, TOC
-  numbering, a vector of `HeadingAnchor`s, a vector of `NonHeadingAnchor`s:
-  * A `HeadingAnchor` in an HTML file: |weak ref to the containing
-    `HtmlFileAnchor`, ID, anchor's inner HTML, optional hyperlink|, numbering on
-    this page, a vector of `NonHeadingAnchors` contained in this heading.
-  * A `NonHeadingAnchor` in an HTML file: |weak ref to the containing
-    `HtmlFileAnchor`, ID, anchor's inner HTML, optional hyperlink|, optional
-    parent heading, snippet of surrounding text, numbering group, number.
-
-A `Hyperlink` consists of a path and ID the link refers to.\
-An `HtmlAnchor` is an enum of `HeadingAnchor` and `NonHeadingAnchor`.\
-An `Anchor` is an enum of a `FileAnchor` and an `HtmlAnchor`.
-
-Globals:
-
-* A map of `PathBuf`s to `FileAnchors`.
-* A map of IDs to (`Anchor`, set of IDs of referring links)
-
-How to keep the sets of referring links up to date? If a link is deleted, we
-won't know until that file is removed. To fix, add a validate() function that
-looks up each link and drops anything that doesn't exist.
-
-How to deal with a link to an anchor not in the cache? Need a stub for that
-until the actual anchor is found. Therefore, have a stub/nonexistent file that
-holds all missing anchors. This file contains a single non-heading anchor, which
-has an empty id.
-
-How to represent TOC numbering?  In the end, it has to becomes a series of
-digits. I'd like to allow headings mixed with ordered lists, since this seems a
-reasonable/common way to express the TOC. But these could easily be assembled in
-a lot of weird ways. If a make a simplifying assumption -- put headings,
-followed by ordered lists -- then this is easier. But, what to do if headings
-appear in ordered lists? My goal is to produce something sensible from a wide
-range of valid inputs. Options are: always treat headings as a higher level of
-organization than lists; or treat them equivalently. The second option is
-simplest, and would seem to be what the author is saying.
-
-#### Editing and cached state
-
-Edits to the document of any cached items cause the browser to push this edit to
-the server; the server then propagates the edits to open windows and updates its
-state. If a modified file is closed without saving it (meaning the cached state
-for this file is now invalid), then all that cache state must be flushed. To
-flush, simply set the date/time stamp of that file to something old/invalid.
-
-### TOC custom tag
-
-Options:
-
-* Path to linked file
-* Depth of numbering
 
 #### Example of non-editable text
 

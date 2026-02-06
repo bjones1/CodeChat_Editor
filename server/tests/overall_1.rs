@@ -123,9 +123,10 @@ async fn test_server_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                contents: None,
                 cursor_position: Some(1),
-                scroll_position: Some(1.0)
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
             })
         }
     );
@@ -148,6 +149,9 @@ async fn test_server_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
+                cursor_position: Some(1),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -163,8 +167,6 @@ async fn test_server_core(
                     }),
                     version: client_version,
                 }),
-                cursor_position: Some(1),
-                scroll_position: Some(1.0)
             })
         }
     );
@@ -183,6 +185,9 @@ async fn test_server_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
+                cursor_position: Some(1),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -198,8 +203,6 @@ async fn test_server_core(
                     }),
                     version: client_version,
                 }),
-                cursor_position: Some(1),
-                scroll_position: Some(1.0),
             }),
         }
     );
@@ -222,9 +225,10 @@ async fn test_server_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                contents: None,
                 cursor_position: Some(2),
-                scroll_position: Some(1.0)
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
             })
         }
     );
@@ -242,9 +246,10 @@ async fn test_server_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                contents: None,
                 cursor_position: Some(1),
-                scroll_position: Some(1.0)
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
             })
         }
     );
@@ -263,6 +268,9 @@ async fn test_server_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
+                cursor_position: Some(2),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -278,8 +286,6 @@ async fn test_server_core(
                     }),
                     version: client_version,
                 }),
-                cursor_position: Some(2),
-                scroll_position: Some(1.0)
             })
         }
     );
@@ -379,6 +385,9 @@ async fn test_server_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: md_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: MARKDOWN_MODE.to_string()
@@ -397,8 +406,24 @@ async fn test_server_core(
                     }),
                     version: client_version,
                 }),
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Get the resulting cursor position update after the edit.
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: md_path_str.clone(),
                 cursor_position: None,
-                scroll_position: None
+                scroll_position: None,
+                is_re_translation: false,
+                contents: None,
             })
         }
     );
@@ -744,6 +769,9 @@ async fn test_client_updates_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
+                cursor_position: Some(1),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -759,8 +787,6 @@ async fn test_client_updates_core(
                     }),
                     version: client_version,
                 }),
-                cursor_position: Some(1),
-                scroll_position: Some(1.0)
             })
         }
     );
@@ -796,6 +822,9 @@ async fn test_client_updates_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
+                cursor_position: Some(4),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -811,8 +840,6 @@ async fn test_client_updates_core(
                     }),
                     version: new_client_version,
                 }),
-                cursor_position: Some(4),
-                scroll_position: Some(1.0)
             })
         }
     );
@@ -861,6 +888,9 @@ async fn test_client_updates_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
+                cursor_position: Some(2),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
                         mode: "python".to_string(),
@@ -876,8 +906,6 @@ async fn test_client_updates_core(
                     }),
                     version: new_client_version,
                 }),
-                cursor_position: Some(2),
-                scroll_position: Some(1.0)
             })
         }
     );

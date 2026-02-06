@@ -102,6 +102,7 @@ declare global {
             // Called by the Client Framework.
             open_lp: (
                 codechat_for_web: CodeChatForWeb,
+                is_re_translation: boolean,
                 cursor_line?: number,
                 scroll_line?: number,
             ) => Promise<void>;
@@ -124,9 +125,6 @@ declare global {
 // autosaved.
 let autosaveTimeoutId: null | number = null;
 
-// True to enable autosave.
-let autosaveEnabled = true;
-
 // Store the lexer info for the currently-loaded language.
 //
 // <a id="current_metadata"></a>This mirrors the data provided by the server --
@@ -135,14 +133,19 @@ let current_metadata: {
     mode: string;
 };
 
+const webSocketComm = () => parent.window.CodeChatEditorFramework.webSocketComm;
+
 // True if the document is dirty (needs saving).
 let is_dirty = false;
 
-// Page initialization
-// -----------------------------------------------------------------------------
 export const set_is_dirty = (value: boolean = true) => {
     is_dirty = value;
 };
+
+export const get_is_dirty = () => is_dirty;
+
+// Page initialization
+// -----------------------------------------------------------------------------
 
 // This is copied from
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
@@ -169,12 +172,18 @@ const is_doc_only = () => {
 // Wait for the DOM to load before opening the file.
 const open_lp = async (
     codechat_for_web: CodeChatForWeb,
+    is_re_translation: boolean,
     cursor_line?: number,
     scroll_line?: number,
 ) =>
     await new Promise<void>((resolve) =>
         on_dom_content_loaded(async () => {
-            await _open_lp(codechat_for_web, cursor_line, scroll_line);
+            await _open_lp(
+                codechat_for_web,
+                is_re_translation,
+                cursor_line,
+                scroll_line,
+            );
             resolve();
         }),
     );
@@ -195,115 +204,173 @@ const _open_lp = async (
     // A data structure provided by the server, containing the source and
     // associated metadata. See [`AllSource`](#AllSource).
     codechat_for_web: CodeChatForWeb,
+    is_re_translation: boolean,
     cursor_line?: number,
     scroll_line?: number,
 ) => {
-    // Use
-    // [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
-    // to parse out the search parameters of this window's URL.
-    const urlParams = new URLSearchParams(window.location.search);
-    // Get the mode from the page's query parameters. Default to edit using the
-    // [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
-    // This works, but TypeScript marks it as an error. Ignore this error by
-    // including the
-    // [@ts-ignore directive](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html#ts-check).
-    /// @ts-expect-error("See above.")
-    const _editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
-
-    // Get the <code>[current_metadata](#current_metadata)</code> from the
-    // provided `code_chat_for_web` struct and store it as a global variable.
-    current_metadata = codechat_for_web["metadata"];
-    const source = codechat_for_web["source"];
-    const codechat_body = document.getElementById(
-        "CodeChat-body",
-    ) as HTMLDivElement;
-    // Disable autosave when updating the document.
-    autosaveEnabled = false;
-    clearAutosaveTimer();
+    // Note that globals, such as `is_dirty` and document contents, may change
+    // between `await` calls. Therefore, try to perform processing which relies
+    // on these values between `await` calls. For example, evaluate this first:
+    //
     // Before calling any MathJax, make sure it's fully loaded and the initial
     // render is finished.
     await window.MathJax.startup.promise;
-    // Per the
-    // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
-    // "If you modify the page to remove content that contains typeset
-    // mathematics, you will need to tell MathJax about that so that it knows
-    // the typeset math that you are removing is no longer on the page."
-    window.MathJax.typesetClear(codechat_body);
-    if (is_doc_only()) {
-        if (tinymce.activeEditor === null) {
-            // We shouldn't have a diff if the editor hasn't been initialized.
-            assert("Plain" in source);
-            // Special case: a CodeChat Editor document's HTML is stored
-            // in`source.doc`. We don't need the CodeMirror editor at all;
-            // instead, treat it like a single doc block contents div.
-            doc_content = source.Plain.doc;
-            codechat_body.innerHTML = `<div class="CodeChat-doc-contents" spellcheck="true">${doc_content}</div>`;
-            await init({
-                selector: ".CodeChat-doc-contents",
-                // In the doc-only mode, add autosave functionality. While there
-                // is an
-                // [autosave plugin](https://www.tiny.cloud/docs/tinymce/6/autosave/),
-                // this autosave functionality is completely different from the
-                // autosave provided here. Per
-                // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
-                // this is how to create a TinyMCE event handler.
-                setup: (editor: Editor) => {
-                    editor.on(
-                        "dirty",
-                        (
-                            event: EditorEvent<Events.EditorEventMap["dirty"]>,
-                        ) => {
-                            // Sometimes, `tinymce.activeEditor` is null
-                            // (perhaps when it's not focused). Use the `event`
-                            // data instead.
-                            event.target.setDirty(false);
-                            is_dirty = true;
-                            startAutosaveTimer();
-                        },
-                    );
-                },
-            });
-            tinymce.activeEditor!.focus();
+
+    // The only the `await` is based on TinyMCE init, which should only cause an
+    // async delay on its first execution. (Even then, I'm not sure it does,
+    // since all resources are statically imported). So, we should be OK for the
+    // rest of this function.
+    //
+    // Now, make all decisions about `is_dirty`: if the text is dirty, do some
+    // special processing; simply applying the update could cause either data
+    // loss (overwriting edits made since the last autosave) or data corruption
+    // (applying a diff to updated text, causing the diff to be mis-applied).
+    // Specifically:
+    //
+    // 1. If this is a re-translation, then ignore the update, since it's only
+    //    changes due to re-translation, not due to updates to IDE content.
+    // 2. If this is the full text, discard changes made in the Client since the
+    //    last autosave, overwriting them with the provided update.
+    // 3. If this is a diff:
+    //    1. In document-only mode, we have a backup copy of the full text
+    //       before it was modified by the Client. Apply the diff to this,
+    //       overwriting changes made in the Client.
+    //    2. In normal mode, we don't have a backup copy of the full text.
+    //       Report an `OutOfSync` error, which causes the IDE to send the full
+    //       text which will then overwrite changes made in the Client.
+    if (is_dirty && is_re_translation) {
+        console_log(`Ignoring re-translation because Client is dirty.`);
+        return;
+    }
+
+    try {
+        // Use
+        // [URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
+        // to parse out the search parameters of this window's URL.
+        const urlParams = new URLSearchParams(window.location.search);
+        // Get the mode from the page's query parameters. Default to edit using
+        // the
+        // [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
+        // TODO: this isn't typesafe, since the `mode` might not be a key of
+        // `EditorMode`.
+        /// @ts-expect-error("See above.")
+        const _editorMode = EditorMode[urlParams.get("mode") ?? "edit"];
+
+        // Get the <code>[current_metadata](#current_metadata)</code> from the
+        // provided `code_chat_for_web` struct and store it as a global
+        // variable.
+        current_metadata = codechat_for_web["metadata"];
+        const source = codechat_for_web["source"];
+        const codechat_body = document.getElementById(
+            "CodeChat-body",
+        ) as HTMLDivElement;
+        if (is_doc_only()) {
+            // Per the
+            // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
+            // "If you modify the page to remove content that contains typeset
+            // mathematics, you will need to tell MathJax about that so that it
+            // knows the typeset math that you are removing is no longer on the
+            // page."
+            window.MathJax.typesetClear(codechat_body);
+            if (tinymce.activeEditor === null) {
+                // We shouldn't have a diff if the editor hasn't been
+                // initialized.
+                assert("Plain" in source);
+                // Special case: a CodeChat Editor document's HTML is stored
+                // in`source.doc`. We don't need the CodeMirror editor at all;
+                // instead, treat it like a single doc block contents div.
+                doc_content = source.Plain.doc;
+                codechat_body.innerHTML = `<div class="CodeChat-doc-contents" spellcheck="true">${doc_content}</div>`;
+                await init({
+                    selector: ".CodeChat-doc-contents",
+                    // In the doc-only mode, add autosave functionality. While
+                    // there is an
+                    // [autosave plugin](https://www.tiny.cloud/docs/tinymce/6/autosave/),
+                    // this autosave functionality is completely different from
+                    // the autosave provided here. Per
+                    // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
+                    // this is how to create a TinyMCE event handler.
+                    setup: (editor: Editor) => {
+                        editor.on(
+                            "dirty",
+                            (
+                                event: EditorEvent<
+                                    Events.EditorEventMap["dirty"]
+                                >,
+                            ) => {
+                                // Sometimes, `tinymce.activeEditor` is null
+                                // (perhaps when it's not focused). Use the
+                                // `event` data instead.
+                                event.target.setDirty(false);
+                                is_dirty = true;
+                                startAutosaveTimer();
+                            },
+                        );
+                    },
+                });
+                tinymce.activeEditor!.focus();
+            } else {
+                // Save the cursor location before the update, then restore it
+                // afterwards, if TinyMCE has focus.
+                const sel = tinymce.activeEditor!.hasFocus()
+                    ? saveSelection()
+                    : undefined;
+                doc_content =
+                    "Plain" in source
+                        ? source.Plain.doc
+                        : apply_diff_str(doc_content, source.Diff.doc);
+                tinymce.activeEditor!.setContent(doc_content);
+                if (sel !== undefined) {
+                    restoreSelection(sel);
+                }
+            }
+            await mathJaxTypeset(codechat_body);
+            scroll_to_line(cursor_line, scroll_line);
         } else {
-            // Save the cursor location before the update, then restore it
-            // afterwards, if TinyMCE has focus.
-            const sel = tinymce.activeEditor!.hasFocus()
-                ? saveSelection()
-                : undefined;
-            doc_content =
-                "Plain" in source
-                    ? source.Plain.doc
-                    : apply_diff_str(doc_content, source.Diff.doc);
-            tinymce.activeEditor!.setContent(doc_content);
-            if (sel !== undefined) {
-                restoreSelection(sel);
+            if (is_dirty && "Diff" in source) {
+                // Send an `OutOfSync` response, so that the IDE will send the
+                // full text to overwrite these changes with.
+                webSocketComm().send_result(
+                    // Pick a rarely-used ID, since we're not responding to a
+                    // specific message.
+                    0,
+                    // There's not a version that matters. TODO: replace this
+                    // with a more suitable error.
+                    { OutOfSync: [0, 0] },
+                );
+            } else {
+                await CodeMirror_load(
+                    codechat_body,
+                    codechat_for_web,
+                    [],
+                    cursor_line,
+                    scroll_line,
+                );
             }
         }
-        mathJaxTypeset(codechat_body);
-        scroll_to_line(cursor_line, scroll_line);
-    } else {
-        await CodeMirror_load(
-            codechat_body,
-            codechat_for_web,
-            [],
-            cursor_line,
-            scroll_line,
-        );
-    }
-    autosaveEnabled = true;
+    } finally {
+        // Use a `finally` block to ensure the cleanup code always runs.
+        //
+        // Per the discussion at the beginning of this function, the dirty
+        // contents have been overwritten by contents from the IDE. By the same
+        // reasoning, restart the autosave timer.
+        clearAutosaveTimer();
+        is_dirty = false;
 
-    // <a id="CodeChatEditor_test"></a>If tests should be run, then the
-    // [following global variable](CodeChatEditor-test.mts#CodeChatEditor_test)
-    // is function that runs them.
-    if (typeof window.CodeChatEditor_test === "function") {
-        window.CodeChatEditor_test();
+        // <a id="CodeChatEditor_test"></a>If tests should be run, then the
+        // [following global variable](CodeChatEditor-test.mts#CodeChatEditor_test)
+        // is function that runs them.
+        if (typeof window.CodeChatEditor_test === "function") {
+            window.CodeChatEditor_test();
+        }
     }
 };
 
-const save_lp = (is_dirty: boolean) => {
+const save_lp = async (is_dirty: boolean) => {
     const update: UpdateMessageContents = {
         // The Framework will fill in this value.
         file_path: "",
+        is_re_translation: false,
     };
     if (is_doc_only()) {
         // TODO: set cursor/scroll position.
@@ -334,7 +401,7 @@ const save_lp = (is_dirty: boolean) => {
                 doc_blocks: [],
             };
             // Retypeset all math after saving the document.
-            mathJaxTypeset(codechat_body);
+            await mathJaxTypeset(codechat_body);
         } else {
             code_mirror_diffable = CodeMirror_save();
             assert("Plain" in code_mirror_diffable);
@@ -463,15 +530,11 @@ const on_save = async (only_if_dirty: boolean = false) => {
 
     // <a id="save"></a>Save the provided contents back to the filesystem, by
     // sending an update message over the websocket.
-    const webSocketComm = parent.window.CodeChatEditorFramework.webSocketComm;
     console_log(
         "CodeChat Editor Client: sent Update - saving document/updating cursor location.",
     );
-    await new Promise((resolve) => {
-        webSocketComm.send_message({ Update: save_lp(is_dirty) }, () =>
-            resolve(0),
-        );
-    });
+    // Don't wait for a response to change `is_dirty`; this boogers up logic.
+    webSocketComm().send_message({ Update: await save_lp(is_dirty) });
     is_dirty = false;
 };
 
@@ -479,9 +542,6 @@ const on_save = async (only_if_dirty: boolean = false) => {
 //
 // Schedule an autosave; call this whenever the document is modified.
 export const startAutosaveTimer = () => {
-    if (!autosaveEnabled) {
-        return;
-    }
     // When the document is changed, perform an autosave after no changes have
     // occurred for a little while. To do this, first cancel any current
     // timeout...
@@ -496,6 +556,7 @@ export const startAutosaveTimer = () => {
 const clearAutosaveTimer = () => {
     if (autosaveTimeoutId !== null) {
         clearTimeout(autosaveTimeoutId);
+        autosaveTimeoutId = null;
     }
 };
 
