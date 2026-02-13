@@ -24,6 +24,16 @@ Changelog
 
 * No changes.
 
+Version 0.1.50 -- 2025-Feb-05
+--------------------------------------------------------------------------------
+
+* First and second-level heading underlines are now sized based on the heading's
+  length, rather than fixed at 80 characters.
+* Update to latest version of CodeMirror, graphviz, ts-rs, pdfjs,
+  notify-deboucer, dprint-markdown, Rust. Improved CodeMirror means removal of a
+  patch to CodeMirror source.
+* Replace old `win_partitions` crate which no longer builds.
+
 Version 0.1.49 -- 2025-Dec-29
 --------------------------------------------------------------------------------
 

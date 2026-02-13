@@ -32,7 +32,7 @@ license = "GPL-3.0-only"
 name = "codechat-editor-server"
 readme = "../README.md"
 repository = "https://github.com/bjones1/CodeChat_Editor"
-version = "0.1.49"
+version = "0.1.50"
 
 # This library allows other packages to use core CodeChat Editor features.
 [lib]
@@ -66,7 +66,8 @@ dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markd
 dunce = "1.0.5"
 futures-util = "0.3.29"
 htmd = { git = "https://github.com/bjones1/htmd.git", branch = "dom-interface", version = "0.5" }
-html5ever = "0.36.1"
+# This must match the version of `markup5ever_rcdom`.
+html5ever = "0.36"
 imara-diff = { version = "0.2", features = [] }
 indoc = "2.0.5"
 lazy_static = "1"
@@ -77,14 +78,16 @@ mime = "0.3.17"
 mime_guess = "2.0.5"
 minreq = "2.12.0"
 normalize-line-endings = "0.3.0"
-notify-debouncer-full = "0.6"
+notify-debouncer-full = "0.7"
 path-slash = "0.2.1"
 pest = "2.7.14"
 pest_derive = "2.7.14"
 phf = "0.13.1"
 # Per the [docs](https://docs.rs/crate/pulldown-cmark/latest), skip building the
 # binary.
-pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+pulldown-cmark = { version = "0.13", default-features = false, features = [
+    "html",
+] }
 rand = "0.9.2"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
@@ -93,14 +96,14 @@ test_utils = { path = "../test_utils" }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
-ts-rs = "11.0.1"
+ts-rs = "12"
 url = "2.5.2"
 urlencoding = "2"
 webbrowser = "1.0.5"
 
 # [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
 [target.'cfg(windows)'.dependencies]
-win_partitions = "0.3.0"
+windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 
 # ### Development-only dependencies
 [dev-dependencies]

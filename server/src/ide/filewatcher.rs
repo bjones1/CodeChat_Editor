@@ -51,7 +51,7 @@ use tokio::{
 };
 use urlencoding;
 #[cfg(target_os = "windows")]
-use win_partitions::win_api::get_logical_drive;
+use windows::Win32::Storage::FileSystem::GetLogicalDrives;
 
 // ### Local
 use crate::{
@@ -303,6 +303,31 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     HttpResponse::Ok()
         .content_type(ContentType::html())
         .body(html_wrapper(&body))
+}
+
+/// Calls the [GetLogicalDrives](https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getlogicaldrives) Windows API function
+/// and returns a `Vector` of drive letters.
+///
+/// Copied almost verbatim from the [win_partitions crate](https://docs.rs/crate/win_partitions/0.3.0/source/src/win_api.rs#144) when compilation errors broke the crate.
+#[cfg(target_os = "windows")]
+pub fn get_logical_drive() -> Result<Vec<char>, std::io::Error> {
+    let bitmask = unsafe { GetLogicalDrives() };
+    if bitmask == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        let mut mask = 1;
+        let mut result: Vec<char> = vec![];
+
+        for index in 1..26 {
+            if mask & bitmask == mask {
+                let char = std::char::from_u32(index + 64);
+                result.push(char.unwrap());
+            }
+            mask <<= 1;
+        }
+
+        Ok(result)
+    }
 }
 
 const FW: &str = "fw-";

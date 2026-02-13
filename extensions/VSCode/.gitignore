@@ -32,5 +32,6 @@ static/
 src/index.d.ts
 src/index.js
 src/codechat-editor-client.win32-x64-msvc.node
+.windows/
 
 # CodeChat Editor lexer: python. See TODO.

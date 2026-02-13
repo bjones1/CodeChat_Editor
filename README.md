@@ -1,5 +1,5 @@
 Welcome to the CodeChat Editor
-================================================================================
+==============================
 
 The CodeChat Editor is a GUI-based programmer's word processor /
 [Jupyter](https://jupyter.org/) for software developers. This document describes
@@ -7,24 +7,24 @@ its basic features and use. In contrast, the [style guide](docs/style_guide.cpp)
 provides strategies for effectively employing the CodeChat Editor to improve the
 software development process.
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/videoseries?si=QNrYCiTLVCpxpAbD&amp;list=PLOJAqFa3UI2FJncc-OBRPhh17NJXQP6ve" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+<iframe title="YouTube video player" src="https://www.youtube.com/embed/videoseries?si=QNrYCiTLVCpxpAbD&amp;list=PLOJAqFa3UI2FJncc-OBRPhh17NJXQP6ve" width="560" height="315" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen="allowfullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
 
 Full manual
---------------------------------------------------------------------------------
+-----------
 
 Read the
 [manual rendered using the CodeChat Editor](https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md),
 since this documentation doesn't correctly render on GitHub.
 
 Installation
---------------------------------------------------------------------------------
+------------
 
 Install the
 [CodeChat Editor extension for Visual Studio code](extensions/VSCode/README.md).
 For developers, see [building from source](docs/design.md).
 
 Structure
---------------------------------------------------------------------------------
+---------
 
 The CodeChat Editor divides source code into code blocks and documentation (doc)
 blocks. These blocks are separated by newlines; the image below shows the
@@ -47,21 +47,21 @@ screenshot shows:
 See the [style guide](docs/style_guide.cpp) for more examples.
 
 Editing
---------------------------------------------------------------------------------
+-------
 
 Edits may be made either in the IDE hosting the CodeChat Editor, or within the
 CodeChat Editor window itself. Edits made in one place are transferred to the
 other after a short delay.
 
 Navigation
---------------------------------------------------------------------------------
+----------
 
 Switching documents in the IDE likewise switches the document shown in the
 CodeChat Editor. Likewise, following hyperlinks in the CodeChat Editor to a
 local file loads that file in the IDE, as well as showing it in the Editor.
 
 References to other files
---------------------------------------------------------------------------------
+-------------------------
 
 The CodeChat Editor supports hyperlinks to any recognized file type; to refer to
 another source file, simply insert a hyperlink to it. For example,
@@ -84,7 +84,7 @@ docs/
 ```
 
 Images
---------------------------------------------------------------------------------
+------
 
 Likewise, the path to local images is relative to the current file's location
 (see the preceding diagram for the location of `monitor.png`). For example
@@ -99,7 +99,7 @@ the image data is embedded directly in the source file. Avoid this; instead,
 place images in a separate file, then reference them as shown above.
 
 Projects
---------------------------------------------------------------------------------
+--------
 
 The CodeChat Editor can either display a single file, or a project. In a
 project, the table of contents is displayed on the left, while a file within the
@@ -110,7 +110,7 @@ the table of contents. See the
 for a simple example.
 
 Mathematics
---------------------------------------------------------------------------------
+-----------
 
 The CodeChat Editor uses [MathJax](https://www.mathjax.org/) to support typeset
 mathematics. Place the delimiters `$` immediately before and after in-line
@@ -126,7 +126,7 @@ See [Latex Mathematics](https://en.wikibooks.org/wiki/LaTeX/Mathematics#Symbols)
 for the syntax used to write mathematics expressions.
 
 Diagrams
---------------------------------------------------------------------------------
+--------
 
 ### Mermaid
 
@@ -223,7 +223,7 @@ can be directly edited by that package:
 ![](docs/sample_diagram.drawio.svg)
 
 <a id="supported-languages"></a>Supported languages
---------------------------------------------------------------------------------
+---------------------------------------------------
 
 * C/C++
 * C#
@@ -247,14 +247,14 @@ can be directly edited by that package:
 * YAML
 
 Issues and feature requests
---------------------------------------------------------------------------------
+---------------------------
 
 Please report issues and provide suggestions for improvement using the
 [Github page for this project](https://github.com/bjones1/CodeChat_Editor).
 Contributions to the code are welcome and encouraged!
 
 License
---------------------------------------------------------------------------------
+-------
 
 Copyright (C) 2025 Bryan A. Jones.
 
@@ -275,7 +275,7 @@ License along with the CodeChat Editor. If not, see
 [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
 
 <a id="notes"></a>Notes
---------------------------------------------------------------------------------
+-----------------------
 
 1. The image used comes from
    [Monitor icons created by prettycons - Flaticon](https://www.flaticon.com/free-icons/monitor "monitor icons").
