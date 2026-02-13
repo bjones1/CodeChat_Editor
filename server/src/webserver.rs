@@ -406,9 +406,17 @@ pub struct CaptureEventWire {
     pub group_id: Option<String>,
     pub file_path: Option<String>,
     pub event_type: String,
-    /// Arbitrary event-specific data stored as JSON.
-    pub data: serde_json::Value,
+
+    /// Optional client-side timestamp (milliseconds since Unix epoch).
+    pub client_timestamp_ms: Option<i64>,
+
+    /// Optional client timezone offset in minutes (JS Date().getTimezoneOffset()).
+    pub client_tz_offset_min: Option<i32>,
+
+    /// Arbitrary event-specific data stored as JSON (optional).
+    pub data: Option<serde_json::Value>,
 }
+
 
 // Macros
 // -----------------------------------------------------------------------------
@@ -600,20 +608,40 @@ async fn capture_endpoint(
 ) -> HttpResponse {
     let wire = payload.into_inner();
 
-    if let Some(capture) = &app_state.capture {
-        let event = CaptureEvent {
-            user_id: wire.user_id,
-            assignment_id: wire.assignment_id,
-            group_id: wire.group_id,
-            file_path: wire.file_path,
-            event_type: wire.event_type,
-            // Server decides when the event is recorded.
-            timestamp: Utc::now(),
-            data: wire.data,
-        };
+ if let Some(capture) = &app_state.capture {
+    // Default missing data to empty object
+    let mut data = wire.data.unwrap_or_else(|| serde_json::json!({}));
 
-        capture.log(event);
+    // Ensure data is an object so we can attach fields
+    if !data.is_object() {
+        data = serde_json::json!({ "value": data });
     }
+
+    // Add client timestamp fields if present (even if extension also sends them;
+    // overwriting is fine and consistent).
+    if let serde_json::Value::Object(map) = &mut data {
+        if let Some(ms) = wire.client_timestamp_ms {
+            map.insert("client_timestamp_ms".to_string(), serde_json::json!(ms));
+        }
+        if let Some(tz) = wire.client_tz_offset_min {
+            map.insert("client_tz_offset_min".to_string(), serde_json::json!(tz));
+        }
+    }
+
+    let event = CaptureEvent {
+        user_id: wire.user_id,
+        assignment_id: wire.assignment_id,
+        group_id: wire.group_id,
+        file_path: wire.file_path,
+        event_type: wire.event_type,
+        // Server decides when the event is recorded.
+        timestamp: Utc::now(),
+        data,
+    };
+
+    capture.log(event);
+}
+
 
     HttpResponse::Ok().finish()
 }

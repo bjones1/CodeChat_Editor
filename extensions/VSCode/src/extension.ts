@@ -55,12 +55,17 @@ import {
 import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes.js";
 import * as os from "os";
 
+import * as crypto from "crypto";
+
 // Globals
 // -----------------------------------------------------------------------------
 enum CodeChatEditorClientLocation {
     html,
     browser,
 }
+
+// Create a unique session ID for logging
+const CAPTURE_SESSION_ID = crypto.randomUUID();
 
 // True on Windows, false on OS X / Linux.
 const is_windows = process.platform === "win32";
@@ -116,6 +121,59 @@ let codeChatEditorServer: CodeChatEditorServer | undefined;
 // -----------------------------------------------------------------------------
 // CAPTURE (Dissertation instrumentation)
 // -----------------------------------------------------------------------------
+
+function isInMarkdownCodeFence(doc: vscode.TextDocument, line: number): boolean {
+    // Very simple fence tracker: toggles when encountering ``` or ~~~ at start of line.
+    // Good enough for dissertation instrumentation; refine later if needed.
+    let inFence = false;
+    for (let i = 0; i <= line; i++) {
+        const t = doc.lineAt(i).text.trim();
+        if (t.startsWith("```") || t.startsWith("~~~")) {
+            inFence = !inFence;
+        }
+    }
+    return inFence;
+}
+
+function isInRstCodeBlock(doc: vscode.TextDocument, line: number): boolean {
+    // Heuristic: find the most recent ".. code-block::" (or "::") and see if we're in its indented region.
+    // This won’t be perfect, but it’s far better than file-level classification.
+    let blockLine = -1;
+    for (let i = line; i >= 0; i--) {
+        const t = doc.lineAt(i).text;
+        const tt = t.trim();
+        if (tt.startsWith(".. code-block::") || tt === "::") {
+            blockLine = i;
+            break;
+        }
+        // If we hit a non-indented line after searching upward too far, keep going; rst blocks can be separated by blank lines.
+    }
+    if (blockLine < 0) return false;
+
+    // RST code block content usually begins after optional blank line(s), indented.
+    // Determine whether current line is indented relative to block directive line.
+    const cur = doc.lineAt(line).text;
+    if (cur.trim().length === 0) return false;
+
+    // If it's indented at least one space/tab, treat it as inside block.
+    return /^\s+/.test(cur);
+}
+
+function classifyAtPosition(doc: vscode.TextDocument, pos: vscode.Position): ActivityKind {
+    if (DOC_LANG_IDS.has(doc.languageId)) {
+        if (doc.languageId === "markdown") {
+            return isInMarkdownCodeFence(doc, pos.line) ? "code" : "doc";
+        }
+        if (doc.languageId === "restructuredtext") {
+            return isInRstCodeBlock(doc, pos.line) ? "code" : "doc";
+        }
+        // Other doc types: default to doc
+        return "doc";
+    }
+    return "code";
+}
+
+
 
 // Types for talking to the Rust /capture endpoint.
 // This mirrors `CaptureEventWire` in webserver.rs.
@@ -196,7 +254,12 @@ async function sendCaptureEvent(
         group_id: CAPTURE_GROUP_ID,
         file_path: filePath,
         event_type: eventType,
-        data,
+        data: {
+            ...data,
+            session_id: CAPTURE_SESSION_ID,
+            client_timestamp_ms: Date.now(),
+            client_tz_offset_min: new Date().getTimezoneOffset(),
+        },
     };
 
     try {
@@ -312,7 +375,11 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                             // CAPTURE: classify this as documentation vs. code and log a write_* event.
                             const doc = event.document;
-                            const kind = classifyDocument(doc);
+//                            const kind = classifyDocument(doc);
+                            const firstChange = event.contentChanges[0];
+                            const pos = firstChange.range.start;
+                            const kind = classifyAtPosition(doc, pos);
+
                             const filePath = doc.fileName;
                             const charsTyped = event.contentChanges
                                 .map((c) => c.text.length)
@@ -370,7 +437,10 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                             // CAPTURE: update activity + possible switch_pane/doc_session.
                             const doc = event.document;
-                            const kind = classifyDocument(doc);
+                            // const kind = classifyDocument(doc);
+                            const pos = event.selection?.active ?? new vscode.Position(0, 0);
+                            const kind = classifyAtPosition(doc, pos);
+
                             const filePath = doc.fileName;
                             noteActivity(kind, filePath);
 
@@ -391,11 +461,49 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                             // CAPTURE: treat a selection change as "activity" in this document.
                             const doc = event.textEditor.document;
-                            const kind = classifyDocument(doc);
+                            // const kind = classifyDocument(doc);
+                            const pos = event.selections?.[0]?.active ?? event.textEditor.selection.active;
+                            const kind = classifyAtPosition(doc, pos);
                             const filePath = doc.fileName;
                             noteActivity(kind, filePath);
 
                             send_update(false);
+                        }),
+                    );
+
+                    // CAPTURE: end of a debug/run session.
+                    context.subscriptions.push(
+                        vscode.debug.onDidTerminateDebugSession((session) => {
+                            const active = vscode.window.activeTextEditor;
+                            const filePath = active?.document.fileName;
+                            void sendCaptureEvent(
+                                CAPTURE_SERVER_BASE,
+                                "run_end",
+                                filePath,
+                                {
+                                    sessionName: session.name,
+                                    sessionType: session.type,
+                                },
+                            );
+                        }),
+                    );
+
+                    // CAPTURE: compile/build end events via VS Code tasks.
+                    context.subscriptions.push(
+                        vscode.tasks.onDidEndTaskProcess((e) => {
+                            const active = vscode.window.activeTextEditor;
+                            const filePath = active?.document.fileName;
+                            const task = e.execution.task;
+                            void sendCaptureEvent(
+                                CAPTURE_SERVER_BASE,
+                                "compile_end",
+                                filePath,
+                                {
+                                    taskName: task.name,
+                                    taskSource: task.source,
+                                    exitCode: e.exitCode,
+                                },
+                            );
                         }),
                     );
 

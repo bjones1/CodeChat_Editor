@@ -77,6 +77,8 @@ pub mod event_types {
     pub const RUN: &str = "run";
     pub const SESSION_START: &str = "session_start";
     pub const SESSION_END: &str = "session_end";
+    pub const COMPILE_END: &str = "compile_end";
+    pub const RUN_END: &str = "run_end";
 }
 
 /// Configuration used to construct the PostgreSQL connection string.
