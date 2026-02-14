@@ -16,13 +16,13 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `extension.ts` - The CodeChat Editor Visual Studio Code extension
-// =============================================================================
+// =================================================================
 //
 // This extension creates a webview, then uses a websocket connection to the
 // CodeChat Editor Server and Client to render editor text in that webview.
 //
 // Imports
-// -----------------------------------------------------------------------------
+// -------
 //
 // ### Node.js packages
 import assert from "assert";
@@ -58,7 +58,7 @@ import * as os from "os";
 import * as crypto from "crypto";
 
 // Globals
-// -----------------------------------------------------------------------------
+// -------
 enum CodeChatEditorClientLocation {
     html,
     browser,
@@ -118,13 +118,15 @@ let codeChatEditorServer: CodeChatEditorServer | undefined;
     initServer(ext.extensionPath);
 }
 
-// -----------------------------------------------------------------------------
+// ---
+//
 // CAPTURE (Dissertation instrumentation)
-// -----------------------------------------------------------------------------
+// --------------------------------------
 
 function isInMarkdownCodeFence(doc: vscode.TextDocument, line: number): boolean {
-    // Very simple fence tracker: toggles when encountering ``` or ~~~ at start of line.
-    // Good enough for dissertation instrumentation; refine later if needed.
+    // Very simple fence tracker: toggles when encountering \`\`\` or ~~~ at
+    // start of line. Good enough for dissertation instrumentation; refine later
+    // if needed.
     let inFence = false;
     for (let i = 0; i <= line; i++) {
         const t = doc.lineAt(i).text.trim();
@@ -136,8 +138,9 @@ function isInMarkdownCodeFence(doc: vscode.TextDocument, line: number): boolean 
 }
 
 function isInRstCodeBlock(doc: vscode.TextDocument, line: number): boolean {
-    // Heuristic: find the most recent ".. code-block::" (or "::") and see if we're in its indented region.
-    // This won’t be perfect, but it’s far better than file-level classification.
+    // Heuristic: find the most recent ".. code-block::" (or "::") and see if
+    // we're in its indented region. This won’t be perfect, but it’s far better
+    // than file-level classification.
     let blockLine = -1;
     for (let i = line; i >= 0; i--) {
         const t = doc.lineAt(i).text;
@@ -146,12 +149,14 @@ function isInRstCodeBlock(doc: vscode.TextDocument, line: number): boolean {
             blockLine = i;
             break;
         }
-        // If we hit a non-indented line after searching upward too far, keep going; rst blocks can be separated by blank lines.
+        // If we hit a non-indented line after searching upward too far, keep
+        // going; rst blocks can be separated by blank lines.
     }
     if (blockLine < 0) return false;
 
-    // RST code block content usually begins after optional blank line(s), indented.
-    // Determine whether current line is indented relative to block directive line.
+    // RST code block content usually begins after optional blank line(s),
+    // indented. Determine whether current line is indented relative to block
+    // directive line.
     const cur = doc.lineAt(line).text;
     if (cur.trim().length === 0) return false;
 
@@ -175,8 +180,8 @@ function classifyAtPosition(doc: vscode.TextDocument, pos: vscode.Position): Act
 
 
 
-// Types for talking to the Rust /capture endpoint.
-// This mirrors `CaptureEventWire` in webserver.rs.
+// Types for talking to the Rust /capture endpoint. This mirrors
+// `CaptureEventWire` in webserver.rs.
 interface CaptureEventPayload {
     user_id: string;
     assignment_id?: string;
@@ -186,8 +191,8 @@ interface CaptureEventPayload {
     data: any; // sent as JSON
 }
 
-// TODO: replace these with something real (e.g., VS Code settings)
-// For now, we hard-code to prove that the pipeline works end-to-end.
+// TODO: replace these with something real (e.g., VS Code settings) For now, we
+// hard-code to prove that the pipeline works end-to-end.
 const CAPTURE_USER_ID: string = (() => {
     try {
         const u = os.userInfo().username;
@@ -209,8 +214,8 @@ const CAPTURE_USER_ID: string = (() => {
 const CAPTURE_ASSIGNMENT_ID = "demo-assignment";
 const CAPTURE_GROUP_ID = "demo-group";
 
-// Base URL for the CodeChat server's /capture endpoint.
-// NOTE: keep this in sync with whatever port your server actually uses.
+// Base URL for the CodeChat server's /capture endpoint. NOTE: keep this in sync
+// with whatever port your server actually uses.
 const CAPTURE_SERVER_BASE = "http://127.0.0.1:8080";
 
 // Simple classification of what the user is currently doing.
@@ -225,7 +230,8 @@ const DOC_LANG_IDS = new Set<string>([
     "restructuredtext",
 ]);
 
-// Track the last activity kind and when a reflective-writing (doc) session started.
+// Track the last activity kind and when a reflective-writing (doc) session
+// started.
 let lastActivityKind: ActivityKind = "other";
 let docSessionStart: number | null = null;
 
@@ -283,7 +289,7 @@ async function sendCaptureEvent(
     }
 }
 
-// Update activity state, emit switch + doc_session events as needed.
+// Update activity state, emit switch + doc\_session events as needed.
 function noteActivity(kind: ActivityKind, filePath?: string) {
     const now = Date.now();
 
@@ -311,7 +317,7 @@ function noteActivity(kind: ActivityKind, filePath?: string) {
         }
     }
 
-    // If we switched between doc and code, log a switch_pane event.
+    // If we switched between doc and code, log a switch\_pane event.
     const docOrCode = (k: ActivityKind) => k === "doc" || k === "code";
     if (docOrCode(lastActivityKind) && docOrCode(kind) && kind !== lastActivityKind) {
         void sendCaptureEvent(CAPTURE_SERVER_BASE, "switch_pane", filePath, {
@@ -324,7 +330,7 @@ function noteActivity(kind: ActivityKind, filePath?: string) {
 }
 
 // Activation/deactivation
-// -----------------------------------------------------------------------------
+// -----------------------
 //
 // This is invoked when the extension is activated. It either creates a new
 // CodeChat Editor Server instance or reveals the currently running one.
@@ -373,9 +379,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 }, ${format_struct(event.contentChanges)}.`,
                             );
 
-                            // CAPTURE: classify this as documentation vs. code and log a write_* event.
+                            // CAPTURE: classify this as documentation vs. code
+                            // and log a write\_\* event.
                             const doc = event.document;
-//                            const kind = classifyDocument(doc);
+// ```
+//                        const kind = classifyDocument(doc);
+// ```
                             const firstChange = event.contentChanges[0];
                             const pos = firstChange.range.start;
                             const kind = classifyAtPosition(doc, pos);
@@ -407,7 +416,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 );
                             }
 
-                            // Update our notion of current activity + doc session.
+                            // Update our notion of current activity + doc
+                            // session.
                             noteActivity(kind, filePath);
 
                             send_update(true);
@@ -435,7 +445,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 return;
                             }
 
-                            // CAPTURE: update activity + possible switch_pane/doc_session.
+                            // CAPTURE: update activity + possible
+                            // switch\_pane/doc\_session.
                             const doc = event.document;
                             // const kind = classifyDocument(doc);
                             const pos = event.selection?.active ?? new vscode.Position(0, 0);
@@ -459,7 +470,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 "CodeChat Editor extension: sending updated cursor/scroll position.",
                             );
 
-                            // CAPTURE: treat a selection change as "activity" in this document.
+                            // CAPTURE: treat a selection change as "activity"
+                            // in this document.
                             const doc = event.textEditor.document;
                             // const kind = classifyDocument(doc);
                             const pos = event.selections?.[0]?.active ?? event.textEditor.selection.active;
@@ -561,7 +573,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                     );
                 }
 
-                // Get the CodeChat Client's location from the VSCode configuration.
+                // Get the CodeChat Client's location from the VSCode
+                // configuration.
                 const codechat_client_location_str = vscode.workspace
                     .getConfiguration("CodeChatEditor.Server")
                     .get("ClientLocation");
@@ -606,7 +619,8 @@ export const activate = (context: vscode.ExtensionContext) => {
                     }
                 }
 
-                // Provide a simple status display while the server is starting up.
+                // Provide a simple status display while the server is starting
+                // up.
                 if (webview_panel !== undefined) {
                     webview_panel.webview.html = "<h1>CodeChat Editor</h1><p>Loading...</p>";
                 } else {
@@ -866,7 +880,8 @@ export const activate = (context: vscode.ExtensionContext) => {
 export const deactivate = async () => {
     console_log("CodeChat Editor extension: deactivating.");
 
-    // CAPTURE: if we were in a doc session, close it out so duration is recorded.
+    // CAPTURE: if we were in a doc session, close it out so duration is
+    // recorded.
     if (docSessionStart !== null) {
         const now = Date.now();
         const durationMs = now - docSessionStart;
@@ -898,7 +913,7 @@ export const deactivate = async () => {
 };
 
 // Supporting functions
-// -----------------------------------------------------------------------------
+// --------------------
 //
 // Format a complex data structure as a string when in debug mode.
 /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
@@ -981,7 +996,8 @@ const send_update = (this_is_dirty: boolean) => {
     }
 };
 
-// Gracefully shut down the render client if possible. Shut down the client as well.
+// Gracefully shut down the render client if possible. Shut down the client as
+// well.
 const stop_client = async () => {
     console_log("CodeChat Editor extension: stopping client.");
     if (codeChatEditorServer !== undefined) {
@@ -1019,8 +1035,8 @@ const show_error = (message: string) => {
     }
 };
 
-// Only render if the window and editor are active, we have a valid render client,
-// and the webview is visible.
+// Only render if the window and editor are active, we have a valid render
+// client, and the webview is visible.
 const can_render = () => {
     return (
         (vscode.window.activeTextEditor !== undefined ||
@@ -1032,7 +1048,7 @@ const can_render = () => {
 };
 
 const get_document = (file_path: string) => {
-    for (const doc of vscode.workspace.textDocuments) {
+    for ( const doc of vscode.workspace.textDocuments) {
         if (
             (!is_windows && doc.fileName === file_path) ||
             (is_windows && doc.fileName.toUpperCase() === file_path.toUpperCase())
