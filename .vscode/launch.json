@@ -8,7 +8,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug",
-            "program": "${workspaceFolder}/server/target/debug/server.exe",
+            "program": "${workspaceFolder}/server/target/debug/codechat-editor-server.exe",
             "args": [],
             "cwd": "${workspaceFolder}"
         }
