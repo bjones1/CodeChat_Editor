@@ -759,10 +759,32 @@ async fn test_client_updates_core(
         .await
         .unwrap();
 
-    // Verify the updated text.
-    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-    let client_version = get_version(&msg);
+    // Get the next message, which could be a cursor update followed by a text update, or just the text update.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    let mut msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    if let EditorMessageContents::Update(ref update) = msg.message
+        && update.contents.is_none()
+    {
+        // Sometimes, we get just a cursor update. If so, verify this then wait for the text update.
+        assert_eq!(
+            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+            EditorMessage {
+                id: client_id,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: path_str.clone(),
+                    cursor_position: Some(1),
+                    scroll_position: Some(1.0),
+                    is_re_translation: false,
+                    contents: None,
+                })
+            }
+        );
+        client_id += MESSAGE_ID_INCREMENT;
+        msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    }
+
+    // Verify the updated text.
+    let client_version = get_version(&msg);
     assert_eq!(
         msg,
         EditorMessage {
