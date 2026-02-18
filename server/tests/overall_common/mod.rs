@@ -261,10 +261,10 @@ macro_rules! make_test {
 }
 // Given an `Update` message with contents, get the version.
 pub fn get_version(msg: &EditorMessage) -> f64 {
-    cast!(&msg.message, EditorMessageContents::Update)
+    let ccfw = cast!(&msg.message, EditorMessageContents::Update)
         .contents
-        .as_ref()
-        .unwrap()
+        .as_ref();
+    ccfw.unwrap_or_else(|| panic!("No contents in message:\n{:#?}", msg))
         .version
 }
 
