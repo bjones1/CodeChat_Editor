@@ -21,8 +21,7 @@ Changelog
 
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
-
-* No changes.
+* Improve tests.
 
 Version 0.1.51 -- 2025-Feb-18
 -----------------------------
