@@ -17,10 +17,10 @@
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
 # `Cargo.toml` -- Rust build/package management config for the server
-# ==============================================================================
+# ===================================================================
 #
 # General package configurations
-# ------------------------------------------------------------------------------
+# ------------------------------
 [package]
 authors = ["Bryan A. Jones", "Peter Loux"]
 categories = ["development-tools", "text-editors"]
@@ -39,7 +39,7 @@ version = "0.1.50"
 name = "code_chat_editor"
 
 # Features
-# ------------------------------------------------------------------------------
+# --------
 #
 # See the [docs](https://doc.rust-lang.org/cargo/reference/features.html).
 [features]
@@ -48,7 +48,7 @@ name = "code_chat_editor"
 lexer_explain = []
 
 # Dependencies
-# ------------------------------------------------------------------------------
+# ------------
 [dependencies]
 actix-files = "0.6"
 actix-http = "3.9.0"
@@ -124,7 +124,7 @@ tokio-tungstenite = "0.28"
 #actix-rt = { path = "../../actix-net/actix-rt" }
 
 # Release
-# ------------------------------------------------------------------------------
+# -------
 #
 # Specify release-only features for pulldown. See the
 # [docs](https://docs.rs/crate/pulldown-cmark/latest).
@@ -135,7 +135,7 @@ panic = "abort"
 strip = "symbols"
 
 # Distribution
-# ------------------------------------------------------------------------------
+# ------------
 #
 # This uses [cargo dist](https://opensource.axo.dev/cargo-dist) to build
 # binaries across multiple platforms using github's CI/CD.
