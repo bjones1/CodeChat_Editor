@@ -46,7 +46,7 @@
 // 5. Define a set of StateEffects to add/update/etc. doc blocks.
 //
 // Imports
-// -----------------------------------------------------------------------------
+// -------
 //
 // ### Third-party
 import { basicSetup } from "codemirror";
@@ -104,7 +104,7 @@ import { assert } from "./assert.mjs";
 import { show_toast } from "./show_toast.mjs";
 
 // Globals
-// -----------------------------------------------------------------------------
+// -------
 let current_view: EditorView;
 // This indicates that a call to `on_dirty` is scheduled, but hasn't run yet.
 let on_dirty_scheduled = false;
@@ -137,7 +137,7 @@ const exceptionSink = EditorView.exceptionSink.of((exception) => {
 });
 
 // Doc blocks in CodeMirror
-// -----------------------------------------------------------------------------
+// ------------------------
 //
 // The goal: given a [Range](https://codemirror.net/docs/ref/#state.Range) of
 // lines containing a doc block (a delimiter, indent, and contents) residing at
@@ -825,7 +825,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
 );
 
 // UI
-// -----------------------------------------------------------------------------
+// --
 //
 // There doesn't seem to be any tracking of a dirty/clean flag built into
 // CodeMirror v6 (although
