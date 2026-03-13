@@ -61,7 +61,7 @@ actix-ws = "0.3.0"
 anyhow = "1.0.100"
 bytes = { version = "1", features = ["serde"] }
 chrono = "0.4"
-clap = { version = "4.5.19", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markdown.git", branch = "all-fixes", version = "0.20.0" }
 dunce = "1.0.5"
 futures-util = "0.3.29"
@@ -108,7 +108,7 @@ windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 # ### Development-only dependencies
 [dev-dependencies]
 actix-http = "3.9.0"
-assert_cmd = "2.0.16"
+assert_cmd = "2"
 assert_fs = "1"
 assertables = "9"
 futures = "0.3.31"

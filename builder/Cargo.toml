@@ -24,7 +24,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-clap = { version = "4.5.19", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 cmd_lib = "2.0.0"
 current_platform = "0.2.0"
 dunce = "1.0.5"

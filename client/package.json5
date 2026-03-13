@@ -68,7 +68,7 @@
         mathjax: '^4.1.0',
         mermaid: '^11.12.3',
         'npm-check-updates': '^19.3.2',
-        'pdfjs-dist': '^5.4.624',
+        'pdfjs-dist': '5.4.624',
         tinymce: '^8.3.2',
         'toastify-js': '^1.12.0',
     },
