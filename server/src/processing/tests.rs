@@ -495,7 +495,7 @@ fn test_source_to_codechat_for_web_1() {
     // A file with an unknown extension and no lexer, which is classified as a
     // text file.
     assert_eq!(
-        source_to_codechat_for_web("", &Path::new("foo.xxx"), 0.0, false, None),
+        source_to_codechat_for_web("", Path::new("foo.xxx"), 0.0, false, None),
         Err(SourceToCodeChatForWebError::NoLexer)
     );
 
@@ -505,7 +505,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web(
             &format!("{lexer_spec}unknown"),
-            &Path::new("foo.xxx"),
+            Path::new("foo.xxx"),
             0.0,
             false,
             None
@@ -517,7 +517,7 @@ fn test_source_to_codechat_for_web_1() {
 
     // A CodeChat Editor document via filename.
     assert_eq!(
-        source_to_codechat_for_web("", &Path::new("foo.md"), 0.0, false, None),
+        source_to_codechat_for_web("", Path::new("foo.md"), 0.0, false, None),
         Ok(build_codechat_for_web(MARKDOWN_MODE, "", vec![]))
     );
 
@@ -525,7 +525,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web(
             &format!("{lexer_spec}markdown"),
-            &Path::new("foo.xxx"),
+            Path::new("foo.xxx"),
             0.0,
             false,
             None
@@ -539,19 +539,19 @@ fn test_source_to_codechat_for_web_1() {
 
     // An empty source file.
     assert_eq!(
-        source_to_codechat_for_web("", &Path::new("foo.js"), 0.0, false, None),
+        source_to_codechat_for_web("", Path::new("foo.js"), 0.0, false, None),
         Ok(build_codechat_for_web("javascript", "", vec![]))
     );
 
     // A zero doc block source file.
     assert_eq!(
-        source_to_codechat_for_web("let a = 1;", &Path::new("foo.js"), 0.0, false, None),
+        source_to_codechat_for_web("let a = 1;", Path::new("foo.js"), 0.0, false, None),
         Ok(build_codechat_for_web("javascript", "let a = 1;", vec![]))
     );
 
     // One doc block source files.
     assert_eq!(
-        source_to_codechat_for_web("// Test", &Path::new("foo.js"), 0.0, false, None),
+        source_to_codechat_for_web("// Test", Path::new("foo.js"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "javascript",
             "\n",
@@ -559,13 +559,7 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
     assert_eq!(
-        source_to_codechat_for_web(
-            "let a = 1;\n// Test",
-            &Path::new("foo.js"),
-            0.0,
-            false,
-            None
-        ),
+        source_to_codechat_for_web("let a = 1;\n// Test", Path::new("foo.js"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "javascript",
             "let a = 1;\n\n",
@@ -579,13 +573,7 @@ fn test_source_to_codechat_for_web_1() {
         ))
     );
     assert_eq!(
-        source_to_codechat_for_web(
-            "// Test\nlet a = 1;",
-            &Path::new("foo.js"),
-            0.0,
-            false,
-            None
-        ),
+        source_to_codechat_for_web("// Test\nlet a = 1;", Path::new("foo.js"), 0.0, false, None),
         Ok(build_codechat_for_web(
             "javascript",
             "\nlet a = 1;",
@@ -598,7 +586,7 @@ fn test_source_to_codechat_for_web_1() {
     assert_eq!(
         source_to_codechat_for_web(
             "// [Link][1]\nlet a = 1;\n/* [1]: http://b.org */",
-            &Path::new("foo.js"),
+            Path::new("foo.js"),
             0.0,
             false,
             None
@@ -1254,7 +1242,7 @@ fn test_hydrate_html_1() {
             "
             )),
             Path::new("foo.md"),
-            &Cache::new()
+            &mut Cache::new()
         )
         .unwrap(),
         indoc!(
@@ -1277,7 +1265,7 @@ fn test_hydrate_html_1() {
             "
             )),
             Path::new("foo.md"),
-            &Cache::new()
+            &mut Cache::new()
         )
         .unwrap(),
         indoc!(
@@ -1305,7 +1293,7 @@ fn test_hydrate_html_1() {
             "
             )),
             Path::new("foo.md"),
-            &Cache::new()
+            &mut Cache::new()
         )
         .unwrap(),
         indoc!(
@@ -1324,7 +1312,7 @@ fn test_hydrate_html_1() {
         hydrate_html(
             &markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;"),
             Path::new("foo.md"),
-            &Cache::new()
+            &mut Cache::new()
         )
         .unwrap(),
         indoc!(

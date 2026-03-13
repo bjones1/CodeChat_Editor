@@ -888,7 +888,7 @@ mod tests {
         // Check the contents.
         let translation_results = source_to_codechat_for_web(
             "",
-            &Path::new("foo.py"),
+            Path::new("foo.py"),
             umc.contents.as_ref().unwrap().version,
             false,
             None,

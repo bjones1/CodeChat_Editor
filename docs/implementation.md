@@ -17,7 +17,7 @@ CodeChat Editor. If not, see
 [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 
 Implementation
-================================================================================
+==============
 
 ### System architecture
 
@@ -65,7 +65,7 @@ a diagram as an overview might be helpful. Perhaps the server, client, etc.
 should have its of readme files providing some of this.
 
 <a id="an-implementation"></a>Architecture
---------------------------------------------------------------------------------
+------------------------------------------
 
 Overall, the code is something like this:
 
@@ -106,7 +106,7 @@ On load:
   data, and the file's path. Output of the classification: binary, raw text, a
   CodeChat document (a Markdown file), or a CodeChat file.
 
-The load processing pipelines: for CodeChat files:
+The load processing pipelines for CodeChat files:
 
 * (CodeChat files only) Run pre-parse hooks: they receive source code, file
   metadata. Examples: code formatters. Skip if cache is up to date.
@@ -114,14 +114,6 @@ The load processing pipelines: for CodeChat files:
 * Run post-parse hooks: they receive an array of code and doc blocks.
 * Transform Markdown to HTML.
 * Run HTML hooks:
-  * Update the cache for the current file only if the current file's cache is
-    stale. To do this, walk the DOM of each doc block. The hook specifies which
-    tags it wants, and the tree walker calls the hook when it encounters these.
-    If this requires adding/changing anything (anchors, for example), mark the
-    document as dirty.
-  * Update tags whose contents depend on data from other files. Hooks work the
-    same as the cache updates, but have a different role. They're always run,
-    while the cache update is skipped when the cache is current.
 * Determine next/prev/up hyperlinks based on this file's location in the TOC.
 * Transform the code and doc blocks into CodeMirror's format.
 
@@ -155,53 +147,7 @@ On save:
 
 ### Cache data format
 
-To think about:
-
-1. For the current page, I need to keep a list of files this page depends on,
-   then perform an update if any of these files changes.
-2. I need a way to apply updates to the TOC. It also needs a list of files it
-   depends on, getting an update when any dependency changes.
-3. When is a file outdated? On startup, mark all files as needing to be checked.
-   After checking and possibly re-loading, mark a file as current. On a file
-   change notification, mark the file as out of date.
-4. Store cache data to disk, reloading it as necessary, and updating as
-   necessary.
-5. Update the search engine only when the user performs a search. So, I need to
-   keep a list of targets that were changed since the last search.
-6. The text search engine needs to be able to search all text, even if not in
-   the cache. So, we need a way to walk the filesystem and cache all files.
-7. Hyperlinks that point to a special gathering element are tags. They can
-   optionally include start and end query parameters to include more than the
-   default chunk (the current doc block and the following code block, if the
-   following block is a code block). Challenge: if the linked file's cache is
-   old, indicating that the link isn't a tag gather, we have to re-process this
-   file.
-8. I need to index all files for a search and to ensure there are no global ID
-   conflicts. But I don't need it for keeping auto-titled text updated; that's
-   lazy.
-
-Code changes elsewhere:
-
-1. Longer-term: modify the pulldown-cmark HTML writer to preserve line numbers.
-2. Write a driver function which calls upsert on the current file with
-   auto-titles enabled and passes on the resulting text, but then start threads
-   to load missing data and sends and update when these complete, perhaps also
-   updating x seconds after each thread completes.
-3. Revise the TOC loader to use mdbook's code to process and update the TOC.
-4. While hydrating, we capture HTML, but this means we're capturing
-   pre-hydration HTML. This is a problem: if the auto-titled text includes an
-   equation, then it won't be translated yet! This is even worse for tags:
-   diagrams are translated, etc. Probably need a multi-step process: hydrate;
-   update code/doc blocks; update cache. This means that an auto-titled target
-   whose text comes from another auto-titled item may not work; however, I think
-   this is reasonable.
-5. Steps
-   1. HTML transformations that don't depend on the cache have no ordering:
-      equations, diagrams. Perform these, storing contents for any targets
-      encountered. Add auto-titled text to a list of items to resolve.
-   2. After finishing HTML transformation, 
-   3. Update doc blocks with transformed and auto-titled text.
-   4. Use this to store tag information, then compute tags.
+Documented elsewhere.
 
 ### IDE/editor integration
 
@@ -259,7 +205,7 @@ More complex IDE integration: everything that the simple IDE does, plus the
 ability to toggle between the IDE's editor and the CodeChat Editor.
 
 Build system
---------------------------------------------------------------------------------
+------------
 
 The app needs build support because of complexity:
 
@@ -271,7 +217,7 @@ So, this project contains Rust code to automate this process -- see the
 [builder](../builder/Cargo.toml).
 
 Misc topics
---------------------------------------------------------------------------------
+-----------
 
 ### <a id="Client-simple-viewer"></a>CodeChat Editor Client Viewer Types
 
@@ -301,7 +247,7 @@ closing tags are removed from the HTML. This is fixed by later HTML processing
 steps (currently, by TinyMCE), which properly closes tags.
 
 Future work
---------------------------------------------------------------------------------
+-----------
 
 ### Table of contents
 
@@ -364,7 +310,7 @@ with descriptions of each setting.
 * Substitutions
 
 <a id="core-developmnt-priorities"></a>Core development priorities
---------------------------------------------------------------------------------
+------------------------------------------------------------------
 
 1. Bug fixes
 2. Book support
@@ -404,7 +350,7 @@ with descriptions of each setting.
   somewhat, since it wants to decode JSON into a V struct.
 
 Organization
---------------------------------------------------------------------------------
+------------
 
 ### Client
 
@@ -450,7 +396,7 @@ TODO: GUIs using TinyMCE. See the
 [how-to guide](https://www.tiny.cloud/docs/tinymce/6/dialog-components/#panel-components).
 
 Code style
---------------------------------------------------------------------------------
+----------
 
 JavaScript functions are a
 [disaster](https://dmitripavlutin.com/differences-between-arrow-and-regular-functions/).
@@ -460,7 +406,7 @@ Other than that, follow the
 [MDN style guide](https://developer.mozilla.org/en-US/docs/MDN/Writing_guidelines/Writing_style_guide/Code_style_guide/JavaScript).
 
 Client modes
---------------------------------------------------------------------------------
+------------
 
 The CodeChat Editor client supports four modes:
 
@@ -477,7 +423,7 @@ The CodeChat Editor client supports four modes:
     area; otherwise, it's only the main area. See: \<gather here>.
 
 Misc
---------------------------------------------------------------------------------
+----
 
 Eventually, provide a read-only mode with possible auth (restrict who can view)
 using JWTs; see
