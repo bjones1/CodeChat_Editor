@@ -62,7 +62,7 @@ anyhow = "1.0.100"
 bytes = { version = "1", features = ["serde"] }
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
-dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markdown.git", branch = "all-fixes", version = "0.20.0" }
+dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markdown.git", branch = "all-fixes", version = "0.21.0" }
 dunce = "1.0.5"
 futures-util = "0.3.29"
 htmd = { git = "https://github.com/bjones1/htmd.git", branch = "dom-interface", version = "0.5" }
@@ -115,7 +115,7 @@ futures = "0.3.31"
 predicates = "3.1.2"
 pretty_assertions = "1.4.1"
 thirtyfour = { git = "https://github.com/bjones1/thirtyfour.git", branch = "selenium_manager" }
-tokio-tungstenite = "0.28"
+tokio-tungstenite = "0.29"
 
 # #### Use local packages for development
 [patch.crates-io]

@@ -14,20 +14,10 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// tsconfig.json -- TypeScript configuration
-// =========================================
-{
-    "compilerOptions": {
-        "module": "nodenext",
-        "target": "es6",
-        "outDir": "out",
-        "sourceMap": true,
-        "strict": true,
-        "rootDirs": ["src", "../../client/src/*"],
-        "rootDir": "../..",
-        // Starting in TypeScript 6.0, no ambient type packages are auto-included. Add these explicitly. See the [TypeScript 5.x to 6.0 Migration Guide](https://gist.github.com/privatenumber/3d2e80da28f84ee30b77d53e1693378f#16-types-defaults-to-).
-        "types": ["node"],
-        "allowJs": true
-    },
-    "exclude": ["node_modules", ".vscode-test", "out", "server", "eslint.config.js"]
-}
+// `global.d.ts` -- Global type definitions
+// =============================================================================
+//
+// Copied from the [TypeScript Docs](https://www.typescriptlang.org/tsconfig/#noUncheckedSideEffectImports):
+//
+// Recognize all CSS files as module imports.
+declare module "*.css" {}

@@ -44,7 +44,7 @@
 // ### JavaScript/TypeScript
 //
 // #### Third-party
-import "./third-party/wc-mermaid/wc-mermaid";
+import "./third-party/wc-mermaid/wc-mermaid.js";
 
 // #### Local
 import { assert } from "./assert.mjs";
@@ -58,7 +58,7 @@ import {
     scroll_to_line as codemirror_scroll_to_line,
     set_CodeMirror_positions,
 } from "./CodeMirror-integration.mjs";
-import "./graphviz-webcomponent-setup.mts";
+import "./graphviz-webcomponent-setup.mjs";
 // This must be imported *after* the previous setup import, so it's placed here,
 // instead of in the third-party category above.
 import "./third-party/graphviz-webcomponent/graph.js";

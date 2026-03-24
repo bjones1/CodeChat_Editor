@@ -52,11 +52,12 @@ Implementation
     * [CodeChatEditor.mts](client/src/CodeChatEditor.mts)
       * [CodeMirror-integration.mts](client/src/CodeMirror-integration.mts)
       * [tinymce-config.mts](client/src/tinymce-config.mts)
-      * [graphviz-webcomponent-setup.mts](client/src/graphviz-webcomponent-setup.mts)
+      * [graphviz-webcomponent-setup.mjs](client/src/graphviz-webcomponent-setup.mts)
       * [Mermaid](client/src/third-party/wc-mermaid/developer.md)
       * [shared\_types.mts](client/src/shared_types.mts)
       * [assert.mts](client/src/assert.mts)
       * [show\_toast.mts](client/src/show_toast.mts)
+    * [global.d.ts](client/src/global.d.ts)
   * Styles
     * [CodeChatEditor.css](client/src/css/CodeChatEditor.css)
     * [CodeChatEditorProject.css](client/src/css/CodeChatEditorProject.css)
