@@ -50,24 +50,25 @@
 /// Tags
 /// ----
 ///
-/// A gather element such as `<p id="baz" data-backlink="tag">Bazzy things</p>`
-/// becomes a list of the contents of tags which reference it after processing
-/// by the cache. A tag is simply a link to a gather element, such as
-/// `[](#baz)`, which becomes `[Bazzy things](#baz)` after auto-titling. The
-/// tag's content by default includes the contents of the current doc block and
-/// the contents of the next code/doc block. Tags can also include an end query
-/// parameter to enclose a wider range of code/doc blocks; for example,
-/// `[](#baz?end=3)` includes the next 3 code/doc blocks.
+/// A gather element such as `<p id="baz" data-backlink="gather">Bazzy
+/// things</p>` becomes a list of the contents of tags which reference it after
+/// processing by the cache. A tag is simply a link to a gather element, such as
+/// `[](#baz)`, which becomes `<a href="#baz" id="abc">Bazzy things</a>` after
+/// auto-titling and auto-assignment of an ID. The tag's content by default
+/// includes the contents of the current doc block and the contents of the next
+/// code/doc block. Tags can also include an end query parameter to enclose a
+/// wider range of code/doc blocks; for example, `[](#baz?end=3)` includes the
+/// next 3 code/doc blocks.
 ///
 /// Tag contents may not include a gather element. They do support indirection:
 /// gather element A includes contents from tag B, which contains an auto-titled
 /// link to target C. Changes to target C makes B and A dirty.
 ///
-/// Example output of the gather tag `<p id="baz" data-backlink="tag">Bazzy
+/// Example output of the gather tag `<p id="baz" data-backlink="gather">Bazzy
 /// things</p>`:
 ///
 /// ```html
-/// <p class="cc-gather mceNonEditable" id="baz" data-backlink="tag">Bazzy things</p>
+/// <p class="cc-gather mceNonEditable" id="baz" data-backlink="gather">Bazzy things</p>
 /// <p class="cc-gather-item-link mceNonEditable">From <a href="backlink-to-first-item">:</p>
 /// (first item content)
 /// ...
@@ -97,7 +98,7 @@
 /// processing, this becomes:
 ///
 /// ```html
-/// <el id="def" data-backlink="wrapped (default)/plain/tag">element text
+/// <el id="def" data-backlink="wrapped (default)/plain/gather">element text
 ///   <details class="mceNonEditable">
 ///     <summary>🔗</summary>
 ///     <ul>
@@ -168,6 +169,7 @@ use std::{
 use markup5ever_rcdom::Node;
 
 // ### Local
+//
 // None.
 
 /// Data structures
@@ -176,31 +178,14 @@ use markup5ever_rcdom::Node;
 /// This defines the cache used to store all targets in a project.
 pub struct Cache {
     /// Provide rapid access to a file by its absolute path; it must be within
-    /// the project's root directory.
-    path: HashMap<PathBuf, Arc<Mutex<File>>>,
+    /// the project's root directory. This is the sole owner of these `File`s.
+    pub(super) path: HashMap<PathBuf, Arc<Mutex<File>>>,
     /// Provide rapid access to a `Target` by its unique anchor.
-    pub(super) anchor: HashMap<String, AnchorTarget>,
-    /// All dirty files.
-    dirty: HashSet<PathBuf>,
+    pub(super) anchor: HashMap<String, Weak<Mutex<Target>>>,
+    /// All files that need to be processed. The same file may be added multiple times to the list; it will only be processed when the corresponding's `File.status` is not `Clean`.
+    pub(super) pending_files: Vec<PathBuf>,
     /// The root directory of this project.
     pub(super) root: PathBuf,
-}
-
-/// Targets may depend on data from another file within this project. Typically,
-/// these are auto-titled hyperlinks or backlinks. If this Target is a gather
-/// element, this contains both direct dependencies (backlinks for the gather
-/// element's anchor) and indirect dependencies (dependencies of each of these
-/// backlinks).
-///
-/// This contains all the data behind an anchor.
-pub struct AnchorTarget {
-    /// The Target itself.
-    target: Weak<Mutex<Target>>,
-    /// All references to this target which don't depend on it.
-    references: HashSet<Weak<Mutex<Target>>>,
-    /// All references to this target that also depend on it; if this Target
-    /// changes, all these must be updated.
-    dependencies: HashSet<Weak<Mutex<Target>>>,
 }
 
 /// This stores metadata for given file. For non-page files (non-existent files,
@@ -211,86 +196,78 @@ pub(super) struct File {
     /// directory. This file may not exist -- it could be created by a broken
     /// link.
     pub(super) path: PathBuf,
+    /// The status of this file.
+    pub(super) status: FileStatus,
     /// The TOC's numbering for this file; empty if it's either not in the TOC,
     /// or is a prefix/suffix chapter.
     pub(super) toc: Vec<u32>,
-    /// All targets on this page, in order of appearance on the page.
+    /// All targets on this page, in order of appearance on the page. This is
+    /// the only owner of `Target` data.
     pub(super) target: Vec<Arc<Mutex<Target>>>,
     /// The first (and hopefully only) H1 target on this page.
     pub(super) h1: Weak<Mutex<Target>>,
+}
+
+/// The status of a file from the cache's perspective.
+pub(super) enum FileStatus {
+    /// The file hasn't been processed yet.
+    Pending,
+    /// The file need to be re-processed.
+    Dirty,
+    /// The file has been processed. (It may not exist.)
+    Clean,
 }
 
 /// Contains all information about a target.
 pub(super) struct Target {
     /// The file which contains this target.
     pub(super) file: Weak<Mutex<File>>,
-    /// The id (which functions as an anchor) of this target, if assigned; empty
+    /// The id of this target, if assigned; empty
     /// otherwise. It must be globally unique with the project.
-    pub(super) anchor: String,
-    /// The DOM node which defines this target. TODO: This isn't Sync, so store
-    /// it elsewhere.
-    //node: Weak<Node>,
+    pub(super) id: String,
     /// The line number of this target in `File`; ignored if the `type_` is
     /// `File`.
-    pub(super) line: u32,
-    /// The type of this target.
-    pub(super) type_: TargetType,
+    pub(super) line: usize,
+    /// The index of the doc block in the vec of `CodeDocBlock`s for this file.
+    pub(super) code_doc_block_index: usize,
+    /// The type of backlink for this target.
+    pub(super) backlink_type: BacklinkType,
     /// The HTML contents (or HTML context, if this target has no content, such
     /// as `<a id="x"></a>`). Tags, which contain multiple code and doc blocks,
     /// must be rendered to static HTML.
     pub(super) contents: String,
+    /// All references to this target which don't depend on it. The key is the
+    /// file path for a file, or the ID for a Target.
+    pub(super) references: HashMap<String, LinkType>,
+    /// Targets may depend on data from another file within this project.
+    /// Typically, these are auto-titled hyperlinks or backlinks. If this Target
+    /// is a gather element, this contains both direct dependencies (backlinks
+    /// for the gather element's anchor) and indirect dependencies (dependencies
+    /// of each of these backlinks).
+    ///
+    /// All references to this target that also depend on it; if this Target
+    /// changes, all these must be updated. The key is the file path for a file,
+    /// or the ID for a Target.
+    pub(super) dependencies: HashMap<String, LinkType>,
 }
 
-/// Stores data unique to each type of target. All we care about is the target's
-/// contents and if it's a gather tag. (Or we chould always store both
-/// contents + code/doc blocks).
-pub(super) enum TargetType {
-    /// This target is a file.
-    File(Weak<File>),
-    /// A heading tag (H1-H6).
-    Heading {
-        /// The level (1-6 for H1-H6) of this heading.
-        level: u32,
-    },
-    /// An HTML element with only an id, which must be globally unique in this
-    /// project. Termed an
-    /// [anchor](https://developer.mozilla.org/en-US/docs/Learn_web_development/Howto/Web_mechanics/What_is_a_URL#anchor)
-    /// or a document fragment identifier.
-    Anchor,
-    /// A tag, which is a link to a gathering tag.
-    Tag {
-        /// The anchor this hyperlink references.
-        anchor: String,
-        /// The index into this page's CodeDocBlock vec where the tag starts.
-        start: usize,
-        /// The index into this page's CodeDocBlock vec where the tag ends.
-        end: usize,
-    },
-    /// A gathering tag.
-    GatherTag {
-        /// The name of this tag, used as the auto-title text for referencing
-        /// links.
-        name: String,
-    },
-    /// A numbered item, such as a figure caption, an equation, a table, etc.
-    Numbered {
-        /// The number of this item.
-        number: u32,
-        /// A string identifying the type of this number: equation, table, etc.
-        /// TODO: a central registry for these? Or use an enum and pre-defined
-        /// types?
-        type_: String,
-    },
-    /// A hyperlink to a location within this project.
-    Link {
-        /// The file this hyperlink references.
-        file: Weak<Mutex<File>>,
-        /// The anchor this hyperlink references. If no anchor is provided, this
-        /// is an empty string.
-        anchor: String,
-        /// Recognized query parameters.
-        flags: LinkOptions,
-    },
+/// Links can have no ID, and therefore are identifiable only by the file they
+/// reside in, or they have an ID and are therefore a target.
+pub(super) enum LinkType {
+    File(Weak<Mutex<File>>),
+    Target(Weak<Mutex<Target>>),
+}
+
+/// Describe the type of this target's backlink.
+pub(super) enum BacklinkType {
+    /// This target is not a backlink.
+    None,
+    /// This target has a gather tag backlink.
+    Gather,
+    /// This target has a wrapped backlink.
+    Wrapped,
+    /// This target has a plain backlink.
+    Plain,
 }
 
 /// Query parameters parsed into known link options. TODO: perhaps use the
@@ -309,7 +286,7 @@ impl Cache {
         Cache {
             path: HashMap::new(),
             anchor: HashMap::new(),
-            dirty: HashSet::new(),
+            pending_files: vec![],
             root: PathBuf::new(),
         }
     }
@@ -322,6 +299,7 @@ impl Cache {
                 // FIXME: add new file to
                 Arc::new(Mutex::new(File {
                     path: path.to_path_buf(),
+                    status: FileStatus::Pending,
                     toc: vec![],
                     h1: Weak::new(),
                     target: vec![],
@@ -391,13 +369,14 @@ mod tests {
     use std::{
         borrow::BorrowMut,
         collections::{HashMap, HashSet},
+        hash::Hash,
         sync::{Arc, Mutex, Weak},
     };
 
     use indoc::indoc;
     use test_utils::prep_test_dir;
 
-    use crate::processing::cache::{Cache, File, Target};
+    use crate::processing::cache::{BacklinkType, Cache, File, FileStatus, Target};
 
     // Verify basic parsing
     fn test_1() {
@@ -422,7 +401,7 @@ mod tests {
             //
             // [](baz.cpp#one?title&number)
             //
-            // [][bar.cpp#gathering_tag)
+            // [][baz.cpp#gathering_tag)
             code();
             "#
         );
@@ -430,6 +409,7 @@ mod tests {
         let bar_cpp_path = test_dir.join("bar.cpp");
         let file_bar_cpp = Arc::new(Mutex::new(File {
             path: bar_cpp_path.clone(),
+            status: FileStatus::Pending,
             toc: vec![1],
             // Since we haven't parsed the file, the `h1` hasn't been found.
             h1: Weak::new(),
@@ -442,6 +422,7 @@ mod tests {
         // a gather tag.
         let mut file_baz_cpp = Arc::new(Mutex::new(File {
             path: baz_cpp_path.clone(),
+            status: FileStatus::Clean,
             toc: vec![2],
             // This is filled in below.
             h1: Weak::new(),
@@ -451,19 +432,23 @@ mod tests {
         file_baz_cpp.borrow_mut().lock().unwrap().target = vec![
             Arc::new(Mutex::new(Target {
                 file: Arc::downgrade(&file_baz_cpp),
-                anchor: "one".to_string(),
+                id: "one".to_string(),
                 line: 1,
-                type_: crate::processing::cache::TargetType::Heading { level: 1 },
+                code_doc_block_index: 0,
+                backlink_type: BacklinkType::None,
                 contents: "Heading one".to_string(),
+                references: HashMap::new(),
+                dependencies: HashMap::new(),
             })),
             Arc::new(Mutex::new(Target {
                 file: Arc::downgrade(&file_baz_cpp),
-                anchor: "gathering_tag".to_string(),
+                id: "gathering_tag".to_string(),
                 line: 1,
-                type_: crate::processing::cache::TargetType::GatherTag {
-                    name: "gather".to_string(),
-                },
+                code_doc_block_index: 0,
+                backlink_type: BacklinkType::Gather,
                 contents: "Gather tag".to_string(),
+                references: HashMap::new(),
+                dependencies: HashMap::new(),
             })),
         ];
         let h1 = Arc::downgrade(&file_baz_cpp.lock().unwrap().target[1]);
@@ -486,7 +471,7 @@ mod tests {
         let mut cache = Cache {
             path: cache_path,
             anchor: cache_anchor,
-            dirty: HashSet::new(),
+            pending_files: vec![],
             root: test_dir,
         };
 

@@ -32,11 +32,12 @@ use std::{
     ffi::OsStr,
     io,
     iter::Map,
+    mem,
     ops::Range,
     path::{Path, PathBuf},
     rc::Rc,
     slice::Iter,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
 };
 
 // ### Third-party
@@ -67,9 +68,12 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 // ### Local
-use crate::lexer::{
-    CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
-    supported_languages::MARKDOWN_MODE,
+use crate::{
+    lexer::{
+        CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
+        supported_languages::MARKDOWN_MODE,
+    },
+    processing::cache::Target,
 };
 use cache::Cache;
 
@@ -805,6 +809,7 @@ pub enum SourceToCodeChatForWebError {
 
 // Transform from source code to `CodeChatForWeb`
 // ----------------------------------------------
+//
 // Given the contents of a file, classify it and (for CodeChat Editor files)
 // convert it to the `CodeChatForWeb` format.
 pub fn source_to_codechat_for_web(
@@ -864,7 +869,7 @@ pub fn source_to_codechat_for_web(
         source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
             // Document-only files are easy: just encode the contents.
             let dry_html = markdown_to_html(file_contents);
-            let html = hydrate_html(&dry_html, file_path, &mut cache.lock().unwrap())
+            let html = hydrate_html(&dry_html, file_path, cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             CodeMirrorDiffable::Plain(CodeMirror {
                 doc: html,
@@ -925,7 +930,7 @@ pub fn source_to_codechat_for_web(
             // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
             // 3. Hydrate the cleaned HTML.
-            let wet_html = hydrate_html(&html, file_path, &mut cache.lock().unwrap())
+            let wet_html = hydrate_html(&html, file_path, cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 4. Split on the separator.
             let mut doc_block_contents_iter: regex::Split<'_, '_> =
@@ -1103,12 +1108,59 @@ pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
 // * (Eventually) record document structure information.
 // * (Eventually) assign a unique ID to all links that don't have one.
 // * (Eventually) fill in autocomplete fields.
-fn hydrate_html(html: &str, file: &Path, cache: &mut Cache) -> io::Result<String> {
+fn hydrate_html(html: &str, file: &Path, cache: Arc<Mutex<Cache>>) -> io::Result<String> {
     let dom = html_to_dom(html)?;
-    let file_entry = cache.get_or_create_file(file);
+    let file_entry = cache.lock().unwrap().get_or_create_file(file);
+    // Move the `target` vec into a HashMap; the vec will be re-created by
+    // moving individual entries back as they're found in the HTML. TODO: move
+    // this to another entry, to invalidate all current weak links. Must also
+    // update all weak links to the underlying `File` when moving a `Target`.
+    let old_target_vec = mem::take(&mut file_entry.lock().unwrap().target);
+    let old_targets: HashMap<String, Arc<Mutex<Target>>> = old_target_vec
+        .into_iter()
+        .map(|target| (target.clone().lock().unwrap().id.clone(), target))
+        .collect();
     // This is storage for the state needed for walking the DOM.
-    let mut doc_block_index: usize = 0;
-    hydrating_walk_node(dom.clone(), file, cache, &file_entry, &mut doc_block_index);
+    let mut walk_context = WalkContext {
+        cache,
+        file_entry,
+        old_targets,
+        doc_block_index: 0,
+        links: Vec::new(),
+        backlinks: Vec::new(),
+        tags: Vec::new(),
+        code_doc_block_dependencies: vec![],
+    };
+    walk_context = hydrating_walk_node(dom.clone(), walk_context);
+    // TODO:
+    //
+    // 1. Remove all `old_targets` that weren't moved back to `targets`.
+    //
+    // 2. Process all `links`:
+    //
+    //    1. If the target of this link is in the cache, first check to see if
+    //       it's been processed. If not, mark the current file to be added to
+    //       the end of `pending_files` list. Based on the link's
+    //       `Target.backlink_type`:
+    //
+    //       1. None: if this is an auto-titled link, get its title from
+    //          the `Target` it refers to (this includes the case where the
+    //          target doesn't exist) and add this file to the target's list of
+    //          `references` if it's not already there. Otherwise, add it to the
+    //          target's list of `dependencies` (again, if it's not already
+    //          there). Remove it from the other list if it's there.
+    //       2. Plain/wrapped: give this link an ID if it doesn't have one
+    //          (meaning add it as a new `Target`). As above, add/verify this
+    //          link is in the `references`/`dependencies` and remove the
+    //          opposite link. If this is added, mark the link target's `File`
+    //          as dirty.
+    //       3. Gather: same as above. Also, record the start/end code/doc
+    //          blocks and put this in the code/doc block tag list.
+    //    2. Otherwise, add the file containing this target to set of files to
+    //       process (`Cache::pending_files`) and mark the current file to be
+    //       added to this set after all dirty dependencies are added.
+    // 3. Process all `backlinks`: generate the appropriate HTML.
+
     dom_to_html(dom)
 }
 
@@ -1136,15 +1188,31 @@ fn get_text_content(node: &Rc<Node>) -> String {
     text
 }
 
-fn hydrating_walk_node(
-    node: Rc<Node>,
-    _file: &Path,
-    _cache: &mut Cache,
-    // FIXME: should pass just one or the other.
-    _file_entry: &Arc<Mutex<cache::File>>,
-    // FIXME: not needed.
-    doc_block_index: &mut usize,
-) {
+/// This provides the needed context when walking the HTML DOM of all doc
+/// blocks.
+struct WalkContext {
+    /// The cache for this project.
+    cache: Arc<Mutex<Cache>>,
+    /// The `cache::File` currently being processed.
+    file_entry: Arc<Mutex<cache::File>>,
+    /// The previous `file_entry.targets` that haven't yet been claimed while
+    /// processing this file. The key is the `Target`'s ID.
+    old_targets: HashMap<String, Arc<Mutex<Target>>>,
+    /// All hyperlinks found in this file.
+    links: Vec<Rc<Node>>,
+    /// Backlinks and gather elements.
+    backlinks: Vec<Rc<Node>>,
+    /// Tags (links to gather elements).
+    tags: Vec<Rc<Node>>,
+    /// A set
+    code_doc_block_dependencies: Vec<HashMap<String, Weak<Mutex<Target>>>>,
+    /// The current doc block index, based on parsing the HTML for
+    /// `codechateditor-separator` elements, which contain this value.
+    doc_block_index: usize,
+}
+
+/// Hydrate the HTML of newly-translated doc blocks.
+fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> WalkContext {
     for child in node.children.borrow_mut().iter_mut() {
         let possible_replacement_child =
         // Perform replacements of GraphViz and Mermaid graphs:
@@ -1201,57 +1269,61 @@ fn hydrating_walk_node(
         // Analyze this node for cacheable data.
         if let Some(tag_name) = get_node_tag_name(child) {
             // See if the element has an id/anchor.
-            let _anchor = get_attr_value(child, "id").unwrap_or_default();
+            let id = get_attr_value(child, "id").unwrap_or_default();
 
             // Track doc block index from separator elements.
             if tag_name == "codechateditor-separator"
                 && let Ok(index) = get_text_content(child).trim().parse::<usize>()
             {
-                *doc_block_index = index;
+                walk_context.doc_block_index = index;
             }
 
-            // TODO: write code here. Updates with no dependencies are already
-            // done. In this pass, simply gather info on all targets and on
-            // unresolved items (auto-titled, etc.). Then, make a second pass to
-            // resolve unresolved items. After converting this to code/doc
-            // blocks, fill in contents for tags referring to a gather tag.
-            //
-            // A data structure to store unresolved items: `Vec<Rc<Node>>`. Need
-            // to pass this to/from all walk functions. This function should
-            // also walk the `File::target` vec, advancing for each Target
-            // found.
+            // TODO: write code here.
             //
             // When walking, look for:
             //
             // 1. A link, or any element that's a back link or gather element.
-            //    Add these to the to-resolve list.
-            // 2. A target (any item with an id).
-            //    1. If this target already exists in the cache, check to see if
-            //       it's changed: is its id and contents the same as before? If
-            //       it's changed, add all dependencies to the set of dirty
-            //       files then delete the old target and create a new one, to
-            //       invalidate any old (weak) references. TODO: how to detect
-            //       duplicate IDs? Probably by finding an existing up-to-date
-            //       Target with the same ID but a different File. What to do in
-            //       this case?
-            //    2. If it doesn't exist, add its contents to the cache. This is
-            //       OK even for auto-titled links (meaning the contents are
-            //       currently empty) since these aren't expected to work
-            //       indirectly.
-            //
-            // On the second pass (place this in a separate function that only
-            // walks the unresolved items vec):
-            //
-            // 1. For links, if the target is up to date, resolve it (this
-            //    includes the case where the target doesn't exist) and add it
-            //    to the target's direct dependencies. Otherwise, add the target
-            //    to set of dirty files to process (`Cache::dirty`). Mark this
-            //    file to be added to this set after all dirty dependencies are
-            //    added.
+            //    Add these to the `links`/`backlinks` list.
+            // 2. A target (any item with an id which refers to a file in the
+            //    project tree).
+            //    1. Process the ID:
+            //       1. ID exists in `old_targets` - transfer ownership by
+            //          appending this to `file.targets`, removing it from the
+            //          `old_targets`. Assert that this ID is unique.
+            //       2. ID doesn't exist in `old_targets` and is unique: create
+            //          a new, randonly-generated ID.
+            //       3. ID doesn't exist in `old_targets` and is a duplicate:
+            //          resolve duplicate IDs:
+            //          1. Is the duplicate ID in the same file? In this case,
+            //             we have no way to determine which was the original
+            //             ID. Rename the ID being processed; stop here.
+            //          2. Have all new files been processed? If not, add this
+            //             file to the list of dirty files which will be
+            //             re-processed after new file processing is done. Stop
+            //             here.
+            //          3. Look at the timestamp of this file and of the other
+            //             file which contains the duplicate ID. If this file is
+            //             newer, rename this ID. Otherwise, update the ID and
+            //             mark the other file as dirty.
+            //    2. Check the `contents`: if the `contents` changed, add all
+            //       this target's `dependencies` to the dirty list.
+            //    3. Check the `backlink_type`. If this changed:
+            //       1. To Gather from any other type: add all the target's
+            //          `references` and `depenencies` to the dirty list, since
+            //          some `references` may need IDs and everything needs
+            //          code+doc blocks.
+            //       2. From Gather to any other type: Do nothing. The code+doc
+            //          blocks will be removed lazily, since they have no impact
+            //          on the resulting output.
+            //       3. From None to Wrapped or Plain: add `references` with no
+            //          ID to the dirty list.
+            //       4. From Wrapped to None: nothing to do.
         }
 
-        hydrating_walk_node(child.clone(), _file, _cache, _file_entry, doc_block_index);
+        walk_context = hydrating_walk_node(child.clone(), walk_context);
     }
+
+    walk_context
 }
 
 fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
@@ -1502,8 +1574,7 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
 
 // #### Diff support for `CodeMirrorDocBlockVec`
 /// We can't simply implement traits for `CodeMirrorDocBlockVec`, since it's not
-/// a struct. So, wrap that it in a struct, then implement traits on that
-/// struct.
+/// a struct. So, wrap it in a struct, then implement traits on that struct.
 struct CodeMirrorDocBlocksStruct<'a>(&'a CodeMirrorDocBlockVec);
 
 /// Only compare the `contents` of two doc blocks; later, we'll compare the

@@ -26,6 +26,7 @@ use std::{
     path::{Path, PathBuf},
     rc::Rc,
     str::FromStr,
+    sync::{Arc, Mutex},
 };
 
 // ### Third-party
@@ -1242,7 +1243,7 @@ fn test_hydrate_html_1() {
             "
             )),
             Path::new("foo.md"),
-            &mut Cache::new()
+            Arc::new(Mutex::new(Cache::new()))
         )
         .unwrap(),
         indoc!(
@@ -1265,7 +1266,7 @@ fn test_hydrate_html_1() {
             "
             )),
             Path::new("foo.md"),
-            &mut Cache::new()
+            Arc::new(Mutex::new(Cache::new()))
         )
         .unwrap(),
         indoc!(
@@ -1293,7 +1294,7 @@ fn test_hydrate_html_1() {
             "
             )),
             Path::new("foo.md"),
-            &mut Cache::new()
+            Arc::new(Mutex::new(Cache::new()))
         )
         .unwrap(),
         indoc!(
@@ -1312,7 +1313,7 @@ fn test_hydrate_html_1() {
         hydrate_html(
             &markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;"),
             Path::new("foo.md"),
-            &mut Cache::new()
+            Arc::new(Mutex::new(Cache::new()))
         )
         .unwrap(),
         indoc!(
