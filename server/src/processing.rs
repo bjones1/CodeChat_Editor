@@ -579,7 +579,7 @@ impl HtmlToMarkdownWrapped {
     /// Convert one item in a stream of HTML to markdown. The HTML must be start
     /// at the root, not continue a previous incomplete section of the DOM.
     fn next(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
-        let converted = self.html_to_markdown.tree_to_markdown(tree)?;
+        let converted = self.html_to_markdown.tree_to_markdown(tree);
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
                 // A return value of `None` means the text was unchanged or
@@ -591,7 +591,7 @@ impl HtmlToMarkdownWrapped {
     }
 
     fn last(&self) -> Result<String, HtmlToMarkdownWrappedError> {
-        let converted = self.html_to_markdown.finalize_conversion()?;
+        let converted = self.html_to_markdown.finalize_conversion();
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
                 // A return value of `None` means the text was unchanged or
