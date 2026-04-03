@@ -14,7 +14,7 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `main.rs` -- Entrypoint for the CodeChat Editor Builder
-/// ============================================================================
+/// =======================================================
 ///
 /// This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
 /// of the release process. To update the `./release.yaml` file this tool
@@ -25,8 +25,11 @@
 /// 3. Review changes to `./release.yaml`, reapplying hand edits.
 /// 4. Revert the changes to `server/dist-workspace.toml`.
 /// 5. Test
+///
+/// Keep the `DIST_VERSION` consistent with the version of dist in
+/// `dist-workspace.toml` on release.
 // Imports
-// -----------------------------------------------------------------------------
+// -------
 //
 // ### Standard library
 use std::{
@@ -50,7 +53,7 @@ use regex::Regex;
 // None
 //
 // Data structures
-// -----------------------------------------------------------------------------
+// ---------------
 //
 // The following defines the command-line interface for the CodeChat Editor.
 #[derive(Parser)]
@@ -117,15 +120,16 @@ struct TypeScriptBuildOptions {
 }
 
 // Constants
-// -----------------------------------------------------------------------------
+// ---------
 static VSCODE_PATH: &str = "../extensions/VSCode";
 static CLIENT_PATH: &str = "../client";
 static BUILDER_PATH: &str = "../builder";
 static TEST_UTILS_PATH: &str = "../test_utils";
 static NAPI_TARGET: &str = "NAPI_TARGET";
+static DIST_VERSION: &str = "0.31.0";
 
 // Code
-// -----------------------------------------------------------------------------
+// ----
 //
 // ### Utilities
 //
@@ -288,7 +292,7 @@ fn search_and_replace_file<
 }
 
 // Core routines
-// -----------------------------------------------------------------------------
+// -------------
 //
 // These functions simplify common build-focused development tasks and support
 // CI builds.
@@ -395,13 +399,13 @@ fn run_install(dev: bool) -> io::Result<()> {
         // on MacOS. Try another approach.
         #[cfg(target_os = "macos")]
         run_cmd!(
-            curl --proto =https --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/latest/download/cargo-dist-installer.sh" | sh;
+            curl --proto =https --tlsv1.2 -LsSf "https://github.com/axodotdev/cargo-dist/releases/download/v${DIST_VERSION}/cargo-dist-installer.sh" | sh;
 
         )?;
         #[cfg(not(target_os = "macos"))]
         run_cmd!(
             info "cargo binstall cargo-dist";
-            cargo binstall cargo-dist --no-confirm;
+            cargo binstall cargo-dist@${DIST_VERSION} --no-confirm;
         )?;
 
         run_cmd!(
@@ -766,7 +770,7 @@ fn run_postrelease(target: &str) -> io::Result<()> {
 }
 
 // CLI implementation
-// -----------------------------------------------------------------------------
+// ------------------
 //
 // The following code implements the command-line interface for the CodeChat
 // Editor.
