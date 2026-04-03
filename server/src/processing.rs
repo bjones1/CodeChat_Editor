@@ -1,4 +1,6 @@
-#![allow(unused)]
+// TODO: Remove this after implementing the cache.
+//#![allow(unused)]
+
 // Copyright (C) 2025 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -932,7 +934,7 @@ pub fn source_to_codechat_for_web(
             // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
             // 3. Hydrate the cleaned HTML.
-            let (wet_html, tags) = hydrate_html(&html, file_path, cache)
+            let (wet_html, _tags) = hydrate_html(&html, file_path, cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 4. Split on the separator.
             let mut doc_block_contents_iter: regex::Split<'_, '_> =
