@@ -1245,7 +1245,8 @@ fn test_hydrate_html_1() {
             Path::new("foo.md"),
             Arc::new(Mutex::new(Cache::new()))
         )
-        .unwrap(),
+        .unwrap()
+        .0,
         indoc!(
             "
             <wc-mermaid>flowchart LR
@@ -1268,7 +1269,8 @@ fn test_hydrate_html_1() {
             Path::new("foo.md"),
             Arc::new(Mutex::new(Cache::new()))
         )
-        .unwrap(),
+        .unwrap()
+        .0,
         indoc!(
             "
             <graphviz-graph>digraph {
@@ -1296,7 +1298,8 @@ fn test_hydrate_html_1() {
             Path::new("foo.md"),
             Arc::new(Mutex::new(Cache::new()))
         )
-        .unwrap(),
+        .unwrap()
+        .0,
         indoc!(
             r#"
             <p><span class="math math-inline mceNonEditable">\({a}_1, b_{2}\)</span>
@@ -1315,7 +1318,8 @@ fn test_hydrate_html_1() {
             Path::new("foo.md"),
             Arc::new(Mutex::new(Cache::new()))
         )
-        .unwrap(),
+        .unwrap()
+        .0,
         indoc!(
             "
             <ol>

@@ -1,3 +1,4 @@
+#![allow(unused)]
 // Copyright (C) 2025 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -867,10 +868,11 @@ pub fn source_to_codechat_for_web(
         },
         version,
         source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
-            // Document-only files are easy: just encode the contents.
+            // Document-only files are easy: just encode the contents. Tags are only supported in source files.
             let dry_html = markdown_to_html(file_contents);
             let html = hydrate_html(&dry_html, file_path, cache)
-                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
+                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?
+                .0;
             CodeMirrorDiffable::Plain(CodeMirror {
                 doc: html,
                 doc_blocks: vec![],
@@ -930,12 +932,12 @@ pub fn source_to_codechat_for_web(
             // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
             // 3. Hydrate the cleaned HTML.
-            let wet_html = hydrate_html(&html, file_path, cache)
+            let (wet_html, tags) = hydrate_html(&html, file_path, cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 4. Split on the separator.
             let mut doc_block_contents_iter: regex::Split<'_, '_> =
                 DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&wet_html);
-            // 5. Cache updates. TODO. <a class="fence-mending-end"></a>
+            // 5. TODO Cache updates: process `tags`. <a class="fence-mending-end"></a>
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             for code_or_doc_block in code_doc_block_arr {
@@ -1108,7 +1110,11 @@ pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
 // * (Eventually) record document structure information.
 // * (Eventually) assign a unique ID to all links that don't have one.
 // * (Eventually) fill in autocomplete fields.
-fn hydrate_html(html: &str, file: &Path, cache: Arc<Mutex<Cache>>) -> io::Result<String> {
+fn hydrate_html(
+    html: &str,
+    file: &Path,
+    cache: Arc<Mutex<Cache>>,
+) -> io::Result<(String, Vec<Rc<Node>>)> {
     let dom = html_to_dom(html)?;
     let file_entry = cache.lock().unwrap().get_or_create_file(file);
     // Move the `target` vec into a HashMap; the vec will be re-created by
@@ -1136,32 +1142,40 @@ fn hydrate_html(html: &str, file: &Path, cache: Arc<Mutex<Cache>>) -> io::Result
     //
     // 1. Remove all `old_targets` that weren't moved back to `targets`.
     //
-    // 2. Process all `links`:
+    // 2. Process `links`:
     //
     //    1. If the target of this link is in the cache, first check to see if
     //       it's been processed. If not, mark the current file to be added to
-    //       the end of `pending_files` list. Based on the link's
+    //       the end of `pending_files` list. Based on the link's
     //       `Target.backlink_type`:
     //
-    //       1. None: if this is an auto-titled link, get its title from
-    //          the `Target` it refers to (this includes the case where the
-    //          target doesn't exist) and add this file to the target's list of
-    //          `references` if it's not already there. Otherwise, add it to the
-    //          target's list of `dependencies` (again, if it's not already
-    //          there). Remove it from the other list if it's there.
-    //       2. Plain/wrapped: give this link an ID if it doesn't have one
+    //       1. `None`: if this is an auto-titled link, get its title from the
+    //          `Target` it refers to (this includes the case where the target
+    //          doesn't exist) and add this file to the target's list of
+    //          `references` if it's not already there; also add it to the
+    //          `code_doc_block_dependencies` list; problem: how would we know
+    //          the doc block index? Otherwise, add it to the target's list
+    //          of `dependencies` (again, if it's not already there). Remove it
+    //          from the other list if it's there.
+    //       2. `Plain`/`wrapped`: give this link an ID if it doesn't have one
     //          (meaning add it as a new `Target`). As above, add/verify this
     //          link is in the `references`/`dependencies` and remove the
     //          opposite link. If this is added, mark the link target's `File`
     //          as dirty.
-    //       3. Gather: same as above. Also, record the start/end code/doc
-    //          blocks and put this in the code/doc block tag list.
+    //       3. `Gather`: same as above. Also, record the start/end code/doc
+    //          blocks and put this in the code/doc block `tags` list.
     //    2. Otherwise, add the file containing this target to set of files to
     //       process (`Cache::pending_files`) and mark the current file to be
     //       added to this set after all dirty dependencies are added.
-    // 3. Process all `backlinks`: generate the appropriate HTML.
+    // 3. Process `backlinks`: generate the appropriate HTML. These are
+    //    processed after `links`, to ensure these are updated / assigned an ID
+    //    in case a backlink references a link in this file. Corner case: if a
+    //    gather element refers to tags in the current file, and the code+doc
+    //    block contents of these tags is outdated, then this file need to be
+    //    reprocessed, since the code+doc block contents won't be updated until
+    //    after this function returns.
 
-    dom_to_html(dom)
+    Ok((dom_to_html(dom)?, walk_context.tags))
 }
 
 /// Get the value of an attribute on an element node.
@@ -1204,7 +1218,9 @@ struct WalkContext {
     backlinks: Vec<Rc<Node>>,
     /// Tags (links to gather elements).
     tags: Vec<Rc<Node>>,
-    /// A set
+    /// For each doc block in the vec of `CodeDocBlock`s, this contains the
+    /// `Target` of autotitled  links. These are used to determine a tag's
+    /// indirect dependencies if this doc block is included in a tag.
     code_doc_block_dependencies: Vec<HashMap<String, Weak<Mutex<Target>>>>,
     /// The current doc block index, based on parsing the HTML for
     /// `codechateditor-separator` elements, which contain this value.
@@ -1269,7 +1285,7 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> WalkCon
         // Analyze this node for cacheable data.
         if let Some(tag_name) = get_node_tag_name(child) {
             // See if the element has an id/anchor.
-            let id = get_attr_value(child, "id").unwrap_or_default();
+            let _id = get_attr_value(child, "id").unwrap_or_default();
 
             // Track doc block index from separator elements.
             if tag_name == "codechateditor-separator"
@@ -1290,8 +1306,8 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> WalkCon
             //       1. ID exists in `old_targets` - transfer ownership by
             //          appending this to `file.targets`, removing it from the
             //          `old_targets`. Assert that this ID is unique.
-            //       2. ID doesn't exist in `old_targets` and is unique: create
-            //          a new, randonly-generated ID.
+            //       2. ID doesn't exist in `old_targets` and is unique: add
+            //          this `Target` to `Cache::id`.
             //       3. ID doesn't exist in `old_targets` and is a duplicate:
             //          resolve duplicate IDs:
             //          1. Is the duplicate ID in the same file? In this case,
@@ -1305,19 +1321,19 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> WalkCon
             //             file which contains the duplicate ID. If this file is
             //             newer, rename this ID. Otherwise, update the ID and
             //             mark the other file as dirty.
-            //    2. Check the `contents`: if the `contents` changed, add all
+            //    2. Check the `contents`: if the `contents` changed, add all
             //       this target's `dependencies` to the dirty list.
             //    3. Check the `backlink_type`. If this changed:
-            //       1. To Gather from any other type: add all the target's
-            //          `references` and `depenencies` to the dirty list, since
+            //       1. To `Gather` from any other type: add all the target's
+            //          `references` and `dependencies` to the dirty list, since
             //          some `references` may need IDs and everything needs
             //          code+doc blocks.
-            //       2. From Gather to any other type: Do nothing. The code+doc
-            //          blocks will be removed lazily, since they have no impact
-            //          on the resulting output.
-            //       3. From None to Wrapped or Plain: add `references` with no
-            //          ID to the dirty list.
-            //       4. From Wrapped to None: nothing to do.
+            //       2. From `Gather` to any other type: Do nothing. The
+            //          code+doc blocks will be removed lazily, since they have
+            //          no impact on the resulting output.
+            //       3. From `None` to `Wrapped` or `Plain`: add `references`
+            //          with no ID to the dirty list.
+            //       4. From `Wrapped` to `None`: nothing to do.
         }
 
         walk_context = hydrating_walk_node(child.clone(), walk_context);

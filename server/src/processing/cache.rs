@@ -180,9 +180,11 @@ pub struct Cache {
     /// Provide rapid access to a file by its absolute path; it must be within
     /// the project's root directory. This is the sole owner of these `File`s.
     pub(super) path: HashMap<PathBuf, Arc<Mutex<File>>>,
-    /// Provide rapid access to a `Target` by its unique anchor.
-    pub(super) anchor: HashMap<String, Weak<Mutex<Target>>>,
-    /// All files that need to be processed. The same file may be added multiple times to the list; it will only be processed when the corresponding's `File.status` is not `Clean`.
+    /// Provide rapid access to a `Target` by its unique id.
+    pub(super) id: HashMap<String, Weak<Mutex<Target>>>,
+    /// All files that need to be processed. The same file may be added multiple
+    /// times to the list; it will only be processed when the corresponding's
+    /// `File.status` is not `Clean`.
     pub(super) pending_files: Vec<PathBuf>,
     /// The root directory of this project.
     pub(super) root: PathBuf,
@@ -222,8 +224,8 @@ pub(super) enum FileStatus {
 pub(super) struct Target {
     /// The file which contains this target.
     pub(super) file: Weak<Mutex<File>>,
-    /// The id of this target, if assigned; empty
-    /// otherwise. It must be globally unique with the project.
+    /// The id of this target, if assigned; empty otherwise. It must be globally
+    /// unique with the project.
     pub(super) id: String,
     /// The line number of this target in `File`; ignored if the `type_` is
     /// `File`.
@@ -237,7 +239,8 @@ pub(super) struct Target {
     /// must be rendered to static HTML.
     pub(super) contents: String,
     /// All references to this target which don't depend on it. The key is the
-    /// file path for a file, or the ID for a Target.
+    /// file path for a file, or the ID for a Target. Assume that IDs and file
+    /// names don't overlap.
     pub(super) references: HashMap<String, LinkType>,
     /// Targets may depend on data from another file within this project.
     /// Typically, these are auto-titled hyperlinks or backlinks. If this Target
@@ -285,7 +288,7 @@ impl Cache {
     pub fn new() -> Self {
         Cache {
             path: HashMap::new(),
-            anchor: HashMap::new(),
+            id: HashMap::new(),
             pending_files: vec![],
             root: PathBuf::new(),
         }
@@ -470,7 +473,7 @@ mod tests {
 
         let mut cache = Cache {
             path: cache_path,
-            anchor: cache_anchor,
+            id: cache_anchor,
             pending_files: vec![],
             root: test_dir,
         };
