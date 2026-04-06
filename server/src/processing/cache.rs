@@ -46,7 +46,8 @@
 ///
 /// becomes `[Bar](#foo)`. This works even when the anchor is located in a
 /// different file. Auto-titled links don't support indirection: link A whose
-/// contents comes from link B whose contents comes from target C doesn't work.
+/// contents comes from link B whose contents comes from target C doesn't work;
+/// link A will end up with an empty title.
 ///
 /// Tags
 /// ----
@@ -123,19 +124,9 @@
 ///   contents (a list of all targets in the containing file).
 /// * Perform a search of all Target contents, returning a list of matching
 ///   targets.
-/// * Given an anchor, retrieve the anchor's Target, all Targets which reference
-///   this anchor but don't depend on it, and all Targets which reference this
-///   anchor and also depend on it.
-///
-/// Supported operations:
-///
-/// * Upsert a given file to the cache.
-/// * Delete a given file from the cache.
-/// * Walk the project, updating the cache for all files. Called when a project
-///   is first opened.
-/// * Monitor the project for filesystem changes, performing lazy updates based
-///   on these changes.
-/// * Keep the in-memory cache synchronized with the on-disk cache.
+/// * Given an id, retrieve the associated `Target`, all `Target`s which
+///   reference this id but don't depend on it, and all `Target`s which
+///   reference this anchor and also depend on it.
 ///
 /// Thinking space:
 ///
@@ -145,10 +136,6 @@
 /// * Non-project files support a subset of this functionality: basically, treat
 ///   the project as a single file. Backlinks to other files work; tags and
 ///   backlinks within the current file work.
-/// * Cache data must be computed in the correct order: first, transformations
-///   with no dependencies (equations, diagrams, etc.). Next, cache-dependent
-///   data except for tags. Then, after a full pass, update gather tag text from
-///   the results.
 ///
 /// Code changes elsewhere:
 ///
@@ -183,9 +170,9 @@ pub struct Cache {
     pub(super) path: HashMap<PathBuf, Arc<Mutex<File>>>,
     /// Provide rapid access to a `Target` by its unique id.
     pub(super) id: HashMap<String, Weak<Mutex<Target>>>,
-    /// All files that need to be processed. The same file may be added multiple
-    /// times to the list; it will only be processed when the corresponding's
-    /// `File.status` is not `Clean`.
+    /// All files that need to be processed. Only `File::status::Clean` files
+    /// should be added, since non-clean files by definition are already in the
+    /// vec.
     pub(super) pending_files: Vec<PathBuf>,
     /// The root directory of this project.
     pub(super) root: PathBuf,
@@ -202,7 +189,8 @@ pub(super) struct File {
     /// The status of this file.
     pub(super) status: FileStatus,
     /// The TOC's numbering for this file; empty if it's either not in the TOC,
-    /// or is a prefix/suffix chapter.
+    /// or is a prefix/suffix chapter. Taken from
+    /// [mdbook::book::SectionNumber](https://docs.rs/codam-mdbook/latest/mdbook/book/struct.SectionNumber.html).
     pub(super) toc: Vec<u32>,
     /// All targets on this page, in order of appearance on the page. This is
     /// the only owner of `Target` data.
@@ -213,7 +201,8 @@ pub(super) struct File {
 
 /// The status of a file from the cache's perspective.
 pub(super) enum FileStatus {
-    /// The file hasn't been processed yet.
+    /// The file hasn't been processed yet. Typically, this is a file referenced
+    /// by a link but not available in the cache.
     Pending,
     /// The file need to be re-processed.
     Dirty,
@@ -221,23 +210,25 @@ pub(super) enum FileStatus {
     Clean,
 }
 
-/// Contains all information about a target.
+/// Contains all information about a target. A target is any HTML element with
+/// an id. This means that links directly to a file are not considered a target
+/// or tracked by the cache.
 pub(super) struct Target {
     /// The file which contains this target.
     pub(super) file: Weak<Mutex<File>>,
     /// The id of this target, if assigned; empty otherwise. It must be globally
     /// unique with the project.
     pub(super) id: String,
-    /// The line number of this target in `File`; ignored if the `type_` is
-    /// `File`.
+    /// The line number of this target in `File`; ignored if the `backlink_type`
+    /// is `File`.
     pub(super) line: usize,
     /// The index of the doc block in the vec of `CodeDocBlock`s for this file.
     pub(super) code_doc_block_index: usize,
     /// The type of backlink for this target.
     pub(super) backlink_type: BacklinkType,
     /// The HTML contents (or HTML context, if this target has no content, such
-    /// as `<a id="x"></a>`). Tags, which contain multiple code and doc blocks,
-    /// must be rendered to static HTML.
+    /// as `<a id="x"></a>`) of this element. Tags, which contain multiple code
+    /// and doc blocks, must be rendered to static HTML.
     pub(super) contents: String,
     /// All references to this target which don't depend on it. The key is the
     /// file path for a file, or the ID for a Target. Assume that IDs and file
@@ -274,8 +265,7 @@ pub(super) enum BacklinkType {
     Plain,
 }
 
-/// Query parameters parsed into known link options. TODO: perhaps use the
-/// bitflags crate instead?
+/// Query parameters parsed into known link options.
 pub(super) enum LinkOptions {
     Plain,
     AutoTitle,
@@ -300,7 +290,6 @@ impl Cache {
         self.path
             .entry(path.to_path_buf())
             .or_insert_with(|| {
-                // FIXME: add new file to
                 Arc::new(Mutex::new(File {
                     path: path.to_path_buf(),
                     status: FileStatus::Pending,
@@ -310,55 +299,6 @@ impl Cache {
                 }))
             })
             .clone()
-    }
-
-    // ### Upsert
-    //
-    // Update the cache using the contents of the provided file.
-    pub fn upsert_file_core(
-        &mut self,
-        // The file to process.
-        file: &Path,
-        // DOM of file to process.
-        dom: Rc<Node>,
-        // True indicates the file is now clean in the cache; false indicates
-        // that it's still dirty, since it requires information from dirty
-        // dependencies.
-    ) -> bool {
-        false
-        // Pseudocode:
-        //
-        // 1. Upsert this file's page data structure. Pre-existing cache data
-        //    provides the TOC numbering.
-        // 2. Set numbering of all numbered items to 1.
-        // 3. Walk the DOM. For each item in the walk:
-        //    1. If this is a doc block separator, read and update the current
-        //       doc block index.
-        //    2. If this item is a target, upsert the target's data structure to
-        //       the page's vector of targets and the cache state.
-        //       1. Update the current numbering if this is a numbered item
-        //          (equation, caption, etc.) and insert the HTML to set its
-        //          number in the DOM.
-        //       2. For tags: look up the tag by ID in the cache. Set the start
-        //          and end indices: if this is a plain tag (no end query
-        //          parameter), set the start index to the current block and the
-        //          end index to the next block. If this tag includes an end
-        //          query parameter, set the end index of the current tag, or
-        //          (if there's no tag) set the start index to the current
-        //          index - 1. How to handle links to files not in the cache?
-        //          The simplest approach is to mark this as dirty, then
-        //          re-resolve.
-        //       3. If this link is auto-titled, add it to the page's map of
-        //          dependencies.
-        //       4. For anything with an anchor, check that this is unique in
-        //          the project. Add it to the backlinks.
-        //       5. For links, add this to the backlinks.
-        // 4. For each item in the map of dependencies:
-        //    1. Look for it in the cache. If it's not in the cache or if the
-        //       cache for that file is dirty, add this file and the referring
-        //       file to the set of dirty files.
-        //    2. Update the auto-titled text and gather elements using cached
-        //       data; if not in the cache use the title "pending."
     }
 }
 
@@ -383,6 +323,7 @@ mod tests {
     use crate::processing::cache::{BacklinkType, Cache, File, FileStatus, Target};
 
     // Verify basic parsing
+    #[test]
     fn test_1() {
         let (temp_dir, test_dir) = prep_test_dir!();
         let bar_cpp = indoc!(
@@ -455,7 +396,7 @@ mod tests {
                 dependencies: HashMap::new(),
             })),
         ];
-        let h1 = Arc::downgrade(&file_baz_cpp.lock().unwrap().target[1]);
+        let h1 = Arc::downgrade(&file_baz_cpp.lock().unwrap().target[0]);
         file_baz_cpp.borrow_mut().lock().unwrap().h1 = h1;
 
         let mut cache_path = HashMap::new();

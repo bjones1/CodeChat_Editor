@@ -870,7 +870,8 @@ pub fn source_to_codechat_for_web(
         },
         version,
         source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
-            // Document-only files are easy: just encode the contents. Tags are only supported in source files.
+            // Document-only files are easy: just encode the contents. Tags are
+            // only supported in source files.
             let dry_html = markdown_to_html(file_contents);
             let html = hydrate_html(&dry_html, file_path, cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?
@@ -939,7 +940,8 @@ pub fn source_to_codechat_for_web(
             // 4. Split on the separator.
             let mut doc_block_contents_iter: regex::Split<'_, '_> =
                 DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&wet_html);
-            // 5. TODO Cache updates: process `tags`. <a class="fence-mending-end"></a>
+            // 5. TODO Cache updates: process `tags`.
+            //    <a class="fence-mending-end"></a>
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             for code_or_doc_block in code_doc_block_arr {
@@ -1148,7 +1150,8 @@ fn hydrate_html(
     //
     //    1. If the target of this link is in the cache, first check to see if
     //       it's been processed. If not, mark the current file to be added to
-    //       the end of `pending_files` list. Based on the link's
+    //       the end of `pending_files` list. Remove any previous
+    //       `references`/`dependencies`, then re-add them based on the link's
     //       `Target.backlink_type`:
     //
     //       1. `None`: if this is an auto-titled link, get its title from the
@@ -1301,13 +1304,15 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> WalkCon
             // When walking, look for:
             //
             // 1. A link, or any element that's a back link or gather element.
-            //    Add these to the `links`/`backlinks` list.
+            //    Note that links directly to a file are ignored, since files
+            //    are not targets. Add these to the `links`/`backlinks` list.
             // 2. A target (any item with an id which refers to a file in the
             //    project tree).
             //    1. Process the ID:
             //       1. ID exists in `old_targets` - transfer ownership by
             //          appending this to `file.targets`, removing it from the
-            //          `old_targets`. Assert that this ID is unique.
+            //          `old_targets`; update the stale `Weak` pointer to the
+            //          parent `File`. Assert that this ID is unique.
             //       2. ID doesn't exist in `old_targets` and is unique: add
             //          this `Target` to `Cache::id`.
             //       3. ID doesn't exist in `old_targets` and is a duplicate:
@@ -1324,7 +1329,8 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> WalkCon
             //             newer, rename this ID. Otherwise, update the ID and
             //             mark the other file as dirty.
             //    2. Check the `contents`: if the `contents` changed, add all
-            //       this target's `dependencies` to the dirty list.
+            //       this target's `dependencies` to the dirty list and update
+            //       the search text for this target.
             //    3. Check the `backlink_type`. If this changed:
             //       1. To `Gather` from any other type: add all the target's
             //          `references` and `dependencies` to the dirty list, since
@@ -1336,6 +1342,8 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> WalkCon
             //       3. From `None` to `Wrapped` or `Plain`: add `references`
             //          with no ID to the dirty list.
             //       4. From `Wrapped` to `None`: nothing to do.
+            //    4. Walk the list of `references`/`dependencies`, removing any
+            //       dropped references.
         }
 
         walk_context = hydrating_walk_node(child.clone(), walk_context);

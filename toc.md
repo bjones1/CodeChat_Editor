@@ -99,6 +99,8 @@ Implementation
     * [config.toml](server/.cargo/config.toml) - for Rust code coverage
     * [dist-workspace.toml](dist-workspace.toml) - cargo-dist configuration
     * [dist.toml](server/dist.toml) - additional cargo-dist configuration
+    * LLM runs
+      * [2026-04-04 query](llm/claude_2026-04-04_history.md) and [response](llm/claude_2026-04-04_query_and_responses.md)
 
 Misc
 ================================================================================
