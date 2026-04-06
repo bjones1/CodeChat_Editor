@@ -22,7 +22,7 @@
 ///
 /// The cache stores the location (file name and anchor), numbering (of headings
 /// in the TOC and figures/equations/etc. on a page), and contents (title text
-/// or code/doc blocks for tags) of a target. Targets are HTML element with an
+/// or code/doc blocks for tags) of a target. Targets are HTML elements with an
 /// id, making them anchors (such as headings, figure titles, display equations,
 /// tags, hyperlinks, etc.), or files.
 ///
@@ -176,6 +176,8 @@ pub struct Cache {
     pub(super) pending_files: Vec<PathBuf>,
     /// The root directory of this project.
     pub(super) root: PathBuf,
+    /// TODO: search engine data storage. Search fields: target id, contents,
+    /// file name. Perhaps [Tantivy](https://docs.rs/tantivy/latest/tantivy/)?
 }
 
 /// This stores metadata for given file. For non-page files (non-existent files,

@@ -1,5 +1,5 @@
 // TODO: Remove this after implementing the cache.
-//#![allow(unused)]
+#![allow(unused)]
 
 // Copyright (C) 2025 Bryan A. Jones.
 //
