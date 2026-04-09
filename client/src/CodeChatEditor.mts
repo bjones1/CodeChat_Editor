@@ -15,7 +15,7 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `CodeChatEditor.mts` -- the CodeChat Editor Client
-// =============================================================================
+// ==================================================
 //
 // The overall process of load a file is:
 //
@@ -39,7 +39,7 @@
 //    writes this code to the disk.
 //
 // Imports
-// -----------------------------------------------------------------------------
+// -------
 //
 // ### JavaScript/TypeScript
 //
@@ -78,7 +78,7 @@ import { show_toast } from "./show_toast.mjs";
 import "./css/CodeChatEditor.css";
 
 // Data structures
-// -----------------------------------------------------------------------------
+// ---------------
 //
 // <a id="EditorMode"></a>Define all possible editor modes; these are passed as
 // a [query string](https://en.wikipedia.org/wiki/Query_string)
@@ -119,7 +119,7 @@ declare global {
 }
 
 // Globals
-// -----------------------------------------------------------------------------
+// -------
 //
 // The ID of the autosave timer; when this timer expires, the document will be
 // autosaved.
@@ -145,7 +145,7 @@ export const set_is_dirty = (value: boolean = true) => {
 export const get_is_dirty = () => is_dirty;
 
 // Page initialization
-// -----------------------------------------------------------------------------
+// -------------------
 
 // This is copied from
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
@@ -160,7 +160,7 @@ export const on_dom_content_loaded = (on_load_func: () => void) => {
 };
 
 // File handling
-// -----------------------------------------------------------------------------
+// -------------
 //
 // True if this is a CodeChat Editor document (not a source file).
 const is_doc_only = () => {
@@ -561,7 +561,7 @@ const clearAutosaveTimer = () => {
 };
 
 // Navigation
-// -----------------------------------------------------------------------------
+// ----------
 //
 // The TOC and this page calls this when a hyperlink is clicked. This saves the
 // current document before navigating.
@@ -704,7 +704,7 @@ on_dom_content_loaded(async () => {
 });
 
 // Testing
-// -----------------------------------------------------------------------------
+// -------
 //
 // A great and simple idea taken from
 // [SO](https://stackoverflow.com/a/54116079): wrap all testing exports in a
