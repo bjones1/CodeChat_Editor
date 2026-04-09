@@ -812,7 +812,10 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         // This process causes TinyMCE to lose focus. Restore
                         // that. However, this causes TinyMCE to lose the
                         // selection, which the next bit of code then restores.
-                        tinymce.activeEditor!.focus(false);
+                        // When the doc block is longer than a screen, omitting
+                        // the `preventScroll` parameter causes this to scroll
+                        // to the top of the doc block, which is incorrect.
+                        tinymce_div.focus({ preventScroll: true });
 
                         // Copy the selection over to TinyMCE by indexing the
                         // selection path to find the selected node.
