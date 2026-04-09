@@ -14,7 +14,7 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `overall_core/mod.rs` - test the overall system
-/// ============================================================================
+/// ===============================================
 ///
 /// These are functional tests of the overall system, performed by attaching a
 /// testing IDE to generate commands then observe results, along with a browser
@@ -35,7 +35,7 @@
 ///   caught using `catch_unwind()`. The driver is shut down before returning an
 ///   error due to the panic.
 // Imports
-// -----------------------------------------------------------------------------
+// -------
 //
 // ### Standard library
 use std::{collections::HashMap, error::Error, path::Path, time::Duration};
@@ -57,7 +57,7 @@ use code_chat_editor::{
 use test_utils::cast;
 
 // Utilities
-// -----------------------------------------------------------------------------
+// ---------
 //
 // Not all messages produced by the server are ordered. To accommodate
 // out-of-order messages, this class provides a way to `insert` expected
@@ -256,7 +256,8 @@ macro_rules! make_test {
             $test_name::harness($test_core_name, prep_test_dir!()).await
         }
 
-        // Some of the thirtyfour calls are marked as deprecated, though they aren't
+        // Some of the thirtyfour calls are marked as deprecated, though they
+        // aren't
     };
 }
 // Given an `Update` message with contents, get the version.
@@ -268,7 +269,8 @@ pub fn get_version(msg: &EditorMessage) -> f64 {
         .version
 }
 
-// Used in one of the common tests, but not in the other...so we get a clippy lint.
+// Used in one of the common tests, but not in the other...so we get a clippy
+// lint.
 #[allow(dead_code)]
 pub async fn goto_line(
     codechat_server: &CodeChatEditorServer,
@@ -411,7 +413,8 @@ pub async fn select_codechat_iframe(driver_ref: &WebDriver) -> WebElement {
     codechat_iframe
 }
 
-// Used in one of the common tests, but not in the other...so we get a clippy lint.
+// Used in one of the common tests, but not in the other...so we get a clippy
+// lint.
 #[allow(dead_code)]
 pub async fn get_empty_client_update(
     codechat_server: &CodeChatEditorServer,

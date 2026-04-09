@@ -13,19 +13,18 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `overall_core/mod.rs` - test the overall system
-/// ============================================================================
+/// `overall_2.rs` - test the overall system
+/// ========================================
 ///
 /// These are functional tests of the overall system, performed by attaching a
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
-///
 // Modules
-// -----------------------------------------------------------------------------
+// -------
 mod overall_common;
 
 // Imports
-// -----------------------------------------------------------------------------
+// -------
 //
 // ### Standard library
 use std::{
@@ -68,7 +67,7 @@ use test_utils::{cast, prep_test_dir};
 make_test!(test_4, test_4_core);
 
 // Tests
-// -----------------------------------------------------------------------------
+// -----
 async fn test_4_core(
     codechat_server: CodeChatEditorServer,
     driver_ref: &WebDriver,
@@ -102,7 +101,8 @@ async fn test_4_core(
     // Target the iframe containing the Client.
     select_codechat_iframe(driver_ref).await;
 
-    // Switch from one doc block to another. It should produce an update with only cursor/scroll info (no contents).
+    // Switch from one doc block to another. It should produce an update with
+    // only cursor/scroll info (no contents).
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     let doc_blocks = driver_ref.find_all(By::Css(".CodeChat-doc")).await.unwrap();
     doc_blocks[0].click().await.unwrap();

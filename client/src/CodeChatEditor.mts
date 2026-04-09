@@ -216,14 +216,16 @@ const _open_lp = async (
     // render is finished.
     await window.MathJax.startup.promise;
 
-    // Process any pending events before proceeding. Sometimes, TinyMCE has a pending edit that hasn't been processed yet, meaning the `is_dirty` flag is incorrect.
+    // Process any pending events before proceeding. Sometimes, TinyMCE has a
+    // pending edit that hasn't been processed yet, meaning the `is_dirty` flag
+    // is incorrect.
     tinymce.activeEditor?.save();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // The only call to `await` is based on TinyMCE init, which should only cause an
-    // async delay on its first execution. (Even then, I'm not sure it does,
-    // since all resources are statically imported). So, we should be OK for the
-    // rest of this function.
+    // The only call to `await` is based on TinyMCE init, which should only
+    // cause an async delay on its first execution. (Even then, I'm not sure it
+    // does, since all resources are statically imported). So, we should be OK
+    // for the rest of this function.
     //
     // Now, make all decisions about `is_dirty`: if the text is dirty, do some
     // special processing; simply applying the update could cause either data

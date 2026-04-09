@@ -13,18 +13,18 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `overall_core/mod.rs` - test the overall system
-/// ============================================================================
+/// `overall_1.rs` - test the overall system
+/// ========================================
 ///
 /// These are functional tests of the overall system, performed by attaching a
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
 // Modules
-// -----------------------------------------------------------------------------
+// -------
 mod overall_common;
 
 // Imports
-// -----------------------------------------------------------------------------
+// -------
 //
 // ### Standard library
 use std::{
@@ -66,7 +66,7 @@ use code_chat_editor::{
 use test_utils::{cast, prep_test_dir};
 
 // Tests
-// -----------------------------------------------------------------------------
+// -----
 //
 // ### Server-side test
 //
@@ -761,13 +761,15 @@ async fn test_client_updates_core(
         .await
         .unwrap();
 
-    // Get the next message, which could be a cursor update followed by a text update, or just the text update.
+    // Get the next message, which could be a cursor update followed by a text
+    // update, or just the text update.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     let mut msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     if let EditorMessageContents::Update(ref update) = msg.message
         && update.contents.is_none()
     {
-        // Sometimes, we get just a cursor update. If so, verify this then wait for the text update.
+        // Sometimes, we get just a cursor update. If so, verify this then wait
+        // for the text update.
         assert_eq!(
             codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
             EditorMessage {
@@ -870,8 +872,8 @@ async fn test_client_updates_core(
     codechat_server.send_result(client_id, None).await.unwrap();
     //client_id += MESSAGE_ID_INCREMENT;
 
-    // The Server sends the Client a re-translated version of the text with the new doc block; the Client
-    // replies with a Result(Ok).
+    // The Server sends the Client a re-translated version of the text with the
+    // new doc block; the Client replies with a Result(Ok).
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
