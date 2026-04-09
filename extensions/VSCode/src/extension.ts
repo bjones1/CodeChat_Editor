@@ -546,7 +546,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                         }
 
                         case "LoadFile": {
-                            const [load_file, is_current] = value as [
+                            const [load_file, is_client_current] = value as [
                                 string,
                                 boolean,
                             ];
@@ -556,7 +556,9 @@ export const activate = (context: vscode.ExtensionContext) => {
                             // If we have this file and the request is for the
                             // current file to edit/view in the Client, assign a
                             // version.
-                            if (doc !== undefined && is_current) {
+                            const is_current_ide =
+                                doc !== undefined && is_client_current;
+                            if (is_current_ide) {
                                 version = rand();
                             }
                             const load_file_result: null | [string, number] =
@@ -570,6 +572,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 id,
                                 load_file_result,
                             );
+                            // If this is the currently active file in VSCode,
+                            // send its cursor location that VSCode
+                            // automatically restores.
+                            if (is_current_ide) {
+                                send_update(false);
+                            }
                             break;
                         }
 
