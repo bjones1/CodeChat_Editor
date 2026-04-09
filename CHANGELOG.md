@@ -22,7 +22,8 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* No changes.
+* Fix losing last typed character when receiving a translation while a TinyMCE
+  edit is pending.
 
 Version 0.1.51 -- 2025-Feb-18
 -----------------------------

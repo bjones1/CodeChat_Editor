@@ -21,3 +21,5 @@
 #
 # dist build output
 target/
+
+# CodeChat Editor lexer: python. See TODO.
