@@ -96,7 +96,7 @@ impl ExpectedMessages {
         } else {
             panic!(
                 "Message not found: looked for \n{:#?}\nin:\n{:#?}",
-                editor_message, self.0
+                self.0, editor_message,
             );
         }
     }
@@ -453,10 +453,10 @@ pub async fn get_empty_client_update(
 }
 
 pub async fn assert_no_more_messages(codechat_server: &CodeChatEditorServer) {
-    assert_eq!(
-        codechat_server
-            .get_message_timeout(Duration::from_millis(500))
-            .await,
-        None
-    );
+    if let Some(msg) = codechat_server
+        .get_message_timeout(Duration::from_millis(500))
+        .await
+    {
+        panic!("Unprocessed messages: {:#?}", msg);
+    }
 }
