@@ -771,7 +771,7 @@ async fn test_client_updates_core(
         // Sometimes, we get just a cursor update. If so, verify this then wait
         // for the text update.
         assert_eq!(
-            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+            msg,
             EditorMessage {
                 id: client_id,
                 message: EditorMessageContents::Update(UpdateMessageContents {
