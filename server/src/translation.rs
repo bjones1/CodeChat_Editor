@@ -14,7 +14,7 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 /// `translation.rs` -- translate messages between the IDE and the Client
-/// ============================================================================
+/// =====================================================================
 ///
 /// The IDE extension client (IDE for short) and the CodeChat Editor Client (or
 /// Editor for short) exchange messages with each other, mediated by the
@@ -25,7 +25,7 @@
 /// the processing module.
 ///
 /// Overview
-/// ----------------------------------------------------------------------------
+/// --------
 ///
 /// ### Architecture
 ///
@@ -203,7 +203,7 @@
 /// in JavaScript) has a 53-bit mantissa, meaning IDs won't wrap around for a
 /// very long time.
 // Imports
-// -----------------------------------------------------------------------------
+// -------
 //
 // ### Standard library
 use std::{collections::HashMap, ffi::OsStr, fmt::Debug, path::PathBuf};
@@ -239,7 +239,7 @@ use crate::{
 };
 
 // Globals
-// -----------------------------------------------------------------------------
+// -------
 //
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH: usize = 500;
@@ -250,7 +250,7 @@ lazy_static! {
 }
 
 // Data structures
-// -----------------------------------------------------------------------------
+// ---------------
 #[derive(Clone, Debug, PartialEq)]
 pub enum EolType {
     Lf,
@@ -258,7 +258,7 @@ pub enum EolType {
 }
 
 // Code
-// -----------------------------------------------------------------------------
+// ----
 pub fn find_eol_type(s: &str) -> EolType {
     match EOL_FINDER.captures(s) {
         // Assume a line type for strings with no newlines.
@@ -1282,7 +1282,7 @@ fn debug_shorten<T: Debug>(val: T) -> String {
 }
 
 // Tests
-// -----------------------------------------------------------------------------
+// -----
 #[cfg(test)]
 mod tests {
     use crate::{processing::CodeMirrorDocBlock, translation::doc_block_compare};

@@ -15,13 +15,13 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // `extension.ts` - The CodeChat Editor Visual Studio Code extension
-// =============================================================================
+// =================================================================
 //
 // This extension creates a webview, then uses a websocket connection to the
 // CodeChat Editor Server and Client to render editor text in that webview.
 //
 // Imports
-// -----------------------------------------------------------------------------
+// -------
 //
 // ### Node.js packages
 import assert from "assert";
@@ -54,7 +54,7 @@ import {
 import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes.js";
 
 // Globals
-// -----------------------------------------------------------------------------
+// -------
 enum CodeChatEditorClientLocation {
     html,
     browser,
@@ -112,7 +112,7 @@ let codeChatEditorServer: CodeChatEditorServer | undefined;
 }
 
 // Activation/deactivation
-// -----------------------------------------------------------------------------
+// -----------------------
 //
 // This is invoked when the extension is activated. It either creates a new
 // CodeChat Editor Server instance or reveals the currently running one.
@@ -607,7 +607,7 @@ export const deactivate = async () => {
 };
 
 // Supporting functions
-// -----------------------------------------------------------------------------
+// --------------------
 //
 // Format a complex data structure as a string when in debug mode.
 /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
