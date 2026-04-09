@@ -167,7 +167,7 @@ class WebSocketComm {
                         if (contents !== undefined) {
                             // Check and update the version. If this is a diff,
                             // ensure the diff was made against the version of
-                            // the file we have. Ignore re-translation version errors, instead ignoring the update.
+                            // the file we have.
                             if ("Diff" in contents.source) {
                                 if (
                                     contents.source.Diff.version !==

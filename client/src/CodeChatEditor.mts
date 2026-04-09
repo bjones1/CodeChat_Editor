@@ -169,13 +169,13 @@ const is_doc_only = () => {
     return current_metadata?.["mode"] === "markdown";
 };
 
-// Wait for the DOM to load before opening the file.
 const open_lp = async (
     codechat_for_web: CodeChatForWeb,
     is_re_translation: boolean,
     cursor_line?: number,
     scroll_line?: number,
 ) =>
+    // Wait for the DOM to load before opening the file.
     await new Promise<void>((resolve) =>
         on_dom_content_loaded(async () => {
             await _open_lp(
@@ -216,7 +216,7 @@ const _open_lp = async (
     // render is finished.
     await window.MathJax.startup.promise;
 
-    // The only the `await` is based on TinyMCE init, which should only cause an
+    // The only call to `await` is based on TinyMCE init, which should only cause an
     // async delay on its first execution. (Even then, I'm not sure it does,
     // since all resources are statically imported). So, we should be OK for the
     // rest of this function.

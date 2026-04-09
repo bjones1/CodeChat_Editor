@@ -648,6 +648,7 @@ const on_dirty = (
     });
 };
 
+// Handle cursur movement and mouse selection in a doc block.
 export const DocBlockPlugin = ViewPlugin.fromClass(
     class {
         constructor(_view: EditorView) {}
@@ -655,7 +656,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
             // If the editor doesn't have focus, ignore selection changes. This
             // avoid the case where cursor movement in the IDE produces
             // selection changes in the Client, which then steals focus. TODO:
-            // with the editor isn't focused, highlight the relevant line or
+            // when the editor isn't focused, highlight the relevant line or
             // something similar.
             if (update.selectionSet && update.view.hasFocus) {
                 // See if the new main selection falls within a doc block.
@@ -690,7 +691,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                 return;
                             }
 
-                            // TODO: current, posToDom never gives us a doc
+                            // TODO: currently, posToDom never gives us a doc
                             // block, even when the from/to is correct. So, we
                             // never get here.
                             (dom.childNodes[1] as HTMLElement).focus();
