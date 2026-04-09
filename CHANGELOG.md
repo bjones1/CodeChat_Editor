@@ -22,16 +22,24 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+* No changes.
+
+Version 0.1.52 -- 2026-Apr-09
+-----------------------------
+
 * Fix losing last typed character when receiving a translation while a TinyMCE
   edit is pending.
+* Avoid unnecessary and distracting scrolling to the top of a doc block when
+  focusing the doc block.
+* When first switching to a file, restore the cursor position from VSCode.
 
-Version 0.1.51 -- 2025-Feb-18
+Version 0.1.51 -- 2026-Feb-18
 -----------------------------
 
 * Revert back to working version of CodeMirror.
 * Updates to other libraries.
 
-Version 0.1.50 -- 2025-Feb-05
+Version 0.1.50 -- 2026-Feb-05
 -----------------------------
 
 * First and second-level heading underlines are now sized based on the heading's
