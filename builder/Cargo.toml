@@ -24,6 +24,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+axotag = "0.3.0"
 clap = { version = "4", features = ["derive"] }
 cmd_lib = "2.0.0"
 current_platform = "0.2.0"

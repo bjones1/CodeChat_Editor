@@ -149,7 +149,7 @@ jobs:
           server/bt prerelease
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
-          server/bt postrelease ${{ matrix.dist_args }}
+          server/bt postrelease ${{ matrix.dist_args }} ${{ needs.plan.outputs.tag-flag }}
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build
