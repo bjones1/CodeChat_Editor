@@ -24,7 +24,7 @@ Changelog
 
 * No changes yet.
 
-Version 0.1.54-beta1 -- 2026-May-11
+Version 0.1.55-beta1 -- 2026-May-12
 -----------------------------------
 
 * Correct Markdown conversion of the last doc block -- properly append all
