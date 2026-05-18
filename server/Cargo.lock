@@ -376,9 +376,9 @@ dependencies = [
 
 [[package]]
 name = "assert_cmd"
-version = "2.2.1"
+version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39bae1d3fa576f7c6519514180a72559268dd7d1fe104070956cb687bc6673bd"
+checksum = "2aa3a22042e45de04255c7bf3626e239f450200fd0493c1e382263544b20aea6"
 dependencies = [
  "anstyle",
  "bstr",
@@ -730,7 +730,7 @@ dependencies = [
 
 [[package]]
 name = "codechat-editor-server"
-version = "0.1.54-beta1"
+version = "0.1.55-beta1"
 dependencies = [
  "actix-files",
  "actix-http",

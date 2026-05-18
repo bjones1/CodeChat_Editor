@@ -41,6 +41,7 @@ use std::{
 };
 
 // ### Third-party
+use axotag::parse_tag;
 use clap::{Parser, Subcommand};
 use cmd_lib::run_cmd;
 use current_platform::CURRENT_PLATFORM;
@@ -106,6 +107,9 @@ enum Commands {
         /// avoid an error.
         #[arg(short, long)]
         artifacts: Option<String>,
+        /// The tag which started this build.
+        #[arg(long)]
+        tag: String,
     },
 }
 
@@ -724,12 +728,12 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
     )?;
     search_and_replace_file(
         format!("{VSCODE_PATH}/package.json"),
-        r#"(\r?\n    "version": ")[\d.]+(",\r?\n)"#,
+        r#"(\r?\n    "version": ")[\d.]+(?:-[a-z\d]*)(",\r?\n)"#,
         &replacement_string,
     )?;
     search_and_replace_file(
         format!("{CLIENT_PATH}/package.json5"),
-        r#"(\r?\n    version: ')[\d.]+(',\r?\n)"#,
+        r#"(\r?\n    version: ')[\d.]+(?:-[a-z\d]*)(',\r?\n)"#,
         &replacement_string,
     )?;
     Ok(())
@@ -742,7 +746,7 @@ fn run_prerelease() -> io::Result<()> {
     run_client_build(true, false)
 }
 
-fn run_postrelease(target: &str) -> io::Result<()> {
+fn run_postrelease(target: &str, tag: &str) -> io::Result<()> {
     // Copy all the Client static files needed by the embedded Server to the
     // VSCode extension.
     let client_static_dir = format!("{VSCODE_PATH}/static");
@@ -762,27 +766,36 @@ fn run_postrelease(target: &str) -> io::Result<()> {
         "aarch64-apple-darwin" => "darwin-arm64",
         _ => panic!("Unsupported platform {target}."),
     };
+
+    // Determine if this is a pre-release from the version tag. While `dist`
+    // does this, it doesn't provide this data in CI until the `host` step,
+    // which comes after this is called. Determine it based on the tag.
+    let is_prerelease = if let Ok(parsed_tag) = parse_tag(&[], tag) {
+        parsed_tag.prerelease
+    } else {
+        false
+    };
+    let mut args = vec![
+        "vsce",
+        "package",
+        // We use esbuild to package; therefore, tell `vsce` not to package.
+        "--no-dependencies",
+        // Since we include the server as a binary, package for the architecture
+        // the binary was build for.
+        "--target",
+        vsce_target,
+    ];
+    if is_prerelease {
+        args.push("--pre-release");
+    }
+
     // `vsce` will invoke this program's `ext_build`; however, it doesn't
     // provide a way to pass the target when cross-compiling. Use an environment
     // variable instead.
     unsafe {
         env::set_var(NAPI_TARGET, target);
     }
-    run_script(
-        "npx",
-        &[
-            "vsce",
-            "package",
-            // We use esbuild to package; therefore, tell `vsce` not to package.
-            "--no-dependencies",
-            // Since we include the server as a binary, package for the
-            // architecture the binary was build for.
-            "--target",
-            vsce_target,
-        ],
-        VSCODE_PATH,
-        true,
-    )?;
+    run_script("npx", &args, VSCODE_PATH, true)?;
 
     Ok(())
 }
@@ -808,7 +821,7 @@ impl Cli {
             }
             Commands::ChangeVersion { new_version } => run_change_version(new_version),
             Commands::Prerelease => run_prerelease(),
-            Commands::Postrelease { target, .. } => run_postrelease(target),
+            Commands::Postrelease { target, tag, .. } => run_postrelease(target, tag),
         }
     }
 }

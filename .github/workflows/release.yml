@@ -149,7 +149,7 @@ jobs:
           server/bt prerelease
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
-          server/bt postrelease ${{ matrix.dist_args }}
+          server/bt postrelease ${{ matrix.dist_args }} ${{ needs.plan.outputs.tag-flag }}
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build
@@ -289,10 +289,12 @@ jobs:
           VSCE_ARGS: --changelog-path docs/changelog.md
         run: |
           npm install -g @vscode/vsce
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-win32-x64-${APP_VERSION}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-linux-x64-${APP_VERSION}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-x64-${APP_VERSION}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-arm64-${APP_VERSION}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
+          # vsce doesn't support prerelease portions of a semver, so strip that
+          # out of the `APP_VERSION` before use.
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-win32-x64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-linux-x64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-x64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
+          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-arm64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
 
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
