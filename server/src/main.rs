@@ -332,10 +332,15 @@ fn port_in_range(s: &str) -> Result<u16, String> {
 
 fn parse_credentials(s: &str) -> Result<Credentials, String> {
     // For simplicity, require a username to have no colons.
-    let split: Vec<_> = s.splitn(2, ":").collect();
+    let Some((username, password)) = s.split_once(':') else {
+        return Err("auth must use the form username:password".to_string());
+    };
+    if username.is_empty() {
+        return Err("auth username may not be empty".to_string());
+    }
     Ok(Credentials {
-        username: split[0].to_string(),
-        password: split[1].to_string(),
+        username: username.to_string(),
+        password: password.to_string(),
     })
 }
 

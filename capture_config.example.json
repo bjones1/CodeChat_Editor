@@ -1,0 +1,9 @@
+{
+    "host": "your-aws-rds-endpoint.amazonaws.com",
+    "port": 5432,
+    "user": "codechat_capture_writer",
+    "password": "your-db-password",
+    "dbname": "your-db-name",
+    "app_id": "dissertation",
+    "fallback_path": "capture-events-fallback.jsonl"
+}

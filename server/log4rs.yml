@@ -40,7 +40,7 @@ loggers:
     level: warn
 
 root:
-  level: info
+  level: debug
   appenders:
     - console_appender
     - file_appender

@@ -693,8 +693,15 @@ export const on_error = (event: Event) => {
     let err_str: string;
     if (event instanceof ErrorEvent) {
         err_str = `${event.filename}:${event.lineno}: ${event.message}`;
+        if (event.error?.stack) {
+            err_str += `\n${event.error.stack}`;
+        }
     } else if (event instanceof PromiseRejectionEvent) {
-        err_str = `${event.promise} rejected: ${event.reason}`;
+        const reason = event.reason;
+        err_str = `${event.promise} rejected: ${reason}`;
+        if (reason instanceof Error && reason.stack) {
+            err_str += `\n${reason.stack}`;
+        }
     } else {
         err_str = `Unexpected error ${typeof event}: ${event}`;
     }

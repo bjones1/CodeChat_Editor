@@ -41,11 +41,7 @@
         "type": "git",
         "url": "https://github.com/bjones1/CodeChat_Editor"
     },
-    "version": "0.1.55",
-    "activationEvents": [
-        "onCommand:extension.codeChatEditorActivate",
-        "onCommand:extension.codeChatEditorDeactivate"
-    ],
+    "version": "0.1.54-beta1",
     "contributes": {
         "configuration": {
             "title": "CodeChat Editor",
@@ -62,6 +58,26 @@
                         "In the default external web browser"
                     ],
                     "markdownDescription": "Select the location of the CodeChat Editor Client. After changing this value, you **must** close then restart the CodeChat Editor extension."
+                },
+                "CodeChatEditor.Capture.RecordStudyEvents": {
+                    "type": "boolean",
+                    "default": false,
+                    "markdownDescription": "Record CodeChat dissertation capture events. This defaults to off. Consent is recorded through **Manage CodeChat Editor Capture** and also defaults to off.\n\n| Consent recorded | Record study events | What happens |\n| --- | --- | --- |\n| Off | Off | Capture is off. |\n| On | Off | Consent is retained, but recording is paused. |\n| On | On | Capture records study events. |\n| Off | On | Capture waits for consent before recording. |"
+                },
+                "CodeChatEditor.Capture.ConsentEnabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "markdownDescription": "Record that participant consent has been given for CodeChat dissertation capture. This defaults to off and persists after setting."
+                },
+                "CodeChatEditor.Capture.ParticipantId": {
+                    "type": "string",
+                    "default": "",
+                    "markdownDescription": "Pseudonymous participant identifier used as the capture user_id. If left blank, CodeChat generates a UUID when the student gives consent."
+                },
+                "CodeChatEditor.Capture.HashFilePaths": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Hash local file paths before they are sent to capture storage."
                 }
             }
         },
@@ -73,6 +89,14 @@
             {
                 "command": "extension.codeChatEditorDeactivate",
                 "title": "Disable the CodeChat Editor"
+            },
+            {
+                "command": "extension.codeChatCaptureStatus",
+                "title": "Manage CodeChat Editor Capture"
+            },
+            {
+                "command": "extension.codeChatInsertReflectionPrompt",
+                "title": "CodeChat Editor: Insert Reflection Prompt"
             }
         ]
     },

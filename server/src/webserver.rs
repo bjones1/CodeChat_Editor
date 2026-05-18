@@ -38,6 +38,7 @@ use std::{
 
 // ### Third-party
 use actix_files;
+
 use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer,
     dev::{Server, ServerHandle, ServiceFactory, ServiceRequest},
@@ -47,6 +48,7 @@ use actix_web::{
     middleware,
     web::{self, Data},
 };
+
 use actix_web_httpauth::{extractors::basic::BasicAuth, middleware::HttpAuthentication};
 use actix_ws::AggregatedMessage;
 use bytes::Bytes;
@@ -94,6 +96,13 @@ use crate::{
         source_to_codechat_for_web_string,
     },
 };
+
+use crate::capture::{
+    CaptureEvent, CaptureEventMetadata, CaptureEventType, CaptureStatus, EventCapture,
+    generate_capture_event_id, load_capture_config,
+};
+
+use chrono::Utc;
 
 // Data structures
 // ---------------
@@ -201,6 +210,8 @@ pub enum EditorMessageContents {
         // Server will determine the value if needed.
         Option<bool>,
     ),
+    /// Record an instrumentation event. Valid destinations: Server.
+    Capture(Box<CaptureEventWire>),
 
     // #### These messages may only be sent by the IDE.
     /// This is the first message sent when the IDE starts up. It may only be
@@ -405,6 +416,8 @@ pub struct AppState {
     pub connection_id: Mutex<HashSet<String>>,
     /// The auth credentials if authentication is used.
     credentials: Option<Credentials>,
+    // Added to support capture - JDS - 11/2025
+    pub capture: Option<EventCapture>,
 }
 
 pub type WebAppState = web::Data<AppState>;
@@ -413,6 +426,61 @@ pub type WebAppState = web::Data<AppState>;
 pub struct Credentials {
     pub username: String,
     pub password: String,
+}
+
+/// JSON payload received from clients for capture events.
+///
+/// The server supplies the authoritative timestamp. Study metadata such as
+/// course, assignment, group, condition, and task is not part of this wire type:
+/// those values are inferred later from researcher-managed mappings keyed by
+/// the pseudonymous `user_id` and event timestamps.
+#[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export, optional_fields)]
+pub struct CaptureEventWire {
+    /// Client-generated unique event identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+    /// Client-local event order for one extension session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequence_number: Option<i64>,
+    /// Capture payload schema version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<i32>,
+    /// Pseudonymous participant UUID. This is not the student's real identity.
+    pub user_id: String,
+    /// Logical capture session UUID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Source of this event, such as the VS Code extension or server translation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_source: Option<String>,
+    /// VS Code language identifier for the active file, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_id: Option<String>,
+    /// SHA-256 hash of the local file path when path hashing is enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_hash: Option<String>,
+    /// Raw file path only when path hashing is disabled for debugging.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+    /// Whether the path was sent plainly, hashed, or omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_privacy: Option<String>,
+    /// Canonical capture event type.
+    pub event_type: CaptureEventType,
+
+    /// Optional client-side timestamp (milliseconds since Unix epoch).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_timestamp_ms: Option<i64>,
+
+    /// Optional client timezone offset in minutes (JS Date().getTimezoneOffset()).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_tz_offset_min: Option<i32>,
+
+    /// Arbitrary event-specific data stored as JSON (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(type = "unknown")]
+    pub data: Option<serde_json::Value>,
 }
 
 // Macros
@@ -449,7 +517,7 @@ macro_rules! queue_send_func {
 // The timeout for a reply from a websocket, in ms. Use a short timeout to speed
 // up unit tests.
 pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
-    Duration::from_millis(500)
+    Duration::from_millis(2500)
 } else {
     Duration::from_millis(15000)
 };
@@ -601,6 +669,65 @@ async fn stop(app_state: WebAppState) -> HttpResponse {
     // following HTTP response. Assign it to a variable to suppress the warning.
     drop(server_handle.stop(true));
     HttpResponse::NoContent().finish()
+}
+
+#[get("/capture/status")]
+async fn capture_status_endpoint(app_state: WebAppState) -> HttpResponse {
+    HttpResponse::Ok().json(capture_status(&app_state))
+}
+
+/// Log a capture event if capture is enabled.
+pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> CaptureStatus {
+    if let Some(capture) = &app_state.capture {
+        let server_timestamp = Utc::now();
+        // Default missing data to empty object
+        let data = wire.data.unwrap_or_else(|| serde_json::json!({}));
+
+        let data = if data.is_object() {
+            data
+        } else {
+            serde_json::json!({ "value": data })
+        };
+
+        let metadata = CaptureEventMetadata {
+            event_id: Some(
+                wire.event_id
+                    .unwrap_or_else(|| generate_capture_event_id("server")),
+            ),
+            sequence_number: wire.sequence_number,
+            schema_version: wire.schema_version,
+            session_id: wire.session_id,
+            event_source: wire.event_source,
+            language_id: wire.language_id,
+            file_hash: wire.file_hash,
+            path_privacy: wire.path_privacy,
+            client_timestamp_ms: wire.client_timestamp_ms,
+            client_tz_offset_min: wire.client_tz_offset_min,
+            server_timestamp_ms: Some(server_timestamp.timestamp_millis()),
+        };
+
+        let event = CaptureEvent::with_metadata(
+            wire.user_id,
+            wire.file_path,
+            wire.event_type,
+            server_timestamp,
+            data,
+            metadata,
+        );
+
+        capture.log(event);
+        capture.status()
+    } else {
+        CaptureStatus::disabled()
+    }
+}
+
+pub fn capture_status(app_state: &WebAppState) -> CaptureStatus {
+    app_state
+        .capture
+        .as_ref()
+        .map(EventCapture::status)
+        .unwrap_or_else(CaptureStatus::disabled)
 }
 
 // Get the `mode` query parameter to determine `is_test_mode`; default to
@@ -1451,9 +1578,6 @@ pub fn setup_server(
     addr: &SocketAddr,
     credentials: Option<Credentials>,
 ) -> std::io::Result<(Server, Data<AppState>)> {
-    // Connect to the Capture Database
-    //let _event_capture = EventCapture::new("config.json").await?;
-
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
     let app_data = make_app_data(credentials);
@@ -1529,6 +1653,22 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
 pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
+    // Initialize event capture from a config file (optional).
+    let root_path = ROOT_PATH.lock().unwrap().clone();
+    let capture: Option<EventCapture> = load_capture_config(&root_path).and_then(|cfg| {
+        let summary = cfg.redacted_summary();
+        match EventCapture::new(cfg) {
+            Ok(ec) => {
+                info!("Capture: enabled ({summary})");
+                Some(ec)
+            }
+            Err(err) => {
+                warn!("Capture: failed to initialize ({summary}): {err}");
+                None
+            }
+        }
+    });
+
     web::Data::new(AppState {
         server_handle: Mutex::new(None),
         filewatcher_next_connection_id: Mutex::new(0),
@@ -1539,6 +1679,7 @@ pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
         client_queues: Arc::new(Mutex::new(HashMap::new())),
         connection_id: Mutex::new(HashSet::new()),
         credentials,
+        capture,
     })
 }
 
@@ -1568,6 +1709,7 @@ where
         .service(vscode_client_framework)
         .service(ping)
         .service(stop)
+        .service(capture_status_endpoint)
         // Reroute to the filewatcher filesystem for typical user-requested
         // URLs.
         .route("/", web::get().to(filewatcher_root_fs_redirect))

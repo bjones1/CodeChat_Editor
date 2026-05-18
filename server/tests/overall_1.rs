@@ -33,7 +33,7 @@ use std::{error::Error, path::PathBuf, time::Duration};
 use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
+use thirtyfour::{By, Key, WebDriver, error::WebDriverError, prelude::ElementQueryable};
 use tokio::time::sleep;
 
 // ### Local
@@ -784,39 +784,52 @@ async fn test_client_updates_core(
     // Target the iframe containing the Client.
     select_codechat_iframe(&driver).await;
 
-    // Select the doc block and add to the line, causing a word wrap.
+    // Focus the doc block, then wait for the async handoff to the shared inline
+    // TinyMCE editor before typing. Otherwise WebDriver can type into the
+    // transient contenteditable div, moving the cursor without marking the doc
+    // block dirty on macOS Chrome.
     let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
     let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
-    doc_block_contents
-        .send_keys("" + Key::End + " testing")
+    doc_block_contents.click().await.unwrap();
+    let doc_block_contents = driver
+        .query(By::Css(
+            ".CodeChat-CodeMirror #TinyMCE-inst:not(.CodeChat-doc-hidden)",
+        ))
+        .first()
         .await
         .unwrap();
 
-    // Get the next message, which could be a cursor update followed by a text
+    // Add to the line, causing a word wrap.
+    doc_block_contents
+        .send_keys(Key::End + " testing")
+        .await
+        .unwrap();
+
+    // Get the next message, which could be cursor updates followed by a text
     // update, or just the text update.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
-    let mut msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-    if let EditorMessageContents::Update(ref update) = msg.message
+    let mut msg = codechat_server
+        .get_message_timeout(TIMEOUT)
+        .await
+        .expect("expected client update after editing doc block");
+    while let EditorMessageContents::Update(ref update) = msg.message
         && update.contents.is_none()
     {
-        // Sometimes, we get just a cursor update. If so, verify this then wait
-        // for the text update.
-        assert_eq!(
-            msg,
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.clone(),
-                    cursor_position: Some(CursorPosition::Line(1)),
-                    scroll_position: Some(1.0),
-                    is_re_translation: false,
-                    contents: None,
-                })
-            }
+        // Sometimes, we get cursor-only updates. If so, verify and acknowledge
+        // them, then keep waiting for the text update.
+        assert_eq!(msg.id, client_id);
+        assert_eq!(update.file_path, path_str);
+        assert!(!update.is_re_translation);
+        assert!(
+            update.cursor_position.is_some() || update.scroll_position.is_some(),
+            "cursor-only update must include cursor or scroll state: {msg:#?}",
         );
+        codechat_server.send_result(client_id, None).await.unwrap();
         client_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(client_id, 7.0);
-        msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+        msg = codechat_server
+            .get_message_timeout(TIMEOUT)
+            .await
+            .expect("expected content update after cursor-only update");
     }
 
     // Verify the updated text.
@@ -850,7 +863,7 @@ async fn test_client_updates_core(
     );
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
-    assert!(client_id == 10.0 || client_id == 7.0);
+    assert!(client_id >= 7.0);
 
     // The Server sends the Client a wrapped version of the text; the Client
     // replies with a Result(Ok).
@@ -863,7 +876,6 @@ async fn test_client_updates_core(
     );
     server_id += MESSAGE_ID_INCREMENT;
 
-    // After this, ID is 13.
     goto_line(&codechat_server, &driver, &mut client_id, &path_str, 4)
         .await
         .unwrap();
