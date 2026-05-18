@@ -435,17 +435,16 @@ function captureLog(message: string): void {
 }
 
 function capturePayloadSummary(payload: CaptureEventWire): string {
-    const data = payload.data as CaptureEventData;
     return [
         `type=${payload.event_type}`,
         `event_id=${payload.event_id}`,
         `sequence=${payload.sequence_number?.toString()}`,
         `schema=${payload.schema_version}`,
         `user_id=${payload.user_id}`,
-        `session_id=${data.session_id}`,
+        `session_id=${payload.session_id}`,
         `source=${payload.event_source}`,
         `language=${payload.language_id ?? ""}`,
-        `path_privacy=${data.path_privacy ?? ""}`,
+        `path_privacy=${payload.path_privacy ?? ""}`,
         payload.file_hash ? `file_hash=${payload.file_hash}` : "",
         payload.file_path ? `file_path=${payload.file_path}` : "",
     ]
@@ -517,15 +516,15 @@ async function sendCaptureEvent(
         sequence_number: BigInt(++captureSequenceNumber),
         schema_version: CAPTURE_SCHEMA_VERSION,
         user_id: participantId,
+        session_id: CAPTURE_SESSION_ID,
         event_source: CAPTURE_EVENT_SOURCE,
         ...fileFields,
+        path_privacy: settings.hashFilePaths ? "sha256" : "plain",
         event_type: eventType,
         client_timestamp_ms: BigInt(Date.now()),
         client_tz_offset_min: new Date().getTimezoneOffset(),
         data: {
             ...data,
-            session_id: CAPTURE_SESSION_ID,
-            path_privacy: settings.hashFilePaths ? "sha256" : "plain",
             capture_active: captureActive,
             // A control-only event updates the server's capture context but is
             // intentionally not inserted into capture storage.

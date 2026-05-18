@@ -33,7 +33,7 @@ use std::{error::Error, path::PathBuf, time::Duration};
 use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, Key, WebDriver, WebElement, error::WebDriverError};
+use thirtyfour::{By, Key, WebDriver, error::WebDriverError, prelude::ElementQueryable};
 use tokio::time::sleep;
 
 // ### Local
@@ -753,17 +753,6 @@ async fn test_client_core(
 
 make_test!(test_client_updates, test_client_updates_core);
 
-async fn wait_for_element(driver: &WebDriver, css: &str) -> Result<WebElement, WebDriverError> {
-    for _ in 0..50 {
-        if let Ok(element) = driver.find(By::Css(css)).await {
-            return Ok(element);
-        }
-        sleep(Duration::from_millis(100)).await;
-    }
-
-    driver.find(By::Css(css)).await
-}
-
 async fn test_client_updates_core(
     codechat_server: CodeChatEditorServer,
     driver: WebDriver,
@@ -802,12 +791,13 @@ async fn test_client_updates_core(
     let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
     let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
     doc_block_contents.click().await.unwrap();
-    let doc_block_contents = wait_for_element(
-        &driver,
-        ".CodeChat-CodeMirror #TinyMCE-inst:not(.CodeChat-doc-hidden)",
-    )
-    .await
-    .unwrap();
+    let doc_block_contents = driver
+        .query(By::Css(
+            ".CodeChat-CodeMirror #TinyMCE-inst:not(.CodeChat-doc-hidden)",
+        ))
+        .first()
+        .await
+        .unwrap();
 
     // Add to the line, causing a word wrap.
     doc_block_contents

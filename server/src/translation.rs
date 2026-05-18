@@ -459,8 +459,10 @@ struct CaptureContext {
     user_id: Option<String>,
     /// Origin of the client event stream, such as the VS Code extension.
     event_source: Option<String>,
-    /// Extension session UUID carried in the event data payload.
+    /// Extension session UUID carried on the capture wire payload.
     session_id: Option<String>,
+    /// Whether extension-originated file paths are sent plainly or hashed.
+    path_privacy: Option<String>,
     /// Client timezone offset in minutes, retained for generated write events.
     client_tz_offset_min: Option<i32>,
     /// Capture payload schema version from the extension.
@@ -489,6 +491,12 @@ impl CaptureContext {
         if let Some(event_source) = &wire.event_source {
             self.event_source = Some(event_source.clone());
         }
+        if let Some(session_id) = &wire.session_id {
+            self.session_id = Some(session_id.clone());
+        }
+        if let Some(path_privacy) = &wire.path_privacy {
+            self.path_privacy = Some(path_privacy.clone());
+        }
         if let Some(schema_version) = wire.schema_version {
             self.schema_version = Some(schema_version);
         }
@@ -504,10 +512,13 @@ impl CaptureContext {
             {
                 self.active = active;
             }
-            // The extension's logical capture session ties server-classified
-            // write events to the same session as extension-originated events.
+            // Support older wire payloads that stored this metadata in `data`.
             if let Some(session_id) = data.get("session_id").and_then(serde_json::Value::as_str) {
                 self.session_id = Some(session_id.to_string());
+            }
+            if let Some(path_privacy) = data.get("path_privacy").and_then(serde_json::Value::as_str)
+            {
+                self.path_privacy = Some(path_privacy.to_string());
             }
         }
     }
@@ -533,10 +544,6 @@ impl CaptureContext {
                 map
             }
         };
-        if let Some(session_id) = &self.session_id {
-            data.entry("session_id".to_string())
-                .or_insert_with(|| serde_json::json!(session_id));
-        }
         // Preserve any existing source field, but default server-generated
         // events to `server_translation` for analysis.
         data.entry("source".to_string())
@@ -547,10 +554,12 @@ impl CaptureContext {
             sequence_number: None,
             schema_version: self.schema_version,
             user_id: self.user_id.clone()?,
+            session_id: self.session_id.clone(),
             event_source: self.event_source.clone(),
             language_id: None,
             file_hash: None,
             file_path,
+            path_privacy: self.path_privacy.clone(),
             event_type,
             client_timestamp_ms: None,
             client_tz_offset_min: self.client_tz_offset_min,
@@ -1708,10 +1717,12 @@ mod tests {
             sequence_number: None,
             schema_version: Some(2),
             user_id: "participant".to_string(),
+            session_id: None,
             event_source: Some("vscode_extension".to_string()),
             language_id: None,
             file_hash: None,
             file_path: None,
+            path_privacy: None,
             event_type,
             client_timestamp_ms: None,
             client_tz_offset_min: Some(360),

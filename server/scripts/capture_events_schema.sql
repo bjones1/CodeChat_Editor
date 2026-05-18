@@ -3,7 +3,9 @@
 -- This script updates an existing legacy `events` table to the lean capture
 -- schema used for dissertation telemetry. It converts `timestamp` and `data` to
 -- analysis-friendly PostgreSQL types and backfills typed telemetry from
--- existing JSON payloads where possible. Study metadata such as course, group,
+-- older JSON payloads where possible. New capture code writes known telemetry
+-- metadata to first-class columns and reserves `data` for event-specific
+-- details. Study metadata such as course, group,
 -- assignment, condition, and task is intentionally omitted: those values are
 -- joined during analysis from researcher-managed participant/date mappings.
 
@@ -171,6 +173,21 @@ COMMENT ON COLUMN public.events.user_id IS 'Pseudonymous participant UUID genera
 COMMENT ON COLUMN public.events.session_id IS 'Capture session UUID emitted by the VS Code extension.';
 COMMENT ON COLUMN public.events.file_hash IS 'SHA-256 hash of the file path when path hashing is enabled.';
 COMMENT ON COLUMN public.events.file_path IS 'Raw captured file path; NULL when path hashing is enabled.';
-COMMENT ON COLUMN public.events.data IS 'Event-specific JSON payload. Duplicates typed telemetry metadata for portable fallback exports.';
+COMMENT ON COLUMN public.events.data IS 'Event-specific JSON payload. Known telemetry metadata lives in typed columns.';
+
+-- Least-privilege deployment guidance:
+-- students or classroom machines should use a dedicated writer account, not a
+-- database owner or administrator account. After replacing the placeholder
+-- password/database/user names, a database administrator can grant only the
+-- permissions needed for capture inserts:
+--
+-- CREATE ROLE codechat_capture_writer LOGIN PASSWORD 'replace-with-secret';
+-- GRANT CONNECT ON DATABASE codechat_capture TO codechat_capture_writer;
+-- GRANT USAGE ON SCHEMA public TO codechat_capture_writer;
+-- GRANT INSERT ON public.events TO codechat_capture_writer;
+-- GRANT USAGE ON SEQUENCE public.events_id_seq TO codechat_capture_writer;
+--
+-- Do not grant SELECT, UPDATE, DELETE, CREATE, or ownership privileges to the
+-- writer account used in `capture_config.json`.
 
 COMMIT;

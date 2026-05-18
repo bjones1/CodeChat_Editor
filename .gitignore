@@ -31,6 +31,5 @@ target/
 /server/scripts/output
 /server/scripts/capture-metrics-*.csv
 /server/scripts/capture-analysis-*/
-server/capture_config.json
 
 # CodeChat Editor lexer: python. See TODO.

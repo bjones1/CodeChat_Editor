@@ -45,7 +45,7 @@ use actix_web::{
     error::Error,
     get,
     http::header::{ContentType, DispositionType},
-    middleware, post,
+    middleware,
     web::{self, Data},
 };
 
@@ -97,7 +97,10 @@ use crate::{
     },
 };
 
-use crate::capture::{CaptureConfig, CaptureEvent, CaptureEventType, CaptureStatus, EventCapture};
+use crate::capture::{
+    CaptureEvent, CaptureEventMetadata, CaptureEventType, CaptureStatus, EventCapture,
+    generate_capture_event_id, load_capture_config,
+};
 
 use chrono::Utc;
 
@@ -445,6 +448,9 @@ pub struct CaptureEventWire {
     pub schema_version: Option<i32>,
     /// Pseudonymous participant UUID. This is not the student's real identity.
     pub user_id: String,
+    /// Logical capture session UUID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     /// Source of this event, such as the VS Code extension or server translation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_source: Option<String>,
@@ -457,6 +463,9 @@ pub struct CaptureEventWire {
     /// Raw file path only when path hashing is disabled for debugging.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_path: Option<String>,
+    /// Whether the path was sent plainly, hashed, or omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_privacy: Option<String>,
     /// Canonical capture event type.
     pub event_type: CaptureEventType,
 
@@ -662,19 +671,6 @@ async fn stop(app_state: WebAppState) -> HttpResponse {
     HttpResponse::NoContent().finish()
 }
 
-#[post("/capture")]
-async fn capture_endpoint(
-    app_state: WebAppState,
-    payload: web::Json<CaptureEventWire>,
-) -> HttpResponse {
-    let status = log_capture_event(&app_state, payload.into_inner());
-    if status.enabled {
-        HttpResponse::Accepted().json(status)
-    } else {
-        HttpResponse::ServiceUnavailable().json(status)
-    }
-}
-
 #[get("/capture/status")]
 async fn capture_status_endpoint(app_state: WebAppState) -> HttpResponse {
     HttpResponse::Ok().json(capture_status(&app_state))
@@ -685,60 +681,39 @@ pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> Cap
     if let Some(capture) = &app_state.capture {
         let server_timestamp = Utc::now();
         // Default missing data to empty object
-        let mut data = wire.data.unwrap_or_else(|| serde_json::json!({}));
+        let data = wire.data.unwrap_or_else(|| serde_json::json!({}));
 
-        // Ensure data is an object so we can attach fields
-        if !data.is_object() {
-            data = serde_json::json!({ "value": data });
-        }
-
-        // Add client timestamp fields if present (even if extension also sends them;
-        // overwriting is fine and consistent).
-        if let serde_json::Value::Object(map) = &mut data {
-            if let Some(event_id) = &wire.event_id {
-                map.insert("event_id".to_string(), serde_json::json!(event_id));
-            }
-            if let Some(sequence_number) = wire.sequence_number {
-                map.insert(
-                    "sequence_number".to_string(),
-                    serde_json::json!(sequence_number),
-                );
-            }
-            if let Some(schema_version) = wire.schema_version {
-                map.insert(
-                    "schema_version".to_string(),
-                    serde_json::json!(schema_version),
-                );
-            }
-            if let Some(event_source) = &wire.event_source {
-                map.insert("event_source".to_string(), serde_json::json!(event_source));
-            }
-            if let Some(language_id) = &wire.language_id {
-                map.insert("language_id".to_string(), serde_json::json!(language_id));
-            }
-            if let Some(file_hash) = &wire.file_hash {
-                map.insert("file_hash".to_string(), serde_json::json!(file_hash));
-            }
-            if let Some(ms) = wire.client_timestamp_ms {
-                map.insert("client_timestamp_ms".to_string(), serde_json::json!(ms));
-            }
-            if let Some(tz) = wire.client_tz_offset_min {
-                map.insert("client_tz_offset_min".to_string(), serde_json::json!(tz));
-            }
-            map.insert(
-                "server_timestamp_ms".to_string(),
-                serde_json::json!(server_timestamp.timestamp_millis()),
-            );
-        }
-
-        let event = CaptureEvent {
-            user_id: wire.user_id,
-            file_path: wire.file_path,
-            event_type: wire.event_type,
-            // Server decides when the event is recorded.
-            timestamp: server_timestamp,
-            data,
+        let data = if data.is_object() {
+            data
+        } else {
+            serde_json::json!({ "value": data })
         };
+
+        let metadata = CaptureEventMetadata {
+            event_id: Some(
+                wire.event_id
+                    .unwrap_or_else(|| generate_capture_event_id("server")),
+            ),
+            sequence_number: wire.sequence_number,
+            schema_version: wire.schema_version,
+            session_id: wire.session_id,
+            event_source: wire.event_source,
+            language_id: wire.language_id,
+            file_hash: wire.file_hash,
+            path_privacy: wire.path_privacy,
+            client_timestamp_ms: wire.client_timestamp_ms,
+            client_tz_offset_min: wire.client_tz_offset_min,
+            server_timestamp_ms: Some(server_timestamp.timestamp_millis()),
+        };
+
+        let event = CaptureEvent::with_metadata(
+            wire.user_id,
+            wire.file_path,
+            wire.event_type,
+            server_timestamp,
+            data,
+            metadata,
+        );
 
         capture.log(event);
         capture.status()
@@ -1679,15 +1654,16 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // `configure_app`, preventing globally shared state.
 pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
     // Initialize event capture from a config file (optional).
-    let capture: Option<EventCapture> = load_capture_config().and_then(|cfg| {
+    let root_path = ROOT_PATH.lock().unwrap().clone();
+    let capture: Option<EventCapture> = load_capture_config(&root_path).and_then(|cfg| {
         let summary = cfg.redacted_summary();
         match EventCapture::new(cfg) {
             Ok(ec) => {
-                eprintln!("Capture: enabled ({summary})");
+                info!("Capture: enabled ({summary})");
                 Some(ec)
             }
             Err(err) => {
-                eprintln!("Capture: failed to initialize ({summary}): {err}");
+                warn!("Capture: failed to initialize ({summary}): {err}");
                 None
             }
         }
@@ -1705,50 +1681,6 @@ pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
         credentials,
         capture,
     })
-}
-
-fn load_capture_config() -> Option<CaptureConfig> {
-    match CaptureConfig::from_env() {
-        Ok(Some(cfg)) => return Some(with_default_capture_fallback_path(cfg)),
-        Ok(None) => {}
-        Err(err) => {
-            eprintln!("Capture: invalid environment configuration: {err}");
-            return None;
-        }
-    }
-
-    let mut config_path = ROOT_PATH.lock().unwrap().clone();
-    config_path.push("capture_config.json");
-
-    match fs::read_to_string(&config_path) {
-        Ok(json) => match serde_json::from_str::<CaptureConfig>(&json) {
-            Ok(cfg) => Some(with_default_capture_fallback_path(cfg)),
-            Err(err) => {
-                eprintln!("Capture: invalid JSON in {config_path:?}: {err}");
-                None
-            }
-        },
-        Err(err) => {
-            eprintln!(
-                "Capture: disabled (no CODECHAT_CAPTURE_* env and no readable config at {config_path:?}: {err})"
-            );
-            None
-        }
-    }
-}
-
-fn with_default_capture_fallback_path(mut cfg: CaptureConfig) -> CaptureConfig {
-    let root_path = ROOT_PATH.lock().unwrap().clone();
-    match &cfg.fallback_path {
-        Some(path) if path.is_relative() => {
-            cfg.fallback_path = Some(root_path.join(path));
-        }
-        Some(_) => {}
-        None => {
-            cfg.fallback_path = Some(root_path.join("capture-events-fallback.jsonl"));
-        }
-    }
-    cfg
 }
 
 // Configure the web application. I'd like to make this return an
@@ -1777,7 +1709,6 @@ where
         .service(vscode_client_framework)
         .service(ping)
         .service(stop)
-        .service(capture_endpoint)
         .service(capture_status_endpoint)
         // Reroute to the filewatcher filesystem for typical user-requested
         // URLs.

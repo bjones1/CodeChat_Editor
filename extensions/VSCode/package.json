@@ -42,18 +42,6 @@
         "url": "https://github.com/bjones1/CodeChat_Editor"
     },
     "version": "0.1.54-beta1",
-    "activationEvents": [
-        "onCommand:extension.codeChatEditorActivate",
-        "onCommand:extension.codeChatEditorDeactivate",
-        "onCommand:extension.codeChatCaptureStatus",
-        "onCommand:extension.codeChatInsertReflectionPrompt",
-        "onCommand:extension.codeChatCaptureTaskStart",
-        "onCommand:extension.codeChatCaptureTaskSubmit",
-        "onCommand:extension.codeChatCaptureDebugTaskStart",
-        "onCommand:extension.codeChatCaptureDebugTaskSubmit",
-        "onCommand:extension.codeChatCaptureHandoffStart",
-        "onCommand:extension.codeChatCaptureHandoffEnd"
-    ],
     "contributes": {
         "configuration": {
             "title": "CodeChat Editor",
@@ -74,7 +62,7 @@
                 "CodeChatEditor.Capture.RecordStudyEvents": {
                     "type": "boolean",
                     "default": false,
-                    "markdownDescription": "Record CodeChat dissertation capture events. This defaults to off. Consent is recorded through **Manage CodeChat Capture** and also defaults to off.\n\n| Consent recorded | Record study events | What happens |\n| --- | --- | --- |\n| Off | Off | Capture is off. |\n| On | Off | Consent is retained, but recording is paused. |\n| On | On | Capture records study events. |\n| Off | On | Capture waits for consent before recording. |"
+                    "markdownDescription": "Record CodeChat dissertation capture events. This defaults to off. Consent is recorded through **Manage CodeChat Editor Capture** and also defaults to off.\n\n| Consent recorded | Record study events | What happens |\n| --- | --- | --- |\n| Off | Off | Capture is off. |\n| On | Off | Consent is retained, but recording is paused. |\n| On | On | Capture records study events. |\n| Off | On | Capture waits for consent before recording. |"
                 },
                 "CodeChatEditor.Capture.ConsentEnabled": {
                     "type": "boolean",
@@ -104,11 +92,11 @@
             },
             {
                 "command": "extension.codeChatCaptureStatus",
-                "title": "Manage CodeChat Capture"
+                "title": "Manage CodeChat Editor Capture"
             },
             {
                 "command": "extension.codeChatInsertReflectionPrompt",
-                "title": "CodeChat: Insert Reflection Prompt"
+                "title": "CodeChat Editor: Insert Reflection Prompt"
             }
         ]
     },
