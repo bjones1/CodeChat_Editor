@@ -526,10 +526,12 @@ export const restoreSelection = ({
             }
             selection_node = new_selection_node;
         }
-        // In case of edits, avoid an offset past the end of the node.
+        // In case of edits, avoid an offset past the end of the node. Note that
+        // the maximum value is `length`, not `length - 1`, which represents a
+        // selection at the very end of the text node.
         const final_selection_offset = Math.min(
             selection_offset,
-            (selection_node.nodeValue?.length ?? 1) - 1,
+            selection_node.nodeValue?.length ?? 0,
         );
         // Use that to set the selection.
         tinymce.activeEditor!.selection.setCursorLocation(
