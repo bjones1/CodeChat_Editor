@@ -18,7 +18,7 @@
 // =============================================================================
 //
 // True to enable additional debug logging.
-export const DEBUG_ENABLED = false;
+export const DEBUG_ENABLED = true;
 
 // The max length of a message to show in the console when debug logging is
 // enabled.

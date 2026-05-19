@@ -104,10 +104,9 @@ On load:
 * Classify the file; inputs are mutable global state (which, if present,
   indicates this is a project build), if the file is a TOC, the file's binary
   data, and the file's path. Output of the classification: binary, raw text, a
-  CodeChat document (a Markdown file), or a CodeChat file. The load processing
-  pipelines
+  CodeChat document (a Markdown file), or a CodeChat file.
 
-For CodeChat files:
+The load processing pipelines for CodeChat files:
 
 * (CodeChat files only) Run pre-parse hooks: they receive source code, file
   metadata. Examples: code formatters. Skip if cache is up to date.
@@ -115,14 +114,6 @@ For CodeChat files:
 * Run post-parse hooks: they receive an array of code and doc blocks.
 * Transform Markdown to HTML.
 * Run HTML hooks:
-  * Update the cache for the current file only if the current file's cache is
-    stale. To do this, walk the DOM of each doc block. The hook specifies which
-    tags it wants, and the tree walker calls the hook when it encounters these.
-    If this requires adding/changing anything (anchors, for example), mark the
-    document as dirty.
-  * Update tags whose contents depend on data from other files. Hooks work the
-    same as the cache updates, but have a different role. They're always run,
-    while the cache update is skipped when the cache is current.
 * Determine next/prev/up hyperlinks based on this file's location in the TOC.
 * Transform the code and doc blocks into CodeMirror's format.
 
@@ -154,112 +145,9 @@ On save:
 * Save the file to disk.
 * If dirty, re-load the file.
 
-### Table of contents
-
-Ideas:
-
-* Something that reflects the filesystem. Subdirectories are branches, files are
-  leaves in the TOC tree. Problems:
-  * Subdirectories should have content, such as a readme. Assume a readme file
-    titles and provides content for a subdirectory? Or provide a config file
-    setting to assign this?
-  * I'd like the ability to relocate files/directories. The means a config file
-    that tracks this movement.
-  * We need ignores.
-  * To reorder files in the TOC, need a config file per directory to store this
-    ordering.
-  * Pro: all files are automatically included, so adding a new file is
-    automatic. The hierarchy is mostly defined by the filesystem, which is nice.
-    A GUI with drag and drop would make this really simple to maintain.
-  * Con: a lot of work/rewrite.
-  * So: readme.md provides a title and contents for a subdirectory. A config
-    file in each directory specifies ordering of files, titles for non-CodeChat
-    files (PDFs, etc.), moves of files/directories from other directories, and
-    ignores.
-* Use mdbook's idea -- a very specific structure for a toc.md file. Simple, but
-  doesn't auto-update as files are added.
-* Current TOC isn't immediately useful. Too much flexibility.
-
-Another topic: how to reconcile headings in a file with the TOC?
-
-* Separate them -- headings have orthogonal numbering to the TOC. I think this
-  is simplest. I just need the right way to display it; mdbook is reasonable in
-  this regard. I'll use this.
-* Combine them -- H1 is current number, H2 is a subhead, etc. But this means the
-  TOC's numbering requires reading the contents of all files referenced by the
-  TOC, which could be slow.
-
 ### Cache data format
 
-The cache stores the location (file name and ID), numbering (of headings and
-figures/equations/etc.), and contents (title text or code/doc blocks for tags)
-of a target. Targets are HTML anchors (such as headings, figure titles, display
-equations, etc.) or tags.
-
-Goals:
-
-* Given a file name and/or ID, retrieve the associated location, numbering, and
-  contents.
-* Perform a search of the contents of all targets, returning a list of matching
-  targets.
-* Given a file name and/or ID, provide a list of all targets in the containing
-  file.
-
-Cache data structure:
-
-* A hashmap of (Path, target data structure). TBD: think about ownership. I
-  think a page is the owner of all targets.
-* A hashmap of (ID, target data structure). 
-
-Target data structure:
-
-* Location: the containing page and an `Option<String>` containing the ID, if
-  assigned.
-* Page numbering: `[Option<i32>, ...]` where each i32 in the list represents the
-  number of a H1..6 element (non-TOC) or the numbering of a list item (TOC);
-  `None` represents a missing level of the hierarchy (e.g. H1 following by and
-  H3, with no H2 between).
-* Type: page, heading, link, tag, caption, equation; numbered items (caption,
-  equation) also include the current number. Pages include the page data
-  structure.
-* Contents: either a string of HTML (would prefer Markdown) or a vec of code/doc
-  blocks. Page contents are an empty string.
-
-Page data structure:
-
-* Path: the path to this file.
-* File info: timestamp, etc. to compare with the filesystem in order to
-  determine if this cache entry is up to date or no. An option, in the case that
-  the file doesn't exist -- it's the target of a broken link.
-* TOC location: `[i32, ...]` gives the numbering of this page in the TOC; if
-  it's not in the TOC, this is an empty list.
-* Vector of targets on this page.
-* (Maybe) first ID on this page.
-
-Pseudocode:
-
-1. Create a hashmap of (file paths to index, list of links depending on this
-   file). Initialize it with the current file.
-2. For each file in the hashset:
-   1. If this is the first file, we already have its DOM. Otherwise, load the
-      file from disk and compute the DOM.
-   2. Given a file's DOM, first create its page data structure. Pre-existing
-      cache data provides the TOC numbering.
-   3. For each target in the DOM (non-TOC) / numbered item (TOC), add the
-      target's data structure to the page's vector of targets, updating the
-      current numbering if this is a numbered item (heading, caption, etc.) and
-      inserting the HTML to set its number in the DOM.
-   4. If this is the first file: for each link in the DOM, if the link is local
-      and autotitled, look for it in the cache. If it's not in the cache or if
-      the cache for that file is outdated, add the referring file to the hashset
-      of files to update if it's not in the hashmap; append this link to its
-      list of dependent links.
-   5. For each link in the list of links depending on this file, update it with
-      the loaded content.
-
-References:
-
-* Hyperlinks with no link text are auto-titled. Look up
+Documented elsewhere.
 
 ### IDE/editor integration
 
@@ -494,7 +382,7 @@ with descriptions of each setting.
   want something that includes type validation and allows comments within the
   config file. Perhaps JSON with a pre-parse step to discard comments then
   [JSON Typedef](https://jsontypedef.com/)? Possibly, vlang can do this
-  somewhat, since it wants to decode JSON into a V struct.)
+  somewhat, since it wants to decode JSON into a V struct.
 
 Organization
 ------------

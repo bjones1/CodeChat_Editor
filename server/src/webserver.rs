@@ -90,8 +90,8 @@ use crate::{
         },
     },
     processing::{
-        CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, find_path_to_toc,
-        source_to_codechat_for_web_string,
+        CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, cache::Cache,
+        find_path_to_toc, source_to_codechat_for_web_string,
     },
 };
 
@@ -405,6 +405,8 @@ pub struct AppState {
     pub connection_id: Mutex<HashSet<String>>,
     /// The auth credentials if authentication is used.
     credentials: Option<Credentials>,
+    /// A hash of project path to Cache.
+    pub cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
 }
 
 pub type WebAppState = web::Data<AppState>;
@@ -451,7 +453,7 @@ macro_rules! queue_send_func {
 pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
     Duration::from_millis(500)
 } else {
-    Duration::from_millis(15000)
+    Duration::from_millis(1500000)
 };
 
 /// The time to wait for a pong from the websocket in response to a ping sent by
@@ -779,6 +781,8 @@ pub async fn try_read_as_text(file: &mut File) -> Option<String> {
 pub async fn file_to_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
+    // The map of project caches.
+    cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
     // The version of this file.
     version: f64,
     // Path to the file currently being edited. This path should be cleaned by
@@ -846,6 +850,7 @@ pub async fn file_to_response(
                 file_path,
                 version,
                 is_toc,
+                cache,
             )
         } else {
             // If this isn't the current file, then don't parse it.
@@ -1502,6 +1507,7 @@ pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
         client_queues: Arc::new(Mutex::new(HashMap::new())),
         connection_id: Mutex::new(HashSet::new()),
         credentials,
+        cache: Arc::new(Mutex::new(HashMap::new())),
     })
 }
 

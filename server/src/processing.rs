@@ -1,3 +1,6 @@
+// TODO: Remove this after implementing the cache.
+#![allow(unused)]
+
 // Copyright (C) 2025 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -16,6 +19,10 @@
 /// `processing.rs` -- Transform source code to its web-editable equivalent and
 /// back
 /// ===========================================================================
+// Modules
+// -------
+pub mod cache;
+
 // Imports
 // -------
 //
@@ -24,16 +31,19 @@ use std::{
     borrow::Cow,
     cell::RefCell,
     cmp::{max, min},
+    collections::HashMap,
     collections::HashSet,
     ffi::OsStr,
     io,
     iter::Map,
+    mem,
     ops::Range,
     path::{Path, PathBuf},
     rc::Rc,
     slice::Iter,
     string::FromUtf8Error,
     sync::LazyLock,
+    sync::{Arc, Mutex, Weak},
 };
 
 // ### Third-party
@@ -66,10 +76,14 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 // ### Local
-use crate::lexer::{
-    CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
-    supported_languages::MARKDOWN_MODE,
+use crate::{
+    lexer::{
+        CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
+        supported_languages::MARKDOWN_MODE,
+    },
+    processing::cache::Target,
 };
+use cache::Cache;
 
 // Data structures
 // ---------------
@@ -214,18 +228,6 @@ pub struct StringDiff {
     pub insert: String,
 }
 
-/// This enum contains the results of translating a source file to the CodeChat
-/// Editor format.
-#[derive(Debug, PartialEq)]
-pub enum TranslationResults {
-    /// This file is unknown to and therefore not supported by the CodeChat
-    /// Editor.
-    Unknown,
-    /// A CodeChat Editor file; the struct contains the file's contents
-    /// translated to CodeMirror.
-    CodeChat(CodeChatForWeb),
-}
-
 /// This enum contains the results of translating a source file to a string
 /// rendering of the CodeChat Editor format.
 #[derive(Debug, PartialEq)]
@@ -260,7 +262,12 @@ lazy_static! {
         // Non-greedy wildcard -- match the first separator, so we don't munch
         // multiple `DOC_BLOCK_SEPARATOR_STRING`s in one replacement.
         ".*?",
-        "<CodeChatEditor-separator></CodeChatEditor-separator>\n")).unwrap();
+        r#"<CodeChatEditor-separator>(\d+)</CodeChatEditor-separator>\n"#)).unwrap();
+    // After converting Markdown to HTML, this can be used to split doc blocks
+    // apart. Since this is post hydration, the element names are normalized to
+    // lower case.
+    static ref DOC_BLOCK_SEPARATOR_SPLIT_REGEX: Regex = Regex::new(
+        r#"<codechateditor-separator>\d+</codechateditor-separator>"#).unwrap();
 }
 
 // Use this as a way to end unterminated fenced code blocks and specific types
@@ -291,16 +298,11 @@ const DOC_BLOCK_SEPARATOR_STRING: &str = concat!(
     r#"<CodeChatEditor-fence>
 ~~~~~~~~~~~~~~~~~~~~~~~
 </CodeChatEditor-fence>
-<CodeChatEditor-separator></CodeChatEditor-separator>
+<CodeChatEditor-separator>{}</CodeChatEditor-separator>
 
 "#
 );
 
-// After converting Markdown to HTML, this can be used to split doc blocks
-// apart. Since this is post hydration, the element names are normalized to
-// lower case.
-const DOC_BLOCK_SEPARATOR_SPLIT_STRING: &str =
-    "<codechateditor-separator></codechateditor-separator>";
 // Correctly terminated fenced code blocks produce this, which can be removed
 // from the HTML produced by Markdown conversion.
 const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
@@ -311,10 +313,13 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 ~~~~~~~~~~~~~~~~~~~~~~~
 </CodeChatEditor-fence>
 "#;
-// The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex.
+// The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex. It
+// relies on the first capture group in that regex (`$1`) containing the index,
+// which it replaces here.
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
-    "</code></pre>\n<CodeChatEditor-separator></CodeChatEditor-separator>\n";
-//
+    "</code></pre>\n<CodeChatEditor-separator>$1</CodeChatEditor-separator>\n";
+// <a class="fence-mending-end"></a>
+
 // The column at which to word wrap doc blocks.
 const WORD_WRAP_COLUMN: usize = 80;
 // The minimum width for doc block word wrap, since large indents may leave
@@ -445,7 +450,7 @@ pub fn codechat_for_web_to_source(
         }
         // Translate the HTML document to Markdown.
         let converter = HtmlToMarkdownWrapped::new();
-        let tree = html_to_tree(&code_mirror.doc, &None)?;
+        let tree = html_to_dom(&code_mirror.doc, &None)?;
         dehydrating_walk_node(&tree);
         return converter
             .convert(&tree)
@@ -618,7 +623,7 @@ pub fn doc_block_html_to_markdown(
     for (index, code_doc_block) in &mut code_doc_block_vec.iter_mut().enumerate() {
         if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
             last_doc_block_index = Some(index);
-            let tree = html_to_tree(&doc_block.contents, dom_location)?;
+            let tree = html_to_dom(&doc_block.contents, dom_location)?;
             dehydrating_walk_node(&tree);
 
             // Calculate the total delimiter width: the delimiter width plus the
@@ -823,6 +828,8 @@ pub enum SourceToCodeChatForWebError {
     // convert the IO error to a string.
     #[error("unable to parse HTML {0}")]
     ParseFailed(String),
+    #[error("no lexer for this file")]
+    NoLexer,
     #[error("encoding error {0}")]
     EncodeFailed(#[from] FromUtf8Error),
 }
@@ -836,14 +843,22 @@ pub fn source_to_codechat_for_web(
     // The file's contents.
     file_contents: &str,
     // The file's extension.
-    file_ext: &String,
+    file_path: &Path,
     // The version of this file.
     version: f64,
     // True if this file is a TOC.
     _is_toc: bool,
-    // True if this file is part of a project.
-    _is_project: bool,
-) -> Result<TranslationResults, SourceToCodeChatForWebError> {
+    // If provided, the cache for this project; otherwise, this file is not in a
+    // project.
+    cache: Option<Arc<Mutex<Cache>>>,
+) -> Result<CodeChatForWeb, SourceToCodeChatForWebError> {
+    // Determine the file's extension, in order to look up a lexer.
+    let file_ext = &file_path
+        .extension()
+        .unwrap_or_else(|| OsStr::new(""))
+        .to_string_lossy()
+        .to_string();
+
     // Determine the lexer to use for this file.
     let lexer_name;
     // First, search for a lexer directive in the file contents.
@@ -860,13 +875,18 @@ pub fn source_to_codechat_for_web(
         match LEXERS.map_ext_to_lexer_vec.get(file_ext) {
             Some(llc) => llc.first().unwrap(),
             _ => {
-                // The file type is unknown; treat it as plain text.
-                return Ok(TranslationResults::Unknown);
+                // The file type is unknown; we can't lex it.
+                return Err(SourceToCodeChatForWebError::NoLexer);
             }
         }
     };
 
     // Transform the provided file into the `CodeChatForWeb` structure.
+    let cache = if let Some(project_cache) = cache {
+        project_cache
+    } else {
+        Arc::new(Mutex::new(Cache::new()))
+    };
     let code_doc_block_arr;
     let codechat_for_web = CodeChatForWeb {
         metadata: SourceFileMetadata {
@@ -874,11 +894,12 @@ pub fn source_to_codechat_for_web(
         },
         version,
         source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
-            // Document-only files are easy: just encode the contents.
+            // Document-only files are easy: just encode the contents. Tags are
+            // only supported in source files.
             let dry_html = markdown_to_html(file_contents);
-            let html = hydrate_html(&dry_html)
+            let html = hydrate_html(&dry_html, file_path, cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
-            let html = minify(&html)?;
+            let html = minify(&html.0)?;
             CodeMirrorDiffable::Plain(CodeMirror {
                 doc: html,
                 doc_blocks: vec![],
@@ -908,18 +929,24 @@ pub fn source_to_codechat_for_web(
             // Walk through the code/doc blocks, ...
             let doc_contents = code_doc_block_arr
                 .iter()
+                .enumerate()
                 // ...selecting only the doc block contents...
-                .filter_map(|cdb| {
+                .filter_map(|(index, cdb)| {
                     if let CodeDocBlock::DocBlock(db) = cdb {
-                        Some(db.contents.as_str())
+                        Some((index, db.contents.as_str()))
                     } else {
                         None
                     }
                 })
-                // ...then collect them, separated by the doc block separator
-                // string.
-                .collect::<Vec<_>>()
-                .join(DOC_BLOCK_SEPARATOR_STRING);
+                // Add the doc block separator string between each doc block;
+                // the separator contains the index of this doc block.
+                .fold(String::new(), |mut acc: String, x: (usize, &str)| {
+                    if !acc.is_empty() {
+                        acc.push_str(&DOC_BLOCK_SEPARATOR_STRING.replace("{}", &x.0.to_string()));
+                    }
+                    acc.push_str(x.1);
+                    acc
+                });
 
             // Convert the Markdown to HTML.
             let html = markdown_to_html(&doc_contents);
@@ -932,11 +959,14 @@ pub fn source_to_codechat_for_web(
             // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
             // 3. Hydrate the cleaned HTML.
-            let html = hydrate_html(&html)
+            let (html, _tags) = hydrate_html(&html, file_path, cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 4. Split on the separator.
-            let mut doc_block_contents_iter = html.split(DOC_BLOCK_SEPARATOR_SPLIT_STRING);
-            //
+            let mut doc_block_contents_iter: regex::Split<'_, '_> =
+                DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&html);
+            // 5. TODO Cache updates: process `tags`.
+            //    <a class="fence-mending-end"></a>
+
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             let mut len = len_utf16(&code_mirror.doc);
             for code_or_doc_block in code_doc_block_arr {
@@ -971,7 +1001,7 @@ pub fn source_to_codechat_for_web(
         },
     };
 
-    Ok(TranslationResults::CodeChat(codechat_for_web))
+    Ok(codechat_for_web)
 }
 
 // Options for a spec-compliant minifier.
@@ -1049,6 +1079,8 @@ pub fn source_to_codechat_for_web_string(
     version: f64,
     // True if this file is a TOC.
     is_toc: bool,
+    // The map of Caches.
+    cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
 ) -> Result<
     (
         // The resulting translation.
@@ -1058,42 +1090,43 @@ pub fn source_to_codechat_for_web_string(
     ),
     SourceToCodeChatForWebError,
 > {
-    // Determine the file's extension, in order to look up a lexer.
-    let ext = &file_path
-        .extension()
-        .unwrap_or_else(|| OsStr::new(""))
-        .to_string_lossy();
-
     // To determine if this source code is part of a project, look for a project
     // file by searching the current directory, then all its parents, for a file
     // named `toc.md`.
     let path_to_toc = find_path_to_toc(file_path);
-    let is_project = path_to_toc.is_some();
+    let cache: Option<Arc<Mutex<Cache>>> = path_to_toc.as_ref().map(|path_to_toc| {
+        cache
+            .lock()
+            .unwrap()
+            .entry(path_to_toc.to_path_buf())
+            .or_insert(Arc::new(Mutex::new(Cache::new())))
+            .clone()
+    });
 
     Ok((
-        {
-            let translation_results = source_to_codechat_for_web(
-                file_contents,
-                &ext.to_string(),
-                version,
-                is_toc,
-                is_project,
-            )?;
-            match translation_results {
-                TranslationResults::CodeChat(codechat_for_web) => {
-                    if is_toc {
-                        // For the table of contents sidebar, which is pure
-                        // markdown, just return the resulting HTML, rather than
-                        // the editable CodeChat for web format.
-                        let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
-                            panic!("No diff!");
-                        };
-                        TranslationResultsString::Toc(plain.doc)
-                    } else {
-                        TranslationResultsString::CodeChat(codechat_for_web)
-                    }
+        match source_to_codechat_for_web(file_contents, file_path, version, is_toc, cache) {
+            Err(err) => {
+                // The no lexer error means we should treat this file type as
+                // unknown.
+                if err == SourceToCodeChatForWebError::NoLexer {
+                    TranslationResultsString::Unknown
+                } else {
+                    // Otherwise, this is an unhandleable error.
+                    return Err(err);
                 }
-                TranslationResults::Unknown => TranslationResultsString::Unknown,
+            }
+            Ok(codechat_for_web) => {
+                if is_toc {
+                    // For the table of contents sidebar, which is pure
+                    // markdown, just return the resulting HTML, rather than the
+                    // editable CodeChat for web format.
+                    let CodeMirrorDiffable::Plain(plain) = codechat_for_web.source else {
+                        panic!("No diff!");
+                    };
+                    TranslationResultsString::Toc(plain.doc)
+                } else {
+                    TranslationResultsString::CodeChat(codechat_for_web)
+                }
             }
         },
         path_to_toc,
@@ -1119,7 +1152,7 @@ fn markdown_to_html(markdown: &str) -> String {
 pub const UNICODE_CURSOR_MARKER: char = '\u{E83B}';
 
 /// Use html5ever to parse a string containing HTML to a DOM tree.
-fn html_to_tree(
+fn html_to_dom(
     html: &str,
     // See the same parameter from `doc_block_html_to_markdown`.
     dom_location: &Option<(Vec<usize>, usize)>,
@@ -1175,9 +1208,13 @@ fn html_to_tree(
 // A framework to transform HTML by parsing it to a DOM tree, walking the tree,
 // then serializing the tree back to an HTML string.
 pub fn transform_html<T: FnOnce(&Rc<Node>)>(html: &str, transform: T) -> io::Result<String> {
-    let tree = html_to_tree(html, &None)?;
+    let tree = html_to_dom(html, &None)?;
     transform(&tree);
+    dom_to_html(tree)
+}
 
+// Transform a DOM tree back to an HTML string.
+pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
     // Serialize the transformed DOM back to a string.
     let so = SerializeOpts {
         // Don't include the body node in the output.
@@ -1187,7 +1224,7 @@ pub fn transform_html<T: FnOnce(&Rc<Node>)>(html: &str, transform: T) -> io::Res
     let mut bytes = vec![];
     serialize(
         &mut bytes,
-        &SerializableHandle::from(get_dom_body(&tree)),
+        &SerializableHandle::from(get_dom_body(&dom)),
         so,
     )?;
     let html_out = String::from_utf8(bytes).map_err(io::Error::other)?;
@@ -1214,13 +1251,130 @@ fn get_dom_body(document: &Rc<Node>) -> Rc<Node> {
 // * (Eventually) record document structure information.
 // * (Eventually) assign a unique ID to all links that don't have one.
 // * (Eventually) fill in autocomplete fields.
-fn hydrate_html(html: &str) -> io::Result<String> {
-    transform_html(html, hydrating_walk_node)
+fn hydrate_html(
+    html: &str,
+    file: &Path,
+    cache: Arc<Mutex<Cache>>,
+) -> io::Result<(String, Vec<Rc<Node>>)> {
+    let dom = html_to_dom(html, &None)?;
+    let file_entry = cache.lock().unwrap().get_or_create_file(file);
+    // Move the `target` vec into a `HashMap`; the vec will be re-created by
+    // moving individual entries back as they're found in the HTML. TODO:
+    // invalidate all current weak links to all `Targets` in this vec. Must also
+    // update all weak links to the underlying `File` when moving a `Target`.
+    let old_target_vec = mem::take(&mut file_entry.lock().unwrap().target);
+    let old_targets: HashMap<String, Arc<Mutex<Target>>> = old_target_vec
+        .into_iter()
+        .map(|target| (target.clone().lock().unwrap().id.clone(), target))
+        .collect();
+    // This is storage for the state needed for walking the DOM.
+    let mut walk_context = WalkContext {
+        cache,
+        file_entry,
+        old_targets,
+        doc_block_index: 0,
+        links: Vec::new(),
+        backlinks: Vec::new(),
+        tags: Vec::new(),
+        code_doc_block_dependencies: vec![],
+    };
+    walk_context = hydrating_walk_node(dom.clone(), walk_context);
+    // TODO:
+    //
+    // 1. Remove all `old_targets` that weren't moved back to `targets`.
+    //
+    // 2. Process `links`:
+    //
+    //    1. If the target of this link is in the cache, first check to see if
+    //       it's been processed. If not, mark the current file to be added to
+    //       the end of `pending_files` list. Remove any previous
+    //       `references`/`dependencies`, then re-add them based on the link's
+    //       `Target.backlink_type`:
+    //
+    //       1. `None`: if this is an auto-titled link, get its title from the
+    //          `Target` it refers to (this includes the case where the target
+    //          doesn't exist) and add this file to the target's list of
+    //          `references` if it's not already there; also add it to the
+    //          `code_doc_block_dependencies` list; problem: how would we know
+    //          the doc block index? Otherwise, add it to the target's list of
+    //          `dependencies` (again, if it's not already there). Remove it
+    //          from the other list if it's there.
+    //       2. `Plain`/`wrapped`: give this link an ID if it doesn't have one
+    //          (meaning add it as a new `Target`). As above, add/verify this
+    //          link is in the `references`/`dependencies` and remove the
+    //          opposite link. If this is added, mark the link target's `File`
+    //          as dirty.
+    //       3. `Gather`: same as above. Also, record the start/end code/doc
+    //          blocks and put this in the code/doc block `tags` list.
+    //    2. Otherwise, add the file containing this target to set of files to
+    //       process (`Cache::pending_files`) and mark the current file to be
+    //       added to this set after all dirty dependencies are added.
+    // 3. Process `backlinks`: generate the appropriate HTML. These are
+    //    processed after `links`, to ensure these are updated / assigned an ID
+    //    in case a backlink references a link in this file. Corner case: if a
+    //    gather element refers to tags in the current file, and the code+doc
+    //    block contents of these tags is outdated, then this file need to be
+    //    reprocessed, since the code+doc block contents won't be updated until
+    //    after this function returns.
+
+    Ok((dom_to_html(dom)?, walk_context.tags))
 }
 
-fn hydrating_walk_node(node: &Rc<Node>) {
+/// Get the value of an attribute on an element node.
+fn get_attr_value(node: &Rc<Node>, attr_name: &str) -> Option<String> {
+    if let NodeData::Element { attrs, .. } = &node.data {
+        attrs
+            .borrow()
+            .iter()
+            .find(|attr| &*attr.name.local == attr_name)
+            .map(|attr| attr.value.to_string())
+    } else {
+        None
+    }
+}
+
+/// Gather text from all text children of this node.
+fn get_text_content(node: &Rc<Node>) -> String {
+    let mut text = String::new();
+    for child in node.children.borrow().iter() {
+        if let NodeData::Text { contents } = &child.data {
+            text.push_str(&contents.borrow())
+        }
+    }
+    text
+}
+
+/// This provides the needed context when walking the HTML DOM of all doc
+/// blocks.
+struct WalkContext {
+    /// The cache for this project.
+    cache: Arc<Mutex<Cache>>,
+    /// The `cache::File` currently being processed.
+    file_entry: Arc<Mutex<cache::File>>,
+    /// The previous `file_entry.targets` that haven't yet been claimed while
+    /// processing this file. The key is the `Target`'s ID.
+    old_targets: HashMap<String, Arc<Mutex<Target>>>,
+    /// All hyperlinks found in this file.
+    links: Vec<Rc<Node>>,
+    /// Backlinks and gather elements.
+    backlinks: Vec<Rc<Node>>,
+    /// Tags (links to gather elements).
+    tags: Vec<Rc<Node>>,
+    /// For each doc block in the vec of `CodeDocBlock`s, this contains the
+    /// `Target` of autotitled  links. These are used to determine a tag's
+    /// indirect dependencies if this doc block is included in a tag.
+    code_doc_block_dependencies: Vec<HashMap<String, Weak<Mutex<Target>>>>,
+    /// The current doc block index, based on parsing the HTML for
+    /// `codechateditor-separator` elements, which contain this value.
+    doc_block_index: usize,
+}
+
+/// Hydrate the HTML of newly-translated doc blocks.
+fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> WalkContext {
     for child in node.children.borrow_mut().iter_mut() {
         let possible_replacement_child =
+        // Perform replacements of GraphViz and Mermaid graphs:
+        //
         // Look for a `<pre>` tag
         if get_node_tag_name(child) == Some("pre")
             // with no attributes
@@ -1233,7 +1387,7 @@ fn hydrating_walk_node(node: &Rc<Node>) {
             && code_children.len() == 1
             && let code_child = code_children.iter().next().unwrap()
             && get_node_tag_name(code_child) == Some("code")
-            // with only a `class=language-mermaid` attribute
+            // with only a `class=language-mermaid/graphviz` attribute
             && let NodeData::Element {
                 attrs: ref_code_child_attrs, ..
             } = &code_child.data
@@ -1264,14 +1418,75 @@ fn hydrating_walk_node(node: &Rc<Node>) {
             replace_math_node(child, true)
         };
 
-        // Replace the child if we found a replacement; otherwise, walk it.
+        // Replace the child if we found a replacement.
         if let Some(replacement_child) = possible_replacement_child {
-            replacement_child.parent.set(Some(Rc::downgrade(node)));
+            replacement_child.parent.set(Some(Rc::downgrade(&node)));
             *child = replacement_child;
-        } else {
-            hydrating_walk_node(child);
         }
+
+        // Analyze this node for cacheable data.
+        if let Some(tag_name) = get_node_tag_name(child) {
+            // See if the element has an id/anchor.
+            let _id = get_attr_value(child, "id").unwrap_or_default();
+
+            // Track doc block index from separator elements.
+            if tag_name == "codechateditor-separator"
+                && let Ok(index) = get_text_content(child).trim().parse::<usize>()
+            {
+                walk_context.doc_block_index = index;
+            }
+
+            // TODO: write code here.
+            //
+            // When walking, look for:
+            //
+            // 1. A link, or any element that's a back link or gather element.
+            //    Note that links directly to a file are ignored, since files
+            //    are not targets. Add these to the `links`/`backlinks` list.
+            // 2. A target (any item with an id which refers to a file in the
+            //    project tree).
+            //    1. Process the ID:
+            //       1. ID exists in `old_targets` - transfer ownership by
+            //          appending this to `file.targets`, removing it from the
+            //          `old_targets`; update the stale `Weak` pointer to the
+            //          parent `File`. Assert that this ID is unique.
+            //       2. ID doesn't exist in `old_targets` and is unique: add
+            //          this `Target` to `Cache::id`.
+            //       3. ID doesn't exist in `old_targets` and is a duplicate:
+            //          resolve duplicate IDs:
+            //          1. Is the duplicate ID in the same file? In this case,
+            //             we have no way to determine which was the original
+            //             ID. Rename the ID being processed; stop here.
+            //          2. Have all new files been processed? If not, add this
+            //             file to the list of dirty files which will be
+            //             re-processed after new file processing is done. Stop
+            //             here.
+            //          3. Look at the timestamp of this file and of the other
+            //             file which contains the duplicate ID. If this file is
+            //             newer, rename this ID. Otherwise, update the ID and
+            //             mark the other file as dirty.
+            //    2. Check the `contents`: if the `contents` changed, add all
+            //       this target's `dependencies` to the dirty list and update
+            //       the search text for this target.
+            //    3. Check the `backlink_type`. If this changed:
+            //       1. To `Gather` from any other type: add all the target's
+            //          `references` and `dependencies` to the dirty list, since
+            //          some `references` may need IDs and everything needs
+            //          code+doc blocks.
+            //       2. From `Gather` to any other type: Do nothing. The
+            //          code+doc blocks will be removed lazily, since they have
+            //          no impact on the resulting output.
+            //       3. From `None` to `Wrapped` or `Plain`: add `references`
+            //          with no ID to the dirty list.
+            //       4. From `Wrapped` to `None`: nothing to do.
+            //    4. Walk the list of `references`/`dependencies`, removing any
+            //       dropped references.
+        }
+
+        walk_context = hydrating_walk_node(child.clone(), walk_context);
     }
+
+    walk_context
 }
 
 fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
@@ -1730,8 +1945,7 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
 
 // #### Diff support for `CodeMirrorDocBlockVec`
 /// We can't simply implement traits for `CodeMirrorDocBlockVec`, since it's not
-/// a struct. So, wrap that it in a struct, then implement traits on that
-/// struct.
+/// a struct. So, wrap it in a struct, then implement traits on that struct.
 struct CodeMirrorDocBlocksStruct<'a>(&'a CodeMirrorDocBlockVec);
 
 /// Only compare the `contents` of two doc blocks; later, we'll compare the
@@ -1919,7 +2133,7 @@ pub fn diff_code_mirror_doc_blocks(
     // while deletions must be performed beginning to end.
     //
     // Therefore, look for sequences of insertions (adds) or updates where
-    // `from_new` > `from` and swap these sequences.
+    // `from_new` > `from` and swap these sequences.
     let mut immediate_sequence_start_index: Option<usize> = None;
     for index in 0..change_specs.len() {
         let is_add = matches!(&change_specs[index], CodeMirrorDocBlockTransaction::Add(_));

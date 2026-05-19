@@ -206,10 +206,16 @@
 // -------
 //
 // ### Standard library
-use std::{collections::HashMap, ffi::OsStr, fmt::Debug, path::PathBuf, rc::Rc};
-
-use htmd::Node;
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    fmt::Debug,
+    path::PathBuf,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 // ### Third-party
+use htmd::Node;
 use lazy_static::lazy_static;
 use log::{debug, error, warn};
 use rand::random;
@@ -226,9 +232,9 @@ use crate::{
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockVec, SourceFileMetadata, TranslationResultsString, UNICODE_CURSOR_MARKER,
-        byte_index_of, codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
-        doc_block_html_to_markdown, minify, remove_tinymce_data, source_to_codechat_for_web_string,
-        transform_html,
+        byte_index_of, cache::Cache, codechat_for_web_to_source, diff_code_mirror_doc_blocks,
+        diff_str, doc_block_html_to_markdown, minify, remove_tinymce_data,
+        source_to_codechat_for_web_string, transform_html,
     },
     queue_send, queue_send_func,
     webserver::{
@@ -244,7 +250,7 @@ use crate::{
 // -------
 //
 // The max length of a message to show in the console.
-const MAX_MESSAGE_LENGTH: usize = 500;
+const MAX_MESSAGE_LENGTH: usize = 50000;
 
 lazy_static! {
         /// A regex to determine the type of the first EOL. See 'PROCESSINGS\`.
@@ -395,6 +401,7 @@ struct TranslationTask {
     to_client_tx: Sender<EditorMessage>,
     from_client_rx: Receiver<EditorMessage>,
     from_http_rx: Receiver<ProcessingTaskHttpRequest>,
+    cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
 
     // These parameters are internal state.
     /// The file currently loaded in the Client.
@@ -474,6 +481,7 @@ pub async fn translation_task(
             to_client_tx,
             from_client_rx,
             from_http_rx,
+            cache: app_state.cache.clone(),
             current_file: PathBuf::new(),
             load_file_requests: HashMap::new(),
             id: INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT,
@@ -772,6 +780,7 @@ impl TranslationTask {
                 (
                     file_to_response(
                         &http_request,
+                        self.cache.clone(),
                         new_version,
                         &self.current_file,
                         Some(&file_contents),
@@ -799,6 +808,7 @@ impl TranslationTask {
                         (
                             file_to_response(
                                 &http_request,
+                                self.cache.clone(),
                                 self.version,
                                 &self.current_file,
                                 option_file_contents.as_ref(),
@@ -880,6 +890,7 @@ impl TranslationTask {
                                     &self.current_file,
                                     contents.version,
                                     false,
+                                    self.cache.clone(),
                                 ) {
                                     Err(err) => {
                                         Err(ResultErrTypes::CannotTranslateSource(err.to_string()))
@@ -1062,6 +1073,7 @@ impl TranslationTask {
                                 &clean_file_path,
                                 cfw.version,
                                 false,
+                                self.cache.clone(),
                             ) && let TranslationResultsString::CodeChat(ccfw) = ccfws.0
                                 && let CodeMirrorDiffable::Plain(code_mirror_translated) =
                                     ccfw.source
