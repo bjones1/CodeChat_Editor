@@ -40,9 +40,8 @@
 //
 // ```sql
 // event_id, sequence_number, schema_version,
-// user_id, session_id, event_source, language_id, file_hash, file_path,
-// path_privacy, event_type, timestamp, client_timestamp_ms,
-// client_tz_offset_min, server_timestamp_ms, data
+// user_id, session_id, event_source, language_id, file_hash, event_type,
+// timestamp, client_timestamp_ms, client_tz_offset_min, data
 // ```
 //
 // * `user_id` – pseudonymous participant UUID. Course, group, assignment, and
@@ -50,10 +49,11 @@
 //   participant/date mappings instead of being configured by students.
 // * `session_id`, `event_id`, `sequence_number`, `schema_version` – event
 //   integrity and versioning metadata.
-// * `file_path` – logical path of the file being edited.
-// * `file_hash` – privacy-preserving SHA-256 hash of the file path.
+// * `file_hash` – privacy-preserving SHA-256 hash of the local file path.
 // * `event_type` – coarse event type (see `CaptureEventType` below).
-// * `timestamp` – RFC3339 timestamp (in UTC).
+// * `timestamp` – server receive/record timestamp (in UTC).
+// * `client_timestamp_ms` – optional client-observed event time for ordering
+//   and latency analysis.
 // * `data` – JSONB payload with event-specific details.
 
 use std::{
@@ -70,6 +70,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::error::Error;
 use tokio::sync::mpsc;
 use tokio_postgres::{Client, NoTls};
@@ -82,9 +83,10 @@ static NEXT_CAPTURE_EVENT_ID: AtomicU64 = AtomicU64::new(1);
 #[serde(rename_all = "snake_case")]
 #[ts(export)]
 pub enum CaptureEventType {
-    /// Server-classified edit to documentation/prose.
+    /// Edit to documentation/prose. In CodeChat files this means doc blocks;
+    /// fenced or embedded code content is classified as `WriteCode`.
     WriteDoc,
-    /// Server-classified edit to executable source code.
+    /// Edit to executable source code, including code inside CodeChat blocks.
     WriteCode,
     /// Editor activity moved between documentation and code contexts.
     SwitchPane,
@@ -154,30 +156,13 @@ impl std::fmt::Display for CaptureEventType {
     }
 }
 
-pub mod event_types {
-    use super::CaptureEventType;
-
-    pub const WRITE_DOC: CaptureEventType = CaptureEventType::WriteDoc;
-    pub const WRITE_CODE: CaptureEventType = CaptureEventType::WriteCode;
-    pub const SWITCH_PANE: CaptureEventType = CaptureEventType::SwitchPane;
-    pub const DOC_SESSION: CaptureEventType = CaptureEventType::DocSession;
-    pub const SAVE: CaptureEventType = CaptureEventType::Save;
-    pub const COMPILE: CaptureEventType = CaptureEventType::Compile;
-    pub const RUN: CaptureEventType = CaptureEventType::Run;
-    pub const SESSION_START: CaptureEventType = CaptureEventType::SessionStart;
-    pub const SESSION_END: CaptureEventType = CaptureEventType::SessionEnd;
-    /// Audit row emitted when the user changes consent or recording settings.
-    pub const CAPTURE_SETTINGS_CHANGED: CaptureEventType = CaptureEventType::CaptureSettingsChanged;
-    pub const COMPILE_END: CaptureEventType = CaptureEventType::CompileEnd;
-    pub const RUN_END: CaptureEventType = CaptureEventType::RunEnd;
-    pub const TASK_START: CaptureEventType = CaptureEventType::TaskStart;
-    pub const TASK_SUBMIT: CaptureEventType = CaptureEventType::TaskSubmit;
-    pub const DEBUG_TASK_START: CaptureEventType = CaptureEventType::DebugTaskStart;
-    pub const DEBUG_TASK_SUBMIT: CaptureEventType = CaptureEventType::DebugTaskSubmit;
-    pub const HANDOFF_START: CaptureEventType = CaptureEventType::HandoffStart;
-    pub const HANDOFF_END: CaptureEventType = CaptureEventType::HandoffEnd;
-    pub const REFLECTION_PROMPT_INSERTED: CaptureEventType =
-        CaptureEventType::ReflectionPromptInserted;
+/// Hash a local file path before it enters capture storage. The hash is stable
+/// enough to group edits to the same file while avoiding raw path collection.
+pub fn hash_capture_path(path: &str) -> String {
+    Sha256::digest(path.as_bytes())
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Configuration used to construct the PostgreSQL connection string.
@@ -208,6 +193,15 @@ pub struct CaptureConfig {
 }
 
 impl CaptureConfig {
+    /// Validate capture configuration before starting the worker. This catches
+    /// invalid setup early and avoids ambiguous "random port" behavior.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.port == Some(0) {
+            return Err("capture database port must be between 1 and 65535".to_string());
+        }
+        Ok(())
+    }
+
     /// Build a libpq-style connection string.
     pub fn to_conn_str(&self) -> String {
         let mut parts = vec![
@@ -244,7 +238,7 @@ impl CaptureConfig {
             None => None,
         };
 
-        Ok(Some(Self {
+        let cfg = Self {
             host,
             port,
             user: required_env_var("CODECHAT_CAPTURE_USER")?,
@@ -252,7 +246,9 @@ impl CaptureConfig {
             dbname: required_env_var("CODECHAT_CAPTURE_DBNAME")?,
             app_id: env_var_trimmed("CODECHAT_CAPTURE_APP_ID"),
             fallback_path: env_var_trimmed("CODECHAT_CAPTURE_FALLBACK_PATH").map(PathBuf::from),
-        }))
+        };
+        cfg.validate()?;
+        Ok(Some(cfg))
     }
 }
 
@@ -276,7 +272,13 @@ pub fn load_capture_config(root_path: &Path) -> Option<CaptureConfig> {
 
     match fs::read_to_string(&config_path) {
         Ok(json) => match serde_json::from_str::<CaptureConfig>(&json) {
-            Ok(cfg) => Some(with_default_capture_fallback_path(cfg, root_path)),
+            Ok(cfg) => match cfg.validate() {
+                Ok(()) => Some(with_default_capture_fallback_path(cfg, root_path)),
+                Err(err) => {
+                    warn!("Capture: invalid configuration in {config_path:?}: {err}");
+                    None
+                }
+            },
             Err(err) => {
                 warn!("Capture: invalid JSON in {config_path:?}: {err}");
                 None
@@ -320,15 +322,29 @@ fn required_env_var(name: &str) -> Result<String, String> {
     env_var_trimmed(name).ok_or_else(|| format!("{name} is required when capture env is used"))
 }
 
-/// Capture worker health, exposed through `/capture/status` and the VS Code
-/// status item.
+/// Known capture worker states reported to the VS Code status UI.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum CaptureState {
+    /// Capture is not configured or the worker is unavailable.
+    Disabled,
+    /// Capture worker is starting and attempting the first database connection.
+    Starting,
+    /// Events are being persisted to PostgreSQL.
+    Database,
+    /// Events are being written to local JSONL fallback storage.
+    Fallback,
+}
+
+/// Capture worker health exposed to the VS Code status item.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
 #[ts(export)]
 pub struct CaptureStatus {
     /// True when the capture worker is configured and accepting events.
     pub enabled: bool,
-    /// Worker state: `starting`, `database`, `fallback`, or `disabled`.
-    pub state: String,
+    /// Current worker state.
+    pub state: CaptureState,
     /// Number of events accepted into the worker queue.
     pub queued_events: u64,
     /// Number of events inserted into PostgreSQL.
@@ -347,7 +363,7 @@ impl CaptureStatus {
     pub fn disabled() -> Self {
         Self {
             enabled: false,
-            state: "disabled".to_string(),
+            state: CaptureState::Disabled,
             queued_events: 0,
             persisted_events: 0,
             fallback_events: 0,
@@ -360,7 +376,7 @@ impl CaptureStatus {
     fn starting(fallback_path: Option<PathBuf>) -> Self {
         Self {
             enabled: true,
-            state: "starting".to_string(),
+            state: CaptureState::Starting,
             queued_events: 0,
             persisted_events: 0,
             fallback_events: 0,
@@ -369,34 +385,6 @@ impl CaptureStatus {
             fallback_path,
         }
     }
-}
-
-/// Typed metadata stored in first-class DB columns instead of the event-specific
-/// JSON `data` payload.
-#[derive(Debug, Clone, Default)]
-pub struct CaptureEventMetadata {
-    /// Globally unique event identifier, generated by the client or server.
-    pub event_id: Option<String>,
-    /// Client-local event order for one extension session.
-    pub sequence_number: Option<i64>,
-    /// Capture payload schema version.
-    pub schema_version: Option<i32>,
-    /// Logical capture session UUID.
-    pub session_id: Option<String>,
-    /// Origin of the event stream, such as the VS Code extension.
-    pub event_source: Option<String>,
-    /// VS Code language identifier for the active file, when known.
-    pub language_id: Option<String>,
-    /// Privacy-preserving SHA-256 hash of the local file path.
-    pub file_hash: Option<String>,
-    /// Whether the path was sent plainly, hashed, or omitted.
-    pub path_privacy: Option<String>,
-    /// Client timestamp, in milliseconds since Unix epoch.
-    pub client_timestamp_ms: Option<i64>,
-    /// Client timezone offset in minutes.
-    pub client_tz_offset_min: Option<i32>,
-    /// Server timestamp, in milliseconds since Unix epoch.
-    pub server_timestamp_ms: Option<i64>,
 }
 
 /// The in-memory representation of a single capture event.
@@ -418,20 +406,15 @@ pub struct CaptureEvent {
     pub language_id: Option<String>,
     /// Privacy-preserving SHA-256 hash of the local file path.
     pub file_hash: Option<String>,
-    /// Raw file path when path hashing is disabled.
-    pub file_path: Option<String>,
-    /// Whether the path was sent plainly, hashed, or omitted.
-    pub path_privacy: Option<String>,
     /// Canonical type of the captured event.
     pub event_type: CaptureEventType,
-    /// When the event occurred, in UTC.
+    /// Server receive/record timestamp, in UTC.
     pub timestamp: DateTime<Utc>,
-    /// Client timestamp, in milliseconds since Unix epoch.
+    /// Optional client-observed event timestamp, in milliseconds since Unix
+    /// epoch.
     pub client_timestamp_ms: Option<i64>,
     /// Client timezone offset in minutes.
     pub client_tz_offset_min: Option<i32>,
-    /// Server timestamp, in milliseconds since Unix epoch.
-    pub server_timestamp_ms: i64,
     /// Event-specific payload, stored as JSON text in the DB.
     pub data: serde_json::Value,
 }
@@ -440,48 +423,58 @@ impl CaptureEvent {
     /// Convenience constructor when the caller already has a timestamp.
     pub fn new(
         user_id: String,
-        file_path: Option<String>,
+        file_hash: Option<String>,
         event_type: CaptureEventType,
         timestamp: DateTime<Utc>,
         data: serde_json::Value,
-    ) -> Self {
-        Self::with_metadata(
-            user_id,
-            file_path,
-            event_type,
-            timestamp,
-            data,
-            CaptureEventMetadata::default(),
-        )
-    }
-
-    /// Constructor for callers that already have first-class capture metadata.
-    pub fn with_metadata(
-        user_id: String,
-        file_path: Option<String>,
-        event_type: CaptureEventType,
-        timestamp: DateTime<Utc>,
-        data: serde_json::Value,
-        metadata: CaptureEventMetadata,
     ) -> Self {
         Self {
-            event_id: metadata.event_id,
-            sequence_number: metadata.sequence_number,
-            schema_version: metadata.schema_version,
+            event_id: None,
+            sequence_number: None,
+            schema_version: None,
             user_id,
-            session_id: metadata.session_id,
-            event_source: metadata.event_source,
-            language_id: metadata.language_id,
-            file_hash: metadata.file_hash,
-            file_path,
-            path_privacy: metadata.path_privacy,
+            session_id: None,
+            event_source: None,
+            language_id: None,
+            file_hash,
             event_type,
             timestamp,
-            client_timestamp_ms: metadata.client_timestamp_ms,
-            client_tz_offset_min: metadata.client_tz_offset_min,
-            server_timestamp_ms: metadata
-                .server_timestamp_ms
-                .unwrap_or_else(|| timestamp.timestamp_millis()),
+            client_timestamp_ms: None,
+            client_tz_offset_min: None,
+            data,
+        }
+    }
+
+    /// Constructor for callers that already have first-class capture columns.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_columns(
+        event_id: Option<String>,
+        sequence_number: Option<i64>,
+        schema_version: Option<i32>,
+        user_id: String,
+        session_id: Option<String>,
+        event_source: Option<String>,
+        language_id: Option<String>,
+        file_hash: Option<String>,
+        event_type: CaptureEventType,
+        timestamp: DateTime<Utc>,
+        client_timestamp_ms: Option<i64>,
+        client_tz_offset_min: Option<i32>,
+        data: serde_json::Value,
+    ) -> Self {
+        Self {
+            event_id,
+            sequence_number,
+            schema_version,
+            user_id,
+            session_id,
+            event_source,
+            language_id,
+            file_hash,
+            event_type,
+            timestamp,
+            client_timestamp_ms,
+            client_tz_offset_min,
             data,
         }
     }
@@ -489,11 +482,11 @@ impl CaptureEvent {
     /// Convenience constructor which uses the current time.
     pub fn now(
         user_id: String,
-        file_path: Option<String>,
+        file_hash: Option<String>,
         event_type: CaptureEventType,
         data: serde_json::Value,
     ) -> Self {
-        Self::new(user_id, file_path, event_type, Utc::now(), data)
+        Self::new(user_id, file_hash, event_type, Utc::now(), data)
     }
 }
 
@@ -565,7 +558,7 @@ impl EventCapture {
                         Ok((client, connection)) => {
                             info!("Capture: successfully connected to PostgreSQL.");
                             update_status(&status_worker, |status| {
-                                status.state = "database".to_string();
+                                status.state = CaptureState::Database;
                                 status.last_error = None;
                             });
 
@@ -575,7 +568,7 @@ impl EventCapture {
                                 if let Err(err) = connection.await {
                                     error!("Capture PostgreSQL connection error: {err}");
                                     update_status(&status_connection, |status| {
-                                        status.state = "fallback".to_string();
+                                        status.state = CaptureState::Fallback;
                                         status.last_error = Some(format!(
                                             "PostgreSQL connection error: {err}"
                                         ));
@@ -587,8 +580,8 @@ impl EventCapture {
                             // them into the database.
                             while let Some(event) = rx.recv().await {
                                 debug!(
-                                    "Capture: inserting event: type={}, user_id={}, file_path={:?}",
-                                    event.event_type, event.user_id, event.file_path
+                                    "Capture: inserting event: type={}, user_id={}, file_hash={:?}",
+                                    event.event_type, event.user_id, event.file_hash
                                 );
 
                                 if let Err(err) = insert_event(&client, &event).await {
@@ -597,7 +590,7 @@ impl EventCapture {
                                         event.event_type, event.user_id
                                     );
                                     update_status(&status_worker, |status| {
-                                        status.state = "fallback".to_string();
+                                        status.state = CaptureState::Fallback;
                                         status.last_error = Some(format!(
                                             "PostgreSQL insert failed: {err}"
                                         ));
@@ -611,8 +604,8 @@ impl EventCapture {
                                 } else {
                                     update_status(&status_worker, |status| {
                                         status.persisted_events += 1;
-                                        if status.state != "database" {
-                                            status.state = "database".to_string();
+                                        if status.state != CaptureState::Database {
+                                            status.state = CaptureState::Database;
                                         }
                                     });
                                     debug!("Capture: event insert successful.");
@@ -631,7 +624,7 @@ impl EventCapture {
                             log_pg_connect_error(&ctx, &err);
 
                             update_status(&status_worker, |status| {
-                                status.state = "fallback".to_string();
+                                status.state = CaptureState::Fallback;
                                 status.last_error = Some(format!(
                                     "PostgreSQL connection failed: {err}"
                                 ));
@@ -664,8 +657,8 @@ impl EventCapture {
     /// Enqueue an event for insertion. This is non-blocking.
     pub fn log(&self, event: CaptureEvent) {
         debug!(
-            "Capture: queueing event: type={}, user_id={}, file_path={:?}",
-            event.event_type, event.user_id, event.file_path
+            "Capture: queueing event: type={}, user_id={}, file_hash={:?}",
+            event.event_type, event.user_id, event.file_hash
         );
 
         if let Err(err) = self.tx.send(event) {
@@ -746,13 +739,10 @@ fn append_fallback_event(fallback_path: &Path, event: &CaptureEvent) -> io::Resu
             "event_source": event.event_source,
             "language_id": event.language_id,
             "file_hash": event.file_hash,
-            "file_path": event.file_path,
-            "path_privacy": event.path_privacy,
             "event_type": event.event_type.as_str(),
             "timestamp": event.timestamp.to_rfc3339(),
             "client_timestamp_ms": event.client_timestamp_ms,
             "client_tz_offset_min": event.client_tz_offset_min,
-            "server_timestamp_ms": event.server_timestamp_ms,
             "data": event.data,
         }
     });
@@ -838,15 +828,13 @@ async fn insert_rich_event(
             "INSERT INTO events \
              (event_id, sequence_number, schema_version, \
               user_id, session_id, \
-              event_source, language_id, file_hash, file_path, path_privacy, \
-              event_type, timestamp, client_timestamp_ms, client_tz_offset_min, \
-              server_timestamp_ms, data) \
+              event_source, language_id, file_hash, \
+              event_type, timestamp, client_timestamp_ms, client_tz_offset_min, data) \
              VALUES \
               ($1, $2, $3, \
               $4, $5, \
-              $6, $7, $8, $9, $10, \
-              $11, $12::text::timestamptz, $13, $14, \
-              $15, $16::text::jsonb)",
+              $6, $7, $8, \
+              $9, $10::text::timestamptz, $11, $12, $13::text::jsonb)",
             &[
                 &event.event_id,
                 &event.sequence_number,
@@ -856,13 +844,10 @@ async fn insert_rich_event(
                 &event.event_source,
                 &event.language_id,
                 &event.file_hash,
-                &event.file_path,
-                &event.path_privacy,
                 &event_type,
                 &timestamp,
                 &event.client_timestamp_ms,
                 &event.client_tz_offset_min,
-                &event.server_timestamp_ms,
                 &data_text,
             ],
         )
@@ -881,6 +866,7 @@ async fn insert_legacy_event(
         "Capture: executing legacy INSERT for user_id={}, event_type={}, timestamp={}",
         event.user_id, event_type, timestamp
     );
+    let file_path: Option<String> = None;
 
     client
         .execute(
@@ -889,7 +875,7 @@ async fn insert_legacy_event(
              VALUES ($1, $2, $3, $4::text::timestamptz, $5::text::jsonb)",
             &[
                 &event.user_id,
-                &event.file_path,
+                &file_path,
                 &event_type,
                 &timestamp,
                 &data_text,
@@ -929,15 +915,15 @@ mod tests {
     #[test]
     fn capture_event_type_uses_stable_serialized_strings() {
         assert_eq!(
-            serde_json::to_value(event_types::WRITE_DOC).unwrap(),
+            serde_json::to_value(CaptureEventType::WriteDoc).unwrap(),
             json!("write_doc")
         );
         assert_eq!(
             serde_json::from_value::<CaptureEventType>(json!("compile_end")).unwrap(),
-            event_types::COMPILE_END
+            CaptureEventType::CompileEnd
         );
         assert_eq!(
-            serde_json::to_value(event_types::CAPTURE_SETTINGS_CHANGED).unwrap(),
+            serde_json::to_value(CaptureEventType::CaptureSettingsChanged).unwrap(),
             json!("capture_settings_changed")
         );
         assert!(serde_json::from_value::<CaptureEventType>(json!("random")).is_err());
@@ -949,17 +935,16 @@ mod tests {
 
         let ev = CaptureEvent::new(
             "user123".to_string(),
-            Some("/path/to/file.rs".to_string()),
-            event_types::WRITE_DOC,
+            Some("hashed-path".to_string()),
+            CaptureEventType::WriteDoc,
             ts,
             json!({ "chars_typed": 42 }),
         );
 
         assert_eq!(ev.user_id, "user123");
-        assert_eq!(ev.file_path.as_deref(), Some("/path/to/file.rs"));
-        assert_eq!(ev.event_type, event_types::WRITE_DOC);
+        assert_eq!(ev.file_hash.as_deref(), Some("hashed-path"));
+        assert_eq!(ev.event_type, CaptureEventType::WriteDoc);
         assert_eq!(ev.timestamp, ts);
-        assert_eq!(ev.server_timestamp_ms, ts.timestamp_millis());
         assert!(ev.event_id.is_none());
         assert_eq!(ev.data, json!({ "chars_typed": 42 }));
     }
@@ -970,15 +955,14 @@ mod tests {
         let ev = CaptureEvent::now(
             "user123".to_string(),
             None,
-            event_types::SAVE,
+            CaptureEventType::Save,
             json!({ "reason": "manual" }),
         );
         let after = Utc::now();
 
         assert_eq!(ev.user_id, "user123");
-        assert!(ev.file_path.is_none());
-        assert_eq!(ev.event_type, event_types::SAVE);
-        assert_eq!(ev.server_timestamp_ms, ev.timestamp.timestamp_millis());
+        assert!(ev.file_hash.is_none());
+        assert_eq!(ev.event_type, CaptureEventType::Save);
         assert_eq!(ev.data, json!({ "reason": "manual" }));
 
         // Timestamp sanity check: it should be between before and after
@@ -987,28 +971,23 @@ mod tests {
     }
 
     #[test]
-    fn capture_event_with_metadata_sets_analysis_columns() {
+    fn capture_event_with_columns_sets_analysis_columns() {
         let ts = Utc::now();
 
-        let ev = CaptureEvent::with_metadata(
+        let ev = CaptureEvent::with_columns(
+            Some("abc-123".to_string()),
+            Some(42),
+            Some(2),
             "user123".to_string(),
-            None,
-            event_types::WRITE_CODE,
+            Some("session-1".to_string()),
+            Some("vscode_extension".to_string()),
+            Some("rust".to_string()),
+            Some("hash".to_string()),
+            CaptureEventType::WriteCode,
             ts,
+            Some(ts.timestamp_millis() - 50),
+            Some(-360),
             json!({ "chars_typed": 42 }),
-            CaptureEventMetadata {
-                event_id: Some("abc-123".to_string()),
-                sequence_number: Some(42),
-                schema_version: Some(2),
-                session_id: Some("session-1".to_string()),
-                event_source: Some("vscode_extension".to_string()),
-                language_id: Some("rust".to_string()),
-                file_hash: Some("hash".to_string()),
-                path_privacy: Some("sha256".to_string()),
-                client_timestamp_ms: Some(ts.timestamp_millis() - 50),
-                client_tz_offset_min: Some(-360),
-                server_timestamp_ms: Some(ts.timestamp_millis()),
-            },
         );
 
         assert_eq!(ev.event_id.as_deref(), Some("abc-123"));
@@ -1018,10 +997,8 @@ mod tests {
         assert_eq!(ev.event_source.as_deref(), Some("vscode_extension"));
         assert_eq!(ev.language_id.as_deref(), Some("rust"));
         assert_eq!(ev.file_hash.as_deref(), Some("hash"));
-        assert_eq!(ev.path_privacy.as_deref(), Some("sha256"));
         assert_eq!(ev.client_timestamp_ms, Some(ts.timestamp_millis() - 50));
         assert_eq!(ev.client_tz_offset_min, Some(-360));
-        assert_eq!(ev.server_timestamp_ms, ts.timestamp_millis());
         assert_eq!(ev.data, json!({ "chars_typed": 42 }));
     }
 
@@ -1053,6 +1030,21 @@ mod tests {
 
         // And it should serialize back to JSON without error
         let _back = serde_json::to_string(&cfg).expect("Should serialize");
+    }
+
+    #[test]
+    fn capture_config_rejects_port_zero() {
+        let cfg = CaptureConfig {
+            host: "localhost".to_string(),
+            port: Some(0),
+            user: "alice".to_string(),
+            password: "secret".to_string(),
+            dbname: "codechat_capture".to_string(),
+            app_id: None,
+            fallback_path: None,
+        };
+
+        assert!(cfg.validate().is_err());
     }
 
     use std::fs;
@@ -1115,10 +1107,8 @@ mod tests {
             "event_source",
             "language_id",
             "file_hash",
-            "path_privacy",
             "client_timestamp_ms",
             "client_tz_offset_min",
-            "server_timestamp_ms",
         ];
         for column in required_columns {
             let row = client
@@ -1154,31 +1144,25 @@ mod tests {
         let expected_session_id = format!("TEST_SESSION_{test_suffix}");
         let expected_file_hash = format!("TEST_FILE_HASH_{test_suffix}");
         let event_timestamp = Utc::now();
-        let expected_server_timestamp_ms = event_timestamp.timestamp_millis();
-        let expected_client_timestamp_ms = expected_server_timestamp_ms - 50;
+        let expected_client_timestamp_ms = event_timestamp.timestamp_millis() - 50;
         let expected_data = json!({
             "chars_typed": 123,
             "classification_basis": "integration_test"
         });
-        let event = CaptureEvent::with_metadata(
+        let event = CaptureEvent::with_columns(
+            Some(expected_event_id.clone()),
+            Some(42),
+            Some(2),
             expected_user_id.clone(),
-            None,
-            event_types::WRITE_DOC,
+            Some(expected_session_id.clone()),
+            Some("integration_test".to_string()),
+            Some("rust".to_string()),
+            Some(expected_file_hash.clone()),
+            CaptureEventType::WriteDoc,
             event_timestamp,
+            Some(expected_client_timestamp_ms),
+            Some(360),
             expected_data.clone(),
-            CaptureEventMetadata {
-                event_id: Some(expected_event_id.clone()),
-                sequence_number: Some(42),
-                schema_version: Some(2),
-                session_id: Some(expected_session_id.clone()),
-                event_source: Some("integration_test".to_string()),
-                language_id: Some("rust".to_string()),
-                file_hash: Some(expected_file_hash.clone()),
-                path_privacy: Some("sha256".to_string()),
-                client_timestamp_ms: Some(expected_client_timestamp_ms),
-                client_tz_offset_min: Some(360),
-                server_timestamp_ms: Some(expected_server_timestamp_ms),
-            },
         );
 
         log::info!("TEST: logging a test capture event.");
@@ -1194,11 +1178,10 @@ mod tests {
             match client
                 .query_one(
                     r#"
-                    SELECT user_id, file_path, event_type,
+                    SELECT user_id, event_type,
                            event_id, sequence_number, schema_version,
                            session_id, event_source, language_id, file_hash,
-                           path_privacy, client_timestamp_ms,
-                           client_tz_offset_min, server_timestamp_ms, data::text
+                           client_timestamp_ms, client_tz_offset_min, data::text
                     FROM events
                     WHERE event_id = $1
                     ORDER BY id DESC
@@ -1219,25 +1202,21 @@ mod tests {
         };
 
         let user_id: String = row.get("user_id");
-        let file_path: Option<String> = row.get(1);
-        let event_type: String = row.get(2);
-        let event_id: Option<String> = row.get(3);
-        let sequence_number: Option<i64> = row.get(4);
-        let schema_version: Option<i32> = row.get(5);
-        let session_id: Option<String> = row.get(6);
-        let event_source: Option<String> = row.get(7);
-        let language_id: Option<String> = row.get(8);
-        let file_hash: Option<String> = row.get(9);
-        let path_privacy: Option<String> = row.get(10);
-        let client_timestamp_ms: Option<i64> = row.get(11);
-        let client_tz_offset_min: Option<i32> = row.get(12);
-        let server_timestamp_ms: Option<i64> = row.get(13);
-        let data_text: String = row.get(14);
+        let event_type: String = row.get(1);
+        let event_id: Option<String> = row.get(2);
+        let sequence_number: Option<i64> = row.get(3);
+        let schema_version: Option<i32> = row.get(4);
+        let session_id: Option<String> = row.get(5);
+        let event_source: Option<String> = row.get(6);
+        let language_id: Option<String> = row.get(7);
+        let file_hash: Option<String> = row.get(8);
+        let client_timestamp_ms: Option<i64> = row.get(9);
+        let client_tz_offset_min: Option<i32> = row.get(10);
+        let data_text: String = row.get(11);
         let data_value: serde_json::Value = serde_json::from_str(&data_text)?;
 
         assert_eq!(user_id, expected_user_id);
-        assert!(file_path.is_none());
-        assert_eq!(event_type, event_types::WRITE_DOC.as_str());
+        assert_eq!(event_type, CaptureEventType::WriteDoc.as_str());
         assert_eq!(event_id.as_deref(), Some(expected_event_id.as_str()));
         assert_eq!(sequence_number, Some(42));
         assert_eq!(schema_version, Some(2));
@@ -1245,10 +1224,8 @@ mod tests {
         assert_eq!(event_source.as_deref(), Some("integration_test"));
         assert_eq!(language_id.as_deref(), Some("rust"));
         assert_eq!(file_hash.as_deref(), Some(expected_file_hash.as_str()));
-        assert_eq!(path_privacy.as_deref(), Some("sha256"));
         assert_eq!(client_timestamp_ms, Some(expected_client_timestamp_ms));
         assert_eq!(client_tz_offset_min, Some(360));
-        assert_eq!(server_timestamp_ms, Some(expected_server_timestamp_ms));
         assert_eq!(data_value, expected_data);
 
         log::info!("✅ TEST: EventCapture integration test succeeded and wrote to database.");

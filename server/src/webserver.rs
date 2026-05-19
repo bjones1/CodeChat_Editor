@@ -98,8 +98,8 @@ use crate::{
 };
 
 use crate::capture::{
-    CaptureEvent, CaptureEventMetadata, CaptureEventType, CaptureStatus, EventCapture,
-    generate_capture_event_id, load_capture_config,
+    CaptureEvent, CaptureEventType, CaptureStatus, EventCapture, generate_capture_event_id,
+    load_capture_config,
 };
 
 use chrono::Utc;
@@ -457,15 +457,10 @@ pub struct CaptureEventWire {
     /// VS Code language identifier for the active file, when known.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language_id: Option<String>,
-    /// SHA-256 hash of the local file path when path hashing is enabled.
+    /// SHA-256 hash of the local file path. Raw local paths are intentionally
+    /// not accepted on the capture wire.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_hash: Option<String>,
-    /// Raw file path only when path hashing is disabled for debugging.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub file_path: Option<String>,
-    /// Whether the path was sent plainly, hashed, or omitted.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path_privacy: Option<String>,
     /// Canonical capture event type.
     pub event_type: CaptureEventType,
 
@@ -671,11 +666,6 @@ async fn stop(app_state: WebAppState) -> HttpResponse {
     HttpResponse::NoContent().finish()
 }
 
-#[get("/capture/status")]
-async fn capture_status_endpoint(app_state: WebAppState) -> HttpResponse {
-    HttpResponse::Ok().json(capture_status(&app_state))
-}
-
 /// Log a capture event if capture is enabled.
 pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> CaptureStatus {
     if let Some(capture) = &app_state.capture {
@@ -689,30 +679,23 @@ pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> Cap
             serde_json::json!({ "value": data })
         };
 
-        let metadata = CaptureEventMetadata {
-            event_id: Some(
+        let event = CaptureEvent::with_columns(
+            Some(
                 wire.event_id
                     .unwrap_or_else(|| generate_capture_event_id("server")),
             ),
-            sequence_number: wire.sequence_number,
-            schema_version: wire.schema_version,
-            session_id: wire.session_id,
-            event_source: wire.event_source,
-            language_id: wire.language_id,
-            file_hash: wire.file_hash,
-            path_privacy: wire.path_privacy,
-            client_timestamp_ms: wire.client_timestamp_ms,
-            client_tz_offset_min: wire.client_tz_offset_min,
-            server_timestamp_ms: Some(server_timestamp.timestamp_millis()),
-        };
-
-        let event = CaptureEvent::with_metadata(
+            wire.sequence_number,
+            wire.schema_version,
             wire.user_id,
-            wire.file_path,
+            wire.session_id,
+            wire.event_source,
+            wire.language_id,
+            wire.file_hash,
             wire.event_type,
             server_timestamp,
+            wire.client_timestamp_ms,
+            wire.client_tz_offset_min,
             data,
-            metadata,
         );
 
         capture.log(event);
@@ -1709,7 +1692,6 @@ where
         .service(vscode_client_framework)
         .service(ping)
         .service(stop)
-        .service(capture_status_endpoint)
         // Reroute to the filewatcher filesystem for typical user-requested
         // URLs.
         .route("/", web::get().to(filewatcher_root_fs_redirect))

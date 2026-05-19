@@ -21,13 +21,10 @@ CREATE TABLE IF NOT EXISTS public.events (
     event_source        TEXT,
     language_id         TEXT,
     file_hash           TEXT,
-    file_path           TEXT,
-    path_privacy        TEXT,
     event_type          TEXT NOT NULL,
     "timestamp"         TIMESTAMPTZ NOT NULL DEFAULT now(),
     client_timestamp_ms BIGINT,
     client_tz_offset_min INTEGER,
-    server_timestamp_ms BIGINT,
     data                JSONB NOT NULL DEFAULT '{}'::jsonb,
     inserted_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -39,10 +36,8 @@ ALTER TABLE public.events ADD COLUMN IF NOT EXISTS session_id TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS event_source TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS language_id TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS file_hash TEXT;
-ALTER TABLE public.events ADD COLUMN IF NOT EXISTS path_privacy TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS client_timestamp_ms BIGINT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS client_tz_offset_min INTEGER;
-ALTER TABLE public.events ADD COLUMN IF NOT EXISTS server_timestamp_ms BIGINT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS inserted_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
 ALTER TABLE public.events DROP COLUMN IF EXISTS assignment_id;
@@ -51,6 +46,9 @@ ALTER TABLE public.events DROP COLUMN IF EXISTS condition;
 ALTER TABLE public.events DROP COLUMN IF EXISTS course_id;
 ALTER TABLE public.events DROP COLUMN IF EXISTS task_id;
 ALTER TABLE public.events DROP COLUMN IF EXISTS capture_mode;
+ALTER TABLE public.events DROP COLUMN IF EXISTS file_path;
+ALTER TABLE public.events DROP COLUMN IF EXISTS path_privacy;
+ALTER TABLE public.events DROP COLUMN IF EXISTS server_timestamp_ms;
 
 DO $$
 DECLARE
@@ -123,7 +121,6 @@ SET
         NULLIF(data->>'languageId', '')
     ),
     file_hash = COALESCE(file_hash, NULLIF(data->>'file_hash', '')),
-    path_privacy = COALESCE(path_privacy, NULLIF(data->>'path_privacy', '')),
     client_timestamp_ms = COALESCE(
         client_timestamp_ms,
         CASE
@@ -136,14 +133,6 @@ SET
         CASE
             WHEN data->>'client_tz_offset_min' ~ '^-?[0-9]+$'
             THEN (data->>'client_tz_offset_min')::integer
-        END
-    ),
-    server_timestamp_ms = COALESCE(
-        server_timestamp_ms,
-        CASE
-            WHEN data->>'server_timestamp_ms' ~ '^-?[0-9]+$'
-            THEN (data->>'server_timestamp_ms')::bigint
-            ELSE floor(extract(epoch from "timestamp") * 1000)::bigint
         END
     );
 
@@ -171,8 +160,9 @@ COMMENT ON TABLE public.events IS
     'CodeChat dissertation capture events. Course, group, assignment, condition, and task context are joined during analysis from participant/date mappings.';
 COMMENT ON COLUMN public.events.user_id IS 'Pseudonymous participant UUID generated or supplied by the VS Code extension.';
 COMMENT ON COLUMN public.events.session_id IS 'Capture session UUID emitted by the VS Code extension.';
-COMMENT ON COLUMN public.events.file_hash IS 'SHA-256 hash of the file path when path hashing is enabled.';
-COMMENT ON COLUMN public.events.file_path IS 'Raw captured file path; NULL when path hashing is enabled.';
+COMMENT ON COLUMN public.events.file_hash IS 'SHA-256 hash of the local file path; raw local paths are not stored.';
+COMMENT ON COLUMN public.events."timestamp" IS 'Server receive/record timestamp in UTC.';
+COMMENT ON COLUMN public.events.client_timestamp_ms IS 'Optional client-observed event timestamp in milliseconds since Unix epoch.';
 COMMENT ON COLUMN public.events.data IS 'Event-specific JSON payload. Known telemetry metadata lives in typed columns.';
 
 -- Least-privilege deployment guidance:

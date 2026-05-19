@@ -222,7 +222,7 @@ use tokio::{
 
 // ### Local
 use crate::{
-    capture::{CaptureEventType, event_types},
+    capture::{CaptureEventType, hash_capture_path},
     lexer::{CodeDocBlock, DocBlock, supported_languages::MARKDOWN_MODE},
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
@@ -461,8 +461,6 @@ struct CaptureContext {
     event_source: Option<String>,
     /// Extension session UUID carried on the capture wire payload.
     session_id: Option<String>,
-    /// Whether extension-originated file paths are sent plainly or hashed.
-    path_privacy: Option<String>,
     /// Client timezone offset in minutes, retained for generated write events.
     client_tz_offset_min: Option<i32>,
     /// Capture payload schema version from the extension.
@@ -494,9 +492,6 @@ impl CaptureContext {
         if let Some(session_id) = &wire.session_id {
             self.session_id = Some(session_id.clone());
         }
-        if let Some(path_privacy) = &wire.path_privacy {
-            self.path_privacy = Some(path_privacy.clone());
-        }
         if let Some(schema_version) = wire.schema_version {
             self.schema_version = Some(schema_version);
         }
@@ -512,13 +507,9 @@ impl CaptureContext {
             {
                 self.active = active;
             }
-            // Support older wire payloads that stored this metadata in `data`.
+            // Support older wire payloads that stored the session in `data`.
             if let Some(session_id) = data.get("session_id").and_then(serde_json::Value::as_str) {
                 self.session_id = Some(session_id.to_string());
-            }
-            if let Some(path_privacy) = data.get("path_privacy").and_then(serde_json::Value::as_str)
-            {
-                self.path_privacy = Some(path_privacy.to_string());
             }
         }
     }
@@ -557,9 +548,7 @@ impl CaptureContext {
             session_id: self.session_id.clone(),
             event_source: self.event_source.clone(),
             language_id: None,
-            file_hash: None,
-            file_path,
-            path_privacy: self.path_privacy.clone(),
+            file_hash: file_path.as_deref().map(hash_capture_path),
             event_type,
             client_timestamp_ms: None,
             client_tz_offset_min: self.client_tz_offset_min,
@@ -898,7 +887,7 @@ impl TranslationTask {
             return;
         }
         self.log_server_capture_event(
-            event_types::WRITE_CODE,
+            CaptureEventType::WriteCode,
             file_path,
             serde_json::json!({
                 "source": "server_translation",
@@ -920,7 +909,7 @@ impl TranslationTask {
         if metadata.mode == MARKDOWN_MODE {
             if !compare_html(before_doc, &after.doc) {
                 self.log_server_capture_event(
-                    event_types::WRITE_DOC,
+                    CaptureEventType::WriteDoc,
                     file_path,
                     serde_json::json!({
                         "source": source,
@@ -935,7 +924,7 @@ impl TranslationTask {
 
         if before_doc != after.doc {
             self.log_server_capture_event(
-                event_types::WRITE_CODE,
+                CaptureEventType::WriteCode,
                 file_path,
                 serde_json::json!({
                     "source": source,
@@ -955,7 +944,7 @@ impl TranslationTask {
                 serde_json::json!(diff_code_mirror_doc_blocks(before, &after.doc_blocks))
             });
             self.log_server_capture_event(
-                event_types::WRITE_DOC,
+                CaptureEventType::WriteDoc,
                 file_path,
                 serde_json::json!({
                     "source": source,
@@ -1700,7 +1689,7 @@ fn debug_shorten<T: Debug>(val: T) -> String {
 #[cfg(test)]
 mod tests {
     use crate::{
-        capture::event_types,
+        capture::CaptureEventType,
         processing::CodeMirrorDocBlock,
         translation::{CaptureContext, capture_control_only, doc_blocks_compare},
         webserver::CaptureEventWire,
@@ -1721,8 +1710,6 @@ mod tests {
             event_source: Some("vscode_extension".to_string()),
             language_id: None,
             file_hash: None,
-            file_path: None,
-            path_privacy: None,
             event_type,
             client_timestamp_ms: None,
             client_tz_offset_min: Some(360),
@@ -1736,12 +1723,12 @@ mod tests {
         // Without an active capture session, translated writes must be skipped.
         assert!(
             context
-                .capture_event(event_types::WRITE_CODE, None, serde_json::json!({}))
+                .capture_event(CaptureEventType::WriteCode, None, serde_json::json!({}))
                 .is_none()
         );
 
         context.update_from_wire(&capture_wire(
-            event_types::SESSION_START,
+            CaptureEventType::SessionStart,
             serde_json::json!({
                 "session_id": "session",
                 "capture_active": true,
@@ -1750,12 +1737,12 @@ mod tests {
         // A session_start activates server-side translated write capture.
         assert!(
             context
-                .capture_event(event_types::WRITE_CODE, None, serde_json::json!({}))
+                .capture_event(CaptureEventType::WriteCode, None, serde_json::json!({}))
                 .is_some()
         );
 
         context.update_from_wire(&capture_wire(
-            event_types::SESSION_END,
+            CaptureEventType::SessionEnd,
             serde_json::json!({
                 "capture_active": false,
             }),
@@ -1764,7 +1751,7 @@ mod tests {
         // cannot continue inserting DB rows.
         assert!(
             context
-                .capture_event(event_types::WRITE_CODE, None, serde_json::json!({}))
+                .capture_event(CaptureEventType::WriteCode, None, serde_json::json!({}))
                 .is_none()
         );
     }
@@ -1774,7 +1761,7 @@ mod tests {
         // Control-only events are the extension's way to update server capture
         // state without storing the stop signal as a normal event row.
         let wire = capture_wire(
-            event_types::SESSION_END,
+            CaptureEventType::SessionEnd,
             serde_json::json!({
                 "capture_active": false,
                 "capture_control_only": true,

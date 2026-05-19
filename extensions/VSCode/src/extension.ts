@@ -212,8 +212,6 @@ interface StudySettings {
     consentEnabled: boolean;
     // Pseudonymous UUID used as the event user ID; generated when absent.
     participantId: string;
-    // True to avoid storing raw local paths in capture events.
-    hashFilePaths: boolean;
 }
 
 // Derived state for the two user-visible capture checkboxes. This mirrors the
@@ -294,7 +292,6 @@ function loadStudySettings(): StudySettings {
         enabled: config.get<boolean>(CAPTURE_RECORD_SETTING_NAME, false),
         consentEnabled: config.get<boolean>("ConsentEnabled", false),
         participantId: optionalString(config.get("ParticipantId")) ?? "",
-        hashFilePaths: config.get<boolean>("HashFilePaths", true),
     };
 }
 
@@ -319,8 +316,7 @@ function captureSettingsEqual(a: StudySettings, b: StudySettings): boolean {
     return (
         a.enabled === b.enabled &&
         a.consentEnabled === b.consentEnabled &&
-        a.participantId === b.participantId &&
-        a.hashFilePaths === b.hashFilePaths
+        a.participantId === b.participantId
     );
 }
 
@@ -413,8 +409,7 @@ function hashText(value: string): string {
 
 function buildFileFields(
     filePath: string | undefined,
-    settings: StudySettings,
-): Pick<CaptureEventWire, "file_path" | "file_hash" | "language_id"> {
+): Pick<CaptureEventWire, "file_hash" | "language_id"> {
     if (filePath === undefined) {
         return {
             language_id: vscode.window.activeTextEditor?.document.languageId,
@@ -422,8 +417,7 @@ function buildFileFields(
     }
     const document = get_document(filePath);
     return {
-        file_path: settings.hashFilePaths ? undefined : filePath,
-        file_hash: settings.hashFilePaths ? hashText(filePath) : undefined,
+        file_hash: hashText(filePath),
         language_id: document?.languageId,
     };
 }
@@ -444,9 +438,7 @@ function capturePayloadSummary(payload: CaptureEventWire): string {
         `session_id=${payload.session_id}`,
         `source=${payload.event_source}`,
         `language=${payload.language_id ?? ""}`,
-        `path_privacy=${payload.path_privacy ?? ""}`,
         payload.file_hash ? `file_hash=${payload.file_hash}` : "",
-        payload.file_path ? `file_path=${payload.file_path}` : "",
     ]
         .filter((part) => part.length > 0)
         .join(" ");
@@ -504,7 +496,7 @@ async function sendCaptureEvent(
         : options.controlOnly
           ? settings.participantId || "capture_control"
           : await ensureParticipantId();
-    const fileFields = buildFileFields(filePath, settings);
+    const fileFields = buildFileFields(filePath);
     // The server uses `capture_active` to decide whether it may generate
     // classified write_doc/write_code rows from translated edits.
     const captureActive =
@@ -519,7 +511,6 @@ async function sendCaptureEvent(
         session_id: CAPTURE_SESSION_ID,
         event_source: CAPTURE_EVENT_SOURCE,
         ...fileFields,
-        path_privacy: settings.hashFilePaths ? "sha256" : "plain",
         event_type: eventType,
         client_timestamp_ms: BigInt(Date.now()),
         client_tz_offset_min: new Date().getTimezoneOffset(),

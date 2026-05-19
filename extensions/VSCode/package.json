@@ -73,11 +73,6 @@
                     "type": "string",
                     "default": "",
                     "markdownDescription": "Pseudonymous participant identifier used as the capture user_id. If left blank, CodeChat generates a UUID when the student gives consent."
-                },
-                "CodeChatEditor.Capture.HashFilePaths": {
-                    "type": "boolean",
-                    "default": true,
-                    "markdownDescription": "Hash local file paths before they are sent to capture storage."
                 }
             }
         },
