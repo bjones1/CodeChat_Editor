@@ -86,8 +86,8 @@ use url::Url;
 // ### Local
 //use crate::capture::EventCapture;
 use crate::processing::{
-    CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, find_path_to_toc,
-    source_to_codechat_for_web_string,
+    CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, cache::Cache,
+    find_path_to_toc, source_to_codechat_for_web_string,
 };
 
 use crate::capture::{
@@ -415,6 +415,8 @@ pub struct AppState {
     credentials: Option<Credentials>,
     // Added to support capture - JDS - 11/2025
     pub capture: Option<EventCapture>,
+    /// A hash of project path to Cache.
+    pub cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
 }
 
 pub type WebAppState = web::Data<AppState>;
@@ -858,6 +860,8 @@ pub async fn try_read_as_text(file: &mut File) -> Option<String> {
 pub async fn file_to_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
+    // The map of project caches.
+    cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
     // The version of this file.
     version: f64,
     // Path to the file currently being edited. This path should be cleaned by
@@ -923,6 +927,7 @@ pub async fn file_to_response(
                 file_path,
                 version,
                 is_toc,
+                cache,
             )
         } else {
             // If this isn't the current file, then don't parse it.
@@ -1608,6 +1613,7 @@ fn make_app_data_with_capture_spool(
         connection_id: Mutex::new(HashSet::new()),
         credentials,
         capture,
+        cache: Arc::new(Mutex::new(HashMap::new())),
     })
 }
 
