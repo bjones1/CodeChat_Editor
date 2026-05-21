@@ -1345,10 +1345,15 @@ fn compare_html(
     if let Ok(raw_html) = transform_html(raw_html, compare_html_walker)
         && let Ok(raw_html) = minify(&raw_html)
     {
-        // pulldown-cmark puts a newline after a `<br>`, which `minify`
-        // doesn't remove but TinyMCE does.
+        // pulldown-cmark puts a newline after a `<br>`, which `minify` doesn't
+        // remove but TinyMCE does.
         let normalized_html = normalized_html.replace("<br> ", "<br>");
-        // TinyMCE wraps an `<iframe>` in paragraph tags: for example, `<p>Previous paragraph</p><p><iframe>...</iframe></p>`, which minifies to `<p>Previous paragraph<p><iframe>...</iframe>`. The IDE doesn't wrap the `<iframe>`; for example, `<p>Previous paragraph</p><iframe>...</iframe>`, which minifies to `<p>Previous paragraph</p><iframe>...</iframe>`. Fix up this difference.
+        // TinyMCE wraps an `<iframe>` in paragraph tags: for example,
+        // `<p>Previous paragraph</p><p><iframe>...</iframe></p>`, which
+        // minifies to `<p>Previous paragraph<p><iframe>...</iframe>`. The IDE
+        // doesn't wrap the `<iframe>`; for example, `<p>Previous
+        // paragraph</p><iframe>...</iframe>`, which minifies to `<p>Previous
+        // paragraph</p><iframe>...</iframe>`. Fix up this difference.
         let raw_html = raw_html.replace("<p><iframe ", "</p><iframe ");
         if normalized_html != raw_html {
             println!("Comparison failed.\n    IDE: {normalized_html:#?}\nTinyMCE: {raw_html:#?}");
