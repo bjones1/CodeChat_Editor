@@ -161,7 +161,7 @@ async fn test_server_core(
                         doc: vec![StringDiff {
                             from: 0,
                             to: Some(7),
-                            insert: "# Tesfoot\n".to_string()
+                            insert: "# Testfoo\n".to_string()
                         }],
                         doc_blocks: vec![],
                         version,
@@ -197,7 +197,7 @@ async fn test_server_core(
                         doc: vec![StringDiff {
                             from: 0,
                             to: Some(10),
-                            insert: "  # Tesfoot\n".to_string(),
+                            insert: "  # Testfoo\n".to_string(),
                         }],
                         doc_blocks: vec![],
                         version,

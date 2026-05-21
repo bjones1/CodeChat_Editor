@@ -579,7 +579,7 @@ fn test_source_to_codechat_for_web_1() {
             "javascript",
             "\nlet a = 1;\n\n",
             vec![
-                build_codemirror_doc_block(0, 1, "", "//", "<p><a href=http://b.org>Link</a></p>"),
+                build_codemirror_doc_block(0, 1, "", "//", "<p><a href=http://b.org>Link</a>"),
                 build_codemirror_doc_block(12, 13, "", "/*", "")
             ]
         )))
@@ -587,9 +587,9 @@ fn test_source_to_codechat_for_web_1() {
 
     // Trigger special cases:
     //
-    // *   An empty doc block at the beginning of the file.
-    // *   A doc block in the middle of the file
-    // *   A doc block with no trailing newline at the end of the file.
+    // * An empty doc block at the beginning of the file.
+    // * A doc block in the middle of the file
+    // * A doc block with no trailing newline at the end of the file.
     assert_eq!(
         source_to_codechat_for_web("//\n\n//\n\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
@@ -623,8 +623,8 @@ fn test_source_to_codechat_for_web_1() {
     // char:  --σ--     ---😄---      ----------👉🏿---------      --------------👨‍👦--------------     -----------🇺🇳----------
     // ```
     //
-    // These are taken from the [MDN UTF-16
-    // docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String#utf-16_characters_unicode_code_points_and_grapheme_clusters).
+    // These are taken from the
+    // [MDN UTF-16 docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String#utf-16_characters_unicode_code_points_and_grapheme_clusters).
     assert_eq!(
         source_to_codechat_for_web("; // σ😄👉🏿👨‍👦🇺🇳\n//", &"cpp".to_string(), 0.0, false, false),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
@@ -654,8 +654,8 @@ fn test_source_to_codechat_for_web_1() {
         )))
     );
 
-    // Test a fenced code block that's unterminated. See [fence
-    // mending](#fence-mending).
+    // Test a fenced code block that's unterminated. See
+    // [fence mending](#fence-mending).
     assert_eq!(
         source_to_codechat_for_web(
             "/* ``` foo\n*/\n// Test",
@@ -724,7 +724,7 @@ fn test_source_to_codechat_for_web_1() {
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<foo> "),
-                build_codemirror_doc_block(1, 2, " ", "//", " <p>Test</p> </foo>"),
+                build_codemirror_doc_block(1, 2, " ", "//", "<p>Test"),
             ]
         )))
     );
@@ -744,7 +744,35 @@ fn test_source_to_codechat_for_web_1() {
             "\n\n",
             vec![
                 build_codemirror_doc_block(0, 1, "", "//", "<pre>\n"),
-                build_codemirror_doc_block(1, 2, " ", "//", "\n<p><em>Test</em></p>\n</pre>"),
+                build_codemirror_doc_block(1, 2, " ", "//", "<p><em>Test</em>"),
+            ]
+        )))
+    );
+
+    // Test that minify functions correctly across multiple paragraphs separated
+    // by a code block.
+    assert_eq!(
+        source_to_codechat_for_web(
+            indoc!(
+                "
+                // One
+                //
+                // Two
+                three();
+                // Four
+                "
+            ),
+            &"cpp".to_string(),
+            0.0,
+            false,
+            false
+        ),
+        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+            "cpp",
+            "\n\n\nthree();\n\n",
+            vec![
+                build_codemirror_doc_block(0, 3, "", "//", "<p>One<p>Two"),
+                build_codemirror_doc_block(12, 13, "", "//", "<p>Four"),
             ]
         )))
     );
@@ -912,8 +940,8 @@ fn test_diff_1() {
         // char:    ---😄---     \n      ----------👉🏿---------      --------------👨‍👦--------------     -----------🇺🇳----------      \n     ⑤      ⑥
         // ```
         //
-        // These are taken from the [MDN UTF-16
-        // docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String#utf-16_characters_unicode_code_points_and_grapheme_clusters).
+        // These are taken from the
+        // [MDN UTF-16 docs](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String#utf-16_characters_unicode_code_points_and_grapheme_clusters).
         "😄\n👉🏿👨‍👦🇺🇳\n⑤⑥",
         "😄\n❷❸\n⑤⑥",
         &[StringDiff {
@@ -1254,7 +1282,8 @@ fn test_doc_block_html_to_markdown_1() {
 
 #[test]
 fn test_hydrate_html_1() {
-    // These tests check the translation from Markdown to "wet" HTML (what the user provides) instead of dry -> wet HTML.
+    // These tests check the translation from Markdown to "wet" HTML (what the
+    // user provides) instead of dry -> wet HTML.
     assert_eq!(
         hydrate_html(&markdown_to_html(indoc!(
             "```mermaid
