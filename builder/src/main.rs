@@ -732,12 +732,12 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
     )?;
     search_and_replace_file(
         format!("{VSCODE_PATH}/package.json"),
-        r#"(\r?\n    "version": ")[\d.]+(?:-[a-z\d]*)(",\r?\n)"#,
+        r#"(\r?\n    "version": ")[\d.]+(?:-[a-z\d]*)?(",\r?\n)"#,
         &replacement_string,
     )?;
     search_and_replace_file(
         format!("{CLIENT_PATH}/package.json5"),
-        r#"(\r?\n    version: ')[\d.]+(?:-[a-z\d]*)(',\r?\n)"#,
+        r#"(\r?\n    version: ')[\d.]+(?:-[a-z\d]*)?(',\r?\n)"#,
         &replacement_string,
     )?;
     Ok(())
