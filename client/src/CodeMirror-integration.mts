@@ -546,7 +546,8 @@ class DocBlockWidget extends WidgetType {
             const codechat_body = document.getElementById("CodeChat-body")!;
             const tinymce_div = document.getElementById(TINYMCE_INST)!;
             codechat_body.insertBefore(tinymce_div, null);
-            // Make TinyMCE invisible, since it's placed below the body of the page.
+            // Make TinyMCE invisible, since it's placed below the body of the
+            // page.
             tinymce_div.classList.add(CODECHAT_DOC_HIDDEN);
             tinymce.activeEditor?.resetContent();
         }
@@ -819,7 +820,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         // would otherwise wipe the selection).
                         //
                         // Copy the current TinyMCE instance contents into a
-                        // contenteditable div, unless the TinyMCE instance wasn't in use (currently hidden, since no previous doc block was being edited).
+                        // contenteditable div, unless the TinyMCE instance
+                        // wasn't in use (currently hidden, since no previous
+                        // doc block was being edited).
                         if (
                             !tinymce_div.classList.contains(CODECHAT_DOC_HIDDEN)
                         ) {
@@ -827,14 +830,18 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                 document.createElement("div");
                             old_contents_div.className =
                                 "CodeChat-doc-contents";
+                            // If the contents aren't editable, then the div
+                            // won't receive a `focusin` message (it instead
+                            // goes to a CodeMirror layer).
+                            old_contents_div.contentEditable = "true";
                             old_contents_div.innerHTML =
                                 tinymce.activeEditor!.save({ format: "raw" });
                             tinymce_div.parentNode!.insertBefore(
                                 old_contents_div,
                                 null,
                             );
-                            // The previous content edited by TinyMCE is now a div.
-                            // Retypeset this after the transition.
+                            // The previous content edited by TinyMCE is now a
+                            // div. Retypeset this after the transition.
                             await mathJaxTypeset(old_contents_div);
                         }
                         // Move TinyMCE to the new location, then remove the old
