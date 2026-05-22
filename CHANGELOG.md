@@ -26,6 +26,7 @@ Changelog
   line in a doc block in the Client.
 * Correct minifier use to reduce unnecessary re-translations.
 * Enable horizontal scrolling in Client, fix approach to scrollbars.
+* Fix a regression that prevented selection of a previously-selected doc block.
 
 Version 0.1.55-beta1 -- 2026-May-12
 -----------------------------------
