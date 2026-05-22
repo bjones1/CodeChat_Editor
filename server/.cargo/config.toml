@@ -16,8 +16,3 @@ TS_RS_EXPORT_DIR = { value = "../client/src/rust-types", relative = true }
 # Set the extension for the imported files: import JavaScript (`.js`) files, per
 # TypeScript's convention.
 TS_RS_IMPORT_EXTENSION = "ts"
-
-
-[build]
-# To check coverage, `cargo install cargo-tarpaulin` then `cargo tarpaulin
-# --skip-clean --out=html --target-dir=tarpaulin`.

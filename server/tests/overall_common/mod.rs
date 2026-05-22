@@ -189,6 +189,7 @@ pub async fn harness<
     // on a narrow screen.
     caps.add_arg("--window-size=1920,768")?;
     //caps.add_arg("--auto-open-devtools-for-tabs")?;
+    // Comment this out to debug test failures.
     caps.add_arg("--headless")?;
     // On Ubuntu CI, avoid failures, probably due to running Chrome as root.
     #[cfg(target_os = "linux")]

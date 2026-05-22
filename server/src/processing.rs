@@ -934,7 +934,6 @@ pub fn source_to_codechat_for_web(
             // 3. Hydrate the cleaned HTML.
             let html = hydrate_html(&html)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
-            let html = minify(&html)?;
             // 4. Split on the separator.
             let mut doc_block_contents_iter = html.split(DOC_BLOCK_SEPARATOR_SPLIT_STRING);
             // <a class="fence-mending-end"></a>
@@ -959,7 +958,7 @@ pub fn source_to_codechat_for_web(
                             delimiter: doc_block.delimiter.to_string(),
                             // Used the markdown-translated replacement for this
                             // doc block, rather than the original string.
-                            contents: doc_block_contents_iter.next().unwrap().to_string(),
+                            contents: minify(doc_block_contents_iter.next().unwrap())?,
                         });
                         // Append newlines to the document; the doc block will
                         // replace these in the editor. This keeps the line

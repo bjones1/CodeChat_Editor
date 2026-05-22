@@ -39,6 +39,7 @@
 :root {
     --top-height: 3.7rem;
     --body-padding: 0.2rem;
+    --body-height: calc(100vh - var(--top-height) - 2 * var(--body-padding));
 }
 
 /* See [box sizing](https://css-tricks.com/box-sizing/) for the following
@@ -67,11 +68,24 @@ body {
 /* The rest of the screen is the editor area. Omit this for printing, so the
    text flows across multiple pages. */
 @media not print {
-    #CodeChat-body {
-        height: calc(100vh - var(--top-height) - 2 * var(--body-padding));
-        overflow: auto;
+     /* ### Height and scrollbars
+
+        When in document-only mode, the editor is a child of the body. */
+    #CodeChat-body > .CodeChat-doc-contents {
+        height: var(--body-height);
+        overflow: auto
+    }
+
+    /* Otherwise, set this per the
+       [CodeMirror docs](https://codemirror.net/examples/styling/). */
+    .cm-editor {
+        height: var(--body-height);
+    }
+    .cm-scroller {
+        overflow: auto
     }
 }
+
 /* Misc styling
    ------------
 
@@ -131,7 +145,7 @@ body {
 
 /* Used to hide the TinyMCE editor instance when it's not in use. */
 .CodeChat-doc-hidden {
-    visibility: hidden;
+    display: none;
 }
 
 /* Combined code/doc block styling

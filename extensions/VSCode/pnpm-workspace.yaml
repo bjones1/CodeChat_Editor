@@ -1,3 +1,8 @@
+allowBuilds:
+  '@vscode/vsce-sign': false
+  bufferutil: false
+  esbuild: true
+  keytar: false
 onlyBuiltDependencies:
   - '@vscode/vsce-sign'
   - bufferutil

@@ -22,7 +22,16 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* No changes yet.
+* No changes.
+
+Version 0.1.56 -- 2026-May-22
+-----------------------------
+
+* Fix regression that moves the cursor back one character when at the end of a
+  line in a doc block in the Client.
+* Correct minifier use to reduce unnecessary re-translations.
+* Enable horizontal scrolling in Client, fix approach to scrollbars.
+* Fix a regression that prevented selection of a previously-selected doc block.
 
 Version 0.1.55-beta1 -- 2026-May-12
 -----------------------------------
