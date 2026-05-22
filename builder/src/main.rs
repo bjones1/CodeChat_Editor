@@ -86,6 +86,8 @@ enum Commands {
     Build,
     /// Build the Client.
     ClientBuild(TypeScriptBuildOptions),
+    /// Measure test coverage.
+    Cover,
     /// Build the extensions.
     ExtBuild(TypeScriptBuildOptions),
     /// Change the version for the client, server, and extensions.
@@ -423,6 +425,8 @@ fn run_install(dev: bool) -> io::Result<()> {
             cargo binstall cargo-sort --no-confirm;
             info "cargo binstall cargo-audit";
             cargo binstall cargo-audit --no-confirm;
+            info "cargo binstall cargo-tarpaulin";
+            cargo binstall cargo-tarpaulin --no-confirm;
         )?;
     }
     Ok(())
@@ -800,6 +804,13 @@ fn run_postrelease(target: &str, tag: &str) -> io::Result<()> {
     Ok(())
 }
 
+fn run_coverage() -> io::Result<()> {
+    run_cmd!(
+        info "cargo tarpaulin --skip-clean --out=html --target-dir=tarpaulin";
+        cargo tarpaulin --skip-clean --out=html --target-dir=tarpaulin;
+    )
+}
+
 // CLI implementation
 // ------------------
 //
@@ -822,6 +833,7 @@ impl Cli {
             Commands::ChangeVersion { new_version } => run_change_version(new_version),
             Commands::Prerelease => run_prerelease(),
             Commands::Postrelease { target, tag, .. } => run_postrelease(target, tag),
+            Commands::Cover => run_coverage(),
         }
     }
 }
