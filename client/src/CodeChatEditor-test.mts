@@ -43,6 +43,24 @@ import {
 // From [SO](https://stackoverflow.com/a/39914235).
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const RENDER_TIMEOUT_MS = 10000;
+const MOCHA_TEST_TIMEOUT_MS = RENDER_TIMEOUT_MS + 5000;
+
+const waitFor = async (
+    description: string,
+    predicate: () => boolean,
+    timeoutMs = RENDER_TIMEOUT_MS,
+) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        if (predicate()) {
+            return;
+        }
+        await sleep(100);
+    }
+    assert.fail(`Timed out waiting for ${description}.`);
+};
+
 // Tests
 // -----
 //
@@ -95,11 +113,18 @@ window.CodeChatEditor_test = () => {
                 });
             });
 
-            test("GraphViz, Mathjax, Mermaid", async function () {
-                // Wait for the renderers to run.
-                await sleep(1500);
+            test("GraphViz, Mathjax, Mermaid", async function (this: Mocha.Context) {
+                this.timeout(MOCHA_TEST_TIMEOUT_MS);
+
                 // Make sure GraphViz includes a `div` at the top of the shadow
                 // root, with a `svg` inside it.
+                const getGraphVizRoot = () =>
+                    document.getElementsByTagName("graphviz-graph")[0]
+                        ?.shadowRoot?.children[0];
+                await waitFor(
+                    "GraphViz SVG",
+                    () => getGraphVizRoot()?.children[0]?.tagName === "svg",
+                );
                 const gv =
                     document.getElementsByTagName("graphviz-graph")[0]
                         .shadowRoot!.children[0];
@@ -107,6 +132,13 @@ window.CodeChatEditor_test = () => {
                 assert.equal(gv.children[0].tagName, "svg");
 
                 // Mermaid graphs start with a div.
+                const getMermaidRoot = () =>
+                    document.getElementsByTagName("wc-mermaid")[0]?.shadowRoot
+                        ?.children[0];
+                await waitFor(
+                    "Mermaid SVG",
+                    () => getMermaidRoot()?.children[0]?.tagName === "svg",
+                );
                 const mer =
                     document.getElementsByTagName("wc-mermaid")[0].shadowRoot!
                         .children[0];
@@ -114,6 +146,12 @@ window.CodeChatEditor_test = () => {
                 assert.equal(mer.children[0].tagName, "svg");
 
                 // MathJax has its own stuff.
+                await waitFor(
+                    "MathJax containers",
+                    () =>
+                        document.getElementsByTagName("mjx-container")
+                            .length === 2,
+                );
                 assert.equal(
                     document.getElementsByTagName("mjx-container").length,
                     2,

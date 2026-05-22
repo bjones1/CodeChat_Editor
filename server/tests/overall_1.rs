@@ -27,7 +27,11 @@ mod overall_common;
 // -------
 //
 // ### Standard library
-use std::{error::Error, path::PathBuf, time::Duration};
+use std::{
+    error::Error,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 // ### Third-party
 use dunce::canonicalize;
@@ -728,13 +732,9 @@ async fn test_client_core(
         .await
         .unwrap();
 
-    // Wait for the tests to run.
-    sleep(Duration::from_millis(3000)).await;
-
     // Look for the test results.
     codechat_iframe.clone().enter_frame().await.unwrap();
-    let mocha_results = driver.find(By::Css("#mocha-stats .result")).await.unwrap();
-    assert_eq!(mocha_results.inner_html().await.unwrap(), "✓");
+    wait_for_mocha_success(&driver).await.unwrap();
 
     server_id -= MESSAGE_ID_INCREMENT;
     assert_eq!(
@@ -749,6 +749,50 @@ async fn test_client_core(
     assert_no_more_messages(&codechat_server).await;
 
     Ok(())
+}
+
+async fn wait_for_mocha_success(driver: &WebDriver) -> Result<(), WebDriverError> {
+    const MOCHA_TEST_TIMEOUT: Duration = Duration::from_millis(30000);
+
+    let start = Instant::now();
+    loop {
+        if let Ok(mocha_results) = driver.find(By::Css("#mocha-stats .result")).await {
+            let result = mocha_results.inner_html().await?;
+            if result == "✓" {
+                return Ok(());
+            }
+            if result == "✖" {
+                panic!(
+                    "Browser Mocha tests failed:\n{}",
+                    mocha_failure_text(driver).await
+                );
+            }
+        }
+
+        if start.elapsed() >= MOCHA_TEST_TIMEOUT {
+            panic!("Timed out waiting for browser Mocha tests to finish.");
+        }
+        sleep(Duration::from_millis(200)).await;
+    }
+}
+
+async fn mocha_failure_text(driver: &WebDriver) -> String {
+    let failures = driver
+        .find_all(By::Css("#mocha-report .fail"))
+        .await
+        .unwrap_or_default();
+    let mut failure_texts = Vec::new();
+    for failure in failures {
+        let text = failure.text().await.unwrap_or_default();
+        if !text.trim().is_empty() {
+            failure_texts.push(text);
+        }
+    }
+    if failure_texts.is_empty() {
+        "Mocha reported a failure, but no failure details were found.".to_string()
+    } else {
+        failure_texts.join("\n\n")
+    }
 }
 
 make_test!(test_client_updates, test_client_updates_core);
