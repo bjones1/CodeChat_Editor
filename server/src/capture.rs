@@ -122,6 +122,9 @@ pub enum CaptureEventType {
     ReflectionPromptInserted,
     /// Code was inserted by a paste operation rather than typed incrementally.
     CodePaste,
+    /// Code changed through a non-paste, non-incremental edit shape; the event
+    /// stores coarse classification metadata, not inserted code content.
+    CodeExternalInsertCandidate,
 }
 
 impl CaptureEventType {
@@ -147,6 +150,7 @@ impl CaptureEventType {
             Self::HandoffEnd => "handoff_end",
             Self::ReflectionPromptInserted => "reflection_prompt_inserted",
             Self::CodePaste => "code_paste",
+            Self::CodeExternalInsertCandidate => "code_external_insert_candidate",
         }
     }
 }
@@ -922,6 +926,10 @@ mod tests {
         assert_eq!(
             serde_json::to_value(CaptureEventType::CodePaste).unwrap(),
             json!("code_paste")
+        );
+        assert_eq!(
+            serde_json::to_value(CaptureEventType::CodeExternalInsertCandidate).unwrap(),
+            json!("code_external_insert_candidate")
         );
         assert!(serde_json::from_value::<CaptureEventType>(json!("random")).is_err());
     }

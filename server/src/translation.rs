@@ -226,10 +226,10 @@ use crate::{
     lexer::{CodeDocBlock, DocBlock, supported_languages::MARKDOWN_MODE},
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
-        CodeMirrorDocBlockVec, SourceFileMetadata, TranslationResultsString, UNICODE_CURSOR_MARKER,
-        byte_index_of, codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
-        doc_block_html_to_markdown, minify, remove_tinymce_data, source_to_codechat_for_web_string,
-        transform_html,
+        CodeMirrorDocBlockVec, SourceFileMetadata, StringDiff, TranslationResultsString,
+        UNICODE_CURSOR_MARKER, byte_index_of, codechat_for_web_to_source,
+        diff_code_mirror_doc_blocks, diff_str, doc_block_html_to_markdown, minify,
+        remove_tinymce_data, source_to_codechat_for_web_string, transform_html,
     },
     queue_send, queue_send_func,
     webserver::{
@@ -591,6 +591,114 @@ fn capture_control_only(wire: &CaptureEventWire) -> bool {
     )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CodeExternalInsertCandidate {
+    basis: &'static str,
+    confidence: &'static str,
+    size_band: &'static str,
+}
+
+// A single translation update above this size is unlikely to be ordinary
+// incremental typing, even when no paste command was observed by the extension.
+const LARGE_CODE_INSERT_LINE_THRESHOLD: usize = 10;
+
+fn inserted_logical_lines(insert: &str) -> usize {
+    if insert.trim().is_empty() {
+        return 0;
+    }
+    let newline_count = insert.matches('\n').count();
+    if newline_count == 0 {
+        1
+    } else if insert.ends_with('\n') {
+        newline_count
+    } else {
+        newline_count + 1
+    }
+}
+
+fn size_band_for_inserted_lines(inserted_lines: usize) -> &'static str {
+    if inserted_lines > LARGE_CODE_INSERT_LINE_THRESHOLD {
+        "large_block"
+    } else if inserted_lines >= 2 {
+        "multi_line"
+    } else {
+        "single_line"
+    }
+}
+
+fn classify_code_external_insert_candidate(
+    diff: &[StringDiff],
+) -> Option<CodeExternalInsertCandidate> {
+    // This classifies the shape of an already-computed code diff. The
+    // code_external_insert_candidate event emitted from this result stores only
+    // coarse basis/confidence/size metadata, not inserted text.
+    let inserted_hunks: Vec<_> = diff
+        .iter()
+        .filter(|hunk| !hunk.insert.trim().is_empty())
+        .collect();
+    if inserted_hunks.is_empty() {
+        return None;
+    }
+
+    let total_inserted_lines: usize = inserted_hunks
+        .iter()
+        .map(|hunk| inserted_logical_lines(&hunk.insert))
+        .sum();
+    let max_inserted_lines = inserted_hunks
+        .iter()
+        .map(|hunk| inserted_logical_lines(&hunk.insert))
+        .max()
+        .unwrap_or(0);
+    let size_band = size_band_for_inserted_lines(total_inserted_lines);
+    let has_large_block = total_inserted_lines > LARGE_CODE_INSERT_LINE_THRESHOLD
+        || max_inserted_lines > LARGE_CODE_INSERT_LINE_THRESHOLD;
+
+    // Large inserts get the strongest signal because they are the least likely
+    // to be produced by normal typing within one translation transaction.
+    if has_large_block {
+        return Some(CodeExternalInsertCandidate {
+            basis: "large_single_transaction_insert",
+            confidence: "high",
+            size_band: "large_block",
+        });
+    }
+
+    // Replacement and multi-hunk edits are weaker signals: they can happen
+    // during structured editing, but they still indicate non-incremental code
+    // entry when no paste marker is pending.
+    let has_large_replacement = inserted_hunks.iter().any(|hunk| {
+        let deleted_units = hunk.to.map_or(0, |to| to.saturating_sub(hunk.from));
+        let inserted_units = hunk.insert.encode_utf16().count();
+        let inserted_lines = inserted_logical_lines(&hunk.insert);
+        deleted_units > 0 && inserted_lines >= 2 && inserted_units > deleted_units.saturating_mul(2)
+    });
+    if has_large_replacement {
+        return Some(CodeExternalInsertCandidate {
+            basis: "large_replacement_insert",
+            confidence: "medium",
+            size_band,
+        });
+    }
+
+    if diff.len() >= 3 && inserted_hunks.len() >= 2 {
+        return Some(CodeExternalInsertCandidate {
+            basis: "multi_hunk_code_insert",
+            confidence: "medium",
+            size_band,
+        });
+    }
+
+    if total_inserted_lines >= 2 {
+        return Some(CodeExternalInsertCandidate {
+            basis: "multi_line_non_paste_insert",
+            confidence: "medium",
+            size_band,
+        });
+    }
+
+    None
+}
+
 /// This is the processing task for the Visual Studio Code IDE. It handles all
 /// the core logic to moving data between the IDE and the client.
 #[allow(clippy::too_many_arguments)]
@@ -902,20 +1010,43 @@ impl TranslationTask {
         log_capture_event(&self.app_state, capture_event);
     }
 
+    fn log_code_external_insert_candidate(
+        &self,
+        file_path: &std::path::Path,
+        classification_basis: &str,
+        candidate: CodeExternalInsertCandidate,
+    ) {
+        self.log_server_capture_event(
+            CaptureEventType::CodeExternalInsertCandidate,
+            file_path,
+            serde_json::json!({
+                "source": "server_translation",
+                "classification_basis": classification_basis,
+                "block_kind": "code",
+                "basis": candidate.basis,
+                "confidence": candidate.confidence,
+                "size_band": candidate.size_band,
+            }),
+        );
+    }
+
     fn log_raw_write_event(&mut self, file_path: &std::path::Path, before: &str, after: &str) {
         if before == after {
             self.capture_context.clear_pending_code_paste();
             return;
         }
+        let code_diff = diff_str(before, after);
         self.log_server_capture_event(
             CaptureEventType::WriteCode,
             file_path,
             serde_json::json!({
                 "source": "server_translation",
                 "classification_basis": "raw_text",
-                "diff": diff_str(before, after),
+                "diff": &code_diff,
             }),
         );
+        // Direct paste evidence wins over the heuristic candidate event so a
+        // single code edit does not emit two competing external-entry signals.
         if self.capture_context.take_pending_code_paste() {
             self.log_server_capture_event(
                 CaptureEventType::CodePaste,
@@ -927,6 +1058,8 @@ impl TranslationTask {
                     "block_kind": "code",
                 }),
             );
+        } else if let Some(candidate) = classify_code_external_insert_candidate(&code_diff) {
+            self.log_code_external_insert_candidate(file_path, "raw_text", candidate);
         }
     }
 
@@ -959,9 +1092,11 @@ impl TranslationTask {
 
         let mut code_changed = false;
         let mut code_classification_basis = None;
+        let mut code_diff = None;
         if before_doc != after.doc {
             code_changed = true;
             code_classification_basis = Some("codemirror_code_text");
+            let diff = diff_str(before_doc, &after.doc);
             self.log_server_capture_event(
                 CaptureEventType::WriteCode,
                 file_path,
@@ -969,9 +1104,10 @@ impl TranslationTask {
                     "source": source,
                     "classification_basis": "codemirror_code_text",
                     "mode": metadata.mode,
-                    "diff": diff_str(before_doc, &after.doc),
+                    "diff": &diff,
                 }),
             );
+            code_diff = Some(diff);
         }
 
         let doc_blocks_changed = match before_doc_blocks {
@@ -996,6 +1132,8 @@ impl TranslationTask {
             );
         }
         let pending_code_paste = self.capture_context.take_pending_code_paste();
+        // Direct paste evidence wins over the heuristic candidate event so a
+        // single code edit does not emit two competing external-entry signals.
         if pending_code_paste && code_changed {
             self.log_server_capture_event(
                 CaptureEventType::CodePaste,
@@ -1007,6 +1145,11 @@ impl TranslationTask {
                     "block_kind": "code",
                 }),
             );
+        } else if let (Some(diff), Some(classification_basis)) =
+            (code_diff.as_ref(), code_classification_basis)
+            && let Some(candidate) = classify_code_external_insert_candidate(diff)
+        {
+            self.log_code_external_insert_candidate(file_path, classification_basis, candidate);
         }
     }
 
@@ -1760,8 +1903,11 @@ fn debug_shorten<T: Debug>(val: T) -> String {
 mod tests {
     use crate::{
         capture::CaptureEventType,
-        processing::CodeMirrorDocBlock,
-        translation::{CaptureContext, capture_control_only, doc_blocks_compare},
+        processing::{CodeMirrorDocBlock, StringDiff},
+        translation::{
+            CaptureContext, capture_control_only, classify_code_external_insert_candidate,
+            doc_blocks_compare,
+        },
         webserver::CaptureEventWire,
     };
 
@@ -1860,6 +2006,50 @@ mod tests {
 
         assert!(context.take_pending_code_paste());
         assert!(!context.take_pending_code_paste());
+    }
+
+    #[test]
+    fn code_external_insert_classifier_detects_multiline_insert() {
+        let diff = vec![StringDiff {
+            from: 0,
+            to: None,
+            insert: "let first = 1;\nlet second = 2;".to_string(),
+        }];
+
+        let candidate = classify_code_external_insert_candidate(&diff)
+            .expect("multi-line insert should be classified");
+        assert_eq!(candidate.basis, "multi_line_non_paste_insert");
+        assert_eq!(candidate.confidence, "medium");
+        assert_eq!(candidate.size_band, "multi_line");
+    }
+
+    #[test]
+    fn code_external_insert_classifier_ignores_small_single_line_insert() {
+        let diff = vec![StringDiff {
+            from: 0,
+            to: None,
+            insert: "x".to_string(),
+        }];
+
+        assert!(classify_code_external_insert_candidate(&diff).is_none());
+    }
+
+    #[test]
+    fn code_external_insert_classifier_detects_large_block_insert() {
+        let diff = vec![StringDiff {
+            from: 0,
+            to: None,
+            insert: (0..11)
+                .map(|line| format!("let value_{line} = {line};"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        }];
+
+        let candidate = classify_code_external_insert_candidate(&diff)
+            .expect("large block insert should be classified");
+        assert_eq!(candidate.basis, "large_single_transaction_insert");
+        assert_eq!(candidate.confidence, "high");
+        assert_eq!(candidate.size_band, "large_block");
     }
 
     #[test]
