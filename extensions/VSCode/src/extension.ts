@@ -249,6 +249,15 @@ let extensionCaptureSessionStarted = false;
 // Monotonic per-extension event sequence number used to order events produced
 // by this VS Code session.
 let captureSequenceNumber = 0;
+// One-shot marker used to associate a paste command with the next document
+// change before the normal CodeChat update is sent to the server.
+let pendingPasteCapture:
+    | {
+          documentUri: string;
+          beforeVersion: number;
+          clearTimer: NodeJS.Timeout;
+      }
+    | undefined;
 // Status bar item that reports capture health and opens the capture controls.
 let capture_status_bar_item: vscode.StatusBarItem | undefined;
 // Timer used to refresh capture status from the running server.
@@ -512,7 +521,6 @@ async function sendCaptureEvent(
         event_source: CAPTURE_EVENT_SOURCE,
         ...fileFields,
         event_type: eventType,
-        client_timestamp_ms: BigInt(Date.now()),
         client_tz_offset_min: new Date().getTimezoneOffset(),
         data: {
             ...data,
@@ -548,6 +556,53 @@ async function sendCaptureEvent(
         await refreshCaptureStatus();
     } catch (err) {
         reportCaptureFailure(err instanceof Error ? err.message : String(err));
+    }
+}
+
+function clearPendingPasteCapture(): void {
+    if (pendingPasteCapture === undefined) {
+        return;
+    }
+    clearTimeout(pendingPasteCapture.clearTimer);
+    pendingPasteCapture = undefined;
+}
+
+async function sendPendingCodePasteCapture(filePath: string): Promise<void> {
+    await sendCaptureEvent(
+        "code_paste",
+        filePath,
+        {
+            operation: "paste",
+            pending_code_paste: true,
+        },
+        {
+            controlOnly: true,
+        },
+    );
+}
+
+async function capturePasteCommand(): Promise<void> {
+    const editor = vscode.window.activeTextEditor;
+    if (editor !== undefined) {
+        clearPendingPasteCapture();
+        pendingPasteCapture = {
+            documentUri: editor.document.uri.toString(),
+            beforeVersion: editor.document.version,
+            clearTimer: setTimeout(() => {
+                pendingPasteCapture = undefined;
+            }, 1000),
+        };
+    }
+
+    await vscode.commands.executeCommand("editor.action.clipboardPasteAction");
+
+    if (
+        editor !== undefined &&
+        pendingPasteCapture !== undefined &&
+        pendingPasteCapture.documentUri === editor.document.uri.toString() &&
+        editor.document.version === pendingPasteCapture.beforeVersion
+    ) {
+        clearPendingPasteCapture();
     }
 }
 
@@ -1154,6 +1209,10 @@ export const activate = (context: vscode.ExtensionContext) => {
             "extension.codeChatInsertReflectionPrompt",
             insertReflectionPrompt,
         ),
+        vscode.commands.registerCommand(
+            "extension.codeChatCapturePaste",
+            capturePasteCommand,
+        ),
         // Study lifecycle commands are registered for optional study
         // automation/keybindings, but they are not contributed to the Command
         // Palette. Normal users should only see status and reflection commands.
@@ -1220,12 +1279,31 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const kind = classifyAtPosition(doc, pos);
 
                             const filePath = doc.fileName;
+                            const pendingPaste = pendingPasteCapture;
+                            const pendingPasteSend =
+                                pendingPaste !== undefined &&
+                                pendingPaste.documentUri ===
+                                    doc.uri.toString() &&
+                                doc.version > pendingPaste.beforeVersion
+                                    ? (() => {
+                                          clearPendingPasteCapture();
+                                          return sendPendingCodePasteCapture(
+                                              filePath,
+                                          );
+                                      })()
+                                    : undefined;
 
                             // Update our notion of current activity + doc
                             // session.
                             noteActivity(kind, filePath);
 
-                            send_update(true);
+                            if (pendingPasteSend !== undefined) {
+                                void pendingPasteSend.finally(() =>
+                                    send_update(true),
+                                );
+                            } else {
+                                send_update(true);
+                            }
                         }),
                     );
 

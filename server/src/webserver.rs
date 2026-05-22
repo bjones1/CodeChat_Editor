@@ -464,10 +464,6 @@ pub struct CaptureEventWire {
     /// Canonical capture event type.
     pub event_type: CaptureEventType,
 
-    /// Optional client-side timestamp (milliseconds since Unix epoch).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_timestamp_ms: Option<i64>,
-
     /// Optional client timezone offset in minutes (JS Date().getTimezoneOffset()).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_tz_offset_min: Option<i32>,
@@ -693,7 +689,6 @@ pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> Cap
             wire.file_hash,
             wire.event_type,
             server_timestamp,
-            wire.client_timestamp_ms,
             wire.client_tz_offset_min,
             data,
         );

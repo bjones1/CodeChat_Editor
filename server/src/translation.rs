@@ -465,6 +465,9 @@ struct CaptureContext {
     client_tz_offset_min: Option<i32>,
     /// Capture payload schema version from the extension.
     schema_version: Option<i32>,
+    /// One-shot marker set by the extension when the next classified write came
+    /// from a paste command. It is consumed by the next write classification.
+    pending_code_paste: bool,
 }
 
 impl CaptureContext {
@@ -511,7 +514,25 @@ impl CaptureContext {
             if let Some(session_id) = data.get("session_id").and_then(serde_json::Value::as_str) {
                 self.session_id = Some(session_id.to_string());
             }
+            if wire.event_type == CaptureEventType::CodePaste
+                && data
+                    .get("pending_code_paste")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false)
+            {
+                self.pending_code_paste = true;
+            }
         }
+    }
+
+    fn take_pending_code_paste(&mut self) -> bool {
+        let pending = self.pending_code_paste;
+        self.pending_code_paste = false;
+        pending
+    }
+
+    fn clear_pending_code_paste(&mut self) {
+        self.pending_code_paste = false;
     }
 
     fn capture_event(
@@ -550,7 +571,6 @@ impl CaptureContext {
             language_id: None,
             file_hash: file_path.as_deref().map(hash_capture_path),
             event_type,
-            client_timestamp_ms: None,
             client_tz_offset_min: self.client_tz_offset_min,
             data: Some(serde_json::Value::Object(data)),
         })
@@ -882,8 +902,9 @@ impl TranslationTask {
         log_capture_event(&self.app_state, capture_event);
     }
 
-    fn log_raw_write_event(&self, file_path: &std::path::Path, before: &str, after: &str) {
+    fn log_raw_write_event(&mut self, file_path: &std::path::Path, before: &str, after: &str) {
         if before == after {
+            self.capture_context.clear_pending_code_paste();
             return;
         }
         self.log_server_capture_event(
@@ -895,10 +916,22 @@ impl TranslationTask {
                 "diff": diff_str(before, after),
             }),
         );
+        if self.capture_context.take_pending_code_paste() {
+            self.log_server_capture_event(
+                CaptureEventType::CodePaste,
+                file_path,
+                serde_json::json!({
+                    "source": "server_translation",
+                    "classification_basis": "raw_text",
+                    "operation": "paste",
+                    "block_kind": "code",
+                }),
+            );
+        }
     }
 
     fn log_code_mirror_write_events(
-        &self,
+        &mut self,
         file_path: &std::path::Path,
         metadata: &SourceFileMetadata,
         before_doc: &str,
@@ -907,7 +940,8 @@ impl TranslationTask {
         source: &str,
     ) {
         if metadata.mode == MARKDOWN_MODE {
-            if !compare_html(before_doc, &after.doc) {
+            let doc_changed = !compare_html(before_doc, &after.doc);
+            if doc_changed {
                 self.log_server_capture_event(
                     CaptureEventType::WriteDoc,
                     file_path,
@@ -919,10 +953,15 @@ impl TranslationTask {
                     }),
                 );
             }
+            self.capture_context.clear_pending_code_paste();
             return;
         }
 
+        let mut code_changed = false;
+        let mut code_classification_basis = None;
         if before_doc != after.doc {
+            code_changed = true;
+            code_classification_basis = Some("codemirror_code_text");
             self.log_server_capture_event(
                 CaptureEventType::WriteCode,
                 file_path,
@@ -953,6 +992,19 @@ impl TranslationTask {
                     "doc_block_count_before": before_doc_blocks.map_or(0, Vec::len),
                     "doc_block_count_after": after.doc_blocks.len(),
                     "doc_block_diff": doc_block_diff,
+                }),
+            );
+        }
+        let pending_code_paste = self.capture_context.take_pending_code_paste();
+        if pending_code_paste && code_changed {
+            self.log_server_capture_event(
+                CaptureEventType::CodePaste,
+                file_path,
+                serde_json::json!({
+                    "source": "server_translation",
+                    "classification_basis": code_classification_basis.unwrap_or("codemirror_code_text"),
+                    "operation": "paste",
+                    "block_kind": "code",
                 }),
             );
         }
@@ -1154,14 +1206,19 @@ impl TranslationTask {
                                                     panic!("Unexpected diff value.");
                                                 };
                                                 if self.sent_full {
+                                                    let before_doc = self.code_mirror_doc.clone();
+                                                    let before_doc_blocks =
+                                                        self.code_mirror_doc_blocks.clone();
                                                     self.log_code_mirror_write_events(
                                                         &clean_file_path,
                                                         &ccfw.metadata,
-                                                        &self.code_mirror_doc,
-                                                        self.code_mirror_doc_blocks.as_ref(),
+                                                        &before_doc,
+                                                        before_doc_blocks.as_ref(),
                                                         code_mirror_translated,
                                                         "ide",
                                                     );
+                                                } else {
+                                                    self.capture_context.clear_pending_code_paste();
                                                 }
                                                 // Send a diff if possible.
                                                 let client_contents = if self.sent_full {
@@ -1209,11 +1266,15 @@ impl TranslationTask {
                                             }
                                             TranslationResultsString::Unknown => {
                                                 if self.sent_full {
+                                                    let before_source_code =
+                                                        self.source_code.clone();
                                                     self.log_raw_write_event(
                                                         &clean_file_path,
-                                                        &self.source_code,
+                                                        &before_source_code,
                                                         &code_mirror.doc,
                                                     );
+                                                } else {
+                                                    self.capture_context.clear_pending_code_paste();
                                                 }
                                                 // Send the new raw contents.
                                                 debug!("Sending translated contents to Client.");
@@ -1328,14 +1389,18 @@ impl TranslationTask {
                                 panic!("Diff not supported.");
                             };
                             if self.sent_full {
+                                let before_doc = self.code_mirror_doc.clone();
+                                let before_doc_blocks = self.code_mirror_doc_blocks.clone();
                                 self.log_code_mirror_write_events(
                                     &clean_file_path,
                                     &cfw.metadata,
-                                    &self.code_mirror_doc,
-                                    self.code_mirror_doc_blocks.as_ref(),
+                                    &before_doc,
+                                    before_doc_blocks.as_ref(),
                                     code_mirror,
                                     "client",
                                 );
+                            } else {
+                                self.capture_context.clear_pending_code_paste();
                             }
                             self.code_mirror_doc = code_mirror.doc.clone();
                             self.code_mirror_doc_blocks = Some(code_mirror.doc_blocks.clone());
@@ -1711,7 +1776,6 @@ mod tests {
             language_id: None,
             file_hash: None,
             event_type,
-            client_timestamp_ms: None,
             client_tz_offset_min: Some(360),
             data: Some(data),
         }
@@ -1769,6 +1833,28 @@ mod tests {
         );
 
         assert!(capture_control_only(&wire));
+    }
+
+    #[test]
+    fn code_paste_marker_is_one_shot() {
+        let mut context = CaptureContext::default();
+        context.update_from_wire(&capture_wire(
+            CaptureEventType::SessionStart,
+            serde_json::json!({
+                "capture_active": true,
+            }),
+        ));
+        context.update_from_wire(&capture_wire(
+            CaptureEventType::CodePaste,
+            serde_json::json!({
+                "capture_active": true,
+                "capture_control_only": true,
+                "pending_code_paste": true,
+            }),
+        ));
+
+        assert!(context.take_pending_code_paste());
+        assert!(!context.take_pending_code_paste());
     }
 
     #[test]

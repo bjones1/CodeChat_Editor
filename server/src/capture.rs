@@ -41,7 +41,7 @@
 // ```sql
 // event_id, sequence_number, schema_version,
 // user_id, session_id, event_source, language_id, file_hash, event_type,
-// timestamp, client_timestamp_ms, client_tz_offset_min, data
+// timestamp, client_tz_offset_min, data
 // ```
 //
 // * `user_id` – pseudonymous participant UUID. Course, group, assignment, and
@@ -52,8 +52,6 @@
 // * `file_hash` – privacy-preserving SHA-256 hash of the local file path.
 // * `event_type` – coarse event type (see `CaptureEventType` below).
 // * `timestamp` – server receive/record timestamp (in UTC).
-// * `client_timestamp_ms` – optional client-observed event time for ordering
-//   and latency analysis.
 // * `data` – JSONB payload with event-specific details.
 
 use std::{
@@ -122,6 +120,8 @@ pub enum CaptureEventType {
     HandoffEnd,
     /// A built-in reflection prompt was inserted into the active editor.
     ReflectionPromptInserted,
+    /// Code was inserted by a paste operation rather than typed incrementally.
+    CodePaste,
 }
 
 impl CaptureEventType {
@@ -146,6 +146,7 @@ impl CaptureEventType {
             Self::HandoffStart => "handoff_start",
             Self::HandoffEnd => "handoff_end",
             Self::ReflectionPromptInserted => "reflection_prompt_inserted",
+            Self::CodePaste => "code_paste",
         }
     }
 }
@@ -410,9 +411,6 @@ pub struct CaptureEvent {
     pub event_type: CaptureEventType,
     /// Server receive/record timestamp, in UTC.
     pub timestamp: DateTime<Utc>,
-    /// Optional client-observed event timestamp, in milliseconds since Unix
-    /// epoch.
-    pub client_timestamp_ms: Option<i64>,
     /// Client timezone offset in minutes.
     pub client_tz_offset_min: Option<i32>,
     /// Event-specific payload, stored as JSON text in the DB.
@@ -439,7 +437,6 @@ impl CaptureEvent {
             file_hash,
             event_type,
             timestamp,
-            client_timestamp_ms: None,
             client_tz_offset_min: None,
             data,
         }
@@ -458,7 +455,6 @@ impl CaptureEvent {
         file_hash: Option<String>,
         event_type: CaptureEventType,
         timestamp: DateTime<Utc>,
-        client_timestamp_ms: Option<i64>,
         client_tz_offset_min: Option<i32>,
         data: serde_json::Value,
     ) -> Self {
@@ -473,7 +469,6 @@ impl CaptureEvent {
             file_hash,
             event_type,
             timestamp,
-            client_timestamp_ms,
             client_tz_offset_min,
             data,
         }
@@ -741,7 +736,6 @@ fn append_fallback_event(fallback_path: &Path, event: &CaptureEvent) -> io::Resu
             "file_hash": event.file_hash,
             "event_type": event.event_type.as_str(),
             "timestamp": event.timestamp.to_rfc3339(),
-            "client_timestamp_ms": event.client_timestamp_ms,
             "client_tz_offset_min": event.client_tz_offset_min,
             "data": event.data,
         }
@@ -829,12 +823,12 @@ async fn insert_rich_event(
              (event_id, sequence_number, schema_version, \
               user_id, session_id, \
               event_source, language_id, file_hash, \
-              event_type, timestamp, client_timestamp_ms, client_tz_offset_min, data) \
+              event_type, timestamp, client_tz_offset_min, data) \
              VALUES \
               ($1, $2, $3, \
               $4, $5, \
               $6, $7, $8, \
-              $9, $10::text::timestamptz, $11, $12, $13::text::jsonb)",
+              $9, $10::text::timestamptz, $11, $12::text::jsonb)",
             &[
                 &event.event_id,
                 &event.sequence_number,
@@ -846,7 +840,6 @@ async fn insert_rich_event(
                 &event.file_hash,
                 &event_type,
                 &timestamp,
-                &event.client_timestamp_ms,
                 &event.client_tz_offset_min,
                 &data_text,
             ],
@@ -926,6 +919,10 @@ mod tests {
             serde_json::to_value(CaptureEventType::CaptureSettingsChanged).unwrap(),
             json!("capture_settings_changed")
         );
+        assert_eq!(
+            serde_json::to_value(CaptureEventType::CodePaste).unwrap(),
+            json!("code_paste")
+        );
         assert!(serde_json::from_value::<CaptureEventType>(json!("random")).is_err());
     }
 
@@ -985,7 +982,6 @@ mod tests {
             Some("hash".to_string()),
             CaptureEventType::WriteCode,
             ts,
-            Some(ts.timestamp_millis() - 50),
             Some(-360),
             json!({ "chars_typed": 42 }),
         );
@@ -997,7 +993,6 @@ mod tests {
         assert_eq!(ev.event_source.as_deref(), Some("vscode_extension"));
         assert_eq!(ev.language_id.as_deref(), Some("rust"));
         assert_eq!(ev.file_hash.as_deref(), Some("hash"));
-        assert_eq!(ev.client_timestamp_ms, Some(ts.timestamp_millis() - 50));
         assert_eq!(ev.client_tz_offset_min, Some(-360));
         assert_eq!(ev.data, json!({ "chars_typed": 42 }));
     }
@@ -1107,7 +1102,6 @@ mod tests {
             "event_source",
             "language_id",
             "file_hash",
-            "client_timestamp_ms",
             "client_tz_offset_min",
         ];
         for column in required_columns {
@@ -1144,7 +1138,6 @@ mod tests {
         let expected_session_id = format!("TEST_SESSION_{test_suffix}");
         let expected_file_hash = format!("TEST_FILE_HASH_{test_suffix}");
         let event_timestamp = Utc::now();
-        let expected_client_timestamp_ms = event_timestamp.timestamp_millis() - 50;
         let expected_data = json!({
             "chars_typed": 123,
             "classification_basis": "integration_test"
@@ -1160,7 +1153,6 @@ mod tests {
             Some(expected_file_hash.clone()),
             CaptureEventType::WriteDoc,
             event_timestamp,
-            Some(expected_client_timestamp_ms),
             Some(360),
             expected_data.clone(),
         );
@@ -1181,7 +1173,7 @@ mod tests {
                     SELECT user_id, event_type,
                            event_id, sequence_number, schema_version,
                            session_id, event_source, language_id, file_hash,
-                           client_timestamp_ms, client_tz_offset_min, data::text
+                           client_tz_offset_min, data::text
                     FROM events
                     WHERE event_id = $1
                     ORDER BY id DESC
@@ -1210,9 +1202,8 @@ mod tests {
         let event_source: Option<String> = row.get(6);
         let language_id: Option<String> = row.get(7);
         let file_hash: Option<String> = row.get(8);
-        let client_timestamp_ms: Option<i64> = row.get(9);
-        let client_tz_offset_min: Option<i32> = row.get(10);
-        let data_text: String = row.get(11);
+        let client_tz_offset_min: Option<i32> = row.get(9);
+        let data_text: String = row.get(10);
         let data_value: serde_json::Value = serde_json::from_str(&data_text)?;
 
         assert_eq!(user_id, expected_user_id);
@@ -1224,7 +1215,6 @@ mod tests {
         assert_eq!(event_source.as_deref(), Some("integration_test"));
         assert_eq!(language_id.as_deref(), Some("rust"));
         assert_eq!(file_hash.as_deref(), Some(expected_file_hash.as_str()));
-        assert_eq!(client_timestamp_ms, Some(expected_client_timestamp_ms));
         assert_eq!(client_tz_offset_min, Some(360));
         assert_eq!(data_value, expected_data);
 

@@ -92,6 +92,31 @@
             {
                 "command": "extension.codeChatInsertReflectionPrompt",
                 "title": "CodeChat Editor: Insert Reflection Prompt"
+            },
+            {
+                "command": "extension.codeChatCapturePaste",
+                "title": "CodeChat Editor: Capture Paste"
+            }
+        ],
+        "menus": {
+            "commandPalette": [
+                {
+                    "command": "extension.codeChatCapturePaste",
+                    "when": "false"
+                }
+            ]
+        },
+        "keybindings": [
+            {
+                "command": "extension.codeChatCapturePaste",
+                "key": "ctrl+v",
+                "mac": "cmd+v",
+                "when": "editorTextFocus && !editorReadonly && config.CodeChatEditor.Capture.RecordStudyEvents && config.CodeChatEditor.Capture.ConsentEnabled"
+            },
+            {
+                "command": "extension.codeChatCapturePaste",
+                "key": "shift+insert",
+                "when": "editorTextFocus && !editorReadonly && config.CodeChatEditor.Capture.RecordStudyEvents && config.CodeChatEditor.Capture.ConsentEnabled"
             }
         ]
     },
