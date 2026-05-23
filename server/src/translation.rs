@@ -206,7 +206,13 @@
 // -------
 //
 // ### Standard library
-use std::{collections::HashMap, ffi::OsStr, fmt::Debug, path::PathBuf, rc::Rc};
+use std::{
+    collections::HashMap,
+    ffi::OsStr,
+    fmt::Debug,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use htmd::Node;
 // ### Third-party
@@ -985,14 +991,14 @@ pub async fn translation_task(
 
 // These provide translation for messages passing through the Server.
 impl TranslationTask {
-    fn capture_file_path(file_path: &std::path::Path) -> Option<String> {
+    fn capture_file_path(file_path: &Path) -> Option<String> {
         file_path.to_str().map(str::to_string)
     }
 
     fn log_server_capture_event(
         &self,
         event_type: CaptureEventType,
-        file_path: &std::path::Path,
+        file_path: &Path,
         data: serde_json::Value,
     ) {
         let Some(capture_event) = self.capture_context.capture_event(
@@ -1008,7 +1014,7 @@ impl TranslationTask {
 
     fn log_code_external_insert_candidate(
         &self,
-        file_path: &std::path::Path,
+        file_path: &Path,
         classification_basis: &str,
         candidate: CodeExternalInsertCandidate,
     ) {
@@ -1026,7 +1032,7 @@ impl TranslationTask {
         );
     }
 
-    fn log_raw_write_event(&mut self, file_path: &std::path::Path, before: &str, after: &str) {
+    fn log_raw_write_event(&mut self, file_path: &Path, before: &str, after: &str) {
         if before == after {
             self.capture_context.clear_pending_code_paste();
             return;
@@ -1061,7 +1067,7 @@ impl TranslationTask {
 
     fn log_code_mirror_write_events(
         &mut self,
-        file_path: &std::path::Path,
+        file_path: &Path,
         metadata: &SourceFileMetadata,
         before_doc: &str,
         before_doc_blocks: Option<&CodeMirrorDocBlockVec>,
