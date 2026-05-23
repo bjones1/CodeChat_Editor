@@ -80,6 +80,8 @@ use tokio::sync::mpsc;
 use tokio_postgres::{Client, NoTls};
 use ts_rs::TS;
 
+use crate::processing::StringDiff;
+
 static NEXT_CAPTURE_EVENT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Canonical event types. Keep the serialized strings stable for analysis.
@@ -174,6 +176,330 @@ pub fn hash_capture_path(path: &str) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+/// JSON payload received from local clients for capture events.
+///
+/// The server supplies the authoritative timestamp and hashes any raw local file
+/// path before storage. Study metadata such as course, assignment, group,
+/// condition, and task is not part of this wire type: those values are inferred
+/// later from researcher-managed mappings keyed by the pseudonymous `user_id`
+/// and event timestamps.
+#[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export, optional_fields)]
+pub struct CaptureEventWire {
+    /// Client-generated unique event identifier. Unlike `sequence_number`, this
+    /// is an opaque stable ID for correlation and possible future deduplication
+    /// across capture transports or retries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
+    /// Client-local event order for one extension session. Unlike `event_id`,
+    /// this is intentionally ordered so analysis can reconstruct event order and
+    /// detect gaps within a session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sequence_number: Option<i64>,
+    /// Capture payload schema version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_version: Option<i32>,
+    /// Pseudonymous participant UUID. This is not the student's real identity.
+    pub user_id: String,
+    /// Logical capture session UUID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Source of this event, such as the VS Code extension or server translation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_source: Option<String>,
+    /// VS Code language identifier for the active file, when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_id: Option<String>,
+    /// Raw local file path from a trusted local client. This value exists only
+    /// long enough for the Rust server to normalize hashing; it is never written
+    /// to the capture database or fallback JSONL.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_path: Option<String>,
+    /// SHA-256 hash of the local file path. Clients should prefer `file_path`
+    /// so the server owns hashing, but this remains for server-originated
+    /// events and backward-compatible local callers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_hash: Option<String>,
+    /// Canonical capture event type.
+    pub event_type: CaptureEventType,
+
+    /// Optional client timezone offset in minutes (JS Date().getTimezoneOffset()).
+    /// Combined with the server UTC timestamp, this allows local time-of-day
+    /// analysis without storing the student's location or full timezone name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_tz_offset_min: Option<i32>,
+
+    /// Event-specific data stored as JSON. Known keys include capture controls
+    /// (`capture_active`, `capture_control_only`), activity/session details
+    /// (`mode`, `closed_by`, `duration_ms`, `duration_seconds`, `from`, `to`),
+    /// tool/run/build details (`reason`, `lineCount`, `sessionName`,
+    /// `sessionType`, `taskName`, `taskSource`, `processId`, `exitCode`), write
+    /// classification details (`source`, `classification_basis`, `diff`,
+    /// `doc_block_diff`, `block_kind`, `basis`, `confidence`, `size_band`), and
+    /// paste markers (`operation`, `pending_code_paste`). Add future keys only
+    /// when they support a specific analysis question and do not store source
+    /// text or raw local paths.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(type = "unknown")]
+    pub data: Option<serde_json::Value>,
+}
+
+/// Participant and session metadata remembered from client capture events.
+///
+/// The translation layer generates `write_doc`/`write_code` events after it has
+/// parsed CodeChat content. Those events should share the same pseudonymous
+/// participant and capture session as extension-side events, but the server
+/// should not ask students for course/group/assignment/task setup values.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CaptureContext {
+    /// True only while capture is actively recording. The translation layer must
+    /// not generate write events from a stale participant/session context after
+    /// recording or consent is turned off.
+    active: bool,
+    /// Pseudonymous participant UUID from the latest client capture event.
+    user_id: Option<String>,
+    /// Origin of the client event stream, such as the VS Code extension.
+    event_source: Option<String>,
+    /// Extension session UUID carried on the capture wire payload.
+    session_id: Option<String>,
+    /// Client timezone offset in minutes, retained for generated write events.
+    client_tz_offset_min: Option<i32>,
+    /// Capture payload schema version from the extension.
+    schema_version: Option<i32>,
+    /// One-shot marker set by the extension when the next classified write came
+    /// from a paste command. It is consumed by the next write classification.
+    pending_code_paste: bool,
+}
+
+impl CaptureContext {
+    /// Refresh server-side capture identity and active/inactive state from an
+    /// extension capture message. This context is used only for server-generated
+    /// write classification events, not for deciding whether the original
+    /// extension event itself is inserted.
+    pub(crate) fn update_from_wire(&mut self, wire: &CaptureEventWire) {
+        // Session start/end are the coarse lifecycle signals; the explicit
+        // `capture_active` data field handles settings-change audit events that
+        // should be inserted while also disabling later translated writes.
+        match wire.event_type {
+            CaptureEventType::SessionStart => self.active = true,
+            CaptureEventType::SessionEnd => self.active = false,
+            _ => {}
+        }
+        // Keep the most recent participant/session metadata so translated write
+        // events can be joined to the same participant as extension events.
+        if !wire.user_id.trim().is_empty() {
+            self.user_id = Some(wire.user_id.clone());
+        }
+        if let Some(event_source) = &wire.event_source {
+            self.event_source = Some(event_source.clone());
+        }
+        if let Some(session_id) = &wire.session_id {
+            self.session_id = Some(session_id.clone());
+        }
+        if let Some(schema_version) = wire.schema_version {
+            self.schema_version = Some(schema_version);
+        }
+        if let Some(client_tz_offset_min) = wire.client_tz_offset_min {
+            self.client_tz_offset_min = Some(client_tz_offset_min);
+        }
+        if let Some(serde_json::Value::Object(data)) = &wire.data {
+            // Settings-change audit events use this flag to tell the server
+            // whether future translation-generated write events are allowed.
+            if let Some(active) = data
+                .get("capture_active")
+                .and_then(serde_json::Value::as_bool)
+            {
+                self.active = active;
+            }
+            if wire.event_type == CaptureEventType::CodePaste
+                && data
+                    .get("pending_code_paste")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false)
+            {
+                self.pending_code_paste = true;
+            }
+        }
+    }
+
+    pub(crate) fn take_pending_code_paste(&mut self) -> bool {
+        let pending = self.pending_code_paste;
+        self.pending_code_paste = false;
+        pending
+    }
+
+    pub(crate) fn clear_pending_code_paste(&mut self) {
+        self.pending_code_paste = false;
+    }
+
+    pub(crate) fn capture_event(
+        &self,
+        event_type: CaptureEventType,
+        file_path: Option<String>,
+        data: serde_json::Value,
+    ) -> Option<CaptureEventWire> {
+        // Do not generate server-side write_doc/write_code rows unless the
+        // latest settings state says capture is actively recording.
+        if !self.active {
+            return None;
+        }
+        // Normalize arbitrary JSON payloads into objects so we can attach
+        // server-translation metadata consistently.
+        let mut data = match data {
+            serde_json::Value::Object(map) => map,
+            other => {
+                let mut map = serde_json::Map::new();
+                map.insert("value".to_string(), other);
+                map
+            }
+        };
+        // Preserve any existing source field, but default server-generated
+        // events to `server_translation` for analysis.
+        data.entry("source".to_string())
+            .or_insert_with(|| serde_json::json!("server_translation"));
+
+        Some(CaptureEventWire {
+            event_id: None,
+            sequence_number: None,
+            schema_version: self.schema_version,
+            user_id: self.user_id.clone()?,
+            session_id: self.session_id.clone(),
+            event_source: self.event_source.clone(),
+            language_id: None,
+            file_path,
+            file_hash: None,
+            event_type,
+            client_tz_offset_min: self.client_tz_offset_min,
+            data: Some(serde_json::Value::Object(data)),
+        })
+    }
+}
+
+/// True for a capture message that should update `CaptureContext` only. These
+/// messages are used to stop server-side write classification after the user
+/// turns off consent or recording, without adding a synthetic DB row.
+pub(crate) fn capture_control_only(wire: &CaptureEventWire) -> bool {
+    matches!(
+        &wire.data,
+        Some(serde_json::Value::Object(data))
+            if data
+                .get("capture_control_only")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+    )
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CodeExternalInsertCandidate {
+    /// The edit-shape reason for treating this insert as likely external input.
+    pub(crate) basis: &'static str,
+    /// Coarse confidence label for analysis filters.
+    pub(crate) confidence: &'static str,
+    /// Coarse size label for the inserted code.
+    pub(crate) size_band: &'static str,
+}
+
+// A single translation update above this size is unlikely to be ordinary
+// incremental typing, even when no paste command was observed by the extension.
+const LARGE_CODE_INSERT_LINE_THRESHOLD: usize = 10;
+
+fn inserted_logical_lines(insert: &str) -> usize {
+    if insert.trim().is_empty() {
+        return 0;
+    }
+    let newline_count = insert.matches('\n').count();
+    if newline_count == 0 {
+        1
+    } else if insert.ends_with('\n') {
+        newline_count
+    } else {
+        newline_count + 1
+    }
+}
+
+fn size_band_for_inserted_lines(inserted_lines: usize) -> &'static str {
+    if inserted_lines > LARGE_CODE_INSERT_LINE_THRESHOLD {
+        "large_block"
+    } else if inserted_lines >= 2 {
+        "multi_line"
+    } else {
+        "single_line"
+    }
+}
+
+pub(crate) fn classify_code_external_insert_candidate(
+    diff: &[StringDiff],
+) -> Option<CodeExternalInsertCandidate> {
+    // This classifies the shape of an already-computed code diff. The
+    // code_external_insert_candidate event emitted from this result stores only
+    // coarse basis/confidence/size metadata, not inserted text.
+    let inserted_hunks: Vec<_> = diff
+        .iter()
+        .filter(|hunk| !hunk.insert.trim().is_empty())
+        .collect();
+    if inserted_hunks.is_empty() {
+        return None;
+    }
+
+    let total_inserted_lines: usize = inserted_hunks
+        .iter()
+        .map(|hunk| inserted_logical_lines(&hunk.insert))
+        .sum();
+    let max_inserted_lines = inserted_hunks
+        .iter()
+        .map(|hunk| inserted_logical_lines(&hunk.insert))
+        .max()
+        .unwrap_or(0);
+    let size_band = size_band_for_inserted_lines(total_inserted_lines);
+    let has_large_block = total_inserted_lines > LARGE_CODE_INSERT_LINE_THRESHOLD
+        || max_inserted_lines > LARGE_CODE_INSERT_LINE_THRESHOLD;
+
+    // Large inserts get the strongest signal because they are the least likely
+    // to be produced by normal typing within one translation transaction.
+    if has_large_block {
+        return Some(CodeExternalInsertCandidate {
+            basis: "large_single_transaction_insert",
+            confidence: "high",
+            size_band: "large_block",
+        });
+    }
+
+    // Replacement and multi-hunk edits are weaker signals: they can happen
+    // during structured editing, but they still indicate non-incremental code
+    // entry when no paste marker is pending.
+    let has_large_replacement = inserted_hunks.iter().any(|hunk| {
+        let deleted_units = hunk.to.map_or(0, |to| to.saturating_sub(hunk.from));
+        let inserted_units = hunk.insert.encode_utf16().count();
+        let inserted_lines = inserted_logical_lines(&hunk.insert);
+        deleted_units > 0 && inserted_lines >= 2 && inserted_units > deleted_units.saturating_mul(2)
+    });
+    if has_large_replacement {
+        return Some(CodeExternalInsertCandidate {
+            basis: "large_replacement_insert",
+            confidence: "medium",
+            size_band,
+        });
+    }
+
+    if diff.len() >= 3 && inserted_hunks.len() >= 2 {
+        return Some(CodeExternalInsertCandidate {
+            basis: "multi_hunk_code_insert",
+            confidence: "medium",
+            size_band,
+        });
+    }
+
+    if total_inserted_lines >= 2 {
+        return Some(CodeExternalInsertCandidate {
+            basis: "multi_line_non_paste_insert",
+            confidence: "medium",
+            size_band,
+        });
+    }
+
+    None
 }
 
 /// Configuration used to construct the PostgreSQL connection string.

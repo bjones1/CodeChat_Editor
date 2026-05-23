@@ -27,18 +27,15 @@ mod overall_common;
 // -------
 //
 // ### Standard library
-use std::{
-    error::Error,
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::{error::Error, path::PathBuf, time::Duration};
 
 // ### Third-party
 use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, Key, WebDriver, error::WebDriverError, prelude::ElementQueryable};
-use tokio::time::sleep;
+use thirtyfour::{
+    By, Key, WebDriver, WebElement, error::WebDriverError, prelude::ElementQueryable,
+};
 
 // ### Local
 use crate::overall_common::{
@@ -754,25 +751,23 @@ async fn test_client_core(
 async fn wait_for_mocha_success(driver: &WebDriver) -> Result<(), WebDriverError> {
     const MOCHA_TEST_TIMEOUT: Duration = Duration::from_millis(30000);
 
-    let start = Instant::now();
-    loop {
-        if let Ok(mocha_results) = driver.find(By::Css("#mocha-stats .result")).await {
-            let result = mocha_results.inner_html().await?;
-            if result == "✓" {
-                return Ok(());
-            }
-            if result == "✖" {
-                panic!(
-                    "Browser Mocha tests failed:\n{}",
-                    mocha_failure_text(driver).await
-                );
-            }
-        }
-
-        if start.elapsed() >= MOCHA_TEST_TIMEOUT {
-            panic!("Timed out waiting for browser Mocha tests to finish.");
-        }
-        sleep(Duration::from_millis(200)).await;
+    let mocha_results = driver
+        .query(By::Css("#mocha-stats .result"))
+        .wait(MOCHA_TEST_TIMEOUT, Duration::from_millis(200))
+        .with_filter(|element: WebElement| async move {
+            let result = element.inner_html().await?;
+            Ok(result == "✓" || result == "✖")
+        })
+        .first()
+        .await?;
+    let result = mocha_results.inner_html().await?;
+    if result == "✓" {
+        Ok(())
+    } else {
+        panic!(
+            "Browser Mocha tests failed:\n{}",
+            mocha_failure_text(driver).await
+        );
     }
 }
 

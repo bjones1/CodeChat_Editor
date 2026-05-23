@@ -62,6 +62,7 @@ use tokio::{
 
 // ### Local
 use crate::{
+    capture::CaptureEventWire,
     ide::vscode::{connection_id_raw_to_str, vscode_ide_core},
     processing::{CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata},
     translation::{CreatedTranslationQueues, create_translation_queues},
@@ -255,7 +256,7 @@ impl CodeChatEditorServer {
 
     pub async fn send_capture_event(
         &self,
-        capture_event: webserver::CaptureEventWire,
+        capture_event: CaptureEventWire,
     ) -> std::io::Result<f64> {
         self.send_message_timeout(EditorMessageContents::Capture(Box::new(capture_event)))
             .await

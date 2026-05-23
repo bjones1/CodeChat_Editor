@@ -418,7 +418,7 @@ function hashText(value: string): string {
 
 function buildFileFields(
     filePath: string | undefined,
-): Pick<CaptureEventWire, "file_hash" | "language_id"> {
+): Pick<CaptureEventWire, "file_path" | "language_id"> {
     if (filePath === undefined) {
         return {
             language_id: vscode.window.activeTextEditor?.document.languageId,
@@ -426,7 +426,9 @@ function buildFileFields(
     }
     const document = get_document(filePath);
     return {
-        file_hash: hashText(filePath),
+        // Send the path only to the local Rust server so it can apply the same
+        // privacy-preserving hash rule used by server-generated capture events.
+        file_path: filePath,
         language_id: document?.languageId,
     };
 }
@@ -447,6 +449,7 @@ function capturePayloadSummary(payload: CaptureEventWire): string {
         `session_id=${payload.session_id}`,
         `source=${payload.event_source}`,
         `language=${payload.language_id ?? ""}`,
+        payload.file_path ? "file_path=present" : "",
         payload.file_hash ? `file_hash=${payload.file_hash}` : "",
     ]
         .filter((part) => part.length > 0)

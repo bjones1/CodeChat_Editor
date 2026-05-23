@@ -98,8 +98,8 @@ use crate::{
 };
 
 use crate::capture::{
-    CaptureEvent, CaptureEventType, CaptureStatus, EventCapture, generate_capture_event_id,
-    load_capture_config,
+    CaptureEvent, CaptureEventWire, CaptureStatus, EventCapture, generate_capture_event_id,
+    hash_capture_path, load_capture_config,
 };
 
 use chrono::Utc;
@@ -428,67 +428,6 @@ pub struct Credentials {
     pub password: String,
 }
 
-/// JSON payload received from clients for capture events.
-///
-/// The server supplies the authoritative timestamp. Study metadata such as
-/// course, assignment, group, condition, and task is not part of this wire type:
-/// those values are inferred later from researcher-managed mappings keyed by
-/// the pseudonymous `user_id` and event timestamps.
-#[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
-#[ts(export, optional_fields)]
-pub struct CaptureEventWire {
-    /// Client-generated unique event identifier. Unlike `sequence_number`, this
-    /// is an opaque stable ID for correlation and possible future deduplication
-    /// across capture transports or retries.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub event_id: Option<String>,
-    /// Client-local event order for one extension session. Unlike `event_id`,
-    /// this is intentionally ordered so analysis can reconstruct event order and
-    /// detect gaps within a session.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sequence_number: Option<i64>,
-    /// Capture payload schema version.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub schema_version: Option<i32>,
-    /// Pseudonymous participant UUID. This is not the student's real identity.
-    pub user_id: String,
-    /// Logical capture session UUID.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    /// Source of this event, such as the VS Code extension or server translation.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub event_source: Option<String>,
-    /// VS Code language identifier for the active file, when known.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language_id: Option<String>,
-    /// SHA-256 hash of the local file path. Raw local paths are intentionally
-    /// not accepted on the capture wire.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub file_hash: Option<String>,
-    /// Canonical capture event type.
-    pub event_type: CaptureEventType,
-
-    /// Optional client timezone offset in minutes (JS Date().getTimezoneOffset()).
-    /// Combined with the server UTC timestamp, this allows local time-of-day
-    /// analysis without storing the student's location or full timezone name.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_tz_offset_min: Option<i32>,
-
-    /// Event-specific data stored as JSON. Known keys include capture controls
-    /// (`capture_active`, `capture_control_only`), activity/session details
-    /// (`mode`, `closed_by`, `duration_ms`, `duration_seconds`, `from`, `to`),
-    /// tool/run/build details (`reason`, `lineCount`, `sessionName`,
-    /// `sessionType`, `taskName`, `taskSource`, `processId`, `exitCode`), write
-    /// classification details (`source`, `classification_basis`, `diff`,
-    /// `doc_block_diff`, `block_kind`, `basis`, `confidence`, `size_band`), and
-    /// paste markers (`operation`, `pending_code_paste`). Add future keys only
-    /// when they support a specific analysis question and do not store source
-    /// text or raw local paths.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(type = "unknown")]
-    pub data: Option<serde_json::Value>,
-}
-
 // Macros
 // ------
 /// Create a macro to report an error when enqueueing an item.
@@ -689,6 +628,15 @@ pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> Cap
         } else {
             serde_json::json!({ "value": data })
         };
+        // Prefer hashing a raw local path on the server so all capture
+        // transports use the same path-to-hash rule. The raw path is not stored;
+        // `file_hash` remains only as a backward-compatible/server-originated
+        // fallback.
+        let file_hash = wire
+            .file_path
+            .as_deref()
+            .map(hash_capture_path)
+            .or(wire.file_hash);
 
         let event = CaptureEvent::with_columns(
             Some(
@@ -701,7 +649,7 @@ pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> Cap
             wire.session_id,
             wire.event_source,
             wire.language_id,
-            wire.file_hash,
+            file_hash,
             wire.event_type,
             server_timestamp,
             wire.client_tz_offset_min,
