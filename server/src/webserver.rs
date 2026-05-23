@@ -437,10 +437,14 @@ pub struct Credentials {
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export, optional_fields)]
 pub struct CaptureEventWire {
-    /// Client-generated unique event identifier.
+    /// Client-generated unique event identifier. Unlike `sequence_number`, this
+    /// is an opaque stable ID for correlation and possible future deduplication
+    /// across capture transports or retries.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_id: Option<String>,
-    /// Client-local event order for one extension session.
+    /// Client-local event order for one extension session. Unlike `event_id`,
+    /// this is intentionally ordered so analysis can reconstruct event order and
+    /// detect gaps within a session.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sequence_number: Option<i64>,
     /// Capture payload schema version.
@@ -465,10 +469,21 @@ pub struct CaptureEventWire {
     pub event_type: CaptureEventType,
 
     /// Optional client timezone offset in minutes (JS Date().getTimezoneOffset()).
+    /// Combined with the server UTC timestamp, this allows local time-of-day
+    /// analysis without storing the student's location or full timezone name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_tz_offset_min: Option<i32>,
 
-    /// Arbitrary event-specific data stored as JSON (optional).
+    /// Event-specific data stored as JSON. Known keys include capture controls
+    /// (`capture_active`, `capture_control_only`), activity/session details
+    /// (`mode`, `closed_by`, `duration_ms`, `duration_seconds`, `from`, `to`),
+    /// tool/run/build details (`reason`, `lineCount`, `sessionName`,
+    /// `sessionType`, `taskName`, `taskSource`, `processId`, `exitCode`), write
+    /// classification details (`source`, `classification_basis`, `diff`,
+    /// `doc_block_diff`, `block_kind`, `basis`, `confidence`, `size_band`), and
+    /// paste markers (`operation`, `pending_code_paste`). Add future keys only
+    /// when they support a specific analysis question and do not store source
+    /// text or raw local paths.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(type = "unknown")]
     pub data: Option<serde_json::Value>,

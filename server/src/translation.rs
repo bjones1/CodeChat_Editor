@@ -510,10 +510,6 @@ impl CaptureContext {
             {
                 self.active = active;
             }
-            // Support older wire payloads that stored the session in `data`.
-            if let Some(session_id) = data.get("session_id").and_then(serde_json::Value::as_str) {
-                self.session_id = Some(session_id.to_string());
-            }
             if wire.event_type == CaptureEventType::CodePaste
                 && data
                     .get("pending_code_paste")
@@ -1922,7 +1918,7 @@ mod tests {
             sequence_number: None,
             schema_version: Some(2),
             user_id: "participant".to_string(),
-            session_id: None,
+            session_id: Some("session".to_string()),
             event_source: Some("vscode_extension".to_string()),
             language_id: None,
             file_hash: None,
@@ -1945,7 +1941,6 @@ mod tests {
         context.update_from_wire(&capture_wire(
             CaptureEventType::SessionStart,
             serde_json::json!({
-                "session_id": "session",
                 "capture_active": true,
             }),
         ));
