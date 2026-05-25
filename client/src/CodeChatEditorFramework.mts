@@ -283,6 +283,12 @@ class WebSocketComm {
                 }
 
                 case "Result": {
+                    // If the result has the magic ID, then call a debug
+                    // routine.
+                    if (id === 1e6 && DEBUG_ENABLED) {
+                        root_iframe!.contentWindow?.CodeChatEditor?.do_debug();
+                        break;
+                    }
                     // Cancel the timer for this message and remove it from
                     // `pending_messages`.
                     const pending_message = this.pending_messages[id];

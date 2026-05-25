@@ -107,6 +107,7 @@ declare global {
                 cursor_position?: CursorPosition,
                 scroll_line?: number,
             ) => Promise<void>;
+            do_debug: () => void;
             send_update: (_only_if_dirty: boolean) => Promise<void>;
             scroll_to_line: (
                 cursor_position?: CursorPosition,
@@ -196,6 +197,14 @@ const open_lp = async (
 // which causes applying diffs to this unexpectedly modified content to produce
 // incorrect results. This text is the unmodified content sent from the IDE.
 let doc_content = "";
+
+// For debugging, allow the extension or server to run this routine by sending
+// the appropriate message.
+const do_debug = () => {
+    if (DEBUG_ENABLED) {
+        tinymce.activeEditor?.save({ format: "raw" });
+    }
+};
 
 // This function is called on page load to "load" a file. Before this point, the
 // server has already lexed the source file into code and doc blocks; this
@@ -720,6 +729,7 @@ on_dom_content_loaded(async () => {
     window.addEventListener("error", on_error);
 
     window.CodeChatEditor = {
+        do_debug,
         open_lp,
         send_update,
         scroll_to_line,
