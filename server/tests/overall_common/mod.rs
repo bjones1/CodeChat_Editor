@@ -63,7 +63,6 @@ use tracing_subscriber::EnvFilter;
 // ### Local
 use code_chat_editor::{
     ide::CodeChatEditorServer,
-    processing::{CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata},
     webserver::{
         CursorPosition, EditorMessage, EditorMessageContents, MESSAGE_ID_INCREMENT, ResultOkTypes,
         UpdateMessageContents, set_root_path,
@@ -420,48 +419,6 @@ pub async fn select_codechat_iframe(driver_ref: &WebDriver) -> WebElement {
     codechat_iframe.clone().enter_frame().await.unwrap();
 
     codechat_iframe
-}
-
-// Used in one of the common tests, but not in the other...so we get a clippy
-// lint.
-#[allow(dead_code)]
-pub async fn get_empty_client_update(
-    codechat_server: &CodeChatEditorServer,
-    path_str: &str,
-    client_id: &mut f64,
-    client_version: &mut f64,
-    mode: &str,
-    cursor_position: Option<CursorPosition>,
-    scroll_position: Option<f32>,
-) {
-    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-    let version = *client_version;
-    *client_version = get_version(&msg);
-    assert_eq!(
-        msg,
-        EditorMessage {
-            id: *client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.to_owned(),
-                cursor_position,
-                scroll_position,
-                is_re_translation: false,
-                contents: Some(CodeChatForWeb {
-                    metadata: SourceFileMetadata {
-                        mode: mode.to_string()
-                    },
-                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                        doc: vec![],
-                        doc_blocks: vec![],
-                        version,
-                    }),
-                    version: *client_version
-                }),
-            })
-        }
-    );
-    codechat_server.send_result(*client_id, None).await.unwrap();
-    *client_id += MESSAGE_ID_INCREMENT;
 }
 
 pub async fn assert_no_more_messages(codechat_server: &CodeChatEditorServer) {

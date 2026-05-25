@@ -473,11 +473,13 @@ class DocBlockWidget extends WidgetType {
         wrap.innerHTML =
             // This doc block's indent. TODO: allow paste, but must only allow
             // pasting whitespace.
-            `<div class="CodeChat-doc-indent" contenteditable onpaste="return false" data-delimiter=${JSON.stringify(
+            `<div class="CodeChat-doc-indent" contenteditable tabIndex="-1" onpaste="return false" data-delimiter=${JSON.stringify(
                 this.delimiter,
             )}>${sanitize_html(this.indent)}</div>` +
-            // The contents of this doc block.
-            `<div class="CodeChat-doc-contents" spellcheck="true" contenteditable>` +
+            // The contents of this doc block. Make it focusable by assigning a
+            // tab stop, but not editable (until it's replaced by the TinyMCE
+            // editor).
+            `<div class="CodeChat-doc-contents" spellcheck="true" tabIndex="0">` +
             this.contents +
             "</div>";
         // TODO: this is an async call. However, CodeMirror doesn't provide
@@ -548,8 +550,8 @@ class DocBlockWidget extends WidgetType {
             codechat_body.insertBefore(tinymce_div, null);
             // Make TinyMCE invisible, since it's placed below the body of the
             // page.
-            tinymce_div.classList.add(CODECHAT_DOC_HIDDEN);
-            tinymce.activeEditor?.resetContent();
+            tinymce.get(0)!.dom.addClass(tinymce_div, CODECHAT_DOC_HIDDEN);
+            tinymce.get(0)!.resetContent();
         }
     }
 }
@@ -833,9 +835,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             // If the contents aren't editable, then the div
                             // won't receive a `focusin` message (it instead
                             // goes to a CodeMirror layer).
-                            old_contents_div.contentEditable = "true";
+                            old_contents_div.tabIndex = 0;
                             old_contents_div.innerHTML =
-                                tinymce.activeEditor!.save({ format: "raw" });
+                                tinymce.activeEditor!.save();
                             tinymce_div.parentNode!.insertBefore(
                                 old_contents_div,
                                 null,
@@ -848,11 +850,21 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         // div it will replace.
                         target.insertBefore(tinymce_div, null);
 
-                        tinymce.activeEditor!.setContent(
+                        // Calling `setContent()` instead produces spurious
+                        // `Dirty` events, observed after receiving a
+                        // re-translation. In addition, `resetContent()` clears
+                        // the undo history, which is appropriate given that
+                        // edits to the previous doc block no longer apply here.
+                        // TODO: Eventually, we need a way to chain TinyMCE's
+                        // undo history with CodeMirror's undo history.
+                        tinymce.activeEditor!.resetContent(
                             contents_div.innerHTML,
                         );
                         contents_div.remove();
-                        tinymce_div.classList.remove(CODECHAT_DOC_HIDDEN);
+                        tinymce.activeEditor!.dom.removeClass(
+                            tinymce_div,
+                            CODECHAT_DOC_HIDDEN,
+                        );
                         // The new div is now a TinyMCE editor. Retypeset this.
                         await mathJaxTypeset(tinymce_div);
 

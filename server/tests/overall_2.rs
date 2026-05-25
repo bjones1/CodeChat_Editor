@@ -33,12 +33,12 @@ use std::{error::Error, path::PathBuf};
 use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, WebDriver, error::WebDriverError};
+use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
 
 // ### Local
 use crate::overall_common::{
-    TIMEOUT, assert_no_more_messages, get_empty_client_update, get_version, optional_message,
-    perform_loadfile, select_codechat_iframe,
+    TIMEOUT, assert_no_more_messages, get_version, optional_message, perform_loadfile,
+    select_codechat_iframe,
 };
 use code_chat_editor::{
     ide::CodeChatEditorServer,
@@ -111,29 +111,38 @@ async fn test_4_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     doc_blocks[1].click().await.unwrap();
-    let mut client_version = 0.0;
-    get_empty_client_update(
-        &codechat_server,
-        &path_str,
-        &mut client_id,
-        &mut client_version,
-        "python",
-        Some(CursorPosition::Line(3)),
-        Some(1.0),
-    )
-    .await;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(3)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
 
     doc_blocks[2].click().await.unwrap();
-    get_empty_client_update(
-        &codechat_server,
-        &path_str,
-        &mut client_id,
-        &mut client_version,
-        "python",
-        Some(CursorPosition::Line(5)),
-        Some(1.0),
-    )
-    .await;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(5)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    //client_id += MESSAGE_ID_INCREMENT;
 
     assert_no_more_messages(&codechat_server).await;
 
@@ -362,17 +371,58 @@ async fn test_6_core(
     // Check the content.
     let body_css = "#CodeChat-body .CodeChat-doc-contents";
     let body_content = driver.find(By::Css(body_css)).await.unwrap();
-
-    // Perform edits.
-    body_content.send_keys("a").await.unwrap();
+    body_content.click().await.unwrap();
+    let body_content = driver.find(By::Css(body_css)).await.unwrap();
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
-    // Sometimes, a cursor update gets sent before the edit.
+    // Sometimes, the cursor starts at the beginning of the doc block before it
+    // moves to the end.
     let msg = optional_message(
         &codechat_server,
         &mut client_id,
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
+            scroll_position: None,
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(3)),
+                scroll_position: None,
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Perform edits at beginning of document.
+    body_content
+        .send_keys(
+            if cfg!(target_os = "macos") {
+                Key::Command
+            } else {
+                Key::Control
+            } + Key::Home,
+        )
+        .await
+        .unwrap();
+    body_content.send_keys("a").await.unwrap();
+    // Sometimes, a cursor update gets sent before the edit.
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(3)),
             scroll_position: None,
             is_re_translation: false,
             contents: None,
