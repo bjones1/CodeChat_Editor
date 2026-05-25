@@ -692,12 +692,12 @@ const scroll_to_line = (
     }
 };
 
-/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-export const console_log = (...args: any) => {
-    if (DEBUG_ENABLED) {
-        console.log(...args);
-    }
-};
+// If debug is enabled, show the line number of the caller, not the current line
+// number, in the log output.
+export const console_log = DEBUG_ENABLED
+    ? console.log.bind(console)
+    : /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
+      (..._args: any) => undefined;
 
 // A global error handler: this is called on any uncaught exception.
 export const on_error = (event: Event) => {

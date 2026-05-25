@@ -413,7 +413,7 @@ class WebSocketComm {
             Result: result === undefined ? { Ok: "Void" } : { Err: result },
         };
         console_log(
-            `CodeChat Client: sending result id = ${id}, message = ${format_struct(message)}`,
+            `CodeChat Editor Client: sending result id = ${id}, message = ${format_struct(message)}`,
         );
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
