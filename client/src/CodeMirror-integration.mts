@@ -71,25 +71,9 @@ import {
     Annotation,
     TransactionSpec,
 } from "@codemirror/state";
-import { cpp } from "@codemirror/lang-cpp";
-import { css } from "@codemirror/lang-css";
-import { go } from "@codemirror/lang-go";
-import { html } from "@codemirror/lang-html";
-import { java } from "@codemirror/lang-java";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { python } from "@codemirror/lang-python";
-import { rust } from "@codemirror/lang-rust";
-import { sql } from "@codemirror/lang-sql";
-import { yaml } from "@codemirror/lang-yaml";
-import { StreamLanguage } from "@codemirror/language";
-import { shell } from "@codemirror/legacy-modes/mode/shell";
-import { swift } from "@codemirror/legacy-modes/mode/swift";
-import { toml } from "@codemirror/legacy-modes/mode/toml";
-import { verilog } from "@codemirror/legacy-modes/mode/verilog";
-import { vhdl } from "@codemirror/legacy-modes/mode/vhdl";
-import { tinymce, init } from "./tinymce-config.mjs";
-import { Editor, EditorEvent, Events } from "tinymce";
+
+import type { StreamParser } from "@codemirror/language";
+import type { Editor, EditorEvent, Events } from "tinymce";
 
 // ### Local
 import {
@@ -97,6 +81,9 @@ import {
     startAutoUpdateTimer,
     saveSelection,
     restoreSelection,
+    tinymce_instance,
+    tinymce,
+    init,
 } from "./CodeChatEditor.mjs";
 import {
     CodeChatForWeb,
@@ -512,10 +499,10 @@ class DocBlockWidget extends WidgetType {
         if (is_tinymce) {
             // Save the cursor location before the update, then restore it
             // afterwards, if TinyMCE has focus.
-            const sel = tinymce.activeEditor!.hasFocus()
+            const sel = tinymce_instance()!.hasFocus()
                 ? saveSelection()
                 : undefined;
-            tinymce.activeEditor!.setContent(this.contents);
+            tinymce_instance()!.setContent(this.contents);
             if (sel !== undefined) {
                 restoreSelection(sel);
             }
@@ -553,8 +540,8 @@ class DocBlockWidget extends WidgetType {
             codechat_body.insertBefore(tinymce_div, null);
             // Make TinyMCE invisible, since it's placed below the body of the
             // page.
-            tinymce.get(0)!.dom.addClass(tinymce_div, CODECHAT_DOC_HIDDEN);
-            tinymce.get(0)!.resetContent();
+            tinymce_instance()!.dom.addClass(tinymce_div, CODECHAT_DOC_HIDDEN);
+            tinymce_instance()!.resetContent();
         }
     }
 }
@@ -594,8 +581,10 @@ export const mathJaxUnTypeset = (node: HTMLElement) => {
 // attached to that div.
 const get_contents = (element: HTMLElement): [HTMLDivElement, boolean] => {
     const contents_div = element.childNodes[1] as HTMLDivElement;
-    const tinymce_inst = tinymce.get(contents_div.id);
-    return [contents_div, tinymce_inst !== null];
+    const tinymce_inst = tinymce?.get(contents_div.id);
+    // Note the use of `!=` to check both `undefined` (TinyMCE not loaded) and
+    // `null`.
+    return [contents_div, tinymce_inst != null];
 };
 
 // Determine if the element which generated the provided event was in a doc
@@ -673,7 +662,7 @@ const on_dirty = (
         mathJaxUnTypeset(contents_div);
         // Use the raw format; see the implementation notes.
         const contents = is_tinymce
-            ? tinymce.activeEditor!.save({ format: "raw" })
+            ? tinymce_instance()!.save({ format: "raw" })
             : contents_div.innerHTML;
         // The `save()` flushes any duplicate `Dirty` events. After this,
         // following `Dirty` events are genuine.
@@ -809,302 +798,11 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     // cursor position (the selection) to be set in the
                     // contenteditable div. Then, save that location.
                     setTimeout(async () => {
-                        // Before untypesetting, make sure all other typesets
-                        // finish.
-                        await new Promise<void>((resolve) =>
-                            window.MathJax.whenReady(() => resolve()),
-                        );
-                        // Untypeset math in the old doc block and the current
-                        // doc block before moving its contents around.
-                        const tinymce_div =
-                            document.getElementById(TINYMCE_INST)!;
-                        mathJaxUnTypeset(tinymce_div);
-                        mathJaxUnTypeset(contents_div);
-                        // The code which moves TinyMCE into this div disturbs
-                        // all the nodes, which causes it to loose a selection
-                        // tied to a specific node.
-                        const sel = saveSelection();
-                        // With the selection saved, it's safe to replace the
-                        // contenteditable div with the TinyMCE instance (which
-                        // would otherwise wipe the selection).
-                        //
-                        // Copy the current TinyMCE instance contents into a
-                        // contenteditable div, unless the TinyMCE instance
-                        // wasn't in use (currently hidden, since no previous
-                        // doc block was being edited).
-                        if (
-                            !tinymce_div.classList.contains(CODECHAT_DOC_HIDDEN)
-                        ) {
-                            const old_contents_div =
-                                document.createElement("div");
-                            old_contents_div.className =
-                                "CodeChat-doc-contents";
-                            // If the contents aren't editable, then the div
-                            // won't receive a `focusin` message (it instead
-                            // goes to a CodeMirror layer).
-                            old_contents_div.tabIndex = 0;
-                            old_contents_div.innerHTML =
-                                tinymce.activeEditor!.save();
-                            tinymce_div.parentNode!.insertBefore(
-                                old_contents_div,
-                                null,
-                            );
-                            // The previous content edited by TinyMCE is now a
-                            // div. Retypeset this after the transition.
-                            await mathJaxTypeset(old_contents_div);
-                        }
-                        // Move TinyMCE to the new location, then remove the old
-                        // div it will replace.
-                        target.insertBefore(tinymce_div, null);
-
-                        // Calling `setContent()` instead produces spurious
-                        // `Dirty` events, observed after receiving a
-                        // re-translation. In addition, `resetContent()` clears
-                        // the undo history, which is appropriate given that
-                        // edits to the previous doc block no longer apply here.
-                        // TODO: Eventually, we need a way to chain TinyMCE's
-                        // undo history with CodeMirror's undo history.
-                        tinymce.activeEditor!.resetContent(
-                            contents_div.innerHTML,
-                        );
-                        contents_div.remove();
-                        tinymce.activeEditor!.dom.removeClass(
-                            tinymce_div,
-                            CODECHAT_DOC_HIDDEN,
-                        );
-                        // The new div is now a TinyMCE editor. Retypeset this.
-                        await mathJaxTypeset(tinymce_div);
-
-                        // This process causes TinyMCE to lose focus. Restore
-                        // that. However, this causes TinyMCE to lose the
-                        // selection, which the next bit of code then restores.
-                        // When the doc block is longer than a screen, omitting
-                        // the `preventScroll` parameter causes this to scroll
-                        // to the top of the doc block, which is incorrect.
-                        tinymce_div.focus({ preventScroll: true });
-
-                        // Copy the selection over to TinyMCE by indexing the
-                        // selection path to find the selected node.
-                        restoreSelection(sel);
-                    }, 0);
-                }
-                return false;
-            },
-        },
-    },
-);
-
-// UI
-// --
-//
-// There doesn't seem to be any tracking of a dirty/clean flag built into
-// CodeMirror v6 (although
-// [v5 does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've
-// found is a
-// [forum post](https://discuss.codemirror.net/t/codemirror-6-proper-way-to-listen-for-changes/2395/11)
-// showing code to do this, which I use below.
-//
-// How this works: the
-// [EditorView.updateListener](https://codemirror.net/docs/ref/#codemirror) is a
-// [Facet](https://codemirror.net/docs/ref/#state.Facet) with an
-// [of function](https://codemirror.net/docs/ref/#state.Facet.of) that creates a
-// CodeMirror extension.
-const autosaveExtension = EditorView.updateListener.of(
-    // CodeMirror passes this function a
-    // [ViewUpdate](https://codemirror.net/docs/ref/#view.ViewUpdate) which
-    // describes a change being made to the document.
-    (v: ViewUpdate) => {
-        // Ignore any transaction group marked with a `noAutosaveAnnotation`.
-        if (
-            v.transactions.some(
-                (tr) => tr.annotation(noAutosaveAnnotation) === true,
-            )
-        ) {
-            return true;
-        }
-
-        // The
-        // [docChanged](https://codemirror.net/docs/ref/#view.ViewUpdate.docChanged)
-        // flag is the relevant part of this change description. However, this
-        // only describes changes to the code blocks (the document, from
-        // CodeMirror's perspective).
-        let isChanged = v.docChanged;
-        // Look for changes to doc blocks as well; skip if a change was already
-        // detected for efficiency.
-        if (!v.docChanged && v.transactions.length) {
-            // Check each effect of each transaction.
-            outer: for (const tr of v.transactions) {
-                for (const effect of tr.effects) {
-                    // Look for a change to a doc block.
-                    if (effect.is(addDocBlock) || effect.is(updateDocBlock)) {
-                        isChanged = true;
-                        break outer;
-                    }
-                }
-            }
-        }
-        if (isChanged) {
-            set_is_dirty();
-            startAutoUpdateTimer();
-        } else if (v.selectionSet) {
-            // Send an update if only the selection changed.
-            startAutoUpdateTimer();
-        }
-    },
-);
-
-// Given source code in a CodeMirror-friendly JSON format, load it into the
-// provided div.
-export const CodeMirror_load = async (
-    // The div to place the loaded document in.
-    codechat_body: HTMLDivElement,
-    // The document to load.
-    codechat_for_web: CodeChatForWeb,
-    // Additional extensions.
-    extensions: Array<Extension>,
-    cursor_position?: CursorPosition,
-    scroll_line?: number,
-) => {
-    if ("Plain" in codechat_for_web.source) {
-        // Although the
-        // [docs](https://codemirror.net/docs/ref/#state.EditorState^fromJSON)
-        // specify a
-        // [EditorStateConfig](https://codemirror.net/docs/ref/#state.EditorStateConfig)
-        // which contains `doc` and `selection`, the implementation requires
-        // these to be present in the `json` (first) argument. Therefore:
-        const editor_state_json = {
-            doc: codechat_for_web.source.Plain.doc,
-            selection: EditorSelection.single(0).toJSON(),
-            doc_blocks: codechat_for_web.source.Plain.doc_blocks,
-        };
-        // Save the current scroll position, to prevent the view from scrolling
-        // back to the top after an update/reload.
-        let scrollSnapshot;
-        if (current_view !== undefined) {
-            scrollSnapshot = current_view.scrollSnapshot();
-            // For reloads, we need to remove previous instances; otherwise, Bad
-            // Things happen.
-            tinymce.remove();
-        }
-
-        codechat_body.innerHTML = `<div class="CodeChat-CodeMirror"></div><div id="${TINYMCE_INST}" class="CodeChat-doc-contents ${CODECHAT_DOC_HIDDEN}" spellcheck="true"></div>`;
-        let parser;
-        // TODO: dynamically load the parser.
-        switch (codechat_for_web.metadata.mode) {
-            // Languages with a parser.
-            case "sh":
-                parser = StreamLanguage.define(shell);
-                break;
-            case "cpp":
-                parser = cpp();
-                break;
-            case "csharp":
-                parser = javascript();
-                break;
-            case "css":
-                parser = css();
-                break;
-            case "golang":
-                parser = go();
-                break;
-            case "html":
-                parser = html();
-                break;
-            case "java":
-                parser = java();
-                break;
-            case "javascript":
-                parser = javascript();
-                break;
-            case "python":
-                parser = python();
-                break;
-            case "rust":
-                parser = rust();
-                break;
-            case "sql":
-                parser = sql();
-                break;
-            case "swift":
-                parser = StreamLanguage.define(swift);
-                break;
-            case "toml":
-                parser = StreamLanguage.define(toml);
-                break;
-            case "typescript":
-                parser = javascript({ typescript: true });
-                break;
-            case "vhdl":
-                parser = StreamLanguage.define(vhdl);
-                break;
-            case "verilog":
-                parser = StreamLanguage.define(verilog);
-                break;
-            case "yaml":
-                parser = yaml();
-                break;
-
-            // Languages without a parser.
-            //
-            // JSON5 allows comments, but JSON doesn't.
-            case "json5":
-                parser = json();
-                break;
-            // Nothing available. Python isn't even close.
-            case "matlab":
-                parser = python();
-                break;
-            // An approximation for Vlang.
-            case "v":
-                parser = javascript();
-                break;
-
-            default:
-                parser = javascript();
-                report_error(
-                    `Unknown lexer name ${codechat_for_web.metadata.mode}`,
-                );
-                break;
-        }
-        const state = EditorState.fromJSON(
-            editor_state_json,
-            {
-                extensions: [
-                    DocBlockPlugin,
-                    parser,
-                    basicSetup,
-                    EditorView.lineWrapping,
-                    exceptionSink,
-                    autosaveExtension,
-                    // Make tab an indent per the
-                    // [docs](https://codemirror.net/examples/tab/). TODO:
-                    // document a way to escape the tab key per the same docs.
-                    keymap.of([indentWithTab]),
-                    // Change the font size. See
-                    // [this post](https://discuss.codemirror.net/t/changing-the-font-size-of-cm6/2935/6).
-                    [
-                        // TODO: get these values from the IDE, so we match its
-                        // size.
-                        EditorView.theme({
-                            "&": {
-                                fontSize: "14px",
-                            },
-                            ".cm-content": {
-                                fontFamily:
-                                    "Consolas, 'Courier New', monospace",
-                            },
-                        }),
-                    ],
-                    ...extensions,
-                ],
-            },
-            CodeMirror_JSON_fields,
-        );
-        current_view = new EditorView({
-            parent: codechat_body.childNodes[0] as HTMLDivElement,
-            state,
-            scrollTo: scrollSnapshot,
-        });
+                        // Create the TinyMCE instance if necessary. Note the
+                        // use of `==` here to check for `null` (TinyMCE is
+                        // loaded, but no instance exists) and `undefined`
+                        // (TinyMCE isn't loaded).
+                        if (tinymce_instance() == null) {
 
         await init({
             selector: "#TinyMCE-inst",
@@ -1202,6 +900,331 @@ export const CodeMirror_load = async (
                     },
                 );
             },
+        });                   }
+
+                        // Before untypesetting, make sure all other typesets
+                        // finish.
+                        await new Promise<void>((resolve) =>
+                            window.MathJax.whenReady(() => resolve()),
+                        );
+                        // Untypeset math in the old doc block and the current
+                        // doc block before moving its contents around.
+                        const tinymce_div =
+                            document.getElementById(TINYMCE_INST)!;
+                        mathJaxUnTypeset(tinymce_div);
+                        mathJaxUnTypeset(contents_div);
+                        // The code which moves TinyMCE into this div disturbs
+                        // all the nodes, which causes it to loose a selection
+                        // tied to a specific node.
+                        const sel = saveSelection();
+                        // With the selection saved, it's safe to replace the
+                        // contenteditable div with the TinyMCE instance (which
+                        // would otherwise wipe the selection).
+                        //
+                        // Copy the current TinyMCE instance contents into a
+                        // contenteditable div, unless the TinyMCE instance
+                        // wasn't in use (currently hidden, since no previous
+                        // doc block was being edited).
+                        if (
+                            !tinymce_div.classList.contains(CODECHAT_DOC_HIDDEN)
+                        ) {
+                            const old_contents_div =
+                                document.createElement("div");
+                            old_contents_div.className =
+                                "CodeChat-doc-contents";
+                            // If the contents aren't editable, then the div
+                            // won't receive a `focusin` message (it instead
+                            // goes to a CodeMirror layer).
+                            old_contents_div.tabIndex = 0;
+                            old_contents_div.innerHTML =
+                                tinymce_instance()!.save();
+                            tinymce_div.parentNode!.insertBefore(
+                                old_contents_div,
+                                null,
+                            );
+                            // The previous content edited by TinyMCE is now a
+                            // div. Retypeset this after the transition.
+                            await mathJaxTypeset(old_contents_div);
+                        }
+                        // Move TinyMCE to the new location, then remove the old
+                        // div it will replace.
+                        target.insertBefore(tinymce_div, null);
+
+                        // Calling `setContent()` instead produces spurious
+                        // `Dirty` events, observed after receiving a
+                        // re-translation. In addition, `resetContent()` clears
+                        // the undo history, which is appropriate given that
+                        // edits to the previous doc block no longer apply here.
+                        // TODO: Eventually, we need a way to chain TinyMCE's
+                        // undo history with CodeMirror's undo history.
+                        tinymce_instance()!.resetContent(
+                            contents_div.innerHTML,
+                        );
+                        contents_div.remove();
+                        tinymce_instance()!.dom.removeClass(
+                            tinymce_div,
+                            CODECHAT_DOC_HIDDEN,
+                        );
+                        // The new div is now a TinyMCE editor. Retypeset this.
+                        await mathJaxTypeset(tinymce_div);
+
+                        // This process causes TinyMCE to lose focus. Restore
+                        // that. However, this causes TinyMCE to lose the
+                        // selection, which the next bit of code then restores.
+                        // When the doc block is longer than a screen, omitting
+                        // the `preventScroll` parameter causes this to scroll
+                        // to the top of the doc block, which is incorrect.
+                        tinymce_div.focus({ preventScroll: true });
+
+                        // Copy the selection over to TinyMCE by indexing the
+                        // selection path to find the selected node.
+                        restoreSelection(sel);
+                    }, 0);
+                }
+                return false;
+            },
+        },
+    },
+);
+
+// UI
+// --
+//
+// There doesn't seem to be any tracking of a dirty/clean flag built into
+// CodeMirror v6 (although
+// [v5 does](https://codemirror.net/5/doc/manual.html#isClean)). The best I've
+// found is a
+// [forum post](https://discuss.codemirror.net/t/codemirror-6-proper-way-to-listen-for-changes/2395/11)
+// showing code to do this, which I use below.
+//
+// How this works: the
+// [EditorView.updateListener](https://codemirror.net/docs/ref/#codemirror) is a
+// [Facet](https://codemirror.net/docs/ref/#state.Facet) with an
+// [of function](https://codemirror.net/docs/ref/#state.Facet.of) that creates a
+// CodeMirror extension.
+const autosaveExtension = EditorView.updateListener.of(
+    // CodeMirror passes this function a
+    // [ViewUpdate](https://codemirror.net/docs/ref/#view.ViewUpdate) which
+    // describes a change being made to the document.
+    (v: ViewUpdate) => {
+        // Ignore any transaction group marked with a `noAutosaveAnnotation`.
+        if (
+            v.transactions.some(
+                (tr) => tr.annotation(noAutosaveAnnotation) === true,
+            )
+        ) {
+            return true;
+        }
+
+        // The
+        // [docChanged](https://codemirror.net/docs/ref/#view.ViewUpdate.docChanged)
+        // flag is the relevant part of this change description. However, this
+        // only describes changes to the code blocks (the document, from
+        // CodeMirror's perspective).
+        let isChanged = v.docChanged;
+        // Look for changes to doc blocks as well; skip if a change was already
+        // detected for efficiency.
+        if (!v.docChanged && v.transactions.length) {
+            // Check each effect of each transaction.
+            outer: for (const tr of v.transactions) {
+                for (const effect of tr.effects) {
+                    // Look for a change to a doc block.
+                    if (effect.is(addDocBlock) || effect.is(updateDocBlock)) {
+                        isChanged = true;
+                        break outer;
+                    }
+                }
+            }
+        }
+        if (isChanged) {
+            set_is_dirty();
+            startAutoUpdateTimer();
+        } else if (v.selectionSet) {
+            // Send an update if only the selection changed.
+            startAutoUpdateTimer();
+        }
+    },
+);
+
+// Wrap a stream language dynamic import.
+const import_stream_language = async (lang: StreamParser<unknown>) =>
+    (await import("@codemirror/language")).StreamLanguage.define(lang);
+
+// Given source code in a CodeMirror-friendly JSON format, load it into the
+// provided div.
+export const CodeMirror_load = async (
+    // The div to place the loaded document in.
+    codechat_body: HTMLDivElement,
+    // The document to load.
+    codechat_for_web: CodeChatForWeb,
+    // Additional extensions.
+    extensions: Array<Extension>,
+    cursor_position?: CursorPosition,
+    scroll_line?: number,
+) => {
+    if ("Plain" in codechat_for_web.source) {
+        // Although the
+        // [docs](https://codemirror.net/docs/ref/#state.EditorState^fromJSON)
+        // specify a
+        // [EditorStateConfig](https://codemirror.net/docs/ref/#state.EditorStateConfig)
+        // which contains `doc` and `selection`, the implementation requires
+        // these to be present in the `json` (first) argument. Therefore:
+        const editor_state_json = {
+            doc: codechat_for_web.source.Plain.doc,
+            selection: EditorSelection.single(0).toJSON(),
+            doc_blocks: codechat_for_web.source.Plain.doc_blocks,
+        };
+        // Save the current scroll position, to prevent the view from scrolling
+        // back to the top after an update/reload.
+        let scrollSnapshot;
+        if (current_view !== undefined) {
+            scrollSnapshot = current_view.scrollSnapshot();
+            // For reloads, we need to remove previous instances; otherwise, Bad
+            // Things happen.
+            tinymce?.remove();
+        }
+
+        codechat_body.innerHTML = `<div class="CodeChat-CodeMirror"></div><div id="${TINYMCE_INST}" class="CodeChat-doc-contents ${CODECHAT_DOC_HIDDEN}" spellcheck="true"></div>`;
+        let parser;
+        // Dynamically load the parser.
+        switch (codechat_for_web.metadata.mode) {
+            // Languages with a parser.
+            case "sh":
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/shell")).shell,
+                );
+                break;
+            case "cpp":
+                parser = (await import("@codemirror/lang-cpp")).cpp();
+                break;
+            case "csharp":
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript();
+                break;
+            case "css":
+                parser = (await import("@codemirror/lang-css")).css();
+                break;
+            case "golang":
+                parser = (await import("@codemirror/lang-go")).go();
+                break;
+            case "html":
+                parser = (await import("@codemirror/lang-html")).html();
+                break;
+            case "java":
+                parser = (await import("@codemirror/lang-java")).java();
+                break;
+            case "javascript":
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript();
+                break;
+            // Octave is an open-source MATLAB-ish clone.
+            case "matlab":
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/octave"))
+                        .octave,
+                );
+                break;
+            case "python":
+                parser = (await import("@codemirror/lang-python")).python();
+                break;
+            case "rust":
+                parser = (await import("@codemirror/lang-rust")).rust();
+                break;
+            case "sql":
+                parser = (await import("@codemirror/lang-sql")).sql();
+                break;
+            case "swift":
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/swift")).swift,
+                );
+                break;
+            case "toml":
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/toml")).toml,
+                );
+                break;
+            case "typescript":
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript({ typescript: true });
+                break;
+            case "vhdl":
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/vhdl")).vhdl,
+                );
+                break;
+            case "verilog":
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/verilog"))
+                        .verilog,
+                );
+                break;
+            case "yaml":
+                parser = (await import("@codemirror/lang-yaml")).yaml();
+                break;
+
+            // Languages without a parser.
+            //
+            // JSON5 allows comments, but JSON doesn't.
+            case "json5":
+                parser = (await import("@codemirror/lang-json")).json();
+                break;
+            // An approximation for Vlang.
+            case "v":
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript();
+                break;
+
+            default:
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript();
+                report_error(
+                    `Unknown lexer name ${codechat_for_web.metadata.mode}`,
+                );
+                break;
+        }
+        const state = EditorState.fromJSON(
+            editor_state_json,
+            {
+                extensions: [
+                    DocBlockPlugin,
+                    parser,
+                    basicSetup,
+                    EditorView.lineWrapping,
+                    exceptionSink,
+                    autosaveExtension,
+                    // Make tab an indent per the
+                    // [docs](https://codemirror.net/examples/tab/). TODO:
+                    // document a way to escape the tab key per the same docs.
+                    keymap.of([indentWithTab]),
+                    // Change the font size. See
+                    // [this post](https://discuss.codemirror.net/t/changing-the-font-size-of-cm6/2935/6).
+                    [
+                        // TODO: get these values from the IDE, so we match its
+                        // size.
+                        EditorView.theme({
+                            "&": {
+                                fontSize: "14px",
+                            },
+                            ".cm-content": {
+                                fontFamily:
+                                    "Consolas, 'Courier New', monospace",
+                            },
+                        }),
+                    ],
+                    ...extensions,
+                ],
+            },
+            CodeMirror_JSON_fields,
+        );
+        current_view = new EditorView({
+            parent: codechat_body.childNodes[0] as HTMLDivElement,
+            state,
+            scrollTo: scrollSnapshot,
         });
     } else {
         // This contains a diff, instead of plain text. Apply the text diff.

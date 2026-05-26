@@ -19,18 +19,11 @@
 // =========================================================================
 //
 // Import TinyMCE.
-import {
-    default as tinymce_,
-    Editor,
-    RawEditorOptions,
-    TinyMCE,
-} from "tinymce";
+import { default as tinymce, Editor, RawEditorOptions } from "tinymce";
 // This is taken from the
 // [TinyMCE example code](https://github.com/tinymce/tinymce/blob/main/modules/tinymce/src/core/demo/ts/demo/TinyMceDemo.ts).
-// However, esbuild doesn't accept it.
-//export declare const tinymce: TinyMCE;
-// Here's a workaround.
-export const tinymce = tinymce_ as unknown as TinyMCE;
+// However, esbuild doesn't accept it. This is the workaround:
+export { tinymce };
 
 // Default icons are required for TinyMCE 5.3 or above.
 import "tinymce/icons/default/index.js";

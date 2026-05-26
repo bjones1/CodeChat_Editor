@@ -62,8 +62,13 @@ import "./graphviz-webcomponent-setup.mjs";
 // This must be imported *after* the previous setup import, so it's placed here,
 // instead of in the third-party category above.
 import "./third-party/graphviz-webcomponent/graph.js";
-import { init, tinymce } from "./tinymce-config.mjs";
-import { Editor, EditorEvent, Events } from "tinymce";
+import type {
+    Editor,
+    EditorEvent,
+    Events,
+    RawEditorOptions,
+    TinyMCE,
+} from "tinymce";
 import {
     CodeChatForWeb,
     CodeMirrorDiffable,
@@ -149,6 +154,20 @@ export const set_is_dirty = (value: boolean = true) => {
 
 export const get_is_dirty = () => is_dirty;
 
+// ### TinyMCE dynamic import
+//
+// TinyMCE is dynamically imported when `init` is called.
+export const init = async (options: RawEditorOptions) => {
+    const tinymce_config = await import("./tinymce-config.mjs");
+    tinymce = tinymce_config.tinymce;
+    return await tinymce_config.init(options);
+};
+// The imported module is stored in this variable.
+export let tinymce: undefined | TinyMCE = undefined;
+// A single TinyMCE instance is used for all doc blocks. Avoid accessing this
+// through `tinymce.activeEditor`, which fails if the editor isn't active.
+export const tinymce_instance = () => tinymce?.get(0);
+
 // Page initialization
 // -------------------
 
@@ -205,7 +224,7 @@ let doc_content = "";
 // the appropriate message.
 const do_debug = () => {
     if (DEBUG_ENABLED) {
-        tinymce.activeEditor?.save({ format: "raw" });
+        tinymce_instance()?.save({ format: "raw" });
     }
 };
 
@@ -285,7 +304,9 @@ const _open_lp = async (
             // knows the typeset math that you are removing is no longer on the
             // page."
             window.MathJax.typesetClear(codechat_body);
-            if (tinymce.activeEditor === null) {
+            // Note that `==` is intentional: `null` (no editor instance) or
+            // `undefined` (TinyMCE not loaded).
+            if (tinymce_instance() == null) {
                 // We shouldn't have a diff if the editor hasn't been
                 // initialized.
                 assert("Plain" in source);
@@ -329,18 +350,18 @@ const _open_lp = async (
                         );
                     },
                 });
-                tinymce.activeEditor!.focus();
+                tinymce_instance()!.focus();
             } else {
                 // Save the cursor location before the update, then restore it
                 // afterwards, if TinyMCE has focus.
-                const sel = tinymce.activeEditor!.hasFocus()
+                const sel = tinymce_instance()!.hasFocus()
                     ? saveSelection()
                     : undefined;
                 doc_content =
                     "Plain" in source
                         ? source.Plain.doc
                         : apply_diff_str(doc_content, source.Diff.doc);
-                tinymce.activeEditor!.setContent(doc_content);
+                tinymce_instance()!.setContent(doc_content);
                 if (sel !== undefined) {
                     restoreSelection(sel);
                 }
@@ -432,7 +453,7 @@ const save_lp = async (
                 // To save a document only, simply get the HTML from the only
                 // Tiny MCE div. Update the `doc_contents` to stay in sync with
                 // the Server.
-                doc_content = tinymce.activeEditor!.save({ format: "raw" });
+                doc_content = tinymce_instance()!.save({ format: "raw" });
                 // The `save()` flushes any duplicate `Dirty` events. After this, following `Dirty` events are genuine.
                 ignoreDirty = false;
                 (
@@ -520,7 +541,7 @@ export const restoreSelection = ({
     // Copy the selection over to TinyMCE by indexing the selection path to find
     // the selected node.
     if (selection_path.length && typeof selection_offset === "number") {
-        let selection_node = tinymce.activeEditor!.getContentAreaContainer();
+        let selection_node = tinymce_instance()!.getContentAreaContainer();
         while (selection_path.length) {
             const new_selection_node = selection_node.childNodes[
                 selection_path.shift()!
@@ -539,7 +560,7 @@ export const restoreSelection = ({
             selection_node.nodeValue?.length ?? 0,
         );
         // Use that to set the selection.
-        tinymce.activeEditor!.selection.setCursorLocation(
+        tinymce_instance()!.selection.setCursorLocation(
             selection_node,
             final_selection_offset,
         );
