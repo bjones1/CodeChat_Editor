@@ -244,9 +244,6 @@ const _open_lp = async (
     // between `await` calls. Therefore, try to perform processing which relies
     // on these values between `await` calls. For example, evaluate this first:
     //
-    // Before calling any MathJax, make sure it's fully loaded and the initial
-    // render is finished.
-    await window.MathJax.startup.promise;
 
     // The only call to `await` is based on TinyMCE init, which should only
     // cause an async delay on its first execution. (Even then, I'm not sure it
@@ -303,7 +300,7 @@ const _open_lp = async (
             // mathematics, you will need to tell MathJax about that so that it
             // knows the typeset math that you are removing is no longer on the
             // page."
-            window.MathJax.typesetClear(codechat_body);
+            window.MathJax?.typesetClear?.(codechat_body);
             // Note that `==` is intentional: `null` (no editor instance) or
             // `undefined` (TinyMCE not loaded).
             if (tinymce_instance() == null) {

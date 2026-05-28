@@ -53,7 +53,7 @@ use bytes::Bytes;
 use dunce::simplified;
 use futures_util::StreamExt;
 use htmlize::{escape_attribute, escape_text};
-use indoc::{concatdoc, formatdoc};
+use indoc::formatdoc;
 use lazy_static::lazy_static;
 use log::{LevelFilter, error, info, warn};
 use log4rs::{self, config::load_config_file};
@@ -472,42 +472,6 @@ pub const INITIAL_IDE_MESSAGE_ID: f64 = INITIAL_CLIENT_MESSAGE_ID + 1.0;
 /// bit, 2^54 seconds = 574 million years before the message ID wraps around
 /// assuming an average of 1 message/second.)
 pub const MESSAGE_ID_INCREMENT: f64 = 3.0;
-
-const MATHJAX_TAGS: &str = concatdoc!(
-    r#"
-    <script>
-        MathJax = {"#,
-    // See the
-    // [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions),
-    // [postFilters](https://docs.mathjax.org/en/latest/options/output/index.html#output-postfilters);
-    // see also the
-    // [TinyMCE non-editable class](https://www.tiny.cloud/docs/tinymce/latest/non-editable-content-options/#noneditable_class).
-    // After some experimentation, I discovered:
-    //
-    // * Setting the `classList` had no effect. I still think it's a good idea
-    //   for the future, though.
-    // * I can't use the `postFilter` to enclose this in a span with the
-    //   appropriate class; MathJax disallows editing the `mjx-container`
-    //   element.
-    // * Simply setting `contentEditable` is what actually works.
-    r#"
-            chtml: {
-                fontURL: "/static/mathjax-newcm-font/chtml/woff2",
-            },
-            output: {
-                postFilters: [(obj) => {
-                    obj.data.classList.add("mceNonEditable");
-                    obj.data.contentEditable = false;
-                }],
-            },
-        };
-    </script>"#,
-    // Per the
-    // [MathJax docs](https://docs.mathjax.org/en/latest/web/components/combined.html#tex-chtml),
-    // enable tex input and HTML output.
-    r#"
-    <script defer src="/static/mathjax/tex-chtml.js"></script>"#
-);
 
 lazy_static! {
     pub static ref ROOT_PATH: Arc<Mutex<PathBuf>> = Arc::new(Mutex::new(PathBuf::new()));
@@ -987,7 +951,6 @@ pub async fn file_to_response(
                             <meta charset="UTF-8">
                             <meta name="viewport" content="width=device-width, initial-scale=1">
                             <title>{name} - The CodeChat Editor</title>
-                            {MATHJAX_TAGS}
                             <link rel="stylesheet" href="/{codechat_editor_css}">
                         </head>
                         <body class="CodeChat-theme-light">
@@ -1030,7 +993,6 @@ pub async fn file_to_response(
                     <meta charset="UTF-8">
                     <meta name="viewport" content="width=device-width, initial-scale=1">
                     <title>{name} - The CodeChat Editor</title>
-                    {MATHJAX_TAGS}
                     <script type="module">import "/{codechat_editor_js}"</script>
                     <link rel="stylesheet" href="/{codechat_editor_css}">
                     {sidebar_css}

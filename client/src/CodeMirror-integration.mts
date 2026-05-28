@@ -114,7 +114,8 @@ const decorationOptions = {
 
 declare global {
     interface Window {
-        // Tye `#types/MathJax` definitions are out of date.
+        // The `@types/MathJax` definitions are out of date and I can't figure
+        // out how to import the v4 Typescript definitions.
         /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
         MathJax: any;
     }
@@ -495,7 +496,7 @@ class DocBlockWidget extends WidgetType {
         // The contents div could be a TinyMCE instance, or just a plain div.
         // Handle both cases.
         const [contents_div, is_tinymce] = get_contents(dom);
-        window.MathJax.typesetClear([contents_div]);
+        window.MathJax?.typesetClear?.([contents_div]);
         if (is_tinymce) {
             // Save the cursor location before the update, then restore it
             // afterwards, if TinyMCE has focus.
@@ -532,7 +533,7 @@ class DocBlockWidget extends WidgetType {
     destroy(dom: HTMLElement): void {
         const [contents_div, is_tinymce] = get_contents(dom);
         // Forget about any typeset math in this node.
-        window.MathJax.typesetClear([contents_div]);
+        window.MathJax?.typesetClear?.([contents_div]);
         // If this is the TinyMCE editor, save it.
         if (is_tinymce) {
             const codechat_body = document.getElementById("CodeChat-body")!;
@@ -559,17 +560,105 @@ export const mathJaxTypeset = async (
     // The node to typeset.
     node: HTMLElement,
 ) => {
-    try {
-        await window.MathJax.typesetPromise([node]);
-        /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    } catch (err: any) {
-        report_error(`Typeset failed: ${err.message}`);
+    // If MathJax isn't loaded, look for math on the page.
+    if (window.MathJax === undefined) {
+        const mathDelimiters = [
+            // See `replace_math_node` in `processing.rs` -- this is how Math is
+            // marked.
+            { start: "$$", end: "$$" },
+            { start: "\\(", end: "\\)" },
+        ];
+
+        // Check if Math tags or the text delimiters exist in the page body
+        const nodeContent = node.innerHTML;
+        const hasTeXMath = mathDelimiters.some((delimiter) => {
+            const startIdx = nodeContent.indexOf(delimiter.start);
+            return (
+                startIdx !== -1 &&
+                nodeContent.indexOf(
+                    delimiter.end,
+                    startIdx + delimiter.start.length,
+                ) !== -1
+            );
+        });
+
+        // If mathematical content is detected, load MathJax.
+        if (hasTeXMath) {
+            // Configure MathJax settings.
+            window.MathJax = {
+                // See the
+                // [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions),
+                // [postFilters](https://docs.mathjax.org/en/latest/options/output/index.html#output-postfilters);
+                // see also the
+                // [TinyMCE non-editable class](https://www.tiny.cloud/docs/tinymce/latest/non-editable-content-options/#noneditable_class).
+                // After some experimentation, I discovered:
+                //
+                // * Setting the `classList` had no effect. I still think it's a
+                //   good idea for the future, though.
+                // * I can't use the `postFilter` to enclose this in a span with
+                //   the appropriate class; MathJax disallows editing the
+                //   `mjx-container` element.
+                // * Simply setting `contentEditable` is what actually works.
+                chtml: {
+                    fontURL: "/static/mathjax-newcm-font/chtml/woff2",
+                },
+                output: {
+                    postFilters: [
+                        /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
+                        (obj: { data: any }) => {
+                            obj.data.classList.add("mceNonEditable");
+                            obj.data.contentEditable = false;
+                        },
+                    ],
+                },
+            };
+
+            // Load MathJax. There are several states for MathJax loading:
+            //
+            // 1. Not loaded: `window.MathJax === undefined`.
+            // 2. Load started: `windows.MathJax` is defined (see above -- this
+            //    is required to configure MathJax properly, but doesn't
+            //    guarantee that the library has finished loading and setup).
+            // 3. Load complete: `window.MathJax.typesetPromise/untypeset/etc.`
+            //    is loaded.
+            // 4. Initial render complete.
+            //
+            // Unfortunately, since CodeMirror is synchronous, it will continue
+            // calling this function and related functions even during an await.
+            // To emulate a lock, put `1` checks on all MathJax functions,
+            // skipping calling them when we're still at step 3.
+            await new Promise((resolve, reject) => {
+                const script = document.createElement("script");
+                script.src = "/static/mathjax/tex-chtml.js";
+                script.async = true;
+                script.onload = resolve;
+                script.onerror = () => {
+                    report_error(`Failed to load script: ${script.src}`);
+                    reject();
+                };
+                document.head.appendChild(script);
+            });
+            // Wait until MathJax is fully loaded and the initial render is
+            // finished.
+            await window.MathJax?.startup.promise;
+        }
+    } else {
+        // MathJax is already loaded; just typeset the provided node.
+        try {
+            // MathJax may still be loading when this is called, since
+            // CodeMirror lacks async support. Use `?.` to skip typesetting in
+            // this case.
+            await window.MathJax.typesetPromise?.([node]);
+            /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
+        } catch (err: any) {
+            report_error(`Typeset failed: ${err.message}`);
+        }
     }
 };
 
 // Transform a typeset node back to the original (untypeset) text.
 export const mathJaxUnTypeset = (node: HTMLElement) => {
-    window.MathJax.startup.document
+    window.MathJax?.startup?.document
         .getMathItemsWithin(node)
         /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
         .forEach((item: any) => {
@@ -636,7 +725,7 @@ const on_dirty = (
     on_dirty_scheduled = true;
 
     // Only run this after typesetting is done.
-    window.MathJax.whenReady(async () => {
+    window.MathJax?.whenReady?.(async () => {
         on_dirty_scheduled = false;
         // Find the doc block parent div.
         const target = (event_target as HTMLDivElement).closest(
@@ -904,8 +993,10 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
 
                         // Before untypesetting, make sure all other typesets
                         // finish.
-                        await new Promise<void>((resolve) =>
-                            window.MathJax.whenReady(() => resolve()),
+                        await new Promise<void>(
+                            (resolve) =>
+                                window.MathJax?.whenReady?.(() => resolve()) ??
+                                resolve(),
                         );
                         // Untypeset math in the old doc block and the current
                         // doc block before moving its contents around.
