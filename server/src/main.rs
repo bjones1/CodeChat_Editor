@@ -44,7 +44,7 @@ use std::{
 #[cfg(debug_assertions)]
 use clap::ValueEnum;
 use clap::{Parser, Subcommand};
-use log::LevelFilter;
+use log::{LevelFilter, error, info};
 
 // ### Local
 use code_chat_editor::webserver::{self, Credentials, GetServerUrlError, path_to_url};
@@ -142,7 +142,7 @@ impl Cli {
                             let status_code = response.status_code;
                             let body = response.as_str().unwrap_or("Non-text body");
                             if status_code == 200 && body == "pong" {
-                                println!("Server started.");
+                                info!("Server started.");
                                 // Open a web browser if requested. TODO: show
                                 // an error if running in a Codespace, since
                                 // this doesn't work. See
@@ -174,7 +174,7 @@ impl Cli {
                                 {
                                     break 'err_print;
                                 }
-                                eprintln!("Failed to connect to server at {addr}: {err}");
+                                error!("Failed to connect to server at {addr}: {err}");
                             }
                         }
                     }
@@ -185,7 +185,7 @@ impl Cli {
                         // already running; in this case, the ping above will
                         // see the running server then exit.
                         None => {
-                            println!("Starting server in background...");
+                            info!("Starting server in background...");
                             let current_exe = match env::current_exe() {
                                 Ok(exe) => exe,
                                 Err(e) => {
@@ -280,7 +280,7 @@ impl Cli {
                 }
             }
             Commands::Stop => {
-                println!("Stopping server...");
+                info!("Stopping server...");
                 let stop_addr = fix_addr(addr);
 
                 // TODO: Use https://crates.io/crates/sysinfo to find the server
@@ -293,7 +293,7 @@ impl Cli {
                     Ok(response) => {
                         let status_code = response.status_code;
                         if status_code == 204 {
-                            println!("Server shutting down.");
+                            info!("Server shutting down.");
                             Ok(())
                         } else {
                             Err(format!(
