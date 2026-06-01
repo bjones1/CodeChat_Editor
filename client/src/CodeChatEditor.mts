@@ -48,7 +48,7 @@ import "./third-party/wc-mermaid/wc-mermaid.js";
 
 // #### Local
 import { assert } from "./assert.mjs";
-import { DEBUG_ENABLED } from "./debug_enabled.mjs";
+import { console_log, DEBUG_ENABLED } from "./debug_enabled.mjs";
 import {
     apply_diff_str,
     CodeMirror_load,
@@ -693,13 +693,6 @@ const scroll_to_line = (
         codemirror_scroll_to_line(cursor_position, scroll_line);
     }
 };
-
-// If debug is enabled, show the line number of the caller, not the current line
-// number, in the log output.
-export const console_log = DEBUG_ENABLED
-    ? console.log.bind(console)
-    : /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-      (..._args: any) => undefined;
 
 // A global error handler: this is called on any uncaught exception.
 export const on_error = (event: Event) => {

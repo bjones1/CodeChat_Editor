@@ -32,7 +32,11 @@ import { show_toast as show_toast_core } from "./show_toast.mjs";
 
 // ### Local
 import { assert } from "./assert.mjs";
-import { DEBUG_ENABLED, MAX_MESSAGE_LENGTH } from "./debug_enabled.mjs";
+import {
+    console_log,
+    DEBUG_ENABLED,
+    MAX_MESSAGE_LENGTH,
+} from "./debug_enabled.mjs";
 import {
     CodeChatForWeb,
     EditorMessage,
@@ -41,11 +45,7 @@ import {
     MessageResult,
     UpdateMessageContents,
 } from "./shared.mjs";
-import {
-    console_log,
-    on_error,
-    on_dom_content_loaded,
-} from "./CodeChatEditor.mjs";
+import { on_error, on_dom_content_loaded } from "./CodeChatEditor.mjs";
 import { ResultErrTypes } from "./rust-types/ResultErrTypes.js";
 import { CursorPosition } from "./rust-types/CursorPosition.js";
 
