@@ -60,8 +60,13 @@
 //   local time-of-day without storing location or full timezone identity.
 // * `data` – JSONB payload with event-specific details.
 
+// Imports
+// -------
+//
+// ### Standard library
 use std::{
     env,
+    error::Error,
     fs::{self, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
@@ -71,15 +76,16 @@ use std::{
     thread,
 };
 
+// ### Third-party
 use chrono::{DateTime, Utc};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::error::Error;
 use tokio::sync::mpsc;
 use tokio_postgres::{Client, NoTls};
 use ts_rs::TS;
 
+// ### Local
 use crate::processing::StringDiff;
 
 static NEXT_CAPTURE_EVENT_ID: AtomicU64 = AtomicU64::new(1);
@@ -334,6 +340,12 @@ impl CaptureContext {
         self.pending_code_paste = false;
     }
 
+    /// True when server-generated capture events should be logged for this
+    /// participant/session context.
+    pub(crate) fn is_active(&self) -> bool {
+        self.active
+    }
+
     pub(crate) fn capture_event(
         &self,
         event_type: CaptureEventType,
@@ -536,6 +548,10 @@ impl CaptureConfig {
         if self.port == Some(0) {
             return Err("capture database port must be between 1 and 65535".to_string());
         }
+        validate_conn_str_field("host", &self.host)?;
+        validate_conn_str_field("user", &self.user)?;
+        validate_conn_str_field("password", &self.password)?;
+        validate_conn_str_field("dbname", &self.dbname)?;
         Ok(())
     }
 
@@ -587,6 +603,18 @@ impl CaptureConfig {
         cfg.validate()?;
         Ok(Some(cfg))
     }
+}
+
+fn validate_conn_str_field(field_name: &str, value: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err(format!("capture database {field_name} must not be empty"));
+    }
+    if value.chars().any(char::is_whitespace) {
+        return Err(format!(
+            "capture database {field_name} must not contain whitespace"
+        ));
+    }
+    Ok(())
 }
 
 /// Load capture configuration from environment variables or the repo/runtime
@@ -1247,6 +1275,18 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn valid_capture_config() -> CaptureConfig {
+        CaptureConfig {
+            host: "localhost".to_string(),
+            port: Some(5432),
+            user: "alice".to_string(),
+            password: "secret".to_string(),
+            dbname: "codechat_capture".to_string(),
+            app_id: None,
+            fallback_path: None,
+        }
+    }
+
     #[test]
     fn capture_config_to_conn_str_is_well_formed() {
         let cfg = CaptureConfig {
@@ -1409,6 +1449,54 @@ mod tests {
         };
 
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn capture_config_rejects_unquoted_conn_str_whitespace() {
+        let mut cfg = valid_capture_config();
+        cfg.host = "db host".to_string();
+        assert_eq!(
+            cfg.validate().unwrap_err(),
+            "capture database host must not contain whitespace"
+        );
+
+        let mut cfg = valid_capture_config();
+        cfg.user = "alice example".to_string();
+        assert_eq!(
+            cfg.validate().unwrap_err(),
+            "capture database user must not contain whitespace"
+        );
+
+        let mut cfg = valid_capture_config();
+        cfg.password = "secret value".to_string();
+        assert_eq!(
+            cfg.validate().unwrap_err(),
+            "capture database password must not contain whitespace"
+        );
+
+        let mut cfg = valid_capture_config();
+        cfg.dbname = "codechat capture".to_string();
+        assert_eq!(
+            cfg.validate().unwrap_err(),
+            "capture database dbname must not contain whitespace"
+        );
+    }
+
+    #[test]
+    fn capture_config_rejects_empty_conn_str_fields() {
+        let mut cfg = valid_capture_config();
+        cfg.host.clear();
+        assert_eq!(
+            cfg.validate().unwrap_err(),
+            "capture database host must not be empty"
+        );
+
+        let mut cfg = valid_capture_config();
+        cfg.user = " \t".to_string();
+        assert_eq!(
+            cfg.validate().unwrap_err(),
+            "capture database user must not be empty"
+        );
     }
 
     use std::fs;

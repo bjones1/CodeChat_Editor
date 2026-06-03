@@ -783,7 +783,8 @@ impl TranslationTask {
         );
     }
 
-    fn log_raw_write_event(&mut self, file_path: &Path, before: &str, after: &str) {
+    fn log_raw_write_event(&mut self, file_path: &Path, after: &str) {
+        let before = self.source_code.as_str();
         if before == after {
             self.capture_context.clear_pending_code_paste();
             return;
@@ -820,11 +821,12 @@ impl TranslationTask {
         &mut self,
         file_path: &Path,
         metadata: &SourceFileMetadata,
-        before_doc: &str,
-        before_doc_blocks: Option<&CodeMirrorDocBlockVec>,
         after: &CodeMirror,
         source: &str,
     ) {
+        let before_doc = self.code_mirror_doc.as_str();
+        let before_doc_blocks = self.code_mirror_doc_blocks.as_ref();
+
         if metadata.mode == MARKDOWN_MODE {
             let doc_changed = !compare_html(before_doc, &after.doc);
             if doc_changed {
@@ -1101,20 +1103,13 @@ impl TranslationTask {
                                                 else {
                                                     panic!("Unexpected diff value.");
                                                 };
-                                                if self.sent_full {
-                                                    let before_doc = self.code_mirror_doc.clone();
-                                                    let before_doc_blocks =
-                                                        self.code_mirror_doc_blocks.clone();
+                                                if self.capture_context.is_active() {
                                                     self.log_code_mirror_write_events(
                                                         &clean_file_path,
                                                         &ccfw.metadata,
-                                                        &before_doc,
-                                                        before_doc_blocks.as_ref(),
                                                         code_mirror_translated,
                                                         "ide",
                                                     );
-                                                } else {
-                                                    self.capture_context.clear_pending_code_paste();
                                                 }
                                                 // Send a diff if possible.
                                                 let client_contents = if self.sent_full {
@@ -1161,16 +1156,11 @@ impl TranslationTask {
                                                 Err(ResultErrTypes::TodoBinarySupport)
                                             }
                                             TranslationResultsString::Unknown => {
-                                                if self.sent_full {
-                                                    let before_source_code =
-                                                        self.source_code.clone();
+                                                if self.capture_context.is_active() {
                                                     self.log_raw_write_event(
                                                         &clean_file_path,
-                                                        &before_source_code,
                                                         &code_mirror.doc,
                                                     );
-                                                } else {
-                                                    self.capture_context.clear_pending_code_paste();
                                                 }
                                                 // Send the new raw contents.
                                                 debug!("Sending translated contents to Client.");
@@ -1284,19 +1274,13 @@ impl TranslationTask {
                                 // TODO: support diffable!
                                 panic!("Diff not supported.");
                             };
-                            if self.sent_full {
-                                let before_doc = self.code_mirror_doc.clone();
-                                let before_doc_blocks = self.code_mirror_doc_blocks.clone();
+                            if self.capture_context.is_active() {
                                 self.log_code_mirror_write_events(
                                     &clean_file_path,
                                     &cfw.metadata,
-                                    &before_doc,
-                                    before_doc_blocks.as_ref(),
                                     code_mirror,
                                     "client",
                                 );
-                            } else {
-                                self.capture_context.clear_pending_code_paste();
                             }
                             self.code_mirror_doc = code_mirror.doc.clone();
                             self.code_mirror_doc_blocks = Some(code_mirror.doc_blocks.clone());
@@ -1663,12 +1647,12 @@ mod tests {
         translation::doc_blocks_compare,
     };
 
+    /// Minimal test helper for feeding lifecycle/control messages into the
+    /// translation-layer capture context.
     fn capture_wire(
         event_type: crate::capture::CaptureEventType,
         data: serde_json::Value,
     ) -> CaptureEventWire {
-        // Minimal test helper for feeding lifecycle/control messages into the
-        // translation-layer capture context.
         CaptureEventWire {
             event_id: None,
             sequence_number: None,
