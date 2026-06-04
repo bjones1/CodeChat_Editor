@@ -228,10 +228,7 @@ use tokio::{
 
 // ### Local
 use crate::{
-    capture::{
-        CaptureContext, CaptureEventType, CodeExternalInsertCandidate, capture_control_only,
-        classify_code_external_insert_candidate,
-    },
+    capture::{CaptureContext, CaptureEventType, capture_control_only},
     lexer::{CodeDocBlock, DocBlock, supported_languages::MARKDOWN_MODE},
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
@@ -747,7 +744,7 @@ impl TranslationTask {
     }
 
     fn log_server_capture_event(
-        &self,
+        &mut self,
         event_type: CaptureEventType,
         file_path: &Path,
         data: serde_json::Value,
@@ -763,30 +760,9 @@ impl TranslationTask {
         log_capture_event(&self.app_state, capture_event);
     }
 
-    fn log_code_external_insert_candidate(
-        &self,
-        file_path: &Path,
-        classification_basis: &str,
-        candidate: CodeExternalInsertCandidate,
-    ) {
-        self.log_server_capture_event(
-            CaptureEventType::CodeExternalInsertCandidate,
-            file_path,
-            serde_json::json!({
-                "source": "server_translation",
-                "classification_basis": classification_basis,
-                "block_kind": "code",
-                "basis": candidate.basis,
-                "confidence": candidate.confidence,
-                "size_band": candidate.size_band,
-            }),
-        );
-    }
-
     fn log_raw_write_event(&mut self, file_path: &Path, after: &str) {
         let before = self.source_code.as_str();
         if before == after {
-            self.capture_context.clear_pending_code_paste();
             return;
         }
         let code_diff = diff_str(before, after);
@@ -799,22 +775,6 @@ impl TranslationTask {
                 "diff": &code_diff,
             }),
         );
-        // Direct paste evidence wins over the heuristic candidate event so a
-        // single code edit does not emit two competing external-entry signals.
-        if self.capture_context.take_pending_code_paste() {
-            self.log_server_capture_event(
-                CaptureEventType::CodePaste,
-                file_path,
-                serde_json::json!({
-                    "source": "server_translation",
-                    "classification_basis": "raw_text",
-                    "operation": "paste",
-                    "block_kind": "code",
-                }),
-            );
-        } else if let Some(candidate) = classify_code_external_insert_candidate(&code_diff) {
-            self.log_code_external_insert_candidate(file_path, "raw_text", candidate);
-        }
     }
 
     fn log_code_mirror_write_events(
@@ -822,36 +782,51 @@ impl TranslationTask {
         file_path: &Path,
         metadata: &SourceFileMetadata,
         after: &CodeMirror,
+        after_source: Option<&str>,
         source: &str,
     ) {
-        let before_doc = self.code_mirror_doc.as_str();
-        let before_doc_blocks = self.code_mirror_doc_blocks.as_ref();
-
         if metadata.mode == MARKDOWN_MODE {
-            let doc_changed = !compare_html(before_doc, &after.doc);
-            if doc_changed {
+            let markdown_diff = {
+                let before_source = self.source_code.as_str();
+                let after_source = after_source.unwrap_or(&after.doc);
+                (before_source != after_source).then(|| diff_str(before_source, after_source))
+            };
+            if let Some(diff) = markdown_diff {
                 self.log_server_capture_event(
                     CaptureEventType::WriteDoc,
                     file_path,
                     serde_json::json!({
                         "source": source,
-                        "classification_basis": "markdown_document",
+                        "classification_basis": "markdown_source",
                         "mode": metadata.mode,
-                        "diff": diff_str(before_doc, &after.doc),
+                        "diff": diff,
                     }),
                 );
             }
-            self.capture_context.clear_pending_code_paste();
             return;
         }
 
-        let mut code_changed = false;
-        let mut code_classification_basis = None;
-        let mut code_diff = None;
-        if before_doc != after.doc {
-            code_changed = true;
-            code_classification_basis = Some("codemirror_code_text");
-            let diff = diff_str(before_doc, &after.doc);
+        let code_diff = {
+            let before_doc = self.code_mirror_doc.as_str();
+            (before_doc != after.doc).then(|| diff_str(before_doc, &after.doc))
+        };
+        let (doc_blocks_changed, doc_block_count_before, doc_block_diff) = {
+            let before_doc_blocks = self.code_mirror_doc_blocks.as_ref();
+            let doc_blocks_changed = match before_doc_blocks {
+                Some(before) => !doc_blocks_compare(before, &after.doc_blocks),
+                None => !after.doc_blocks.is_empty(),
+            };
+            let doc_block_diff = before_doc_blocks.map(|before| {
+                serde_json::json!(diff_code_mirror_doc_blocks(before, &after.doc_blocks))
+            });
+            (
+                doc_blocks_changed,
+                before_doc_blocks.map_or(0, Vec::len),
+                doc_block_diff,
+            )
+        };
+
+        if let Some(diff) = code_diff {
             self.log_server_capture_event(
                 CaptureEventType::WriteCode,
                 file_path,
@@ -862,17 +837,9 @@ impl TranslationTask {
                     "diff": &diff,
                 }),
             );
-            code_diff = Some(diff);
         }
 
-        let doc_blocks_changed = match before_doc_blocks {
-            Some(before) => !doc_blocks_compare(before, &after.doc_blocks),
-            None => !after.doc_blocks.is_empty(),
-        };
         if doc_blocks_changed {
-            let doc_block_diff = before_doc_blocks.map(|before| {
-                serde_json::json!(diff_code_mirror_doc_blocks(before, &after.doc_blocks))
-            });
             self.log_server_capture_event(
                 CaptureEventType::WriteDoc,
                 file_path,
@@ -880,31 +847,11 @@ impl TranslationTask {
                     "source": source,
                     "classification_basis": "codemirror_doc_blocks",
                     "mode": metadata.mode,
-                    "doc_block_count_before": before_doc_blocks.map_or(0, Vec::len),
+                    "doc_block_count_before": doc_block_count_before,
                     "doc_block_count_after": after.doc_blocks.len(),
                     "doc_block_diff": doc_block_diff,
                 }),
             );
-        }
-        let pending_code_paste = self.capture_context.take_pending_code_paste();
-        // Direct paste evidence wins over the heuristic candidate event so a
-        // single code edit does not emit two competing external-entry signals.
-        if pending_code_paste && code_changed {
-            self.log_server_capture_event(
-                CaptureEventType::CodePaste,
-                file_path,
-                serde_json::json!({
-                    "source": "server_translation",
-                    "classification_basis": code_classification_basis.unwrap_or("codemirror_code_text"),
-                    "operation": "paste",
-                    "block_kind": "code",
-                }),
-            );
-        } else if let (Some(diff), Some(classification_basis)) =
-            (code_diff.as_ref(), code_classification_basis)
-            && let Some(candidate) = classify_code_external_insert_candidate(diff)
-        {
-            self.log_code_external_insert_candidate(file_path, classification_basis, candidate);
         }
     }
 
@@ -1108,6 +1055,7 @@ impl TranslationTask {
                                                         &clean_file_path,
                                                         &ccfw.metadata,
                                                         code_mirror_translated,
+                                                        Some(&code_mirror.doc),
                                                         "ide",
                                                     );
                                                 }
@@ -1279,6 +1227,7 @@ impl TranslationTask {
                                     &clean_file_path,
                                     &cfw.metadata,
                                     code_mirror,
+                                    Some(&new_source_code),
                                     "client",
                                 );
                             }
@@ -1639,11 +1588,8 @@ fn debug_shorten<T: Debug>(val: T) -> String {
 #[cfg(test)]
 mod tests {
     use crate::{
-        capture::{
-            CaptureContext, CaptureEventType, CaptureEventWire, capture_control_only,
-            classify_code_external_insert_candidate,
-        },
-        processing::{CodeMirrorDocBlock, StringDiff},
+        capture::{CaptureContext, CaptureEventType, CaptureEventWire, capture_control_only},
+        processing::CodeMirrorDocBlock,
         translation::doc_blocks_compare,
     };
 
@@ -1723,7 +1669,7 @@ mod tests {
     }
 
     #[test]
-    fn code_paste_marker_is_one_shot() {
+    fn server_generated_capture_events_have_session_sequence_numbers() {
         let mut context = CaptureContext::default();
         context.update_from_wire(&capture_wire(
             CaptureEventType::SessionStart,
@@ -1731,61 +1677,17 @@ mod tests {
                 "capture_active": true,
             }),
         ));
-        context.update_from_wire(&capture_wire(
-            CaptureEventType::CodePaste,
-            serde_json::json!({
-                "capture_active": true,
-                "capture_control_only": true,
-                "pending_code_paste": true,
-            }),
-        ));
+        let first = context
+            .capture_event(CaptureEventType::WriteCode, None, serde_json::json!({}))
+            .expect("active context should generate a capture event");
+        let second = context
+            .capture_event(CaptureEventType::WriteDoc, None, serde_json::json!({}))
+            .expect("active context should generate a capture event");
 
-        assert!(context.take_pending_code_paste());
-        assert!(!context.take_pending_code_paste());
-    }
-
-    #[test]
-    fn code_external_insert_classifier_detects_multiline_insert() {
-        let diff = vec![StringDiff {
-            from: 0,
-            to: None,
-            insert: "let first = 1;\nlet second = 2;".to_string(),
-        }];
-
-        let candidate = classify_code_external_insert_candidate(&diff)
-            .expect("multi-line insert should be classified");
-        assert_eq!(candidate.basis, "multi_line_non_paste_insert");
-        assert_eq!(candidate.confidence, "medium");
-        assert_eq!(candidate.size_band, "multi_line");
-    }
-
-    #[test]
-    fn code_external_insert_classifier_ignores_small_single_line_insert() {
-        let diff = vec![StringDiff {
-            from: 0,
-            to: None,
-            insert: "x".to_string(),
-        }];
-
-        assert!(classify_code_external_insert_candidate(&diff).is_none());
-    }
-
-    #[test]
-    fn code_external_insert_classifier_detects_large_block_insert() {
-        let diff = vec![StringDiff {
-            from: 0,
-            to: None,
-            insert: (0..11)
-                .map(|line| format!("let value_{line} = {line};"))
-                .collect::<Vec<_>>()
-                .join("\n"),
-        }];
-
-        let candidate = classify_code_external_insert_candidate(&diff)
-            .expect("large block insert should be classified");
-        assert_eq!(candidate.basis, "large_single_transaction_insert");
-        assert_eq!(candidate.confidence, "high");
-        assert_eq!(candidate.size_band, "large_block");
+        assert_eq!(first.sequence_number, Some(1));
+        assert_eq!(second.sequence_number, Some(2));
+        assert_eq!(first.event_source.as_deref(), Some("server_translation"));
+        assert_eq!(second.event_source.as_deref(), Some("server_translation"));
     }
 
     #[test]

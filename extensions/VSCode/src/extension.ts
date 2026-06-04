@@ -225,10 +225,9 @@ type CaptureSettingsState =
 
 const CAPTURE_SCHEMA_VERSION = 2;
 const CAPTURE_EVENT_SOURCE = "vscode_extension";
-// Settings contribution key for the user-facing recording checkbox. The
-// shorter `Enabled` setting is deliberately no longer used because it was too
-// ambiguous next to consent.
-const CAPTURE_RECORD_SETTING_NAME = "RecordStudyEvents";
+// Audit label for the user-facing recording toggle. This is intentionally not
+// a persisted setting; recording is scoped to the current VS Code window.
+const CAPTURE_RECORD_AUDIT_LABEL = "RecordStudyEvents";
 const DEFAULT_REFLECTION_PROMPTS = [
     "What changed in your understanding of this code?",
     "What assumption are you making, and how could you test it?",
@@ -246,18 +245,14 @@ let captureFailureLogged = false;
 let captureTransportReady = false;
 // True after a capture-enabled extension session has emitted `session_start`.
 let extensionCaptureSessionStarted = false;
+// Recording is intentionally scoped to this VS Code extension host session.
+// Consent and participant ID persist in settings, but recording must be
+// re-enabled after VS Code restarts and can be toggled independently in each
+// open VS Code window.
+let sessionRecordStudyEvents = false;
 // Monotonic per-extension event sequence number used to order events produced
 // by this VS Code session.
 let captureSequenceNumber = 0;
-// One-shot marker used to associate a paste command with the next document
-// change before the normal CodeChat update is sent to the server.
-let pendingPasteCapture:
-    | {
-          documentUri: string;
-          beforeVersion: number;
-          clearTimer: NodeJS.Timeout;
-      }
-    | undefined;
 // Status bar item that reports capture health and opens the capture controls.
 let capture_status_bar_item: vscode.StatusBarItem | undefined;
 // Timer used to refresh capture status from the running server.
@@ -296,9 +291,9 @@ function optionalString(value: unknown): string | undefined {
 function loadStudySettings(): StudySettings {
     const config = vscode.workspace.getConfiguration("CodeChatEditor.Capture");
     return {
-        // Both capture settings default to false; persisted user values override
-        // these defaults after a student changes the Settings UI.
-        enabled: config.get<boolean>(CAPTURE_RECORD_SETTING_NAME, false),
+        // Recording is session-local so capture starts paused in every VS Code
+        // window/restart. Consent and participant ID remain persisted settings.
+        enabled: sessionRecordStudyEvents,
         consentEnabled: config.get<boolean>("ConsentEnabled", false),
         participantId: optionalString(config.get("ParticipantId")) ?? "",
     };
@@ -562,53 +557,6 @@ async function sendCaptureEvent(
     }
 }
 
-function clearPendingPasteCapture(): void {
-    if (pendingPasteCapture === undefined) {
-        return;
-    }
-    clearTimeout(pendingPasteCapture.clearTimer);
-    pendingPasteCapture = undefined;
-}
-
-async function sendPendingCodePasteCapture(filePath: string): Promise<void> {
-    await sendCaptureEvent(
-        "code_paste",
-        filePath,
-        {
-            operation: "paste",
-            pending_code_paste: true,
-        },
-        {
-            controlOnly: true,
-        },
-    );
-}
-
-async function capturePasteCommand(): Promise<void> {
-    const editor = vscode.window.activeTextEditor;
-    if (editor !== undefined) {
-        clearPendingPasteCapture();
-        pendingPasteCapture = {
-            documentUri: editor.document.uri.toString(),
-            beforeVersion: editor.document.version,
-            clearTimer: setTimeout(() => {
-                pendingPasteCapture = undefined;
-            }, 1000),
-        };
-    }
-
-    await vscode.commands.executeCommand("editor.action.clipboardPasteAction");
-
-    if (
-        editor !== undefined &&
-        pendingPasteCapture !== undefined &&
-        pendingPasteCapture.documentUri === editor.document.uri.toString() &&
-        editor.document.version === pendingPasteCapture.beforeVersion
-    ) {
-        clearPendingPasteCapture();
-    }
-}
-
 function stringifyCapturePayload(payload: CaptureEventWire): string {
     return JSON.stringify(payload, (_key, value) =>
         typeof value === "bigint" ? Number(value) : value,
@@ -704,7 +652,7 @@ async function setRecordStudyEvents(enabled: boolean): Promise<void> {
     // Save the previous settings before updating so the audit event can record
     // exactly what changed.
     const previousSettings = loadStudySettings();
-    await updateCaptureSetting(CAPTURE_RECORD_SETTING_NAME, enabled);
+    sessionRecordStudyEvents = enabled;
     await reconcileCaptureSettings(
         "manage_capture_record_study_events",
         previousSettings,
@@ -765,7 +713,7 @@ async function giveConsentAndRecordStudyEvents(): Promise<void> {
 
     await ensureParticipantId();
     await updateCaptureSetting("ConsentEnabled", true);
-    await updateCaptureSetting(CAPTURE_RECORD_SETTING_NAME, true);
+    sessionRecordStudyEvents = true;
     await reconcileCaptureSettings(
         "manage_capture_give_consent_and_record",
         previousSettings,
@@ -789,7 +737,7 @@ async function sendCaptureSettingsChangedEvent(
         changedSettings.push("ConsentEnabled");
     }
     if (previous.enabled !== current.enabled) {
-        changedSettings.push(CAPTURE_RECORD_SETTING_NAME);
+        changedSettings.push(CAPTURE_RECORD_AUDIT_LABEL);
     }
     if (changedSettings.length === 0) {
         return;
@@ -974,6 +922,9 @@ async function showCaptureStatus(): Promise<void> {
 async function recordStudyLifecycleEvent(
     eventType: CaptureEventType,
 ): Promise<void> {
+    if (captureDisabledReason(loadStudySettings()) !== undefined) {
+        return;
+    }
     const active = vscode.window.activeTextEditor;
     await sendCaptureEvent(eventType, active?.document.fileName, {
         command: eventType,
@@ -1212,10 +1163,6 @@ export const activate = (context: vscode.ExtensionContext) => {
             "extension.codeChatInsertReflectionPrompt",
             insertReflectionPrompt,
         ),
-        vscode.commands.registerCommand(
-            "extension.codeChatCapturePaste",
-            capturePasteCommand,
-        ),
         // Study lifecycle commands are registered for optional study
         // automation/keybindings, but they are not contributed to the Command
         // Palette. Normal users should only see status and reflection commands.
@@ -1282,31 +1229,11 @@ export const activate = (context: vscode.ExtensionContext) => {
                             const kind = classifyAtPosition(doc, pos);
 
                             const filePath = doc.fileName;
-                            const pendingPaste = pendingPasteCapture;
-                            const pendingPasteSend =
-                                pendingPaste !== undefined &&
-                                pendingPaste.documentUri ===
-                                    doc.uri.toString() &&
-                                doc.version > pendingPaste.beforeVersion
-                                    ? (() => {
-                                          clearPendingPasteCapture();
-                                          return sendPendingCodePasteCapture(
-                                              filePath,
-                                          );
-                                      })()
-                                    : undefined;
-
                             // Update our notion of current activity + doc
                             // session.
                             noteActivity(kind, filePath);
 
-                            if (pendingPasteSend !== undefined) {
-                                void pendingPasteSend.finally(() =>
-                                    send_update(true),
-                                );
-                            } else {
-                                send_update(true);
-                            }
+                            send_update(true);
                         }),
                     );
 
@@ -1376,6 +1303,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                     // CAPTURE: listen for file saves.
                     context.subscriptions.push(
                         vscode.workspace.onDidSaveTextDocument((doc) => {
+                            if (
+                                captureDisabledReason(loadStudySettings()) !==
+                                undefined
+                            ) {
+                                return;
+                            }
                             sendCaptureEvent("save", doc.fileName, {
                                 reason: "manual_save",
                                 languageId: doc.languageId,
@@ -1387,6 +1320,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                     // CAPTURE: start and end of a debug/run session.
                     context.subscriptions.push(
                         vscode.debug.onDidStartDebugSession((session) => {
+                            if (
+                                captureDisabledReason(loadStudySettings()) !==
+                                undefined
+                            ) {
+                                return;
+                            }
                             const active = vscode.window.activeTextEditor;
                             const filePath = active?.document.fileName;
                             sendCaptureEvent("run", filePath, {
@@ -1395,6 +1334,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                             });
                         }),
                         vscode.debug.onDidTerminateDebugSession((session) => {
+                            if (
+                                captureDisabledReason(loadStudySettings()) !==
+                                undefined
+                            ) {
+                                return;
+                            }
                             const active = vscode.window.activeTextEditor;
                             const filePath = active?.document.fileName;
                             sendCaptureEvent("run_end", filePath, {
@@ -1408,6 +1353,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                     // tasks.
                     context.subscriptions.push(
                         vscode.tasks.onDidStartTaskProcess((e) => {
+                            if (
+                                captureDisabledReason(loadStudySettings()) !==
+                                undefined
+                            ) {
+                                return;
+                            }
                             const active = vscode.window.activeTextEditor;
                             const filePath = active?.document.fileName;
                             const task = e.execution.task;
@@ -1419,6 +1370,12 @@ export const activate = (context: vscode.ExtensionContext) => {
                             });
                         }),
                         vscode.tasks.onDidEndTaskProcess((e) => {
+                            if (
+                                captureDisabledReason(loadStudySettings()) !==
+                                undefined
+                            ) {
+                                return;
+                            }
                             const active = vscode.window.activeTextEditor;
                             const filePath = active?.document.fileName;
                             const task = e.execution.task;

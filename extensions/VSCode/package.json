@@ -63,11 +63,6 @@
                     ],
                     "markdownDescription": "Select the location of the CodeChat Editor Client. After changing this value, you **must** close then restart the CodeChat Editor extension."
                 },
-                "CodeChatEditor.Capture.RecordStudyEvents": {
-                    "type": "boolean",
-                    "default": false,
-                    "markdownDescription": "Record CodeChat dissertation capture events. This defaults to off. Consent is recorded through **Manage CodeChat Editor Capture** and also defaults to off.\n\n| Consent recorded | Record study events | What happens |\n| --- | --- | --- |\n| Off | Off | Capture is off. |\n| On | Off | Consent is retained, but recording is paused. |\n| On | On | Capture records study events. |\n| Off | On | Capture waits for consent before recording. |"
-                },
                 "CodeChatEditor.Capture.ConsentEnabled": {
                     "type": "boolean",
                     "default": false,
@@ -96,31 +91,6 @@
             {
                 "command": "extension.codeChatInsertReflectionPrompt",
                 "title": "CodeChat Editor: Insert Reflection Prompt"
-            },
-            {
-                "command": "extension.codeChatCapturePaste",
-                "title": "CodeChat Editor: Capture Paste"
-            }
-        ],
-        "menus": {
-            "commandPalette": [
-                {
-                    "command": "extension.codeChatCapturePaste",
-                    "when": "false"
-                }
-            ]
-        },
-        "keybindings": [
-            {
-                "command": "extension.codeChatCapturePaste",
-                "key": "ctrl+v",
-                "mac": "cmd+v",
-                "when": "editorTextFocus && !editorReadonly && config.CodeChatEditor.Capture.RecordStudyEvents && config.CodeChatEditor.Capture.ConsentEnabled"
-            },
-            {
-                "command": "extension.codeChatCapturePaste",
-                "key": "shift+insert",
-                "when": "editorTextFocus && !editorReadonly && config.CodeChatEditor.Capture.RecordStudyEvents && config.CodeChatEditor.Capture.ConsentEnabled"
             }
         ]
     },

@@ -1594,21 +1594,28 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
 pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
-    // Initialize event capture from a config file (optional).
+    // Initialize event capture from DB config when available; otherwise still
+    // capture to JSONL fallback so local/debug runs produce inspectable data.
     let root_path = ROOT_PATH.lock().unwrap().clone();
-    let capture: Option<EventCapture> = load_capture_config(&root_path).and_then(|cfg| {
-        let summary = cfg.redacted_summary();
-        match EventCapture::new(cfg) {
-            Ok(ec) => {
-                info!("Capture: enabled ({summary})");
-                Some(ec)
-            }
-            Err(err) => {
-                warn!("Capture: failed to initialize ({summary}): {err}");
-                None
+    let fallback_path = root_path.join("capture-events-fallback.jsonl");
+    let capture: Option<EventCapture> = match load_capture_config(&root_path) {
+        Some(cfg) => {
+            let summary = cfg.redacted_summary();
+            match EventCapture::new(cfg) {
+                Ok(ec) => {
+                    info!("Capture: enabled ({summary})");
+                    Some(ec)
+                }
+                Err(err) => {
+                    warn!(
+                        "Capture: failed to initialize database capture ({summary}); using fallback JSONL: {err}"
+                    );
+                    EventCapture::fallback_only(fallback_path).ok()
+                }
             }
         }
-    });
+        None => EventCapture::fallback_only(fallback_path).ok(),
+    };
 
     web::Data::new(AppState {
         server_handle: Mutex::new(None),

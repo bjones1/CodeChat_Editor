@@ -49,8 +49,8 @@
 //   participant/date mappings instead of being configured by students.
 // * `event_id` – opaque stable per-event ID for correlation and future
 //   deduplication across capture transports or retries.
-// * `sequence_number` – ordered, session-local event counter for reconstructing
-//   event order and detecting gaps.
+// * `sequence_number` – ordered event counter scoped by `session_id` and
+//   `event_source` for reconstructing event order and detecting gaps.
 // * `session_id`, `schema_version` – session grouping and payload versioning
 //   metadata.
 // * `file_hash` – privacy-preserving SHA-256 hash of the local file path.
@@ -84,9 +84,6 @@ use sha2::{Digest, Sha256};
 use tokio::sync::mpsc;
 use tokio_postgres::{Client, NoTls};
 use ts_rs::TS;
-
-// ### Local
-use crate::processing::StringDiff;
 
 static NEXT_CAPTURE_EVENT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -134,11 +131,6 @@ pub enum CaptureEventType {
     HandoffEnd,
     /// A built-in reflection prompt was inserted into the active editor.
     ReflectionPromptInserted,
-    /// Code was inserted by a paste operation rather than typed incrementally.
-    CodePaste,
-    /// Code changed through a non-paste, non-incremental edit shape; the event
-    /// stores coarse classification metadata, not inserted code content.
-    CodeExternalInsertCandidate,
 }
 
 impl CaptureEventType {
@@ -163,8 +155,6 @@ impl CaptureEventType {
             Self::HandoffStart => "handoff_start",
             Self::HandoffEnd => "handoff_end",
             Self::ReflectionPromptInserted => "reflection_prompt_inserted",
-            Self::CodePaste => "code_paste",
-            Self::CodeExternalInsertCandidate => "code_external_insert_candidate",
         }
     }
 }
@@ -199,9 +189,9 @@ pub struct CaptureEventWire {
     /// across capture transports or retries.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub event_id: Option<String>,
-    /// Client-local event order for one extension session. Unlike `event_id`,
-    /// this is intentionally ordered so analysis can reconstruct event order and
-    /// detect gaps within a session.
+    /// Event order within one `(session_id, event_source)` stream. Unlike
+    /// `event_id`, this is intentionally ordered so analysis can reconstruct
+    /// event order and detect gaps within a stream.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sequence_number: Option<i64>,
     /// Capture payload schema version.
@@ -243,10 +233,10 @@ pub struct CaptureEventWire {
     /// tool/run/build details (`reason`, `lineCount`, `sessionName`,
     /// `sessionType`, `taskName`, `taskSource`, `processId`, `exitCode`), write
     /// classification details (`source`, `classification_basis`, `diff`,
-    /// `doc_block_diff`, `block_kind`, `basis`, `confidence`, `size_band`), and
-    /// paste markers (`operation`, `pending_code_paste`). Add future keys only
-    /// when they support a specific analysis question and do not store source
-    /// text or raw local paths.
+    /// `doc_block_diff`, `doc_block_count_before`,
+    /// `doc_block_count_after`). Add future keys only when they support a
+    /// specific analysis question and do not store source text or raw local
+    /// paths.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(type = "unknown")]
     pub data: Option<serde_json::Value>,
@@ -274,9 +264,9 @@ pub(crate) struct CaptureContext {
     client_tz_offset_min: Option<i32>,
     /// Capture payload schema version from the extension.
     schema_version: Option<i32>,
-    /// One-shot marker set by the extension when the next classified write came
-    /// from a paste command. It is consumed by the next write classification.
-    pending_code_paste: bool,
+    /// Server-local event order for translation-generated events in this
+    /// capture context. Client events have their own extension-side sequence.
+    server_sequence_number: i64,
 }
 
 impl CaptureContext {
@@ -302,6 +292,9 @@ impl CaptureContext {
             self.event_source = Some(event_source.clone());
         }
         if let Some(session_id) = &wire.session_id {
+            if self.session_id.as_ref() != Some(session_id) {
+                self.server_sequence_number = 0;
+            }
             self.session_id = Some(session_id.clone());
         }
         if let Some(schema_version) = wire.schema_version {
@@ -319,25 +312,7 @@ impl CaptureContext {
             {
                 self.active = active;
             }
-            if wire.event_type == CaptureEventType::CodePaste
-                && data
-                    .get("pending_code_paste")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false)
-            {
-                self.pending_code_paste = true;
-            }
         }
-    }
-
-    pub(crate) fn take_pending_code_paste(&mut self) -> bool {
-        let pending = self.pending_code_paste;
-        self.pending_code_paste = false;
-        pending
-    }
-
-    pub(crate) fn clear_pending_code_paste(&mut self) {
-        self.pending_code_paste = false;
     }
 
     /// True when server-generated capture events should be logged for this
@@ -347,7 +322,7 @@ impl CaptureContext {
     }
 
     pub(crate) fn capture_event(
-        &self,
+        &mut self,
         event_type: CaptureEventType,
         file_path: Option<String>,
         data: serde_json::Value,
@@ -372,13 +347,15 @@ impl CaptureContext {
         data.entry("source".to_string())
             .or_insert_with(|| serde_json::json!("server_translation"));
 
+        self.server_sequence_number += 1;
+
         Some(CaptureEventWire {
             event_id: None,
-            sequence_number: None,
+            sequence_number: Some(self.server_sequence_number),
             schema_version: self.schema_version,
             user_id: self.user_id.clone()?,
             session_id: self.session_id.clone(),
-            event_source: self.event_source.clone(),
+            event_source: Some("server_translation".to_string()),
             language_id: None,
             file_path,
             file_hash: None,
@@ -401,117 +378,6 @@ pub(crate) fn capture_control_only(wire: &CaptureEventWire) -> bool {
                 .and_then(serde_json::Value::as_bool)
                 .unwrap_or(false)
     )
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct CodeExternalInsertCandidate {
-    /// The edit-shape reason for treating this insert as likely external input.
-    pub(crate) basis: &'static str,
-    /// Coarse confidence label for analysis filters.
-    pub(crate) confidence: &'static str,
-    /// Coarse size label for the inserted code.
-    pub(crate) size_band: &'static str,
-}
-
-// A single translation update above this size is unlikely to be ordinary
-// incremental typing, even when no paste command was observed by the extension.
-const LARGE_CODE_INSERT_LINE_THRESHOLD: usize = 10;
-
-fn inserted_logical_lines(insert: &str) -> usize {
-    if insert.trim().is_empty() {
-        return 0;
-    }
-    let newline_count = insert.matches('\n').count();
-    if newline_count == 0 {
-        1
-    } else if insert.ends_with('\n') {
-        newline_count
-    } else {
-        newline_count + 1
-    }
-}
-
-fn size_band_for_inserted_lines(inserted_lines: usize) -> &'static str {
-    if inserted_lines > LARGE_CODE_INSERT_LINE_THRESHOLD {
-        "large_block"
-    } else if inserted_lines >= 2 {
-        "multi_line"
-    } else {
-        "single_line"
-    }
-}
-
-pub(crate) fn classify_code_external_insert_candidate(
-    diff: &[StringDiff],
-) -> Option<CodeExternalInsertCandidate> {
-    // This classifies the shape of an already-computed code diff. The
-    // code_external_insert_candidate event emitted from this result stores only
-    // coarse basis/confidence/size metadata, not inserted text.
-    let inserted_hunks: Vec<_> = diff
-        .iter()
-        .filter(|hunk| !hunk.insert.trim().is_empty())
-        .collect();
-    if inserted_hunks.is_empty() {
-        return None;
-    }
-
-    let total_inserted_lines: usize = inserted_hunks
-        .iter()
-        .map(|hunk| inserted_logical_lines(&hunk.insert))
-        .sum();
-    let max_inserted_lines = inserted_hunks
-        .iter()
-        .map(|hunk| inserted_logical_lines(&hunk.insert))
-        .max()
-        .unwrap_or(0);
-    let size_band = size_band_for_inserted_lines(total_inserted_lines);
-    let has_large_block = total_inserted_lines > LARGE_CODE_INSERT_LINE_THRESHOLD
-        || max_inserted_lines > LARGE_CODE_INSERT_LINE_THRESHOLD;
-
-    // Large inserts get the strongest signal because they are the least likely
-    // to be produced by normal typing within one translation transaction.
-    if has_large_block {
-        return Some(CodeExternalInsertCandidate {
-            basis: "large_single_transaction_insert",
-            confidence: "high",
-            size_band: "large_block",
-        });
-    }
-
-    // Replacement and multi-hunk edits are weaker signals: they can happen
-    // during structured editing, but they still indicate non-incremental code
-    // entry when no paste marker is pending.
-    let has_large_replacement = inserted_hunks.iter().any(|hunk| {
-        let deleted_units = hunk.to.map_or(0, |to| to.saturating_sub(hunk.from));
-        let inserted_units = hunk.insert.encode_utf16().count();
-        let inserted_lines = inserted_logical_lines(&hunk.insert);
-        deleted_units > 0 && inserted_lines >= 2 && inserted_units > deleted_units.saturating_mul(2)
-    });
-    if has_large_replacement {
-        return Some(CodeExternalInsertCandidate {
-            basis: "large_replacement_insert",
-            confidence: "medium",
-            size_band,
-        });
-    }
-
-    if diff.len() >= 3 && inserted_hunks.len() >= 2 {
-        return Some(CodeExternalInsertCandidate {
-            basis: "multi_hunk_code_insert",
-            confidence: "medium",
-            size_band,
-        });
-    }
-
-    if total_inserted_lines >= 2 {
-        return Some(CodeExternalInsertCandidate {
-            basis: "multi_line_non_paste_insert",
-            confidence: "medium",
-            size_band,
-        });
-    }
-
-    None
 }
 
 /// Configuration used to construct the PostgreSQL connection string.
@@ -759,9 +625,9 @@ pub struct CaptureEvent {
     ///
     /// This is an opaque stable ID for correlation and possible future
     /// deduplication. It is not ordered; use `sequence_number` for event order
-    /// within one extension session.
+    /// within one `(session_id, event_source)` stream.
     pub event_id: Option<String>,
-    /// Client-local event order for one extension session.
+    /// Event order within one `(session_id, event_source)` stream.
     ///
     /// This is intentionally ordered so analysis can reconstruct event order and
     /// detect missing events. It is not globally unique; use `event_id` for
@@ -800,9 +666,7 @@ pub struct CaptureEvent {
     /// * Save/run/compile metadata: `reason`, `lineCount`, `sessionName`,
     ///   `sessionType`, `taskName`, `taskSource`, `processId`, `exitCode`.
     /// * Write classification: `source`, `classification_basis`, `diff`,
-    ///   `doc_block_diff`, `doc_block_count_before`, `doc_block_count_after`,
-    ///   `block_kind`, `basis`, `confidence`, `size_band`.
-    /// * Paste evidence: `operation`, `pending_code_paste`.
+    ///   `doc_block_diff`, `doc_block_count_before`, `doc_block_count_after`.
     ///
     /// Future keys should be documented here, tied to an analysis question, and
     /// privacy-reviewed before capture. Do not store raw source text or raw
@@ -903,6 +767,59 @@ pub struct EventCapture {
 }
 
 impl EventCapture {
+    /// Create a capture worker that writes every event to local JSONL fallback.
+    ///
+    /// This mode is used for local debugging and for installations without a
+    /// configured PostgreSQL capture database.
+    pub fn fallback_only(fallback_path: PathBuf) -> Result<Self, io::Error> {
+        let status = Arc::new(Mutex::new(CaptureStatus {
+            enabled: true,
+            state: CaptureState::Fallback,
+            queued_events: 0,
+            persisted_events: 0,
+            fallback_events: 0,
+            failed_events: 0,
+            last_error: Some("PostgreSQL capture config unavailable".to_string()),
+            fallback_path: Some(fallback_path.clone()),
+        }));
+
+        info!(
+            "Capture: no PostgreSQL config available; writing events to fallback JSONL at {:?}.",
+            fallback_path
+        );
+
+        let (tx, mut rx) = mpsc::unbounded_channel::<WorkerMsg>();
+        let status_worker = status.clone();
+
+        thread::Builder::new()
+            .name("codechat-capture-fallback".to_string())
+            .spawn(move || {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Capture: failed to build fallback Tokio runtime");
+
+                runtime.block_on(async move {
+                    while let Some(event) = rx.recv().await {
+                        write_event_to_fallback(
+                            &fallback_path,
+                            &event,
+                            &status_worker,
+                            Some("PostgreSQL capture config unavailable".to_string()),
+                        );
+                    }
+                    warn!("Capture: event channel closed; fallback-only worker exiting.");
+                });
+            })
+            .map_err(|err| {
+                io::Error::other(format!(
+                    "Capture: failed to start fallback worker thread: {err}"
+                ))
+            })?;
+
+        Ok(Self { tx, status })
+    }
+
     /// Create a new `EventCapture` instance and spawn a background worker which
     /// consumes events and inserts them into PostgreSQL.
     ///
@@ -1274,6 +1191,7 @@ async fn insert_legacy_event(
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::{fs, thread, time::Duration};
 
     fn valid_capture_config() -> CaptureConfig {
         CaptureConfig {
@@ -1324,14 +1242,6 @@ mod tests {
             serde_json::to_value(CaptureEventType::CaptureSettingsChanged).unwrap(),
             json!("capture_settings_changed")
         );
-        assert_eq!(
-            serde_json::to_value(CaptureEventType::CodePaste).unwrap(),
-            json!("code_paste")
-        );
-        assert_eq!(
-            serde_json::to_value(CaptureEventType::CodeExternalInsertCandidate).unwrap(),
-            json!("code_external_insert_candidate")
-        );
         assert!(serde_json::from_value::<CaptureEventType>(json!("random")).is_err());
     }
 
@@ -1374,6 +1284,49 @@ mod tests {
         // Timestamp sanity check: it should be between before and after
         assert!(ev.timestamp >= before);
         assert!(ev.timestamp <= after);
+    }
+
+    #[test]
+    fn fallback_only_capture_writes_jsonl() {
+        let fallback_path = std::env::temp_dir().join(format!(
+            "codechat-capture-fallback-test-{}-{}.jsonl",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let _ = fs::remove_file(&fallback_path);
+
+        let capture = EventCapture::fallback_only(fallback_path.clone())
+            .expect("fallback capture should start");
+        capture.log(CaptureEvent::with_columns(
+            Some("event-1".to_string()),
+            Some(1),
+            Some(2),
+            "participant".to_string(),
+            Some("session".to_string()),
+            Some("test".to_string()),
+            Some("rust".to_string()),
+            Some("file-hash".to_string()),
+            CaptureEventType::Save,
+            Utc::now(),
+            Some(360),
+            json!({ "reason": "unit_test" }),
+        ));
+
+        let mut text = String::new();
+        for _ in 0..20 {
+            if let Ok(contents) = fs::read_to_string(&fallback_path) {
+                text = contents;
+                if text.contains("\"event_id\":\"event-1\"") {
+                    break;
+                }
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+
+        assert!(text.contains("\"event_type\":\"save\""));
+        assert!(text.contains("\"fallback_timestamp\""));
+        assert_eq!(capture.status().state, CaptureState::Fallback);
+        let _ = fs::remove_file(&fallback_path);
     }
 
     #[test]
@@ -1499,7 +1452,6 @@ mod tests {
         );
     }
 
-    use std::fs;
     //use tokio::time::{sleep, Duration};
 
     /// Integration-style test: verify that EventCapture inserts into the rich
