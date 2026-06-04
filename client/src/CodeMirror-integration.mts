@@ -1102,25 +1102,92 @@ export const CodeMirror_load = async (
         await init({
             selector: "#TinyMCE-inst",
             setup: (editor: Editor) => {
+                let inputTimer: undefined | NodeJS.Timeout = undefined;
                 // See the
                 // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
-                // This is triggered on edits (just as the `input` event), but
-                // also when applying formatting changes, inserting images, etc.
-                // that the above callback misses.
+                // After much experimentation, using both an `input` event
+                // (which suppresses the redundant `Dirty` event which follows
+                // it) combined with a `Dirty` event (which catches GUI
+                // interactions, undo, etc. which doesn't produce an `input`
+                // event). Just using `Dirty` produces one failing case: insert
+                // a character (dirty event), delete the character (no dirty
+                // event), left arrow (delayed dirty event from backspace).
+                //
+                // Here's a demonstration of the bug and its fix:
+                //
+                // ```
+                // <!DOCTYPE html>
+                // <html lang="en">
+                // <head>
+                //     <meta charset="UTF-8">
+                //     <title>TinyMCE Dirty Event Test</title>
+                // </head>
+                // <body>
+                //     <h1>TinyMCE Dirty Event Test</h1>
+                //     <textarea id="editor">
+                //         <p>Edit this content to trigger the dirty event.
+                //             Type x (which produces a dirty event), then backspace
+                //             (which doesn't produce a dirty event), then
+                //             the left arrow key (which produces the dirty event
+                //             from pressing backspace).
+                //         </p>
+                //     </textarea>
+                //
+                //     <script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/8/tinymce.min.js" referrerpolicy="origin" crossorigin="anonymous"></script>
+                //     <script>
+                //         // Version 1: `dirty` event only; buggy.
+                //         // Version 2: `input` and `dirty`; works.
+                //         const version = 1;
+                //         let inputTimer = undefined;
+                //         const saveEditor = (eventDescription) =>
+                //             console.log(`${eventDescription} fired. save() output: ${tinymce.activeEditor.save()}`);
+                //         tinymce.init({
+                //             selector: '#editor',
+                //             setup(editor) {
+                //                 editor.on('dirty', () => {
+                //                     if (inputTimer === undefined || version === 1) {
+                //                         saveEditor('dirty');
+                //                     }
+                //                 });
+                //                 editor.on('input', () => {
+                //                     if (version === 2) {
+                //                         inputTimer = setTimeout(() => inputTimer = undefined, 0);
+                //                         saveEditor('input');
+                //                     }
+                //                 });
+                //             }
+                //         });
+                //     </script>
+                // </body>
+                // </html>
+                // ```
+
+                // ```
+                // ```
                 editor.on(
                     "Dirty",
                     (event: EditorEvent<Events.EditorEventMap["dirty"]>) => {
                         // Sometimes, `tinymce.activeEditor` is null (perhaps
                         // when it's not focused). Use the `event` data instead.
-                        event.target.setDirty(false);
                         // Get the div TinyMCE stores edits in.
-                        const target_or_false = event.target.bodyElement;
-                        if (target_or_false == null) {
+                        const target = event.target.bodyElement;
+                        if (target == null) {
                             return;
                         }
-                        setTimeout(() => on_dirty(target_or_false));
+                        if (inputTimer === undefined) {
+                            on_dirty(target);
+                        }
                     },
                 );
+
+                editor.on("input", (event: InputEvent) => {
+                    const target = event.target as HTMLElement;
+                    if (target == null) {
+                        return;
+                    }
+                    inputTimer = setTimeout(() => (inputTimer = undefined), 0);
+                    on_dirty(target);
+                });
 
                 // Send updates on cursor movement.
                 editor.on(

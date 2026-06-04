@@ -307,21 +307,22 @@ const _open_lp = async (
                     // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
                     // this is how to create a TinyMCE event handler.
                     setup: (editor: Editor) => {
-                        editor.on(
-                            "dirty",
-                            (
-                                event: EditorEvent<
-                                    Events.EditorEventMap["dirty"]
-                                >,
-                            ) => {
-                                // Sometimes, `tinymce.activeEditor` is null
-                                // (perhaps when it's not focused). Use the
-                                // `event` data instead.
-                                event.target.setDirty(false);
+                        let inputTimer: undefined | NodeJS.Timeout = undefined;
+                        editor.on("dirty", () => {
+                            if (inputTimer === undefined) {
                                 is_dirty = true;
-                                startAutoUpdateTimer();
-                            },
-                        );
+                            }
+                            startAutoUpdateTimer();
+                        });
+
+                        editor.on("input", () => {
+                            inputTimer = setTimeout(
+                                () => (inputTimer = undefined),
+                                0,
+                            );
+                            is_dirty = true;
+                        });
+
                         // Send updates on cursor movement.
                         editor.on(
                             "SelectionChange",
