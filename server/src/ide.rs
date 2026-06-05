@@ -62,6 +62,7 @@ use tokio::{
 
 // ### Local
 use crate::{
+    capture::CaptureEventWire,
     ide::vscode::{connection_id_raw_to_str, vscode_ide_core},
     processing::{CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata},
     translation::{CreatedTranslationQueues, create_translation_queues},
@@ -93,6 +94,7 @@ async fn start_server(
 // Provide a class to start and stop the server. All its fields are opaque,
 // since only Rust should use them.
 pub struct CodeChatEditorServer {
+    app_state: WebAppState,
     server_handle: ServerHandle,
     from_ide_tx: Sender<EditorMessage>,
     to_ide_rx: Arc<Mutex<Receiver<EditorMessage>>>,
@@ -141,6 +143,7 @@ impl CodeChatEditorServer {
 
         let (expired_messages_tx, expired_messages_rx) = mpsc::channel(100);
         Ok(CodeChatEditorServer {
+            app_state,
             server_handle,
             from_ide_tx: websocket_queues.from_websocket_tx,
             to_ide_rx: Arc::new(Mutex::new(websocket_queues.to_websocket_rx)),
@@ -249,6 +252,18 @@ impl CodeChatEditorServer {
             hosted_in_ide,
         )))
         .await
+    }
+
+    pub async fn send_capture_event(
+        &self,
+        capture_event: CaptureEventWire,
+    ) -> std::io::Result<f64> {
+        self.send_message_timeout(EditorMessageContents::Capture(Box::new(capture_event)))
+            .await
+    }
+
+    pub fn capture_status(&self) -> crate::capture::CaptureStatus {
+        webserver::capture_status(&self.app_state)
     }
 
     // Send a `CurrentFile` message. The other parameter (true if text/false if

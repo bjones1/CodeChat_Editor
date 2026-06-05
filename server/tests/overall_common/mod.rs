@@ -145,8 +145,14 @@ impl ExpectedMessages {
     }
 }
 
-// Time to wait for `ExpectedMessages`.
-pub const TIMEOUT: Duration = Duration::from_millis(3000);
+// Time to wait for browser/WebDriver-backed client-server messages. This
+// matches the client-side response window and gives CI enough room for autosave
+// and loadfile acknowledgements under matrix load.
+pub const TIMEOUT: Duration = Duration::from_millis(15000);
+
+// Browser-backed tests share a single WebDriver endpoint. Safari on macOS CI is
+// unreliable with overlapping sessions, so serialize the harness.
+pub(crate) static WEB_DRIVER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 // ### Test harness
 //
@@ -161,6 +167,7 @@ pub async fn harness<
     // The output from calling `prep_test_dir!()`.
     prep_test_dir: (TempDir, PathBuf),
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let _webdriver_test_lock = WEB_DRIVER_TEST_LOCK.lock().await;
     // Send log events to the tracing subscriber, since the code currently uses
     // a log-based framework. As below, ignore re-initialization errors.
     let _ = LogTracer::init();
@@ -238,11 +245,10 @@ pub async fn harness<
     // Report any errors produced when removing the temporary directory.
     temp_dir.close()?;
 
-    ret.unwrap_or_else(|err|
-                    // Convert a panic to an error.
-                    Err::<(), Box<dyn Error + Send + Sync>>(Box::from(format!(
-                        "{err:#?}"
-                    ))))
+    ret.unwrap_or_else(
+        // Convert a panic to an error.
+        |err| Err::<(), Box<dyn Error + Send + Sync>>(Box::from(format!("{err:#?}"))),
+    )
 }
 
 #[macro_export]

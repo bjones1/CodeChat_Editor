@@ -81,6 +81,19 @@ impl CodeChatEditorServer {
     }
 
     #[napi]
+    pub async fn send_capture_event(&self, capture_event_json: String) -> std::io::Result<f64> {
+        let capture_event = serde_json::from_str(&capture_event_json)
+            .map_err(|err| std::io::Error::other(err.to_string()))?;
+        self.0.send_capture_event(capture_event).await
+    }
+
+    #[napi]
+    pub fn get_capture_status(&self) -> Result<String, Error> {
+        serde_json::to_string(&self.0.capture_status())
+            .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))
+    }
+
+    #[napi]
     pub async fn send_message_current_file(&self, url: String) -> std::io::Result<f64> {
         self.0.send_message_current_file(url).await
     }

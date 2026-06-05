@@ -62,6 +62,16 @@
                         "In the default external web browser"
                     ],
                     "markdownDescription": "Select the location of the CodeChat Editor Client. After changing this value, you **must** close then restart the CodeChat Editor extension."
+                },
+                "CodeChatEditor.Capture.ConsentEnabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "markdownDescription": "Record that participant consent has been given for CodeChat dissertation capture. This defaults to off and persists after setting."
+                },
+                "CodeChatEditor.Capture.ParticipantId": {
+                    "type": "string",
+                    "default": "",
+                    "markdownDescription": "Pseudonymous participant identifier used as the capture user_id. If left blank, CodeChat generates a UUID when the student gives consent."
                 }
             }
         },
@@ -73,6 +83,14 @@
             {
                 "command": "extension.codeChatEditorDeactivate",
                 "title": "Disable the CodeChat Editor"
+            },
+            {
+                "command": "extension.codeChatCaptureStatus",
+                "title": "Manage CodeChat Editor Capture"
+            },
+            {
+                "command": "extension.codeChatInsertReflectionPrompt",
+                "title": "CodeChat Editor: Insert Reflection Prompt"
             }
         ]
     },

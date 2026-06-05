@@ -43,6 +43,8 @@ import { CodeMirrorDocBlockTuple } from "./rust-types/CodeMirrorDocBlockTuple.js
 import { UpdateMessageContents } from "./rust-types/UpdateMessageContents.js";
 import { ResultOkTypes } from "./rust-types/ResultOkTypes.js";
 import { ResultErrTypes } from "./rust-types/ResultErrTypes.js";
+import { CaptureEventWire } from "./rust-types/CaptureEventWire.js";
+import { CaptureStatus } from "./rust-types/CaptureStatus.js";
 
 // Manually define this, since `ts-rs` can't export `webserver.MessageResult`.
 type MessageResult = { Ok: ResultOkTypes } | { Err: ResultErrTypes };
@@ -55,6 +57,8 @@ export type {
     CodeMirror,
     CodeMirrorDiffable,
     CodeMirrorDocBlockTuple,
+    CaptureEventWire,
+    CaptureStatus,
     CodeChatForWeb,
     EditorMessage,
     EditorMessageContents,

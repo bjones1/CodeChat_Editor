@@ -674,6 +674,7 @@ async fn processing_task(
 
                         EditorMessageContents::Opened(_) |
                         EditorMessageContents::OpenUrl(_) |
+                        EditorMessageContents::Capture(_) |
                         EditorMessageContents::ClientHtml(_) |
                         EditorMessageContents::RequestClose => {
                             let err = ResultErrTypes::ClientIllegalMessage;

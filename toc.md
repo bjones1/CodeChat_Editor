@@ -30,6 +30,7 @@ Implementation
       * [python.pest](server/src/lexer/pest/python.pest)
   * [webserver.rs](server/src/webserver.rs)
     * [log4rs.yml](server/log4rs.yml)
+  * [Capture events schema](server/scripts/capture_events_schema.sql)
   * [ide.rs](server/src/ide.rs)
     * [filewatcher.rs](server/src/ide/filewatcher.rs)
     * [vscode.rs](server/src/ide/vscode.rs)

@@ -38,6 +38,7 @@ use std::{
 
 // ### Third-party
 use actix_files;
+
 use actix_web::{
     App, HttpRequest, HttpResponse, HttpServer,
     dev::{Server, ServerHandle, ServiceFactory, ServiceRequest},
@@ -47,6 +48,7 @@ use actix_web::{
     middleware,
     web::{self, Data},
 };
+
 use actix_web_httpauth::{extractors::basic::BasicAuth, middleware::HttpAuthentication};
 use actix_ws::AggregatedMessage;
 use bytes::Bytes;
@@ -94,6 +96,13 @@ use crate::{
         source_to_codechat_for_web_string,
     },
 };
+
+use crate::capture::{
+    CaptureEvent, CaptureEventWire, CaptureStatus, EventCapture, generate_capture_event_id,
+    hash_capture_path, load_capture_config,
+};
+
+use chrono::Utc;
 
 // Data structures
 // ---------------
@@ -201,6 +210,8 @@ pub enum EditorMessageContents {
         // Server will determine the value if needed.
         Option<bool>,
     ),
+    /// Record an instrumentation event. Valid destinations: Server.
+    Capture(Box<CaptureEventWire>),
 
     // #### These messages may only be sent by the IDE.
     /// This is the first message sent when the IDE starts up. It may only be
@@ -405,6 +416,8 @@ pub struct AppState {
     pub connection_id: Mutex<HashSet<String>>,
     /// The auth credentials if authentication is used.
     credentials: Option<Credentials>,
+    // Added to support capture - JDS - 11/2025
+    pub capture: Option<EventCapture>,
 }
 
 pub type WebAppState = web::Data<AppState>;
@@ -449,7 +462,7 @@ macro_rules! queue_send_func {
 // The timeout for a reply from a websocket, in ms. Use a short timeout to speed
 // up unit tests.
 pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
-    Duration::from_millis(500)
+    Duration::from_millis(2500)
 } else {
     Duration::from_millis(15000)
 };
@@ -601,6 +614,61 @@ async fn stop(app_state: WebAppState) -> HttpResponse {
     // following HTTP response. Assign it to a variable to suppress the warning.
     drop(server_handle.stop(true));
     HttpResponse::NoContent().finish()
+}
+
+/// Log a capture event if capture is enabled.
+pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> CaptureStatus {
+    if let Some(capture) = &app_state.capture {
+        let server_timestamp = Utc::now();
+        // Default missing data to empty object
+        let data = wire.data.unwrap_or_else(|| serde_json::json!({}));
+
+        let data = if data.is_object() {
+            data
+        } else {
+            serde_json::json!({ "value": data })
+        };
+        // Prefer hashing a raw local path on the server so all capture
+        // transports use the same path-to-hash rule. The raw path is not stored;
+        // `file_hash` remains only as a backward-compatible/server-originated
+        // fallback.
+        let file_hash = wire
+            .file_path
+            .as_deref()
+            .map(hash_capture_path)
+            .or(wire.file_hash);
+
+        let event = CaptureEvent::with_columns(
+            Some(
+                wire.event_id
+                    .unwrap_or_else(|| generate_capture_event_id("server")),
+            ),
+            wire.sequence_number,
+            wire.schema_version,
+            wire.user_id,
+            wire.session_id,
+            wire.event_source,
+            wire.language_id,
+            file_hash,
+            wire.event_type,
+            server_timestamp,
+            wire.client_tz_offset_min,
+            data,
+        );
+
+        capture.log(event);
+        capture.status()
+    } else {
+        CaptureStatus::disabled()
+    }
+}
+
+pub fn capture_status(app_state: &WebAppState) -> CaptureStatus {
+    app_state
+        .capture
+        .as_ref()
+        .map(EventCapture::status)
+        .unwrap_or_else(CaptureStatus::disabled)
 }
 
 // Get the `mode` query parameter to determine `is_test_mode`; default to
@@ -1451,9 +1519,6 @@ pub fn setup_server(
     addr: &SocketAddr,
     credentials: Option<Credentials>,
 ) -> std::io::Result<(Server, Data<AppState>)> {
-    // Connect to the Capture Database
-    //let _event_capture = EventCapture::new("config.json").await?;
-
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
     let app_data = make_app_data(credentials);
@@ -1529,6 +1594,29 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
 pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
+    // Initialize event capture from DB config when available; otherwise still
+    // capture to JSONL fallback so local/debug runs produce inspectable data.
+    let root_path = ROOT_PATH.lock().unwrap().clone();
+    let fallback_path = root_path.join("capture-events-fallback.jsonl");
+    let capture: Option<EventCapture> = match load_capture_config(&root_path) {
+        Some(cfg) => {
+            let summary = cfg.redacted_summary();
+            match EventCapture::new(cfg) {
+                Ok(ec) => {
+                    info!("Capture: enabled ({summary})");
+                    Some(ec)
+                }
+                Err(err) => {
+                    warn!(
+                        "Capture: failed to initialize database capture ({summary}); using fallback JSONL: {err}"
+                    );
+                    EventCapture::fallback_only(fallback_path).ok()
+                }
+            }
+        }
+        None => EventCapture::fallback_only(fallback_path).ok(),
+    };
+
     web::Data::new(AppState {
         server_handle: Mutex::new(None),
         filewatcher_next_connection_id: Mutex::new(0),
@@ -1539,6 +1627,7 @@ pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
         client_queues: Arc::new(Mutex::new(HashMap::new())),
         connection_id: Mutex::new(HashSet::new()),
         credentials,
+        capture,
     })
 }
 
