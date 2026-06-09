@@ -407,11 +407,12 @@ async fn test_6_core(
     // Perform edits at beginning of document.
     body_content
         .send_keys(
+            // Go to the beginning of the document, using an OS-specific key combo.
             if cfg!(target_os = "macos") {
-                Key::Command
+                Key::Command + Key::Up
             } else {
-                Key::Control
-            } + Key::Home,
+                Key::Control + Key::Home
+            },
         )
         .await
         .unwrap();
