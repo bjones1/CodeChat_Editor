@@ -405,15 +405,12 @@ async fn test_6_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Perform edits at beginning of document.
+    // Go to the beginning of the document, using an OS-specific key combo.
+    #[cfg(target_os = "macos")]
+    body_content.send_keys(Key::Home).await.unwrap();
+    #[cfg(not(target_os = "macos"))]
     body_content
-        .send_keys(
-            // Go to the beginning of the document, using an OS-specific key combo.
-            if cfg!(target_os = "macos") {
-                Key::Command + Key::Up
-            } else {
-                Key::Control + Key::Home
-            },
-        )
+        .send_keys(Key::Control + Key::Home)
         .await
         .unwrap();
     body_content.send_keys("a").await.unwrap();
