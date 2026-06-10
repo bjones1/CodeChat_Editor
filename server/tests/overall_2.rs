@@ -404,10 +404,12 @@ async fn test_6_core(
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
 
-    // Perform edits at beginning of document.
-    // Go to the beginning of the document, using an OS-specific key combo.
+    // Perform edits at beginning of document. Go to the beginning of the
+    // document, using an OS-specific key combo. On MacOS, Home, Command+Up, and
+    // Command+Home all fail. Here's a kludgy workaround: press the up arrow
+    // repeatedly.
     #[cfg(target_os = "macos")]
-    body_content.send_keys(Key::Home).await.unwrap();
+    body_content.send_keys(Key::Up + Key::Up).await.unwrap();
     #[cfg(not(target_os = "macos"))]
     body_content
         .send_keys(Key::Control + Key::Home)
