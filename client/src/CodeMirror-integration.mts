@@ -115,6 +115,8 @@ import { CursorPosition } from "./rust-types/CursorPosition";
 let current_view: EditorView;
 // This indicates that a call to `on_dirty` is scheduled, but hasn't run yet.
 let on_dirty_scheduled = false;
+// This set when an `input` event occurs, which usually produces a duplicate `Dirty` event which should be ignored.
+let ignoreDirty = false;
 
 // Options used when creating a `Decoration`.
 const decorationOptions = {
@@ -640,6 +642,7 @@ const on_dirty = (
     if (on_dirty_scheduled) {
         return;
     }
+    set_is_dirty();
     on_dirty_scheduled = true;
 
     // Only run this after typesetting is done.
@@ -671,6 +674,8 @@ const on_dirty = (
         const contents = is_tinymce
             ? tinymce.activeEditor!.save({ format: "raw" })
             : contents_div.innerHTML;
+        // The `save()` flushes any duplicate `Dirty` events. After this, following `Dirty` events are genuine.
+        ignoreDirty = false;
         await mathJaxTypeset(contents_div);
         current_view.dispatch({
             effects: [
@@ -1102,7 +1107,6 @@ export const CodeMirror_load = async (
         await init({
             selector: "#TinyMCE-inst",
             setup: (editor: Editor) => {
-                let inputTimer: undefined | NodeJS.Timeout = undefined;
                 // See the
                 // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
                 // After much experimentation, using both an `input` event
@@ -1116,6 +1120,7 @@ export const CodeMirror_load = async (
                 // Here's a demonstration of the bug and its fix:
                 //
                 // ```
+                //
                 // <!DOCTYPE html>
                 // <html lang="en">
                 // <head>
@@ -1125,33 +1130,32 @@ export const CodeMirror_load = async (
                 // <body>
                 //     <h1>TinyMCE Dirty Event Test</h1>
                 //     <textarea id="editor">
-                //         <p>Edit this content to trigger the dirty event.
-                //             Type x (which produces a dirty event), then backspace
-                //             (which doesn't produce a dirty event), then
-                //             the left arrow key (which produces the dirty event
-                //             from pressing backspace).
-                //         </p>
+                //         <p>Edit this content to trigger the dirty event.</p>
                 //     </textarea>
-                //
-                //     <script src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/8/tinymce.min.js" referrerpolicy="origin" crossorigin="anonymous"></script>
+                //     <script
+                //         src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/8/tinymce.min.js"
+                //         referrerpolicy="origin" crossorigin="anonymous">
+                //     </script>
                 //     <script>
                 //         // Version 1: `dirty` event only; buggy.
                 //         // Version 2: `input` and `dirty`; works.
-                //         const version = 1;
-                //         let inputTimer = undefined;
-                //         const saveEditor = (eventDescription) =>
+                //         const version = 2;
+                //         let ignoreDirty = false;
+                //         const saveEditor = (eventDescription) => {
                 //             console.log(`${eventDescription} fired. save() output: ${tinymce.activeEditor.save()}`);
+                //             ignoreDirty = false;
+                //         };
                 //         tinymce.init({
                 //             selector: '#editor',
                 //             setup(editor) {
                 //                 editor.on('dirty', () => {
-                //                     if (inputTimer === undefined || version === 1) {
+                //                     if (!ignoreDirty || version === 1) {
                 //                         saveEditor('dirty');
                 //                     }
                 //                 });
                 //                 editor.on('input', () => {
                 //                     if (version === 2) {
-                //                         inputTimer = setTimeout(() => inputTimer = undefined, 0);
+                //                         ignoreDirty = true;
                 //                         saveEditor('input');
                 //                     }
                 //                 });
@@ -1159,10 +1163,6 @@ export const CodeMirror_load = async (
                 //         });
                 //     </script>
                 // </body>
-                // </html>
-                // ```
-
-                // ```
                 // ```
                 editor.on(
                     "Dirty",
@@ -1174,7 +1174,7 @@ export const CodeMirror_load = async (
                         if (target == null) {
                             return;
                         }
-                        if (inputTimer === undefined) {
+                        if (!ignoreDirty) {
                             on_dirty(target);
                         }
                     },
@@ -1185,7 +1185,7 @@ export const CodeMirror_load = async (
                     if (target == null) {
                         return;
                     }
-                    inputTimer = setTimeout(() => (inputTimer = undefined), 0);
+                    ignoreDirty = true;
                     on_dirty(target);
                 });
 

@@ -137,6 +137,9 @@ let current_metadata: {
 
 const webSocketComm = () => parent.window.CodeChatEditorFramework.webSocketComm;
 
+// This set when a TinyMCE `input` event occurs, which usually produces a duplicate `Dirty` event which should be ignored.
+let ignoreDirty = false;
+
 // True if the document is dirty (needs saving).
 let is_dirty = false;
 
@@ -307,19 +310,15 @@ const _open_lp = async (
                     // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
                     // this is how to create a TinyMCE event handler.
                     setup: (editor: Editor) => {
-                        let inputTimer: undefined | NodeJS.Timeout = undefined;
-                        editor.on("dirty", () => {
-                            if (inputTimer === undefined) {
+                        editor.on("Dirty", () => {
+                            if (!ignoreDirty) {
                                 is_dirty = true;
                             }
                             startAutoUpdateTimer();
                         });
 
                         editor.on("input", () => {
-                            inputTimer = setTimeout(
-                                () => (inputTimer = undefined),
-                                0,
-                            );
+                            ignoreDirty = true;
                             is_dirty = true;
                         });
 
@@ -440,6 +439,8 @@ const save_lp = async (
                 // Tiny MCE div. Update the `doc_contents` to stay in sync with
                 // the Server.
                 doc_content = tinymce.activeEditor!.save({ format: "raw" });
+                // The `save()` flushes any duplicate `Dirty` events. After this, following `Dirty` events are genuine.
+                ignoreDirty = false;
                 (
                     code_mirror_diffable as {
                         Plain: CodeMirror;
