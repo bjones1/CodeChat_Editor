@@ -22,7 +22,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* No changes.
+* Simplify the process of sending doc block edits to the server.
 
 Version 0.1.56 -- 2026-May-22
 -----------------------------

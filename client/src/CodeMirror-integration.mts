@@ -115,7 +115,8 @@ import { CursorPosition } from "./rust-types/CursorPosition";
 let current_view: EditorView;
 // This indicates that a call to `on_dirty` is scheduled, but hasn't run yet.
 let on_dirty_scheduled = false;
-// This set when an `input` event occurs, which usually produces a duplicate `Dirty` event which should be ignored.
+// This set when an `input` event occurs, which usually produces a duplicate
+// `Dirty` event which should be ignored.
 let ignoreDirty = false;
 
 // Options used when creating a `Decoration`.
@@ -674,7 +675,8 @@ const on_dirty = (
         const contents = is_tinymce
             ? tinymce.activeEditor!.save({ format: "raw" })
             : contents_div.innerHTML;
-        // The `save()` flushes any duplicate `Dirty` events. After this, following `Dirty` events are genuine.
+        // The `save()` flushes any duplicate `Dirty` events. After this,
+        // following `Dirty` events are genuine.
         ignoreDirty = false;
         await mathJaxTypeset(contents_div);
         current_view.dispatch({
@@ -1119,8 +1121,7 @@ export const CodeMirror_load = async (
                 //
                 // Here's a demonstration of the bug and its fix:
                 //
-                // ```
-                //
+                // ```html
                 // <!DOCTYPE html>
                 // <html lang="en">
                 // <head>

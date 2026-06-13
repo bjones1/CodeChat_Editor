@@ -408,6 +408,28 @@ async fn test_6_core(
     // document, using an OS-specific key combo. On MacOS, Home, Command+Up, and
     // Command+Home all fail. Here's a kludgy workaround: press the up arrow
     // repeatedly.
+    //
+    // Background: On macOS, many standard navigation shortcuts (like Cmd + Up
+    // or Ctrl + Home) are intercepted at the OS or application-shell level
+    // rather than by the web browser's DOM.\
+    // Because ChromeDriver simulates interactions by injecting DOM-level events
+    // (keyup/keydown), these injected events bypass macOS’s native Cocoa text
+    // system. As a result, the OS does not trigger the expected cursor or
+    // document jumps.
+    //
+    // Here is how the system handles these keys and how to work around the
+    // limitation:
+    //
+    // * The WebKit/Cocoa Bridge: On Mac, many text field interactions rely on
+    //   macOS's global key bindings (managed by NSTextView in the Cocoa
+    //   framework).
+    // * OS Interception: Shortcuts like Cmd + Up (beginning of document) and
+    //   Ctrl + Home trigger OS-level text editing behaviors rather than pure
+    //   JavaScript DOM events.
+    // * WebDriver Limitation: WebDriver strictly injects key events into the
+    //   browser's JavaScript execution context. Since OS-level shortcuts are
+    //   intercepted by the native application frame, send\_keys() in a testing
+    //   script often fails to trigger the OS-level jump.
     #[cfg(target_os = "macos")]
     body_content.send_keys(Key::Up + Key::Up).await.unwrap();
     #[cfg(not(target_os = "macos"))]
