@@ -563,6 +563,7 @@ impl HtmlToMarkdownWrapped {
                 .unordered_list_kind(UnorderedListKind::Asterisks)
                 .text_wrap(TextWrap::Always)
                 .heading_kind(HeadingKind::Setext)
+                .allow_fenced_blank_lines(true)
                 .build(),
         }
     }
@@ -1424,6 +1425,77 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                 code.children.borrow_mut().push(text_child.clone());
                 pre.children.borrow_mut().push(code);
                 Some(pre)
+            } else
+            // Look for a fenced code block containing `<br>` elements added by TinyMCE, instead of the usual newlines. Translate these to newlines, so that HTML to markdown conversion works.
+            //
+            // A fenced codeblock is a `<pre>` tag...
+            if get_node_tag_name(child) == Some("pre")
+                // ...with zero attributes...
+                && let NodeData::Element {
+                    attrs: ref_pre_attrs, ..
+                } = &child.data
+                && let pre_attrs = ref_pre_attrs.borrow()
+                && pre_attrs.is_empty()
+                // ...and exactly one child, ...
+                && let pre_children = &child.children.borrow()
+                && pre_children.len() == 1
+                && let Some(code_child) = pre_children.iter().next()
+                // ...which is a `code` tag with either zero attributes or one
+                // `class` attribute whose value starts with `language-`, ...
+                && get_node_tag_name(code_child) == Some("code")
+                && let NodeData::Element {
+                    attrs: ref_code_attrs, ..
+                } = &code_child.data
+                && let code_attrs = ref_code_attrs.borrow()
+                && (code_attrs.is_empty()
+                    || (code_attrs.len() == 1
+                        && code_attrs.iter().next().is_some_and(|attr| {
+                            *attr.name.local == *"class"
+                                && attr.value.starts_with("language-")
+                        })))
+                // ...whose children consist only of text nodes and `<br>` elements
+                // with no attributes, including at least one `<br>`.
+                && let code_children = &code_child.children.borrow()
+                && code_children.iter().all(|c| {
+                    matches!(c.data, NodeData::Text { .. })
+                        || (get_node_tag_name(c) == Some("br")
+                            && matches!(&c.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty()))
+                })
+                && code_children
+                    .iter()
+                    .any(|c| get_node_tag_name(c) == Some("br"))
+            {
+                // Replace all `br` instances with a text node containing a
+                // newline, preserving the surrounding `pre`/`code` structure.
+                let new_code = Node::new(NodeData::Element {
+                    name: QualName::new(None, Namespace::from(""), LocalName::from("code")),
+                    attrs: RefCell::new(code_attrs.clone()),
+                    template_contents: RefCell::new(None),
+                    mathml_annotation_xml_integration_point: false,
+                });
+                {
+                    let mut new_code_children = new_code.children.borrow_mut();
+                    for c in code_children.iter() {
+                        let new_child = if get_node_tag_name(c) == Some("br") {
+                            Node::new(NodeData::Text {
+                                contents: RefCell::new("\n".into()),
+                            })
+                        } else {
+                            c.clone()
+                        };
+                        new_child.parent.set(Some(Rc::downgrade(&new_code)));
+                        new_code_children.push(new_child);
+                    }
+                }
+                let new_pre = Node::new(NodeData::Element {
+                    name: QualName::new(None, Namespace::from(""), LocalName::from("pre")),
+                    attrs: RefCell::new(vec![]),
+                    template_contents: RefCell::new(None),
+                    mathml_annotation_xml_integration_point: false,
+                });
+                new_code.parent.set(Some(Rc::downgrade(&new_pre)));
+                new_pre.children.borrow_mut().push(new_code);
+                Some(new_pre)
             } else {
                 replace_math_node(child, false)
             };

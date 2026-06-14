@@ -22,7 +22,9 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* Simplify the process of sending doc block edits to the server.
+* Simplify and correct the process of sending doc block edits to the server.
+* Fix mis-translation when adding newlines to a fenced code block in a doc block
+  in the Client.
 
 Version 0.1.56 -- 2026-May-22
 -----------------------------

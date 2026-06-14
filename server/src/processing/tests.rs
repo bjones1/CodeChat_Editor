@@ -1365,7 +1365,6 @@ fn test_hydrate_html_1() {
 fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
     let tree = html_to_tree(html, &None)?;
     dehydrating_walk_node(&tree);
-    //println!("{:#?}", tree);
     Ok(tree)
 }
 
@@ -1459,5 +1458,47 @@ fn test_dehydrate_html_1() {
             )
             .unwrap(),
         "1. foo\u{a0}\n"
+    );
+
+    assert_eq!(
+        converter
+            .convert(
+                &dehydrate_html(indoc!(
+                    r#"
+                    <pre><code class="language-html"><br>&lt;!DOCTYPE html&gt;<br>
+                    &lt;html lang="en"&gt;
+                    &lt;head&gt;
+                        &lt;meta charset="UTF-8"&gt;
+                        &lt;title&gt;TinyMCE Dirty Event Test&lt;/title&gt;
+                    &lt;/head&gt;
+                    &lt;body&gt;
+                        &lt;h1&gt;TinyMCE Dirty Event Test&lt;/h1&gt;
+                    &lt;/body&gt;
+                    &lt;/html&gt;<br>
+                    </code></pre>
+                    "#
+                ))
+                .unwrap()
+            )
+            .unwrap(),
+        indoc!(
+            r#"
+                ```html
+
+                <!DOCTYPE html>
+
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>TinyMCE Dirty Event Test</title>
+                </head>
+                <body>
+                    <h1>TinyMCE Dirty Event Test</h1>
+                </body>
+                </html>
+
+                ```
+        "#
+        )
     );
 }
