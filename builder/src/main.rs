@@ -132,7 +132,7 @@ static CLIENT_PATH: &str = "../client";
 static BUILDER_PATH: &str = "../builder";
 static TEST_UTILS_PATH: &str = "../test_utils";
 static NAPI_TARGET: &str = "NAPI_TARGET";
-static DIST_VERSION: &str = "0.31.0";
+static DIST_VERSION: &str = "0.32.0";
 
 // Code
 // ----
