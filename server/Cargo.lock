@@ -739,7 +739,7 @@ dependencies = [
 
 [[package]]
 name = "codechat-editor-server"
-version = "0.1.56"
+version = "0.1.57"
 dependencies = [
  "actix-files",
  "actix-http",
