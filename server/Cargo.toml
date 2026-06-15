@@ -108,7 +108,7 @@ windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 actix-http = "3.9.0"
 assert_cmd = "2"
 assert_fs = "1"
-assertables = "9"
+assertables = "10"
 futures = "0.3.31"
 predicates = "3.1.2"
 pretty_assertions = "1.4.1"
