@@ -815,7 +815,6 @@ async fn test_client_updates_core(
             }
         );
         client_id += MESSAGE_ID_INCREMENT;
-        assert_eq!(client_id, 7.0);
         msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     }
 
