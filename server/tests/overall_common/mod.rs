@@ -433,6 +433,7 @@ pub async fn assert_no_more_messages(codechat_server: &CodeChatEditorServer) {
 /// Wait for a message. If it matches the provided optional message, acknowledge
 /// it and update the client ID, then wait for another message. Return the most
 /// recently received message.
+#[allow(dead_code)]
 #[tracing::instrument(skip_all)]
 pub async fn optional_message(
     codechat_server: &CodeChatEditorServer,
