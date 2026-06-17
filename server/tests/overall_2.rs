@@ -151,7 +151,8 @@ async fn test_4_core(
 
 make_test!(test_5, test_5_core);
 
-// Verify that newlines in Mermaid and Graphviz diagrams aren't removed.
+// Verify that newlines in Mermaid and Graphviz diagrams aren't removed, and
+// that equations aren't munged.
 async fn test_5_core(
     codechat_server: CodeChatEditorServer,
     driver: WebDriver,
@@ -174,6 +175,8 @@ async fn test_5_core(
         # graph TD
         #   A --> B
         # ```
+        #
+        # $x$
         "
     )
     .to_string();

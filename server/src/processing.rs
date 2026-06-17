@@ -1249,10 +1249,14 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
                 attrs: ref_child_attrs, ..
             } = &child.data
             && let child_attrs = ref_child_attrs.borrow()
-            && child_attrs.len() == 1
-            && let Some(attr) = child_attrs.iter().next()
-            && *attr.name.local == *"class"
-            && let attr_value = &attr.value
+            && let child_attrs_len = child_attrs.len()
+            && child_attrs_len >= 1
+            // Look up the `class` attribute by name, so it may appear in any
+            // order relative to other attributes.
+            && let Some(class_attr) = child_attrs
+                .iter()
+                .find(|attr| *attr.name.local == *"class")
+            && let attr_value = &class_attr.value
             // with only one Text child
             && let text_children = &child.children.borrow()
             && text_children.len() == 1
@@ -1266,16 +1270,33 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
         // this span.
         let attr_value_str: &str = attr_value;
         let delim = if is_hydrate {
-            match attr_value_str {
-                "math math-inline" => Some(("\\(", "\\)", "math math-inline mceNonEditable")),
-                "math math-display" => Some(("$$", "$$", "math math-display mceNonEditable")),
-                _ => None,
+            // When hydrating, there should only be a `class` attribute.
+            if child_attrs_len == 1 {
+                match attr_value_str {
+                    "math math-inline" => Some(("\\(", "\\)", "math math-inline mceNonEditable")),
+                    "math math-display" => Some(("$$", "$$", "math math-display mceNonEditable")),
+                    _ => None,
+                }
+            } else {
+                None
             }
         } else {
-            match attr_value_str {
-                "math math-inline mceNonEditable" => Some(("\\(", "\\)", "math math-inline")),
-                "math math-display mceNonEditable" => Some(("$$", "$$", "math math-display")),
-                _ => None,
+            // When dehydrating, there should also be a `contenteditable=false`
+            // attribute. It may appear in either order relative to `class`, so
+            // look it up by name.
+            if child_attrs_len == 2
+                && let Some(contenteditable_attr) = child_attrs
+                    .iter()
+                    .find(|attr| *attr.name.local == *"contenteditable")
+                && contenteditable_attr.value == *"false"
+            {
+                match attr_value_str {
+                    "math math-inline mceNonEditable" => Some(("\\(", "\\)", "math math-inline")),
+                    "math math-display mceNonEditable" => Some(("$$", "$$", "math math-display")),
+                    _ => None,
+                }
+            } else {
+                None
             }
         };
 
@@ -1286,7 +1307,7 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
             let delimited_text_str = if is_hydrate {
                 format!("{}{}{}", delim.0, contents_str, delim.1)
             } else {
-                // Only apply the dehydration is the delimiters are correct.
+                // Only apply the dehydration if the delimiters are correct.
                 if !contents_str.starts_with(delim.0) || !contents_str.ends_with(delim.1) {
                     return None;
                 }
@@ -1297,12 +1318,23 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
             let delimited_text_node = Node::new(NodeData::Text {
                 contents: RefCell::new(delimited_text_str.into()),
             });
+            let mut attrs_vec = vec![Attribute {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
+                value: delim.2.into(),
+            }];
+            if is_hydrate {
+                attrs_vec.push(Attribute {
+                    name: QualName::new(
+                        None,
+                        Namespace::from(""),
+                        LocalName::from("contenteditable"),
+                    ),
+                    value: "false".into(),
+                });
+            }
             let span = Node::new(NodeData::Element {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("span")),
-                attrs: RefCell::new(vec![Attribute {
-                    name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
-                    value: delim.2.into(),
-                }]),
+                attrs: RefCell::new(attrs_vec),
                 template_contents: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
             });

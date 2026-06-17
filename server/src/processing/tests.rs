@@ -1338,12 +1338,12 @@ fn test_hydrate_html_1() {
         .unwrap(),
         indoc!(
             r#"
-            <p><span class="math math-inline mceNonEditable">\({a}_1, b_{2}\)</span>
-            <span class="math math-inline mceNonEditable">\(a*1, b*2\)</span>
-            <span class="math math-inline mceNonEditable">\([a](b)\)</span>
-            <span class="math math-inline mceNonEditable">\(3 &lt;a&gt; b\)</span>
-            <span class="math math-inline mceNonEditable">\(a \; b\)</span></p>
-            <p><span class="math math-display mceNonEditable">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
+            <p><span class="math math-inline mceNonEditable" contenteditable="false">\({a}_1, b_{2}\)</span>
+            <span class="math math-inline mceNonEditable" contenteditable="false">\(a*1, b*2\)</span>
+            <span class="math math-inline mceNonEditable" contenteditable="false">\([a](b)\)</span>
+            <span class="math math-inline mceNonEditable" contenteditable="false">\(3 &lt;a&gt; b\)</span>
+            <span class="math math-inline mceNonEditable" contenteditable="false">\(a \; b\)</span></p>
+            <p><span class="math math-display mceNonEditable" contenteditable="false">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
             "#
         )
     );
@@ -1424,12 +1424,12 @@ fn test_dehydrate_html_1() {
             .convert(
                 &dehydrate_html(indoc!(
                     r#"
-                    <p><span class="math math-inline mceNonEditable">\({a}_1, b_{2}\)</span>
-                    <span class="math math-inline mceNonEditable">\(a*1, b*2\)</span>
-                    <span class="math math-inline mceNonEditable">\([a](b)\)</span>
-                    <span class="math math-inline mceNonEditable">\(3 &lt;a&gt; b\)</span>
-                    <span class="math math-inline mceNonEditable">\(a \; b\)</span></p>
-                    <p><span class="math math-display mceNonEditable">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
+                    <p><span class="math math-inline mceNonEditable" contenteditable="false">\({a}_1, b_{2}\)</span>
+                    <span class="math math-inline mceNonEditable" contenteditable="false">\(a*1, b*2\)</span>
+                    <span class="math math-inline mceNonEditable" contenteditable="false">\([a](b)\)</span>
+                    <span class="math math-inline mceNonEditable" contenteditable="false">\(3 &lt;a&gt; b\)</span>
+                    <span class="math math-inline mceNonEditable" contenteditable="false">\(a \; b\)</span></p>
+                    <p><span class="math math-display mceNonEditable" contenteditable="false">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
                     "#
                 ))
                 .unwrap()
