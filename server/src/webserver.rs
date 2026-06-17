@@ -998,6 +998,7 @@ pub async fn file_to_response(
                     {sidebar_css}
                 </head>
                 <body class="CodeChat-theme-light">
+                    <div id="error-overlay"><h1 class="centered-text">Fatal error</h1></div>
                     {sidebar_iframe}
                     <div id="CodeChat-contents">
                         <header id="CodeChat-top">

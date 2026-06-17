@@ -95,6 +95,29 @@ body {
     white-space: nowrap;
 }
 
+/* Error overlay. When visible, obscure the screen. */
+#error-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    /* The toast z-index is 10000. */
+    z-index: 9999;
+    display: none;
+    opacity: 0.8;
+    background-color: gray;
+}
+
+.centered-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* Pulls element back exactly to its own middle */
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
 /* Doc block styling
    ----------------- */
 .CodeChat-doc {

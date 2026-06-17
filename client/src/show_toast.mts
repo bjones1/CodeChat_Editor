@@ -22,7 +22,7 @@ import "toastify-js/src/toastify.css";
 export const show_toast = (text: string) =>
     Toastify({
         text,
-        duration: 10000,
+        duration: 20000,
         newWindow: true,
         close: true,
         escapeMarkup: true,
@@ -31,5 +31,6 @@ export const show_toast = (text: string) =>
         stopOnFocus: true,
         style: {
             background: "linear-gradient(to right, #b00049ff, #e76d8bff)",
+            zIndex: "10000",
         },
     }).showToast();

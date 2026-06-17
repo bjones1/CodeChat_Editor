@@ -142,7 +142,8 @@ let current_metadata: {
 
 const webSocketComm = () => parent.window.CodeChatEditorFramework.webSocketComm;
 
-// This set when a TinyMCE `input` event occurs, which usually produces a duplicate `Dirty` event which should be ignored.
+// This set when a TinyMCE `input` event occurs, which usually produces a
+// duplicate `Dirty` event which should be ignored.
 let ignoreTinyMceDirty = false;
 
 // True if the document is dirty (needs saving).
@@ -241,14 +242,9 @@ const _open_lp = async (
     scroll_line?: number,
 ) => {
     // Note that globals, such as `is_dirty` and document contents, may change
-    // between `await` calls. Therefore, try to perform processing which relies
-    // on these values between `await` calls. For example, evaluate this first:
-    //
-
-    // The only call to `await` is based on TinyMCE init, which should only
-    // cause an async delay on its first execution. (Even then, I'm not sure it
-    // does, since all resources are statically imported). So, we should be OK
-    // for the rest of this function.
+    // between `await` calls. The only call to `await` is based on TinyMCE init,
+    // which should only cause an async delay on its first execution. So, we
+    // should be OK for the rest of this function.
     //
     // Now, make all decisions about `is_dirty`: if the text is dirty, do some
     // special processing; simply applying the update could cause either data
@@ -267,7 +263,7 @@ const _open_lp = async (
     //    2. In normal mode, we don't have a backup copy of the full text.
     //       Report an `OutOfSync` error, which causes the IDE to send the full
     //       text which will then overwrite changes made in the Client.
-    if (is_dirty && is_re_translation) {
+    if (get_is_dirty() && is_re_translation) {
         console_log(`Ignoring re-translation because Client is dirty.`);
         return;
     }
@@ -280,10 +276,12 @@ const _open_lp = async (
         // Get the mode from the page's query parameters. Default to edit using
         // the
         // [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
-        const mode = urlParams.get("mode") ?? EditorMode.edit;
-        const _editorMode = Object.values(EditorMode).includes(mode)
-            ? mode
-            : EditorMode.edit;
+        const mode = urlParams.get("mode") ?? EditorMode[EditorMode.edit];
+        // `EditorMode` is a numeric enum, so indexing it by the mode name
+        // yields the matching enum value, or `undefined` for an unknown name.
+        // Fall back to `edit` in that case.
+        const _editorMode: EditorMode =
+            EditorMode[mode as keyof typeof EditorMode] ?? EditorMode.edit;
 
         // Get the <code>[current_metadata](#current_metadata)</code> from the
         // provided `code_chat_for_web` struct and store it as a global
@@ -324,14 +322,14 @@ const _open_lp = async (
                     setup: (editor: Editor) => {
                         editor.on("Dirty", () => {
                             if (!ignoreTinyMceDirty) {
-                                is_dirty = true;
+                                set_is_dirty(true);
                                 startAutoUpdateTimer();
                             }
                         });
 
                         editor.on("input", () => {
                             ignoreTinyMceDirty = true;
-                            is_dirty = true;
+                            set_is_dirty(true);
                             startAutoUpdateTimer();
                         });
 
@@ -367,7 +365,7 @@ const _open_lp = async (
             await mathJaxTypeset(codechat_body);
             scroll_to_line(cursor_position, scroll_line);
         } else {
-            if (is_dirty && "Diff" in source) {
+            if (get_is_dirty() && "Diff" in source) {
                 // Send an `OutOfSync` response, so that the IDE will send the
                 // full text to overwrite these changes with.
                 webSocketComm().send_result(
@@ -395,7 +393,7 @@ const _open_lp = async (
         // contents have been overwritten by contents from the IDE. By the same
         // reasoning, restart the auto update timer.
         clearAutoUpdateTimer();
-        is_dirty = false;
+        set_is_dirty(false);
 
         // <a id="CodeChatEditor_test"></a>If tests should be run, then the
         // [following global variable](CodeChatEditor-test.mts#CodeChatEditor_test)
@@ -452,7 +450,8 @@ const save_lp = async (
                 // Tiny MCE div. Update the `doc_contents` to stay in sync with
                 // the Server.
                 doc_content = tinymce_instance()!.save({ format: "raw" });
-                // The `save()` flushes any duplicate `Dirty` events. After this, following `Dirty` events are genuine.
+                // The `save()` flushes any duplicate `Dirty` events. After
+                // this, following `Dirty` events are genuine.
                 ignoreTinyMceDirty = false;
                 (
                     code_mirror_diffable as {
@@ -540,9 +539,11 @@ export const restoreSelection = ({
     // the selected node.
     if (selection_path.length && typeof selection_offset === "number") {
         let selection_node = tinymce_instance()!.getContentAreaContainer();
-        while (selection_path.length) {
+        // Avoid mutating `selection_path` by making a copy of it.
+        const selection_path_copy = [...selection_path];
+        while (selection_path_copy.length) {
             const new_selection_node = selection_node.childNodes[
-                selection_path.shift()!
+                selection_path_copy.shift()!
             ] as HTMLElement;
             // If we get lost during the descent, then stop just before that.
             if (new_selection_node === undefined) {
@@ -685,12 +686,19 @@ const on_click = (event: MouseEvent) => {
 // Save the current document, then navigate to the provided URL, which must be a
 // reference to another CodeChat Editor document.
 const save_then_navigate = (codeChatEditorUrl: URL) => {
-    send_update(true).then((_value) => {
+    const navigate = () => {
         // Avoid recursion!
         window.navigation.removeEventListener("navigate", on_navigate);
         parent.window.CodeChatEditorFramework.webSocketComm.current_file(
             codeChatEditorUrl,
         );
+    };
+    // Navigate after the save completes. If the save fails, still navigate --
+    // otherwise the user is stranded on the current page with only a generic
+    // error toast -- but report the failure so the lost save isn't silent.
+    send_update(true).then(navigate, (reason) => {
+        show_toast(`Error saving before navigation: ${reason}`);
+        navigate();
     });
 };
 
@@ -713,11 +721,24 @@ export const on_error = (event: Event) => {
     if (event instanceof ErrorEvent) {
         err_str = `${event.filename}:${event.lineno}: ${event.message}`;
     } else if (event instanceof PromiseRejectionEvent) {
-        err_str = `${event.promise} rejected: ${event.reason}`;
+        const reason = event.reason;
+        let userMessage = "An unexpected error occurred. Please try again.";
+        console.log(reason, reason instanceof Error, typeof reason);
+        // A simple `reason instanceof Error` fails here. Better would be
+        // [Error.isError()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/isError),
+        // but this requires es2027.
+        if (typeof reason.message === "string") {
+            // Extracts the text from `reject(new Error('Your text'))`.
+            userMessage = reason.message;
+        } else if (typeof reason === "string") {
+            // Extracts the text from `reject('Your text')`.
+            userMessage = reason;
+        }
+        err_str = `Promise rejected: ${userMessage}`;
     } else {
         err_str = `Unexpected error ${typeof event}: ${event}`;
     }
-    show_toast(`Error: ${err_str}`);
+    show_toast(err_str);
     console.error(event);
 };
 

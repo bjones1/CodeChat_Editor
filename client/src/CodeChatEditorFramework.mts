@@ -326,8 +326,7 @@ class WebSocketComm {
         };
     }
 
-    /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    send = (data: any) => this.ws.send(data);
+    send = (data: string | BufferSource | Blob) => this.ws.send(data);
     /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
     close = (...args: any) => this.ws.close(...args);
 

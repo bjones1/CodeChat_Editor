@@ -184,9 +184,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                     .slice(effect.value.from, effect.value.to)
                     .toString();
                 if (newlines !== "\n".repeat(newlines.length)) {
-                    report_error(`Attempt to overwrite text: "${newlines}".`);
-                    window.close();
-                    assert(false);
+                    halt_on_error(`Attempt to overwrite text: "${newlines}".`);
                 }
                 // Perform an
                 // [update](https://codemirror.net/docs/ref/#state.RangeSet.update)
@@ -237,11 +235,9 @@ export const docBlockField = StateField.define<DecorationSet>({
                             // doc block.
                             if (prev !== undefined) {
                                 console.error({ doc_blocks, effect });
-                                report_error(
+                                halt_on_error(
                                     "More than one doc block at one location found.",
                                 );
-                                window.close();
-                                assert(false);
                             }
                             prev = value;
                             to = to_found;
@@ -255,8 +251,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                 );
                 if (prev === undefined) {
                     console.error({ doc_blocks, effect });
-                    report_error("No doc block found.");
-                    window.close();
+                    halt_on_error("No doc block found.");
                     assert(false);
                 }
                 // Determine the final from/to values.
@@ -265,10 +260,9 @@ export const docBlockField = StateField.define<DecorationSet>({
                 // Check that we're not overwriting text.
                 const newlines = tr.newDoc.slice(from, to).toString();
                 if (newlines !== "\n".repeat(newlines.length)) {
-                    report_error(`Attempt to overwrite text: "${newlines}".`);
-                    window.close();
-                    assert(false);
+                    halt_on_error(`Attempt to overwrite text: "${newlines}".`);
                 }
+                const prev_widget = prev.spec.widget as DocBlockWidget;
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
@@ -280,13 +274,12 @@ export const docBlockField = StateField.define<DecorationSet>({
                     add: [
                         Decoration.replace({
                             widget: new DocBlockWidget(
-                                effect.value.indent ?? prev.spec.widget.indent,
-                                effect.value.delimiter ??
-                                    prev.spec.widget.delimiter,
+                                effect.value.indent ?? prev_widget.indent,
+                                effect.value.delimiter ?? prev_widget.delimiter,
                                 typeof effect.value.contents === "string"
                                     ? effect.value.contents
                                     : apply_diff_str(
-                                          prev.spec.widget.contents,
+                                          prev_widget.contents,
                                           effect.value.contents,
                                       ),
                                 // If autosave is allowed (meaning no autosave
@@ -325,7 +318,7 @@ export const docBlockField = StateField.define<DecorationSet>({
     toJSON: (value: DecorationSet, _state: EditorState) => {
         const json_result = [];
         for (const iter = value.iter(); iter.value !== null; iter.next()) {
-            const w = iter.value.spec.widget;
+            const w = iter.value.spec.widget as DocBlockWidget;
             json_result.push([
                 iter.from,
                 iter.to,
@@ -395,9 +388,6 @@ type updateDocBlockType = {
     indent?: string;
     delimiter?: string;
     contents: string | StringDiff[];
-    // True if this update comes from a user change, as opposed to an update
-    // received from the IDE.
-    is_user_change?: boolean;
 };
 
 // Define an update.
@@ -452,7 +442,8 @@ class DocBlockWidget extends WidgetType {
         return (
             other.indent === this.indent &&
             other.delimiter === this.delimiter &&
-            other.contents === this.contents
+            other.contents === this.contents &&
+            other.is_user_change == this.is_user_change
         );
     }
 
@@ -485,7 +476,7 @@ class DocBlockWidget extends WidgetType {
     // different, non-eq content) to reflect this widget."
     updateDOM(dom: HTMLElement, _view: EditorView): boolean {
         // If this change was produced by a user edit, then the DOM was already
-        // updated. Stop here.
+        // updated, both for the indent and contents. Stop here.
         if (this.is_user_change) {
             return true;
         }
@@ -625,22 +616,25 @@ export const mathJaxTypeset = async (
             //
             // Unfortunately, since CodeMirror is synchronous, it will continue
             // calling this function and related functions even during an await.
-            // To emulate a lock, put `1` checks on all MathJax functions,
-            // skipping calling them when we're still at step 3.
-            await new Promise((resolve, reject) => {
+            // To emulate a lock, put step 1-3 checks on all MathJax functions,
+            // skipping calling them until step 4.
+            await new Promise((resolve) => {
                 const script = document.createElement("script");
                 script.src = "/static/mathjax/tex-chtml.js";
                 script.async = true;
                 script.onload = resolve;
                 script.onerror = () => {
                     report_error(`Failed to load script: ${script.src}`);
-                    reject();
+                    // We've already reported the error; don't `reject()`, which
+                    // would propagate this error up the call chain and further
+                    // break things.
+                    resolve(0);
                 };
                 document.head.appendChild(script);
             });
             // Wait until MathJax is fully loaded and the initial render is
-            // finished.
-            await window.MathJax?.startup.promise;
+            // finished. Note that this also renders newly-added math.
+            await window.MathJax.startup.promise;
         }
     } else {
         // MathJax is already loaded; just typeset the provided node.
@@ -649,9 +643,10 @@ export const mathJaxTypeset = async (
             // CodeMirror lacks async support. Use `?.` to skip typesetting in
             // this case.
             await window.MathJax.typesetPromise?.([node]);
-            /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-        } catch (err: any) {
-            report_error(`Typeset failed: ${err.message}`);
+        } catch (err: unknown) {
+            report_error(
+                `Typeset failed: ${err instanceof Error ? err.message : "unknown"}`,
+            );
         }
     }
 };
@@ -726,7 +721,8 @@ const on_dirty = (
 
     // Only run this after typesetting is done, if MathJax is loaded; otherwise,
     // run this immediately.
-    const whenReady = window.MathJax?.whenReady ?? ((f: () => void) => f());
+    const whenReady =
+        window.MathJax?.whenReady ?? (async (f: () => void) => f());
     whenReady(async () => {
         on_dirty_scheduled = false;
         // Find the doc block parent div.
@@ -889,6 +885,10 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     // cursor position (the selection) to be set in the
                     // contenteditable div. Then, save that location.
                     setTimeout(async () => {
+                        // In case this node was modified during the timeout.
+                        if (!contents_div.isConnected) {
+                            return;
+                        }
                         // Create the TinyMCE instance if necessary. Note the
                         // use of `==` here to check for `null` (TinyMCE is
                         // loaded, but no instance exists) and `undefined`
@@ -1461,7 +1461,7 @@ export const set_CodeMirror_positions = (
     // If a doc block has focus, then the CodeMirror selection reports line 1.
     // Use the starting line number of the doc block instead.
     const doc_block = document.activeElement?.closest(".CodeChat-doc");
-    let cursor_position;
+    let cursor_position: CursorPosition;
     if (doc_block) {
         const from = current_view.posAtDOM(doc_block);
         const location = saveSelection();
@@ -1505,4 +1505,11 @@ export const set_CodeMirror_positions = (
 const report_error = (text: string) => {
     console.error(text);
     show_toast(text);
+};
+
+const halt_on_error = (text: string): never => {
+    document.getElementById("error-overlay")!.style.display = "block";
+    console.error(text);
+    // The error handler will make this a toast.
+    throw new Error(text);
 };
