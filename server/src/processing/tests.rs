@@ -1501,4 +1501,25 @@ fn test_dehydrate_html_1() {
         "#
         )
     );
+
+    // A trailing empty paragraph (`<p><br></p>`) is converted to `<p>&nbsp;</p>`
+    // by `dehydrating_walk_node`, preserving it as a non-breaking space.
+    assert_eq!(
+        converter
+            .convert(
+                &dehydrate_html(indoc!(
+                    "
+                    <p>1</p><p><br data-mce-bogus=\"1\"></p>
+                    "
+                ))
+                .unwrap()
+            )
+            .unwrap(),
+        indoc!("
+        1
+
+        \u{a0}
+        ")
+    );
+
 }

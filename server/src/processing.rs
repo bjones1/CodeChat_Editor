@@ -1538,12 +1538,38 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                 Some(children[index].clone())
             }
         };
-        // `borrow_mut` is now dropped; safe to recurse.
+        // `borrow_mut` is now dropped; safe to recurse. Recurse first so that
+        // TinyMCE attributes on descendants (e.g. `data-mce-bogus` on a `<br>`)
+        // are removed before the `<p><br></p>` check below.
         if let Some(child) = child_to_walk {
             dehydrating_walk_node(&child);
+            // If this child is `<p><br></p>`, change it to `<p>&nbsp;</p>`. An
+            // empty paragraph is created by TinyMCE as `<p><br></p>`; the `<br>`
+            // alone is dropped by HTML-to-Markdown conversion, so replace it
+            // with a non-breaking space to preserve the empty paragraph.
+            if is_empty_p_with_br(&child) {
+                let nbsp = Node::new(NodeData::Text {
+                    contents: RefCell::new("\u{a0}".into()),
+                });
+                nbsp.parent.set(Some(Rc::downgrade(&child)));
+                *child.children.borrow_mut() = vec![nbsp];
+            }
         }
         index += 1;
     }
+}
+
+/// Returns true if `node` is `<p><br></p>`: a `<p>` element with no attributes
+/// whose only child is a `<br>` element with no attributes.
+fn is_empty_p_with_br(node: &Rc<Node>) -> bool {
+    get_node_tag_name(node) == Some("p")
+        && matches!(&node.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty())
+        // ...with exactly one child, a `<br>` element with no attributes.
+        && node.children.borrow().len() == 1
+        && node.children.borrow().first().is_some_and(|br| {
+            get_node_tag_name(br) == Some("br")
+                && matches!(&br.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty())
+        })
 }
 
 fn get_node_tag_name(node: &Rc<Node>) -> Option<&str> {

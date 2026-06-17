@@ -37,10 +37,14 @@ use thirtyfour::{By, Key, WebDriver, error::WebDriverError, prelude::ElementQuer
 
 // ### Local
 use crate::overall_common::{
-    TIMEOUT, assert_no_more_messages, perform_loadfile, select_codechat_iframe,
+    TIMEOUT, assert_no_more_messages, get_version, optional_message, perform_loadfile,
+    select_codechat_iframe,
 };
 use code_chat_editor::{
     ide::CodeChatEditorServer,
+    processing::{
+        CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
+    },
     webserver::{
         CursorPosition, EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID,
         MESSAGE_ID_INCREMENT, UpdateMessageContents,
@@ -142,6 +146,137 @@ async fn test_7_core(
         codechat_server.send_result(client_id, None).await?;
         client_id += MESSAGE_ID_INCREMENT;
     }
+
+    assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
+make_test!(test_8, test_8_core);
+
+// Test that Clients can insert a new paragraph.
+async fn test_8_core(
+    codechat_server: CodeChatEditorServer,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.py"))?;
+    let path_str = path.to_str().unwrap().to_string();
+    let ide_version = 0.0;
+    perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.py",
+        Some((
+            indoc!(
+                "
+                    # 1
+                    "
+            )
+            .to_string(),
+            ide_version,
+        )),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // Switch from one doc block to another. It should produce an update with
+    // only cursor/scroll info (no contents).
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    let doc_blocks = driver.query(By::Css(".CodeChat-doc")).first().await?;
+    doc_blocks.click().await?;
+
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await?;
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Refind it, since it's now switched with a TinyMCE editor.
+    let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await?;
+
+    // Move to the end of this line. Due to MacOS fun, avoid option+left arrow.
+    tinymce_contents.send_keys(Key::Right + Key::Right).await?;
+
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await?;
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Start a new paragraph. Wait for a re-translation as the line changes.
+    tinymce_contents.send_keys(Key::Enter).await?;
+
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(1)),
+            scroll_position: None,
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
+    let version = 0.0;
+    let client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(4),
+                            insert: "* aa\n".to_string(),
+                        },],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
+                }),
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await?;
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Add a character.
+    tinymce_contents.send_keys("2").await?;
 
     assert_no_more_messages(&codechat_server).await;
 
