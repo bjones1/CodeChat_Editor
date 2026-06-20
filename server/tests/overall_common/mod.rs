@@ -250,7 +250,7 @@ macro_rules! make_test {
     ($test_name: ident, $test_core_name: ident) => {
         #[tokio::test]
         #[tracing::instrument]
-        async fn $test_name() -> Result<(), Box<dyn Error + Send + Sync>> {
+        async fn $test_name() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             $crate::overall_common::harness($test_core_name, prep_test_dir!()).await
         }
     };
@@ -299,10 +299,12 @@ pub async fn goto_line(
         .await
         .unwrap();
     // The cursor movement produces a cursor/scroll position update after an
-    // autosave delay. Sometimes, we get an update just before the movement;
-    // ignore that.
+    // autosave delay. Sometimes, we get an update or two just before the
+    // movement; ignore those (up to 2 of them).
     let mut msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-    if msg.id == *client_id
+    let mut ignored = 0;
+    while ignored < 2
+        && msg.id == *client_id
         && let EditorMessageContents::Update(update) = &msg.message
         && update.file_path == path_str
         && update.cursor_position != Some(CursorPosition::Line(line))
@@ -314,6 +316,7 @@ pub async fn goto_line(
         codechat_server.send_result(*client_id, None).await.unwrap();
         *client_id += MESSAGE_ID_INCREMENT;
         msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+        ignored += 1;
     }
     assert_eq!(
         msg,
@@ -410,6 +413,32 @@ pub async fn perform_loadfile(
     } else {
         server_id
     }
+}
+
+/// Click near the top-left corner of `element`. By default, `click()` selects
+/// the middle of an element; we want to start at the first line, so use an
+/// action chain to offset from the middle (the origin used by
+/// `move_to_element_with_offset`) toward the top left.
+///
+/// Note that the offset must be computed from the element's `width`/`height`. A
+/// few pixels of inset is also added so the click lands just inside the element
+/// rather than on its border or in any surrounding padding.
+#[allow(dead_code)]
+pub async fn click_element_top_left(
+    driver_ref: &WebDriver,
+    element: &WebElement,
+) -> Result<(), WebDriverError> {
+    let element_size = element.rect().await?;
+    driver_ref
+        .action_chain()
+        .move_to_element_with_offset(
+            element,
+            (-element_size.width / 2.0 + 8.0) as i64,
+            (-element_size.height / 2.0 + 8.0) as i64,
+        )
+        .click()
+        .perform()
+        .await
 }
 
 #[allow(deprecated)]

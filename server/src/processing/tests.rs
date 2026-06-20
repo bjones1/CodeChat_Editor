@@ -1515,11 +1515,12 @@ fn test_dehydrate_html_1() {
                 .unwrap()
             )
             .unwrap(),
-        indoc!("
-        1
+        indoc!(
+            "
+            1
 
-        \u{a0}
-        ")
+            \u{a0}
+            "
+        )
     );
-
 }

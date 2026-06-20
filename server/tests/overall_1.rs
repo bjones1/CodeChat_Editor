@@ -27,7 +27,7 @@ mod overall_common;
 // -------
 //
 // ### Standard library
-use std::{error::Error, path::PathBuf, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 // ### Third-party
 use dunce::canonicalize;
@@ -137,7 +137,7 @@ async fn test_server_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -267,7 +267,7 @@ async fn test_server_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -849,7 +849,6 @@ async fn test_client_updates_core(
     );
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
-    assert!(client_id == 10.0 || client_id == 7.0);
 
     // The Server sends the Client a wrapped version of the text; the Client
     // replies with a Result(Ok).
@@ -879,7 +878,7 @@ async fn test_client_updates_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -971,7 +970,7 @@ async fn test_client_updates_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),

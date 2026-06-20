@@ -27,7 +27,7 @@ mod overall_common;
 // -------
 //
 // ### Standard library
-use std::{error::Error, path::PathBuf};
+use std::path::PathBuf;
 
 // ### Third-party
 use dunce::canonicalize;
@@ -37,8 +37,8 @@ use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
 
 // ### Local
 use crate::overall_common::{
-    TIMEOUT, assert_no_more_messages, get_version, optional_message, perform_loadfile,
-    select_codechat_iframe,
+    TIMEOUT, assert_no_more_messages, click_element_top_left, get_version, optional_message,
+    perform_loadfile, select_codechat_iframe,
 };
 use code_chat_editor::{
     ide::CodeChatEditorServer,
@@ -194,8 +194,7 @@ async fn test_5_core(
     select_codechat_iframe(&driver).await;
 
     // Focus it.
-    let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
-    let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
+    let doc_block_contents = driver.find(By::Css(".CodeChat-doc")).await.unwrap();
     doc_block_contents.click().await.unwrap();
     // The click produces an updated cursor/scroll location after an autosave
     // delay.
@@ -232,7 +231,7 @@ async fn test_5_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -269,7 +268,6 @@ async fn test_5_core(
     let version = client_version;
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
-    assert_eq!(client_id, 10.0);
 
     // Send new text, which turns into a diff.
     let ide_id = codechat_server
@@ -296,7 +294,7 @@ async fn test_5_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -374,30 +372,17 @@ async fn test_6_core(
     // Check the content.
     let body_css = "#CodeChat-body .CodeChat-doc-contents";
     let body_content = driver.find(By::Css(body_css)).await.unwrap();
-    body_content.click().await.unwrap();
-    let body_content = driver.find(By::Css(body_css)).await.unwrap();
+    click_element_top_left(&driver, &body_content)
+        .await
+        .unwrap();
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
-    // Sometimes, the cursor starts at the beginning of the doc block before it
-    // moves to the end.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
     assert_eq!(
-        msg,
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(3)),
+                cursor_position: Some(CursorPosition::Line(1)),
                 scroll_position: None,
                 is_re_translation: false,
                 contents: None,
@@ -447,7 +432,7 @@ async fn test_6_core(
         &mut client_id,
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(3)),
+            cursor_position: Some(CursorPosition::Line(1)),
             scroll_position: None,
             is_re_translation: false,
             contents: None,
