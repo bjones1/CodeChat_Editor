@@ -942,7 +942,8 @@ async fn test_client_updates_core(
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
 
-    // Send the original text back, to ensure the re-translation correctly updated the Client.
+    // Send the original text back, to ensure the re-translation correctly
+    // updated the Client.
     let ide_version = 1.0;
     let ide_id = codechat_server
         .send_message_update_plain(

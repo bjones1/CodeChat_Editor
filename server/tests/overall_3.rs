@@ -91,8 +91,8 @@ async fn test_7_core(
     // Target the iframe containing the Client.
     select_codechat_iframe(&driver).await;
 
-    // Focus the doc block. It should produce an update with
-    // only cursor/scroll info (no contents).
+    // Focus the doc block. It should produce an update with only cursor/scroll
+    // info (no contents).
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     let doc_block = driver.find(By::Css(".CodeChat-doc")).await.unwrap();
     click_element_top_left(&driver, &doc_block).await.unwrap();
@@ -175,8 +175,8 @@ async fn test_8_core(
     // Target the iframe containing the Client.
     select_codechat_iframe(&driver).await;
 
-    // Focus the doc block. It should produce an update with
-    // only cursor/scroll info (no contents).
+    // Focus the doc block. It should produce an update with only cursor/scroll
+    // info (no contents).
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     let doc_block = driver.find(By::Css(".CodeChat-doc")).await.unwrap();
     click_element_top_left(&driver, &doc_block).await.unwrap();
@@ -200,7 +200,9 @@ async fn test_8_core(
     // Refind it, since it's now switched with a TinyMCE editor.
     let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
 
-    // Move to the beginning of this line. Due to MacOS fun, avoid option+left arrow.
+    // Move to the beginning of this line. Due to MacOS fun, avoid option+left
+    // arrow. TODO: the cursor movement doesn't seem to change the actual
+    // insertion point. Not sure why.
     tinymce_contents
         .send_keys(Key::Left + Key::Left)
         .await
@@ -275,7 +277,8 @@ async fn test_8_core(
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
 
-    // There's a re-translation sent to the client, whose response comes back to the IDE.
+    // There's a re-translation sent to the client, whose response comes back to
+    // the IDE.
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
