@@ -238,7 +238,7 @@ async fn test_server_core(
 
     // Moving left should move us back to the doc block.
     code_line
-        .send_keys("" + Key::Home + Key::Left)
+        .send_keys(Key::Home + Key::Left)
         .await
         .unwrap();
     assert_eq!(
@@ -789,7 +789,7 @@ async fn test_client_updates_core(
 
     let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
     doc_block_contents
-        .send_keys("" + Key::End + " testing")
+        .send_keys(Key::End + " testing")
         .await
         .unwrap();
 
