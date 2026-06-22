@@ -32,7 +32,7 @@ license = "GPL-3.0-only"
 name = "codechat-editor-server"
 readme = "../README.md"
 repository = "https://github.com/bjones1/CodeChat_Editor"
-version = "0.1.57"
+version = "0.1.58"
 
 # This library allows other packages to use core CodeChat Editor features.
 [lib]
@@ -71,13 +71,13 @@ markup5ever_rcdom = "0.39"
 mime = "0.3.17"
 mime_guess = "2.0.5"
 minify-html = { git = "https://github.com/bjones1/minify-html.git", branch = "dev", version = "0.18.1" }
-minreq = "2.12.0"
+minreq = "3"
 normalize-line-endings = "0.3.0"
 notify-debouncer-full = "0.7"
 path-slash = "0.2.1"
 pest = "2.7.14"
 pest_derive = "2.7.14"
-phf = "0.13.1"
+phf = { version = "0.14", features = ["macros"] }
 # Per the [docs](https://docs.rs/crate/pulldown-cmark/latest), skip building the
 # binary.
 pulldown-cmark = { version = "0.13", default-features = false, features = [

@@ -22,9 +22,16 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+* No changes.
+
+Version 0.1.58 -- 2026-Jun-22
+-----------------------------
+
 * Load Client components at first use, rather than pre-loading all possible
   components.
 * Correct math translation from the Client back to the IDE.
+* Fix Client bug which caused it to immediately remove newly added empty
+  paragraphs.
 
 Version 0.1.57 -- 2026-Jun-15
 -----------------------------

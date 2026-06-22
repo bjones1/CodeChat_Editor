@@ -237,10 +237,7 @@ async fn test_server_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Moving left should move us back to the doc block.
-    code_line
-        .send_keys(Key::Home + Key::Left)
-        .await
-        .unwrap();
+    code_line.send_keys(Key::Home + Key::Left).await.unwrap();
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
