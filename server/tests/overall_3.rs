@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
+use thirtyfour::{By, Key, WebDriver, error::WebDriverError, extensions::query::ElementQueryable};
 
 // ### Local
 use crate::overall_common::{
@@ -458,6 +458,175 @@ async fn test_8_core(
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    //client_id += MESSAGE_ID_INCREMENT;
+
+    assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
+make_test!(test_9, test_9_core);
+
+// Test that Clients can insert a new paragraph.
+async fn test_9_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let ide_version = 0.0;
+    perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.py",
+        Some((
+            indoc!(
+                "
+                # 1
+                 # 2
+                "
+            )
+            .to_string(),
+            ide_version,
+        )),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // Focus the doc block. It should produce an update with only cursor/scroll
+    // info (no contents).
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    let doc_block = driver
+        .query(By::Css(".CodeChat-doc"))
+        .first()
+        .await
+        .unwrap();
+    click_element_top_left(&driver, &doc_block).await.unwrap();
+
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Refind it, since it's now switched with a TinyMCE editor.
+    let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
+
+    // Perform an edit
+    tinymce_contents.send_keys("a").await.unwrap();
+
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(1)),
+            scroll_position: Some(1.0),
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
+    let mut version = 0.0;
+    let client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(4),
+                            insert: "# a1\n".to_string(),
+                        },],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
+                }),
+            })
+        }
+    );
+    version = client_version;
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Focus on the code block.
+    let cm_line = driver.query(By::Css(".cm-line")).first().await.unwrap();
+    cm_line.click().await.unwrap();
+
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(3)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Add a character.
+    cm_line.send_keys("3").await.unwrap();
+    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    let client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(3)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 10,
+                            to: None,
+                            insert: "3".to_string(),
+                        },],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
+                }),
             })
         }
     );
