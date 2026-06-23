@@ -38,11 +38,10 @@ use tokio::time::sleep;
 
 // ### Local
 use crate::overall_common::{
-    ExpectedMessages, TIMEOUT, assert_no_more_messages, get_version, goto_line, optional_message,
-    perform_loadfile, select_codechat_iframe,
+    CodeChatEditorServerLog, ExpectedMessages, TIMEOUT, assert_no_more_messages, get_version,
+    goto_line, optional_message, perform_loadfile, select_codechat_iframe,
 };
 use code_chat_editor::{
-    ide::CodeChatEditorServer,
     lexer::supported_languages::MARKDOWN_MODE,
     processing::{
         CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
@@ -67,7 +66,7 @@ make_test!(test_server, test_server_core);
 // marked that way in the Selenium docs.
 #[allow(deprecated)]
 async fn test_server_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -654,7 +653,7 @@ make_test!(test_client, test_client_core);
 // marked that way in the Selenium docs.
 #[allow(deprecated)]
 async fn test_client_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -733,7 +732,7 @@ async fn test_client_core(
 make_test!(test_client_updates, test_client_updates_core);
 
 async fn test_client_updates_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {

@@ -37,11 +37,10 @@ use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
 
 // ### Local
 use crate::overall_common::{
-    TIMEOUT, assert_no_more_messages, click_element_top_left, get_version, optional_message,
-    perform_loadfile, select_codechat_iframe,
+    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, click_element_top_left, get_version,
+    optional_message, perform_loadfile, select_codechat_iframe,
 };
 use code_chat_editor::{
-    ide::CodeChatEditorServer,
     processing::{
         CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
     },
@@ -57,7 +56,7 @@ make_test!(test_4, test_4_core);
 // Tests
 // -----
 async fn test_4_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -154,7 +153,7 @@ make_test!(test_5, test_5_core);
 // Verify that newlines in Mermaid and Graphviz diagrams aren't removed, and
 // that equations aren't munged.
 async fn test_5_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -341,7 +340,7 @@ make_test!(test_6, test_6_core);
 
 // Verify that edits in document-only mode don't result in data corruption.
 async fn test_6_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {

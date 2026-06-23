@@ -37,11 +37,10 @@ use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
 
 // ### Local
 use crate::overall_common::{
-    TIMEOUT, assert_no_more_messages, click_element_top_left, get_version, optional_message,
-    perform_loadfile, select_codechat_iframe,
+    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, click_element_top_left, get_version,
+    optional_message, perform_loadfile, select_codechat_iframe,
 };
 use code_chat_editor::{
-    ide::CodeChatEditorServer,
     processing::{
         CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
     },
@@ -58,7 +57,7 @@ make_test!(test_7, test_7_core);
 
 // Test that Client to IDE cursor sync in doc blocks works.
 async fn test_7_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -145,7 +144,7 @@ make_test!(test_8, test_8_core);
 
 // Test that Clients can insert a new paragraph.
 async fn test_8_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {

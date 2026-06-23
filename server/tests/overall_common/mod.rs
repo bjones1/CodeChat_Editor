@@ -53,10 +53,10 @@ use dunce::canonicalize;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use thirtyfour::{
-    By, ChromiumLikeCapabilities, DesiredCapabilities, Key, WebDriver, WebElement,
-    error::WebDriverError,
+    By, ChromiumLikeCapabilities, DesiredCapabilities, Key, LoggingPrefsLogLevel, WebDriver,
+    WebElement, error::WebDriverError,
 };
-use tracing::debug;
+use tracing::{debug, error, info, warn};
 use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
 
@@ -64,11 +64,98 @@ use tracing_subscriber::EnvFilter;
 use code_chat_editor::{
     ide::CodeChatEditorServer,
     webserver::{
-        CursorPosition, EditorMessage, EditorMessageContents, MESSAGE_ID_INCREMENT, ResultOkTypes,
-        UpdateMessageContents, set_root_path,
+        CursorPosition, EditorMessage, EditorMessageContents, MESSAGE_ID_INCREMENT, ResultErrTypes,
+        ResultOkTypes, UpdateMessageContents, set_root_path,
     },
 };
 use test_utils::cast;
+
+// Console-log-polling server wrapper
+// ----------------------------------
+//
+// The legacy `/log` "browser" buffer (where chromedriver collects page-side
+// `console.*` output and uncaught JavaScript errors) is only drained when we
+// ask for it. To interleave that output with the rest of the test's logging,
+// this wrapper holds the `CodeChatEditorServer` together with a `WebDriver`
+// handle and drains the buffer on every call the test framework makes. Each
+// delegated method forwards to the inner server and, around that call, polls
+// the browser log via [`forward_browser_logs`].
+//
+// The wrapper exposes the same method names as `CodeChatEditorServer`, so
+// test bodies use it transparently.
+pub struct CodeChatEditorServerLog {
+    inner: CodeChatEditorServer,
+    // A `WebDriver` handle used only to read the browser log. `WebDriver` is
+    // cheap to clone (it's an `Arc` internally), so a clone of the harness's
+    // driver is stored here.
+    driver: WebDriver,
+}
+
+impl CodeChatEditorServerLog {
+    pub fn new(inner: CodeChatEditorServer, driver: WebDriver) -> CodeChatEditorServerLog {
+        CodeChatEditorServerLog { inner, driver }
+    }
+
+    // Drain and forward any console output the browser has produced so far.
+    async fn poll_log(&self) {
+        forward_browser_logs(&self.driver).await;
+    }
+
+    // The following methods mirror `CodeChatEditorServer`'s API. Each polls
+    // the browser log so console output is emitted close to when it occurred,
+    // then delegates to the inner server.
+    pub async fn get_message_timeout(&self, timeout: Duration) -> Option<EditorMessage> {
+        let msg = self.inner.get_message_timeout(timeout).await;
+        // Waiting for a message is when the browser is most active, so poll
+        // again after the wait to catch output produced during it.
+        self.poll_log().await;
+        msg
+    }
+
+    pub async fn send_message_opened(&self, hosted_in_ide: bool) -> std::io::Result<f64> {
+        self.poll_log().await;
+        self.inner.send_message_opened(hosted_in_ide).await
+    }
+
+    pub async fn send_message_current_file(&self, url: String) -> std::io::Result<f64> {
+        self.poll_log().await;
+        self.inner.send_message_current_file(url).await
+    }
+
+    // Used by some test targets but not others; each test binary compiles
+    // this module separately, so it's dead code in the others.
+    #[allow(dead_code)]
+    pub async fn send_message_update_plain(
+        &self,
+        file_path: String,
+        option_contents: Option<(String, f64)>,
+        cursor_position: Option<u32>,
+        scroll_position: Option<f64>,
+    ) -> std::io::Result<f64> {
+        self.poll_log().await;
+        self.inner
+            .send_message_update_plain(file_path, option_contents, cursor_position, scroll_position)
+            .await
+    }
+
+    pub async fn send_result(
+        &self,
+        id: f64,
+        message_result: Option<ResultErrTypes>,
+    ) -> std::io::Result<()> {
+        self.poll_log().await;
+        self.inner.send_result(id, message_result).await
+    }
+
+    pub async fn send_result_loadfile(
+        &self,
+        id: f64,
+        load_file: Option<(String, f64)>,
+    ) -> std::io::Result<()> {
+        self.poll_log().await;
+        self.inner.send_result_loadfile(id, load_file).await
+    }
+}
 
 // Utilities
 // ---------
@@ -122,13 +209,17 @@ impl ExpectedMessages {
         }
     }
 
-    async fn _assert_message(&mut self, codechat_server: &CodeChatEditorServer, timeout: Duration) {
+    async fn _assert_message(
+        &mut self,
+        codechat_server: &CodeChatEditorServerLog,
+        timeout: Duration,
+    ) {
         self.check(codechat_server.get_message_timeout(timeout).await.unwrap());
     }
 
     pub async fn assert_all_messages(
         &mut self,
-        codechat_server: &CodeChatEditorServer,
+        codechat_server: &CodeChatEditorServerLog,
         timeout: Duration,
     ) {
         while !self.0.is_empty() {
@@ -153,7 +244,7 @@ pub const TIMEOUT: Duration = Duration::from_millis(3000);
 // runs provided tests. After testing finishes, it cleans up (handling panics
 // properly).
 pub async fn harness<
-    F: FnOnce(CodeChatEditorServer, WebDriver, PathBuf) -> Fut,
+    F: FnOnce(CodeChatEditorServerLog, WebDriver, PathBuf) -> Fut,
     Fut: Future<Output = Result<(), WebDriverError>>,
 >(
     f: F,
@@ -181,6 +272,11 @@ pub async fn harness<
     // on a narrow screen.
     caps.add_arg("--window-size=1920,768")?;
     //caps.add_arg("--auto-open-devtools-for-tabs")?;
+    // Tell chromedriver to capture page-side `console.*` output and uncaught
+    // JavaScript errors in the `browser` log buffer, which we drain below and
+    // forward to Rust logging. Without this capability the `/log` endpoint
+    // returns nothing regardless of what the page does.
+    caps.set_browser_log_level(LoggingPrefsLogLevel::All)?;
     // Comment this out to debug test failures.
     caps.add_arg("--headless")?;
     // On Ubuntu CI, avoid failures, probably due to running Chrome as root.
@@ -200,7 +296,12 @@ pub async fn harness<
         // ### Setup
         let p = env::current_exe().unwrap().parent().unwrap().join("../..");
         set_root_path(Some(&p)).unwrap();
-        let codechat_server = CodeChatEditorServer::new().unwrap();
+        // Wrap the server so every call the test framework makes also drains
+        // the browser's JavaScript console log (see `CodeChatEditorServerLog`).
+        let codechat_server = CodeChatEditorServerLog::new(
+            CodeChatEditorServer::new().unwrap(),
+            driver_clone.clone(),
+        );
 
         // Get the resulting web page text.
         let opened_id = codechat_server.send_message_opened(true).await.unwrap();
@@ -223,8 +324,15 @@ pub async fn harness<
 
         // Open the Client and send it a file to load.
         driver_clone.goto(address).await.unwrap();
-        f(codechat_server, driver_clone, test_dir).await?;
+        let test_result = f(codechat_server, driver_clone.clone(), test_dir).await;
 
+        // Drain any JavaScript console output captured during the test and
+        // forward it to Rust logging, then propagate the test's result. Do
+        // this even when the test failed, since the console output often
+        // explains the failure.
+        forward_browser_logs(&driver_clone).await;
+
+        test_result?;
         Ok(())
     })
     // Catch any panics/assertions, again to ensure the driver shuts down
@@ -242,6 +350,36 @@ pub async fn harness<
                     Err::<(), Box<dyn Error + Send + Sync>>(Box::from(format!(
                         "{err:#?}"
                     ))))
+}
+
+/// Drain the browser's `console.*` / uncaught-error log buffer and re-emit
+/// each entry through the Rust `tracing` macros, mapping the Selenium log
+/// level to the closest Rust log level. Requires
+/// `set_browser_log_level(...)` to have been set on the capabilities used to
+/// start the driver (see `harness`).
+///
+/// Errors fetching the log are ignored: `get_log("browser")` is a legacy,
+/// non-W3C endpoint, and a failure to read it should never fail a test.
+async fn forward_browser_logs(driver: &WebDriver) {
+    let entries = match driver.get_log("browser").await {
+        Ok(entries) => entries,
+        Err(err) => {
+            debug!("Unable to read browser console log: {err}");
+            return;
+        }
+    };
+    for entry in entries {
+        // chromedriver emits SCREAMING levels (`SEVERE`, `WARNING`, `INFO`,
+        // `DEBUG`, `FINE`, ...). Map them onto Rust log levels.
+        let msg = format!("JS console [{}]: {}", entry.level, entry.message);
+        match entry.level.as_str() {
+            "SEVERE" => error!("{msg}"),
+            "WARNING" => warn!("{msg}"),
+            "INFO" | "CONFIG" => info!("{msg}"),
+            // FINE/FINER/FINEST/DEBUG and anything else.
+            _ => debug!("{msg}"),
+        }
+    }
 }
 
 #[macro_export]
@@ -270,7 +408,7 @@ pub fn get_version(msg: &EditorMessage) -> f64 {
 #[allow(dead_code)]
 #[tracing::instrument(skip_all)]
 pub async fn goto_line(
-    codechat_server: &CodeChatEditorServer,
+    codechat_server: &CodeChatEditorServerLog,
     driver_ref: &WebDriver,
     client_id: &mut f64,
     path_str: &str,
@@ -338,7 +476,7 @@ pub async fn goto_line(
 }
 
 pub async fn perform_loadfile(
-    codechat_server: &CodeChatEditorServer,
+    codechat_server: &CodeChatEditorServerLog,
     test_dir: &Path,
     file_name: &str,
     file_contents: Option<(String, f64)>,
@@ -450,7 +588,7 @@ pub async fn select_codechat_iframe(driver_ref: &WebDriver) -> WebElement {
     codechat_iframe
 }
 
-pub async fn assert_no_more_messages(codechat_server: &CodeChatEditorServer) {
+pub async fn assert_no_more_messages(codechat_server: &CodeChatEditorServerLog) {
     if let Some(msg) = codechat_server
         .get_message_timeout(Duration::from_millis(500))
         .await
@@ -465,7 +603,7 @@ pub async fn assert_no_more_messages(codechat_server: &CodeChatEditorServer) {
 #[allow(dead_code)]
 #[tracing::instrument(skip_all)]
 pub async fn optional_message(
-    codechat_server: &CodeChatEditorServer,
+    codechat_server: &CodeChatEditorServerLog,
     client_id: &mut f64,
     optional_message: EditorMessageContents,
 ) -> EditorMessage {
