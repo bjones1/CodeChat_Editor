@@ -110,8 +110,20 @@ async fn test_4_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     doc_blocks[1].click().await.unwrap();
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(1)),
+            scroll_position: Some(1.0),
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {

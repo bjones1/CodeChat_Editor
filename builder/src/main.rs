@@ -270,6 +270,7 @@ fn copy_file<P: AsRef<Path> + std::fmt::Debug>(src: P, dest: P) -> io::Result<()
 }
 
 fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(path: P) -> io::Result<()> {
+    println!("Removing {path}...");
     if Path::new(path.as_ref()).try_exists().unwrap() {
         fs::remove_dir_all(path.as_ref())?;
     }
