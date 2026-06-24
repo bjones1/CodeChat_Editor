@@ -22,7 +22,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* No changes.
+* Block malicious HTML in source code/Markdown documents.
 
 Version 0.1.58 -- 2026-Jun-22
 -----------------------------

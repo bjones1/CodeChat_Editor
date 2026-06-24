@@ -37,6 +37,7 @@ use std::{
 };
 
 // ### Third-party
+use ammonia::Builder;
 use dprint_plugin_markdown::{
     configuration::{
         Configuration, ConfigurationBuilder, EmphasisKind, HeadingKind, StrongKind, TextWrap,
@@ -992,9 +993,43 @@ static MINIFY_OPTIONS: LazyLock<minify_html::Cfg> = LazyLock::new(|| {
     cfg
 });
 
+// A static config for Ammonia.
+static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
+    let mut b = Builder::default();
+    // Add custom tags produced during hydration, plus `input` (task list
+    // checkboxes produced by pulldown-cmark) and `iframe` (embedded media
+    // inserted via TinyMCE), neither of which Ammonia allows by default.
+    b.add_tags(&["wc-mermaid", "graphviz-graph", "input", "iframe"])
+        // This allows math produced by pulldown-cmark and updated by the
+        // hydration code.
+        .add_allowed_classes(
+            "span",
+            &["math", "math-inline", "math-display", "mceNonEditable"],
+        )
+        // `code` tags can have `class=language-*`. Since Ammonia doesn't
+        // support a regex like this, just allow anything.
+        .add_tag_attributes("code", &["class"])
+        // Task list checkboxes are rendered as `<input type="checkbox"
+        // checked>`.
+        .add_tag_attributes("input", &["type", "checked", "disabled"])
+        // Allow the attributes TinyMCE/the IDE place on embedded `<iframe>`s.
+        .add_tag_attributes(
+            "iframe",
+            &["width", "height", "src", "allowfullscreen", "frameborder"],
+        )
+        // Keep HTML comments, which Ammonia strips by default.
+        .strip_comments(false)
+        // For now, don't change this. We can't tell if the user included this
+        // manually and it should not be stripped without some extra work
+        // (perhaps adding custom attributes?).
+        .link_rel(None);
+    b
+});
+
 /// A spec-compliant minifier.
 pub fn minify(html: &str) -> Result<String, FromUtf8Error> {
-    String::from_utf8(minify_html::minify(html.as_bytes(), &MINIFY_OPTIONS))
+    let clean_html = AMMONIA_OPTIONS.clean(html).to_string();
+    String::from_utf8(minify_html::minify(clean_html.as_bytes(), &MINIFY_OPTIONS))
 }
 
 // Compute the length of the provided string in UTF16 characters.
@@ -1458,7 +1493,9 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                 pre.children.borrow_mut().push(code);
                 Some(pre)
             } else
-            // Look for a fenced code block containing `<br>` elements added by TinyMCE, instead of the usual newlines. Translate these to newlines, so that HTML to markdown conversion works.
+            // Look for a fenced code block containing `<br>` elements added by
+            // TinyMCE, instead of the usual newlines. Translate these to
+            // newlines, so that HTML to markdown conversion works.
             //
             // A fenced codeblock is a `<pre>` tag...
             if get_node_tag_name(child) == Some("pre")
@@ -1485,8 +1522,8 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                             *attr.name.local == *"class"
                                 && attr.value.starts_with("language-")
                         })))
-                // ...whose children consist only of text nodes and `<br>` elements
-                // with no attributes, including at least one `<br>`.
+                // ...whose children consist only of text nodes and `<br>`
+                // elements with no attributes, including at least one `<br>`.
                 && let code_children = &code_child.children.borrow()
                 && code_children.iter().all(|c| {
                     matches!(c.data, NodeData::Text { .. })
@@ -1544,9 +1581,10 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
         if let Some(child) = child_to_walk {
             dehydrating_walk_node(&child);
             // If this child is `<p><br></p>`, change it to `<p>&nbsp;</p>`. An
-            // empty paragraph is created by TinyMCE as `<p><br></p>`; the `<br>`
-            // alone is dropped by HTML-to-Markdown conversion, so replace it
-            // with a non-breaking space to preserve the empty paragraph.
+            // empty paragraph is created by TinyMCE as `<p><br></p>`; the
+            // `<br>` alone is dropped by HTML-to-Markdown conversion, so
+            // replace it with a non-breaking space to preserve the empty
+            // paragraph.
             if is_empty_p_with_br(&child) {
                 let nbsp = Node::new(NodeData::Text {
                     contents: RefCell::new("\u{a0}".into()),

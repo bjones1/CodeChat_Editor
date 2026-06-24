@@ -718,19 +718,26 @@ fn test_source_to_codechat_for_web_1() {
 
     // Test an unterminated HTML block.
     assert_eq!(
-        source_to_codechat_for_web("// <foo>\n // Test", &"cpp".to_string(), 0.0, false, false),
+        source_to_codechat_for_web(
+            "// <strong>\n // Test",
+            &"cpp".to_string(),
+            0.0,
+            false,
+            false
+        ),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
             "cpp",
             "\n\n",
             vec![
-                build_codemirror_doc_block(0, 1, "", "//", "<foo> "),
+                build_codemirror_doc_block(0, 1, "", "//", "<strong> </strong>"),
                 build_codemirror_doc_block(1, 2, " ", "//", "<p>Test"),
             ]
         )))
     );
 
     // Test an unterminated `<pre>` block. Ensure that markdown after this is
-    // still parsed.
+    // still parsed. Ammonia closes the unterminated `<pre>`, dropping the
+    // trailing newline.
     assert_eq!(
         source_to_codechat_for_web(
             "// <pre>\n // *Test*",
@@ -743,7 +750,7 @@ fn test_source_to_codechat_for_web_1() {
             "cpp",
             "\n\n",
             vec![
-                build_codemirror_doc_block(0, 1, "", "//", "<pre>\n"),
+                build_codemirror_doc_block(0, 1, "", "//", "<pre></pre>"),
                 build_codemirror_doc_block(1, 2, " ", "//", "<p><em>Test</em>"),
             ]
         )))

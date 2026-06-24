@@ -49,6 +49,7 @@ actix-service = "2.0.3"
 actix-web = "4"
 actix-web-httpauth = "0.8.2"
 actix-ws = "0.4"
+ammonia = "4.1.2"
 anyhow = "1.0.100"
 bytes = { version = "1", features = ["serde"] }
 chrono = "0.4"
