@@ -151,7 +151,7 @@ body {
 
 /* Reset what CodeMirror messes up for doc blocks. */
 .CodeChat-doc-contents {
-    font-family: auto;
+    font-family: inherit;
     line-height: initial;
     white-space: normal;
     flex-grow: 1;
