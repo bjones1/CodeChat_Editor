@@ -830,8 +830,14 @@ fn run_postrelease(target: &str, tag: &str) -> io::Result<()> {
 fn run_coverage() -> io::Result<()> {
     run_cmd!(
         info "cargo tarpaulin --skip-clean --out=html --target-dir=tarpaulin";
-        cargo tarpaulin --skip-clean --out=html --target-dir=tarpaulin;
-    )
+        cargo tarpaulin --skip-clean --out=html --out=json --target-dir=tarpaulin;
+    )?;
+
+    // Open the resulting coverage report in the default web browser. The current
+    // working directory is `server/` (see `main`), so the report lives at
+    // `server/tarpaulin-report.html`.
+    let report = Path::new("tarpaulin-report.html");
+    open::that(report)
 }
 
 // CLI implementation
