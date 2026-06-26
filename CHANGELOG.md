@@ -22,7 +22,14 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+* No changes.
+
+Version 0.1.58 -- 2026-Jun-26
+-----------------------------
+
 * Block malicious HTML in source code/Markdown documents.
+* Update @codemirror/view after
+  [bug fix](https://code.haverbeke.berlin/codemirror/dev/issues/1717).
 
 Version 0.1.58 -- 2026-Jun-22
 -----------------------------

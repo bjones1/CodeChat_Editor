@@ -102,9 +102,7 @@ fn test_stop_no_server() {
         // Use a port that nothing is listening on.
         .args(["--port", "8083", "stop"])
         .assert();
-    assert
-        .failure()
-        .stderr(contains("Failed to stop server"));
+    assert.failure().stderr(contains("Failed to stop server"));
 }
 
 // A server that responds to `/stop` with the expected 204 causes `stop` to
@@ -164,16 +162,12 @@ async fn test_stop_unexpected_response() {
 #[test]
 fn test_port_out_of_range() {
     let assert = get_server().args(["--port", "0", "serve"]).assert();
-    assert
-        .failure()
-        .stderr(contains("port not in range"));
+    assert.failure().stderr(contains("port not in range"));
 }
 
 // A non-numeric port is rejected.
 #[test]
 fn test_port_not_a_number() {
     let assert = get_server().args(["--port", "abc", "serve"]).assert();
-    assert
-        .failure()
-        .stderr(contains("isn't a port number"));
+    assert.failure().stderr(contains("isn't a port number"));
 }
