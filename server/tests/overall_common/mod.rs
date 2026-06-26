@@ -53,8 +53,8 @@ use dunce::canonicalize;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use thirtyfour::{
-    By, ChromiumLikeCapabilities, DesiredCapabilities, Key, LoggingPrefsLogLevel, WebDriver,
-    WebElement, error::WebDriverError,
+    BrowserLogEntry, By, ChromiumLikeCapabilities, DesiredCapabilities, Key, LoggingPrefsLogLevel,
+    WebDriver, WebElement, error::WebDriverError,
 };
 use tracing::{debug, error, info, warn};
 use tracing_log::LogTracer;
@@ -96,9 +96,10 @@ impl CodeChatEditorServerLog {
         CodeChatEditorServerLog { inner, driver }
     }
 
-    // Drain and forward any console output the browser has produced so far.
-    async fn poll_log(&self) {
-        forward_browser_logs(&self.driver).await;
+    // Drain and forward any console output the browser has produced so far,
+    // returning the drained entries.
+    pub async fn poll_log(&self) -> Vec<BrowserLogEntry> {
+        forward_browser_logs(&self.driver).await
     }
 
     // The following methods mirror `CodeChatEditorServer`'s API. Each polls
@@ -352,23 +353,24 @@ pub async fn harness<
                     ))))
 }
 
-/// Drain the browser's `console.*` / uncaught-error log buffer and re-emit
-/// each entry through the Rust `tracing` macros, mapping the Selenium log
-/// level to the closest Rust log level. Requires
-/// `set_browser_log_level(...)` to have been set on the capabilities used to
-/// start the driver (see `harness`).
+/// Drain the browser's `console.*` / uncaught-error log buffer, re-emit each
+/// entry through the Rust `tracing` macros (mapping the Selenium log level to
+/// the closest Rust log level), and return the drained entries so callers can
+/// inspect them. Requires `set_browser_log_level(...)` to have been set on the
+/// capabilities used to start the driver (see `harness`).
 ///
 /// Errors fetching the log are ignored: `get_log("browser")` is a legacy,
-/// non-W3C endpoint, and a failure to read it should never fail a test.
-async fn forward_browser_logs(driver: &WebDriver) {
+/// non-W3C endpoint, and a failure to read it should never fail a test. In that
+/// case an empty `Vec` is returned.
+async fn forward_browser_logs(driver: &WebDriver) -> Vec<BrowserLogEntry> {
     let entries = match driver.get_log("browser").await {
         Ok(entries) => entries,
         Err(err) => {
             debug!("Unable to read browser console log: {err}");
-            return;
+            return Vec::new();
         }
     };
-    for entry in entries {
+    for entry in &entries {
         // chromedriver emits SCREAMING levels (`SEVERE`, `WARNING`, `INFO`,
         // `DEBUG`, `FINE`, ...). Map them onto Rust log levels.
         let msg = format!("JS console [{}]: {}", entry.level, entry.message);
@@ -380,6 +382,7 @@ async fn forward_browser_logs(driver: &WebDriver) {
             _ => debug!("{msg}"),
         }
     }
+    entries
 }
 
 #[macro_export]
