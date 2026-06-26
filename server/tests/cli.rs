@@ -23,7 +23,7 @@
 // None.
 //
 // ### Third-party
-use actix_web::{App, HttpServer};
+use actix_web::{App, HttpResponse, HttpServer, web};
 use assert_cmd::Command;
 use predicates::{prelude::predicate, str::contains};
 
@@ -91,4 +91,89 @@ async fn test_start_no_response() {
             .stderr(contains("status code = 404"));
     });
     test.await.unwrap();
+}
+
+// ### `stop` subcommand
+//
+// Stopping when no server is listening should report a connection failure.
+#[test]
+fn test_stop_no_server() {
+    let assert = get_server()
+        // Use a port that nothing is listening on.
+        .args(["--port", "8083", "stop"])
+        .assert();
+    assert
+        .failure()
+        .stderr(contains("Failed to stop server"));
+}
+
+// A server that responds to `/stop` with the expected 204 causes `stop` to
+// succeed.
+#[actix_web::test]
+async fn test_stop_success() {
+    actix_rt::spawn(async move {
+        HttpServer::new(|| {
+            App::new().route(
+                "/stop",
+                web::get().to(|| async { HttpResponse::NoContent().finish() }),
+            )
+        })
+        .bind(("127.0.0.1", 8084))
+        .unwrap()
+        .run()
+        .await
+        .unwrap();
+    });
+    let test = spawn_blocking(move || {
+        let assert = get_server().args(["--port", "8084", "stop"]).assert();
+        assert.success();
+    });
+    test.await.unwrap();
+}
+
+// A server that responds to `/stop` with an unexpected status code causes
+// `stop` to report the unexpected response.
+#[actix_web::test]
+async fn test_stop_unexpected_response() {
+    actix_rt::spawn(async move {
+        HttpServer::new(|| {
+            App::new().route(
+                "/stop",
+                web::get().to(|| async { HttpResponse::Ok().body("nope") }),
+            )
+        })
+        .bind(("127.0.0.1", 8085))
+        .unwrap()
+        .run()
+        .await
+        .unwrap();
+    });
+    let test = spawn_blocking(move || {
+        let assert = get_server().args(["--port", "8085", "stop"]).assert();
+        assert
+            .failure()
+            .stderr(contains("Unexpected response from server"))
+            .stderr(contains("status code = 200"));
+    });
+    test.await.unwrap();
+}
+
+// ### Argument parsing
+//
+// An out-of-range port is rejected by the `port_in_range` validator.
+#[test]
+fn test_port_out_of_range() {
+    let assert = get_server().args(["--port", "0", "serve"]).assert();
+    assert
+        .failure()
+        .stderr(contains("port not in range"));
+}
+
+// A non-numeric port is rejected.
+#[test]
+fn test_port_not_a_number() {
+    let assert = get_server().args(["--port", "abc", "serve"]).assert();
+    assert
+        .failure()
+        .stderr(contains("isn't a port number"));
 }
