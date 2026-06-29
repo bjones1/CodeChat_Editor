@@ -1408,7 +1408,7 @@ export const scroll_to_line = (
         }
         // If a scroll position is provided, use it; otherwise, scroll the
         // cursor into the current view.
-        if (scroll_line == undefined) {
+        if (scroll_line === undefined) {
             dispatch_data.scrollIntoView = true;
         }
     }
@@ -1422,6 +1422,24 @@ export const scroll_to_line = (
 
     // Run it.
     current_view?.dispatch(dispatch_data);
+
+    // Restore the previous horizontal scroll position, overriding whatever
+    // `scrollIntoView` set. Defer to the next frame so this runs after
+    // CodeMirror has applied its own scroll from the transaction above.
+    if (scroll_line !== undefined) {
+        // With line wrapping enabled, the only source of horizontal scroll is a
+        // doc block containing a long, non-wrapping line. CodeMirror's
+        // `scrollIntoView` can't measure a position inside such a block reliably
+        // and pins `scrollLeft` to its maximum regardless of the `x` option. We
+        // only want to scroll vertically, so capture the horizontal position now
+        // and restore it after the dispatch.
+        const prev_scroll_left = current_view?.scrollDOM.scrollLeft;
+        requestAnimationFrame(() => {
+            if (current_view) {
+                current_view.scrollDOM.scrollLeft = prev_scroll_left;
+            }
+        });
+    }
 };
 
 // Apply a `StringDiff` to the before string to produce the after string.
