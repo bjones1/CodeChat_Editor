@@ -19,6 +19,9 @@
 /// These are functional tests of the overall system, performed by attaching a
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
+///
+/// To run this test, execute `cargo test --test overall_1
+/// <optional_test_name>` in the `server/` directory.
 // Modules
 // -------
 mod overall_common;
@@ -38,8 +41,9 @@ use tokio::time::sleep;
 
 // ### Local
 use crate::overall_common::{
-    CodeChatEditorServerLog, ExpectedMessages, TIMEOUT, assert_no_more_messages, get_version,
-    goto_line, optional_message, perform_loadfile, select_codechat_iframe,
+    CodeChatEditorServerLog, ExpectedMessages, TIMEOUT, assert_no_more_messages, beginning_of_line,
+    end_of_line, get_version, goto_line, optional_message, perform_loadfile,
+    select_codechat_iframe,
 };
 use code_chat_editor::{
     lexer::supported_languages::MARKDOWN_MODE,
@@ -175,7 +179,11 @@ async fn test_server_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Edit the indent. It should only allow spaces and tabs, rejecting other
-    // edits.
+    // edits. Click it first, since the indent is only editable while
+    // focused; see the inline `onmousedown` handler on
+    // `.CodeChat-doc-indent` in `CodeMirror-integration.mts`, which makes it
+    // editable on click.
+    doc_block_indent.click().await.unwrap();
     doc_block_indent.send_keys("  123").await.unwrap();
     let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     let client_version = get_version(&msg);
@@ -236,7 +244,7 @@ async fn test_server_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Moving left should move us back to the doc block.
-    code_line.send_keys(Key::Home + Key::Left).await.unwrap();
+    beginning_of_line(&code_line, Key::Left).await.unwrap();
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
@@ -729,9 +737,9 @@ async fn test_client_core(
     Ok(())
 }
 
-make_test!(test_client_updates, test_client_updates_core);
+make_test!(test_updates, test_updates_core);
 
-async fn test_client_updates_core(
+async fn test_updates_core(
     codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
@@ -784,10 +792,7 @@ async fn test_client_updates_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
-    doc_block_contents
-        .send_keys(Key::End + " testing")
-        .await
-        .unwrap();
+    end_of_line(&doc_block_contents, " testing").await.unwrap();
 
     // Get the next message, which could be a cursor update followed by a text
     // update, or just the text update.
@@ -865,7 +870,7 @@ async fn test_client_updates_core(
     // Add an indented comment.
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
     let code_line = driver.find(By::Css(code_line_css)).await.unwrap();
-    code_line.send_keys(Key::Home + "# ").await.unwrap();
+    beginning_of_line(&code_line, "# ").await.unwrap();
     // This should edit the (new) third line of the file after word wrap: `def
     // foo():`.
     let msg = optional_message(

@@ -17,8 +17,10 @@
 // `CodeChatEditor-test.mts` -- Tests for the CodeChat Editor client
 // =================================================================
 //
-// To run tests, add a `?test` to any web page served by the CodeChat Editor
-// server.
+// To run tests, change to the `server/` directory then run `./bt client-build`
+// to build any changes to the Client, followed by `cargo test --test overall_1
+// test_client`. Or, add a `?test` parameter to any web page served by the
+// CodeChat Editor Server.
 //
 // Imports
 // -------
@@ -46,8 +48,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Tests
 // -----
 //
-// <a id="CodeChatEditor_test"></a>Defining this global variable signals the
-// CodeChat Editor to [run tests](CodeChatEditor.mts#CodeChatEditor_test).
+// Defining this global variable signals the CodeChat Editor to
+// [run tests](CodeChatEditor.mts#CodeChatEditor_test).
 window.CodeChatEditor_test = () => {
     // See the [Mocha docs](https://mochajs.org/#browser-configuration).
     mocha.setup({

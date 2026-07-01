@@ -54,7 +54,7 @@ use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use thirtyfour::{
     BrowserLogEntry, By, ChromiumLikeCapabilities, DesiredCapabilities, Key, LoggingPrefsLogLevel,
-    WebDriver, WebElement, error::WebDriverError,
+    TypingData, WebDriver, WebElement, error::WebDriverError,
 };
 use tracing::{debug, error, info, warn};
 use tracing_log::LogTracer;
@@ -272,14 +272,22 @@ pub async fn harness<
     // key to go to the end of the line...but it's not the end of the full line
     // on a narrow screen.
     caps.add_arg("--window-size=1920,768")?;
-    //caps.add_arg("--auto-open-devtools-for-tabs")?;
     // Tell chromedriver to capture page-side `console.*` output and uncaught
     // JavaScript errors in the `browser` log buffer, which we drain below and
     // forward to Rust logging. Without this capability the `/log` endpoint
     // returns nothing regardless of what the page does.
     caps.set_browser_log_level(LoggingPrefsLogLevel::All)?;
-    // Comment this out to debug test failures.
+
+    // Debug support:
+    //
+    // Comment/uncomment these out to debug test failures.
     caps.add_arg("--headless")?;
+    //caps.add_arg("--auto-open-devtools-for-tabs")?;
+    // Insert the code in a test to pause it for manual inspection.
+    //use std::time::Duration;
+    //use tokio::time::sleep;
+    //sleep(Duration::from_hours(1)).await;
+
     // On Ubuntu CI, avoid failures, probably due to running Chrome as root.
     #[cfg(target_os = "linux")]
     if env::var("CI") == Ok("true".to_string()) {
@@ -395,6 +403,23 @@ macro_rules! make_test {
             $crate::overall_common::harness($test_core_name, prep_test_dir!()).await
         }
     };
+
+    // Same as above, but for a test that's currently known to fail (a
+    // regression test pinning down an unfixed bug). `harness` converts a
+    // panic into a `Result::Err` (see its `catch_unwind` use, needed to shut
+    // the WebDriver down cleanly), so the failure never becomes a live
+    // unwind -- meaning `#[should_panic]` can't detect it. `#[ignore]` is
+    // the alternative: the test is skipped by default (so the suite stays
+    // green) but still compiles, and can be run explicitly with `cargo test
+    // -- --ignored` to check whether the bug has been fixed yet.
+    ($test_name: ident, $test_core_name: ident, ignore = $reason: literal) => {
+        #[tokio::test]
+        #[tracing::instrument]
+        #[ignore = $reason]
+        async fn $test_name() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            $crate::overall_common::harness($test_core_name, prep_test_dir!()).await
+        }
+    };
 }
 
 // Given an `Update` message with contents, get the version.
@@ -477,6 +502,106 @@ pub async fn goto_line(
 
     Ok(())
 }
+
+// Cursor-navigation helpers
+// -------------------------
+//
+// On macOS, key combinations that are supposed to jump to the beginning/end of
+// a document (`Ctrl+Home`, `Ctrl+End`, `Cmd+Up`, `Cmd+Down`, ...) are handled
+// by macOS's native Cocoa/WebKit text-editing bridge rather than by pure
+// JavaScript `keydown`/`keyup` DOM events. ChromeDriver's `send_keys` only
+// injects DOM-level key events, so on macOS these shortcuts are silently
+// swallowed before they ever produce the OS-level cursor jump. This is a
+// longstanding WebDriver/Selenium limitation, not a bug in this project --
+// see [Command key modifier doesn't work on Mac
+// OS](https://github.com/SeleniumHQ/selenium/issues/1290).
+//
+// `Ctrl+Home`/`Ctrl+End` do work via `send_keys` on Windows/Linux for a plain
+// CodeMirror line, but empirically do *not* reliably reach the true
+// beginning/end inside a TinyMCE `contenteditable` doc block (observed
+// landing partway through the block instead of at the first/last paragraph,
+// even on Windows) -- presumably TinyMCE's own keyboard-shortcut handling
+// intercepts or only partially handles them. So rather than branch by OS,
+// [`beginning_of_document`] and [`end_of_document`] always use the
+// repeated-arrow-key approach below, which works uniformly on every platform
+// and in both CodeMirror and TinyMCE elements.
+//
+// Each helper accepts `keys_after`, sent in the same `send_keys` call as the
+// navigation keys (rather than a separate `send_keys` call afterward): each
+// `send_keys` call can produce its own debounced cursor-update message, so
+// splitting one logical action into two calls can surface an extra, unwanted
+// intermediate update.
+
+// Move the cursor to the beginning of the current line, then send `keys_after`
+// (which may be empty). Plain `Home` (no modifier) is handled by the browser
+// itself on every platform, so no OS-specific workaround is needed here.
+#[allow(dead_code)]
+#[tracing::instrument(skip(element))]
+pub async fn beginning_of_line(
+    element: &WebElement,
+    keys_after: impl Into<TypingData> + std::fmt::Debug,
+) -> Result<(), WebDriverError> {
+    element.send_keys(Key::Home + keys_after).await
+}
+
+// Move the cursor to the end of the current line, then send `keys_after`
+// (which may be empty). Plain `End` (no modifier) is handled by the browser
+// itself on every platform, so no OS-specific workaround is needed here.
+#[allow(dead_code)]
+#[tracing::instrument(skip(element))]
+pub async fn end_of_line(
+    element: &WebElement,
+    keys_after: impl Into<TypingData> + std::fmt::Debug,
+) -> Result<(), WebDriverError> {
+    element.send_keys(Key::End + keys_after).await
+}
+
+// Move the cursor to the beginning of the document, then send `keys_after`
+// (which may be empty). See the module-level comment above for why this
+// presses `Up` enough times to reach line 1 from anywhere within a test
+// fixture's (small) document, rather than using `Ctrl+Home`/`Cmd+Up`.
+#[allow(dead_code)]
+#[tracing::instrument(skip(element))]
+pub async fn beginning_of_document(
+    element: &WebElement,
+    keys_after: impl Into<TypingData> + std::fmt::Debug,
+) -> Result<(), WebDriverError> {
+    // Test fixtures used by this suite are well under this many lines;
+    // repeating `Up` past the first line is a no-op, so an overshoot is
+    // harmless. Sent as a single `send_keys` call, along with `keys_after`,
+    // so this produces one cursor update rather than one per repeated key.
+    let keys: TypingData = repeated_key(Key::Up, MAX_TEST_DOCUMENT_LINES) + keys_after;
+    element.send_keys(keys).await
+}
+
+// Move the cursor to the end of the document, then send `keys_after` (which
+// may be empty). See the module-level comment above for why this presses
+// `Down` enough times to reach the last line from anywhere within a test
+// fixture's (small) document (then `End` to reach the end of that line),
+// rather than using `Ctrl+End`/`Cmd+Down`.
+#[allow(dead_code)]
+#[tracing::instrument(skip(element))]
+pub async fn end_of_document(
+    element: &WebElement,
+    keys_after: impl Into<TypingData> + std::fmt::Debug,
+) -> Result<(), WebDriverError> {
+    let keys: TypingData = repeated_key(Key::Down, MAX_TEST_DOCUMENT_LINES) + Key::End + keys_after;
+    element.send_keys(keys).await
+}
+
+// Build a `TypingData` consisting of `key` repeated `count` times, for the
+// macOS repeated-arrow-key workaround in [`beginning_of_document`] and
+// [`end_of_document`].
+fn repeated_key(key: Key, count: u32) -> TypingData {
+    std::iter::repeat_n(key.value(), count as usize)
+        .collect::<String>()
+        .into()
+}
+
+// An upper bound on the number of lines in any document used by this test
+// suite's fixtures, used by the macOS `Up`/`Down`-repeating workaround in
+// [`beginning_of_document`] and [`end_of_document`] above.
+const MAX_TEST_DOCUMENT_LINES: u32 = 100;
 
 pub async fn perform_loadfile(
     codechat_server: &CodeChatEditorServerLog,

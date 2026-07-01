@@ -138,6 +138,9 @@ body {
        * `<div class="CodeChat-TinyMCE">` contains the \<doc block contents> */
     display: flex;
     padding: 0px 2px 0px 6px;
+    /* Establish a positioning context for an empty `.CodeChat-doc-indent`;
+       see below. */
+    position: relative;
 }
 
 /* Preserve whitespace in the indent of a doc block. */
@@ -147,6 +150,33 @@ body {
     flex: 0 0 auto;
     white-space: pre;
     tab-size: 4;
+}
+
+/* An empty indent would otherwise collapse to a zero-size element, which
+   isn't reliably clickable (a real mousedown/click can't hit-test a
+   too-small target -- the browser resolves the click point to whatever
+   sits behind/beside it instead) -- so it could never be focused to become
+   editable (see the inline `onmousedown` handler in `DocBlockWidget.toDOM`
+   and the `focusout` handler in `DocBlockPlugin`, which toggle
+   `contenteditable` on and off). Give it a nonzero, clickable size via
+   `position: absolute` rather than sizing it in normal flow (e.g.
+   `min-width`): per the
+   [Flexbox spec](https://www.w3.org/TR/css-flexbox-1/#abspos-items), an
+   absolutely-positioned flex item is removed from flex layout entirely, so
+   this can't shift `.CodeChat-doc-contents`'s horizontal start away from its
+   natural position -- which matters because the browser's native
+   caret-boundary walk (used for arrow-key navigation between adjacent doc
+   blocks; see `docBlockNavKeymap` in `CodeMirror-integration.mts`) tracks
+   the caret's horizontal position across lines, and a shifted contents
+   start throws that off. Position it at the indent's usual (here, zero)
+   offset from the block's left padding, so it visually and functionally
+   sits where the (empty) indent belongs. */
+.CodeChat-doc-indent:empty {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1ch;
+    height: 100%;
 }
 
 /* Reset what CodeMirror messes up for doc blocks. */

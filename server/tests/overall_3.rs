@@ -37,8 +37,9 @@ use thirtyfour::{By, Key, WebDriver, error::WebDriverError, extensions::query::E
 
 // ### Local
 use crate::overall_common::{
-    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, click_element_top_left, get_version,
-    optional_message, perform_loadfile, select_codechat_iframe,
+    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_document,
+    beginning_of_line, click_element_top_left, get_version, optional_message, perform_loadfile,
+    select_codechat_iframe,
 };
 use code_chat_editor::{
     processing::{
@@ -91,9 +92,15 @@ async fn test_7_core(
     select_codechat_iframe(&driver).await;
 
     // Focus the doc block. It should produce an update with only cursor/scroll
-    // info (no contents).
+    // info (no contents). Click on the contents specifically (rather than the
+    // whole doc block, which also contains the indent) so the click reliably
+    // lands inside the text regardless of the indent's width, which varies
+    // with its `contenteditable` state.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
-    let doc_block = driver.find(By::Css(".CodeChat-doc")).await.unwrap();
+    let doc_block = driver
+        .find(By::Css(".CodeChat-doc-contents"))
+        .await
+        .unwrap();
     click_element_top_left(&driver, &doc_block).await.unwrap();
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
@@ -142,7 +149,7 @@ async fn test_7_core(
 
 make_test!(test_8, test_8_core);
 
-// Test that Clients can insert a new paragraph.
+// Test that Clients can insert a new paragraph; do so at the beginning of a doc block, in the middle of a doc block, and at the end of a doc block.
 async fn test_8_core(
     codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
@@ -175,9 +182,15 @@ async fn test_8_core(
     select_codechat_iframe(&driver).await;
 
     // Focus the doc block. It should produce an update with only cursor/scroll
-    // info (no contents).
+    // info (no contents). Click on the contents specifically (rather than the
+    // whole doc block, which also contains the indent) so the click reliably
+    // lands inside the text regardless of the indent's width, which varies
+    // with its `contenteditable` state.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
-    let doc_block = driver.find(By::Css(".CodeChat-doc")).await.unwrap();
+    let doc_block = driver
+        .find(By::Css(".CodeChat-doc-contents"))
+        .await
+        .unwrap();
     click_element_top_left(&driver, &doc_block).await.unwrap();
 
     assert_eq!(
@@ -199,19 +212,7 @@ async fn test_8_core(
     // Refind it, since it's now switched with a TinyMCE editor.
     let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
 
-    // Move to the beginning of this line. Due to MacOS fun, avoid option+left
-    // arrow. TODO: the cursor movement doesn't seem to change the actual
-    // insertion point. Not sure why.
-    tinymce_contents
-        .send_keys(Key::Left + Key::Left)
-        .await
-        .unwrap();
-
-    // Uncomment for debug.
-    //use std::time::Duration;
-    //use tokio::time::sleep;
-    //sleep(Duration::from_hours(1)).await;
-
+    beginning_of_line(&tinymce_contents, "").await.unwrap();
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
@@ -229,6 +230,8 @@ async fn test_8_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Start a new paragraph. Wait for a re-translation as the line changes.
+    // The click above lands the cursor right at the start of "2" (the first
+    // paragraph), so this splits it into an empty paragraph followed by "2".
     tinymce_contents.send_keys(Key::Enter).await.unwrap();
 
     let msg = optional_message(
@@ -244,88 +247,6 @@ async fn test_8_core(
     )
     .await;
     let mut version = 0.0;
-    let client_version = get_version(&msg);
-    assert_eq!(
-        msg,
-        EditorMessage {
-            id: client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(1)),
-                scroll_position: Some(1.0),
-                is_re_translation: false,
-                contents: Some(CodeChatForWeb {
-                    metadata: SourceFileMetadata {
-                        mode: "python".to_string(),
-                    },
-                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                        doc: vec![StringDiff {
-                            from: 10,
-                            to: None,
-                            insert: "#\n# \u{a0}\n".to_string(),
-                        },],
-                        doc_blocks: vec![],
-                        version,
-                    }),
-                    version: client_version,
-                }),
-            })
-        }
-    );
-    version = client_version;
-    codechat_server.send_result(client_id, None).await.unwrap();
-    client_id += MESSAGE_ID_INCREMENT;
-
-    // There's a re-translation sent to the client, whose response comes back to
-    // the IDE.
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: server_id,
-            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-        }
-    );
-    server_id += MESSAGE_ID_INCREMENT;
-
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(1)),
-                scroll_position: Some(1.0),
-                is_re_translation: false,
-                contents: None,
-            })
-        }
-    );
-    codechat_server.send_result(client_id, None).await.unwrap();
-    client_id += MESSAGE_ID_INCREMENT;
-
-    // ### Insert a newline between two existing paragraphs
-    //
-    // After the previous edit, the doc block contains three paragraphs. Move up
-    // to the first paragraph (producing a cursor-only update), then start a new
-    // paragraph between the first and second ones. Wait for a re-translation as
-    // the lines change.
-    tinymce_contents.send_keys(Key::Up + Key::Up).await.unwrap();
-    tinymce_contents.send_keys(Key::Enter).await.unwrap();
-
-    // The cursor move produces an optional cursor-only update before the
-    // re-translation arrives.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -376,6 +297,88 @@ async fn test_8_core(
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
                 cursor_position: Some(CursorPosition::Line(3)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // ### Insert a newline between two existing paragraphs
+    //
+    // After the previous edit, the doc block contains three paragraphs (an
+    // empty one, "2", and "4"). Move up to the first (empty) paragraph
+    // (producing a cursor-only update), then start a new paragraph there.
+    // Wait for a re-translation as the lines change.
+    beginning_of_document(&tinymce_contents, "").await.unwrap();
+    tinymce_contents.send_keys(Key::Enter).await.unwrap();
+
+    // The cursor move produces an optional cursor-only update before the
+    // re-translation arrives.
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(1)),
+            scroll_position: Some(1.0),
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
+    let client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 6,
+                            to: None,
+                            insert: "# \u{a0}\n#\n".to_string(),
+                        },],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
+                }),
+            })
+        }
+    );
+    version = client_version;
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // There's a re-translation sent to the client, whose response comes back to
+    // the IDE.
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    server_id += MESSAGE_ID_INCREMENT;
+
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,
@@ -503,10 +506,13 @@ async fn test_9_core(
     select_codechat_iframe(&driver).await;
 
     // Focus the doc block. It should produce an update with only cursor/scroll
-    // info (no contents).
+    // info (no contents). Click on the contents specifically (rather than the
+    // whole doc block, which also contains the indent) so the click reliably
+    // lands inside the text regardless of the indent's width, which varies
+    // with its `contenteditable` state.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     let doc_block = driver
-        .query(By::Css(".CodeChat-doc"))
+        .query(By::Css(".CodeChat-doc-contents"))
         .first()
         .await
         .unwrap();
@@ -530,6 +536,27 @@ async fn test_9_core(
 
     // Refind it, since it's now switched with a TinyMCE editor.
     let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
+
+    // The click above doesn't necessarily land exactly at the start of the
+    // text (its position now depends on the contents div's layout, not the
+    // indent's), so explicitly move to the beginning of the line before
+    // editing.
+    beginning_of_line(&tinymce_contents, "").await.unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
 
     // Perform an edit
     tinymce_contents.send_keys("a").await.unwrap();
@@ -579,7 +606,9 @@ async fn test_9_core(
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
 
-    // Focus on the code block.
+    // Focus on the code block. Both source lines are doc blocks (kept
+    // separate by their differing indents), so the only real `.cm-line` is
+    // the trailing blank line CodeMirror renders after them -- line 3.
     let cm_line = driver.query(By::Css(".cm-line")).first().await.unwrap();
     cm_line.click().await.unwrap();
 
