@@ -33,6 +33,7 @@ use std::{path::PathBuf, time::Duration};
 
 // ### Third-party
 use dunce::canonicalize;
+use indoc::formatdoc;
 use pretty_assertions::assert_eq;
 use thirtyfour::{By, WebDriver, error::WebDriverError};
 use tokio::time::sleep;
@@ -74,9 +75,9 @@ async fn test_xss_core(
     let path = canonicalize(test_dir.join("test.md")).unwrap();
     let path_str = path.to_str().unwrap().to_string();
     let version = 0.0;
-    // The malicious payload: an image whose `src` is guaranteed to fail loading,
-    // firing the `onerror` handler. If the handler were allowed through, it
-    // would log the `XSS` marker to the browser console.
+    // The malicious payload: an image whose `src` is guaranteed to fail
+    // loading, firing the `onerror` handler. If the handler were allowed
+    // through, it would log the `XSS` marker to the browser console.
     //
     // The `src` is an invalid `data:` URI so the failed load is resolved
     // entirely in the browser. (A relative `src` such as `x` would instead make
@@ -103,15 +104,15 @@ async fn test_xss_core(
     // during this window.
     sleep(Duration::from_millis(500)).await;
 
-    // ### 1. The JavaScript must not have executed.
+    // ### 1\. The JavaScript must not have executed.
     //
     // Drain the browser console log. chromedriver records page-side `console.*`
     // output (and uncaught errors) in the `browser` buffer; if the `onerror`
     // handler had run, our `XSS` marker would appear here. Draining via the
     // wrapper (rather than `driver.get_log("browser")` directly) both forwards
     // each entry to Rust logging and hands the entries back for inspection. Do
-    // this right after rendering and before any further server call, which would
-    // otherwise drain the buffer first.
+    // this right after rendering and before any further server call, which
+    // would otherwise drain the buffer first.
     let entries = codechat_server.poll_log().await;
     for entry in &entries {
         assert!(
@@ -121,7 +122,7 @@ async fn test_xss_core(
         );
     }
 
-    // ### 2. The rendered DOM must not contain the malicious handler.
+    // ### 2\. The rendered DOM must not contain the malicious handler.
     //
     // The doc block should render the image with its `onerror` attribute
     // stripped, leaving a harmless `<img>`.
@@ -137,7 +138,7 @@ async fn test_xss_core(
         "Expected a sanitized <img> tag in the rendered DOM: {rendered}"
     );
 
-    // ### 3. Editing the document must write back sanitized source.
+    // ### 3\. Editing the document must write back sanitized source.
     //
     // Click into the doc block, then type a character. The Client converts the
     // (already sanitized) rendered HTML back to source and sends it to the IDE
@@ -181,8 +182,8 @@ async fn test_xss_core(
     )
     .await;
 
-    // The update must carry contents; pull the source out of the diff and verify
-    // the malicious handler is gone.
+    // The update must carry contents; pull the source out of the diff and
+    // verify the malicious handler is gone.
     let contents = match &msg.message {
         EditorMessageContents::Update(UpdateMessageContents {
             contents: Some(contents),
@@ -208,8 +209,8 @@ async fn test_xss_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Editing a doc block prompts the Server to send the Client a re-translated
-    // version of the document; the Client's acknowledgement comes back here as a
-    // `Result(Ok)` carrying the Server's ID.
+    // version of the document; the Client's acknowledgement comes back here as
+    // a `Result(Ok)` carrying the Server's ID.
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
@@ -235,6 +236,119 @@ async fn test_xss_core(
     );
     codechat_server.send_result(client_id, None).await.unwrap();
     //client_id += MESSAGE_ID_INCREMENT;
+
+    assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
+make_test!(
+    test_horizontal_scroll_preserved,
+    test_horizontal_scroll_preserved_core
+);
+
+// Regression test for
+// [#113](https://github.com/bjones1/CodeChat_Editor/issues/113): when the IDE
+// moves the cursor into a doc block containing a line too wide for the Client's
+// viewport, the Client must scroll vertically to bring that line into view
+// without disturbing the horizontal scroll position. Before the fix,
+// CodeMirror's `scrollIntoView` pinned the horizontal scrollbar to its maximum.
+//
+// The test loads a doc block containing a few one-line paragraphs, a fenced
+// code block with a very long, non-wrapping line, then more one-line
+// paragraphs. It scrolls the CodeMirror scroller horizontally to a middle
+// position, then simulates the IDE moving its cursor to each line in the doc
+// block (as arrow-key presses in the IDE would), verifying after each move that
+// the horizontal scroll position hasn't changed.
+async fn test_horizontal_scroll_preserved_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let ide_version = 0.0;
+    // A long, non-wrapping line: fenced code blocks render as `<pre>`, which
+    // doesn't wrap, so this forces horizontal scrolling.
+    let long_line = "x".repeat(500);
+    let orig_text = formatdoc!(
+        "
+        # 1
+        #
+        # 2
+        #
+        # ```
+        # {long_line}
+        # ```
+        #
+        # 8
+        #
+        # 9
+        "
+    );
+    perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.py",
+        Some((orig_text, ide_version)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // Scroll the CodeMirror scroller horizontally to a middle position (not
+    // fully left or fully right).
+    let scroller_css = ".CodeChat-CodeMirror .cm-scroller";
+    driver
+        .execute(
+            &format!("document.querySelector('{scroller_css}').scrollLeft = 200;"),
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+    let get_scroll_left = format!("return document.querySelector('{scroller_css}').scrollLeft;");
+    let scroll_left_before: f64 = driver
+        .execute(&get_scroll_left, Vec::new())
+        .await
+        .unwrap()
+        .convert()
+        .unwrap();
+    assert!(
+        scroll_left_before > 0.0,
+        "Failed to scroll the CodeMirror scroller horizontally before the test began."
+    );
+
+    // Simulate the IDE moving its cursor to each line of the doc block, as
+    // arrow-key presses in the IDE would produce. Check every line, including
+    // the fenced-code-block lines.
+    for line in 1..=11u32 {
+        let ide_id = codechat_server
+            .send_message_update_plain(path_str.clone(), None, Some(line), Some(line.into()))
+            .await
+            .unwrap();
+        // The Client acknowledges the Update with a Result(Ok).
+        assert_eq!(
+            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+            EditorMessage {
+                id: ide_id,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+            }
+        );
+
+        let scroll_left_after: f64 = driver
+            .execute(&get_scroll_left, Vec::new())
+            .await
+            .unwrap()
+            .convert()
+            .unwrap();
+        assert_eq!(
+            scroll_left_after, scroll_left_before,
+            "Horizontal scroll changed after moving the cursor to line {line}."
+        );
+    }
 
     assert_no_more_messages(&codechat_server).await;
 
