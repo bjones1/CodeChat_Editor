@@ -163,7 +163,7 @@ body {
    attribute is only visible briefly, but this eliminated that visual flicker. */
 .CodeChat-doc-contents.mce-edit-focus,
 .CodeChat-doc-contents:focus-visible {
-    outline-width: 0px;
+    outline: 0px;
 }
 
 /* Used to hide the TinyMCE editor instance when it's not in use. */
