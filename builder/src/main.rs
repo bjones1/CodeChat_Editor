@@ -613,7 +613,7 @@ fn run_client_build(
         true,
     )?;
 
-    // \<a id="#pdf.js>The PDF viewer for use with VSCode. Build it separately,
+    // <a id="#pdf.js"></a>The PDF viewer for use with VSCode. Build it separately,
     // since it's loaded apart from the rest of the Client.
     run_script(
         &esbuild,

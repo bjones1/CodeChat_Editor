@@ -783,6 +783,33 @@ fn test_source_to_codechat_for_web_1() {
             ]
         )))
     );
+
+    // Test that minify functions correctly across multiple paragraphs separated
+    // by a code block.
+    assert_eq!(
+        source_to_codechat_for_web(
+            indoc!(
+                r#"
+                // <a id="one"></a>1
+                "#
+            ),
+            &"cpp".to_string(),
+            0.0,
+            false,
+            false
+        ),
+        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+            "cpp",
+            "\n",
+            vec![build_codemirror_doc_block(
+                0,
+                1,
+                "",
+                "//",
+                r#"<p><a id=one></a>1"#
+            ),]
+        )))
+    );
 }
 
 #[test]

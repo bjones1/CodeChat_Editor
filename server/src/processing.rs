@@ -1000,6 +1000,8 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     // checkboxes produced by pulldown-cmark) and `iframe` (embedded media
     // inserted via TinyMCE), neither of which Ammonia allows by default.
     b.add_tags(&["wc-mermaid", "graphviz-graph", "input", "iframe"])
+        // Allow any element to be assigned an ID.
+        .add_generic_attributes(&["id"])
         // This allows math produced by pulldown-cmark and updated by the
         // hydration code.
         .add_allowed_classes(

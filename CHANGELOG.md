@@ -27,6 +27,9 @@ Changelog
   view, the Client scrolled the horizontal scrollbar all the way to the end of
   the line. This fix only performs vertical scrolling, but leaves the horizontal
   scroll unchanged.
+* Fix keyboard navigation -- moving between doc blocks and code blocks with
+  arrow keys is now supported.
+* Fix regression -- `id` attributes on HTML elements are no longer blocked.
 
 Version 0.1.58 -- 2026-Jun-26
 -----------------------------
