@@ -18,7 +18,9 @@
         "ghcr.io/devcontainers/features/node:latest": {},
         // Add the GitHub CLI as a feature (to support the CodeChat Editor).
         "ghcr.io/devcontainers/features/github-cli:1": {},
-        // Include Chrome for browser testing.
+        // Include Chrome for browser testing. Note: this installs the binary
+        // as `/usr/local/bin/chrome`; postCreateCommand.sh symlinks it to
+        // `google-chrome` so Selenium Manager can find it.
         "ghcr.io/kreemer/features/chrometesting:1": {}
     },
     // Run this script after the container is created.
