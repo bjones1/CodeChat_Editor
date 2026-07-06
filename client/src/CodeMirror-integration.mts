@@ -129,13 +129,13 @@ const docBlockFreezeAnnotation = Annotation.define<boolean>();
 // location updates.
 const noAutosaveAnnotation = Annotation.define<boolean>();
 
-// When this is included in a transaction, `DocBlockPlugin.update` won't
-// capture focus into a doc block even though the resulting selection touches
-// its boundary. Used by `docBlockNavKeymap`'s `ArrowLeft` handler when it
-// deliberately stops the cursor at a code block's start (a doc block's `to`
-// is numerically identical to the following code line's `from`, so without
-// this annotation that stop would be indistinguishable from -- and
-// incorrectly treated as -- entry into the preceding doc block).
+// When this is included in a transaction, `DocBlockPlugin.update` won't capture
+// focus into a doc block even though the resulting selection touches its
+// boundary. Used by `docBlockNavKeymap`'s `ArrowLeft` handler when it
+// deliberately stops the cursor at a code block's start (a doc block's `to` is
+// numerically identical to the following code line's `from`, so without this
+// annotation that stop would be indistinguishable from -- and incorrectly
+// treated as -- entry into the preceding doc block).
 const stayInCodeBlockAnnotation = Annotation.define<boolean>();
 
 // Define a facet called when extensions produce an error.
@@ -449,11 +449,12 @@ class DocBlockWidget extends WidgetType {
     }
 
     eq(other: DocBlockWidget) {
+        // Order these to do the fastest comparisons first.
         return (
-            other.indent === this.indent &&
+            other.is_user_change == this.is_user_change &&
             other.delimiter === this.delimiter &&
-            other.contents === this.contents &&
-            other.is_user_change == this.is_user_change
+            other.indent === this.indent &&
+            other.contents === this.contents
         );
     }
 
@@ -463,27 +464,26 @@ class DocBlockWidget extends WidgetType {
         const wrap = document.createElement("div");
         wrap.className = "CodeChat-doc";
         wrap.innerHTML =
-            // This doc block's indent. It's not editable (and not a tab
-            // stop) until clicked; see the inline `onmousedown` handler
-            // below and the `focusout` handler in `DocBlockPlugin`, which
-            // toggle `contenteditable` on and off so that keyboard/IDE-driven
-            // navigation between code and doc blocks skips over the indent.
-            // The toggle must happen in an inline handler, not a
-            // `DocBlockPlugin` `eventHandlers.mousedown` handler: CodeMirror
-            // appends its own built-in `mousedown` handler (registered on
-            // `contentDOM`) after any plugin handlers, and -- whenever the
-            // editor doesn't already have focus -- that built-in handler
-            // unconditionally moves focus to `contentDOM`, regardless of
-            // what a same-turn `contentEditable` toggle just did. An inline
-            // attribute handler runs at the target, ahead of that
-            // `contentDOM`-level listener, so calling `stopPropagation()`
-            // here (after making the div editable) prevents the event from
-            // ever reaching CodeMirror's handler, leaving the browser's
-            // default action free to focus this now-editable div. TODO:
-            // allow paste, but must only allow pasting whitespace.
+            // This doc block's indent. It's not editable (and not a tab stop)
+            // until clicked; see the inline `onmousedown` handler below and the
+            // `focusout` handler in `DocBlockPlugin`, which toggle
+            // `contenteditable` on and off so that keyboard/IDE-driven
+            // navigation between code and doc blocks skips over the indent. The
+            // toggle must happen in an inline handler, not a `DocBlockPlugin`
+            // `eventHandlers.mousedown` handler: CodeMirror appends its own
+            // built-in `mousedown` handler (registered on `contentDOM`) after
+            // any plugin handlers, and -- whenever the editor doesn't already
+            // have focus -- that built-in handler unconditionally moves focus
+            // to `contentDOM`, regardless of what a same-turn `contentEditable`
+            // toggle just did. An inline attribute handler runs at the target,
+            // ahead of that `contentDOM`-level listener, so calling
+            // `stopPropagation()` here (after making the div editable) prevents
+            // the event from ever reaching CodeMirror's handler, leaving the
+            // browser's default action free to focus this now-editable div.
+            // TODO: allow paste, but must only allow pasting whitespace.
             `<div class="CodeChat-doc-indent" onmousedown="this.contentEditable='true'; event.stopPropagation();" onpaste="return false" data-delimiter=${JSON.stringify(
                 this.delimiter,
-            )}>${sanitize_html(this.indent)}</div>` +
+            )}>${this.indent}</div>` +
             // The contents of this doc block. Make it focusable by assigning a
             // tab stop, but not editable (until it's replaced by the TinyMCE
             // editor).
@@ -501,18 +501,26 @@ class DocBlockWidget extends WidgetType {
     // "Update a DOM element created by a widget of the same type (but
     // different, non-eq content) to reflect this widget."
     updateDOM(dom: HTMLElement, _view: EditorView): boolean {
-        // If this change was produced by a user edit, then the DOM was already
-        // updated, both for the indent and contents. Stop here.
-        if (this.is_user_change) {
+        // If this change was produced by a user edit and the DOM to "update" is
+        // a TinyMCE editor, then the DOM was already updated. Stop here.
+        const [contents_div, is_tinymce] = get_contents(dom);
+        if (this.is_user_change && is_tinymce) {
             return true;
         }
-        (dom.childNodes[0] as HTMLDivElement).innerHTML = sanitize_html(
-            this.indent,
-        );
 
-        // The contents div could be a TinyMCE instance, or just a plain div.
-        // Handle both cases.
-        const [contents_div, is_tinymce] = get_contents(dom);
+        // Update the indent and delimiter. Assume both have already been
+        // sanitized: the server only allows whitespace for the indent; only
+        // specific, safe delimiters are allowed. The Client only allows editing
+        // the indent, and only whitespace is allowed there as well.
+        (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
+        dom.dataset.delimiter = this.delimiter;
+
+        // Update the contents. The contents div could be a TinyMCE instance, or
+        // just a plain div. Handle both cases. Again, we assume sanitized
+        // content, since this comes from the server (which uses Ammonia) or
+        // TinyMCE (which uses a
+        // [sanitizer](https://www.tiny.cloud/docs/tinymce/latest/security/#sanitizing-html-input-to-protect-against-xss-attacks)
+        // for all user input).
         window.MathJax?.typesetClear?.([contents_div]);
         if (is_tinymce) {
             // Save the cursor location before the update, then restore it
@@ -530,28 +538,24 @@ class DocBlockWidget extends WidgetType {
         mathJaxTypeset(contents_div);
 
         // Indicate the update was successful. TODO: but, contents are still
-        // pending...
+        // pending if it contains math...
         return true;
     }
 
     ignoreEvent(event: Event) {
         // Avoid handling other events, since this causes
         // [weird problems with event routing](https://discuss.codemirror.net/t/how-to-get-focusin-events-on-a-custom-widget-decoration/6792).
-        // `focusout` is also let through: `DocBlockPlugin`'s `focusout`
-        // handler needs it to turn off the indent's `contenteditable` once
-        // it loses focus (see the inline `onmousedown` handler above, which
-        // turns it on).
-        return (
-            event.type !== "focusin" &&
-            event.type !== "input" &&
-            event.type !== "focusout"
-        );
+        // `focusout` is also let through: `DocBlockPlugin`'s `focusout` handler
+        // needs it to turn off the indent's `contenteditable` once it loses
+        // focus (see the inline `onmousedown` handler above, which turns it
+        // on).
+        return event.type !== "focusin" && event.type !== "focusout";
     }
 
     // Per the [docs](https://codemirror.net/docs/ref/#view.WidgetType.destroy),
     // "This is called when the an instance of the widget is removed from the
     // editor view."
-    destroy(dom: HTMLElement): void {
+    destroy(dom: HTMLElement) {
         const [contents_div, is_tinymce] = get_contents(dom);
         // Forget about any typeset math in this node.
         window.MathJax?.typesetClear?.([contents_div]);
@@ -567,13 +571,6 @@ class DocBlockWidget extends WidgetType {
         }
     }
 }
-
-// Native DOM sanitizer.
-const sanitize_html = (html: string) => {
-    const div = document.createElement("div");
-    div.textContent = html;
-    return div.innerHTML;
-};
 
 // Typeset the provided node; taken from the
 // [MathJax docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
@@ -785,6 +782,10 @@ const on_dirty = (
         // following `Dirty` events are genuine.
         ignoreTinyMceDirty = false;
         await mathJaxTypeset(contents_div);
+        // When editing large doc blocks, they may be deleted then re-created by
+        // CodeMirror, which causes unexpected scrolling. To avoid this, save
+        // then restore the scroll after updating CodeMirror.
+        const currentScrollTop = current_view.scrollDOM.scrollTop;
         current_view.dispatch({
             effects: [
                 updateDocBlock.of({
@@ -795,6 +796,9 @@ const on_dirty = (
                 }),
             ],
         });
+        requestAnimationFrame(
+            () => (current_view.scrollDOM.scrollTop = currentScrollTop),
+        );
     });
 };
 
@@ -813,10 +817,10 @@ const on_dirty = (
 
 // Given a doc position `pos`, return the range (`from`/`to`) of the doc block
 // that starts exactly at `pos`, or `null` if there isn't one. Doc blocks can
-// sit back-to-back (sharing a boundary position with a neighboring doc
-// block), so this looks for an exact match on `from` rather than any block
-// that merely touches `pos` -- otherwise, at a shared boundary, the block
-// ending at `pos` could be returned instead of the one starting there.
+// sit back-to-back (sharing a boundary position with a neighboring doc block),
+// so this looks for an exact match on `from` rather than any block that merely
+// touches `pos` -- otherwise, at a shared boundary, the block ending at `pos`
+// could be returned instead of the one starting there.
 const doc_block_starting_at = (
     view: EditorView,
     pos: number,
@@ -831,8 +835,8 @@ const doc_block_starting_at = (
     return found;
 };
 
-// Same as `doc_block_starting_at`, but looks for a doc block that ends
-// exactly at `pos`.
+// Same as `doc_block_starting_at`, but looks for a doc block that ends exactly
+// at `pos`.
 const doc_block_ending_at = (
     view: EditorView,
     pos: number,
@@ -861,20 +865,20 @@ const select_doc_block_edge = (view: EditorView, pos: number): boolean => {
 // (ArrowUp, ArrowLeft) lands it at the block's end.
 export const docBlockNavKeymap = keymap.of([
     {
-        // Down arrow at the bottom of a code block: enter the doc block
-        // below, caret at its start. Look right after the current line's
-        // contents, which is where a following doc block's decoration would
-        // begin. A line's `.to` is the position of (before) its own trailing
-        // newline; the doc block placeholder that follows starts one
-        // position later, right after that newline -- hence `+ 1` (see the
-        // matching `main.head + 1` in the `ArrowRight` handler below, which
-        // lands on the same position). Chaining from one doc block into the
-        // next (once focus has actually entered a doc block) happens outside
-        // CodeMirror entirely -- see `DocBlockPlugin`'s `focusin` handler --
-        // so this keymap only ever needs to handle the first entry from a
-        // code line; a `main.head` that happens to equal a doc block's `to`
-        // (this doc block's own placeholder boundary) is just the following
-        // code line's start, not a sign we're "already chained" out of it.
+        // Down arrow at the bottom of a code block: enter the doc block below,
+        // caret at its start. Look right after the current line's contents,
+        // which is where a following doc block's decoration would begin. A
+        // line's `.to` is the position of (before) its own trailing newline;
+        // the doc block placeholder that follows starts one position later,
+        // right after that newline -- hence `+ 1` (see the matching
+        // `main.head + 1` in the `ArrowRight` handler below, which lands on the
+        // same position). Chaining from one doc block into the next (once focus
+        // has actually entered a doc block) happens outside CodeMirror entirely
+        // -- see `DocBlockPlugin`'s `focusin` handler -- so this keymap only
+        // ever needs to handle the first entry from a code line; a `main.head`
+        // that happens to equal a doc block's `to` (this doc block's own
+        // placeholder boundary) is just the following code line's start, not a
+        // sign we're "already chained" out of it.
         key: "ArrowDown",
         run: (view) => {
             const { main } = view.state.selection;
@@ -886,11 +890,11 @@ export const docBlockNavKeymap = keymap.of([
         },
     },
     {
-        // Up arrow at the top of a code block: enter the doc block above,
-        // caret at its end. Look right before the current line's contents,
-        // which is where a preceding doc block's decoration would end (see
-        // the `ArrowDown` comment above for why no "chained" check is
-        // needed here either).
+        // Up arrow at the top of a code block: enter the doc block above, caret
+        // at its end. Look right before the current line's contents, which is
+        // where a preceding doc block's decoration would end (see the
+        // `ArrowDown` comment above for why no "chained" check is needed here
+        // either).
         key: "ArrowUp",
         run: (view) => {
             const { main } = view.state.selection;
@@ -927,10 +931,10 @@ export const docBlockNavKeymap = keymap.of([
         // first line jumps straight past that line's start and into the doc
         // block, skipping the "beginning of the code block" stop entirely.
         // Intercept the press instead: if the cursor isn't already at the
-        // line's start, stop it there ourselves (this is the first press);
-        // only if the cursor is already at the line's start (a second,
-        // subsequent press) do we enter the preceding doc block, with the
-        // caret at its end.
+        // line's start, stop it there ourselves (this is the first press); only
+        // if the cursor is already at the line's start (a second, subsequent
+        // press) do we enter the preceding doc block, with the caret at its
+        // end.
         key: "ArrowLeft",
         run: (view) => {
             const { main } = view.state.selection;
@@ -998,8 +1002,8 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
             // when the editor isn't focused, highlight the relevant line or
             // something similar.
             if (update.selectionSet && update.view.hasFocus) {
-                // If focus is currently in a doc block's indent (made
-                // editable by the inline `onmousedown` handler in
+                // If focus is currently in a doc block's indent (made editable
+                // by the inline `onmousedown` handler in
                 // `DocBlockWidget.toDOM`), don't steal it away into the
                 // contents div.
                 if (
@@ -1009,11 +1013,11 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 ) {
                     return;
                 }
-                // If one of this update's transactions deliberately stopped
-                // the cursor at a code block's start (see
+                // If one of this update's transactions deliberately stopped the
+                // cursor at a code block's start (see
                 // `stayInCodeBlockAnnotation`), don't treat the resulting
-                // selection -- which sits at the same position as the
-                // preceding doc block's `to` -- as entry into that doc block.
+                // selection -- which sits at the same position as the preceding
+                // doc block's `to` -- as entry into that doc block.
                 if (
                     update.transactions.some(
                         (tr) =>
@@ -1070,21 +1074,20 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             const range = document.createRange();
                             // Walk to the first/last actual text node under
                             // `contents`, rather than using
-                            // `selectNodeContents` + `collapse` (which
-                            // anchors the selection on `contents` itself, at
-                            // a childNodes-index boundary). `saveSelection`
-                            // (called later, when this doc block is promoted
-                            // to TinyMCE) walks up from
-                            // `window.getSelection().anchorNode` looking for
-                            // an *ancestor* with the `CodeChat-doc-contents`
-                            // class; if the anchor node already *is* that
-                            // div, the walk's loop body never runs and it
-                            // returns an empty `selection_path`, silently
-                            // dropping this edge placement and leaving the
-                            // caret wherever TinyMCE's own init happens to
-                            // put it (its start). Anchoring on a text node
-                            // instead keeps the walk -- and thus the edge
-                            // placement -- intact.
+                            // `selectNodeContents` + `collapse` (which anchors
+                            // the selection on `contents` itself, at a
+                            // childNodes-index boundary). `saveSelection`
+                            // (called later, when this doc block is promoted to
+                            // TinyMCE) walks up from
+                            // `window.getSelection().anchorNode` looking for an
+                            // *ancestor* with the `CodeChat-doc-contents`
+                            // class; if the anchor node already *is* that div,
+                            // the walk's loop body never runs and it returns an
+                            // empty `selection_path`, silently dropping this
+                            // edge placement and leaving the caret wherever
+                            // TinyMCE's own init happens to put it (its start).
+                            // Anchoring on a text node instead keeps the walk
+                            // -- and thus the edge placement -- intact.
                             let edge_node: Node = contents;
                             while (
                                 at_end
@@ -1102,9 +1105,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                 range.setStart(edge_node, offset);
                                 range.setEnd(edge_node, offset);
                             } else {
-                                // No text node found (e.g. an empty doc
-                                // block); fall back to the previous,
-                                // element-anchored behavior.
+                                // No text node found (e.g. an empty doc block);
+                                // fall back to the previous, element-anchored
+                                // behavior.
                                 range.selectNodeContents(contents);
                                 // `collapse(true)` -> start, `collapse(false)`
                                 // -> end.
@@ -1187,15 +1190,15 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         if (!contents_div.isConnected) {
                             return;
                         }
-                        // Note whether this doc block still genuinely has
-                        // focus before any of the DOM surgery below runs
-                        // (which removes `contents_div` from the document,
-                        // making `document.activeElement` an unreliable way
-                        // to answer this question afterwards). If the user
-                        // has since clicked or navigated elsewhere while this
-                        // promotion was in flight, don't steal focus back to
-                        // this (now stale) doc block once the promotion
-                        // finishes -- see the check below.
+                        // Note whether this doc block still genuinely has focus
+                        // before any of the DOM surgery below runs (which
+                        // removes `contents_div` from the document, making
+                        // `document.activeElement` an unreliable way to answer
+                        // this question afterwards). If the user has since
+                        // clicked or navigated elsewhere while this promotion
+                        // was in flight, don't steal focus back to this (now
+                        // stale) doc block once the promotion finishes -- see
+                        // the check below.
                         const still_focused = target.contains(
                             document.activeElement,
                         );
@@ -1384,14 +1387,14 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         await mathJaxTypeset(tinymce_div);
 
                         // This process causes TinyMCE to lose focus. Restore
-                        // that -- but only if focus was still genuinely in
-                        // this doc block just before the DOM surgery above
-                        // began (see `still_focused`). Unconditionally
-                        // focusing here would otherwise steal focus back to
-                        // this (now stale) doc block even after the user
-                        // clicked or navigated elsewhere while this promotion
-                        // was in flight. Restoring the selection is skipped
-                        // too, since it's meaningless once focus has moved on.
+                        // that -- but only if focus was still genuinely in this
+                        // doc block just before the DOM surgery above began
+                        // (see `still_focused`). Unconditionally focusing here
+                        // would otherwise steal focus back to this (now stale)
+                        // doc block even after the user clicked or navigated
+                        // elsewhere while this promotion was in flight.
+                        // Restoring the selection is skipped too, since it's
+                        // meaningless once focus has moved on.
                         if (!still_focused) {
                             return;
                         }
@@ -1411,14 +1414,13 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
             },
 
             // The indent of a doc block is only editable while it's being
-            // clicked on/focused; otherwise, it's plain (uneditable) text.
-            // This keeps it out of the keyboard/IDE-driven navigation path
-            // (see the "Keyboard navigation" section above), which only ever
-            // focuses the contents div. Turning it editable on click is
-            // handled by an inline `onmousedown` attribute in
-            // `DocBlockWidget.toDOM` rather than here -- see the comment
-            // there for why a `ViewPlugin` `eventHandlers.mousedown` handler
-            // doesn't work for this.
+            // clicked on/focused; otherwise, it's plain (uneditable) text. This
+            // keeps it out of the keyboard/IDE-driven navigation path (see the
+            // "Keyboard navigation" section above), which only ever focuses the
+            // contents div. Turning it editable on click is handled by an
+            // inline `onmousedown` attribute in `DocBlockWidget.toDOM` rather
+            // than here -- see the comment there for why a `ViewPlugin`
+            // `eventHandlers.mousedown` handler doesn't work for this.
             //
             // Once the indent loses focus, make it uneditable again.
             focusout: (event: FocusEvent, _view: EditorView) => {
@@ -1776,10 +1778,10 @@ export const scroll_to_line = (
     if (scroll_line !== undefined) {
         // With line wrapping enabled, the only source of horizontal scroll is a
         // doc block containing a long, non-wrapping line. CodeMirror's
-        // `scrollIntoView` can't measure a position inside such a block reliably
-        // and pins `scrollLeft` to its maximum regardless of the `x` option. We
-        // only want to scroll vertically, so capture the horizontal position now
-        // and restore it after the dispatch.
+        // `scrollIntoView` can't measure a position inside such a block
+        // reliably and pins `scrollLeft` to its maximum regardless of the `x`
+        // option. We only want to scroll vertically, so capture the horizontal
+        // position now and restore it after the dispatch.
         const prev_scroll_left = current_view?.scrollDOM.scrollLeft;
         requestAnimationFrame(() => {
             if (current_view) {

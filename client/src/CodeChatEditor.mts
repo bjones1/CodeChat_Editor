@@ -749,8 +749,7 @@ on_dom_content_loaded(async () => {
     // Intercept links in this document to save before following the link.
     window.navigation.addEventListener("navigate", on_navigate);
     const ccb = document.getElementById("CodeChat-sidebar") as
-        | HTMLIFrameElement
-        | undefined;
+        HTMLIFrameElement | undefined;
     ccb?.contentWindow?.navigation.addEventListener("navigate", on_navigate);
     document.addEventListener("click", on_click);
     // Provide basic error reporting for uncaught errors.

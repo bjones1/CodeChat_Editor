@@ -30,6 +30,9 @@ Changelog
 * Fix keyboard navigation -- moving between doc blocks and code blocks with
   arrow keys is now supported.
 * Fix regression -- `id` attributes on HTML elements are no longer blocked.
+* Fix unexpected scrolling when editing doc blocks which exceed the screen
+  height.
+* Update the delimiter when a doc block is updated.
 
 Version 0.1.58 -- 2026-Jun-26
 -----------------------------
