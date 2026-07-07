@@ -33,8 +33,10 @@ Changelog
 * Fix unexpected scrolling when editing doc blocks which exceed the screen
   height.
 * Update the delimiter when a doc block is updated.
+* Remove highlight around the a doc block when it's being edited, which hides
+  the cursor when the cursor is at the beginning of the line.
 
-Version 0.1.58 -- 2026-Jun-26
+Version 0.1.59 -- 2026-Jun-26
 -----------------------------
 
 * Block malicious HTML in source code/Markdown documents.

@@ -814,7 +814,7 @@ const on_dirty = (
 // the block's contents div (the `focusin` handler promotes it to TinyMCE). This
 // keeps a single focus path -- the same one used for mouse clicks and
 // IDE-driven cursor sync.
-
+//
 // Given a doc position `pos`, return the range (`from`/`to`) of the doc block
 // that starts exactly at `pos`, or `null` if there isn't one. Doc blocks can
 // sit back-to-back (sharing a boundary position with a neighboring doc block),
@@ -927,14 +927,13 @@ export const docBlockNavKeymap = keymap.of([
     {
         // Left arrow next to a doc block. CodeMirror's default cursor motion
         // treats a doc block's `Decoration.replace` widget as atomic, so a
-        // single ArrowLeft press from anywhere on the following code block's
-        // first line jumps straight past that line's start and into the doc
-        // block, skipping the "beginning of the code block" stop entirely.
-        // Intercept the press instead: if the cursor isn't already at the
-        // line's start, stop it there ourselves (this is the first press); only
-        // if the cursor is already at the line's start (a second, subsequent
-        // press) do we enter the preceding doc block, with the caret at its
-        // end.
+        // single ArrowLeft press from the position right after the following
+        // code block's first line start (`line.from + 1`) jumps straight past
+        // that line's start and into the doc block, skipping the "beginning of
+        // the code block" stop entirely. Intercept only that specific press:
+        // land the cursor at the line's start instead. Every other position on
+        // the line (including the start itself, on a subsequent press) falls
+        // through to normal handling below.
         key: "ArrowLeft",
         run: (view) => {
             const { main } = view.state.selection;
@@ -942,11 +941,12 @@ export const docBlockNavKeymap = keymap.of([
                 return false;
             }
             const line = view.state.doc.lineAt(main.head);
-            if (main.head !== line.from) {
-                // Not yet at the line's start. If a doc block ends exactly at
-                // this line's start, the default motion would jump straight
-                // into it; land the cursor at the line's start instead, so a
-                // further ArrowLeft press is needed to enter the doc block.
+            if (main.head === line.from + 1) {
+                // One character away from the line's start. If a doc block
+                // ends exactly at this line's start, the default motion would
+                // jump straight into it; land the cursor at the line's start
+                // instead, so a further ArrowLeft press is needed to enter the
+                // doc block.
                 if (doc_block_ending_at(view, line.from) !== null) {
                     view.dispatch({
                         selection: { anchor: line.from },
@@ -956,7 +956,10 @@ export const docBlockNavKeymap = keymap.of([
                 }
                 return false;
             }
-            const range = doc_block_ending_at(view, main.head - 1);
+            if (main.head !== line.from) {
+                return false;
+            }
+            const range = doc_block_ending_at(view, main.head);
             return range !== null
                 ? select_doc_block_edge(view, range.to)
                 : false;
@@ -968,7 +971,14 @@ export const docBlockNavKeymap = keymap.of([
         // means "stay on this line," so if a doc block ends exactly at the
         // line's start, always stop the cursor there ourselves instead of
         // letting the default motion (or `DocBlockPlugin.update`) treat it as
-        // entry into that doc block.
+        // entry into that doc block. This includes the case where the cursor
+        // is already at the line's start (a second, redundant Home press):
+        // even though the selection doesn't move, we still need to dispatch
+        // with `stayInCodeBlockAnnotation` so `DocBlockPlugin.update` doesn't
+        // treat the (unchanged) selection as entry into the preceding doc
+        // block -- falling through to `false` here would let the default Home
+        // command dispatch a plain selection update instead, without that
+        // annotation.
         key: "Home",
         run: (view) => {
             const { main } = view.state.selection;
@@ -976,10 +986,7 @@ export const docBlockNavKeymap = keymap.of([
                 return false;
             }
             const line = view.state.doc.lineAt(main.head);
-            if (
-                main.head !== line.from &&
-                doc_block_ending_at(view, line.from) !== null
-            ) {
+            if (doc_block_ending_at(view, line.from) !== null) {
                 view.dispatch({
                     selection: { anchor: line.from },
                     annotations: stayInCodeBlockAnnotation.of(true),
