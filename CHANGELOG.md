@@ -22,6 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+* No changes.
+
+Version 0.1.60 -- 2026-Jul-07
+-----------------------------
+
 * Fix [#113](https://github.com/bjones1/CodeChat_Editor/issues/113) -- when
   selecting a doc block in the IDE that contains a line wider than the Client's
   view, the Client scrolled the horizontal scrollbar all the way to the end of

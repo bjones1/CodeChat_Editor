@@ -80,6 +80,7 @@ Implementation
     * [Cargo.toml](extensions/VSCode/Cargo.toml)
     * [Developer documentation](extensions/VSCode/developer.md)
 * Development tools
+  * [CLAUDE.md](CLAUDE.md)
   * Builder
     * [builder/Cargo.toml](builder/Cargo.toml)
     * [builder/src/main.rs](builder/src/main.rs)
