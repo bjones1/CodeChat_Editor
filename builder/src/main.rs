@@ -380,7 +380,7 @@ fn run_install(dev: bool) -> io::Result<()> {
         cargo fetch --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo fetch";
         cargo fetch --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo fetch"
+        info "test_utils: cargo fetch";
         cargo fetch --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo fetch";
         cargo fetch;
@@ -437,7 +437,7 @@ fn run_update() -> io::Result<()> {
         cargo update --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo update";
         cargo update --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo update"
+        info "test_utils: cargo update";
         cargo update --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo update";
         cargo update;
@@ -450,7 +450,7 @@ fn run_update() -> io::Result<()> {
         cargo outdated --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo outdated";
         cargo outdated --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo outdated"
+        info "test_utils: cargo outdated";
         cargo outdated --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo outdated";
         cargo outdated;
@@ -476,7 +476,7 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         info "VSCode extension: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$VSCODE_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo clippy and fmt"
+        info "test_utils: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$TEST_UTILS_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
 
@@ -486,7 +486,7 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cargo audit --file=$BUILDER_PATH/Cargo.lock --no-fetch;
         info "VSCode extension: cargo audit";
         cargo audit --file=$VSCODE_PATH/Cargo.lock --no-fetch;
-        info "test_utils: cargo audit"
+        info "test_utils: cargo audit";
         cargo audit --file=$TEST_UTILS_PATH/Cargo.lock --no-fetch;
 
         info "cargo sort";
@@ -497,8 +497,8 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cd $VSCODE_PATH;
         info "VSCode extension: cargo sort";
         cargo sort $check;
-        info "test_utils: cargo sort"
-        cd $TEST_UTILS_PATH;
+        info "test_utils: cargo sort";
+        cd ../$TEST_UTILS_PATH;
         cargo sort $check;
 
     )?;
@@ -526,7 +526,7 @@ fn run_test() -> io::Result<()> {
         cargo test --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo test";
         cargo test --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo test"
+        info "test_utils: cargo test";
         cargo test --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo test";
         cargo test;
