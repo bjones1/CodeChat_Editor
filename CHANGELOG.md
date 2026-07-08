@@ -24,7 +24,7 @@ Changelog
 
 * No changes.
 
-Version 0.1.60 -- 2026-Jul-07
+Version 0.1.60 -- 2026-Jul-08
 -----------------------------
 
 * Fix [#113](https://github.com/bjones1/CodeChat_Editor/issues/113) -- when

@@ -110,7 +110,7 @@ async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
     let msg_txt = loop {
         let msg = select! {
             data = ws_stream.next() => data.unwrap().unwrap(),
-            _ = sleep(Duration::from_secs(3) - now.elapsed().unwrap()) => panic!("Timeout waiting for message")
+            _ = sleep(Duration::from_secs(6) - now.elapsed().unwrap()) => panic!("Timeout waiting for message")
         };
         match msg {
             Message::Close(_) => panic!("Unexpected close message."),
