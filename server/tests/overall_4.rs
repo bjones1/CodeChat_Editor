@@ -737,7 +737,33 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
         .perform()
         .await
         .unwrap();
-    assert_cursor_line(&codechat_server, &mut client_id, &path_str, 8).await;
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(8)),
+            scroll_position: None,
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.to_string(),
+                cursor_position: Some(CursorPosition::Line(8)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    //client_id += MESSAGE_ID_INCREMENT;
 
     // `Line(8)` only proves the caret is somewhere on the paragraph's *last*
     // source line -- it can't distinguish that line's start from its end.

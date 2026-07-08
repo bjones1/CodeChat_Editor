@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, WebDriver, error::WebDriverError};
+use thirtyfour::{By, WebDriver, error::WebDriverError, extensions::query::ElementQueryable};
 
 // ### Local
 use crate::overall_common::{
@@ -229,7 +229,7 @@ async fn test_5_core(
     assert_eq!(client_id, 7.0);
 
     // Refind it, since it's now switched with a TinyMCE editor.
-    let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
     // Make an edit.
     tinymce_contents.send_keys("foo").await.unwrap();
 
