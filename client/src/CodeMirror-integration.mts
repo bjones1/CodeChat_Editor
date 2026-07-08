@@ -807,13 +807,37 @@ const on_dirty = (
 //
 // Doc blocks are `Decoration.replace` widgets drawn over empty lines in the
 // document, so CodeMirror's default cursor movement treats them as an atomic
-// region and arrow keys skip over them to the next code block. The keymap below
-// intercepts the arrow keys and, when the cursor would move into a doc block,
-// dispatches a CodeMirror selection into that block's range instead. That
-// selection change is then picked up by `DocBlockPlugin.update`, which focuses
-// the block's contents div (the `focusin` handler promotes it to TinyMCE). This
-// keeps a single focus path -- the same one used for mouse clicks and
-// IDE-driven cursor sync.
+// region and arrow keys (mostly) skip over them to the next code block.
+//
+// ### Specification
+//
+// The requirements for correct keyboard cursor navigation are:
+//
+// * When the cursor is located at the beginning of a code/doc block preceded by
+//   a code/doc block, pressing the left arrow key should move the cursor to the
+//   end of the preceding code/doc block.
+// * When the cursor is located on the first line of a code/doc block preceded
+//   by a code/doc block, pressing the up arrow key should move the cursor into
+//   the last line of the preceding code/doc block, moving the cursor as little
+//   horizontally as possible.
+// * When the cursor is located at the end of a code/doc block followed by a
+//   code/doc block, pressing the right arrow key should move the cursor to the
+//   beginning of the following code/doc block.
+// * When the cursor is located on the last line of a code/doc block followed by
+//   a code/doc block, pressing the down arrow key should move the cursor to the
+//   following code/doc block, moving the cursor as little horizontally as
+//   possible.
+// * Pressing the PageUp/PageDown keys should move the cursor by viewport,
+//   rather than limited cursor movement within the current code/doc block.
+//
+// ### Implementation notes
+//
+// The keymap below intercepts the arrow keys and, when the cursor would move
+// into a doc block, dispatches a CodeMirror selection into that block's range
+// instead. That selection change is then picked up by `DocBlockPlugin.update`,
+// which focuses the block's contents div (the `focusin` handler promotes it to
+// TinyMCE). This keeps a single focus path -- the same one used for mouse
+// clicks and IDE-driven cursor sync.
 //
 // Given a doc position `pos`, return the range (`from`/`to`) of the doc block
 // that starts exactly at `pos`, or `null` if there isn't one. Doc blocks can
@@ -822,7 +846,9 @@ const on_dirty = (
 // touches `pos` -- otherwise, at a shared boundary, the block ending at `pos`
 // could be returned instead of the one starting there.
 const doc_block_starting_at = (
+    // The CodeMirror view whose doc blocks are searched.
     view: EditorView,
+    // The document position to check for a doc block starting there.
     pos: number,
 ): { from: number; to: number } | null => {
     let found: { from: number; to: number } | null = null;
@@ -866,19 +892,12 @@ const select_doc_block_edge = (view: EditorView, pos: number): boolean => {
 export const docBlockNavKeymap = keymap.of([
     {
         // Down arrow at the bottom of a code block: enter the doc block below,
-        // caret at its start. Look right after the current line's contents,
-        // which is where a following doc block's decoration would begin. A
-        // line's `.to` is the position of (before) its own trailing newline;
-        // the doc block placeholder that follows starts one position later,
-        // right after that newline -- hence `+ 1` (see the matching
-        // `main.head + 1` in the `ArrowRight` handler below, which lands on the
-        // same position). Chaining from one doc block into the next (once focus
-        // has actually entered a doc block) happens outside CodeMirror entirely
-        // -- see `DocBlockPlugin`'s `focusin` handler -- so this keymap only
-        // ever needs to handle the first entry from a code line; a `main.head`
-        // that happens to equal a doc block's `to` (this doc block's own
-        // placeholder boundary) is just the following code line's start, not a
-        // sign we're "already chained" out of it.
+        // caret at its start. A line's `.to` sits just before its trailing
+        // newline, so the following doc block's placeholder starts one position
+        // later -- hence `+ 1` (matches `main.head + 1` in the `ArrowRight`
+        // handler below). Chaining from one doc block into the next happens
+        // outside CodeMirror, in `DocBlockPlugin`'s `focusin` handler, so this
+        // only needs to handle first entry from a code line.
         key: "ArrowDown",
         run: (view) => {
             const { main } = view.state.selection;
@@ -942,9 +961,9 @@ export const docBlockNavKeymap = keymap.of([
             }
             const line = view.state.doc.lineAt(main.head);
             if (main.head === line.from + 1) {
-                // One character away from the line's start. If a doc block
-                // ends exactly at this line's start, the default motion would
-                // jump straight into it; land the cursor at the line's start
+                // One character away from the line's start. If a doc block ends
+                // exactly at this line's start, the default motion would jump
+                // straight into it; land the cursor at the line's start
                 // instead, so a further ArrowLeft press is needed to enter the
                 // doc block.
                 if (doc_block_ending_at(view, line.from) !== null) {
@@ -967,18 +986,14 @@ export const docBlockNavKeymap = keymap.of([
     },
     {
         // Home on a code line: same atomic-widget problem as ArrowLeft above,
-        // but with no "second press" case to fall through to -- Home always
-        // means "stay on this line," so if a doc block ends exactly at the
-        // line's start, always stop the cursor there ourselves instead of
-        // letting the default motion (or `DocBlockPlugin.update`) treat it as
-        // entry into that doc block. This includes the case where the cursor
-        // is already at the line's start (a second, redundant Home press):
-        // even though the selection doesn't move, we still need to dispatch
-        // with `stayInCodeBlockAnnotation` so `DocBlockPlugin.update` doesn't
-        // treat the (unchanged) selection as entry into the preceding doc
-        // block -- falling through to `false` here would let the default Home
-        // command dispatch a plain selection update instead, without that
-        // annotation.
+        // but with no "second press" case -- Home always means "stay on this
+        // line," so if a doc block ends exactly at the line's start, always
+        // stop the cursor there ourselves, dispatching with
+        // `stayInCodeBlockAnnotation` even when the selection doesn't move (a
+        // redundant Home press), so `DocBlockPlugin.update` doesn't treat it as
+        // entry into the preceding doc block. Falling through to `false` here
+        // would let the default Home command dispatch a plain selection update
+        // instead, without that annotation.
         key: "Home",
         run: (view) => {
             const { main } = view.state.selection;
