@@ -33,7 +33,11 @@ use std::path::PathBuf;
 use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, WebDriver, error::WebDriverError, extensions::query::ElementQueryable};
+use thirtyfour::{
+    By, WebDriver,
+    error::WebDriverError,
+    extensions::query::{ElementQueryable, ElementWaitable},
+};
 
 // ### Local
 use crate::overall_common::{
@@ -206,7 +210,11 @@ async fn test_5_core(
     select_codechat_iframe(&driver).await;
 
     // Focus it.
-    let doc_block_contents = driver.find(By::Css(".CodeChat-doc")).await.unwrap();
+    let doc_block_contents = driver
+        .query(By::Css(".CodeChat-doc"))
+        .first()
+        .await
+        .unwrap();
     doc_block_contents.click().await.unwrap();
     // The click produces an updated cursor/scroll location after an autosave
     // delay.
@@ -230,6 +238,10 @@ async fn test_5_core(
 
     // Refind it, since it's now switched with a TinyMCE editor.
     let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
+    // Wait for it to become clickable before interacting with it, since the
+    // switch from the doc block to the TinyMCE editor can leave the element
+    // briefly present but not yet interactable.
+    tinymce_contents.wait_until().clickable().await.unwrap();
     // Make an edit.
     tinymce_contents.send_keys("foo").await.unwrap();
 
