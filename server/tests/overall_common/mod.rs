@@ -52,6 +52,7 @@ use assert_fs::TempDir;
 use dunce::canonicalize;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
+use serde_json::Value;
 use thirtyfour::{
     BrowserLogEntry, By, ChromiumLikeCapabilities, DesiredCapabilities, Key, LoggingPrefsLogLevel,
     TypingData, WebDriver, WebElement, error::WebDriverError,
@@ -361,6 +362,44 @@ pub async fn harness<
                     ))))
 }
 
+/// Decode a `BrowserLogEntry::message` produced by a `console.*` call.
+/// chromedriver formats these as
+/// `<source-url> <line>:<column> <serialized message>`, where the serialized
+/// message is the JSON encoding of each argument passed to `console.*`
+/// (strings included, hence the embedded quotes/escapes). Strip the
+/// `<source-url> <line>:<column>` prefix and decode the remainder, falling
+/// back to the raw message if it doesn't match the expected shape.
+fn decode_console_message(message: &str) -> String {
+    // Split off the `<source-url> <line>:<column>` prefix: the first two
+    // whitespace-separated fields.
+    let mut parts = message.splitn(3, ' ');
+    let (Some(_source_url), Some(_line_col), Some(serialized)) =
+        (parts.next(), parts.next(), parts.next())
+    else {
+        return message.to_string();
+    };
+
+    // The serialized message is a whitespace-separated sequence of
+    // JSON-encoded values (one per `console.*` argument). Decode each,
+    // rendering strings without their surrounding quotes and falling back to
+    // the raw text for anything that isn't valid JSON.
+    let mut decoded_parts = Vec::new();
+    let mut deserializer = serde_json::Deserializer::from_str(serialized).into_iter::<Value>();
+    for value in &mut deserializer {
+        match value {
+            Ok(Value::String(s)) => decoded_parts.push(s),
+            Ok(other) => decoded_parts.push(other.to_string()),
+            Err(_) => return message.to_string(),
+        }
+    }
+    // If there's leftover, unparsed text, give up and return the raw message.
+    if !serialized[deserializer.byte_offset()..].trim().is_empty() {
+        return message.to_string();
+    }
+
+    decoded_parts.join(" ")
+}
+
 /// Drain the browser's `console.*` / uncaught-error log buffer, re-emit each
 /// entry through the Rust `tracing` macros (mapping the Selenium log level to
 /// the closest Rust log level), and return the drained entries so callers can
@@ -381,7 +420,11 @@ async fn forward_browser_logs(driver: &WebDriver) -> Vec<BrowserLogEntry> {
     for entry in &entries {
         // chromedriver emits SCREAMING levels (`SEVERE`, `WARNING`, `INFO`,
         // `DEBUG`, `FINE`, ...). Map them onto Rust log levels.
-        let msg = format!("JS console [{}]: {}", entry.level, entry.message);
+        let msg = format!(
+            "JS console [{}]: {}",
+            entry.level,
+            decode_console_message(&entry.message)
+        );
         match entry.level.as_str() {
             "SEVERE" => error!("{msg}"),
             "WARNING" => warn!("{msg}"),

@@ -1707,6 +1707,11 @@ export const CodeMirror_load = async (
             scrollTo: scrollSnapshot,
         });
     } else {
+        // When editing large doc blocks, they may be deleted then re-created by
+        // CodeMirror, which causes unexpected scrolling. To avoid this, save
+        // then restore the scroll after updating CodeMirror.
+        const currentScrollTop = current_view.scrollDOM.scrollTop;
+
         // This contains a diff, instead of plain text. Apply the text diff.
         //
         // First, apply just the text edits. Use an annotation so that the doc
@@ -1749,6 +1754,11 @@ export const CodeMirror_load = async (
             effects: stateEffects,
             annotations: noAutosaveAnnotation.of(true),
         });
+
+        // Restore the scroll position.
+        requestAnimationFrame(
+            () => (current_view.scrollDOM.scrollTop = currentScrollTop),
+        );
     }
     scroll_to_line(cursor_position, scroll_line);
 };
