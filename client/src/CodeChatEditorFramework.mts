@@ -440,12 +440,12 @@ const set_content = async (
     if (client === undefined) {
         // See if this is the [simple viewer](#Client-simple-viewer). Otherwise,
         // it's just the bare document to replace.
+        const contentsElement =
+            root_iframe!.contentDocument?.getElementById("CodeChat-contents");
         const cw =
-            (
-                root_iframe!.contentDocument?.getElementById(
-                    "CodeChat-contents",
-                ) as HTMLIFrameElement | undefined
-            )?.contentWindow ?? root_iframe!.contentWindow!;
+            (contentsElement instanceof HTMLIFrameElement
+                ? contentsElement.contentWindow
+                : undefined) ?? root_iframe!.contentWindow!;
         cw.document.open();
         assert("Plain" in contents.source);
         cw.document.write(contents.source.Plain.doc);
@@ -489,9 +489,9 @@ export const page_init = (
         webSocketComm = new WebSocketComm(
             `${protocol}//${window.location.host}/${ws_pathname}`,
         );
-        root_iframe = document.getElementById(
-            "CodeChat-iframe",
-        )! as HTMLIFrameElement;
+        const iframe_element = document.getElementById("CodeChat-iframe");
+        assert(iframe_element instanceof HTMLIFrameElement);
+        root_iframe = iframe_element;
         window.CodeChatEditorFramework = {
             webSocketComm,
         };

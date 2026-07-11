@@ -288,9 +288,8 @@ const _open_lp = async (
         // variable.
         current_metadata = codechat_for_web["metadata"];
         const source = codechat_for_web["source"];
-        const codechat_body = document.getElementById(
-            "CodeChat-body",
-        ) as HTMLDivElement;
+        const codechat_body = document.getElementById("CodeChat-body");
+        assert(codechat_body instanceof HTMLDivElement);
         if (is_doc_only()) {
             // Per the
             // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
@@ -439,9 +438,8 @@ const save_lp = async (
         let code_mirror_diffable: CodeMirrorDiffable = {};
         if (is_doc_only()) {
             // Untypeset all math before saving the document.
-            const codechat_body = document.getElementById(
-                "CodeChat-body",
-            ) as HTMLDivElement;
+            const codechat_body = document.getElementById("CodeChat-body");
+            assert(codechat_body instanceof HTMLDivElement);
             mathJaxUnTypeset(codechat_body);
             // Use a try/finally to ensure that the document is retypeset even
             // if errors occur.
@@ -496,15 +494,13 @@ export const saveSelection = () => {
             let current_node = sel.anchorNode;
             // Continue until we find the div which contains the doc block
             // contents: either it's not an element (such as a div), ...
-            current_node.nodeType !== Node.ELEMENT_NODE ||
+            !(current_node instanceof Element) ||
             // or it's not the doc block contents div.
-            (!(current_node as Element).classList.contains(
-                "CodeChat-doc-contents",
-            ) &&
+            (!current_node.classList.contains("CodeChat-doc-contents") &&
                 // Sometimes, the parent of a custom node (`wc-mermaid`) skips
                 // the TinyMCE div and returns the overall div. I don't know
                 // why.
-                !(current_node as Element).classList.contains("CodeChat-doc"));
+                !current_node.classList.contains("CodeChat-doc"));
             current_node = current_node.parentNode!
         ) {
             // Store the index of this node in its' parent list of child
@@ -538,15 +534,15 @@ export const restoreSelection = ({
     // Copy the selection over to TinyMCE by indexing the selection path to find
     // the selected node.
     if (selection_path.length && typeof selection_offset === "number") {
-        let selection_node = tinymce_instance()!.getContentAreaContainer();
+        let selection_node: Node =
+            tinymce_instance()!.getContentAreaContainer();
         // Avoid mutating `selection_path` by making a copy of it.
         const selection_path_copy = [...selection_path];
         while (selection_path_copy.length) {
-            const new_selection_node = selection_node.childNodes[
-                selection_path_copy.shift()!
-            ] as HTMLElement;
+            const new_selection_node =
+                selection_node.childNodes[selection_path_copy.shift()!];
             // If we get lost during the descent, then stop just before that.
-            if (new_selection_node === undefined) {
+            if (!(new_selection_node instanceof Node)) {
                 break;
             }
             selection_node = new_selection_node;
@@ -748,9 +744,10 @@ export const on_error = (event: Event) => {
 on_dom_content_loaded(async () => {
     // Intercept links in this document to save before following the link.
     window.navigation.addEventListener("navigate", on_navigate);
-    const ccb = document.getElementById("CodeChat-sidebar") as
-        HTMLIFrameElement | undefined;
-    ccb?.contentWindow?.navigation.addEventListener("navigate", on_navigate);
+    const ccb = document.getElementById("CodeChat-sidebar");
+    if (ccb instanceof HTMLIFrameElement) {
+        ccb.contentWindow?.navigation.addEventListener("navigate", on_navigate);
+    }
     document.addEventListener("click", on_click);
     // Provide basic error reporting for uncaught errors.
     window.addEventListener("unhandledrejection", on_error);

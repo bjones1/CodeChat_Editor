@@ -272,7 +272,8 @@ export const docBlockField = StateField.define<DecorationSet>({
                 if (newlines !== "\n".repeat(newlines.length)) {
                     halt_on_error(`Attempt to overwrite text: "${newlines}".`);
                 }
-                const prev_widget = prev.spec.widget as DocBlockWidget;
+                const prev_widget = prev.spec.widget;
+                assert(prev_widget instanceof DocBlockWidget);
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
@@ -328,7 +329,8 @@ export const docBlockField = StateField.define<DecorationSet>({
     toJSON: (value: DecorationSet, _state: EditorState) => {
         const json_result = [];
         for (const iter = value.iter(); iter.value !== null; iter.next()) {
-            const w = iter.value.spec.widget as DocBlockWidget;
+            const w = iter.value.spec.widget;
+            assert(w instanceof DocBlockWidget);
             json_result.push([
                 iter.from,
                 iter.to,
@@ -512,7 +514,9 @@ class DocBlockWidget extends WidgetType {
         // sanitized: the server only allows whitespace for the indent; only
         // specific, safe delimiters are allowed. The Client only allows editing
         // the indent, and only whitespace is allowed there as well.
-        (dom.childNodes[0] as HTMLDivElement).innerHTML = this.indent;
+        const dom_indent = dom.childNodes[0];
+        assert(dom_indent instanceof HTMLDivElement);
+        dom_indent.innerHTML = this.indent;
         dom.dataset.delimiter = this.delimiter;
 
         // Update the contents. The contents div could be a TinyMCE instance, or
@@ -690,8 +694,9 @@ export const mathJaxUnTypeset = (node: HTMLElement) => {
 
 // Given a doc block div element, return the contents div and if TinyMCE is
 // attached to that div.
-const get_contents = (element: HTMLElement): [HTMLDivElement, boolean] => {
-    const contents_div = element.childNodes[1] as HTMLDivElement;
+const get_contents = (element: Element): [HTMLDivElement, boolean] => {
+    const contents_div = element.childNodes[1];
+    assert(contents_div instanceof HTMLDivElement);
     const tinymce_inst = tinymce?.get(contents_div.id);
     // Note the use of `!=` to check both `undefined` (TinyMCE not loaded) and
     // `null`.
@@ -702,15 +707,14 @@ const get_contents = (element: HTMLElement): [HTMLDivElement, boolean] => {
 // block or not. If not, return false; if so, return the doc block div.
 const element_is_in_doc_block = (
     target: EventTarget | null,
-): boolean | HTMLDivElement => {
-    if (target === null) {
-        return false;
-    }
-    // Look for either a CodeMirror ancestor or a CodeChat doc block ancestor.
-    const ancestor = (target as HTMLElement).closest(".cm-line, .CodeChat-doc");
-    // If it's a doc block, then tell Code Mirror not to handle this event.
-    if (ancestor?.classList.contains("CodeChat-doc")) {
-        return ancestor as HTMLDivElement;
+): boolean | Element => {
+    if (target instanceof HTMLElement) {
+        // Look for either a CodeMirror ancestor or a CodeChat doc block ancestor.
+        const ancestor = target.closest(".cm-line, .CodeChat-doc");
+        // If it's a doc block, then tell CodeMirror not to handle this event.
+        if (ancestor?.classList.contains("CodeChat-doc")) {
+            return ancestor;
+        }
     }
     return false;
 };
@@ -753,9 +757,7 @@ const on_dirty = (
     whenReady(async () => {
         on_dirty_scheduled = false;
         // Find the doc block parent div.
-        const target = (event_target as HTMLDivElement).closest(
-            ".CodeChat-doc",
-        )! as HTMLDivElement;
+        const target = event_target.closest(".CodeChat-doc")!;
 
         // We can only get the position (the `from` value) for the doc block.
         // Use this to find the `to` value for the doc block.
@@ -767,7 +769,8 @@ const on_dirty = (
             return;
         }
         // Send an update to the state field associated with this DOM element.
-        const indent_div = target.childNodes[0] as HTMLDivElement;
+        const indent_div = target.childNodes[0];
+        assert(indent_div instanceof HTMLDivElement);
         const indent = indent_div.innerHTML;
         const delimiter = indent_div.getAttribute("data-delimiter")!;
         const [contents_div, is_tinymce] = get_contents(target);
@@ -834,7 +837,7 @@ const on_dirty = (
 //
 // The keymap below intercepts the arrow keys and, when the cursor would move
 // into a doc block, dispatches a CodeMirror selection into that block's range
-// instead. That selection change is then picked up by `DocBlockPlugin.update`,
+// instead. That selection change is then picked up by `DocBlockPlugin.update`,
 // which focuses the block's contents div (the `focusin` handler promotes it to
 // TinyMCE). This keeps a single focus path -- the same one used for mouse
 // clicks and IDE-driven cursor sync.
@@ -1028,11 +1031,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 // by the inline `onmousedown` handler in
                 // `DocBlockWidget.toDOM`), don't steal it away into the
                 // contents div.
-                if (
-                    (document.activeElement as HTMLElement | null)?.closest(
-                        ".CodeChat-doc-indent",
-                    )
-                ) {
+                if (document.activeElement?.closest(".CodeChat-doc-indent")) {
                     return;
                 }
                 // If one of this update's transactions deliberately stopped the
@@ -1070,11 +1069,10 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             // Ensure we have a valid dom. This also checks for
                             // undefined.
                             const dom_at_pos = update.view.domAtPos(from);
-                            const dom = dom_at_pos.node.childNodes[
-                                dom_at_pos.offset
-                            ] as HTMLDivElement | null;
+                            const dom =
+                                dom_at_pos.node.childNodes[dom_at_pos.offset];
                             if (
-                                dom == null ||
+                                !(dom instanceof HTMLElement) ||
                                 dom.className !== "CodeChat-doc"
                             ) {
                                 return;
@@ -1082,7 +1080,8 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
 
                             // Focus the contents div. This fires the `focusin`
                             // handler, which promotes the block to TinyMCE.
-                            const contents = dom.childNodes[1] as HTMLElement;
+                            const contents = dom.childNodes[1];
+                            assert(contents instanceof HTMLDivElement);
                             contents.focus();
 
                             // Place the caret at the natural edge: when the
@@ -1150,13 +1149,15 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
             // update() method above, but this is VERY slow, since update is
             // called frequently.
             focusin: (event: FocusEvent, _view: EditorView) => {
-                const target_or_false = element_is_in_doc_block(event.target);
-                if (!target_or_false) {
+                const event_target = event.target;
+                const target_or_false = element_is_in_doc_block(event_target);
+                if (!(target_or_false instanceof HTMLDivElement)) {
                     return false;
                 }
                 // Set up for editing the indent of doc blocks.
-                const target = target_or_false as HTMLDivElement;
-                const indent_div = target.childNodes[0] as HTMLDivElement;
+                const target = target_or_false;
+                const indent_div = target.childNodes[0];
+                assert(indent_div instanceof HTMLDivElement);
                 // Use the
                 // [beforeinput](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event)
                 // event to allow only whitespace in the indent. Note that
@@ -1182,15 +1183,17 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 );
                 indent_div.addEventListener("input", (event) => {
                     // Signal that this indent is dirty.
-                    on_dirty(event.target as HTMLElement);
+                    const target = event.target;
+                    if (target instanceof HTMLElement) {
+                        on_dirty(target);
+                    }
                 });
 
                 // If the target is in the indent, not the contents, then the
                 // following code isn't needed.
                 if (
-                    (event.target as HTMLElement).closest(
-                        ".CodeChat-doc-contents",
-                    ) === null
+                    !(event_target instanceof HTMLDivElement) ||
+                    event_target.closest(".CodeChat-doc-contents") === null
                 ) {
                     return false;
                 }
@@ -1306,7 +1309,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                             // div TinyMCE stores edits in.
                                             const target =
                                                 event.target.bodyElement;
-                                            if (target == null) {
+                                            if (target === null) {
                                                 return;
                                             }
                                             if (!ignoreTinyMceDirty) {
@@ -1316,13 +1319,12 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                     );
 
                                     editor.on("input", (event: InputEvent) => {
-                                        const target =
-                                            event.target as HTMLElement;
-                                        if (target == null) {
-                                            return;
+                                        const target = event.target;
+                                        // Sometimes, I see non-elements here.
+                                        if (target instanceof HTMLElement) {
+                                            ignoreTinyMceDirty = true;
+                                            on_dirty(target);
                                         }
-                                        ignoreTinyMceDirty = true;
-                                        on_dirty(target);
                                     });
 
                                     // Send updates on cursor movement.
@@ -1446,13 +1448,13 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
             //
             // Once the indent loses focus, make it uneditable again.
             focusout: (event: FocusEvent, _view: EditorView) => {
-                const indent_div = (event.target as HTMLElement)?.closest(
-                    ".CodeChat-doc-indent",
-                ) as HTMLDivElement | null;
-                if (indent_div === null) {
-                    return false;
+                const target = event.target;
+                if (target instanceof HTMLElement) {
+                    const indent_div = target.closest(".CodeChat-doc-indent");
+                    if (indent_div instanceof HTMLElement) {
+                        indent_div.contentEditable = "false";
+                    }
                 }
-                indent_div.contentEditable = "false";
                 return false;
             },
         },
@@ -1697,8 +1699,10 @@ export const CodeMirror_load = async (
             },
             CodeMirror_JSON_fields,
         );
+        const codechat_div = codechat_body.childNodes[0];
+        assert(codechat_div instanceof HTMLDivElement);
         current_view = new EditorView({
-            parent: codechat_body.childNodes[0] as HTMLDivElement,
+            parent: codechat_div,
             state,
             scrollTo: scrollSnapshot,
         });
