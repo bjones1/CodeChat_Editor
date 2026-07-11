@@ -22,7 +22,9 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* No changes.
+* Fix unexpected scrolling when server updates are applied to a doc block that
+  exceeds the screen height.
+* Fix errors due to incorrect TypeScript typecasts.
 
 Version 0.1.60 -- 2026-Jul-08
 -----------------------------
