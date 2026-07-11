@@ -358,67 +358,6 @@ async fn test_horizontal_scroll_preserved_core(
 
 make_test!(test_arrow_key_navigation, test_arrow_key_navigation_core);
 
-// Regression test replacing the old Client-only unit test (which drove
-// `docBlockNavKeymap` directly by calling `runScopeHandlers` on a bare
-// CodeMirror instance, with hand-built `doc`/`doc_blocks` data). That approach
-// never reflected real behavior: its synthetic `doc` string collapsed a code
-// line's own trailing newline with the following doc block's placeholder
-// newline (e.g. `"a\nb\n\nc"`, where offset 3 -- "b"'s own newline -- doubled
-// as doc block 1's placeholder). The real Server never produces this shape:
-// it always appends each doc block's placeholder newline(s) *in addition to*
-// the preceding code block's own trailing newline (see the comment above
-// `source.push_str(&"\n".repeat(doc_block.lines))` in
-// `processing.rs::source_to_codechat_for_web`).
-//
-// Against a real document, that one-character difference used to matter:
-// `docBlockNavKeymap`'s `ArrowDown` handler computed
-// `search_pos = lineAt(main.head).to`, which lands on the code line's own
-// newline -- one position *before* where the doc block actually starts -- so
-// the lookup never matched, the keymap reported the key unhandled, and
-// CodeMirror's default `ArrowDown` jumped straight over the (atomic) doc block
-// widgets to the next real code line instead. This was a real, reproducible
-// off-by-one bug the old synthetic test could never have caught; it's now
-// fixed by using `lineAt(main.head).to + 1`, matching the `main.head + 1`
-// already used by the analogous `ArrowRight` handler. `ArrowUp`'s
-// `search_pos = lineAt(main.head).from` never had this problem, since a doc
-// block's placeholder newline(s) sit immediately before the following code
-// line with nothing in between.
-//
-// Fixing the off-by-one also exposed a second, related bug: both handlers had
-// a "chained navigation" branch that checked whether `main.head` already sat
-// at a doc block boundary, to decide whether this was a continued chain
-// through consecutive doc blocks rather than a fresh entry from a code line.
-// But `main.head` sitting at a doc block's boundary is exactly what a fresh
-// arrival at the neighboring code line's edge looks like too (a doc block's
-// `to` is numerically identical to the following code line's `from`), so the
-// branch misfired on fresh entries, treating them as chained and skipping
-// straight past the intended doc block. In practice this branch was
-// unreachable for its intended purpose anyway: chaining between two
-// consecutive, already-focused doc blocks happens entirely outside CodeMirror
-// (via the browser's native contenteditable caret handling and
-// `DocBlockPlugin`'s `focusin` promotion -- see the comment further below),
-// so by the time a second consecutive doc-block-entering keypress could
-// occur, CodeMirror would no longer even have focus for `docBlockNavKeymap`
-// to run. Both handlers now just look at the fixed boundary position with no
-// "chained" special case.
-//
-// This test drives real keyboard input through WebDriver, so each
-// `ArrowDown`/`ArrowUp` goes wherever the browser's actual focus is -- exactly
-// as a user's keystrokes would -- rather than assuming CodeMirror stays
-// focused across every keypress the way the old test did. It uses the same
-// document shape as the old test: a code block (`a`, `b`), two consecutive
-// one-line doc blocks with different indents (so they remain separate blocks
-// -- see the merge rule in `lexer.rs`), then another code block (`c`).
-//
-// After each keypress, the test waits for the autosave timer to fire and
-// checks the `cursor_position` the Client reports back to the IDE. A doc
-// block's cursor is computed from `document.activeElement` client-side (see
-// `set_CodeMirror_positions` in `CodeMirror-integration.mts`) and sent to the
-// Server as a `DomLocation`, which the Server then translates into the
-// doc block's source line number before forwarding to the IDE (see the
-// comment on `CursorPosition::DomLocation` in `webserver.rs`) -- so a `Line`
-// value naming a doc block's line is proof that real DOM focus, not just
-// CodeMirror's internal selection, moved into that block.
 async fn test_arrow_key_navigation_core(
     codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
@@ -619,33 +558,6 @@ make_test!(
 // fact), which isn't enough to catch this -- entering a one-line doc block,
 // its first line and its last line are the same line, so an off-by-one in
 // "first vs. last" can't show up there.
-//
-// This test uses six consecutive comment lines sharing the same indent
-// ("# 3", "#", then four "# <wrapped_line>" lines), which the lexer merges
-// into a *single* six-line doc block (see the check `last_doc_block.indent ==
-// indent && last_doc_block.delimiter == delimiter` in `lexer.rs`, which
-// appends each comment's contents to the previous one rather than starting a
-// new doc block). The blank `#` line forces the Markdown contents to render
-// as two separate paragraphs rather than one line-wrapped paragraph (matching
-// the `// One`, `//`, `// Two` pattern used by the analogous Rust unit test in
-// `processing/tests.rs`); without it, CommonMark would join "3" and the
-// second paragraph into a single visual line, unable to expose a
-// first-vs-last-line bug. The second paragraph's four lines are themselves
-// pre-wrapped (each already at the Server's own word-wrap width for this doc
-// block -- see the `wrapped_line` comment below), so CommonMark's soft-wrap
-// rule joins them into one long visual paragraph *without* the Server's
-// HTML-to-Markdown caret-location logic (`doc_block_html_to_markdown` in
-// `processing.rs`) needing to invent any new line breaks when it re-wraps
-// them to locate the caret. That matters: an *unwrapped* single long source
-// line for this paragraph also fails this test, but for a different reason
-// than a beginning/end caret mix-up -- the re-wrap invents extra line breaks
-// not present in the actual CodeMirror source, inflating the reported line
-// number past the end of the document entirely. Pre-wrapping the source
-// avoids that confound, isolating this test to the beginning-vs-end caret
-// question alone; both the line-number check and a direct DOM caret-position
-// check below pass under these conditions, indicating that particular defect
-// doesn't reproduce here. That doc block spans CodeMirror lines 3-8; the
-// following code line "c" is line 9.
 async fn test_arrow_key_navigation_multiline_doc_block_core(
     codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
