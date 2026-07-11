@@ -249,9 +249,8 @@ pub enum TranslationResultsString {
 lazy_static! {
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
-    /// <a class="fence-mending-start"></a>If this matches, it means an
-    /// unterminated fenced code block. This should be replaced with the
-    /// `</code></pre>` terminator.
+    /// If this matches, it means an unterminated fenced code block. This should
+    /// be replaced with the `</code></pre>` terminator.
     static ref DOC_BLOCK_SEPARATOR_BROKEN_FENCE: Regex = Regex::new(concat!(
         // Allow the `.` wildcard to match newlines.
         "(?s)",
@@ -315,8 +314,7 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 // The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex.
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
     "</code></pre>\n<CodeChatEditor-separator></CodeChatEditor-separator>\n";
-// <a class="fence-mending-end"></a>
-
+//
 // The column at which to word wrap doc blocks.
 const WORD_WRAP_COLUMN: usize = 80;
 // The minimum width for doc block word wrap, since large indents may leave
@@ -926,7 +924,7 @@ pub fn source_to_codechat_for_web(
             // Convert the Markdown to HTML.
             let html = markdown_to_html(&doc_contents);
 
-            // <a class="fence-mending-start"></a>Break it back into doc blocks:
+            // Break it back into doc blocks:
             //
             // 1. Mend broken fences.
             let html = DOC_BLOCK_SEPARATOR_BROKEN_FENCE
@@ -938,8 +936,7 @@ pub fn source_to_codechat_for_web(
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 4. Split on the separator.
             let mut doc_block_contents_iter = html.split(DOC_BLOCK_SEPARATOR_SPLIT_STRING);
-            // <a class="fence-mending-end"></a>
-
+            //
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             let mut len = len_utf16(&code_mirror.doc);
             for code_or_doc_block in code_doc_block_arr {

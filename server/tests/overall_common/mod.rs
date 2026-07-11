@@ -80,10 +80,10 @@ use test_utils::cast;
 // this wrapper holds the `CodeChatEditorServer` together with a `WebDriver`
 // handle and drains the buffer on every call the test framework makes. Each
 // delegated method forwards to the inner server and, around that call, polls
-// the browser log via [`forward_browser_logs`].
+// the browser log via \[`forward_browser_logs`\].
 //
-// The wrapper exposes the same method names as `CodeChatEditorServer`, so
-// test bodies use it transparently.
+// The wrapper exposes the same method names as `CodeChatEditorServer`, so test
+// bodies use it transparently.
 pub struct CodeChatEditorServerLog {
     inner: CodeChatEditorServer,
     // A `WebDriver` handle used only to read the browser log. `WebDriver` is
@@ -103,9 +103,9 @@ impl CodeChatEditorServerLog {
         forward_browser_logs(&self.driver).await
     }
 
-    // The following methods mirror `CodeChatEditorServer`'s API. Each polls
-    // the browser log so console output is emitted close to when it occurred,
-    // then delegates to the inner server.
+    // The following methods mirror `CodeChatEditorServer`'s API. Each polls the
+    // browser log so console output is emitted close to when it occurred, then
+    // delegates to the inner server.
     pub async fn get_message_timeout(&self, timeout: Duration) -> Option<EditorMessage> {
         let msg = self.inner.get_message_timeout(timeout).await;
         // Waiting for a message is when the browser is most active, so poll
@@ -124,8 +124,8 @@ impl CodeChatEditorServerLog {
         self.inner.send_message_current_file(url).await
     }
 
-    // Used by some test targets but not others; each test binary compiles
-    // this module separately, so it's dead code in the others.
+    // Used by some test targets but not others; each test binary compiles this
+    // module separately, so it's dead code in the others.
     #[allow(dead_code)]
     pub async fn send_message_update_plain(
         &self,
@@ -337,9 +337,9 @@ pub async fn harness<
         let test_result = f(codechat_server, driver_clone.clone(), test_dir).await;
 
         // Drain any JavaScript console output captured during the test and
-        // forward it to Rust logging, then propagate the test's result. Do
-        // this even when the test failed, since the console output often
-        // explains the failure.
+        // forward it to Rust logging, then propagate the test's result. Do this
+        // even when the test failed, since the console output often explains
+        // the failure.
         forward_browser_logs(&driver_clone).await;
 
         test_result?;
@@ -363,12 +363,12 @@ pub async fn harness<
 }
 
 /// Decode a `BrowserLogEntry::message` produced by a `console.*` call.
-/// chromedriver formats these as
-/// `<source-url> <line>:<column> <serialized message>`, where the serialized
-/// message is the JSON encoding of each argument passed to `console.*`
-/// (strings included, hence the embedded quotes/escapes). Strip the
-/// `<source-url> <line>:<column>` prefix and decode the remainder, falling
-/// back to the raw message if it doesn't match the expected shape.
+/// chromedriver formats these as `<source-url> <line>:<column> <serialized
+/// message>`, where the serialized message is the JSON encoding of each
+/// argument passed to `console.*` (strings included, hence the embedded
+/// quotes/escapes). Strip the `<source-url> <line>:<column>` prefix and decode
+/// the remainder, falling back to the raw message if it doesn't match the
+/// expected shape.
 fn decode_console_message(message: &str) -> String {
     // Split off the `<source-url> <line>:<column>` prefix: the first two
     // whitespace-separated fields.
@@ -379,10 +379,10 @@ fn decode_console_message(message: &str) -> String {
         return message.to_string();
     };
 
-    // The serialized message is a whitespace-separated sequence of
-    // JSON-encoded values (one per `console.*` argument). Decode each,
-    // rendering strings without their surrounding quotes and falling back to
-    // the raw text for anything that isn't valid JSON.
+    // The serialized message is a whitespace-separated sequence of JSON-encoded
+    // values (one per `console.*` argument). Decode each, rendering strings
+    // without their surrounding quotes and falling back to the raw text for
+    // anything that isn't valid JSON.
     let mut decoded_parts = Vec::new();
     let mut deserializer = serde_json::Deserializer::from_str(serialized).into_iter::<Value>();
     for value in &mut deserializer {
@@ -448,13 +448,13 @@ macro_rules! make_test {
     };
 
     // Same as above, but for a test that's currently known to fail (a
-    // regression test pinning down an unfixed bug). `harness` converts a
-    // panic into a `Result::Err` (see its `catch_unwind` use, needed to shut
-    // the WebDriver down cleanly), so the failure never becomes a live
-    // unwind -- meaning `#[should_panic]` can't detect it. `#[ignore]` is
-    // the alternative: the test is skipped by default (so the suite stays
-    // green) but still compiles, and can be run explicitly with `cargo test
-    // -- --ignored` to check whether the bug has been fixed yet.
+    // regression test pinning down an unfixed bug). `harness` converts a panic
+    // into a `Result::Err` (see its `catch_unwind` use, needed to shut the
+    // WebDriver down cleanly), so the failure never becomes a live unwind --
+    // meaning `#[should_panic]` can't detect it. `#[ignore]` is the
+    // alternative: the test is skipped by default (so the suite stays green)
+    // but still compiles, and can be run explicitly with `cargo test --
+    // --ignored` to check whether the bug has been fixed yet.
     ($test_name: ident, $test_core_name: ident, ignore = $reason: literal) => {
         #[tokio::test]
         #[tracing::instrument]
@@ -555,17 +555,16 @@ pub async fn goto_line(
 // JavaScript `keydown`/`keyup` DOM events. ChromeDriver's `send_keys` only
 // injects DOM-level key events, so on macOS these shortcuts are silently
 // swallowed before they ever produce the OS-level cursor jump. This is a
-// longstanding WebDriver/Selenium limitation, not a bug in this project --
-// see [Command key modifier doesn't work on Mac
-// OS](https://github.com/SeleniumHQ/selenium/issues/1290).
+// longstanding WebDriver/Selenium limitation, not a bug in this project -- see
+// [Command key modifier doesn't work on Mac OS](https://github.com/SeleniumHQ/selenium/issues/1290).
 //
 // `Ctrl+Home`/`Ctrl+End` do work via `send_keys` on Windows/Linux for a plain
 // CodeMirror line, but empirically do *not* reliably reach the true
-// beginning/end inside a TinyMCE `contenteditable` doc block (observed
-// landing partway through the block instead of at the first/last paragraph,
-// even on Windows) -- presumably TinyMCE's own keyboard-shortcut handling
-// intercepts or only partially handles them. So rather than branch by OS,
-// [`beginning_of_document`] and [`end_of_document`] always use the
+// beginning/end inside a TinyMCE `contenteditable` doc block (observed landing
+// partway through the block instead of at the first/last paragraph, even on
+// Windows) -- presumably TinyMCE's own keyboard-shortcut handling intercepts or
+// only partially handles them. So rather than branch by OS,
+// \[`beginning_of_document`\] and \[`end_of_document`\] always use the
 // repeated-arrow-key approach below, which works uniformly on every platform
 // and in both CodeMirror and TinyMCE elements.
 //
@@ -587,9 +586,9 @@ pub async fn beginning_of_line(
     element.send_keys(Key::Home + keys_after).await
 }
 
-// Move the cursor to the end of the current line, then send `keys_after`
-// (which may be empty). Plain `End` (no modifier) is handled by the browser
-// itself on every platform, so no OS-specific workaround is needed here.
+// Move the cursor to the end of the current line, then send `keys_after` (which
+// may be empty). Plain `End` (no modifier) is handled by the browser itself on
+// every platform, so no OS-specific workaround is needed here.
 #[allow(dead_code)]
 #[tracing::instrument(skip(element))]
 pub async fn end_of_line(
@@ -600,9 +599,9 @@ pub async fn end_of_line(
 }
 
 // Move the cursor to the beginning of the document, then send `keys_after`
-// (which may be empty). See the module-level comment above for why this
-// presses `Up` enough times to reach line 1 from anywhere within a test
-// fixture's (small) document, rather than using `Ctrl+Home`/`Cmd+Up`.
+// (which may be empty). See the module-level comment above for why this presses
+// `Up` enough times to reach line 1 from anywhere within a test fixture's
+// (small) document, rather than using `Ctrl+Home`/`Cmd+Up`.
 #[allow(dead_code)]
 #[tracing::instrument(skip(element))]
 pub async fn beginning_of_document(
@@ -611,17 +610,17 @@ pub async fn beginning_of_document(
 ) -> Result<(), WebDriverError> {
     // Test fixtures used by this suite are well under this many lines;
     // repeating `Up` past the first line is a no-op, so an overshoot is
-    // harmless. Sent as a single `send_keys` call, along with `keys_after`,
-    // so this produces one cursor update rather than one per repeated key.
+    // harmless. Sent as a single `send_keys` call, along with `keys_after`, so
+    // this produces one cursor update rather than one per repeated key.
     let keys: TypingData = repeated_key(Key::Up, MAX_TEST_DOCUMENT_LINES) + keys_after;
     element.send_keys(keys).await
 }
 
-// Move the cursor to the end of the document, then send `keys_after` (which
-// may be empty). See the module-level comment above for why this presses
-// `Down` enough times to reach the last line from anywhere within a test
-// fixture's (small) document (then `End` to reach the end of that line),
-// rather than using `Ctrl+End`/`Cmd+Down`.
+// Move the cursor to the end of the document, then send `keys_after` (which may
+// be empty). See the module-level comment above for why this presses `Down`
+// enough times to reach the last line from anywhere within a test fixture's
+// (small) document (then `End` to reach the end of that line), rather than
+// using `Ctrl+End`/`Cmd+Down`.
 #[allow(dead_code)]
 #[tracing::instrument(skip(element))]
 pub async fn end_of_document(
@@ -633,8 +632,8 @@ pub async fn end_of_document(
 }
 
 // Build a `TypingData` consisting of `key` repeated `count` times, for the
-// macOS repeated-arrow-key workaround in [`beginning_of_document`] and
-// [`end_of_document`].
+// macOS repeated-arrow-key workaround in \[`beginning_of_document`\] and
+// \[`end_of_document`\].
 fn repeated_key(key: Key, count: u32) -> TypingData {
     std::iter::repeat_n(key.value(), count as usize)
         .collect::<String>()
@@ -643,7 +642,7 @@ fn repeated_key(key: Key, count: u32) -> TypingData {
 
 // An upper bound on the number of lines in any document used by this test
 // suite's fixtures, used by the macOS `Up`/`Down`-repeating workaround in
-// [`beginning_of_document`] and [`end_of_document`] above.
+// \[`beginning_of_document`\] and \[`end_of_document`\] above.
 const MAX_TEST_DOCUMENT_LINES: u32 = 100;
 
 pub async fn perform_loadfile(

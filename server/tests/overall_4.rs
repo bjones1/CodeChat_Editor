@@ -366,10 +366,10 @@ async fn test_arrow_key_navigation_core(
     let path = canonicalize(test_dir.join("test.py")).unwrap();
     let path_str = path.to_str().unwrap().to_string();
     let ide_version = 0.0;
-    // Source lines, and the CodeMirror line each becomes on the Client:
-    // "a" -> 1, "b" -> 2, "# 3" (doc block 1, indent "") -> 3,
-    // " # 4" (doc block 2, indent " ") -> 4, "c" -> 5. The differing indent
-    // keeps the two doc blocks separate instead of merging into one.
+    // Source lines, and the CodeMirror line each becomes on the Client: "a" ->
+    // 1, "b" -> 2, "# 3" (doc block 1, indent "") -> 3, " # 4" (doc block 2,
+    // indent " ") -> 4, "c" -> 5. The differing indent keeps the two doc blocks
+    // separate instead of merging into one.
     let orig_text = "a\nb\n# 3\n # 4\nc\n".to_string();
     perform_loadfile(
         &codechat_server,
@@ -413,8 +413,8 @@ async fn test_arrow_key_navigation_core(
 
     // ### `ArrowDown` from a code line enters the doc block below it.
     //
-    // Click near the start of line "b" (the last line of the top code
-    // block), then move to its end with `End`, which is the boundary
+    // Click near the start of line "b" (the last line of the top code block),
+    // then move to its end with `End`, which is the boundary
     // `docBlockNavKeymap`'s `ArrowDown` handler looks for.
     let code_lines = driver
         .find_all(By::Css(".CodeChat-CodeMirror .cm-line"))
@@ -427,9 +427,9 @@ async fn test_arrow_key_navigation_core(
     end_of_line(&code_lines[1], "").await.unwrap();
     assert_cursor_line(&codechat_server, &mut client_id, &path_str, 2).await;
 
-    // With the off-by-one fixed, this moves focus into the first doc block
-    // ("# 3", line 3) rather than skipping both (atomic) doc block widgets to
-    // land on "c" (line 5).
+    // With the off-by-one fixed, this moves focus into the first doc block ("#
+    // 3", line 3) rather than skipping both (atomic) doc block widgets to land
+    // on "c" (line 5).
     driver
         .action_chain()
         .send_keys(Key::Down)
@@ -446,9 +446,9 @@ async fn test_arrow_key_navigation_core(
     // already at the very end of that block's content) moves focus into the
     // second, following doc block -- the browser's default caret-boundary
     // handling for the contenteditable region falls through to the adjacent
-    // `.CodeChat-doc-contents` div, which then goes through the same
-    // `focusin` promotion as any other doc block. Doc block 2 (" # 4")
-    // translates to line 4.
+    // `.CodeChat-doc-contents` div, which then goes through the same `focusin`
+    // promotion as any other doc block. Doc block 2 (" # 4") translates to
+    // line 4.
     driver
         .action_chain()
         .send_keys(Key::Down)
@@ -464,11 +464,11 @@ async fn test_arrow_key_navigation_core(
     // CodeMirror's, so unlike the doc-block-to-doc-block case above (which
     // works because both blocks are DOM siblings the browser's default
     // caret-boundary handling walks between), nothing hands focus back to
-    // CodeMirror when there's no further doc block to chain into via that
-    // same mechanism. In practice, though, the browser's caret-boundary walk
+    // CodeMirror when there's no further doc block to chain into via that same
+    // mechanism. In practice, though, the browser's caret-boundary walk
     // continues past doc block 2's contents into its `.CodeChat-doc` sibling
-    // structure and on to the next code line "c" (line 5) once the indent
-    // div is no longer permanently `contenteditable` (see the `mousedown`/
+    // structure and on to the next code line "c" (line 5) once the indent div
+    // is no longer permanently `contenteditable` (see the `mousedown`/
     // `focusout` handlers in `DocBlockPlugin`, which toggle it instead).
     driver
         .action_chain()
@@ -483,10 +483,9 @@ async fn test_arrow_key_navigation_core(
     // `ArrowUp`'s boundary math has no off-by-one (a doc block's placeholder
     // newline(s) sit immediately before the following code line), so this
     // direction has always worked. Click directly on code line "c" to give
-    // CodeMirror real focus there (the doc block gap above left focus stuck
-    // in doc block 2's TinyMCE instance), then press `Home` so the cursor
-    // sits at the exact line start `docBlockNavKeymap`'s `ArrowUp` handler
-    // looks for.
+    // CodeMirror real focus there (the doc block gap above left focus stuck in
+    // doc block 2's TinyMCE instance), then press `Home` so the cursor sits at
+    // the exact line start `docBlockNavKeymap`'s `ArrowUp` handler looks for.
     let c_line = driver
         .find(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
         .await
@@ -513,26 +512,27 @@ async fn test_arrow_key_navigation_core(
     // The Client reports the doc block's cursor as a `DomLocation` (a DOM
     // coordinate), but the Server translates that into a plain `Line` before
     // forwarding to the IDE -- `DomLocation` is a Client/Server-only detail
-    // (see the comment on `CursorPosition::DomLocation` in `webserver.rs`).
-    // Doc block 2 (" # 4") translates to line 4.
+    // (see the comment on `CursorPosition::DomLocation` in `webserver.rs`). Doc
+    // block 2 (" # 4") translates to line 4.
     assert_cursor_line(&codechat_server, &mut client_id, &path_str, 4).await;
 
     // ### Chaining `ArrowUp` between two consecutive doc blocks overshoots
+    //
     // straight to the code above, skipping doc block 1.
     //
-    // Focus is now genuinely in the second doc block's
-    // `.CodeChat-doc-contents` div (promoted to TinyMCE), outside CodeMirror
-    // and thus outside `docBlockNavKeymap`, with the caret at the very end of
-    // that block's content ("entering from below" lands the caret at the
-    // end; see `DocBlockPlugin`'s `focusin` handler). Each doc block's
-    // wrapper (`.CodeChat-doc`) is no longer permanently `contenteditable`
-    // on its indent (see the `mousedown`/`focusout` handlers in
-    // `DocBlockPlugin`), so the browser's native caret-boundary walk now
-    // carries `ArrowUp` all the way from doc block 2's contents, through doc
-    // block 1's (very short, single-character) contents, and out the other
-    // side into code line "b" (line 2) in a single keypress -- reported as a
-    // plain `Line`, not a `DomLocation`, confirming focus landed in
-    // CodeMirror rather than a doc block's DOM.
+    // Focus is now genuinely in the second doc block's `.CodeChat-doc-contents`
+    // div (promoted to TinyMCE), outside CodeMirror and thus outside
+    // `docBlockNavKeymap`, with the caret at the very end of that block's
+    // content ("entering from below" lands the caret at the end; see
+    // `DocBlockPlugin`'s `focusin` handler). Each doc block's wrapper
+    // (`.CodeChat-doc`) is no longer permanently `contenteditable` on its
+    // indent (see the `mousedown`/`focusout` handlers in `DocBlockPlugin`), so
+    // the browser's native caret-boundary walk now carries `ArrowUp` all the
+    // way from doc block 2's contents, through doc block 1's (very short,
+    // single-character) contents, and out the other side into code line "b"
+    // (line 2) in a single keypress -- reported as a plain `Line`, not a
+    // `DomLocation`, confirming focus landed in CodeMirror rather than a doc
+    // block's DOM.
     driver
         .action_chain()
         .send_keys(Key::Up)
@@ -554,10 +554,10 @@ make_test!(
 // Regression test for a manually-observed bug: moving the cursor from a code
 // line to a *multi-line* doc block places the cursor at the doc block's first
 // line rather than its last line. `test_arrow_key_navigation_core` above only
-// exercises single-line doc blocks (two separate one-line doc blocks, in
-// fact), which isn't enough to catch this -- entering a one-line doc block,
-// its first line and its last line are the same line, so an off-by-one in
-// "first vs. last" can't show up there.
+// exercises single-line doc blocks (two separate one-line doc blocks, in fact),
+// which isn't enough to catch this -- entering a one-line doc block, its first
+// line and its last line are the same line, so an off-by-one in "first vs.
+// last" can't show up there.
 async fn test_arrow_key_navigation_multiline_doc_block_core(
     codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
@@ -568,19 +568,19 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
     let ide_version = 0.0;
     // A paragraph line, pre-wrapped at the same width the Server's own word
     // wrap (`WORD_WRAP_COLUMN` minus this doc block's delimiter-plus-space
-    // width, in `processing.rs`) produces for this doc block's indent ("")
-    // and delimiter ("#") -- confirmed by feeding this exact paragraph
-    // through `doc_block_html_to_markdown` directly, which wraps it into four
-    // lines of "four" repeated 15 times each (74 characters). Repeating that
+    // width, in `processing.rs`) produces for this doc block's indent ("") and
+    // delimiter ("#") -- confirmed by feeding this exact paragraph through
+    // `doc_block_html_to_markdown` directly, which wraps it into four lines of
+    // "four" repeated 15 times each (74 characters). Repeating that
     // already-wrapped line four times below reproduces the Server's own wrap
     // points exactly, so its HTML-to-Markdown re-wrap (done to locate the
     // caret) doesn't invent any new line breaks.
     let wrapped_line = std::iter::repeat_n("four", 15)
         .collect::<Vec<_>>()
         .join(" ");
-    // Source lines, and the CodeMirror line each becomes on the Client:
-    // "a" -> 1, "b" -> 2, "# 3" + "#" + four "# <wrapped_line>" lines (one
-    // merged six-line doc block, indent "") -> 3-8, "c" -> 9.
+    // Source lines, and the CodeMirror line each becomes on the Client: "a" ->
+    // 1, "b" -> 2, "# 3" + "#" + four "# \<wrapped\_line>" lines (one merged
+    // six-line doc block, indent "") -> 3-8, "c" -> 9.
     let orig_text = format!(
         "a\nb\n# 3\n#\n# {wrapped_line}\n# {wrapped_line}\n# {wrapped_line}\n# {wrapped_line}\nc\n"
     );
@@ -629,8 +629,8 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
     // `Home` so the cursor sits at the exact line start `docBlockNavKeymap`'s
     // `ArrowUp` handler looks for.
     //
-    // Confirm the click genuinely lands on code line "c" (i.e. `Line(9)`),
-    // not inside the preceding doc block.
+    // Confirm the click genuinely lands on code line "c" (i.e. `Line(9)`), not
+    // inside the preceding doc block.
     let c_line = driver
         .find(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
         .await
@@ -639,9 +639,9 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
     end_of_line(&c_line, "").await.unwrap();
     assert_cursor_line(&codechat_server, &mut client_id, &path_str, 9).await;
 
-    // `ArrowUp` from code line "c" should enter the doc block above it with
-    // the cursor at the block's *last* line (8), matching the "entering from
-    // below lands at the end" rule documented on `docBlockNavKeymap` and
+    // `ArrowUp` from code line "c" should enter the doc block above it with the
+    // cursor at the block's *last* line (8), matching the "entering from below
+    // lands at the end" rule documented on `docBlockNavKeymap` and
     // `DocBlockPlugin`'s `focusin` handler.
     driver
         .action_chain()
@@ -679,12 +679,12 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
 
     // `Line(8)` only proves the caret is somewhere on the paragraph's *last*
     // source line -- it can't distinguish that line's start from its end.
-    // Independently confirm the DOM caret placement itself: per the
-    // "entering from below lands at the end" rule (see `DocBlockPlugin`'s
-    // `focusin` handler in `CodeMirror-integration.mts`, which does
-    // `range.selectNodeContents(contents); range.collapse(!at_end)`), the
-    // caret should sit at the very end of the doc block's text -- after the
-    // last "four" -- not at its start.
+    // Independently confirm the DOM caret placement itself: per the "entering
+    // from below lands at the end" rule (see `DocBlockPlugin`'s `focusin`
+    // handler in `CodeMirror-integration.mts`, which does
+    // `range.selectNodeContents(contents); range.collapse(!at_end)`), the caret
+    // should sit at the very end of the doc block's text -- after the last
+    // "four" -- not at its start.
     let is_caret_at_end: bool = driver
         .execute(
             "const contents = document.activeElement.closest('.CodeChat-doc-contents');

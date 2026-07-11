@@ -709,7 +709,8 @@ const element_is_in_doc_block = (
     target: EventTarget | null,
 ): boolean | Element => {
     if (target instanceof HTMLElement) {
-        // Look for either a CodeMirror ancestor or a CodeChat doc block ancestor.
+        // Look for either a CodeMirror ancestor or a CodeChat doc block
+        // ancestor.
         const ancestor = target.closest(".cm-line, .CodeChat-doc");
         // If it's a doc block, then tell CodeMirror not to handle this event.
         if (ancestor?.classList.contains("CodeChat-doc")) {

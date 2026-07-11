@@ -19,13 +19,13 @@
 //! This file implements the command-line interface (CLI) for the CodeChat
 //! Editor server binary. It provides three subcommands:
 //!
-//! - `serve`: Start the webserver in the foreground.
-//! - `start`: Spawn the webserver as a background child process, polling
-//!   until it responds to a ping, then optionally open a browser.
-//! - `stop`: Send a stop request to a running server instance.
+//! * `serve`: Start the webserver in the foreground.
+//! * `start`: Spawn the webserver as a background child process, polling until
+//!   it responds to a ping, then optionally open a browser.
+//! * `stop`: Send a stop request to a running server instance.
 //!
-//! All subcommands accept `--host` and `--port` options to control the
-//! server's network address.
+//! All subcommands accept `--host` and `--port` options to control the server's
+//! network address.
 // Imports
 // -------
 //
@@ -339,7 +339,8 @@ fn parse_credentials(s: &str) -> Result<Credentials, String> {
     })
 }
 
-/// This is used by `ping` to transform the "access connections from any address" address into localhost, a valid destination address for a ping.
+/// This is used by `ping` to transform the "access connections from any
+/// address" address into localhost, a valid destination address for a ping.
 fn fix_addr(addr: &SocketAddr) -> SocketAddr {
     if addr.ip() == IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)) {
         let mut addr = *addr;
