@@ -248,7 +248,7 @@ fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Resu
     }
 
     // Print the command, in case this produces and error or takes a while.
-    println!("{:#?}", &copy_process);
+    println!("{:#?}", copy_process);
 
     // Check for errors.
     let exit_code = copy_process
@@ -542,7 +542,13 @@ fn run_until_fail() -> io::Result<()> {
     unsafe {
         env::set_var("RUST_BACKTRACE", "1");
     }
-    let tests = ["overall_1", "overall_2", "overall_3", "overall_4"];
+    let tests = [
+        "overall_1",
+        "overall_2",
+        "overall_3",
+        "overall_4",
+        "overall_5",
+    ];
     let mut iteration = 0;
     loop {
         iteration += 1;

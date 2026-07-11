@@ -1071,15 +1071,15 @@ pub fn source_to_codechat_for_web_string(
     let is_project = path_to_toc.is_some();
 
     Ok((
-        match source_to_codechat_for_web(
-            file_contents,
-            &ext.to_string(),
-            version,
-            is_toc,
-            is_project,
-        ) {
-            Err(err) => return Err(err),
-            Ok(translation_results) => match translation_results {
+        {
+            let translation_results = source_to_codechat_for_web(
+                file_contents,
+                &ext.to_string(),
+                version,
+                is_toc,
+                is_project,
+            )?;
+            match translation_results {
                 TranslationResults::CodeChat(codechat_for_web) => {
                     if is_toc {
                         // For the table of contents sidebar, which is pure
@@ -1094,7 +1094,7 @@ pub fn source_to_codechat_for_web_string(
                     }
                 }
                 TranslationResults::Unknown => TranslationResultsString::Unknown,
-            },
+            }
         },
         path_to_toc,
     ))

@@ -487,7 +487,7 @@ fn build_lexer_regex(
 
             // Look for either the delimiter or a newline to terminate the
             // string.
-            (false, NewlineSupport::None) => Regex::new(&format!("{}|\n", &escaped_delimiter)),
+            (false, NewlineSupport::None) => Regex::new(&format!("{}|\n", escaped_delimiter)),
         }
         .unwrap();
         regex_builder(
@@ -1071,7 +1071,7 @@ pub fn source_lexer(
                                     source_code_unlexed_index + opening_delimiter.len();
                                 trace!(
                                     "Found a nested opening block comment delimiter. Nesting depth: {}",
-                                    &nesting_depth
+                                    nesting_depth
                                 );
                                 continue;
                             } else {
@@ -1093,7 +1093,7 @@ pub fn source_lexer(
                                         + closing_delimiter_match.len();
                                     trace!(
                                         "Found a non-innermost closing block comment delimiter. Nesting depth: {}",
-                                        &nesting_depth
+                                        nesting_depth
                                     );
                                     continue;
                                 }
@@ -1356,7 +1356,7 @@ pub fn source_lexer(
                                     // print the doc block
                                     trace!(
                                         "Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.",
-                                        &comment_line_prefix, matching_group_str, contents
+                                        comment_line_prefix, matching_group_str, contents
                                     );
 
                                     // advance `current_code_block_index` to

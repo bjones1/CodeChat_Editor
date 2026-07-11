@@ -703,7 +703,7 @@ pub async fn filesystem_endpoint(
         let Some(processing_tx) = processing_queue_tx.get(&connection_id) else {
             let msg = format!(
                 "Error: no processing task queue for connection id {}.",
-                &connection_id
+                connection_id
             );
             error!("{msg}");
             return http_not_found(&msg);
