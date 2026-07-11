@@ -80,8 +80,7 @@ use crate::{
     lexer::{
         CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
         supported_languages::MARKDOWN_MODE,
-    },
-    processing::cache::Target,
+    }, processing::cache::{Fragment, Target},
 };
 use cache::Cache;
 
@@ -318,8 +317,6 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 // which it replaces here.
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
     "</code></pre>\n<CodeChatEditor-separator>$1</CodeChatEditor-separator>\n";
-// <a class="fence-mending-end"></a>
-
 // The column at which to word wrap doc blocks.
 const WORD_WRAP_COLUMN: usize = 80;
 // The minimum width for doc block word wrap, since large indents may leave
@@ -965,7 +962,6 @@ pub fn source_to_codechat_for_web(
             let mut doc_block_contents_iter: regex::Split<'_, '_> =
                 DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&html);
             // 5. TODO Cache updates: process `tags`.
-            //    <a class="fence-mending-end"></a>
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             let mut len = len_utf16(&code_mirror.doc);
@@ -1258,69 +1254,116 @@ fn hydrate_html(
 ) -> io::Result<(String, Vec<Rc<Node>>)> {
     let dom = html_to_dom(html, &None)?;
     let file_entry = cache.lock().unwrap().get_or_create_file(file);
-    // Move the `target` vec into a `HashMap`; the vec will be re-created by
-    // moving individual entries back as they're found in the HTML. TODO:
-    // invalidate all current weak links to all `Targets` in this vec. Must also
-    // update all weak links to the underlying `File` when moving a `Target`.
-    let old_target_vec = mem::take(&mut file_entry.lock().unwrap().target);
-    let old_targets: HashMap<String, Arc<Mutex<Target>>> = old_target_vec
-        .into_iter()
-        .map(|target| (target.clone().lock().unwrap().id.clone(), target))
-        .collect();
+    // ### Prepare `Targets`/`Xrefs` to process this file
+    //
+    // Requirement: determine if any files containing cross-references need to
+    // be rebuilt due to changes in the `Target`s in this file. To accomplish
+    // this, determine if any `Targets` in this file were added, deleted, or
+    // modified, then notify all cross-references of these targets that their
+    // containing file is outdated. Note that "modified" refers only to the
+    // `Target` state that cross-references depend on.
+    //
+    // Because `file_entry.xrefs` have no id to match against, remove all
+    // `xrefs` on this page from their `Target` dependencies; this will be
+    // re-generated during the DOM traversal. TODO: remove each `xref.id` from
+    // `cache.targets[id]` for `xref` in `file_entry.xrefs`.
+    //
+    // TODO: implementation. Move the current `file_entry.targets` to a local
+    // variable `targets`. Match each `Target` encountered in the DOM against
+    // the `targets`, moving identical entries to `file_entry.targets`. After
+    // processing the DOM, remaining entries in `targets` are deleted, while new
+    // entries and modifications were discovered during the DOM traversal.
+    let old_targets = mem::take(&mut file_entry.lock().unwrap().targets);
+    // ### Prepare `Fragments`/`GatherElements` to process this file
+    //
+    // Requirement: determine if any files containing `Fragment`s need to be
+    // rebuilt due to changes in gather elements in this file. Similarly,
+    // determine if any files containing gather elements need to be rebuilt due
+    // to change in `Fragment`s in this file. Because `Fragment`s have an id,
+    // use the same approach as `Target`s. Gather elements don't have an id; to
+    // identify differences, make a copy of all `Fragment.gathers` referenced by
+    // gather elements in the current file, then remove all gathers in the
+    // current file from `Fragments.gathers`. Walk the DOM; changes to any
+    // `Fragment.gathers` which wasn't copied is an addition. Comparison with
+    // the copied `Fragment.gathers` with current `Fragment.gathers` shows
+    // deletions. Since Fragments only depend on gather ids and no other state,
+    // there's no modifications to track (unlike cross-references, where changes
+    // to Target contents affect its cross-reference state).
+    //
+    // Store the previous state of all `Fragment.gathers` referenced by gather
+    // on this page in a map where key = `Fragment.id`, value =
+    // `Fragment.gathers`.
+    let old_fragments_gathers = HashMap::new();
+    // For each `id` in `gather.ids` in `file.gathers` on this page:
+    //
+    // 1. Insert a copy of `cache.fragments[id].gathers` to a
+    //    `old_fragments_gathers`, unless it's already inserted.
+    // 2. Remove `gather` from `cache.fragments[id].gathers`.
+    //
+    // Finally, empty `file_entry.gathers`. This will be re-created by page
+    // processing. After processing this page, rebuild any files containing
+    // fragments whose `gathers` list changed.
+    //
+    // Move the `file_entry.fragments` vec into a `HashMap`; follow the same
+    // logic as `old_targets_vec` above.
+    let old_fragments = mem::take(&mut file_entry.lock().unwrap().fragments);
     // This is storage for the state needed for walking the DOM.
     let mut walk_context = WalkContext {
         cache,
         file_entry,
         old_targets,
+        old_fragments,
         doc_block_index: 0,
-        links: Vec::new(),
-        backlinks: Vec::new(),
-        tags: Vec::new(),
-        code_doc_block_dependencies: vec![],
+        xrefs: Vec::new(),
+        fragments: Vec::new(),
+        gathers: Vec::new(),
     };
     walk_context = hydrating_walk_node(dom.clone(), walk_context);
+    // The overall processing order after walking the DOM:
+    //
+    // 1. All `Target` cross-reference (`Xref`) state is updated. Therefore,
+    //    update the DOM content for all `Xrefs` in this file (whic is stored in
+    //    `walk_context.xrefs`). If the `Xref.id` refers to a `Fragment` instead
+    //    of a `Target`, the DOM will contain an error message.
+    // 2. All `Fragment`s in this file have updated ids. For
+    //    each `walk_context.gathers`, create a `GatherElement`. Add it to
+    //    `file_entry.gathers` and `file_entry.targets[id].gathers`.
+    // 3. All `GatherElements` `Fragment` state is now updated. Therefore,
+    //    update the DOM content for all `Fragment`s in this file (stored in
+    //    `walk_context.fragments`).
+    // 4. On exit from this function, doc block contents will be finalized.
+    //    After that, update each `Fragment.content`.
+    // 5. `Fragment`s on this page now have updated state needed by
+    //    `GatherElement`s. Update each `GatherElement`.
+    //
     // TODO:
     //
-    // 1. Remove all `old_targets` that weren't moved back to `targets`.
+    // 1. For each `target` in `old_targets`, mark all `target.xrefs` as
+    //    outdated.
+    // 2. For each `fragment` in `old_fragments`, mark each `gather.file` in
+    //    `fragment.gathers` as outdated.
+    // 3. For each `old_fragment_gathers`, compare old and new gathers. If they
+    //    differ, mark the file containing the `Fragment` as outdated, unless
+    //    the file is `file_entry`.
+    // 4. For each `gather` in `file_entry.gathers`, look up/create the
+    //    corresponding `Fragment`. Add each `gather` to this
+    //    `fragment.gathers`.
+    // 5. For each `xref` in `walk_context.xrefs`, get/create (add to
+    //    `cache.missingTargetsAndFragments`) the `Target` of this xref. Add
+    //    `file_entry` to `Target.xrefs`. If the `Target` of this xref is not
+    //    clean, mark `file_entry` as dirty. Update the DOM by inserting a link
+    //    based on available `Target` info. Note that `xref` processing was
+    //    deferred until all `Target`s in this file were processed.
+    // 6. For each `fragment`, generate updated DOM data (a link per gather
+    //    element).
     //
-    // 2. Process `links`:
-    //
-    //    1. If the target of this link is in the cache, first check to see if
-    //       it's been processed. If not, mark the current file to be added to
-    //       the end of `pending_files` list. Remove any previous
-    //       `references`/`dependencies`, then re-add them based on the link's
-    //       `Target.backlink_type`:
-    //
-    //       1. `None`: if this is an auto-titled link, get its title from the
-    //          `Target` it refers to (this includes the case where the target
-    //          doesn't exist) and add this file to the target's list of
-    //          `references` if it's not already there; also add it to the
-    //          `code_doc_block_dependencies` list; problem: how would we know
-    //          the doc block index? Otherwise, add it to the target's list of
-    //          `dependencies` (again, if it's not already there). Remove it
-    //          from the other list if it's there.
-    //       2. `Plain`/`wrapped`: give this link an ID if it doesn't have one
-    //          (meaning add it as a new `Target`). As above, add/verify this
-    //          link is in the `references`/`dependencies` and remove the
-    //          opposite link. If this is added, mark the link target's `File`
-    //          as dirty.
-    //       3. `Gather`: same as above. Also, record the start/end code/doc
-    //          blocks and put this in the code/doc block `tags` list.
-    //    2. Otherwise, add the file containing this target to set of files to
-    //       process (`Cache::pending_files`) and mark the current file to be
-    //       added to this set after all dirty dependencies are added.
-    // 3. Process `backlinks`: generate the appropriate HTML. These are
-    //    processed after `links`, to ensure these are updated / assigned an ID
-    //    in case a backlink references a link in this file. Corner case: if a
-    //    gather element refers to tags in the current file, and the code+doc
-    //    block contents of these tags is outdated, then this file need to be
-    //    reprocessed, since the code+doc block contents won't be updated until
-    //    after this function returns.
+    // TODO: on return, update fragment contents, then update gathers DOM data
+    // (a list containing a link to each fragment followed by its contents),
 
-    Ok((dom_to_html(dom)?, walk_context.tags))
+    Ok((dom_to_html(dom)?, walk_context.gathers))
 }
 
-/// Get the value of an attribute on an element node.
+// Get the value of an attribute on an element node.
 fn get_attr_value(node: &Rc<Node>, attr_name: &str) -> Option<String> {
     if let NodeData::Element { attrs, .. } = &node.data {
         attrs
@@ -1354,16 +1397,14 @@ struct WalkContext {
     /// The previous `file_entry.targets` that haven't yet been claimed while
     /// processing this file. The key is the `Target`'s ID.
     old_targets: HashMap<String, Arc<Mutex<Target>>>,
-    /// All hyperlinks found in this file.
-    links: Vec<Rc<Node>>,
-    /// Backlinks and gather elements.
-    backlinks: Vec<Rc<Node>>,
-    /// Tags (links to gather elements).
-    tags: Vec<Rc<Node>>,
-    /// For each doc block in the vec of `CodeDocBlock`s, this contains the
-    /// `Target` of autotitled  links. These are used to determine a tag's
-    /// indirect dependencies if this doc block is included in a tag.
-    code_doc_block_dependencies: Vec<HashMap<String, Weak<Mutex<Target>>>>,
+    /// Same as above: currently unclaimed `file_entry.fragments`.
+    old_fragments: HashMap<String, Arc<Mutex<Fragment>>>,
+    /// DOM for all xrefs found in this file.
+    xrefs: Vec<Rc<Node>>,
+    /// DOM for all `Fragment`s.
+    fragments: Vec<Rc<Node>>,
+    /// DOM for all `GatherElement`s
+    gathers: Vec<Rc<Node>>,
     /// The current doc block index, based on parsing the HTML for
     /// `codechateditor-separator` elements, which contain this value.
     doc_block_index: usize,
@@ -1440,47 +1481,35 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> WalkCon
             //
             // When walking, look for:
             //
-            // 1. A link, or any element that's a back link or gather element.
-            //    Note that links directly to a file are ignored, since files
-            //    are not targets. Add these to the `links`/`backlinks` list.
-            // 2. A target (any item with an id which refers to a file in the
-            //    project tree).
-            //    1. Process the ID:
-            //       1. ID exists in `old_targets` - transfer ownership by
-            //          appending this to `file.targets`, removing it from the
-            //          `old_targets`; update the stale `Weak` pointer to the
-            //          parent `File`. Assert that this ID is unique.
-            //       2. ID doesn't exist in `old_targets` and is unique: add
-            //          this `Target` to `Cache::id`.
-            //       3. ID doesn't exist in `old_targets` and is a duplicate:
-            //          resolve duplicate IDs:
-            //          1. Is the duplicate ID in the same file? In this case,
+            // 1. A cross reference. Add it to `walk_context.xrefs`.
+            // 2. A `Target` (any item with an id that's not a `Fragment`).
+            //    1. Process the id:
+            //       1. id exists in `old_targets` - transfer ownership by
+            //          appending this to `walk_content.file_entry.targets`,
+            //          removing it from the `old_targets`. Assert that this id
+            //          is unique.
+            //       2. id doesn't exist in `old_targets` and is unique: add
+            //          this `Target` to `walk_content.file_entry.targets`.
+            //       3. id doesn't exist in `old_targets` and is in the set of
+            //          `cache.missingTargetsOrFragments`: transfer ownership by
+            //          appending this to `walk_content.file_entry.targets`.
+            //          Mark all `target.xrefs` as `Outdated`.
+            //       4. id is a duplicate (exists
+            //          in `cache.targetsOrFragments`): resolve duplicate ids:
+            //          1. Is the duplicate id in the same file? In this case,
             //             we have no way to determine which was the original
-            //             ID. Rename the ID being processed; stop here.
-            //          2. Have all new files been processed? If not, add this
-            //             file to the list of dirty files which will be
-            //             re-processed after new file processing is done. Stop
-            //             here.
-            //          3. Look at the timestamp of this file and of the other
-            //             file which contains the duplicate ID. If this file is
-            //             newer, rename this ID. Otherwise, update the ID and
-            //             mark the other file as dirty.
+            //             id. Rename the id being processed; stop here.
+            //          2. Look at the timestamp of this file and of the other
+            //             file which contains the duplicate id. If this file is
+            //             newer, rename this id. Otherwise, update the id and
+            //             mark the other file as `Outdated`.
             //    2. Check the `contents`: if the `contents` changed, add all
-            //       this target's `dependencies` to the dirty list and update
-            //       the search text for this target.
-            //    3. Check the `backlink_type`. If this changed:
-            //       1. To `Gather` from any other type: add all the target's
-            //          `references` and `dependencies` to the dirty list, since
-            //          some `references` may need IDs and everything needs
-            //          code+doc blocks.
-            //       2. From `Gather` to any other type: Do nothing. The
-            //          code+doc blocks will be removed lazily, since they have
-            //          no impact on the resulting output.
-            //       3. From `None` to `Wrapped` or `Plain`: add `references`
-            //          with no ID to the dirty list.
-            //       4. From `Wrapped` to `None`: nothing to do.
-            //    4. Walk the list of `references`/`dependencies`, removing any
-            //       dropped references.
+            //       this target's `xrefs` to the `Outdated` list and update the
+            //       search text for this target.
+            // 3. A `GatherElement`: add it to `walk_context.gathers`.
+            // 4. A `Fragment`: add it to `walk_context.fragments`, then process
+            //    similarly to a `Target`. Note that `content` can't be
+            //    determined yet.
         }
 
         walk_context = hydrating_walk_node(child.clone(), walk_context);
@@ -1522,7 +1551,7 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
             // When hydrating, there should only be a `class` attribute.
             if child_attrs_len == 1 {
                 match attr_value_str {
-                    "math math-inline" => Some(("\\(", "\\)", "math math-inline mceNonEditable")),
+                    "math math-inline" => Some(("\(", "\)", "math math-inline mceNonEditable")),
                     "math math-display" => Some(("$$", "$$", "math math-display mceNonEditable")),
                     _ => None,
                 }
@@ -1530,9 +1559,9 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
                 None
             }
         } else {
-            // When dehydrating, there should also be a `contenteditable=false`
-            // attribute. It may appear in either order relative to `class`, so
-            // look it up by name.
+
+
+
             if child_attrs_len == 2
                 && let Some(contenteditable_attr) = child_attrs
                     .iter()
@@ -1540,7 +1569,7 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
                 && contenteditable_attr.value == *"false"
             {
                 match attr_value_str {
-                    "math math-inline mceNonEditable" => Some(("\\(", "\\)", "math math-inline")),
+                    "math math-inline mceNonEditable" => Some(("\(", "\)", "math math-inline")),
                     "math math-display mceNonEditable" => Some(("$$", "$$", "math math-display")),
                     _ => None,
                 }
