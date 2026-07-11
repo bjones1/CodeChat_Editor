@@ -240,8 +240,8 @@ fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Resu
             "-c",
             format!(
                 "rsync --archive --delete {} {}",
-                &src_combined.to_str().unwrap(),
-                &dest.to_str().unwrap()
+                src_combined.to_str().unwrap(),
+                dest.to_str().unwrap()
             )
             .as_str(),
         ]);
