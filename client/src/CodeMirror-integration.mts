@@ -517,7 +517,7 @@ class DocBlockWidget extends WidgetType {
         const dom_indent = dom.childNodes[0];
         assert(dom_indent instanceof HTMLDivElement);
         dom_indent.innerHTML = this.indent;
-        dom.dataset.delimiter = this.delimiter;
+        dom_indent.dataset.delimiter = this.delimiter;
 
         // Update the contents. The contents div could be a TinyMCE instance, or
         // just a plain div. Handle both cases. Again, we assume sanitized

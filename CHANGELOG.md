@@ -25,6 +25,7 @@ Changelog
 * Fix unexpected scrolling when server updates are applied to a doc block that
   exceeds the screen height.
 * Fix errors due to incorrect TypeScript typecasts.
+* Correctly update the delimiter when a doc block is updated.
 
 Version 0.1.60 -- 2026-Jul-08
 -----------------------------
