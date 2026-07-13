@@ -94,6 +94,35 @@ impl CodeChatEditorServer {
     }
 
     #[napi]
+    pub fn configure_capture_service(
+        &self,
+        base_url: String,
+        token: Option<String>,
+    ) -> Result<(), Error> {
+        self.0
+            .configure_capture_service(base_url, token)
+            .map_err(|err| Error::new(Status::GenericFailure, err))
+    }
+
+    #[napi]
+    pub fn clear_capture_token(&self) -> Result<(), Error> {
+        self.0
+            .clear_capture_token()
+            .map_err(|err| Error::new(Status::GenericFailure, err))
+    }
+
+    #[napi]
+    pub fn check_capture_service_status(&self) -> Result<String, Error> {
+        serde_json::to_string(
+            &self
+                .0
+                .check_capture_service_status()
+                .map_err(|err| Error::new(Status::GenericFailure, err))?,
+        )
+        .map_err(|err| Error::new(Status::GenericFailure, err.to_string()))
+    }
+
+    #[napi]
     pub async fn send_message_current_file(&self, url: String) -> std::io::Result<f64> {
         self.0.send_message_current_file(url).await
     }

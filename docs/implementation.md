@@ -60,9 +60,46 @@ Inside the client:
 The entire VSCode interface is contained in the extension, with the NAPI-RS glue
 in the corresponding library.
 
-Does this make more sense to place in the TOC? Or is it too wordy there? I think
-a diagram as an overview might be helpful. Perhaps the server, client, etc.
-should have its of readme files providing some of this.
+### Capture path
+
+Dissertation capture is a web-service-only path. The VS Code extension stores
+the portal-issued capture token in VS Code SecretStorage after the user enters
+it through the capture manager or **CodeChat Editor: Enter Capture Token**
+command. The token is never written to settings, workspace files, or a JSON
+configuration file. The extension keeps only non-secret participant/instance
+metadata in VS Code global state and asks CaptureWebService for token status
+before recording user events. The participant ID in each event comes from that
+status response. The extension also caches the last capture-enabled decision for
+the same token hash and service URL, so offline fallback cannot turn a
+portal-disabled token back into a recordable state.
+
+When consent, recording, and token status allow capture, the extension sends the
+same capture event shape to the local CodeChat server through the existing
+NAPI-RS bridge. The server hashes raw local file paths, removes any raw path
+fields from event data before local persistence, writes every event to a durable
+`capture-spool` FIFO directory, and uploads batches to
+`POST /v1/capture/events` using
+`Authorization: Bearer <token>`. CodeChat does not read database credentials
+from disk and does not connect directly to PostgreSQL; the database schema under
+`server/scripts/` documents the server-side table used by CaptureWebService.
+The previous local JSON database-secret configuration path is intentionally
+removed; any database writer role or password must remain server-side in the
+CaptureWebService deployment.
+The service endpoint is read only from the user/application-level
+`CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values are ignored so
+a repository cannot redirect a stored token. Bearer-token requests require
+HTTPS, with `http://localhost` and `http://127.0.0.1` allowed only for local
+development.
+
+The upload worker deletes spooled events only after the service returns `202`.
+After a token has been accepted at least once, transient service or network
+failures still allow local recording and keep events queued for retry. Each
+spool record includes a non-secret token hash and service URL identity; the
+worker uploads only records matching the currently configured token/service, so
+events queued under an old token remain local until that matching token is
+configured again. Authentication failures pause upload until a valid token is
+entered, malformed or oversized events are moved to the spool quarantine
+directory, and blocking service calls use bounded request timeouts.
 
 <a id="an-implementation"></a>Architecture
 ------------------------------------------

@@ -22,6 +22,7 @@
 # NPM
 node_modules/
 out/
+.test-output/
 
 # Server support files
 log4rs.yml

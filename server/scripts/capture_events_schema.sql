@@ -155,28 +155,16 @@ COMMENT ON TABLE public.events IS
     'CodeChat dissertation capture events. Course, group, assignment, condition, and task context are joined during analysis from participant/date mappings.';
 COMMENT ON COLUMN public.events.event_id IS 'Opaque stable per-event ID for correlation and future deduplication; not used for event ordering.';
 COMMENT ON COLUMN public.events.sequence_number IS 'Client-local event order within one VS Code extension session, useful for ordering and detecting gaps.';
-COMMENT ON COLUMN public.events.user_id IS 'Pseudonymous participant UUID generated or supplied by the VS Code extension.';
+COMMENT ON COLUMN public.events.user_id IS 'Pseudonymous participant UUID authorized by the portal-issued capture token.';
 COMMENT ON COLUMN public.events.session_id IS 'Capture session UUID emitted by the VS Code extension.';
 COMMENT ON COLUMN public.events.file_hash IS 'SHA-256 hash of the local file path; raw local paths are not stored.';
 COMMENT ON COLUMN public.events."timestamp" IS 'Server receive/record timestamp in UTC.';
 COMMENT ON COLUMN public.events.client_tz_offset_min IS 'Client timezone offset in minutes, used with timestamp to derive local time of day without storing location or full timezone name.';
 COMMENT ON COLUMN public.events.data IS 'Event-specific JSON payload. Known telemetry metadata lives in typed columns.';
 
--- Least-privilege deployment guidance:
--- students or classroom machines should use a dedicated writer account, not a
--- database owner or administrator account. After replacing the placeholder
--- password/database/user names, a database administrator can grant only the
--- permissions needed for capture inserts:
---
--- ```sql
--- CREATE ROLE codechat_capture_writer LOGIN PASSWORD 'replace-with-secret';
--- GRANT CONNECT ON DATABASE codechat_capture TO codechat_capture_writer;
--- GRANT USAGE ON SCHEMA public TO codechat_capture_writer;
--- GRANT INSERT ON public.events TO codechat_capture_writer;
--- GRANT USAGE ON SEQUENCE public.events_id_seq TO codechat_capture_writer;
--- ```
---
--- Do not grant SELECT, UPDATE, DELETE, CREATE, or ownership privileges to the
--- writer account used in `capture_config.json`.
+-- CodeChat clients do not connect to PostgreSQL. Public clients submit events
+-- only to CaptureWebService with a portal-issued bearer token; any database
+-- writer role and credentials must remain server-side inside the web service
+-- deployment.
 
 COMMIT;

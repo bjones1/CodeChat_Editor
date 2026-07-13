@@ -35,6 +35,30 @@ Running
    2. Run the extension again (close the existing window, type `Ctrl+Shift+P`
       then select Enable the CodeChat Editor).
 
+Study capture
+-------------
+
+Participants who have registered in the capture portal receive a capture token
+by email. To use it, run **Manage CodeChat Editor Capture** or **CodeChat
+Editor: Enter Capture Token** from the command palette, paste the token, then
+turn on consent and recording. The capture status item shows whether the token
+is accepted, rejected, unavailable, or disabled by the portal.
+
+The token is imported through the VS Code UI and persisted only in VS Code
+SecretStorage. It is never written to settings, workspace files, or a JSON
+configuration file. The participant identity used in capture events comes from
+CaptureWebService token status, not from the token text.
+
+CodeChat sends capture events only to CaptureWebService and does not connect
+directly to the capture database. The old JSON database-secret configuration
+path is not used by the extension. Events are sanitized and written to a local
+FIFO spool before upload, so events recorded offline after the token has been
+accepted and capture-enabled upload automatically when the matching service is
+reachable again. If the service endpoint changes, update the user-level
+`CodeChatEditor.Capture.ServiceBaseUrl` setting. Workspace values are ignored
+for this token-bearing endpoint. Token-bearing service requests must use HTTPS,
+except for localhost development endpoints.
+
 Additional documentation
 ------------------------
 

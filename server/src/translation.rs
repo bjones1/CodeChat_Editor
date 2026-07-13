@@ -530,7 +530,7 @@ pub async fn translation_task(
                         EditorMessageContents::Result(_) => continue_loop = tt.ide_result(ide_message).await,
                         EditorMessageContents::Update(_) => continue_loop = tt.ide_update(ide_message).await,
                         EditorMessageContents::Capture(capture_event) => {
-                            // Capture messages affect both DB storage and the
+                            // Capture messages affect both upload spooling and the
                             // translation-layer context used for future
                             // server-classified write events.
                             let control_only = capture_control_only(&capture_event);
@@ -1642,7 +1642,7 @@ mod tests {
             }),
         ));
         // A session_end deactivates translated write capture so stale context
-        // cannot continue inserting DB rows.
+        // cannot continue generating spooled capture events.
         assert!(
             context
                 .capture_event(CaptureEventType::WriteCode, None, serde_json::json!({}))

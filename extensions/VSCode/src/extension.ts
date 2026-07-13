@@ -56,8 +56,21 @@ import {
     console_log,
 } from "../../../client/src/debug_enabled.mjs";
 import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes.js";
+import {
+    captureStatusFailureClearsIdentity,
+    captureTokenCanRecord,
+    captureTokenClearedState,
+    CaptureTokenCurrentnessSnapshot,
+    CaptureTokenPolicyStatus,
+    captureTokenSnapshotStillCurrent,
+    captureTokenStatusForStatusFailure,
+    normalizeCaptureServiceBaseUrl,
+    trustedCaptureServiceBaseUrl,
+} from "./capture-policy.js";
 
 import * as crypto from "crypto";
+import * as http from "http";
+import * as https from "https";
 
 // Globals
 // -------
@@ -217,29 +230,75 @@ type CaptureEventData = Record<string, unknown>;
 type CaptureEventType = CaptureEventWire["event_type"];
 
 // Student-facing capture settings. The setup is intentionally small: students
-// give consent, toggle capture, and receive or reuse a pseudonymous participant
-// UUID. Assignment, course, group, and study-condition metadata are inferred
-// during analysis from that participant ID and event timestamps.
+// give local consent, toggle recording, and paste a portal-issued capture
+// token. The participant UUID comes from CaptureWebService token status.
 interface StudySettings {
     // True when the student wants capture enabled for the current work session.
     enabled: boolean;
     // True after the student has consented to study capture.
     consentEnabled: boolean;
-    // Pseudonymous UUID used as the event user ID; generated when absent.
+    // Pseudonymous UUID returned by CaptureWebService token status.
     participantId: string;
+    // True only after CaptureWebService accepts the bearer token and capture is
+    // allowed for that participant/instance.
+    tokenAccepted: boolean;
+    // Non-secret token status used for user-facing capture feedback.
+    tokenStatus: CaptureTokenUiStatus;
 }
 
-// Derived state for the two user-visible capture checkboxes. This mirrors the
-// table shown in Settings and is the single source of truth for whether events
-// may be recorded.
+type CaptureTokenUiStatus = CaptureTokenPolicyStatus;
+
+interface CaptureServiceStatusResponse {
+    participant_id: string;
+    instance_id: string;
+    study_id: string;
+    capture_enabled: boolean;
+    participant_status: string;
+    consent_status: string;
+    instance_status: string;
+    token_expires_at?: string | null;
+    server_time: string;
+    service_version: string;
+}
+
+interface CaptureTokenRuntimeState {
+    tokenStatus: CaptureTokenUiStatus;
+    participantId: string;
+    instanceId: string;
+    studyId: string;
+    captureEnabled?: boolean;
+    participantStatus?: string;
+    consentStatus?: string;
+    instanceStatus?: string;
+    tokenExpiresAt?: string | null;
+    serviceVersion?: string;
+    lastStatusCheckAt?: string;
+    lastError?: string;
+}
+
+// Derived state for local consent, session recording, and remote token status.
+// This is the single source of truth for whether events may be recorded.
 type CaptureSettingsState =
     | "off"
     | "paused"
     | "recording"
-    | "waitingForConsent";
+    | "waitingForConsent"
+    | "waitingForToken"
+    | "captureDisabled";
 
 const CAPTURE_SCHEMA_VERSION = 2;
 const CAPTURE_EVENT_SOURCE = "vscode_extension";
+const CAPTURE_SERVICE_DEFAULT_BASE_URL =
+    "https://9m2nbv2rvc.execute-api.us-east-2.amazonaws.com/dev";
+const CAPTURE_TOKEN_SECRET_KEY = "CodeChatEditor.Capture.Token";
+const CAPTURE_PARTICIPANT_GLOBAL_KEY =
+    "CodeChatEditor.Capture.ServiceParticipantId";
+const CAPTURE_INSTANCE_GLOBAL_KEY = "CodeChatEditor.Capture.InstanceId";
+const CAPTURE_STUDY_GLOBAL_KEY = "CodeChatEditor.Capture.StudyId";
+const CAPTURE_ENABLED_GLOBAL_KEY = "CodeChatEditor.Capture.CaptureEnabled";
+const CAPTURE_TOKEN_HASH_GLOBAL_KEY = "CodeChatEditor.Capture.TokenHash";
+const CAPTURE_SERVICE_BASE_GLOBAL_KEY =
+    "CodeChatEditor.Capture.IdentityServiceBaseUrl";
 // Audit label for the user-facing recording toggle. This is intentionally not
 // a persisted setting; recording is scoped to the current VS Code window.
 const CAPTURE_RECORD_AUDIT_LABEL = "RecordStudyEvents";
@@ -252,6 +311,14 @@ const DEFAULT_REFLECTION_PROMPTS = [
 // Output channel used for capture diagnostics that should not interrupt normal
 // editor use.
 let capture_output_channel: vscode.OutputChannel | undefined;
+// Extension context provides SecretStorage and global non-secret token metadata.
+let extension_context: vscode.ExtensionContext | undefined;
+let captureTokenRuntimeState: CaptureTokenRuntimeState = {
+    tokenStatus: "missing",
+    participantId: "",
+    instanceId: "",
+    studyId: "",
+};
 // True after the first failed send is logged to the console, suppressing repeat
 // console warnings while still writing detailed failures to the output channel.
 let captureFailureLogged = false;
@@ -261,7 +328,7 @@ let captureTransportReady = false;
 // True after a capture-enabled extension session has emitted `session_start`.
 let extensionCaptureSessionStarted = false;
 // Recording is intentionally scoped to this VS Code extension host session.
-// Consent and participant ID persist in settings, but recording must be
+// Consent persists in settings, but recording must be
 // re-enabled after VS Code restarts and can be toggled independently in each
 // open VS Code window.
 let sessionRecordStudyEvents = false;
@@ -276,6 +343,14 @@ let capture_status_timer: NodeJS.Timeout | undefined;
 // without double-logging when a command and VS Code's configuration event both
 // observe the same transition.
 let lastCaptureSettings: StudySettings | undefined;
+// Token mutations are authoritative. They cancel refresh/status work, but
+// refreshes must never cancel an enter or clear mutation.
+let captureTokenMutationGeneration = 0;
+let captureTokenRefreshGeneration = 0;
+// Serialize token work so SecretStorage, persisted identity, and runtime state
+// writes happen in a predictable order. Clear still invalidates immediately so
+// it can stop Rust uploads ASAP.
+let captureTokenOperationQueue: Promise<void> = Promise.resolve();
 
 // Simple classification of what the user is currently doing. `doc` means
 // prose/documentation activity, whether in a Markdown/RST document or a
@@ -306,20 +381,68 @@ function optionalString(value: unknown): string | undefined {
         : undefined;
 }
 
+function captureServiceBaseUrl(): string {
+    const inspected = vscode.workspace
+        .getConfiguration("CodeChatEditor.Capture")
+        .inspect<string>("ServiceBaseUrl");
+    // This endpoint receives bearer tokens. Honor only application/user-level
+    // settings so a repository cannot redirect a user's stored token.
+    return trustedCaptureServiceBaseUrl(
+        inspected,
+        CAPTURE_SERVICE_DEFAULT_BASE_URL,
+    );
+}
+
+function captureTokenStatusLabel(status: CaptureTokenUiStatus): string {
+    switch (status) {
+        case "missing":
+            return "Missing";
+        case "unverified":
+            return "Stored, not verified";
+        case "accepted":
+            return "Accepted";
+        case "rejected":
+            return "Rejected";
+        case "capture_disabled":
+            return "Capture disabled";
+        case "service_unavailable":
+            return "Service unavailable";
+    }
+}
+
 function loadStudySettings(): StudySettings {
     const config = vscode.workspace.getConfiguration("CodeChatEditor.Capture");
+    const participantId = captureTokenRuntimeState.participantId;
+    const tokenAccepted = captureTokenCanRecord(
+        participantId,
+        captureTokenRuntimeState.captureEnabled,
+        captureTokenRuntimeState.tokenStatus,
+    );
     return {
         // Recording is session-local so capture starts paused in every VS Code
-        // window/restart. Consent and participant ID remain persisted settings.
+        // window/restart. Consent persists in settings; token identity comes
+        // from CaptureWebService status.
         enabled: sessionRecordStudyEvents,
         consentEnabled: config.get<boolean>("ConsentEnabled", false),
-        participantId: optionalString(config.get("ParticipantId")) ?? "",
+        participantId,
+        tokenAccepted,
+        tokenStatus: captureTokenRuntimeState.tokenStatus,
     };
 }
 
 // Convert raw settings into the explicit four-row state table. Keeping this as
 // a separate helper prevents callers from inventing their own partial rules.
 function captureSettingsState(settings: StudySettings): CaptureSettingsState {
+    if (
+        settings.tokenStatus === "capture_disabled" &&
+        settings.consentEnabled &&
+        settings.enabled
+    ) {
+        return "captureDisabled";
+    }
+    if (settings.consentEnabled && settings.enabled && !settings.tokenAccepted) {
+        return "waitingForToken";
+    }
     if (settings.consentEnabled && settings.enabled) {
         return "recording";
     }
@@ -338,7 +461,9 @@ function captureSettingsEqual(a: StudySettings, b: StudySettings): boolean {
     return (
         a.enabled === b.enabled &&
         a.consentEnabled === b.consentEnabled &&
-        a.participantId === b.participantId
+        a.participantId === b.participantId &&
+        a.tokenAccepted === b.tokenAccepted &&
+        a.tokenStatus === b.tokenStatus
     );
 }
 
@@ -351,6 +476,10 @@ function captureStateDescription(state: CaptureSettingsState): string {
             return "Consent is retained, but recording is paused.";
         case "waitingForConsent":
             return "Capture waits for consent before recording.";
+        case "waitingForToken":
+            return "Capture waits for a valid portal token before recording.";
+        case "captureDisabled":
+            return "Capture is disabled by the portal or capture service.";
         case "off":
             return "Capture is off.";
     }
@@ -375,6 +504,12 @@ function captureSettingsStatus(settings: StudySettings): {
         case "waitingForConsent":
             label = "Capture: Waiting for consent";
             break;
+        case "waitingForToken":
+            label = "Capture: Waiting for token";
+            break;
+        case "captureDisabled":
+            label = "Capture: Disabled by portal";
+            break;
         case "off":
             label = "Capture: Off";
             break;
@@ -386,8 +521,20 @@ function captureSettingsStatus(settings: StudySettings): {
         tooltip: [
             `Consent Enabled: ${settings.consentEnabled ? "On" : "Off"}`,
             `Record Study Events: ${settings.enabled ? "On" : "Off"}`,
+            `Token: ${captureTokenStatusLabel(settings.tokenStatus)}`,
+            settings.participantId
+                ? `Participant ID: ${settings.participantId}`
+                : "Participant ID: unavailable",
+            captureTokenRuntimeState.instanceId
+                ? `Instance ID: ${captureTokenRuntimeState.instanceId}`
+                : "",
+            captureTokenRuntimeState.lastError
+                ? `Capture Service: ${captureTokenRuntimeState.lastError}`
+                : "",
             `State: ${captureStateDescription(state)}`,
-        ].join("\n"),
+        ]
+            .filter((line) => line.length > 0)
+            .join("\n"),
     };
 }
 
@@ -409,20 +556,100 @@ async function updateCaptureSetting(
     await config.update(name, value, vscode.ConfigurationTarget.Global);
 }
 
-async function ensureParticipantId(): Promise<string> {
-    const config = vscode.workspace.getConfiguration("CodeChatEditor.Capture");
-    const existing = optionalString(config.get("ParticipantId"));
-    if (existing !== undefined) {
-        return existing;
+function getExtensionContext(): vscode.ExtensionContext {
+    if (extension_context === undefined) {
+        throw new Error("CodeChat extension context is not initialized.");
     }
+    return extension_context;
+}
 
-    const generated = crypto.randomUUID();
-    await config.update(
-        "ParticipantId",
-        generated,
-        vscode.ConfigurationTarget.Global,
+async function getStoredCaptureToken(): Promise<string | undefined> {
+    return optionalString(
+        await getExtensionContext().secrets.get(CAPTURE_TOKEN_SECRET_KEY),
     );
-    return generated;
+}
+
+async function storeCaptureToken(token: string): Promise<void> {
+    await getExtensionContext().secrets.store(CAPTURE_TOKEN_SECRET_KEY, token);
+}
+
+async function deleteStoredCaptureToken(): Promise<void> {
+    await getExtensionContext().secrets.delete(CAPTURE_TOKEN_SECRET_KEY);
+}
+
+function loadPersistedCaptureIdentity(context: vscode.ExtensionContext): void {
+    const storedBaseUrl = optionalString(
+        context.globalState.get(CAPTURE_SERVICE_BASE_GLOBAL_KEY),
+    );
+    let currentBaseUrl: string | undefined;
+    try {
+        currentBaseUrl = normalizeCaptureServiceBaseUrl(captureServiceBaseUrl());
+    } catch {
+        currentBaseUrl = undefined;
+    }
+    if (storedBaseUrl === undefined || storedBaseUrl !== currentBaseUrl) {
+        captureTokenRuntimeState = {
+            ...captureTokenRuntimeState,
+            participantId: "",
+            instanceId: "",
+            studyId: "",
+            captureEnabled: false,
+        };
+        return;
+    }
+    const captureEnabled = context.globalState.get<boolean>(
+        CAPTURE_ENABLED_GLOBAL_KEY,
+    );
+    captureTokenRuntimeState = {
+        ...captureTokenRuntimeState,
+        participantId:
+            optionalString(context.globalState.get(CAPTURE_PARTICIPANT_GLOBAL_KEY)) ??
+            "",
+        instanceId:
+            optionalString(context.globalState.get(CAPTURE_INSTANCE_GLOBAL_KEY)) ??
+            "",
+        studyId:
+            optionalString(context.globalState.get(CAPTURE_STUDY_GLOBAL_KEY)) ??
+            "",
+        captureEnabled:
+            typeof captureEnabled === "boolean" ? captureEnabled : undefined,
+    };
+}
+
+async function persistCaptureIdentity(
+    status: CaptureServiceStatusResponse,
+    tokenHash: string,
+    serviceBaseUrl: string,
+): Promise<void> {
+    const context = getExtensionContext();
+    await context.globalState.update(
+        CAPTURE_PARTICIPANT_GLOBAL_KEY,
+        status.participant_id,
+    );
+    await context.globalState.update(
+        CAPTURE_INSTANCE_GLOBAL_KEY,
+        status.instance_id,
+    );
+    await context.globalState.update(CAPTURE_STUDY_GLOBAL_KEY, status.study_id);
+    await context.globalState.update(
+        CAPTURE_ENABLED_GLOBAL_KEY,
+        status.capture_enabled,
+    );
+    await context.globalState.update(CAPTURE_TOKEN_HASH_GLOBAL_KEY, tokenHash);
+    await context.globalState.update(
+        CAPTURE_SERVICE_BASE_GLOBAL_KEY,
+        serviceBaseUrl,
+    );
+}
+
+async function clearPersistedCaptureIdentity(): Promise<void> {
+    const context = getExtensionContext();
+    await context.globalState.update(CAPTURE_PARTICIPANT_GLOBAL_KEY, undefined);
+    await context.globalState.update(CAPTURE_INSTANCE_GLOBAL_KEY, undefined);
+    await context.globalState.update(CAPTURE_STUDY_GLOBAL_KEY, undefined);
+    await context.globalState.update(CAPTURE_ENABLED_GLOBAL_KEY, undefined);
+    await context.globalState.update(CAPTURE_TOKEN_HASH_GLOBAL_KEY, undefined);
+    await context.globalState.update(CAPTURE_SERVICE_BASE_GLOBAL_KEY, undefined);
 }
 
 function hashText(value: string): string {
@@ -472,13 +699,23 @@ function capturePayloadSummary(payload: CaptureEventWire): string {
 function captureStatusSummary(status: CaptureStatus): string {
     return [
         `state=${status.state}`,
+        `token=${status.token_status}`,
         `enabled=${status.enabled}`,
         `queued=${status.queued_events}`,
-        `db=${status.persisted_events}`,
-        `fallback=${status.fallback_events}`,
+        `spooled=${status.spooled_events}`,
+        `uploaded=${status.uploaded_events}`,
+        `quarantined=${status.quarantined_events}`,
         `failed=${status.failed_events}`,
+        status.participant_id ? `participant_id=${status.participant_id}` : "",
+        status.instance_id ? `instance_id=${status.instance_id}` : "",
+        status.capture_enabled !== null
+            ? `capture_enabled=${status.capture_enabled}`
+            : "",
+        status.service_version
+            ? `service_version=${status.service_version}`
+            : "",
         status.last_error ? `last_error=${status.last_error}` : "",
-        status.fallback_path ? `fallback_path=${status.fallback_path}` : "",
+        status.spool_path ? `spool_path=${status.spool_path}` : "",
     ]
         .filter((part) => part.length > 0)
         .join(" ");
@@ -486,12 +723,17 @@ function captureStatusSummary(status: CaptureStatus): string {
 
 type CaptureStatusJson = Omit<
     CaptureStatus,
-    "queued_events" | "persisted_events" | "fallback_events" | "failed_events"
+    | "queued_events"
+    | "spooled_events"
+    | "uploaded_events"
+    | "failed_events"
+    | "quarantined_events"
 > & {
     queued_events: number;
-    persisted_events: number;
-    fallback_events: number;
+    spooled_events: number;
+    uploaded_events: number;
     failed_events: number;
+    quarantined_events: number;
 };
 
 function parseCaptureStatus(json: string): CaptureStatus {
@@ -502,17 +744,432 @@ function parseCaptureStatus(json: string): CaptureStatus {
     return {
         ...status,
         queued_events: BigInt(status.queued_events),
-        persisted_events: BigInt(status.persisted_events),
-        fallback_events: BigInt(status.fallback_events),
+        spooled_events: BigInt(status.spooled_events),
+        uploaded_events: BigInt(status.uploaded_events),
         failed_events: BigInt(status.failed_events),
+        quarantined_events: BigInt(status.quarantined_events),
     };
+}
+
+function captureStatusUrl(serviceBaseUrl: string): string {
+    return `${serviceBaseUrl}/v1/capture/status`;
+}
+
+function leadingHttpStatusCode(message: string): number | undefined {
+    const match = /^(\d{3})(?:\s|$)/.exec(message);
+    return match === null ? undefined : Number.parseInt(match[1], 10);
+}
+
+function requestCaptureStatus(
+    token: string,
+    serviceBaseUrl: string,
+): Promise<CaptureServiceStatusResponse> {
+    const url = new URL(captureStatusUrl(serviceBaseUrl));
+    const client = url.protocol === "http:" ? http : https;
+
+    return new Promise((resolve, reject) => {
+        const req = client.request(
+            url,
+            {
+                method: "GET",
+                headers: {
+                    Accept: "application/json",
+                    Authorization: `Bearer ${token}`,
+                },
+            },
+            (res) => {
+                const chunks: Buffer[] = [];
+                res.on("data", (chunk: Buffer) => chunks.push(chunk));
+                res.on("end", () => {
+                    const body = Buffer.concat(chunks).toString("utf8");
+                    const statusCode = res.statusCode ?? 0;
+                    if (statusCode < 200 || statusCode >= 300) {
+                        reject(
+                            new Error(
+                                `${statusCode} ${
+                                    body || res.statusMessage || "request failed"
+                                }`,
+                            ),
+                        );
+                        return;
+                    }
+                    try {
+                        resolve(JSON.parse(body) as CaptureServiceStatusResponse);
+                    } catch (err) {
+                        reject(
+                            new Error(
+                                `Unable to parse capture status response: ${
+                                    err instanceof Error
+                                        ? err.message
+                                        : String(err)
+                                }`,
+                            ),
+                        );
+                    }
+                });
+            },
+        );
+        req.setTimeout(10000, () => {
+            req.destroy(new Error("capture status request timed out"));
+        });
+        req.on("error", reject);
+        req.end();
+    });
+}
+
+async function applyCaptureServiceStatus(
+    status: CaptureServiceStatusResponse,
+    tokenHash: string,
+    serviceBaseUrl: string,
+): Promise<void> {
+    captureTokenRuntimeState = {
+        tokenStatus: status.capture_enabled ? "accepted" : "capture_disabled",
+        participantId: status.participant_id,
+        instanceId: status.instance_id,
+        studyId: status.study_id,
+        captureEnabled: status.capture_enabled,
+        participantStatus: status.participant_status,
+        consentStatus: status.consent_status,
+        instanceStatus: status.instance_status,
+        tokenExpiresAt: status.token_expires_at,
+        serviceVersion: status.service_version,
+        lastStatusCheckAt: new Date().toISOString(),
+        lastError: status.capture_enabled
+            ? undefined
+            : "Capture is disabled by the portal or capture service.",
+    };
+    await persistCaptureIdentity(status, tokenHash, serviceBaseUrl);
+}
+
+async function configureRustCaptureService(
+    token: string | undefined,
+    serviceBaseUrl?: string,
+): Promise<boolean> {
+    if (codeChatEditorServer === undefined) {
+        return true;
+    }
+    try {
+        if (token === undefined) {
+            codeChatEditorServer.clearCaptureToken();
+            return true;
+        }
+        if (serviceBaseUrl === undefined) {
+            throw new Error("Capture service URL is not configured.");
+        }
+        codeChatEditorServer.configureCaptureService(
+            serviceBaseUrl,
+            token,
+        );
+        return true;
+    } catch (err) {
+        reportCaptureFailure(
+            `capture service configuration failed: ${
+                err instanceof Error ? err.message : String(err)
+            }`,
+        );
+        return false;
+    }
+}
+
+type CaptureServiceConfigurationResult = "configured" | "stale" | "failed";
+
+function beginCaptureTokenMutation(): CaptureTokenCurrentnessSnapshot {
+    captureTokenMutationGeneration += 1;
+    captureTokenRefreshGeneration += 1;
+    return {
+        mutationGeneration: captureTokenMutationGeneration,
+    };
+}
+
+function beginCaptureTokenRefresh(): CaptureTokenCurrentnessSnapshot {
+    captureTokenRefreshGeneration += 1;
+    return {
+        mutationGeneration: captureTokenMutationGeneration,
+        refreshGeneration: captureTokenRefreshGeneration,
+    };
+}
+
+function captureTokenOperationSnapshotIsCurrent(
+    snapshot: CaptureTokenCurrentnessSnapshot,
+): boolean {
+    return captureTokenSnapshotStillCurrent(
+        snapshot,
+        captureTokenMutationGeneration,
+        captureTokenRefreshGeneration,
+    );
+}
+
+function enqueueCaptureTokenOperation(
+    operation: () => Promise<void>,
+): Promise<void> {
+    const task = captureTokenOperationQueue
+        .catch(() => undefined)
+        .then(operation);
+    captureTokenOperationQueue = task.catch(() => undefined);
+    return task;
+}
+
+async function captureTokenOperationStillCurrent(
+    snapshot: CaptureTokenCurrentnessSnapshot,
+    expectedTokenHash?: string,
+    expectedBaseUrl?: string,
+): Promise<boolean> {
+    if (!captureTokenOperationSnapshotIsCurrent(snapshot)) {
+        return false;
+    }
+    let storedTokenHash: string | undefined;
+    if (expectedTokenHash !== undefined) {
+        const token = await getStoredCaptureToken();
+        storedTokenHash = token === undefined ? undefined : hashText(token);
+    }
+    let currentBaseUrl: string | undefined;
+    if (expectedBaseUrl !== undefined) {
+        try {
+            currentBaseUrl = normalizeCaptureServiceBaseUrl(captureServiceBaseUrl());
+        } catch {
+            currentBaseUrl = undefined;
+        }
+    }
+    return captureTokenSnapshotStillCurrent(
+        snapshot,
+        captureTokenMutationGeneration,
+        captureTokenRefreshGeneration,
+        storedTokenHash,
+        expectedTokenHash,
+        currentBaseUrl,
+        expectedBaseUrl,
+    );
+}
+
+async function configureRustCaptureServiceIfCurrent(
+    snapshot: CaptureTokenCurrentnessSnapshot,
+    token: string | undefined,
+    serviceBaseUrl?: string,
+    expectedTokenHash?: string,
+    expectedBaseUrl?: string,
+): Promise<CaptureServiceConfigurationResult> {
+    if (
+        !(await captureTokenOperationStillCurrent(
+            snapshot,
+            expectedTokenHash,
+            expectedBaseUrl,
+        ))
+    ) {
+        return "stale";
+    }
+    if (!captureTokenOperationSnapshotIsCurrent(snapshot)) {
+        return "stale";
+    }
+    return (await configureRustCaptureService(token, serviceBaseUrl))
+        ? "configured"
+        : "failed";
+}
+
+async function refreshCaptureTokenState(
+    notify: boolean = false,
+): Promise<void> {
+    const operationSnapshot = beginCaptureTokenRefresh();
+    await enqueueCaptureTokenOperation(() =>
+        refreshCaptureTokenStateInner(operationSnapshot, notify),
+    );
+}
+
+async function refreshCaptureTokenStateInner(
+    operationSnapshot: CaptureTokenCurrentnessSnapshot,
+    notify: boolean,
+): Promise<void> {
+    const token = await getStoredCaptureToken();
+    if (!(await captureTokenOperationStillCurrent(operationSnapshot))) {
+        return;
+    }
+
+    if (token === undefined) {
+        const configurationResult = await configureRustCaptureServiceIfCurrent(
+            operationSnapshot,
+            undefined,
+        );
+        if (configurationResult === "stale") {
+            return;
+        }
+        captureTokenRuntimeState = captureTokenClearedState();
+        await clearPersistedCaptureIdentity();
+        await refreshCaptureStatus();
+        return;
+    }
+
+    let expectedBaseUrl: string;
+    try {
+        expectedBaseUrl = normalizeCaptureServiceBaseUrl(captureServiceBaseUrl());
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const configurationResult = await configureRustCaptureServiceIfCurrent(
+            operationSnapshot,
+            undefined,
+        );
+        if (configurationResult === "stale") {
+            return;
+        }
+        captureTokenRuntimeState = {
+            ...captureTokenRuntimeState,
+            tokenStatus: "service_unavailable",
+            captureEnabled: false,
+            lastError: message,
+        };
+        captureLog(`capture token status failed: ${message}`);
+        if (notify) {
+            vscode.window.showWarningMessage(
+                `CodeChat capture token could not be verified: ${message}`,
+            );
+        }
+        await refreshCaptureStatus();
+        return;
+    }
+
+    const expectedTokenHash = hashText(token);
+    const configurationResult = await configureRustCaptureServiceIfCurrent(
+        operationSnapshot,
+        token,
+        expectedBaseUrl,
+        expectedTokenHash,
+        expectedBaseUrl,
+    );
+    if (configurationResult === "stale") {
+        return;
+    }
+    if (configurationResult === "failed") {
+        captureTokenRuntimeState = {
+            ...captureTokenRuntimeState,
+            tokenStatus: "service_unavailable",
+            captureEnabled: false,
+            lastError: "Capture service configuration failed.",
+        };
+        await refreshCaptureStatus();
+        return;
+    }
+
+    const context = getExtensionContext();
+    const storedTokenHash = optionalString(
+        context.globalState.get(CAPTURE_TOKEN_HASH_GLOBAL_KEY),
+    );
+    const storedBaseUrl = optionalString(
+        context.globalState.get(CAPTURE_SERVICE_BASE_GLOBAL_KEY),
+    );
+    if (
+        !(await captureTokenOperationStillCurrent(
+            operationSnapshot,
+            expectedTokenHash,
+            expectedBaseUrl,
+        ))
+    ) {
+        return;
+    }
+    if (
+        storedTokenHash !== expectedTokenHash ||
+        storedBaseUrl !== expectedBaseUrl
+    ) {
+        await clearPersistedCaptureIdentity();
+        if (
+            !(await captureTokenOperationStillCurrent(
+                operationSnapshot,
+                expectedTokenHash,
+                expectedBaseUrl,
+            ))
+        ) {
+            return;
+        }
+        captureTokenRuntimeState = {
+            ...captureTokenRuntimeState,
+            participantId: "",
+            instanceId: "",
+            studyId: "",
+            captureEnabled: false,
+        };
+    }
+
+    captureTokenRuntimeState = {
+        ...captureTokenRuntimeState,
+        tokenStatus: "unverified",
+        lastError: undefined,
+    };
+
+    try {
+        const status = await requestCaptureStatus(token, expectedBaseUrl);
+        if (
+            !(await captureTokenOperationStillCurrent(
+                operationSnapshot,
+                expectedTokenHash,
+                expectedBaseUrl,
+            ))
+        ) {
+            return;
+        }
+        await applyCaptureServiceStatus(status, expectedTokenHash, expectedBaseUrl);
+        captureLog(
+            `capture token status: ${captureTokenStatusLabel(
+                captureTokenRuntimeState.tokenStatus,
+            )} participant_id=${status.participant_id} instance_id=${status.instance_id}`,
+        );
+        if (notify) {
+            vscode.window.showInformationMessage(
+                status.capture_enabled
+                    ? "CodeChat capture token accepted."
+                    : "CodeChat capture is disabled by the portal.",
+            );
+        }
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const statusCode = leadingHttpStatusCode(message);
+        if (
+            !(await captureTokenOperationStillCurrent(
+                operationSnapshot,
+                expectedTokenHash,
+                expectedBaseUrl,
+            ))
+        ) {
+            return;
+        }
+        const clearIdentity = captureStatusFailureClearsIdentity(statusCode);
+        if (clearIdentity) {
+            await clearPersistedCaptureIdentity();
+            if (
+                !(await captureTokenOperationStillCurrent(
+                    operationSnapshot,
+                    expectedTokenHash,
+                    expectedBaseUrl,
+                ))
+            ) {
+                return;
+            }
+        }
+        const tokenStatus = captureTokenStatusForStatusFailure(statusCode);
+        captureTokenRuntimeState = {
+            ...(clearIdentity
+                ? {
+                      participantId: "",
+                      instanceId: "",
+                      studyId: "",
+                      captureEnabled: false,
+                  }
+                : captureTokenRuntimeState),
+            tokenStatus,
+            lastError: message,
+        };
+        captureLog(`capture token status failed: ${message}`);
+        if (notify) {
+            vscode.window.showWarningMessage(
+                `CodeChat capture token could not be verified: ${message}`,
+            );
+        }
+    }
+
+    await refreshCaptureStatus();
 }
 
 interface CaptureSendOptions {
     // Permit audit/control events even when normal capture is paused or waiting
     // for consent.
     ignoreCaptureSettings?: boolean;
-    // Update server-side capture state without inserting this event into the DB.
+    // Update server-side capture state without spooling this event for upload.
     controlOnly?: boolean;
     // Explicit active flag carried to the server so it can enable/disable
     // translation-generated write events.
@@ -544,7 +1201,15 @@ async function sendCaptureEvent(
         ? options.userId
         : options.controlOnly
           ? settings.participantId || "capture_control"
-          : await ensureParticipantId();
+          : settings.participantId;
+    if (!options.controlOnly && participantId.length === 0) {
+        captureLog(`capture skipped: ${eventType} (no verified capture token)`);
+        updateCaptureStatusBar(
+            "Capture: Waiting for token",
+            "Enter and verify a portal-issued capture token before recording.",
+        );
+        return;
+    }
     const fileFields = buildFileFields(filePath);
     // The server uses `capture_active` to decide whether it may generate
     // classified write_doc/write_code rows from translated edits.
@@ -628,7 +1293,7 @@ async function refreshCaptureStatus(): Promise<void> {
     const settings = loadStudySettings();
     const settingsStatus = captureSettingsStatus(settings);
     // When the settings are not in the recording row, the settings state is the
-    // authoritative status regardless of the server's DB/fallback state.
+    // authoritative status regardless of the server upload worker state.
     if (settingsStatus.state !== "recording") {
         updateCaptureStatusBar(settingsStatus.label, settingsStatus.tooltip);
         return;
@@ -647,14 +1312,26 @@ async function refreshCaptureStatus(): Promise<void> {
         );
         let label: string;
         switch (status.state) {
-            case "database":
-                label = "Capture: DB";
+            case "remote":
+                label = "Capture: Remote";
                 break;
-            case "fallback":
-                label = "Capture: Fallback";
+            case "spooling":
+                label = "Capture: Queued";
+                break;
+            case "uploading":
+                label = "Capture: Uploading";
                 break;
             case "starting":
                 label = "Capture: Starting";
+                break;
+            case "auth_failed":
+                label = "Capture: Token rejected";
+                break;
+            case "capture_disabled":
+                label = "Capture: Disabled by portal";
+                break;
+            case "service_unavailable":
+                label = "Capture: Service unavailable";
                 break;
             default:
                 label = "Capture: Off";
@@ -705,7 +1382,7 @@ async function setRecordStudyEvents(enabled: boolean): Promise<void> {
         );
     } else if (enabled) {
         vscode.window.showInformationMessage(
-            "CodeChat capture is waiting for consent.",
+            captureStateDescription(captureSettingsState(updatedSettings)),
         );
     } else {
         vscode.window.showInformationMessage(
@@ -719,11 +1396,6 @@ async function setCaptureConsent(enabled: boolean): Promise<void> {
     // consent transitions, including consent being turned off.
     const previousSettings = loadStudySettings();
 
-    // Consent-on creates the pseudonymous participant ID up front, so the audit
-    // event and later study events use the same stable identifier.
-    if (enabled) {
-        await ensureParticipantId();
-    }
     await updateCaptureSetting("ConsentEnabled", enabled);
     await reconcileCaptureSettings(
         "manage_capture_consent_enabled",
@@ -751,7 +1423,6 @@ async function giveConsentAndRecordStudyEvents(): Promise<void> {
     // then lets the common reconcile path emit one combined audit event.
     const previousSettings = loadStudySettings();
 
-    await ensureParticipantId();
     await updateCaptureSetting("ConsentEnabled", true);
     sessionRecordStudyEvents = true;
     await reconcileCaptureSettings(
@@ -787,9 +1458,6 @@ async function sendCaptureSettingsChangedEvent(
     // turning consent off can still be attributed to the participant who opted
     // out.
     let participantId = current.participantId || previous.participantId;
-    if (current.consentEnabled && participantId.length === 0) {
-        participantId = await ensureParticipantId();
-    }
     if (participantId.length === 0) {
         captureLog(
             `capture settings change skipped: ${changedSettings.join(",")} (no participant id)`,
@@ -836,7 +1504,7 @@ async function reconcileCaptureSettings(
     const previous = lastCaptureSettings ?? previousSettings;
 
     // Commands update settings and VS Code then fires a configuration event.
-    // This guard keeps the DB audit trail to one row per actual transition.
+    // This guard keeps the capture audit trail to one row per actual transition.
     if (
         lastCaptureSettings !== undefined &&
         captureSettingsEqual(lastCaptureSettings, settings)
@@ -884,10 +1552,94 @@ async function reconcileCaptureSettings(
 }
 
 async function copyParticipantId(): Promise<void> {
-    const participantId = await ensureParticipantId();
+    const participantId = captureTokenRuntimeState.participantId;
+    if (participantId.length === 0) {
+        vscode.window.showWarningMessage(
+            "Enter and verify a capture token before copying a participant ID.",
+        );
+        return;
+    }
     await vscode.env.clipboard.writeText(participantId);
     vscode.window.showInformationMessage(
         "CodeChat capture participant ID copied.",
+    );
+}
+
+async function enterCaptureToken(): Promise<void> {
+    const previousSettings = loadStudySettings();
+    const token = await vscode.window.showInputBox({
+        title: "Enter CodeChat Capture Token",
+        prompt: "Paste the portal-issued capture token.",
+        password: true,
+        ignoreFocusOut: true,
+        validateInput: (value) =>
+            value.trim().length === 0 ? "Capture token is required." : null,
+    });
+    if (token === undefined) {
+        return;
+    }
+    const operationSnapshot = beginCaptureTokenMutation();
+    const tokenText = token.trim();
+    let mutationApplied = false;
+    await enqueueCaptureTokenOperation(async () => {
+        if (!(await captureTokenOperationStillCurrent(operationSnapshot))) {
+            return;
+        }
+        await storeCaptureToken(tokenText);
+        if (!(await captureTokenOperationStillCurrent(operationSnapshot))) {
+            return;
+        }
+        captureTokenRuntimeState = {
+            ...captureTokenRuntimeState,
+            tokenStatus: "unverified",
+            lastError: undefined,
+        };
+        mutationApplied = true;
+    });
+    if (
+        mutationApplied &&
+        captureTokenOperationSnapshotIsCurrent(operationSnapshot)
+    ) {
+        await refreshCaptureTokenState(true);
+    }
+    await reconcileCaptureSettings(
+        "manage_capture_enter_token",
+        previousSettings,
+    );
+}
+
+async function clearCaptureToken(): Promise<void> {
+    const operationSnapshot = beginCaptureTokenMutation();
+    // Reserve clear's queue position before awaiting Rust reconfiguration so
+    // later refreshes cannot observe the pre-clear token as current state.
+    const clearTask = enqueueCaptureTokenOperation(async () => {
+        if (!(await captureTokenOperationStillCurrent(operationSnapshot))) {
+            return;
+        }
+        await deleteStoredCaptureToken();
+        if (!(await captureTokenOperationStillCurrent(operationSnapshot))) {
+            return;
+        }
+        await clearPersistedCaptureIdentity();
+        if (!(await captureTokenOperationStillCurrent(operationSnapshot))) {
+            return;
+        }
+        captureTokenRuntimeState = captureTokenClearedState();
+        await reconcileCaptureSettings("manage_capture_clear_token");
+        vscode.window.showInformationMessage("CodeChat capture token cleared.");
+    });
+    await Promise.all([
+        clearTask,
+        configureRustCaptureServiceIfCurrent(operationSnapshot, undefined),
+    ]);
+}
+
+async function validateCaptureToken(): Promise<void> {
+    const previousSettings = loadStudySettings();
+    await refreshCaptureTokenState(true);
+    await reconcileCaptureSettings(
+        "manage_capture_validate_token",
+        previousSettings,
     );
 }
 
@@ -918,6 +1670,20 @@ async function showCaptureStatus(): Promise<void> {
     }
 
     actions.push({
+        label: "Enter Capture Token",
+        description: `Token: ${captureTokenStatusLabel(settings.tokenStatus)}`,
+        run: enterCaptureToken,
+    });
+
+    if (settings.tokenStatus !== "missing") {
+        actions.push({
+            label: "Validate Capture Token",
+            description: "Check token status with CaptureWebService.",
+            run: validateCaptureToken,
+        });
+    }
+
+    actions.push({
         label: settings.consentEnabled ? "Turn Consent Off" : "Turn Consent On",
         description: settings.consentEnabled
             ? "Stop recording if active; keep the recording setting unchanged."
@@ -935,10 +1701,18 @@ async function showCaptureStatus(): Promise<void> {
         run: () => setRecordStudyEvents(!settings.enabled),
     });
 
+    if (settings.tokenStatus !== "missing") {
+        actions.push({
+            label: "Clear Capture Token",
+            description: "Remove the locally stored portal token.",
+            run: clearCaptureToken,
+        });
+    }
+
     actions.push(
         {
             label: "Copy Participant ID",
-            description: settings.participantId || "Generate a new UUID.",
+            description: settings.participantId || "Verify a token first.",
             run: copyParticipantId,
         },
         {
@@ -1073,7 +1847,7 @@ async function sendCaptureStopControl(
     }
     // This message is sent through the normal capture channel so the server can
     // clear its active capture context, but `capture_control_only` prevents it
-    // from becoming a DB row.
+    // from being spooled for upload.
     await sendCaptureEvent(
         "session_end",
         filePath,
@@ -1180,6 +1954,8 @@ function queueActivityCapture(kind: ActivityKind, filePath?: string): void {
 // This is invoked when the extension is activated. It either creates a new
 // CodeChat Editor Server instance or reveals the currently running one.
 export const activate = (context: vscode.ExtensionContext) => {
+    extension_context = context;
+    loadPersistedCaptureIdentity(context);
     lastCaptureSettings = loadStudySettings();
     capture_output_channel =
         vscode.window.createOutputChannel("CodeChat Capture");
@@ -1204,16 +1980,30 @@ export const activate = (context: vscode.ExtensionContext) => {
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(async (event) => {
             if (event.affectsConfiguration("CodeChatEditor.Capture")) {
+                await refreshCaptureTokenState();
                 await reconcileCaptureSettings("settings_ui");
             }
         }),
     );
+    refreshCaptureTokenState();
     refreshCaptureStatus();
 
     context.subscriptions.push(
         vscode.commands.registerCommand(
             "extension.codeChatCaptureStatus",
             showCaptureStatus,
+        ),
+        vscode.commands.registerCommand(
+            "extension.codeChatCaptureEnterToken",
+            enterCaptureToken,
+        ),
+        vscode.commands.registerCommand(
+            "extension.codeChatCaptureValidateToken",
+            validateCaptureToken,
+        ),
+        vscode.commands.registerCommand(
+            "extension.codeChatCaptureClearToken",
+            clearCaptureToken,
         ),
         vscode.commands.registerCommand(
             "extension.codeChatInsertReflectionPrompt",
@@ -1548,6 +2338,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                 captureFailureLogged = false;
                 captureTransportReady = false;
                 extensionCaptureSessionStarted = false;
+                await refreshCaptureTokenState();
                 refreshCaptureStatus();
 
                 const hosted_in_ide =

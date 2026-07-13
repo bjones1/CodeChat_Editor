@@ -52,7 +52,7 @@ actix-ws = "0.4"
 ammonia = "4.1.2"
 anyhow = "1.0.100"
 bytes = { version = "1", features = ["serde"] }
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markdown.git", branch = "all-fixes", version = "0.21.0" }
 dunce = "1.0.5"
@@ -92,7 +92,6 @@ sha2 = "0.11"
 test_utils = { path = "../test_utils" }
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
-tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
 tracing = "0.1.44"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

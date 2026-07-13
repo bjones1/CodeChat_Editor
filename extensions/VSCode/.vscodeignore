@@ -27,6 +27,7 @@ src/**
 
 # Omit libraries, since `esbuild` takes care of packaging.
 node_modules/
+.test-output/**
 
 # Omit VSCode config.
 .vscode/**
@@ -41,6 +42,7 @@ target/**
 # Misc files not needed in a package.
 .eslintrc.yml
 .gitignore
+out/*.test.cjs
 build.rs
 Cargo.lock
 Cargo.toml

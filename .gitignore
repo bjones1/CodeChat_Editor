@@ -23,9 +23,8 @@
 target/
 /server/bindings/
 
-# Runtime capture configuration and local fallback capture logs.
-/capture_config.json
-/capture-events-fallback.jsonl
+# Runtime capture spools and generated capture exports.
+/capture-spool/
 /capture-metrics-*.csv
 /capture-analysis-*/
 /server/scripts/output

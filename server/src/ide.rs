@@ -267,6 +267,37 @@ impl CodeChatEditorServer {
         webserver::capture_status(&self.app_state)
     }
 
+    pub fn configure_capture_service(
+        &self,
+        base_url: String,
+        token: Option<String>,
+    ) -> Result<(), String> {
+        self.app_state
+            .capture
+            .as_ref()
+            .ok_or_else(|| "Capture worker is not available".to_string())?
+            .configure_service(base_url, token)
+    }
+
+    pub fn clear_capture_token(&self) -> Result<(), String> {
+        self.app_state
+            .capture
+            .as_ref()
+            .ok_or_else(|| "Capture worker is not available".to_string())?
+            .clear_token();
+        Ok(())
+    }
+
+    pub fn check_capture_service_status(
+        &self,
+    ) -> Result<crate::capture::CaptureServiceStatusResponse, String> {
+        self.app_state
+            .capture
+            .as_ref()
+            .ok_or_else(|| "Capture worker is not available".to_string())?
+            .check_service_status()
+    }
+
     // Send a `CurrentFile` message. The other parameter (true if text/false if
     // binary/None if ignored) is ignored by the server, so it's always sent as
     // `None`.

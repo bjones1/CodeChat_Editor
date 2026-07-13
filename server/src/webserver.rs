@@ -99,7 +99,7 @@ use crate::{
 
 use crate::capture::{
     CaptureEvent, CaptureEventWire, CaptureStatus, EventCapture, generate_capture_event_id,
-    hash_capture_path, load_capture_config,
+    hash_capture_path,
 };
 
 use chrono::Utc;
@@ -595,7 +595,7 @@ pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> Cap
         // Prefer hashing a raw local path on the server so all capture
         // transports use the same path-to-hash rule. The raw path is not stored;
         // `file_hash` remains only as a backward-compatible/server-originated
-        // fallback.
+        // alternative.
         let file_hash = wire
             .file_path
             .as_deref()
@@ -1557,27 +1557,20 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
 pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
-    // Initialize event capture from DB config when available; otherwise still
-    // capture to JSONL fallback so local/debug runs produce inspectable data.
+    // Initialize capture with a durable local upload spool. The VS Code
+    // extension supplies the CaptureWebService endpoint and bearer token at
+    // runtime; this server never reads database credentials from disk or env.
     let root_path = ROOT_PATH.lock().unwrap().clone();
-    let fallback_path = root_path.join("capture-events-fallback.jsonl");
-    let capture: Option<EventCapture> = match load_capture_config(&root_path) {
-        Some(cfg) => {
-            let summary = cfg.redacted_summary();
-            match EventCapture::new(cfg) {
-                Ok(ec) => {
-                    info!("Capture: enabled ({summary})");
-                    Some(ec)
-                }
-                Err(err) => {
-                    warn!(
-                        "Capture: failed to initialize database capture ({summary}); using fallback JSONL: {err}"
-                    );
-                    EventCapture::fallback_only(fallback_path).ok()
-                }
-            }
+    let capture_spool_path = root_path.join("capture-spool");
+    let capture: Option<EventCapture> = match EventCapture::new(capture_spool_path.clone()) {
+        Ok(ec) => {
+            info!("Capture: enabled with local upload spool at {capture_spool_path:?}");
+            Some(ec)
         }
-        None => EventCapture::fallback_only(fallback_path).ok(),
+        Err(err) => {
+            warn!("Capture: failed to initialize local upload spool: {err}");
+            None
+        }
     };
 
     web::Data::new(AppState {

@@ -43,8 +43,7 @@ use thirtyfour::{
 // ### Local
 use crate::overall_common::{
     CodeChatEditorServerLog, ExpectedMessages, TIMEOUT, assert_no_more_messages, beginning_of_line,
-    end_of_line, get_version, goto_line, optional_message, perform_loadfile,
-    select_codechat_iframe,
+    get_version, goto_line, optional_message, perform_loadfile, select_codechat_iframe,
 };
 use code_chat_editor::{
     lexer::supported_languages::MARKDOWN_MODE,
@@ -778,7 +777,7 @@ async fn mocha_failure_text(driver: &WebDriver) -> String {
 
 make_test!(test_client_updates, test_client_updates_core);
 
-async fn test_updates_core(
+async fn test_client_updates_core(
     codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
