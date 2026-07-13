@@ -46,6 +46,11 @@ Implementation
     * ide/vscode [tests.rs](server/src/ide/vscode/tests.rs)
     * Processing [tests.rs](server/src/processing/tests.rs)
     * [cli.rs](server/tests/cli.rs)
+    * Webdriver-based
+      * [overall_1.rs](server/tests/overall_1.rs)
+      * [overall_2.rs](server/tests/overall_2.rs)
+      * [overall_3.rs](server/tests/overall_3.rs)
+      * [overall_4.rs](server/tests/overall_4.rs)
   * [Cargo.toml](server/Cargo.toml)
 * [Client](client/readme.md)
   * Editor
@@ -76,6 +81,7 @@ Implementation
     * [Cargo.toml](extensions/VSCode/Cargo.toml)
     * [Developer documentation](extensions/VSCode/developer.md)
 * Development tools
+  * [CLAUDE.md](CLAUDE.md)
   * Builder
     * [builder/Cargo.toml](builder/Cargo.toml)
     * [builder/src/main.rs](builder/src/main.rs)

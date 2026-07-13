@@ -32,7 +32,11 @@ import { show_toast as show_toast_core } from "./show_toast.mjs";
 
 // ### Local
 import { assert } from "./assert.mjs";
-import { DEBUG_ENABLED, MAX_MESSAGE_LENGTH } from "./debug_enabled.mjs";
+import {
+    console_log,
+    DEBUG_ENABLED,
+    MAX_MESSAGE_LENGTH,
+} from "./debug_enabled.mjs";
 import {
     CodeChatForWeb,
     EditorMessage,
@@ -41,11 +45,7 @@ import {
     MessageResult,
     UpdateMessageContents,
 } from "./shared.mjs";
-import {
-    console_log,
-    on_error,
-    on_dom_content_loaded,
-} from "./CodeChatEditor.mjs";
+import { on_error, on_dom_content_loaded } from "./CodeChatEditor.mjs";
 import { ResultErrTypes } from "./rust-types/ResultErrTypes.js";
 import { CursorPosition } from "./rust-types/CursorPosition.js";
 
@@ -283,6 +283,12 @@ class WebSocketComm {
                 }
 
                 case "Result": {
+                    // If the result has the magic ID, then call a debug
+                    // routine.
+                    if (id === 1e6 && DEBUG_ENABLED) {
+                        root_iframe!.contentWindow?.CodeChatEditor?.do_debug();
+                        break;
+                    }
                     // Cancel the timer for this message and remove it from
                     // `pending_messages`.
                     const pending_message = this.pending_messages[id];
@@ -320,8 +326,7 @@ class WebSocketComm {
         };
     }
 
-    /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    send = (data: any) => this.ws.send(data);
+    send = (data: string | BufferSource | Blob) => this.ws.send(data);
     /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
     close = (...args: any) => this.ws.close(...args);
 
@@ -407,7 +412,7 @@ class WebSocketComm {
             Result: result === undefined ? { Ok: "Void" } : { Err: result },
         };
         console_log(
-            `CodeChat Client: sending result id = ${id}, message = ${format_struct(message)}`,
+            `CodeChat Editor Client: sending result id = ${id}, message = ${format_struct(message)}`,
         );
         // We can't simply call `send_message` because that function expects a
         // result message back from the server.
@@ -435,12 +440,12 @@ const set_content = async (
     if (client === undefined) {
         // See if this is the [simple viewer](#Client-simple-viewer). Otherwise,
         // it's just the bare document to replace.
+        const contentsElement =
+            root_iframe!.contentDocument?.getElementById("CodeChat-contents");
         const cw =
-            (
-                root_iframe!.contentDocument?.getElementById(
-                    "CodeChat-contents",
-                ) as HTMLIFrameElement | undefined
-            )?.contentWindow ?? root_iframe!.contentWindow!;
+            (contentsElement instanceof HTMLIFrameElement
+                ? contentsElement.contentWindow
+                : undefined) ?? root_iframe!.contentWindow!;
         cw.document.open();
         assert("Plain" in contents.source);
         cw.document.write(contents.source.Plain.doc);
@@ -484,9 +489,9 @@ export const page_init = (
         webSocketComm = new WebSocketComm(
             `${protocol}//${window.location.host}/${ws_pathname}`,
         );
-        root_iframe = document.getElementById(
-            "CodeChat-iframe",
-        )! as HTMLIFrameElement;
+        const iframe_element = document.getElementById("CodeChat-iframe");
+        assert(iframe_element instanceof HTMLIFrameElement);
+        root_iframe = iframe_element;
         window.CodeChatEditorFramework = {
             webSocketComm,
         };

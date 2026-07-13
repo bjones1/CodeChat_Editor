@@ -19,15 +19,21 @@
 // `.eslintrc.yml` -- Configure ESLint for this project
 // ====================================================
 import eslintPluginPrettierRecommended from "eslint-plugin-prettier/recommended";
+import css from "@eslint/css";
 import eslint from "@eslint/js";
 import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
 import globals from "globals";
 
+// Glob matching the JS/TS files the JavaScript/TypeScript configs below should
+// apply to. Without this, those configs (and their core rules) also run against
+// `.css` files, which crashes since CSS uses a different language.
+const jsFiles = ["**/*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"];
+
 export default defineConfig(
-    eslint.configs.recommended,
-    tseslint.configs.recommended,
-    eslintPluginPrettierRecommended,
+    { files: jsFiles, extends: [eslint.configs.recommended] },
+    { files: jsFiles, extends: [tseslint.configs.recommended] },
+    { files: jsFiles, extends: [eslintPluginPrettierRecommended] },
     defineConfig([
         {
             // This must be the only key in this dict to be treated as a global
@@ -37,10 +43,11 @@ export default defineConfig(
         },
         {
             name: "local",
+            files: jsFiles,
             languageOptions: {
                 globals: {
-                    ...globals.browser
-                }
+                    ...globals.browser,
+                },
             },
             rules: {
                 "no-unused-vars": "off",
@@ -57,6 +64,14 @@ export default defineConfig(
                     },
                 ],
             },
+        },
+        {
+            name: "css",
+            files: ["**/*.css"],
+            ignores: ["src/third-party/**"],
+            language: "css/css",
+            plugins: { css },
+            extends: ["css/recommended"],
         },
     ]),
 );

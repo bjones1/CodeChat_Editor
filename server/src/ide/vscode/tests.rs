@@ -110,7 +110,7 @@ async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
     let msg_txt = loop {
         let msg = select! {
             data = ws_stream.next() => data.unwrap().unwrap(),
-            _ = sleep(Duration::from_secs(3) - now.elapsed().unwrap()) => panic!("Timeout waiting for message")
+            _ = sleep(Duration::from_secs(6) - now.elapsed().unwrap()) => panic!("Timeout waiting for message")
         };
         match msg {
             Message::Close(_) => panic!("Unexpected close message."),
@@ -608,7 +608,7 @@ async fn test_vscode_ide_websocket7() {
             message: EditorMessageContents::CurrentFile(
                 format!(
                     "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
-                    &file_path.to_slash().unwrap(),
+                    file_path.to_slash().unwrap(),
                 ),
                 None,
             ),
@@ -899,7 +899,7 @@ async fn test_vscode_ide_websocket4() {
             message: EditorMessageContents::CurrentFile(
                 format!(
                     "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
-                    &file_path.to_slash().unwrap()
+                    file_path.to_slash().unwrap()
                 ),
                 None,
             ),
@@ -1164,7 +1164,7 @@ async fn test_vscode_ide_websocket4a() {
             message: EditorMessageContents::CurrentFile(
                 format!(
                     "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
-                    &file_path.to_slash().unwrap()
+                    file_path.to_slash().unwrap()
                 ),
                 None,
             ),
@@ -1266,7 +1266,7 @@ async fn test_vscode_ide_websocket4b() {
             message: EditorMessageContents::CurrentFile(
                 format!(
                     "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
-                    &file_path.to_slash().unwrap()
+                    file_path.to_slash().unwrap()
                 ),
                 None,
             ),

@@ -24,12 +24,11 @@ pub mod supported_languages;
 // -------
 //
 // ### Standard library
-#[cfg(feature = "lexer_explain")]
-use std::cmp::min;
-use std::{collections::HashMap, sync::Arc};
+use std::{cmp::min, collections::HashMap, sync::Arc};
 
 // ### Third-party
 use lazy_static::lazy_static;
+use log::trace;
 use regex::Regex;
 
 // ### Local
@@ -488,7 +487,7 @@ fn build_lexer_regex(
 
             // Look for either the delimiter or a newline to terminate the
             // string.
-            (false, NewlineSupport::None) => Regex::new(&format!("{}|\n", &escaped_delimiter)),
+            (false, NewlineSupport::None) => Regex::new(&format!("{}|\n", escaped_delimiter)),
         }
         .unwrap();
         regex_builder(
@@ -761,8 +760,7 @@ pub fn source_lexer(
 
     // Main loop: lex the provided source code.
     while source_code_unlexed_index < source_code.len() {
-        #[cfg(feature = "lexer_explain")]
-        println!(
+        trace!(
             "Searching the following source_code using the pattern {:?}:\n'{}'\n\nThe current code block is '{}'\n",
             language_lexer_compiled.next_token,
             &source_code[source_code_unlexed_index..],
@@ -796,8 +794,7 @@ pub fn source_lexer(
                 source_code_unlexed_index +=
                     classify_match.get(matching_group_index).unwrap().start();
 
-                #[cfg(feature = "lexer_explain")]
-                println!(
+                trace!(
                     "Matched the string {} in group {}. The current_code_block is now\n'{}'\n",
                     matching_group_str,
                     matching_group_index,
@@ -811,27 +808,23 @@ pub fn source_lexer(
                                    // match will be appended to the current code
                                    // block.
                                    |closing_regex: &Regex| {
-                #[cfg(feature = "lexer_explain")]
-                println!("Searching for the end of this token using the pattern '{:?}'.", closing_regex);
+                trace!("Searching for the end of this token using the pattern '{:?}'.", closing_regex);
 
                 // Add the opening delimiter to the code.
                 source_code_unlexed_index += matching_group_str.len();
                 // Find the closing delimiter.
                 if let Some(closing_match) = closing_regex.find(&source_code[source_code_unlexed_index..]) {
-                    #[cfg(feature = "lexer_explain")]
-                    println!("Found; adding source_code up to and including this token to current_code_block.");
+                    trace!("Found; adding source_code up to and including this token to current_code_block.");
 
                     // Include this in code.
                     source_code_unlexed_index += closing_match.end();
                 } else {
-                    #[cfg(feature = "lexer_explain")]
-                    println!("Not found; adding all the source_code to current_code_block.");
+                    trace!("Not found; adding all the source_code to current_code_block.");
 
                     // Then the rest of the code is a string.
                     source_code_unlexed_index = source_code.len();
                 }
-                #[cfg(feature = "lexer_explain")]
-                println!("The current_code_block is now\n\
+                trace!("The current_code_block is now\n\
                     '{}'\n", &source_code[current_code_block_index..source_code_unlexed_index]);
 
             };
@@ -881,8 +874,7 @@ pub fn source_lexer(
                         let full_comment =
                             &source_code[full_comment_start_index..source_code_unlexed_index];
 
-                        #[cfg(feature = "lexer_explain")]
-                        println!(
+                        trace!(
                             "This is an inline comment. Source code before the line containing this comment is:\n'{}'\n\
                         The text preceding this comment is: '{}'.\n\
                         The comment is: '{}'\n",
@@ -939,8 +931,7 @@ pub fn source_lexer(
                                 contents,
                             );
 
-                            #[cfg(feature = "lexer_explain")]
-                            println!(
+                            trace!(
                                 "This is a doc block. Possibly added the preceding code block\n\
                             '{}'.\n\
                             Added a doc block with indent = '{}', delimiter = '{}', and contents =\n\
@@ -965,16 +956,14 @@ pub fn source_lexer(
 
                     // #### Block comment
                     RegexDelimType::BlockComment(comment_delim_regex) => 'block_comment: {
-                        #[cfg(feature = "lexer_explain")]
-                        println!("Block Comment Found.");
+                        trace!("Block Comment Found.");
 
                         // Determine the location of the beginning of this block
                         // comment's content.
                         let mut comment_start_index =
                             source_code_unlexed_index + matching_group_str.len();
 
-                        #[cfg(feature = "lexer_explain")]
-                        println!(
+                        trace!(
                             "The opening delimiter is '{}', and the closing delimiter regex is '{}'.",
                             matching_group_str, comment_delim_regex
                         );
@@ -1022,8 +1011,7 @@ pub fn source_lexer(
                         while nesting_depth != 0 {
                             // Get the index of the next block comment
                             // delimiter.
-                            #[cfg(feature = "lexer_explain")]
-                            println!(
+                            trace!(
                                 "Looking for a block comment delimiter in '{}'.",
                                 &source_code[comment_start_index
                                     ..min(comment_start_index + 30, source_code.len())]
@@ -1031,8 +1019,7 @@ pub fn source_lexer(
                             let delimiter_captures_wrapped =
                                 comment_delim_regex.captures(&source_code[comment_start_index..]);
                             if delimiter_captures_wrapped.is_none() {
-                                #[cfg(feature = "lexer_explain")]
-                                println!("The closing comment delimiter wasn't found.");
+                                trace!("The closing comment delimiter wasn't found.");
                                 // If there's no closing delimiter, this is not
                                 // a doc block; it's a syntax error. The safe
                                 // route is to assume the rest of the contents
@@ -1073,8 +1060,7 @@ pub fn source_lexer(
                                 nesting_depth += 1;
                                 // Mark all previous text as code, then continue
                                 // the loop.
-                                #[cfg(feature = "lexer_explain")]
-                                println!(
+                                trace!(
                                     "opening_delimiter.start() = {}, opening_delimiter.len() = {}",
                                     opening_delimiter.start(),
                                     opening_delimiter.len()
@@ -1083,10 +1069,9 @@ pub fn source_lexer(
                                     comment_start_index + opening_delimiter.start();
                                 comment_start_index =
                                     source_code_unlexed_index + opening_delimiter.len();
-                                #[cfg(feature = "lexer_explain")]
-                                println!(
+                                trace!(
                                     "Found a nested opening block comment delimiter. Nesting depth: {}",
-                                    &nesting_depth
+                                    nesting_depth
                                 );
                                 continue;
                             } else {
@@ -1106,10 +1091,9 @@ pub fn source_lexer(
                                     source_code_unlexed_index = comment_start_index
                                         + closing_delimiter_match.start()
                                         + closing_delimiter_match.len();
-                                    #[cfg(feature = "lexer_explain")]
-                                    println!(
+                                    trace!(
                                         "Found a non-innermost closing block comment delimiter. Nesting depth: {}",
-                                        &nesting_depth
+                                        nesting_depth
                                     );
                                     continue;
                                 }
@@ -1133,8 +1117,7 @@ pub fn source_lexer(
                                 let comment_body = &source_code
                                     [comment_start_index..closing_delimiter_start_index];
 
-                                #[cfg(feature = "lexer_explain")]
-                                println!(
+                                trace!(
                                     "The comment body is\n\
                             '{}'.\n\
                             The closing delimiter is '{}'.",
@@ -1163,8 +1146,7 @@ pub fn source_lexer(
                                     [closing_delimiter_end_index
                                         ..newline_or_eof_after_closing_delimiter_index];
 
-                                #[cfg(feature = "lexer_explain")]
-                                println!(
+                                trace!(
                                     "The post-comment line is '{}'.",
                                     post_closing_delimiter_line
                                 );
@@ -1195,8 +1177,7 @@ pub fn source_lexer(
                                 source_code_unlexed_index =
                                     newline_or_eof_after_closing_delimiter_index;
 
-                                #[cfg(feature = "lexer_explain")]
-                                println!(
+                                trace!(
                                     "current_code_block is '{}'\n\
                             comment_line_prefix is '{}'\n\
                             code_lines_before_comment is '{}'",
@@ -1373,10 +1354,9 @@ pub fn source_lexer(
                                     append_code_doc_block(indent, delimiter, dedented_contents);
 
                                     // print the doc block
-                                    #[cfg(feature = "lexer_explain")]
-                                    println!(
+                                    trace!(
                                         "Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.",
-                                        &comment_line_prefix, matching_group_str, contents
+                                        comment_line_prefix, matching_group_str, contents
                                     );
 
                                     // advance `current_code_block_index` to
@@ -1399,20 +1379,17 @@ pub fn source_lexer(
 
                     // #### String-like syntax
                     RegexDelimType::String(closing_regex) => {
-                        #[cfg(feature = "lexer_explain")]
-                        print!("This is a string. ");
+                        trace!("This is a string. ");
                         append_code(closing_regex)
                     }
 
                     RegexDelimType::TemplateLiteral => {
-                        #[cfg(feature = "lexer_explain")]
-                        print!("This is a template literal. ");
+                        trace!("This is a template literal. ");
                         append_code(&TEMPLATE_LITERAL_CLOSING_REGEX);
                     }
 
                     RegexDelimType::Heredoc(stop_prefix, stop_suffix) => {
-                        #[cfg(feature = "lexer_explain")]
-                        print!("This is a heredoc. ");
+                        trace!("This is a heredoc. ");
 
                         // Get the string from the source code which (along with
                         // the stop prefix/suffix) defines the end of the

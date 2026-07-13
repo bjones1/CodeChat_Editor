@@ -19,6 +19,9 @@
 /// These are functional tests of the overall system, performed by attaching a
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
+///
+/// To run this test, execute `cargo test --test overall_1
+/// <optional_test_name>` in the `server/` directory.
 // Modules
 // -------
 mod overall_common;
@@ -27,7 +30,7 @@ mod overall_common;
 // -------
 //
 // ### Standard library
-use std::{error::Error, path::PathBuf, time::Duration};
+use std::{path::PathBuf, time::Duration};
 
 // ### Third-party
 use dunce::canonicalize;
@@ -39,11 +42,11 @@ use thirtyfour::{
 
 // ### Local
 use crate::overall_common::{
-    ExpectedMessages, TIMEOUT, assert_no_more_messages, get_version, goto_line, optional_message,
-    perform_loadfile, select_codechat_iframe,
+    CodeChatEditorServerLog, ExpectedMessages, TIMEOUT, assert_no_more_messages, beginning_of_line,
+    end_of_line, get_version, goto_line, optional_message, perform_loadfile,
+    select_codechat_iframe,
 };
 use code_chat_editor::{
-    ide::CodeChatEditorServer,
     lexer::supported_languages::MARKDOWN_MODE,
     processing::{
         CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
@@ -68,7 +71,7 @@ make_test!(test_server, test_server_core);
 // marked that way in the Selenium docs.
 #[allow(deprecated)]
 async fn test_server_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -138,7 +141,7 @@ async fn test_server_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -177,7 +180,11 @@ async fn test_server_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Edit the indent. It should only allow spaces and tabs, rejecting other
-    // edits.
+    // edits. Click it first, since the indent is only editable while
+    // focused; see the inline `onmousedown` handler on
+    // `.CodeChat-doc-indent` in `CodeMirror-integration.mts`, which makes it
+    // editable on click.
+    doc_block_indent.click().await.unwrap();
     doc_block_indent.send_keys("  123").await.unwrap();
     let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     let client_version = get_version(&msg);
@@ -238,10 +245,7 @@ async fn test_server_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Moving left should move us back to the doc block.
-    code_line
-        .send_keys("" + Key::Home + Key::Left)
-        .await
-        .unwrap();
+    beginning_of_line(&code_line, Key::Left).await.unwrap();
     assert_eq!(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
@@ -268,7 +272,7 @@ async fn test_server_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -448,24 +452,6 @@ async fn test_server_core(
                     }),
                     version: client_version,
                 }),
-            })
-        }
-    );
-    codechat_server.send_result(client_id, None).await.unwrap();
-    client_id += MESSAGE_ID_INCREMENT;
-
-    // Get the resulting cursor position update after the edit.
-    let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-    assert_eq!(
-        msg,
-        EditorMessage {
-            id: client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: md_path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(1)),
-                scroll_position: None,
-                is_re_translation: false,
-                contents: None,
             })
         }
     );
@@ -676,7 +662,7 @@ make_test!(test_client, test_client_core);
 // marked that way in the Selenium docs.
 #[allow(deprecated)]
 async fn test_client_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -792,8 +778,8 @@ async fn mocha_failure_text(driver: &WebDriver) -> String {
 
 make_test!(test_client_updates, test_client_updates_core);
 
-async fn test_client_updates_core(
-    codechat_server: CodeChatEditorServer,
+async fn test_updates_core(
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -922,7 +908,7 @@ async fn test_client_updates_core(
     // Add an indented comment.
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
     let code_line = driver.find(By::Css(code_line_css)).await.unwrap();
-    code_line.send_keys(Key::Home + "# ").await.unwrap();
+    beginning_of_line(&code_line, "# ").await.unwrap();
     // This should edit the (new) third line of the file after word wrap: `def
     // foo():`.
     let msg = optional_message(
@@ -931,7 +917,7 @@ async fn test_client_updates_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -993,63 +979,72 @@ async fn test_client_updates_core(
         }
     );
     codechat_server.send_result(client_id, None).await.unwrap();
-    //client_id += MESSAGE_ID_INCREMENT;
+    client_id += MESSAGE_ID_INCREMENT;
 
-    /*x TODO broken by OutOfSync due to unnecessary save after re-translate.
-        // Send the original text back, to ensure the re-translation correctly updated the Client.
-        ide_version = 1.0;
-        let ide_id = codechat_server
-            .send_message_update_plain(
-                path_str.clone(),
-                Some((orig_text, ide_version)),
-                Some(1),
-                None,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-            EditorMessage {
-                id: ide_id,
-                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-            }
-        );
-        // Trigger a client edit to send the Client contents back.
-        let code_line = driver.find(By::Css(code_line_css)).await.unwrap();
-        code_line.send_keys(" ").await.unwrap();
+    // Send the original text back, to ensure the re-translation correctly
+    // updated the Client.
+    let ide_version = 1.0;
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            path_str.clone(),
+            Some((orig_text, ide_version)),
+            Some(1),
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    // Trigger a client edit to send the Client contents back.
+    let code_line = driver.find(By::Css(code_line_css)).await.unwrap();
+    code_line.send_keys(" ").await.unwrap();
 
-        let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-        let new_client_version = get_version(&msg);
-        assert_eq!(
-            msg,
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.clone(),
-                    cursor_position: Some(CursorPosition::Line(2)),
-                    scroll_position: Some(1.0),
-                    is_re_translation: false,
-                    contents: Some(CodeChatForWeb {
-                        metadata: SourceFileMetadata {
-                            mode: "python".to_string(),
-                        },
-                        source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
-                            doc: vec![StringDiff {
-                                from: 79,
-                                to: Some(90),
-                                insert: "def foo(): \n".to_string()
-                            }],
-                            doc_blocks: vec![],
-                            version: ide_version,
-                        }),
-                        version: new_client_version,
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(1)),
+            scroll_position: Some(1.0),
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
+    let new_client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(2)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 79,
+                            to: Some(90),
+                            insert: "def foo(): \n".to_string()
+                        }],
+                        doc_blocks: vec![],
+                        version: ide_version,
                     }),
-                })
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
-    */
-
+                    version: new_client_version,
+                }),
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
     assert_no_more_messages(&codechat_server).await;
 
     Ok(())

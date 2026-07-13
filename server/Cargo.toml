@@ -32,20 +32,11 @@ license = "GPL-3.0-only"
 name = "codechat-editor-server"
 readme = "../README.md"
 repository = "https://github.com/bjones1/CodeChat_Editor"
-version = "0.1.56"
+version = "0.1.61"
 
 # This library allows other packages to use core CodeChat Editor features.
 [lib]
 name = "code_chat_editor"
-
-# Features
-# --------
-#
-# See the [docs](https://doc.rust-lang.org/cargo/reference/features.html).
-[features]
-# Uncomment this to show an explanation of the lexing process.
-#default = ["lexer_explain"]
-lexer_explain = []
 
 # Dependencies
 # ------------
@@ -58,6 +49,7 @@ actix-service = "2.0.3"
 actix-web = "4"
 actix-web-httpauth = "0.8.2"
 actix-ws = "0.4"
+ammonia = "4.1.2"
 anyhow = "1.0.100"
 bytes = { version = "1", features = ["serde"] }
 chrono = "0.4"
@@ -72,19 +64,21 @@ htmlize = "1.0.6"
 imara-diff = { version = "0.2", features = [] }
 indoc = "2.0.5"
 lazy_static = "1"
-log = "0.4"
+# Ideally, we'd set this in a non-library place, but this also builds a CLI.
+# TODO: separate the CLI into a different crate.
+log = { version = "0.4", features = ["release_max_level_warn"] }
 log4rs = "1.3"
 markup5ever_rcdom = "0.39"
 mime = "0.3.17"
 mime_guess = "2.0.5"
 minify-html = { git = "https://github.com/bjones1/minify-html.git", branch = "dev", version = "0.18.1" }
-minreq = "2.12.0"
+minreq = "3"
 normalize-line-endings = "0.3.0"
 notify-debouncer-full = "0.7"
 path-slash = "0.2.1"
 pest = "2.7.14"
 pest_derive = "2.7.14"
-phf = "0.13.1"
+phf = { version = "0.14", features = ["macros"] }
 # Per the [docs](https://docs.rs/crate/pulldown-cmark/latest), skip building the
 # binary.
 pulldown-cmark = { version = "0.13", default-features = false, features = [
@@ -116,7 +110,7 @@ windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 actix-http = "3.9.0"
 assert_cmd = "2"
 assert_fs = "1"
-assertables = "9"
+assertables = "10"
 futures = "0.3.31"
 predicates = "3.1.2"
 pretty_assertions = "1.4.1"

@@ -53,6 +53,7 @@ import {
 import {
     DEBUG_ENABLED,
     MAX_MESSAGE_LENGTH,
+    console_log,
 } from "../../../client/src/debug_enabled.mjs";
 import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes.js";
 
@@ -2125,12 +2126,5 @@ const get_document = (file_path: string) => {
 const get_text_editor = (doc: TextDocument): TextEditor | undefined => {
     for (const editor of vscode.window.visibleTextEditors) {
         if (editor.document === doc) return editor;
-    }
-};
-
-/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-const console_log = (...args: any) => {
-    if (DEBUG_ENABLED) {
-        console.log(...args);
     }
 };

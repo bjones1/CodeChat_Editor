@@ -27,21 +27,25 @@ mod overall_common;
 // -------
 //
 // ### Standard library
-use std::{error::Error, path::PathBuf};
+use std::path::PathBuf;
 
 // ### Third-party
 use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, WebDriver, error::WebDriverError};
+use thirtyfour::{
+    By, WebDriver,
+    error::WebDriverError,
+    extensions::query::{ElementQueryable, ElementWaitable},
+};
 
 // ### Local
 use crate::overall_common::{
-    TIMEOUT, assert_no_more_messages, get_empty_client_update, get_version, optional_message,
-    perform_loadfile, select_codechat_iframe,
+    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_document,
+    click_element_top_left, get_version, optional_message, perform_loadfile,
+    select_codechat_iframe,
 };
 use code_chat_editor::{
-    ide::CodeChatEditorServer,
     processing::{
         CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
     },
@@ -57,7 +61,7 @@ make_test!(test_4, test_4_core);
 // Tests
 // -----
 async fn test_4_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -111,29 +115,50 @@ async fn test_4_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     doc_blocks[1].click().await.unwrap();
-    let mut client_version = 0.0;
-    get_empty_client_update(
+    let msg = optional_message(
         &codechat_server,
-        &path_str,
         &mut client_id,
-        &mut client_version,
-        "python",
-        Some(CursorPosition::Line(3)),
-        Some(1.0),
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(1)),
+            scroll_position: Some(1.0),
+            is_re_translation: false,
+            contents: None,
+        }),
     )
     .await;
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(3)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
 
     doc_blocks[2].click().await.unwrap();
-    get_empty_client_update(
-        &codechat_server,
-        &path_str,
-        &mut client_id,
-        &mut client_version,
-        "python",
-        Some(CursorPosition::Line(5)),
-        Some(1.0),
-    )
-    .await;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(5)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    //client_id += MESSAGE_ID_INCREMENT;
 
     assert_no_more_messages(&codechat_server).await;
 
@@ -142,9 +167,10 @@ async fn test_4_core(
 
 make_test!(test_5, test_5_core);
 
-// Verify that newlines in Mermaid and Graphviz diagrams aren't removed.
+// Verify that newlines in Mermaid and Graphviz diagrams aren't removed, and
+// that equations aren't munged.
 async fn test_5_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -165,6 +191,8 @@ async fn test_5_core(
         # graph TD
         #   A --> B
         # ```
+        #
+        # $x$
         "
     )
     .to_string();
@@ -182,8 +210,11 @@ async fn test_5_core(
     select_codechat_iframe(&driver).await;
 
     // Focus it.
-    let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
-    let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
+    let doc_block_contents = driver
+        .query(By::Css(".CodeChat-doc"))
+        .first()
+        .await
+        .unwrap();
     doc_block_contents.click().await.unwrap();
     // The click produces an updated cursor/scroll location after an autosave
     // delay.
@@ -206,7 +237,11 @@ async fn test_5_core(
     assert_eq!(client_id, 7.0);
 
     // Refind it, since it's now switched with a TinyMCE editor.
-    let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
+    // Wait for it to become clickable before interacting with it, since the
+    // switch from the doc block to the TinyMCE editor can leave the element
+    // briefly present but not yet interactable.
+    tinymce_contents.wait_until().clickable().await.unwrap();
     // Make an edit.
     tinymce_contents.send_keys("foo").await.unwrap();
 
@@ -220,7 +255,7 @@ async fn test_5_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -257,7 +292,6 @@ async fn test_5_core(
     let version = client_version;
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
-    assert_eq!(client_id, 10.0);
 
     // Send new text, which turns into a diff.
     let ide_id = codechat_server
@@ -284,7 +318,7 @@ async fn test_5_core(
         EditorMessageContents::Update(UpdateMessageContents {
             file_path: path_str.clone(),
             cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
+            scroll_position: Some(1.0),
             is_re_translation: false,
             contents: None,
         }),
@@ -331,7 +365,7 @@ make_test!(test_6, test_6_core);
 
 // Verify that edits in document-only mode don't result in data corruption.
 async fn test_6_core(
-    codechat_server: CodeChatEditorServer,
+    codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
@@ -362,10 +396,31 @@ async fn test_6_core(
     // Check the content.
     let body_css = "#CodeChat-body .CodeChat-doc-contents";
     let body_content = driver.find(By::Css(body_css)).await.unwrap();
-
-    // Perform edits.
-    body_content.send_keys("a").await.unwrap();
+    click_element_top_left(&driver, &body_content)
+        .await
+        .unwrap();
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: None,
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Perform edits at the beginning of the document. See
+    // `overall_common::beginning_of_document` for why this can't just be a
+    // plain OS-specific key combo on macOS.
+    beginning_of_document(&body_content, "").await.unwrap();
+    body_content.send_keys("a").await.unwrap();
     // Sometimes, a cursor update gets sent before the edit.
     let msg = optional_message(
         &codechat_server,

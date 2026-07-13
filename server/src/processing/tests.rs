@@ -718,19 +718,26 @@ fn test_source_to_codechat_for_web_1() {
 
     // Test an unterminated HTML block.
     assert_eq!(
-        source_to_codechat_for_web("// <foo>\n // Test", &"cpp".to_string(), 0.0, false, false),
+        source_to_codechat_for_web(
+            "// <strong>\n // Test",
+            &"cpp".to_string(),
+            0.0,
+            false,
+            false
+        ),
         Ok(TranslationResults::CodeChat(build_codechat_for_web(
             "cpp",
             "\n\n",
             vec![
-                build_codemirror_doc_block(0, 1, "", "//", "<foo> "),
+                build_codemirror_doc_block(0, 1, "", "//", "<strong> </strong>"),
                 build_codemirror_doc_block(1, 2, " ", "//", "<p>Test"),
             ]
         )))
     );
 
     // Test an unterminated `<pre>` block. Ensure that markdown after this is
-    // still parsed.
+    // still parsed. Ammonia closes the unterminated `<pre>`, dropping the
+    // trailing newline.
     assert_eq!(
         source_to_codechat_for_web(
             "// <pre>\n // *Test*",
@@ -743,7 +750,7 @@ fn test_source_to_codechat_for_web_1() {
             "cpp",
             "\n\n",
             vec![
-                build_codemirror_doc_block(0, 1, "", "//", "<pre>\n"),
+                build_codemirror_doc_block(0, 1, "", "//", "<pre></pre>"),
                 build_codemirror_doc_block(1, 2, " ", "//", "<p><em>Test</em>"),
             ]
         )))
@@ -774,6 +781,33 @@ fn test_source_to_codechat_for_web_1() {
                 build_codemirror_doc_block(0, 3, "", "//", "<p>One<p>Two"),
                 build_codemirror_doc_block(12, 13, "", "//", "<p>Four"),
             ]
+        )))
+    );
+
+    // Test that minify functions correctly across multiple paragraphs separated
+    // by a code block.
+    assert_eq!(
+        source_to_codechat_for_web(
+            indoc!(
+                r#"
+                // <a id="one"></a>1
+                "#
+            ),
+            &"cpp".to_string(),
+            0.0,
+            false,
+            false
+        ),
+        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+            "cpp",
+            "\n",
+            vec![build_codemirror_doc_block(
+                0,
+                1,
+                "",
+                "//",
+                r#"<p><a id=one></a>1"#
+            ),]
         )))
     );
 }
@@ -1338,12 +1372,12 @@ fn test_hydrate_html_1() {
         .unwrap(),
         indoc!(
             r#"
-            <p><span class="math math-inline mceNonEditable">\({a}_1, b_{2}\)</span>
-            <span class="math math-inline mceNonEditable">\(a*1, b*2\)</span>
-            <span class="math math-inline mceNonEditable">\([a](b)\)</span>
-            <span class="math math-inline mceNonEditable">\(3 &lt;a&gt; b\)</span>
-            <span class="math math-inline mceNonEditable">\(a \; b\)</span></p>
-            <p><span class="math math-display mceNonEditable">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
+            <p><span class="math math-inline mceNonEditable" contenteditable="false">\({a}_1, b_{2}\)</span>
+            <span class="math math-inline mceNonEditable" contenteditable="false">\(a*1, b*2\)</span>
+            <span class="math math-inline mceNonEditable" contenteditable="false">\([a](b)\)</span>
+            <span class="math math-inline mceNonEditable" contenteditable="false">\(3 &lt;a&gt; b\)</span>
+            <span class="math math-inline mceNonEditable" contenteditable="false">\(a \; b\)</span></p>
+            <p><span class="math math-display mceNonEditable" contenteditable="false">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
             "#
         )
     );
@@ -1365,7 +1399,6 @@ fn test_hydrate_html_1() {
 fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
     let tree = html_to_tree(html, &None)?;
     dehydrating_walk_node(&tree);
-    //println!("{:#?}", tree);
     Ok(tree)
 }
 
@@ -1425,12 +1458,12 @@ fn test_dehydrate_html_1() {
             .convert(
                 &dehydrate_html(indoc!(
                     r#"
-                    <p><span class="math math-inline mceNonEditable">\({a}_1, b_{2}\)</span>
-                    <span class="math math-inline mceNonEditable">\(a*1, b*2\)</span>
-                    <span class="math math-inline mceNonEditable">\([a](b)\)</span>
-                    <span class="math math-inline mceNonEditable">\(3 &lt;a&gt; b\)</span>
-                    <span class="math math-inline mceNonEditable">\(a \; b\)</span></p>
-                    <p><span class="math math-display mceNonEditable">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
+                    <p><span class="math math-inline mceNonEditable" contenteditable="false">\({a}_1, b_{2}\)</span>
+                    <span class="math math-inline mceNonEditable" contenteditable="false">\(a*1, b*2\)</span>
+                    <span class="math math-inline mceNonEditable" contenteditable="false">\([a](b)\)</span>
+                    <span class="math math-inline mceNonEditable" contenteditable="false">\(3 &lt;a&gt; b\)</span>
+                    <span class="math math-inline mceNonEditable" contenteditable="false">\(a \; b\)</span></p>
+                    <p><span class="math math-display mceNonEditable" contenteditable="false">$${a}_1, b_{2}, a*1, b*2, [a](b), 3 &lt;a&gt; b, a \; b$$</span></p>
                     "#
                 ))
                 .unwrap()
@@ -1459,5 +1492,69 @@ fn test_dehydrate_html_1() {
             )
             .unwrap(),
         "1. foo\u{a0}\n"
+    );
+
+    assert_eq!(
+        converter
+            .convert(
+                &dehydrate_html(indoc!(
+                    r#"
+                    <pre><code class="language-html"><br>&lt;!DOCTYPE html&gt;<br>
+                    &lt;html lang="en"&gt;
+                    &lt;head&gt;
+                        &lt;meta charset="UTF-8"&gt;
+                        &lt;title&gt;TinyMCE Dirty Event Test&lt;/title&gt;
+                    &lt;/head&gt;
+                    &lt;body&gt;
+                        &lt;h1&gt;TinyMCE Dirty Event Test&lt;/h1&gt;
+                    &lt;/body&gt;
+                    &lt;/html&gt;<br>
+                    </code></pre>
+                    "#
+                ))
+                .unwrap()
+            )
+            .unwrap(),
+        indoc!(
+            r#"
+                ```html
+
+                <!DOCTYPE html>
+
+                <html lang="en">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>TinyMCE Dirty Event Test</title>
+                </head>
+                <body>
+                    <h1>TinyMCE Dirty Event Test</h1>
+                </body>
+                </html>
+
+                ```
+        "#
+        )
+    );
+
+    // A trailing empty paragraph (`<p><br></p>`) is converted to `<p>&nbsp;</p>`
+    // by `dehydrating_walk_node`, preserving it as a non-breaking space.
+    assert_eq!(
+        converter
+            .convert(
+                &dehydrate_html(indoc!(
+                    "
+                    <p>1</p><p><br data-mce-bogus=\"1\"></p>
+                    "
+                ))
+                .unwrap()
+            )
+            .unwrap(),
+        indoc!(
+            "
+            1
+
+            \u{a0}
+            "
+        )
     );
 }

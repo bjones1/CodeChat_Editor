@@ -48,7 +48,7 @@ import "./third-party/wc-mermaid/wc-mermaid.js";
 
 // #### Local
 import { assert } from "./assert.mjs";
-import { DEBUG_ENABLED } from "./debug_enabled.mjs";
+import { console_log, DEBUG_ENABLED } from "./debug_enabled.mjs";
 import {
     apply_diff_str,
     CodeMirror_load,
@@ -62,8 +62,13 @@ import "./graphviz-webcomponent-setup.mjs";
 // This must be imported *after* the previous setup import, so it's placed here,
 // instead of in the third-party category above.
 import "./third-party/graphviz-webcomponent/graph.js";
-import { init, tinymce } from "./tinymce-config.mjs";
-import { Editor, EditorEvent, Events } from "tinymce";
+import type {
+    Editor,
+    EditorEvent,
+    Events,
+    RawEditorOptions,
+    TinyMCE,
+} from "tinymce";
 import {
     CodeChatForWeb,
     CodeMirrorDiffable,
@@ -107,6 +112,7 @@ declare global {
                 cursor_position?: CursorPosition,
                 scroll_line?: number,
             ) => Promise<void>;
+            do_debug: () => void;
             send_update: (_only_if_dirty: boolean) => Promise<void>;
             scroll_to_line: (
                 cursor_position?: CursorPosition,
@@ -136,6 +142,10 @@ let current_metadata: {
 
 const webSocketComm = () => parent.window.CodeChatEditorFramework.webSocketComm;
 
+// This set when a TinyMCE `input` event occurs, which usually produces a
+// duplicate `Dirty` event which should be ignored.
+let ignoreTinyMceDirty = false;
+
 // True if the document is dirty (needs saving).
 let is_dirty = false;
 
@@ -144,6 +154,20 @@ export const set_is_dirty = (value: boolean = true) => {
 };
 
 export const get_is_dirty = () => is_dirty;
+
+// ### TinyMCE dynamic import
+//
+// TinyMCE is dynamically imported when `init` is called.
+export const init = async (options: RawEditorOptions) => {
+    const tinymce_config = await import("./tinymce-config.mjs");
+    tinymce = tinymce_config.tinymce;
+    return await tinymce_config.init(options);
+};
+// The imported module is stored in this variable.
+export let tinymce: undefined | TinyMCE = undefined;
+// A single TinyMCE instance is used for all doc blocks. Avoid accessing this
+// through `tinymce.activeEditor`, which fails if the editor isn't active.
+export const tinymce_instance = () => tinymce?.get(0);
 
 // Page initialization
 // -------------------
@@ -197,6 +221,14 @@ const open_lp = async (
 // incorrect results. This text is the unmodified content sent from the IDE.
 let doc_content = "";
 
+// For debugging, allow the extension or server to run this routine by sending
+// the appropriate message.
+const do_debug = () => {
+    if (DEBUG_ENABLED) {
+        tinymce_instance()?.save({ format: "raw" });
+    }
+};
+
 // This function is called on page load to "load" a file. Before this point, the
 // server has already lexed the source file into code and doc blocks; this
 // function transforms the code and doc blocks into HTML and updates the current
@@ -210,23 +242,9 @@ const _open_lp = async (
     scroll_line?: number,
 ) => {
     // Note that globals, such as `is_dirty` and document contents, may change
-    // between `await` calls. Therefore, try to perform processing which relies
-    // on these values between `await` calls. For example, evaluate this first:
-    //
-    // Before calling any MathJax, make sure it's fully loaded and the initial
-    // render is finished.
-    await window.MathJax.startup.promise;
-
-    // Process any pending events before proceeding. Sometimes, TinyMCE has a
-    // pending edit that hasn't been processed yet, meaning the `is_dirty` flag
-    // is incorrect. Use the raw format; see the implementation notes.
-    tinymce.activeEditor?.save({ format: "raw" });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    // The only call to `await` is based on TinyMCE init, which should only
-    // cause an async delay on its first execution. (Even then, I'm not sure it
-    // does, since all resources are statically imported). So, we should be OK
-    // for the rest of this function.
+    // between `await` calls. The only call to `await` is based on TinyMCE init,
+    // which should only cause an async delay on its first execution. So, we
+    // should be OK for the rest of this function.
     //
     // Now, make all decisions about `is_dirty`: if the text is dirty, do some
     // special processing; simply applying the update could cause either data
@@ -245,7 +263,7 @@ const _open_lp = async (
     //    2. In normal mode, we don't have a backup copy of the full text.
     //       Report an `OutOfSync` error, which causes the IDE to send the full
     //       text which will then overwrite changes made in the Client.
-    if (is_dirty && is_re_translation) {
+    if (get_is_dirty() && is_re_translation) {
         console_log(`Ignoring re-translation because Client is dirty.`);
         return;
     }
@@ -258,19 +276,20 @@ const _open_lp = async (
         // Get the mode from the page's query parameters. Default to edit using
         // the
         // [nullish coalescing operator](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing_operator).
-        const mode = urlParams.get("mode") ?? EditorMode.edit;
-        const _editorMode = Object.values(EditorMode).includes(mode)
-            ? mode
-            : EditorMode.edit;
+        const mode = urlParams.get("mode") ?? EditorMode[EditorMode.edit];
+        // `EditorMode` is a numeric enum, so indexing it by the mode name
+        // yields the matching enum value, or `undefined` for an unknown name.
+        // Fall back to `edit` in that case.
+        const _editorMode: EditorMode =
+            EditorMode[mode as keyof typeof EditorMode] ?? EditorMode.edit;
 
         // Get the <code>[current_metadata](#current_metadata)</code> from the
         // provided `code_chat_for_web` struct and store it as a global
         // variable.
         current_metadata = codechat_for_web["metadata"];
         const source = codechat_for_web["source"];
-        const codechat_body = document.getElementById(
-            "CodeChat-body",
-        ) as HTMLDivElement;
+        const codechat_body = document.getElementById("CodeChat-body");
+        assert(codechat_body instanceof HTMLDivElement);
         if (is_doc_only()) {
             // Per the
             // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
@@ -278,8 +297,10 @@ const _open_lp = async (
             // mathematics, you will need to tell MathJax about that so that it
             // knows the typeset math that you are removing is no longer on the
             // page."
-            window.MathJax.typesetClear(codechat_body);
-            if (tinymce.activeEditor === null) {
+            window.MathJax?.typesetClear?.(codechat_body);
+            // Note that `==` is intentional: `null` (no editor instance) or
+            // `undefined` (TinyMCE not loaded).
+            if (tinymce_instance() == null) {
                 // We shouldn't have a diff if the editor hasn't been
                 // initialized.
                 assert("Plain" in source);
@@ -298,21 +319,19 @@ const _open_lp = async (
                     // [handling editor events](https://www.tiny.cloud/docs/tinymce/6/events/#handling-editor-events),
                     // this is how to create a TinyMCE event handler.
                     setup: (editor: Editor) => {
-                        editor.on(
-                            "dirty",
-                            (
-                                event: EditorEvent<
-                                    Events.EditorEventMap["dirty"]
-                                >,
-                            ) => {
-                                // Sometimes, `tinymce.activeEditor` is null
-                                // (perhaps when it's not focused). Use the
-                                // `event` data instead.
-                                event.target.setDirty(false);
-                                is_dirty = true;
+                        editor.on("Dirty", () => {
+                            if (!ignoreTinyMceDirty) {
+                                set_is_dirty(true);
                                 startAutoUpdateTimer();
-                            },
-                        );
+                            }
+                        });
+
+                        editor.on("input", () => {
+                            ignoreTinyMceDirty = true;
+                            set_is_dirty(true);
+                            startAutoUpdateTimer();
+                        });
+
                         // Send updates on cursor movement.
                         editor.on(
                             "SelectionChange",
@@ -326,18 +345,18 @@ const _open_lp = async (
                         );
                     },
                 });
-                tinymce.activeEditor!.focus();
+                tinymce_instance()!.focus();
             } else {
                 // Save the cursor location before the update, then restore it
                 // afterwards, if TinyMCE has focus.
-                const sel = tinymce.activeEditor!.hasFocus()
+                const sel = tinymce_instance()!.hasFocus()
                     ? saveSelection()
                     : undefined;
                 doc_content =
                     "Plain" in source
                         ? source.Plain.doc
                         : apply_diff_str(doc_content, source.Diff.doc);
-                tinymce.activeEditor!.setContent(doc_content);
+                tinymce_instance()!.setContent(doc_content);
                 if (sel !== undefined) {
                     restoreSelection(sel);
                 }
@@ -345,7 +364,7 @@ const _open_lp = async (
             await mathJaxTypeset(codechat_body);
             scroll_to_line(cursor_position, scroll_line);
         } else {
-            if (is_dirty && "Diff" in source) {
+            if (get_is_dirty() && "Diff" in source) {
                 // Send an `OutOfSync` response, so that the IDE will send the
                 // full text to overwrite these changes with.
                 webSocketComm().send_result(
@@ -373,7 +392,7 @@ const _open_lp = async (
         // contents have been overwritten by contents from the IDE. By the same
         // reasoning, restart the auto update timer.
         clearAutoUpdateTimer();
-        is_dirty = false;
+        set_is_dirty(false);
 
         // <a id="CodeChatEditor_test"></a>If tests should be run, then the
         // [following global variable](CodeChatEditor-test.mts#CodeChatEditor_test)
@@ -419,9 +438,8 @@ const save_lp = async (
         let code_mirror_diffable: CodeMirrorDiffable = {};
         if (is_doc_only()) {
             // Untypeset all math before saving the document.
-            const codechat_body = document.getElementById(
-                "CodeChat-body",
-            ) as HTMLDivElement;
+            const codechat_body = document.getElementById("CodeChat-body");
+            assert(codechat_body instanceof HTMLDivElement);
             mathJaxUnTypeset(codechat_body);
             // Use a try/finally to ensure that the document is retypeset even
             // if errors occur.
@@ -429,7 +447,10 @@ const save_lp = async (
                 // To save a document only, simply get the HTML from the only
                 // Tiny MCE div. Update the `doc_contents` to stay in sync with
                 // the Server.
-                doc_content = tinymce.activeEditor!.save({ format: "raw" });
+                doc_content = tinymce_instance()!.save({ format: "raw" });
+                // The `save()` flushes any duplicate `Dirty` events. After
+                // this, following `Dirty` events are genuine.
+                ignoreTinyMceDirty = false;
                 (
                     code_mirror_diffable as {
                         Plain: CodeMirror;
@@ -473,15 +494,13 @@ export const saveSelection = () => {
             let current_node = sel.anchorNode;
             // Continue until we find the div which contains the doc block
             // contents: either it's not an element (such as a div), ...
-            current_node.nodeType !== Node.ELEMENT_NODE ||
+            !(current_node instanceof Element) ||
             // or it's not the doc block contents div.
-            (!(current_node as Element).classList.contains(
-                "CodeChat-doc-contents",
-            ) &&
+            (!current_node.classList.contains("CodeChat-doc-contents") &&
                 // Sometimes, the parent of a custom node (`wc-mermaid`) skips
                 // the TinyMCE div and returns the overall div. I don't know
                 // why.
-                !(current_node as Element).classList.contains("CodeChat-doc"));
+                !current_node.classList.contains("CodeChat-doc"));
             current_node = current_node.parentNode!
         ) {
             // Store the index of this node in its' parent list of child
@@ -515,13 +534,15 @@ export const restoreSelection = ({
     // Copy the selection over to TinyMCE by indexing the selection path to find
     // the selected node.
     if (selection_path.length && typeof selection_offset === "number") {
-        let selection_node = tinymce.activeEditor!.getContentAreaContainer();
-        while (selection_path.length) {
-            const new_selection_node = selection_node.childNodes[
-                selection_path.shift()!
-            ] as HTMLElement;
+        let selection_node: Node =
+            tinymce_instance()!.getContentAreaContainer();
+        // Avoid mutating `selection_path` by making a copy of it.
+        const selection_path_copy = [...selection_path];
+        while (selection_path_copy.length) {
+            const new_selection_node =
+                selection_node.childNodes[selection_path_copy.shift()!];
             // If we get lost during the descent, then stop just before that.
-            if (new_selection_node === undefined) {
+            if (!(new_selection_node instanceof Node)) {
                 break;
             }
             selection_node = new_selection_node;
@@ -534,7 +555,7 @@ export const restoreSelection = ({
             selection_node.nodeValue?.length ?? 0,
         );
         // Use that to set the selection.
-        tinymce.activeEditor!.selection.setCursorLocation(
+        tinymce_instance()!.selection.setCursorLocation(
             selection_node,
             final_selection_offset,
         );
@@ -661,12 +682,19 @@ const on_click = (event: MouseEvent) => {
 // Save the current document, then navigate to the provided URL, which must be a
 // reference to another CodeChat Editor document.
 const save_then_navigate = (codeChatEditorUrl: URL) => {
-    send_update(true).then((_value) => {
+    const navigate = () => {
         // Avoid recursion!
         window.navigation.removeEventListener("navigate", on_navigate);
         parent.window.CodeChatEditorFramework.webSocketComm.current_file(
             codeChatEditorUrl,
         );
+    };
+    // Navigate after the save completes. If the save fails, still navigate --
+    // otherwise the user is stranded on the current page with only a generic
+    // error toast -- but report the failure so the lost save isn't silent.
+    send_update(true).then(navigate, (reason) => {
+        show_toast(`Error saving before navigation: ${reason}`);
+        navigate();
     });
 };
 
@@ -683,13 +711,6 @@ const scroll_to_line = (
     }
 };
 
-/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-export const console_log = (...args: any) => {
-    if (DEBUG_ENABLED) {
-        console.log(...args);
-    }
-};
-
 // A global error handler: this is called on any uncaught exception.
 export const on_error = (event: Event) => {
     let err_str: string;
@@ -700,14 +721,23 @@ export const on_error = (event: Event) => {
         }
     } else if (event instanceof PromiseRejectionEvent) {
         const reason = event.reason;
-        err_str = `${event.promise} rejected: ${reason}`;
-        if (reason instanceof Error && reason.stack) {
-            err_str += `\n${reason.stack}`;
+        let userMessage = "An unexpected error occurred. Please try again.";
+        console.log(reason, reason instanceof Error, typeof reason);
+        // A simple `reason instanceof Error` fails here. Better would be
+        // [Error.isError()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/isError),
+        // but this requires es2027.
+        if (typeof reason.message === "string") {
+            // Extracts the text from `reject(new Error('Your text'))`.
+            userMessage = reason.message;
+        } else if (typeof reason === "string") {
+            // Extracts the text from `reject('Your text')`.
+            userMessage = reason;
         }
+        err_str = `Promise rejected: ${userMessage}`;
     } else {
         err_str = `Unexpected error ${typeof event}: ${event}`;
     }
-    show_toast(`Error: ${err_str}`);
+    show_toast(err_str);
     console.error(event);
 };
 
@@ -717,16 +747,17 @@ export const on_error = (event: Event) => {
 on_dom_content_loaded(async () => {
     // Intercept links in this document to save before following the link.
     window.navigation.addEventListener("navigate", on_navigate);
-    const ccb = document.getElementById("CodeChat-sidebar") as
-        | HTMLIFrameElement
-        | undefined;
-    ccb?.contentWindow?.navigation.addEventListener("navigate", on_navigate);
+    const ccb = document.getElementById("CodeChat-sidebar");
+    if (ccb instanceof HTMLIFrameElement) {
+        ccb.contentWindow?.navigation.addEventListener("navigate", on_navigate);
+    }
     document.addEventListener("click", on_click);
     // Provide basic error reporting for uncaught errors.
     window.addEventListener("unhandledrejection", on_error);
     window.addEventListener("error", on_error);
 
     window.CodeChatEditor = {
+        do_debug,
         open_lp,
         send_update,
         scroll_to_line,

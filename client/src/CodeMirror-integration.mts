@@ -64,6 +64,7 @@ import {
     ChangeDesc,
     EditorState,
     Extension,
+    Prec,
     StateField,
     StateEffect,
     EditorSelection,
@@ -71,25 +72,9 @@ import {
     Annotation,
     TransactionSpec,
 } from "@codemirror/state";
-import { cpp } from "@codemirror/lang-cpp";
-import { css } from "@codemirror/lang-css";
-import { go } from "@codemirror/lang-go";
-import { html } from "@codemirror/lang-html";
-import { java } from "@codemirror/lang-java";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { python } from "@codemirror/lang-python";
-import { rust } from "@codemirror/lang-rust";
-import { sql } from "@codemirror/lang-sql";
-import { yaml } from "@codemirror/lang-yaml";
-import { StreamLanguage } from "@codemirror/language";
-import { shell } from "@codemirror/legacy-modes/mode/shell";
-import { swift } from "@codemirror/legacy-modes/mode/swift";
-import { toml } from "@codemirror/legacy-modes/mode/toml";
-import { verilog } from "@codemirror/legacy-modes/mode/verilog";
-import { vhdl } from "@codemirror/legacy-modes/mode/vhdl";
-import { tinymce, init } from "./tinymce-config.mjs";
-import { Editor, EditorEvent, Events } from "tinymce";
+
+import type { StreamParser } from "@codemirror/language";
+import type { Editor, EditorEvent, Events } from "tinymce";
 
 // ### Local
 import {
@@ -97,6 +82,9 @@ import {
     startAutoUpdateTimer,
     saveSelection,
     restoreSelection,
+    tinymce_instance,
+    tinymce,
+    init,
 } from "./CodeChatEditor.mjs";
 import {
     CodeChatForWeb,
@@ -115,6 +103,9 @@ import { CursorPosition } from "./rust-types/CursorPosition";
 let current_view: EditorView;
 // This indicates that a call to `on_dirty` is scheduled, but hasn't run yet.
 let on_dirty_scheduled = false;
+// This set when an `input` event occurs, which usually produces a duplicate
+// `Dirty` event which should be ignored.
+let ignoreTinyMceDirty = false;
 
 // Options used when creating a `Decoration`.
 const decorationOptions = {
@@ -124,7 +115,8 @@ const decorationOptions = {
 
 declare global {
     interface Window {
-        // Tye `#types/MathJax` definitions are out of date.
+        // The `@types/MathJax` definitions are out of date and I can't figure
+        // out how to import the v4 Typescript definitions.
         /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
         MathJax: any;
     }
@@ -136,6 +128,15 @@ const docBlockFreezeAnnotation = Annotation.define<boolean>();
 // When this is included in a transaction, don't send autosave scroll/cursor
 // location updates.
 const noAutosaveAnnotation = Annotation.define<boolean>();
+
+// When this is included in a transaction, `DocBlockPlugin.update` won't capture
+// focus into a doc block even though the resulting selection touches its
+// boundary. Used by `docBlockNavKeymap`'s `ArrowLeft` handler when it
+// deliberately stops the cursor at a code block's start (a doc block's `to` is
+// numerically identical to the following code line's `from`, so without this
+// annotation that stop would be indistinguishable from -- and incorrectly
+// treated as -- entry into the preceding doc block).
+const stayInCodeBlockAnnotation = Annotation.define<boolean>();
 
 // Define a facet called when extensions produce an error.
 const exceptionSink = EditorView.exceptionSink.of((exception) => {
@@ -193,9 +194,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                     .slice(effect.value.from, effect.value.to)
                     .toString();
                 if (newlines !== "\n".repeat(newlines.length)) {
-                    report_error(`Attempt to overwrite text: "${newlines}".`);
-                    window.close();
-                    assert(false);
+                    halt_on_error(`Attempt to overwrite text: "${newlines}".`);
                 }
                 // Perform an
                 // [update](https://codemirror.net/docs/ref/#state.RangeSet.update)
@@ -246,11 +245,9 @@ export const docBlockField = StateField.define<DecorationSet>({
                             // doc block.
                             if (prev !== undefined) {
                                 console.error({ doc_blocks, effect });
-                                report_error(
+                                halt_on_error(
                                     "More than one doc block at one location found.",
                                 );
-                                window.close();
-                                assert(false);
                             }
                             prev = value;
                             to = to_found;
@@ -264,8 +261,7 @@ export const docBlockField = StateField.define<DecorationSet>({
                 );
                 if (prev === undefined) {
                     console.error({ doc_blocks, effect });
-                    report_error("No doc block found.");
-                    window.close();
+                    halt_on_error("No doc block found.");
                     assert(false);
                 }
                 // Determine the final from/to values.
@@ -274,10 +270,10 @@ export const docBlockField = StateField.define<DecorationSet>({
                 // Check that we're not overwriting text.
                 const newlines = tr.newDoc.slice(from, to).toString();
                 if (newlines !== "\n".repeat(newlines.length)) {
-                    report_error(`Attempt to overwrite text: "${newlines}".`);
-                    window.close();
-                    assert(false);
+                    halt_on_error(`Attempt to overwrite text: "${newlines}".`);
                 }
+                const prev_widget = prev.spec.widget;
+                assert(prev_widget instanceof DocBlockWidget);
                 doc_blocks = doc_blocks.update({
                     // Remove the old doc block. We assume there's only one
                     // block in the provided from/to range.
@@ -289,13 +285,12 @@ export const docBlockField = StateField.define<DecorationSet>({
                     add: [
                         Decoration.replace({
                             widget: new DocBlockWidget(
-                                effect.value.indent ?? prev.spec.widget.indent,
-                                effect.value.delimiter ??
-                                    prev.spec.widget.delimiter,
+                                effect.value.indent ?? prev_widget.indent,
+                                effect.value.delimiter ?? prev_widget.delimiter,
                                 typeof effect.value.contents === "string"
                                     ? effect.value.contents
                                     : apply_diff_str(
-                                          prev.spec.widget.contents,
+                                          prev_widget.contents,
                                           effect.value.contents,
                                       ),
                                 // If autosave is allowed (meaning no autosave
@@ -335,6 +330,7 @@ export const docBlockField = StateField.define<DecorationSet>({
         const json_result = [];
         for (const iter = value.iter(); iter.value !== null; iter.next()) {
             const w = iter.value.spec.widget;
+            assert(w instanceof DocBlockWidget);
             json_result.push([
                 iter.from,
                 iter.to,
@@ -404,9 +400,6 @@ type updateDocBlockType = {
     indent?: string;
     delimiter?: string;
     contents: string | StringDiff[];
-    // True if this update comes from a user change, as opposed to an update
-    // received from the IDE.
-    is_user_change?: boolean;
 };
 
 // Define an update.
@@ -458,9 +451,11 @@ class DocBlockWidget extends WidgetType {
     }
 
     eq(other: DocBlockWidget) {
+        // Order these to do the fastest comparisons first.
         return (
-            other.indent === this.indent &&
+            other.is_user_change == this.is_user_change &&
             other.delimiter === this.delimiter &&
+            other.indent === this.indent &&
             other.contents === this.contents
         );
     }
@@ -471,13 +466,30 @@ class DocBlockWidget extends WidgetType {
         const wrap = document.createElement("div");
         wrap.className = "CodeChat-doc";
         wrap.innerHTML =
-            // This doc block's indent. TODO: allow paste, but must only allow
-            // pasting whitespace.
-            `<div class="CodeChat-doc-indent" contenteditable onpaste="return false" data-delimiter=${JSON.stringify(
+            // This doc block's indent. It's not editable (and not a tab stop)
+            // until clicked; see the inline `onmousedown` handler below and the
+            // `focusout` handler in `DocBlockPlugin`, which toggle
+            // `contenteditable` on and off so that keyboard/IDE-driven
+            // navigation between code and doc blocks skips over the indent. The
+            // toggle must happen in an inline handler, not a `DocBlockPlugin`
+            // `eventHandlers.mousedown` handler: CodeMirror appends its own
+            // built-in `mousedown` handler (registered on `contentDOM`) after
+            // any plugin handlers, and -- whenever the editor doesn't already
+            // have focus -- that built-in handler unconditionally moves focus
+            // to `contentDOM`, regardless of what a same-turn `contentEditable`
+            // toggle just did. An inline attribute handler runs at the target,
+            // ahead of that `contentDOM`-level listener, so calling
+            // `stopPropagation()` here (after making the div editable) prevents
+            // the event from ever reaching CodeMirror's handler, leaving the
+            // browser's default action free to focus this now-editable div.
+            // TODO: allow paste, but must only allow pasting whitespace.
+            `<div class="CodeChat-doc-indent" onmousedown="this.contentEditable='true'; event.stopPropagation();" onpaste="return false" data-delimiter=${JSON.stringify(
                 this.delimiter,
-            )}>${sanitize_html(this.indent)}</div>` +
-            // The contents of this doc block.
-            `<div class="CodeChat-doc-contents" spellcheck="true" contenteditable>` +
+            )}>${this.indent}</div>` +
+            // The contents of this doc block. Make it focusable by assigning a
+            // tab stop, but not editable (until it's replaced by the TinyMCE
+            // editor).
+            `<div class="CodeChat-doc-contents" spellcheck="true" tabIndex="0">` +
             this.contents +
             "</div>";
         // TODO: this is an async call. However, CodeMirror doesn't provide
@@ -491,26 +503,36 @@ class DocBlockWidget extends WidgetType {
     // "Update a DOM element created by a widget of the same type (but
     // different, non-eq content) to reflect this widget."
     updateDOM(dom: HTMLElement, _view: EditorView): boolean {
-        // If this change was produced by a user edit, then the DOM was already
-        // updated. Stop here.
-        if (this.is_user_change) {
+        // If this change was produced by a user edit and the DOM to "update" is
+        // a TinyMCE editor, then the DOM was already updated. Stop here.
+        const [contents_div, is_tinymce] = get_contents(dom);
+        if (this.is_user_change && is_tinymce) {
             return true;
         }
-        (dom.childNodes[0] as HTMLDivElement).innerHTML = sanitize_html(
-            this.indent,
-        );
 
-        // The contents div could be a TinyMCE instance, or just a plain div.
-        // Handle both cases.
-        const [contents_div, is_tinymce] = get_contents(dom);
-        window.MathJax.typesetClear([contents_div]);
+        // Update the indent and delimiter. Assume both have already been
+        // sanitized: the server only allows whitespace for the indent; only
+        // specific, safe delimiters are allowed. The Client only allows editing
+        // the indent, and only whitespace is allowed there as well.
+        const dom_indent = dom.childNodes[0];
+        assert(dom_indent instanceof HTMLDivElement);
+        dom_indent.innerHTML = this.indent;
+        dom_indent.dataset.delimiter = this.delimiter;
+
+        // Update the contents. The contents div could be a TinyMCE instance, or
+        // just a plain div. Handle both cases. Again, we assume sanitized
+        // content, since this comes from the server (which uses Ammonia) or
+        // TinyMCE (which uses a
+        // [sanitizer](https://www.tiny.cloud/docs/tinymce/latest/security/#sanitizing-html-input-to-protect-against-xss-attacks)
+        // for all user input).
+        window.MathJax?.typesetClear?.([contents_div]);
         if (is_tinymce) {
             // Save the cursor location before the update, then restore it
             // afterwards, if TinyMCE has focus.
-            const sel = tinymce.activeEditor!.hasFocus()
+            const sel = tinymce_instance()!.hasFocus()
                 ? saveSelection()
                 : undefined;
-            tinymce.activeEditor!.setContent(this.contents);
+            tinymce_instance()!.setContent(this.contents);
             if (sel !== undefined) {
                 restoreSelection(sel);
             }
@@ -520,27 +542,27 @@ class DocBlockWidget extends WidgetType {
         mathJaxTypeset(contents_div);
 
         // Indicate the update was successful. TODO: but, contents are still
-        // pending...
+        // pending if it contains math...
         return true;
     }
 
     ignoreEvent(event: Event) {
         // Avoid handling other events, since this causes
         // [weird problems with event routing](https://discuss.codemirror.net/t/how-to-get-focusin-events-on-a-custom-widget-decoration/6792).
-        if (event.type === "focusin" || event.type === "input") {
-            return false;
-        } else {
-            return true;
-        }
+        // `focusout` is also let through: `DocBlockPlugin`'s `focusout` handler
+        // needs it to turn off the indent's `contenteditable` once it loses
+        // focus (see the inline `onmousedown` handler above, which turns it
+        // on).
+        return event.type !== "focusin" && event.type !== "focusout";
     }
 
     // Per the [docs](https://codemirror.net/docs/ref/#view.WidgetType.destroy),
     // "This is called when the an instance of the widget is removed from the
     // editor view."
-    destroy(dom: HTMLElement): void {
+    destroy(dom: HTMLElement) {
         const [contents_div, is_tinymce] = get_contents(dom);
         // Forget about any typeset math in this node.
-        window.MathJax.typesetClear([contents_div]);
+        window.MathJax?.typesetClear?.([contents_div]);
         // If this is the TinyMCE editor, save it.
         if (is_tinymce) {
             const codechat_body = document.getElementById("CodeChat-body")!;
@@ -548,18 +570,11 @@ class DocBlockWidget extends WidgetType {
             codechat_body.insertBefore(tinymce_div, null);
             // Make TinyMCE invisible, since it's placed below the body of the
             // page.
-            tinymce_div.classList.add(CODECHAT_DOC_HIDDEN);
-            tinymce.activeEditor?.resetContent();
+            tinymce_instance()!.dom.addClass(tinymce_div, CODECHAT_DOC_HIDDEN);
+            tinymce_instance()!.resetContent();
         }
     }
 }
-
-// Native DOM sanitizer.
-const sanitize_html = (html: string) => {
-    const div = document.createElement("div");
-    div.textContent = html;
-    return div.innerHTML;
-};
 
 // Typeset the provided node; taken from the
 // [MathJax docs](https://docs.mathjax.org/en/latest/web/typeset.html#handling-asynchronous-typesetting).
@@ -567,17 +582,109 @@ export const mathJaxTypeset = async (
     // The node to typeset.
     node: HTMLElement,
 ) => {
-    try {
-        await window.MathJax.typesetPromise([node]);
-        /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    } catch (err: any) {
-        report_error(`Typeset failed: ${err.message}`);
+    // If MathJax isn't loaded, look for math on the page.
+    if (window.MathJax === undefined) {
+        const mathDelimiters = [
+            // See `replace_math_node` in `processing.rs` -- this is how Math is
+            // marked.
+            { start: "$$", end: "$$" },
+            { start: "\\(", end: "\\)" },
+        ];
+
+        // Check if Math tags or the text delimiters exist in the page body
+        const nodeContent = node.innerHTML;
+        const hasTeXMath = mathDelimiters.some((delimiter) => {
+            const startIdx = nodeContent.indexOf(delimiter.start);
+            return (
+                startIdx !== -1 &&
+                nodeContent.indexOf(
+                    delimiter.end,
+                    startIdx + delimiter.start.length,
+                ) !== -1
+            );
+        });
+
+        // If mathematical content is detected, load MathJax.
+        if (hasTeXMath) {
+            // Configure MathJax settings.
+            window.MathJax = {
+                // See the
+                // [docs](https://docs.mathjax.org/en/latest/options/output/chtml.html#option-descriptions),
+                // [postFilters](https://docs.mathjax.org/en/latest/options/output/index.html#output-postfilters);
+                // see also the
+                // [TinyMCE non-editable class](https://www.tiny.cloud/docs/tinymce/latest/non-editable-content-options/#noneditable_class).
+                // After some experimentation, I discovered:
+                //
+                // * Setting the `classList` had no effect. I still think it's a
+                //   good idea for the future, though.
+                // * I can't use the `postFilter` to enclose this in a span with
+                //   the appropriate class; MathJax disallows editing the
+                //   `mjx-container` element.
+                // * Simply setting `contentEditable` is what actually works.
+                chtml: {
+                    fontURL: "/static/mathjax-newcm-font/chtml/woff2",
+                },
+                output: {
+                    postFilters: [
+                        /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
+                        (obj: { data: any }) => {
+                            obj.data.classList.add("mceNonEditable");
+                            obj.data.contentEditable = false;
+                        },
+                    ],
+                },
+            };
+
+            // Load MathJax. There are several states for MathJax loading:
+            //
+            // 1. Not loaded: `window.MathJax === undefined`.
+            // 2. Load started: `windows.MathJax` is defined (see above -- this
+            //    is required to configure MathJax properly, but doesn't
+            //    guarantee that the library has finished loading and setup).
+            // 3. Load complete: `window.MathJax.typesetPromise/untypeset/etc.`
+            //    is loaded.
+            // 4. Initial render complete.
+            //
+            // Unfortunately, since CodeMirror is synchronous, it will continue
+            // calling this function and related functions even during an await.
+            // To emulate a lock, put step 1-3 checks on all MathJax functions,
+            // skipping calling them until step 4.
+            await new Promise((resolve) => {
+                const script = document.createElement("script");
+                script.src = "/static/mathjax/tex-chtml.js";
+                script.async = true;
+                script.onload = resolve;
+                script.onerror = () => {
+                    report_error(`Failed to load script: ${script.src}`);
+                    // We've already reported the error; don't `reject()`, which
+                    // would propagate this error up the call chain and further
+                    // break things.
+                    resolve(0);
+                };
+                document.head.appendChild(script);
+            });
+            // Wait until MathJax is fully loaded and the initial render is
+            // finished. Note that this also renders newly-added math.
+            await window.MathJax.startup.promise;
+        }
+    } else {
+        // MathJax is already loaded; just typeset the provided node.
+        try {
+            // MathJax may still be loading when this is called, since
+            // CodeMirror lacks async support. Use `?.` to skip typesetting in
+            // this case.
+            await window.MathJax.typesetPromise?.([node]);
+        } catch (err: unknown) {
+            report_error(
+                `Typeset failed: ${err instanceof Error ? err.message : "unknown"}`,
+            );
+        }
     }
 };
 
 // Transform a typeset node back to the original (untypeset) text.
 export const mathJaxUnTypeset = (node: HTMLElement) => {
-    window.MathJax.startup.document
+    window.MathJax?.startup?.document
         .getMathItemsWithin(node)
         /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
         .forEach((item: any) => {
@@ -587,25 +694,28 @@ export const mathJaxUnTypeset = (node: HTMLElement) => {
 
 // Given a doc block div element, return the contents div and if TinyMCE is
 // attached to that div.
-const get_contents = (element: HTMLElement): [HTMLDivElement, boolean] => {
-    const contents_div = element.childNodes[1] as HTMLDivElement;
-    const tinymce_inst = tinymce.get(contents_div.id);
-    return [contents_div, tinymce_inst !== null];
+const get_contents = (element: Element): [HTMLDivElement, boolean] => {
+    const contents_div = element.childNodes[1];
+    assert(contents_div instanceof HTMLDivElement);
+    const tinymce_inst = tinymce?.get(contents_div.id);
+    // Note the use of `!=` to check both `undefined` (TinyMCE not loaded) and
+    // `null`.
+    return [contents_div, tinymce_inst != null];
 };
 
 // Determine if the element which generated the provided event was in a doc
 // block or not. If not, return false; if so, return the doc block div.
 const element_is_in_doc_block = (
     target: EventTarget | null,
-): boolean | HTMLDivElement => {
-    if (target === null) {
-        return false;
-    }
-    // Look for either a CodeMirror ancestor or a CodeChat doc block ancestor.
-    const ancestor = (target as HTMLElement).closest(".cm-line, .CodeChat-doc");
-    // If it's a doc block, then tell Code Mirror not to handle this event.
-    if (ancestor?.classList.contains("CodeChat-doc")) {
-        return ancestor as HTMLDivElement;
+): boolean | Element => {
+    if (target instanceof HTMLElement) {
+        // Look for either a CodeMirror ancestor or a CodeChat doc block
+        // ancestor.
+        const ancestor = target.closest(".cm-line, .CodeChat-doc");
+        // If it's a doc block, then tell CodeMirror not to handle this event.
+        if (ancestor?.classList.contains("CodeChat-doc")) {
+            return ancestor;
+        }
     }
     return false;
 };
@@ -638,15 +748,17 @@ const on_dirty = (
     if (on_dirty_scheduled) {
         return;
     }
+    set_is_dirty();
     on_dirty_scheduled = true;
 
-    // Only run this after typesetting is done.
-    window.MathJax.whenReady(async () => {
+    // Only run this after typesetting is done, if MathJax is loaded; otherwise,
+    // run this immediately.
+    const whenReady =
+        window.MathJax?.whenReady ?? (async (f: () => void) => f());
+    whenReady(async () => {
         on_dirty_scheduled = false;
         // Find the doc block parent div.
-        const target = (event_target as HTMLDivElement).closest(
-            ".CodeChat-doc",
-        )! as HTMLDivElement;
+        const target = event_target.closest(".CodeChat-doc")!;
 
         // We can only get the position (the `from` value) for the doc block.
         // Use this to find the `to` value for the doc block.
@@ -658,7 +770,8 @@ const on_dirty = (
             return;
         }
         // Send an update to the state field associated with this DOM element.
-        const indent_div = target.childNodes[0] as HTMLDivElement;
+        const indent_div = target.childNodes[0];
+        assert(indent_div instanceof HTMLDivElement);
         const indent = indent_div.innerHTML;
         const delimiter = indent_div.getAttribute("data-delimiter")!;
         const [contents_div, is_tinymce] = get_contents(target);
@@ -667,9 +780,16 @@ const on_dirty = (
         mathJaxUnTypeset(contents_div);
         // Use the raw format; see the implementation notes.
         const contents = is_tinymce
-            ? tinymce.activeEditor!.save({ format: "raw" })
+            ? tinymce_instance()!.save({ format: "raw" })
             : contents_div.innerHTML;
+        // The `save()` flushes any duplicate `Dirty` events. After this,
+        // following `Dirty` events are genuine.
+        ignoreTinyMceDirty = false;
         await mathJaxTypeset(contents_div);
+        // When editing large doc blocks, they may be deleted then re-created by
+        // CodeMirror, which causes unexpected scrolling. To avoid this, save
+        // then restore the scroll after updating CodeMirror.
+        const currentScrollTop = current_view.scrollDOM.scrollTop;
         current_view.dispatch({
             effects: [
                 updateDocBlock.of({
@@ -680,8 +800,222 @@ const on_dirty = (
                 }),
             ],
         });
+        requestAnimationFrame(
+            () => (current_view.scrollDOM.scrollTop = currentScrollTop),
+        );
     });
 };
+
+// Keyboard navigation between code and doc blocks
+// -----------------------------------------------
+//
+// Doc blocks are `Decoration.replace` widgets drawn over empty lines in the
+// document, so CodeMirror's default cursor movement treats them as an atomic
+// region and arrow keys (mostly) skip over them to the next code block.
+//
+// ### Specification
+//
+// The requirements for correct keyboard cursor navigation are:
+//
+// * When the cursor is located at the beginning of a code/doc block preceded by
+//   a code/doc block, pressing the left arrow key should move the cursor to the
+//   end of the preceding code/doc block.
+// * When the cursor is located on the first line of a code/doc block preceded
+//   by a code/doc block, pressing the up arrow key should move the cursor into
+//   the last line of the preceding code/doc block, moving the cursor as little
+//   horizontally as possible.
+// * When the cursor is located at the end of a code/doc block followed by a
+//   code/doc block, pressing the right arrow key should move the cursor to the
+//   beginning of the following code/doc block.
+// * When the cursor is located on the last line of a code/doc block followed by
+//   a code/doc block, pressing the down arrow key should move the cursor to the
+//   following code/doc block, moving the cursor as little horizontally as
+//   possible.
+// * Pressing the PageUp/PageDown keys should move the cursor by viewport,
+//   rather than limited cursor movement within the current code/doc block.
+//
+// ### Implementation notes
+//
+// The keymap below intercepts the arrow keys and, when the cursor would move
+// into a doc block, dispatches a CodeMirror selection into that block's range
+// instead. That selection change is then picked up by `DocBlockPlugin.update`,
+// which focuses the block's contents div (the `focusin` handler promotes it to
+// TinyMCE). This keeps a single focus path -- the same one used for mouse
+// clicks and IDE-driven cursor sync.
+//
+// Given a doc position `pos`, return the range (`from`/`to`) of the doc block
+// that starts exactly at `pos`, or `null` if there isn't one. Doc blocks can
+// sit back-to-back (sharing a boundary position with a neighboring doc block),
+// so this looks for an exact match on `from` rather than any block that merely
+// touches `pos` -- otherwise, at a shared boundary, the block ending at `pos`
+// could be returned instead of the one starting there.
+const doc_block_starting_at = (
+    // The CodeMirror view whose doc blocks are searched.
+    view: EditorView,
+    // The document position to check for a doc block starting there.
+    pos: number,
+): { from: number; to: number } | null => {
+    let found: { from: number; to: number } | null = null;
+    view.state.field(docBlockField).between(pos, pos, (from, to, _deco) => {
+        if (from === pos) {
+            found = { from, to };
+            return false;
+        }
+    });
+    return found;
+};
+
+// Same as `doc_block_starting_at`, but looks for a doc block that ends exactly
+// at `pos`.
+const doc_block_ending_at = (
+    view: EditorView,
+    pos: number,
+): { from: number; to: number } | null => {
+    let found: { from: number; to: number } | null = null;
+    view.state.field(docBlockField).between(pos, pos, (from, to, _deco) => {
+        if (to === pos) {
+            found = { from, to };
+            return false;
+        }
+    });
+    return found;
+};
+
+// Move the CodeMirror selection to `pos` (an edge of a doc block range). The
+// `DocBlockPlugin.update` handler reacts to the resulting selection change by
+// focusing the block. Returns `true` so the keymap reports the key as handled.
+const select_doc_block_edge = (view: EditorView, pos: number): boolean => {
+    view.dispatch({ selection: { anchor: pos } });
+    return true;
+};
+
+// A keymap (registered at high precedence) that moves the selection into an
+// adjacent doc block on arrow-key navigation. Entering from above (ArrowDown,
+// ArrowRight) lands the selection at the block's start; entering from below
+// (ArrowUp, ArrowLeft) lands it at the block's end.
+export const docBlockNavKeymap = keymap.of([
+    {
+        // Down arrow at the bottom of a code block: enter the doc block below,
+        // caret at its start. A line's `.to` sits just before its trailing
+        // newline, so the following doc block's placeholder starts one position
+        // later -- hence `+ 1` (matches `main.head + 1` in the `ArrowRight`
+        // handler below). Chaining from one doc block into the next happens
+        // outside CodeMirror, in `DocBlockPlugin`'s `focusin` handler, so this
+        // only needs to handle first entry from a code line.
+        key: "ArrowDown",
+        run: (view) => {
+            const { main } = view.state.selection;
+            const search_pos = view.state.doc.lineAt(main.head).to + 1;
+            const range = doc_block_starting_at(view, search_pos);
+            return range !== null
+                ? select_doc_block_edge(view, range.from)
+                : false;
+        },
+    },
+    {
+        // Up arrow at the top of a code block: enter the doc block above, caret
+        // at its end. Look right before the current line's contents, which is
+        // where a preceding doc block's decoration would end (see the
+        // `ArrowDown` comment above for why no "chained" check is needed here
+        // either).
+        key: "ArrowUp",
+        run: (view) => {
+            const { main } = view.state.selection;
+            const search_pos = view.state.doc.lineAt(main.head).from;
+            const range = doc_block_ending_at(view, search_pos);
+            return range !== null
+                ? select_doc_block_edge(view, range.to)
+                : false;
+        },
+    },
+    {
+        // Right arrow at the end of a line: if a doc block follows, enter it
+        // with the caret at its start.
+        key: "ArrowRight",
+        run: (view) => {
+            const { main } = view.state.selection;
+            if (!main.empty) {
+                return false;
+            }
+            const line = view.state.doc.lineAt(main.head);
+            if (main.head !== line.to) {
+                return false;
+            }
+            const range = doc_block_starting_at(view, main.head + 1);
+            return range !== null
+                ? select_doc_block_edge(view, range.from)
+                : false;
+        },
+    },
+    {
+        // Left arrow next to a doc block. CodeMirror's default cursor motion
+        // treats a doc block's `Decoration.replace` widget as atomic, so a
+        // single ArrowLeft press from the position right after the following
+        // code block's first line start (`line.from + 1`) jumps straight past
+        // that line's start and into the doc block, skipping the "beginning of
+        // the code block" stop entirely. Intercept only that specific press:
+        // land the cursor at the line's start instead. Every other position on
+        // the line (including the start itself, on a subsequent press) falls
+        // through to normal handling below.
+        key: "ArrowLeft",
+        run: (view) => {
+            const { main } = view.state.selection;
+            if (!main.empty) {
+                return false;
+            }
+            const line = view.state.doc.lineAt(main.head);
+            if (main.head === line.from + 1) {
+                // One character away from the line's start. If a doc block ends
+                // exactly at this line's start, the default motion would jump
+                // straight into it; land the cursor at the line's start
+                // instead, so a further ArrowLeft press is needed to enter the
+                // doc block.
+                if (doc_block_ending_at(view, line.from) !== null) {
+                    view.dispatch({
+                        selection: { anchor: line.from },
+                        annotations: stayInCodeBlockAnnotation.of(true),
+                    });
+                    return true;
+                }
+                return false;
+            }
+            if (main.head !== line.from) {
+                return false;
+            }
+            const range = doc_block_ending_at(view, main.head);
+            return range !== null
+                ? select_doc_block_edge(view, range.to)
+                : false;
+        },
+    },
+    {
+        // Home on a code line: same atomic-widget problem as ArrowLeft above,
+        // but with no "second press" case -- Home always means "stay on this
+        // line," so if a doc block ends exactly at the line's start, always
+        // stop the cursor there ourselves, dispatching with
+        // `stayInCodeBlockAnnotation` even when the selection doesn't move (a
+        // redundant Home press), so `DocBlockPlugin.update` doesn't treat it as
+        // entry into the preceding doc block. Falling through to `false` here
+        // would let the default Home command dispatch a plain selection update
+        // instead, without that annotation.
+        key: "Home",
+        run: (view) => {
+            const { main } = view.state.selection;
+            if (!main.empty) {
+                return false;
+            }
+            const line = view.state.doc.lineAt(main.head);
+            if (doc_block_ending_at(view, line.from) !== null) {
+                view.dispatch({
+                    selection: { anchor: line.from },
+                    annotations: stayInCodeBlockAnnotation.of(true),
+                });
+                return true;
+            }
+            return false;
+        },
+    },
+]);
 
 // Handle cursor movement and mouse selection in a doc block.
 export const DocBlockPlugin = ViewPlugin.fromClass(
@@ -694,6 +1028,26 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
             // when the editor isn't focused, highlight the relevant line or
             // something similar.
             if (update.selectionSet && update.view.hasFocus) {
+                // If focus is currently in a doc block's indent (made editable
+                // by the inline `onmousedown` handler in
+                // `DocBlockWidget.toDOM`), don't steal it away into the
+                // contents div.
+                if (document.activeElement?.closest(".CodeChat-doc-indent")) {
+                    return;
+                }
+                // If one of this update's transactions deliberately stopped the
+                // cursor at a code block's start (see
+                // `stayInCodeBlockAnnotation`), don't treat the resulting
+                // selection -- which sits at the same position as the preceding
+                // doc block's `to` -- as entry into that doc block.
+                if (
+                    update.transactions.some(
+                        (tr) =>
+                            tr.annotation(stayInCodeBlockAnnotation) === true,
+                    )
+                ) {
+                    return;
+                }
                 // See if the new main selection falls within a doc block.
                 const main_selection = update.state.selection.main;
                 update.state
@@ -716,20 +1070,74 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             // Ensure we have a valid dom. This also checks for
                             // undefined.
                             const dom_at_pos = update.view.domAtPos(from);
-                            const dom = dom_at_pos.node.childNodes[
-                                dom_at_pos.offset
-                            ] as HTMLDivElement | null;
+                            const dom =
+                                dom_at_pos.node.childNodes[dom_at_pos.offset];
                             if (
-                                dom == null ||
+                                !(dom instanceof HTMLElement) ||
                                 dom.className !== "CodeChat-doc"
                             ) {
                                 return;
                             }
 
-                            // TODO: currently, posToDom never gives us a doc
-                            // block, even when the from/to is correct. So, we
-                            // never get here.
-                            (dom.childNodes[1] as HTMLElement).focus();
+                            // Focus the contents div. This fires the `focusin`
+                            // handler, which promotes the block to TinyMCE.
+                            const contents = dom.childNodes[1];
+                            assert(contents instanceof HTMLDivElement);
+                            contents.focus();
+
+                            // Place the caret at the natural edge: when the
+                            // selection landed at the block's start (entered
+                            // from above), put the caret at the start; when it
+                            // landed at the end (entered from below), put it at
+                            // the end. Once TinyMCE initializes it preserves
+                            // this selection, so the edge placement carries
+                            // over.
+                            const at_end = main_selection.head >= to;
+                            const range = document.createRange();
+                            // Walk to the first/last actual text node under
+                            // `contents`, rather than using
+                            // `selectNodeContents` + `collapse` (which anchors
+                            // the selection on `contents` itself, at a
+                            // childNodes-index boundary). `saveSelection`
+                            // (called later, when this doc block is promoted to
+                            // TinyMCE) walks up from
+                            // `window.getSelection().anchorNode` looking for an
+                            // *ancestor* with the `CodeChat-doc-contents`
+                            // class; if the anchor node already *is* that div,
+                            // the walk's loop body never runs and it returns an
+                            // empty `selection_path`, silently dropping this
+                            // edge placement and leaving the caret wherever
+                            // TinyMCE's own init happens to put it (its start).
+                            // Anchoring on a text node instead keeps the walk
+                            // -- and thus the edge placement -- intact.
+                            let edge_node: Node = contents;
+                            while (
+                                at_end
+                                    ? edge_node.lastChild
+                                    : edge_node.firstChild
+                            ) {
+                                edge_node = at_end
+                                    ? edge_node.lastChild!
+                                    : edge_node.firstChild!;
+                            }
+                            if (edge_node.nodeType === Node.TEXT_NODE) {
+                                const offset = at_end
+                                    ? (edge_node.textContent?.length ?? 0)
+                                    : 0;
+                                range.setStart(edge_node, offset);
+                                range.setEnd(edge_node, offset);
+                            } else {
+                                // No text node found (e.g. an empty doc block);
+                                // fall back to the previous, element-anchored
+                                // behavior.
+                                range.selectNodeContents(contents);
+                                // `collapse(true)` -> start, `collapse(false)`
+                                // -> end.
+                                range.collapse(!at_end);
+                            }
+                            const sel = window.getSelection();
+                            sel?.removeAllRanges();
+                            sel?.addRange(range);
                         },
                     );
             }
@@ -742,13 +1150,15 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
             // update() method above, but this is VERY slow, since update is
             // called frequently.
             focusin: (event: FocusEvent, _view: EditorView) => {
-                const target_or_false = element_is_in_doc_block(event.target);
-                if (!target_or_false) {
+                const event_target = event.target;
+                const target_or_false = element_is_in_doc_block(event_target);
+                if (!(target_or_false instanceof HTMLDivElement)) {
                     return false;
                 }
                 // Set up for editing the indent of doc blocks.
-                const target = target_or_false as HTMLDivElement;
-                const indent_div = target.childNodes[0] as HTMLDivElement;
+                const target = target_or_false;
+                const indent_div = target.childNodes[0];
+                assert(indent_div instanceof HTMLDivElement);
                 // Use the
                 // [beforeinput](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/beforeinput_event)
                 // event to allow only whitespace in the indent. Note that
@@ -774,15 +1184,17 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 );
                 indent_div.addEventListener("input", (event) => {
                     // Signal that this indent is dirty.
-                    on_dirty(event.target as HTMLElement);
+                    const target = event.target;
+                    if (target instanceof HTMLElement) {
+                        on_dirty(target);
+                    }
                 });
 
                 // If the target is in the indent, not the contents, then the
                 // following code isn't needed.
                 if (
-                    (event.target as HTMLElement).closest(
-                        ".CodeChat-doc-contents",
-                    ) === null
+                    !(event_target instanceof HTMLDivElement) ||
+                    event_target.closest(".CodeChat-doc-contents") === null
                 ) {
                     return false;
                 }
@@ -800,10 +1212,143 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     // cursor position (the selection) to be set in the
                     // contenteditable div. Then, save that location.
                     setTimeout(async () => {
+                        // In case this node was modified during the timeout.
+                        if (!contents_div.isConnected) {
+                            return;
+                        }
+                        // Note whether this doc block still genuinely has focus
+                        // before any of the DOM surgery below runs (which
+                        // removes `contents_div` from the document, making
+                        // `document.activeElement` an unreliable way to answer
+                        // this question afterwards). If the user has since
+                        // clicked or navigated elsewhere while this promotion
+                        // was in flight, don't steal focus back to this (now
+                        // stale) doc block once the promotion finishes -- see
+                        // the check below.
+                        const still_focused = target.contains(
+                            document.activeElement,
+                        );
+                        // Create the TinyMCE instance if necessary. Note the
+                        // use of `==` here to check for `null` (TinyMCE is
+                        // loaded, but no instance exists) and `undefined`
+                        // (TinyMCE isn't loaded).
+                        if (tinymce_instance() == null) {
+                            await init({
+                                selector: "#TinyMCE-inst",
+                                setup: (editor: Editor) => {
+                                    // See the
+                                    // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
+                                    // After much experimentation, using both an
+                                    // `input` event (which suppresses the
+                                    // redundant `Dirty` event which follows it)
+                                    // combined with a `Dirty` event (which
+                                    // catches GUI interactions, undo, etc.
+                                    // which doesn't produce an `input` event).
+                                    // Just using `Dirty` produces one failing
+                                    // case: insert a character (dirty event),
+                                    // delete the character (no dirty event),
+                                    // left arrow (delayed dirty event from
+                                    // backspace).
+                                    //
+                                    // Here's a demonstration of the bug and its
+                                    // fix:
+                                    //
+                                    // ```html
+                                    // <!DOCTYPE html>
+                                    // <html lang="en">
+                                    // <head>
+                                    //     <meta charset="UTF-8">
+                                    //     <title>TinyMCE Dirty Event Test</title>
+                                    // </head>
+                                    // <body>
+                                    //     <h1>TinyMCE Dirty Event Test</h1>
+                                    //     <textarea id="editor">
+                                    //         <p>Edit this content to trigger the dirty event.</p>
+                                    //     </textarea>
+                                    //     <script
+                                    //         src="https://cdn.tiny.cloud/1/rrqw1m3511pf4ag8c5zao97ad7ymvnhqu6z0995b1v63rqb5/tinymce/8/tinymce.min.js"
+                                    //         referrerpolicy="origin" crossorigin="anonymous">
+                                    //     </script>
+                                    //     <script>
+                                    //         // Version 1: `dirty` event only; buggy.
+                                    //         // Version 2: `input` and `dirty`; works.
+                                    //         const version = 2;
+                                    //         let ignoreDirty = false;
+                                    //         const saveEditor = (eventDescription) => {
+                                    //             console.log(`${eventDescription} fired. save() output: ${tinymce.activeEditor.save()}`);
+                                    //             ignoreDirty = false;
+                                    //         };
+                                    //         tinymce.init({
+                                    //             selector: '#editor',
+                                    //             setup(editor) {
+                                    //                 editor.on('dirty', () => {
+                                    //                     if (!ignoreDirty || version === 1) {
+                                    //                         saveEditor('dirty');
+                                    //                     }
+                                    //                 });
+                                    //                 editor.on('input', () => {
+                                    //                     if (version === 2) {
+                                    //                         ignoreDirty = true;
+                                    //                         saveEditor('input');
+                                    //                     }
+                                    //                 });
+                                    //             }
+                                    //         });
+                                    //     </script>
+                                    // </body>
+                                    // ```
+                                    editor.on(
+                                        "Dirty",
+                                        (
+                                            event: EditorEvent<
+                                                Events.EditorEventMap["dirty"]
+                                            >,
+                                        ) => {
+                                            // Sometimes, `tinymce.activeEditor` is
+                                            // null (perhaps when it's not focused).
+                                            // Use the `event` data instead. Get the
+                                            // div TinyMCE stores edits in.
+                                            const target =
+                                                event.target.bodyElement;
+                                            if (target === null) {
+                                                return;
+                                            }
+                                            if (!ignoreTinyMceDirty) {
+                                                on_dirty(target);
+                                            }
+                                        },
+                                    );
+
+                                    editor.on("input", (event: InputEvent) => {
+                                        const target = event.target;
+                                        // Sometimes, I see non-elements here.
+                                        if (target instanceof HTMLElement) {
+                                            ignoreTinyMceDirty = true;
+                                            on_dirty(target);
+                                        }
+                                    });
+
+                                    // Send updates on cursor movement.
+                                    editor.on(
+                                        "SelectionChange",
+                                        (
+                                            _event: EditorEvent<
+                                                Events.EditorEventMap["SelectionChange"]
+                                            >,
+                                        ) => {
+                                            startAutoUpdateTimer();
+                                        },
+                                    );
+                                },
+                            });
+                        }
+
                         // Before untypesetting, make sure all other typesets
                         // finish.
-                        await new Promise<void>((resolve) =>
-                            window.MathJax.whenReady(() => resolve()),
+                        await new Promise<void>(
+                            (resolve) =>
+                                window.MathJax?.whenReady?.(() => resolve()) ??
+                                resolve(),
                         );
                         // Untypeset math in the old doc block and the current
                         // doc block before moving its contents around.
@@ -833,9 +1378,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             // If the contents aren't editable, then the div
                             // won't receive a `focusin` message (it instead
                             // goes to a CodeMirror layer).
-                            old_contents_div.contentEditable = "true";
+                            old_contents_div.tabIndex = 0;
                             old_contents_div.innerHTML =
-                                tinymce.activeEditor!.save({ format: "raw" });
+                                tinymce_instance()!.save();
                             tinymce_div.parentNode!.insertBefore(
                                 old_contents_div,
                                 null,
@@ -848,26 +1393,68 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         // div it will replace.
                         target.insertBefore(tinymce_div, null);
 
-                        tinymce.activeEditor!.setContent(
+                        // Calling `setContent()` instead produces spurious
+                        // `Dirty` events, observed after receiving a
+                        // re-translation. In addition, `resetContent()` clears
+                        // the undo history, which is appropriate given that
+                        // edits to the previous doc block no longer apply here.
+                        // TODO: Eventually, we need a way to chain TinyMCE's
+                        // undo history with CodeMirror's undo history.
+                        tinymce_instance()!.resetContent(
                             contents_div.innerHTML,
                         );
                         contents_div.remove();
-                        tinymce_div.classList.remove(CODECHAT_DOC_HIDDEN);
+                        tinymce_instance()!.dom.removeClass(
+                            tinymce_div,
+                            CODECHAT_DOC_HIDDEN,
+                        );
                         // The new div is now a TinyMCE editor. Retypeset this.
                         await mathJaxTypeset(tinymce_div);
 
                         // This process causes TinyMCE to lose focus. Restore
-                        // that. However, this causes TinyMCE to lose the
-                        // selection, which the next bit of code then restores.
-                        // When the doc block is longer than a screen, omitting
-                        // the `preventScroll` parameter causes this to scroll
-                        // to the top of the doc block, which is incorrect.
+                        // that -- but only if focus was still genuinely in this
+                        // doc block just before the DOM surgery above began
+                        // (see `still_focused`). Unconditionally focusing here
+                        // would otherwise steal focus back to this (now stale)
+                        // doc block even after the user clicked or navigated
+                        // elsewhere while this promotion was in flight.
+                        // Restoring the selection is skipped too, since it's
+                        // meaningless once focus has moved on.
+                        if (!still_focused) {
+                            return;
+                        }
+                        // However, this causes TinyMCE to lose the selection,
+                        // which the next bit of code then restores. When the
+                        // doc block is longer than a screen, omitting the
+                        // `preventScroll` parameter causes this to scroll to
+                        // the top of the doc block, which is incorrect.
                         tinymce_div.focus({ preventScroll: true });
 
                         // Copy the selection over to TinyMCE by indexing the
                         // selection path to find the selected node.
                         restoreSelection(sel);
                     }, 0);
+                }
+                return false;
+            },
+
+            // The indent of a doc block is only editable while it's being
+            // clicked on/focused; otherwise, it's plain (uneditable) text. This
+            // keeps it out of the keyboard/IDE-driven navigation path (see the
+            // "Keyboard navigation" section above), which only ever focuses the
+            // contents div. Turning it editable on click is handled by an
+            // inline `onmousedown` attribute in `DocBlockWidget.toDOM` rather
+            // than here -- see the comment there for why a `ViewPlugin`
+            // `eventHandlers.mousedown` handler doesn't work for this.
+            //
+            // Once the indent loses focus, make it uneditable again.
+            focusout: (event: FocusEvent, _view: EditorView) => {
+                const target = event.target;
+                if (target instanceof HTMLElement) {
+                    const indent_div = target.closest(".CodeChat-doc-indent");
+                    if (indent_div instanceof HTMLElement) {
+                        indent_div.contentEditable = "false";
+                    }
                 }
                 return false;
             },
@@ -934,6 +1521,10 @@ const autosaveExtension = EditorView.updateListener.of(
     },
 );
 
+// Wrap a stream language dynamic import.
+const import_stream_language = async (lang: StreamParser<unknown>) =>
+    (await import("@codemirror/language")).StreamLanguage.define(lang);
+
 // Given source code in a CodeMirror-friendly JSON format, load it into the
 // provided div.
 export const CodeMirror_load = async (
@@ -965,83 +1556,107 @@ export const CodeMirror_load = async (
             scrollSnapshot = current_view.scrollSnapshot();
             // For reloads, we need to remove previous instances; otherwise, Bad
             // Things happen.
-            tinymce.remove();
+            tinymce?.remove();
         }
 
         codechat_body.innerHTML = `<div class="CodeChat-CodeMirror"></div><div id="${TINYMCE_INST}" class="CodeChat-doc-contents ${CODECHAT_DOC_HIDDEN}" spellcheck="true"></div>`;
         let parser;
-        // TODO: dynamically load the parser.
+        // Dynamically load the parser.
         switch (codechat_for_web.metadata.mode) {
             // Languages with a parser.
             case "sh":
-                parser = StreamLanguage.define(shell);
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/shell")).shell,
+                );
                 break;
             case "cpp":
-                parser = cpp();
+                parser = (await import("@codemirror/lang-cpp")).cpp();
                 break;
             case "csharp":
-                parser = javascript();
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript();
                 break;
             case "css":
-                parser = css();
+                parser = (await import("@codemirror/lang-css")).css();
                 break;
             case "golang":
-                parser = go();
+                parser = (await import("@codemirror/lang-go")).go();
                 break;
             case "html":
-                parser = html();
+                parser = (await import("@codemirror/lang-html")).html();
                 break;
             case "java":
-                parser = java();
+                parser = (await import("@codemirror/lang-java")).java();
                 break;
             case "javascript":
-                parser = javascript();
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript();
+                break;
+            // Octave is an open-source MATLAB-ish clone.
+            case "matlab":
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/octave"))
+                        .octave,
+                );
                 break;
             case "python":
-                parser = python();
+                parser = (await import("@codemirror/lang-python")).python();
                 break;
             case "rust":
-                parser = rust();
+                parser = (await import("@codemirror/lang-rust")).rust();
                 break;
             case "sql":
-                parser = sql();
+                parser = (await import("@codemirror/lang-sql")).sql();
                 break;
             case "swift":
-                parser = StreamLanguage.define(swift);
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/swift")).swift,
+                );
                 break;
             case "toml":
-                parser = StreamLanguage.define(toml);
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/toml")).toml,
+                );
                 break;
             case "typescript":
-                parser = javascript({ typescript: true });
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript({ typescript: true });
                 break;
             case "vhdl":
-                parser = StreamLanguage.define(vhdl);
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/vhdl")).vhdl,
+                );
                 break;
             case "verilog":
-                parser = StreamLanguage.define(verilog);
+                parser = await import_stream_language(
+                    (await import("@codemirror/legacy-modes/mode/verilog"))
+                        .verilog,
+                );
                 break;
             case "yaml":
-                parser = yaml();
+                parser = (await import("@codemirror/lang-yaml")).yaml();
                 break;
 
             // Languages without a parser.
             //
             // JSON5 allows comments, but JSON doesn't.
             case "json5":
-                parser = json();
-                break;
-            // Nothing available. Python isn't even close.
-            case "matlab":
-                parser = python();
+                parser = (await import("@codemirror/lang-json")).json();
                 break;
             // An approximation for Vlang.
             case "v":
-                parser = javascript();
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript();
                 break;
 
             default:
-                parser = javascript();
+                parser = (
+                    await import("@codemirror/lang-javascript")
+                ).javascript();
                 report_error(
                     `Unknown lexer name ${codechat_for_web.metadata.mode}`,
                 );
@@ -1052,6 +1667,10 @@ export const CodeMirror_load = async (
             {
                 extensions: [
                     DocBlockPlugin,
+                    // Move focus into adjacent doc blocks on arrow-key
+                    // navigation. High precedence so it runs before the default
+                    // arrow-key commands in `basicSetup`.
+                    Prec.high(docBlockNavKeymap),
                     parser,
                     basicSetup,
                     EditorView.lineWrapping,
@@ -1081,49 +1700,19 @@ export const CodeMirror_load = async (
             },
             CodeMirror_JSON_fields,
         );
+        const codechat_div = codechat_body.childNodes[0];
+        assert(codechat_div instanceof HTMLDivElement);
         current_view = new EditorView({
-            parent: codechat_body.childNodes[0] as HTMLDivElement,
+            parent: codechat_div,
             state,
             scrollTo: scrollSnapshot,
         });
-
-        await init({
-            selector: "#TinyMCE-inst",
-            setup: (editor: Editor) => {
-                // See the
-                // [docs](https://www.tiny.cloud/docs/tinymce/latest/events/#editor-core-events).
-                // This is triggered on edits (just as the `input` event), but
-                // also when applying formatting changes, inserting images, etc.
-                // that the above callback misses.
-                editor.on(
-                    "Dirty",
-                    (event: EditorEvent<Events.EditorEventMap["dirty"]>) => {
-                        // Sometimes, `tinymce.activeEditor` is null (perhaps
-                        // when it's not focused). Use the `event` data instead.
-                        event.target.setDirty(false);
-                        // Get the div TinyMCE stores edits in.
-                        const target_or_false = event.target.bodyElement;
-                        if (target_or_false == null) {
-                            return;
-                        }
-                        setTimeout(() => on_dirty(target_or_false));
-                    },
-                );
-
-                // Send updates on cursor movement.
-                editor.on(
-                    "SelectionChange",
-                    (
-                        _event: EditorEvent<
-                            Events.EditorEventMap["SelectionChange"]
-                        >,
-                    ) => {
-                        startAutoUpdateTimer();
-                    },
-                );
-            },
-        });
     } else {
+        // When editing large doc blocks, they may be deleted then re-created by
+        // CodeMirror, which causes unexpected scrolling. To avoid this, save
+        // then restore the scroll after updating CodeMirror.
+        const currentScrollTop = current_view.scrollDOM.scrollTop;
+
         // This contains a diff, instead of plain text. Apply the text diff.
         //
         // First, apply just the text edits. Use an annotation so that the doc
@@ -1166,6 +1755,11 @@ export const CodeMirror_load = async (
             effects: stateEffects,
             annotations: noAutosaveAnnotation.of(true),
         });
+
+        // Restore the scroll position.
+        requestAnimationFrame(
+            () => (current_view.scrollDOM.scrollTop = currentScrollTop),
+        );
     }
     scroll_to_line(cursor_position, scroll_line);
 };
@@ -1200,7 +1794,7 @@ export const scroll_to_line = (
         }
         // If a scroll position is provided, use it; otherwise, scroll the
         // cursor into the current view.
-        if (scroll_line == undefined) {
+        if (scroll_line === undefined) {
             dispatch_data.scrollIntoView = true;
         }
     }
@@ -1214,6 +1808,24 @@ export const scroll_to_line = (
 
     // Run it.
     current_view?.dispatch(dispatch_data);
+
+    // Restore the previous horizontal scroll position, overriding whatever
+    // `scrollIntoView` set. Defer to the next frame so this runs after
+    // CodeMirror has applied its own scroll from the transaction above.
+    if (scroll_line !== undefined) {
+        // With line wrapping enabled, the only source of horizontal scroll is a
+        // doc block containing a long, non-wrapping line. CodeMirror's
+        // `scrollIntoView` can't measure a position inside such a block
+        // reliably and pins `scrollLeft` to its maximum regardless of the `x`
+        // option. We only want to scroll vertically, so capture the horizontal
+        // position now and restore it after the dispatch.
+        const prev_scroll_left = current_view?.scrollDOM.scrollLeft;
+        requestAnimationFrame(() => {
+            if (current_view) {
+                current_view.scrollDOM.scrollLeft = prev_scroll_left;
+            }
+        });
+    }
 };
 
 // Apply a `StringDiff` to the before string to produce the after string.
@@ -1253,7 +1865,7 @@ export const set_CodeMirror_positions = (
     // If a doc block has focus, then the CodeMirror selection reports line 1.
     // Use the starting line number of the doc block instead.
     const doc_block = document.activeElement?.closest(".CodeChat-doc");
-    let cursor_position;
+    let cursor_position: CursorPosition;
     if (doc_block) {
         const from = current_view.posAtDOM(doc_block);
         const location = saveSelection();
@@ -1297,4 +1909,11 @@ export const set_CodeMirror_positions = (
 const report_error = (text: string) => {
     console.error(text);
     show_toast(text);
+};
+
+const halt_on_error = (text: string): never => {
+    document.getElementById("error-overlay")!.style.display = "block";
+    console.error(text);
+    // The error handler will make this a toast.
+    throw new Error(text);
 };

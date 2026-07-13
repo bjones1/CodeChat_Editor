@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 assert_fs = "1"
-assertables = "9"
+assertables = "10"
 log = "0.4"

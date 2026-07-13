@@ -37,6 +37,7 @@ use std::{
 };
 
 // ### Third-party
+use ammonia::Builder;
 use dprint_plugin_markdown::{
     configuration::{
         Configuration, ConfigurationBuilder, EmphasisKind, HeadingKind, StrongKind, TextWrap,
@@ -248,9 +249,8 @@ pub enum TranslationResultsString {
 lazy_static! {
     /// Match the lexer directive in a source file.
     static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
-    /// <a class="fence-mending-start"></a>If this matches, it means an
-    /// unterminated fenced code block. This should be replaced with the
-    /// `</code></pre>` terminator.
+    /// If this matches, it means an unterminated fenced code block. This should
+    /// be replaced with the `</code></pre>` terminator.
     static ref DOC_BLOCK_SEPARATOR_BROKEN_FENCE: Regex = Regex::new(concat!(
         // Allow the `.` wildcard to match newlines.
         "(?s)",
@@ -314,8 +314,7 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
 // The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex.
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
     "</code></pre>\n<CodeChatEditor-separator></CodeChatEditor-separator>\n";
-// <a class="fence-mending-end"></a>
-
+//
 // The column at which to word wrap doc blocks.
 const WORD_WRAP_COLUMN: usize = 80;
 // The minimum width for doc block word wrap, since large indents may leave
@@ -563,6 +562,7 @@ impl HtmlToMarkdownWrapped {
                 .unordered_list_kind(UnorderedListKind::Asterisks)
                 .text_wrap(TextWrap::Always)
                 .heading_kind(HeadingKind::Setext)
+                .allow_fenced_blank_lines(true)
                 .build(),
         }
     }
@@ -924,7 +924,7 @@ pub fn source_to_codechat_for_web(
             // Convert the Markdown to HTML.
             let html = markdown_to_html(&doc_contents);
 
-            // <a class="fence-mending-start"></a>Break it back into doc blocks:
+            // Break it back into doc blocks:
             //
             // 1. Mend broken fences.
             let html = DOC_BLOCK_SEPARATOR_BROKEN_FENCE
@@ -936,8 +936,7 @@ pub fn source_to_codechat_for_web(
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 4. Split on the separator.
             let mut doc_block_contents_iter = html.split(DOC_BLOCK_SEPARATOR_SPLIT_STRING);
-            // <a class="fence-mending-end"></a>
-
+            //
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             let mut len = len_utf16(&code_mirror.doc);
             for code_or_doc_block in code_doc_block_arr {
@@ -991,9 +990,45 @@ static MINIFY_OPTIONS: LazyLock<minify_html::Cfg> = LazyLock::new(|| {
     cfg
 });
 
+// A static config for Ammonia.
+static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
+    let mut b = Builder::default();
+    // Add custom tags produced during hydration, plus `input` (task list
+    // checkboxes produced by pulldown-cmark) and `iframe` (embedded media
+    // inserted via TinyMCE), neither of which Ammonia allows by default.
+    b.add_tags(&["wc-mermaid", "graphviz-graph", "input", "iframe"])
+        // Allow any element to be assigned an ID.
+        .add_generic_attributes(&["id"])
+        // This allows math produced by pulldown-cmark and updated by the
+        // hydration code.
+        .add_allowed_classes(
+            "span",
+            &["math", "math-inline", "math-display", "mceNonEditable"],
+        )
+        // `code` tags can have `class=language-*`. Since Ammonia doesn't
+        // support a regex like this, just allow anything.
+        .add_tag_attributes("code", &["class"])
+        // Task list checkboxes are rendered as `<input type="checkbox"
+        // checked>`.
+        .add_tag_attributes("input", &["type", "checked", "disabled"])
+        // Allow the attributes TinyMCE/the IDE place on embedded `<iframe>`s.
+        .add_tag_attributes(
+            "iframe",
+            &["width", "height", "src", "allowfullscreen", "frameborder"],
+        )
+        // Keep HTML comments, which Ammonia strips by default.
+        .strip_comments(false)
+        // For now, don't change this. We can't tell if the user included this
+        // manually and it should not be stripped without some extra work
+        // (perhaps adding custom attributes?).
+        .link_rel(None);
+    b
+});
+
 /// A spec-compliant minifier.
 pub fn minify(html: &str) -> Result<String, FromUtf8Error> {
-    String::from_utf8(minify_html::minify(html.as_bytes(), &MINIFY_OPTIONS))
+    let clean_html = AMMONIA_OPTIONS.clean(html).to_string();
+    String::from_utf8(minify_html::minify(clean_html.as_bytes(), &MINIFY_OPTIONS))
 }
 
 // Compute the length of the provided string in UTF16 characters.
@@ -1036,15 +1071,15 @@ pub fn source_to_codechat_for_web_string(
     let is_project = path_to_toc.is_some();
 
     Ok((
-        match source_to_codechat_for_web(
-            file_contents,
-            &ext.to_string(),
-            version,
-            is_toc,
-            is_project,
-        ) {
-            Err(err) => return Err(err),
-            Ok(translation_results) => match translation_results {
+        {
+            let translation_results = source_to_codechat_for_web(
+                file_contents,
+                &ext.to_string(),
+                version,
+                is_toc,
+                is_project,
+            )?;
+            match translation_results {
                 TranslationResults::CodeChat(codechat_for_web) => {
                     if is_toc {
                         // For the table of contents sidebar, which is pure
@@ -1059,7 +1094,7 @@ pub fn source_to_codechat_for_web_string(
                     }
                 }
                 TranslationResults::Unknown => TranslationResultsString::Unknown,
-            },
+            }
         },
         path_to_toc,
     ))
@@ -1248,10 +1283,14 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
                 attrs: ref_child_attrs, ..
             } = &child.data
             && let child_attrs = ref_child_attrs.borrow()
-            && child_attrs.len() == 1
-            && let Some(attr) = child_attrs.iter().next()
-            && *attr.name.local == *"class"
-            && let attr_value = &attr.value
+            && let child_attrs_len = child_attrs.len()
+            && child_attrs_len >= 1
+            // Look up the `class` attribute by name, so it may appear in any
+            // order relative to other attributes.
+            && let Some(class_attr) = child_attrs
+                .iter()
+                .find(|attr| *attr.name.local == *"class")
+            && let attr_value = &class_attr.value
             // with only one Text child
             && let text_children = &child.children.borrow()
             && text_children.len() == 1
@@ -1265,16 +1304,33 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
         // this span.
         let attr_value_str: &str = attr_value;
         let delim = if is_hydrate {
-            match attr_value_str {
-                "math math-inline" => Some(("\\(", "\\)", "math math-inline mceNonEditable")),
-                "math math-display" => Some(("$$", "$$", "math math-display mceNonEditable")),
-                _ => None,
+            // When hydrating, there should only be a `class` attribute.
+            if child_attrs_len == 1 {
+                match attr_value_str {
+                    "math math-inline" => Some(("\\(", "\\)", "math math-inline mceNonEditable")),
+                    "math math-display" => Some(("$$", "$$", "math math-display mceNonEditable")),
+                    _ => None,
+                }
+            } else {
+                None
             }
         } else {
-            match attr_value_str {
-                "math math-inline mceNonEditable" => Some(("\\(", "\\)", "math math-inline")),
-                "math math-display mceNonEditable" => Some(("$$", "$$", "math math-display")),
-                _ => None,
+            // When dehydrating, there should also be a `contenteditable=false`
+            // attribute. It may appear in either order relative to `class`, so
+            // look it up by name.
+            if child_attrs_len == 2
+                && let Some(contenteditable_attr) = child_attrs
+                    .iter()
+                    .find(|attr| *attr.name.local == *"contenteditable")
+                && contenteditable_attr.value == *"false"
+            {
+                match attr_value_str {
+                    "math math-inline mceNonEditable" => Some(("\\(", "\\)", "math math-inline")),
+                    "math math-display mceNonEditable" => Some(("$$", "$$", "math math-display")),
+                    _ => None,
+                }
+            } else {
+                None
             }
         };
 
@@ -1285,7 +1341,7 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
             let delimited_text_str = if is_hydrate {
                 format!("{}{}{}", delim.0, contents_str, delim.1)
             } else {
-                // Only apply the dehydration is the delimiters are correct.
+                // Only apply the dehydration if the delimiters are correct.
                 if !contents_str.starts_with(delim.0) || !contents_str.ends_with(delim.1) {
                     return None;
                 }
@@ -1296,12 +1352,23 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
             let delimited_text_node = Node::new(NodeData::Text {
                 contents: RefCell::new(delimited_text_str.into()),
             });
+            let mut attrs_vec = vec![Attribute {
+                name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
+                value: delim.2.into(),
+            }];
+            if is_hydrate {
+                attrs_vec.push(Attribute {
+                    name: QualName::new(
+                        None,
+                        Namespace::from(""),
+                        LocalName::from("contenteditable"),
+                    ),
+                    value: "false".into(),
+                });
+            }
             let span = Node::new(NodeData::Element {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("span")),
-                attrs: RefCell::new(vec![Attribute {
-                    name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
-                    value: delim.2.into(),
-                }]),
+                attrs: RefCell::new(attrs_vec),
                 template_contents: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
             });
@@ -1424,6 +1491,79 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                 code.children.borrow_mut().push(text_child.clone());
                 pre.children.borrow_mut().push(code);
                 Some(pre)
+            } else
+            // Look for a fenced code block containing `<br>` elements added by
+            // TinyMCE, instead of the usual newlines. Translate these to
+            // newlines, so that HTML to markdown conversion works.
+            //
+            // A fenced codeblock is a `<pre>` tag...
+            if get_node_tag_name(child) == Some("pre")
+                // ...with zero attributes...
+                && let NodeData::Element {
+                    attrs: ref_pre_attrs, ..
+                } = &child.data
+                && let pre_attrs = ref_pre_attrs.borrow()
+                && pre_attrs.is_empty()
+                // ...and exactly one child, ...
+                && let pre_children = &child.children.borrow()
+                && pre_children.len() == 1
+                && let Some(code_child) = pre_children.iter().next()
+                // ...which is a `code` tag with either zero attributes or one
+                // `class` attribute whose value starts with `language-`, ...
+                && get_node_tag_name(code_child) == Some("code")
+                && let NodeData::Element {
+                    attrs: ref_code_attrs, ..
+                } = &code_child.data
+                && let code_attrs = ref_code_attrs.borrow()
+                && (code_attrs.is_empty()
+                    || (code_attrs.len() == 1
+                        && code_attrs.iter().next().is_some_and(|attr| {
+                            *attr.name.local == *"class"
+                                && attr.value.starts_with("language-")
+                        })))
+                // ...whose children consist only of text nodes and `<br>`
+                // elements with no attributes, including at least one `<br>`.
+                && let code_children = &code_child.children.borrow()
+                && code_children.iter().all(|c| {
+                    matches!(c.data, NodeData::Text { .. })
+                        || (get_node_tag_name(c) == Some("br")
+                            && matches!(&c.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty()))
+                })
+                && code_children
+                    .iter()
+                    .any(|c| get_node_tag_name(c) == Some("br"))
+            {
+                // Replace all `br` instances with a text node containing a
+                // newline, preserving the surrounding `pre`/`code` structure.
+                let new_code = Node::new(NodeData::Element {
+                    name: QualName::new(None, Namespace::from(""), LocalName::from("code")),
+                    attrs: RefCell::new(code_attrs.clone()),
+                    template_contents: RefCell::new(None),
+                    mathml_annotation_xml_integration_point: false,
+                });
+                {
+                    let mut new_code_children = new_code.children.borrow_mut();
+                    for c in code_children.iter() {
+                        let new_child = if get_node_tag_name(c) == Some("br") {
+                            Node::new(NodeData::Text {
+                                contents: RefCell::new("\n".into()),
+                            })
+                        } else {
+                            c.clone()
+                        };
+                        new_child.parent.set(Some(Rc::downgrade(&new_code)));
+                        new_code_children.push(new_child);
+                    }
+                }
+                let new_pre = Node::new(NodeData::Element {
+                    name: QualName::new(None, Namespace::from(""), LocalName::from("pre")),
+                    attrs: RefCell::new(vec![]),
+                    template_contents: RefCell::new(None),
+                    mathml_annotation_xml_integration_point: false,
+                });
+                new_code.parent.set(Some(Rc::downgrade(&new_pre)));
+                new_pre.children.borrow_mut().push(new_code);
+                Some(new_pre)
             } else {
                 replace_math_node(child, false)
             };
@@ -1434,12 +1574,39 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                 Some(children[index].clone())
             }
         };
-        // `borrow_mut` is now dropped; safe to recurse.
+        // `borrow_mut` is now dropped; safe to recurse. Recurse first so that
+        // TinyMCE attributes on descendants (e.g. `data-mce-bogus` on a `<br>`)
+        // are removed before the `<p><br></p>` check below.
         if let Some(child) = child_to_walk {
             dehydrating_walk_node(&child);
+            // If this child is `<p><br></p>`, change it to `<p>&nbsp;</p>`. An
+            // empty paragraph is created by TinyMCE as `<p><br></p>`; the
+            // `<br>` alone is dropped by HTML-to-Markdown conversion, so
+            // replace it with a non-breaking space to preserve the empty
+            // paragraph.
+            if is_empty_p_with_br(&child) {
+                let nbsp = Node::new(NodeData::Text {
+                    contents: RefCell::new("\u{a0}".into()),
+                });
+                nbsp.parent.set(Some(Rc::downgrade(&child)));
+                *child.children.borrow_mut() = vec![nbsp];
+            }
         }
         index += 1;
     }
+}
+
+/// Returns true if `node` is `<p><br></p>`: a `<p>` element with no attributes
+/// whose only child is a `<br>` element with no attributes.
+fn is_empty_p_with_br(node: &Rc<Node>) -> bool {
+    get_node_tag_name(node) == Some("p")
+        && matches!(&node.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty())
+        // ...with exactly one child, a `<br>` element with no attributes.
+        && node.children.borrow().len() == 1
+        && node.children.borrow().first().is_some_and(|br| {
+            get_node_tag_name(br) == Some("br")
+                && matches!(&br.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty())
+        })
 }
 
 fn get_node_tag_name(node: &Rc<Node>) -> Option<&str> {

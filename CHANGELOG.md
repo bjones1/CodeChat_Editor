@@ -24,6 +24,54 @@ Changelog
 
 * No changes.
 
+Version 0.1.61 -- 2026-Jul-11
+-----------------------------
+
+* Fix unexpected scrolling when server updates are applied to a doc block that
+  exceeds the screen height.
+* Fix errors due to incorrect TypeScript typecasts.
+* Correctly update the delimiter when a doc block is updated.
+
+Version 0.1.60 -- 2026-Jul-08
+-----------------------------
+
+* Fix [#113](https://github.com/bjones1/CodeChat_Editor/issues/113) -- when
+  selecting a doc block in the IDE that contains a line wider than the Client's
+  view, the Client scrolled the horizontal scrollbar all the way to the end of
+  the line. This fix only performs vertical scrolling, but leaves the horizontal
+  scroll unchanged.
+* Fix keyboard navigation -- moving between doc blocks and code blocks with
+  arrow keys is now supported.
+* Fix regression -- `id` attributes on HTML elements are no longer blocked.
+* Fix unexpected scrolling when editing doc blocks which exceed the screen
+  height.
+* Update the delimiter when a doc block is updated.
+* Remove highlight around the a doc block when it's being edited, which hides
+  the cursor when the cursor is at the beginning of the line.
+
+Version 0.1.59 -- 2026-Jun-26
+-----------------------------
+
+* Block malicious HTML in source code/Markdown documents.
+* Update @codemirror/view after
+  [bug fix](https://code.haverbeke.berlin/codemirror/dev/issues/1717).
+
+Version 0.1.58 -- 2026-Jun-22
+-----------------------------
+
+* Load Client components at first use, rather than pre-loading all possible
+  components.
+* Correct math translation from the Client back to the IDE.
+* Fix Client bug which caused it to immediately remove newly added empty
+  paragraphs.
+
+Version 0.1.57 -- 2026-Jun-15
+-----------------------------
+
+* Simplify and correct the process of sending doc block edits to the server.
+* Fix mis-translation when adding newlines to a fenced code block in a doc block
+  in the Client.
+
 Version 0.1.56 -- 2026-May-22
 -----------------------------
 

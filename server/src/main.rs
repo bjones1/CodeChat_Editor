@@ -19,13 +19,13 @@
 //! This file implements the command-line interface (CLI) for the CodeChat
 //! Editor server binary. It provides three subcommands:
 //!
-//! - `serve`: Start the webserver in the foreground.
-//! - `start`: Spawn the webserver as a background child process, polling
-//!   until it responds to a ping, then optionally open a browser.
-//! - `stop`: Send a stop request to a running server instance.
+//! * `serve`: Start the webserver in the foreground.
+//! * `start`: Spawn the webserver as a background child process, polling until
+//!   it responds to a ping, then optionally open a browser.
+//! * `stop`: Send a stop request to a running server instance.
 //!
-//! All subcommands accept `--host` and `--port` options to control the
-//! server's network address.
+//! All subcommands accept `--host` and `--port` options to control the server's
+//! network address.
 // Imports
 // -------
 //
@@ -44,7 +44,7 @@ use std::{
 #[cfg(debug_assertions)]
 use clap::ValueEnum;
 use clap::{Parser, Subcommand};
-use log::LevelFilter;
+use log::{LevelFilter, error, info};
 
 // ### Local
 use code_chat_editor::webserver::{self, Credentials, GetServerUrlError, path_to_url};
@@ -142,7 +142,7 @@ impl Cli {
                             let status_code = response.status_code;
                             let body = response.as_str().unwrap_or("Non-text body");
                             if status_code == 200 && body == "pong" {
-                                println!("Server started.");
+                                info!("Server started.");
                                 // Open a web browser if requested. TODO: show
                                 // an error if running in a Codespace, since
                                 // this doesn't work. See
@@ -174,7 +174,7 @@ impl Cli {
                                 {
                                     break 'err_print;
                                 }
-                                eprintln!("Failed to connect to server at {addr}: {err}");
+                                error!("Failed to connect to server at {addr}: {err}");
                             }
                         }
                     }
@@ -185,7 +185,7 @@ impl Cli {
                         // already running; in this case, the ping above will
                         // see the running server then exit.
                         None => {
-                            println!("Starting server in background...");
+                            info!("Starting server in background...");
                             let current_exe = match env::current_exe() {
                                 Ok(exe) => exe,
                                 Err(e) => {
@@ -280,7 +280,7 @@ impl Cli {
                 }
             }
             Commands::Stop => {
-                println!("Stopping server...");
+                info!("Stopping server...");
                 let stop_addr = fix_addr(addr);
 
                 // TODO: Use https://crates.io/crates/sysinfo to find the server
@@ -293,7 +293,7 @@ impl Cli {
                     Ok(response) => {
                         let status_code = response.status_code;
                         if status_code == 204 {
-                            println!("Server shutting down.");
+                            info!("Server shutting down.");
                             Ok(())
                         } else {
                             Err(format!(
@@ -344,7 +344,8 @@ fn parse_credentials(s: &str) -> Result<Credentials, String> {
     })
 }
 
-/// This is used by `ping` to transform the "access connections from any address" address into localhost, a valid destination address for a ping.
+/// This is used by `ping` to transform the "access connections from any
+/// address" address into localhost, a valid destination address for a ping.
 fn fix_addr(addr: &SocketAddr) -> SocketAddr {
     if addr.ip() == IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)) {
         let mut addr = *addr;
@@ -375,7 +376,9 @@ async fn get_server_url(port: u16) -> Result<String, GetServerUrlError> {
 
 #[cfg(test)]
 mod test {
-    use super::Cli;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+
+    use super::{Cli, fix_addr, parse_credentials, port_in_range};
     use clap::CommandFactory;
 
     // This is recommended in the
@@ -383,5 +386,72 @@ mod test {
     #[test]
     fn verify_cli() {
         Cli::command().debug_assert();
+    }
+
+    // ### `port_in_range`
+    #[test]
+    fn test_port_in_range_valid() {
+        assert_eq!(port_in_range("1"), Ok(1));
+        assert_eq!(port_in_range("8080"), Ok(8080));
+        assert_eq!(port_in_range("65535"), Ok(65535));
+    }
+
+    #[test]
+    fn test_port_in_range_not_a_number() {
+        let err = port_in_range("abc").unwrap_err();
+        assert!(err.contains("isn't a port number"), "got: {err}");
+    }
+
+    #[test]
+    fn test_port_in_range_out_of_range() {
+        // Zero is below the valid range.
+        let err = port_in_range("0").unwrap_err();
+        assert!(err.contains("port not in range"), "got: {err}");
+        // Above the valid range (but still parses as a `usize`).
+        let err = port_in_range("65536").unwrap_err();
+        assert!(err.contains("port not in range"), "got: {err}");
+    }
+
+    // ### `parse_credentials`
+    #[test]
+    fn test_parse_credentials_simple() {
+        let creds = parse_credentials("user:pass").unwrap();
+        assert_eq!(creds.username, "user");
+        assert_eq!(creds.password, "pass");
+    }
+
+    #[test]
+    fn test_parse_credentials_password_with_colon() {
+        // Only the first colon splits the username from the password; the
+        // password may contain additional colons.
+        let creds = parse_credentials("user:pa:ss").unwrap();
+        assert_eq!(creds.username, "user");
+        assert_eq!(creds.password, "pa:ss");
+    }
+
+    // ### `fix_addr`
+    #[test]
+    fn test_fix_addr_ipv4_unspecified() {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080);
+        let fixed = fix_addr(&addr);
+        assert_eq!(fixed.ip(), IpAddr::V4(Ipv4Addr::LOCALHOST));
+        assert_eq!(fixed.port(), 8080);
+    }
+
+    #[test]
+    fn test_fix_addr_ipv6_unspecified() {
+        let addr = SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 8080);
+        let fixed = fix_addr(&addr);
+        assert_eq!(fixed.ip(), IpAddr::V6(Ipv6Addr::LOCALHOST));
+        assert_eq!(fixed.port(), 8080);
+    }
+
+    #[test]
+    fn test_fix_addr_specific_unchanged() {
+        // A specific (non-unspecified) address is returned unchanged.
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        assert_eq!(fix_addr(&addr), addr);
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5)), 1234);
+        assert_eq!(fix_addr(&addr), addr);
     }
 }

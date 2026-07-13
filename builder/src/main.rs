@@ -82,6 +82,9 @@ enum Commands {
     },
     /// Run lints and tests.
     Test,
+    /// Repeatedly run the `overall_*` tests until one fails. Useful for
+    /// shaking out intermittent test failures.
+    RunUntilFail,
     /// Build everything.
     Build,
     /// Build the Client.
@@ -132,7 +135,7 @@ static CLIENT_PATH: &str = "../client";
 static BUILDER_PATH: &str = "../builder";
 static TEST_UTILS_PATH: &str = "../test_utils";
 static NAPI_TARGET: &str = "NAPI_TARGET";
-static DIST_VERSION: &str = "0.31.0";
+static DIST_VERSION: &str = "0.32.0";
 
 // Code
 // ----
@@ -237,15 +240,15 @@ fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Resu
             "-c",
             format!(
                 "rsync --archive --delete {} {}",
-                &src_combined.to_str().unwrap(),
-                &dest.to_str().unwrap()
+                src_combined.to_str().unwrap(),
+                dest.to_str().unwrap()
             )
             .as_str(),
         ]);
     }
 
     // Print the command, in case this produces and error or takes a while.
-    println!("{:#?}", &copy_process);
+    println!("{:#?}", copy_process);
 
     // Check for errors.
     let exit_code = copy_process
@@ -270,6 +273,7 @@ fn copy_file<P: AsRef<Path> + std::fmt::Debug>(src: P, dest: P) -> io::Result<()
 }
 
 fn remove_dir_all_if_exists<P: AsRef<Path> + std::fmt::Display>(path: P) -> io::Result<()> {
+    println!("Removing {path}...");
     if Path::new(path.as_ref()).try_exists().unwrap() {
         fs::remove_dir_all(path.as_ref())?;
     }
@@ -324,17 +328,9 @@ fn patch_file(patch: &str, before_patch: &str, file_path: &str) -> io::Result<()
     }
     Ok(())
 }
+
 /// After updating files in the client's Node files, perform some fix-ups.
 fn patch_client_libs() -> io::Result<()> {
-    // Apply a the fixes described in
-    // [issue 27](https://github.com/bjones1/CodeChat_Editor/issues/27).
-    patch_file(
-        "
-        selectionNotFocus = this.view.state.facet(editable) ? focused : hasSelection(this.dom, this.view.observer.selectionRange)",
-        "        let selectionNotFocus = !focused && !(this.view.state.facet(editable) || this.dom.tabIndex > -1) &&
-            hasSelection(this.dom, this.view.observer.selectionRange) && !(activeElt && this.dom.contains(activeElt));",
-        &format!("{CLIENT_PATH}/node_modules/@codemirror/view/dist/index.js")
-    )?;
     // In
     // [older releases](https://www.tiny.cloud/docs/tinymce/5/6.0-upcoming-changes/#options),
     // TinyMCE allowed users to change `whitespace_elements`; the whitespace
@@ -384,7 +380,7 @@ fn run_install(dev: bool) -> io::Result<()> {
         cargo fetch --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo fetch";
         cargo fetch --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo fetch"
+        info "test_utils: cargo fetch";
         cargo fetch --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo fetch";
         cargo fetch;
@@ -441,7 +437,7 @@ fn run_update() -> io::Result<()> {
         cargo update --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo update";
         cargo update --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo update"
+        info "test_utils: cargo update";
         cargo update --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo update";
         cargo update;
@@ -454,7 +450,7 @@ fn run_update() -> io::Result<()> {
         cargo outdated --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo outdated";
         cargo outdated --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo outdated"
+        info "test_utils: cargo outdated";
         cargo outdated --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo outdated";
         cargo outdated;
@@ -480,7 +476,7 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         info "VSCode extension: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$VSCODE_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo clippy and fmt"
+        info "test_utils: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$TEST_UTILS_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
 
@@ -490,7 +486,7 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cargo audit --file=$BUILDER_PATH/Cargo.lock --no-fetch;
         info "VSCode extension: cargo audit";
         cargo audit --file=$VSCODE_PATH/Cargo.lock --no-fetch;
-        info "test_utils: cargo audit"
+        info "test_utils: cargo audit";
         cargo audit --file=$TEST_UTILS_PATH/Cargo.lock --no-fetch;
 
         info "cargo sort";
@@ -501,8 +497,8 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cd $VSCODE_PATH;
         info "VSCode extension: cargo sort";
         cargo sort $check;
-        info "test_utils: cargo sort"
-        cd $TEST_UTILS_PATH;
+        info "test_utils: cargo sort";
+        cd ../$TEST_UTILS_PATH;
         cargo sort $check;
 
     )?;
@@ -530,12 +526,45 @@ fn run_test() -> io::Result<()> {
         cargo test --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo test";
         cargo test --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "test_utils: cargo test"
+        info "test_utils: cargo test";
         cargo test --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo test";
         cargo test;
     )?;
     Ok(())
+}
+
+/// Repeatedly run the `overall_*` integration tests until one fails, to expose
+/// intermittent failures. This is a translation of `server/run_until_fail.ps1`.
+fn run_until_fail() -> io::Result<()> {
+    // Provide a backtrace on a failing test, matching the script's
+    // `RUST_BACKTRACE=1`.
+    unsafe {
+        env::set_var("RUST_BACKTRACE", "1");
+    }
+    let tests = [
+        "overall_1",
+        "overall_2",
+        "overall_3",
+        "overall_4",
+        "overall_5",
+    ];
+    let mut iteration = 0;
+    loop {
+        iteration += 1;
+        // Clear the screen so only the current iteration's output is visible.
+        print!("\x1b[2J\x1b[H");
+        println!("--- Iteration {iteration} ---");
+        for test in tests {
+            // `run_cmd!` returns an error if `cargo test` exits non-zero, which
+            // breaks out of the loop -- the same behavior as the script.
+            run_cmd!(cargo test --test $test).map_err(|err| {
+                io::Error::other(format!(
+                    "Test {test} failed on iteration {iteration}: {err}"
+                ))
+            })?;
+        }
+    }
 }
 
 fn run_build() -> io::Result<()> {
@@ -590,7 +619,7 @@ fn run_client_build(
         true,
     )?;
 
-    // \<a id="#pdf.js>The PDF viewer for use with VSCode. Build it separately,
+    // <a id="#pdf.js"></a>The PDF viewer for use with VSCode. Build it separately,
     // since it's loaded apart from the rest of the Client.
     run_script(
         &esbuild,
@@ -807,8 +836,14 @@ fn run_postrelease(target: &str, tag: &str) -> io::Result<()> {
 fn run_coverage() -> io::Result<()> {
     run_cmd!(
         info "cargo tarpaulin --skip-clean --out=html --target-dir=tarpaulin";
-        cargo tarpaulin --skip-clean --out=html --target-dir=tarpaulin;
-    )
+        cargo tarpaulin --skip-clean --out=html --out=json --target-dir=tarpaulin;
+    )?;
+
+    // Open the resulting coverage report in the default web browser. The current
+    // working directory is `server/` (see `main`), so the report lives at
+    // `server/tarpaulin-report.html`.
+    let report = Path::new("tarpaulin-report.html");
+    open::that(report)
 }
 
 // CLI implementation
@@ -823,6 +858,7 @@ impl Cli {
             Commands::Update => run_update(),
             Commands::Flint { check } => run_format_and_lint(*check),
             Commands::Test => run_test(),
+            Commands::RunUntilFail => run_until_fail(),
             Commands::Build => run_build(),
             Commands::ClientBuild(build_options) => {
                 run_client_build(build_options.dist, build_options.skip_check_errors)

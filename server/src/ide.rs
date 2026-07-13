@@ -48,6 +48,7 @@ use std::{
 
 // ### Third-party
 use actix_server::{Server, ServerHandle};
+use log::error;
 use rand::random;
 use tokio::{
     runtime::Handle,
@@ -225,7 +226,7 @@ impl CodeChatEditorServer {
             match expired_messages_tx.send(id).await {
                 Ok(join_handle) => join_handle,
                 Err(err) => {
-                    eprintln!("Error -- unable to send expired message: {err}");
+                    error!("Error -- unable to send expired message: {err}");
                 }
             }
         });

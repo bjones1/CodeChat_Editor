@@ -22,4 +22,11 @@ export const DEBUG_ENABLED = false;
 
 // The max length of a message to show in the console when debug logging is
 // enabled.
-export const MAX_MESSAGE_LENGTH = 20000;
+export const MAX_MESSAGE_LENGTH = 50000;
+
+/*eslint-disable-next-line @typescript-eslint/no-explicit-any */
+export const console_log = (...args: any) => {
+    if (DEBUG_ENABLED) {
+        console.log(...args);
+    }
+};
