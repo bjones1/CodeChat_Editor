@@ -1,7 +1,7 @@
-const assert = require("node:assert/strict");
-const test = require("node:test");
+import assert from "node:assert/strict";
+import test from "node:test";
 
-const {
+import {
     captureRefreshStillCurrentSnapshot,
     captureStatusFailureClearsIdentity,
     captureTokenCanRecord,
@@ -10,7 +10,7 @@ const {
     captureTokenStatusForStatusFailure,
     normalizeCaptureServiceBaseUrl,
     trustedCaptureServiceBaseUrl,
-} = require("../.test-output/capture-policy.test.cjs");
+} from "../.test-output/capture-policy.test.mjs";
 
 test("capture service URL normalization strips known routes", () => {
     assert.equal(
@@ -20,7 +20,9 @@ test("capture service URL normalization strips known routes", () => {
         "https://capture.example/dev",
     );
     assert.equal(
-        normalizeCaptureServiceBaseUrl("http://localhost:8787/v1/capture/status"),
+        normalizeCaptureServiceBaseUrl(
+            "http://localhost:8787/v1/capture/status",
+        ),
         "http://localhost:8787",
     );
 });
@@ -39,7 +41,8 @@ test("capture service URL normalization rejects unsafe token destinations", () =
         /https:\/\/ except for localhost/,
     );
     assert.throws(
-        () => normalizeCaptureServiceBaseUrl("https://user:pass@example.com/dev"),
+        () =>
+            normalizeCaptureServiceBaseUrl("https://user:pass@example.com/dev"),
         /must not include credentials/,
     );
 });

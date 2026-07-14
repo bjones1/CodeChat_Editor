@@ -143,7 +143,7 @@
     },
     "scripts": {
         "compile": "cargo run --manifest-path=../../builder/Cargo.toml ext-build",
-        "test:capture-policy": "esbuild src/capture-policy.ts --platform=node --format=cjs --bundle --outfile=.test-output/capture-policy.test.cjs && node --test src/capture-policy.test.js",
+        "test:capture-policy": "esbuild src/capture-policy.ts --platform=node --format=esm --bundle --outfile=.test-output/capture-policy.test.mjs && node --test src/capture-policy.test.mjs",
         "vscode:prepublish": "cargo run --manifest-path=../../builder/Cargo.toml ext-build --dist"
     }
 }

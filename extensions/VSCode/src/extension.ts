@@ -440,7 +440,11 @@ function captureSettingsState(settings: StudySettings): CaptureSettingsState {
     ) {
         return "captureDisabled";
     }
-    if (settings.consentEnabled && settings.enabled && !settings.tokenAccepted) {
+    if (
+        settings.consentEnabled &&
+        settings.enabled &&
+        !settings.tokenAccepted
+    ) {
         return "waitingForToken";
     }
     if (settings.consentEnabled && settings.enabled) {
@@ -583,7 +587,9 @@ function loadPersistedCaptureIdentity(context: vscode.ExtensionContext): void {
     );
     let currentBaseUrl: string | undefined;
     try {
-        currentBaseUrl = normalizeCaptureServiceBaseUrl(captureServiceBaseUrl());
+        currentBaseUrl = normalizeCaptureServiceBaseUrl(
+            captureServiceBaseUrl(),
+        );
     } catch {
         currentBaseUrl = undefined;
     }
@@ -603,11 +609,13 @@ function loadPersistedCaptureIdentity(context: vscode.ExtensionContext): void {
     captureTokenRuntimeState = {
         ...captureTokenRuntimeState,
         participantId:
-            optionalString(context.globalState.get(CAPTURE_PARTICIPANT_GLOBAL_KEY)) ??
-            "",
+            optionalString(
+                context.globalState.get(CAPTURE_PARTICIPANT_GLOBAL_KEY),
+            ) ?? "",
         instanceId:
-            optionalString(context.globalState.get(CAPTURE_INSTANCE_GLOBAL_KEY)) ??
-            "",
+            optionalString(
+                context.globalState.get(CAPTURE_INSTANCE_GLOBAL_KEY),
+            ) ?? "",
         studyId:
             optionalString(context.globalState.get(CAPTURE_STUDY_GLOBAL_KEY)) ??
             "",
@@ -649,7 +657,10 @@ async function clearPersistedCaptureIdentity(): Promise<void> {
     await context.globalState.update(CAPTURE_STUDY_GLOBAL_KEY, undefined);
     await context.globalState.update(CAPTURE_ENABLED_GLOBAL_KEY, undefined);
     await context.globalState.update(CAPTURE_TOKEN_HASH_GLOBAL_KEY, undefined);
-    await context.globalState.update(CAPTURE_SERVICE_BASE_GLOBAL_KEY, undefined);
+    await context.globalState.update(
+        CAPTURE_SERVICE_BASE_GLOBAL_KEY,
+        undefined,
+    );
 }
 
 function hashText(value: string): string {
@@ -787,14 +798,18 @@ function requestCaptureStatus(
                         reject(
                             new Error(
                                 `${statusCode} ${
-                                    body || res.statusMessage || "request failed"
+                                    body ||
+                                    res.statusMessage ||
+                                    "request failed"
                                 }`,
                             ),
                         );
                         return;
                     }
                     try {
-                        resolve(JSON.parse(body) as CaptureServiceStatusResponse);
+                        resolve(
+                            JSON.parse(body) as CaptureServiceStatusResponse,
+                        );
                     } catch (err) {
                         reject(
                             new Error(
@@ -856,10 +871,7 @@ async function configureRustCaptureService(
         if (serviceBaseUrl === undefined) {
             throw new Error("Capture service URL is not configured.");
         }
-        codeChatEditorServer.configureCaptureService(
-            serviceBaseUrl,
-            token,
-        );
+        codeChatEditorServer.configureCaptureService(serviceBaseUrl, token);
         return true;
     } catch (err) {
         reportCaptureFailure(
@@ -925,7 +937,9 @@ async function captureTokenOperationStillCurrent(
     let currentBaseUrl: string | undefined;
     if (expectedBaseUrl !== undefined) {
         try {
-            currentBaseUrl = normalizeCaptureServiceBaseUrl(captureServiceBaseUrl());
+            currentBaseUrl = normalizeCaptureServiceBaseUrl(
+                captureServiceBaseUrl(),
+            );
         } catch {
             currentBaseUrl = undefined;
         }
@@ -999,7 +1013,9 @@ async function refreshCaptureTokenStateInner(
 
     let expectedBaseUrl: string;
     try {
-        expectedBaseUrl = normalizeCaptureServiceBaseUrl(captureServiceBaseUrl());
+        expectedBaseUrl = normalizeCaptureServiceBaseUrl(
+            captureServiceBaseUrl(),
+        );
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         const configurationResult = await configureRustCaptureServiceIfCurrent(
@@ -1103,7 +1119,11 @@ async function refreshCaptureTokenStateInner(
         ) {
             return;
         }
-        await applyCaptureServiceStatus(status, expectedTokenHash, expectedBaseUrl);
+        await applyCaptureServiceStatus(
+            status,
+            expectedTokenHash,
+            expectedBaseUrl,
+        );
         captureLog(
             `capture token status: ${captureTokenStatusLabel(
                 captureTokenRuntimeState.tokenStatus,
@@ -1457,7 +1477,7 @@ async function sendCaptureSettingsChangedEvent(
     // Prefer the current participant ID, but fall back to the previous value so
     // turning consent off can still be attributed to the participant who opted
     // out.
-    let participantId = current.participantId || previous.participantId;
+    const participantId = current.participantId || previous.participantId;
     if (participantId.length === 0) {
         captureLog(
             `capture settings change skipped: ${changedSettings.join(",")} (no participant id)`,
