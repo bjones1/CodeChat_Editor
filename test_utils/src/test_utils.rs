@@ -20,9 +20,10 @@
 // -------
 //
 // ### Standard library
-use std::{env, fs};
-use std::path::MAIN_SEPARATOR_STR;
-use std::path::PathBuf;
+use std::{
+    env, fs,
+    path::{MAIN_SEPARATOR_STR, PathBuf},
+};
 
 // ### Third-party
 use assert_fs::{TempDir, fixture::PathCopy};
