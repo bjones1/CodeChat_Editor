@@ -132,6 +132,13 @@ pub fn prep_test_dir_impl(
     let source_path_tmp = source_path.clone();
     let test_name = source_path_tmp.file_name().unwrap().to_str().unwrap();
     source_path.pop();
+    let fixture_dir = source_path.join(test_name);
+    if !fixture_dir.is_dir() {
+        panic!(
+            "Missing test fixture directory derived from {test_full_name}: {}",
+            fixture_dir.to_string_lossy()
+        );
+    }
 
     // For debugging, append
     // [.into\_persistent()](https://docs.rs/assert_fs/latest/assert_fs/fixture/struct.TempDir.html#method.into_persistent).
@@ -149,6 +156,12 @@ pub fn prep_test_dir_impl(
 
     // This is a path where testing takes place.
     let test_dir = temp_dir.path().join(test_name);
+    if !test_dir.is_dir() {
+        panic!(
+            "Test fixture copy did not create expected directory: {}",
+            test_dir.to_string_lossy()
+        );
+    }
 
     (temp_dir, test_dir)
 }
