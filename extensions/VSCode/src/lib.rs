@@ -54,8 +54,10 @@ struct CodeChatEditorServer(ide::CodeChatEditorServer);
 #[allow(dead_code)]
 impl CodeChatEditorServer {
     #[napi(constructor)]
-    pub fn new() -> Result<CodeChatEditorServer, Error> {
-        Ok(CodeChatEditorServer(ide::CodeChatEditorServer::new()?))
+    pub fn new(capture_spool_path: String) -> Result<CodeChatEditorServer, Error> {
+        Ok(CodeChatEditorServer(
+            ide::CodeChatEditorServer::new_with_capture_spool(PathBuf::from(capture_spool_path))?,
+        ))
     }
 
     // This returns an error if the conversion to JSON fails, `None` if the

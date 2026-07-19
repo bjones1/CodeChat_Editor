@@ -52,9 +52,11 @@ CaptureWebService token status, not from the token text.
 CodeChat sends capture events only to CaptureWebService and does not connect
 directly to the capture database. The old JSON database-secret configuration
 path is not used by the extension. Events are sanitized and written to a local
-FIFO spool before upload, so events recorded offline after the token has been
-accepted and capture-enabled upload automatically when the matching service is
-reachable again. If the service endpoint changes, update the user-level
+FIFO spool under VS Code's global extension storage before upload, so extension
+upgrades do not remove queued events. Events recorded offline after the token
+has been accepted and capture-enabled upload automatically when the matching
+service is reachable again. If the service endpoint changes, update the
+user-level
 `CodeChatEditor.Capture.ServiceBaseUrl` setting. Workspace values are ignored
 for this token-bearing endpoint. Token-bearing service requests must use HTTPS,
 except for localhost development endpoints.

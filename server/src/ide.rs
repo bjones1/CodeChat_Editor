@@ -70,7 +70,7 @@ use crate::{
     webserver::{
         self, CursorPosition, EditorMessage, EditorMessageContents, INITIAL_IDE_MESSAGE_ID,
         MESSAGE_ID_INCREMENT, REPLY_TIMEOUT_MS, ResultErrTypes, ResultOkTypes,
-        UpdateMessageContents, WebAppState, setup_server,
+        UpdateMessageContents, WebAppState,
     },
 };
 
@@ -108,11 +108,19 @@ pub struct CodeChatEditorServer {
 impl CodeChatEditorServer {
     // Creating the server could fail, so this must return an `io::Result`.
     pub fn new() -> std::io::Result<CodeChatEditorServer> {
+        let capture_spool_path = webserver::ROOT_PATH.lock().unwrap().join("capture-spool");
+        Self::new_with_capture_spool(capture_spool_path)
+    }
+
+    pub fn new_with_capture_spool(
+        capture_spool_path: std::path::PathBuf,
+    ) -> std::io::Result<CodeChatEditorServer> {
         // Start the server.
-        let (server, app_state) = setup_server(
+        let (server, app_state) = webserver::setup_server_with_capture_spool(
             // A port of 0 requests the OS to assign an open port.
             &SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0),
             None,
+            capture_spool_path,
         )?;
         let server_handle = server.handle();
 

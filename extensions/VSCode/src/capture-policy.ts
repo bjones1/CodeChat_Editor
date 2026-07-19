@@ -176,6 +176,14 @@ export function captureTokenSnapshotStillCurrent(
     return true;
 }
 
+export function appendSerializedCaptureOperation(
+    queue: Promise<void>,
+    operation: () => Promise<void>,
+    onFailure: (error: unknown) => void,
+): Promise<void> {
+    return queue.then(operation).catch(onFailure);
+}
+
 export function captureTokenClearedState(): CaptureTokenClearedState {
     return {
         tokenStatus: "missing",

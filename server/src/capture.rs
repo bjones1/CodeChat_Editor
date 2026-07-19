@@ -1395,26 +1395,19 @@ fn sanitize_capture_object(
             if FORBIDDEN_KEYS.contains(&key.as_str()) {
                 return None;
             }
-            let value = match value {
-                serde_json::Value::Object(map) => {
-                    serde_json::Value::Object(sanitize_capture_object(map))
-                }
-                serde_json::Value::Array(values) => serde_json::Value::Array(
-                    values
-                        .into_iter()
-                        .map(|value| match value {
-                            serde_json::Value::Object(map) => {
-                                serde_json::Value::Object(sanitize_capture_object(map))
-                            }
-                            other => other,
-                        })
-                        .collect(),
-                ),
-                other => other,
-            };
-            Some((key, value))
+            Some((key, sanitize_capture_value(value)))
         })
         .collect()
+}
+
+fn sanitize_capture_value(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => serde_json::Value::Object(sanitize_capture_object(map)),
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.into_iter().map(sanitize_capture_value).collect())
+        }
+        other => other,
+    }
 }
 
 fn post_capture_batch(
@@ -1877,7 +1870,10 @@ mod tests {
         event.data = json!({
             "file_path": "C:/secret.rs",
             "nested": { "path": "/secret" },
-            "items": [{ "absolute_path": "/secret2", "ok": true }]
+            "items": [
+                { "absolute_path": "/secret2", "ok": true },
+                [[{ "workspace_path": "/secret3", "nested_ok": true }]]
+            ]
         });
 
         append_spool_event(&spool_path, &event, None).expect("event should spool");
@@ -1894,6 +1890,17 @@ mod tests {
                 .is_none()
         );
         assert_eq!(record.event.data.pointer("/items/0/ok"), Some(&json!(true)));
+        assert!(
+            record
+                .event
+                .data
+                .pointer("/items/1/0/0/workspace_path")
+                .is_none()
+        );
+        assert_eq!(
+            record.event.data.pointer("/items/1/0/0/nested_ok"),
+            Some(&json!(true))
+        );
         let _ = fs::remove_dir_all(&spool_path);
     }
 
@@ -1945,7 +1952,10 @@ mod tests {
                 "reason": "manual",
                 "file_path": "C:/secret.rs",
                 "nested": { "path": "/secret" },
-                "items": [{ "absolute_path": "/secret2", "ok": true }]
+                "items": [
+                    { "absolute_path": "/secret2", "ok": true },
+                    [[{ "workspace_path": "/secret3", "nested_ok": true }]]
+                ]
             }),
         );
         let service_event = service_event_from_capture_event(ev).expect("event should convert");
@@ -1962,6 +1972,16 @@ mod tests {
         );
         assert_eq!(
             service_event.data.pointer("/items/0/ok"),
+            Some(&json!(true))
+        );
+        assert!(
+            service_event
+                .data
+                .pointer("/items/1/0/0/workspace_path")
+                .is_none()
+        );
+        assert_eq!(
+            service_event.data.pointer("/items/1/0/0/nested_ok"),
             Some(&json!(true))
         );
     }

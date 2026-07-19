@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+    appendSerializedCaptureOperation,
     captureRefreshStillCurrentSnapshot,
     captureStatusFailureClearsIdentity,
     captureTokenCanRecord,
@@ -11,6 +12,51 @@ import {
     normalizeCaptureServiceBaseUrl,
     trustedCaptureServiceBaseUrl,
 } from "../.test-output/capture-policy.test.mjs";
+
+test("capture operations run serially and recover from rejection", async () => {
+    const calls = [];
+    let releaseFirst;
+    const firstCanFinish = new Promise((resolve) => {
+        releaseFirst = resolve;
+    });
+
+    let queue = appendSerializedCaptureOperation(
+        Promise.resolve(),
+        async () => {
+            calls.push("first-start");
+            await firstCanFinish;
+            calls.push("first-end");
+        },
+        (error) => calls.push(`unexpected: ${String(error)}`),
+    );
+    queue = appendSerializedCaptureOperation(
+        queue,
+        async () => {
+            calls.push("second");
+            throw new Error("expected failure");
+        },
+        (error) => calls.push(error.message),
+    );
+    queue = appendSerializedCaptureOperation(
+        queue,
+        async () => {
+            calls.push("third");
+        },
+        (error) => calls.push(`unexpected: ${String(error)}`),
+    );
+
+    await Promise.resolve();
+    assert.deepEqual(calls, ["first-start"]);
+    releaseFirst();
+    await queue;
+    assert.deepEqual(calls, [
+        "first-start",
+        "first-end",
+        "second",
+        "expected failure",
+        "third",
+    ]);
+});
 
 test("capture service URL normalization strips known routes", () => {
     assert.equal(

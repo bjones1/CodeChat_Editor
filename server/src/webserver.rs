@@ -1482,9 +1482,18 @@ pub fn setup_server(
     addr: &SocketAddr,
     credentials: Option<Credentials>,
 ) -> std::io::Result<(Server, Data<AppState>)> {
+    let capture_spool_path = ROOT_PATH.lock().unwrap().join("capture-spool");
+    setup_server_with_capture_spool(addr, credentials, capture_spool_path)
+}
+
+pub fn setup_server_with_capture_spool(
+    addr: &SocketAddr,
+    credentials: Option<Credentials>,
+    capture_spool_path: PathBuf,
+) -> std::io::Result<(Server, Data<AppState>)> {
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
-    let app_data = make_app_data(credentials);
+    let app_data = make_app_data_with_capture_spool(credentials, capture_spool_path);
     let app_data_server = app_data.clone();
     let server = match HttpServer::new(move || {
         let auth = HttpAuthentication::with_fn(basic_validator);
@@ -1557,11 +1566,17 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
 pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
+    let capture_spool_path = ROOT_PATH.lock().unwrap().join("capture-spool");
+    make_app_data_with_capture_spool(credentials, capture_spool_path)
+}
+
+fn make_app_data_with_capture_spool(
+    credentials: Option<Credentials>,
+    capture_spool_path: PathBuf,
+) -> WebAppState {
     // Initialize capture with a durable local upload spool. The VS Code
     // extension supplies the CaptureWebService endpoint and bearer token at
     // runtime; this server never reads database credentials from disk or env.
-    let root_path = ROOT_PATH.lock().unwrap().clone();
-    let capture_spool_path = root_path.join("capture-spool");
     let capture: Option<EventCapture> = match EventCapture::new(capture_spool_path.clone()) {
         Ok(ec) => {
             info!("Capture: enabled with local upload spool at {capture_spool_path:?}");

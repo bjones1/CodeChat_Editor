@@ -46,9 +46,10 @@ configuration path has been removed. Capture events now leave CodeChat only by
 calling CaptureWebService with the portal-issued bearer token; any database
 writer role remains inside the service deployment.
 
-Events are sanitized, written to a durable local FIFO spool, then uploaded to
-CaptureWebService. Spooled events carry only a non-secret token hash/service
-identity so events from an old token are not uploaded under a new token. Offline
+Events are sanitized, written to a durable local FIFO spool in VS Code's global
+extension storage, then uploaded to CaptureWebService. Spooled events carry only
+a non-secret token hash/service identity so events from an old token are not
+uploaded under a new token. Offline
 recording is allowed only after the same token and service URL have previously
 been verified as capture-enabled; a token disabled by the portal remains
 disabled while the service is unavailable. If the network or service is

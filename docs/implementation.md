@@ -77,7 +77,8 @@ When consent, recording, and token status allow capture, the extension sends the
 same capture event shape to the local CodeChat server through the existing
 NAPI-RS bridge. The server hashes raw local file paths, removes any raw path
 fields from event data before local persistence, writes every event to a durable
-`capture-spool` FIFO directory, and uploads batches to
+`capture-spool` FIFO directory under VS Code's global extension storage, and
+uploads batches to
 `POST /v1/capture/events` using
 `Authorization: Bearer <token>`. CodeChat does not read database credentials
 from disk and does not connect directly to PostgreSQL; the database schema under
