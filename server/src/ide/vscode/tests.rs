@@ -86,6 +86,8 @@ lazy_static! {
 // ---------
 /// The default port on which the server listens for incoming connections.
 pub const IP_PORT: u16 = 8080;
+/// Allow slower CI runners enough time to start the shared test webserver.
+const WEBSERVER_START_TIMEOUT: Duration = Duration::from_secs(6);
 
 // Support functions
 // -----------------
@@ -202,7 +204,7 @@ async fn _prep_test(
     let _ = &*WEBSERVER_HANDLE;
     let now = SystemTime::now();
     let mut started = false;
-    while now.elapsed().unwrap().as_millis() < 500 {
+    while now.elapsed().unwrap() < WEBSERVER_START_TIMEOUT {
         if minreq::get(format!("http://127.0.0.1:{IP_PORT}/ping",))
             .send()
             .is_ok_and(|response| response.as_bytes() == b"pong")
