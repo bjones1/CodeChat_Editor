@@ -24,6 +24,11 @@ Changelog
 
 * No changes.
 
+Version 0.2.0 -- 2026-Jul-20
+----------------------------
+
+* Added capture functionality.
+
 Version 0.1.61 -- 2026-Jul-11
 -----------------------------
 
