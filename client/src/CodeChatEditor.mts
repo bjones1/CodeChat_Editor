@@ -734,6 +734,9 @@ export const on_error = (event: Event) => {
             userMessage = reason;
         }
         err_str = `Promise rejected: ${userMessage}`;
+        if (reason instanceof Error && reason.stack) {
+            err_str += `\n${reason.stack}`;
+        }
     } else {
         err_str = `Unexpected error ${typeof event}: ${event}`;
     }
