@@ -39,6 +39,7 @@ use std::{
 // ### Third-party
 use ammonia::Builder;
 use dprint_plugin_markdown::{
+    FormatError,
     configuration::{
         Configuration, ConfigurationBuilder, EmphasisKind, HeadingKind, StrongKind, TextWrap,
         UnorderedListKind,
@@ -539,7 +540,7 @@ pub enum HtmlToMarkdownWrappedError {
     #[error("unable to convert from HTML to markdown")]
     HtmlToMarkdownFailed(#[from] std::io::Error),
     #[error("unable to word wrap Markdown")]
-    WordWrapFailed(#[from] anyhow::Error),
+    WordWrapFailed(#[from] FormatError),
 }
 
 impl HtmlToMarkdownWrapped {

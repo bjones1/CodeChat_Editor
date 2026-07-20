@@ -54,7 +54,7 @@ anyhow = "1.0.100"
 bytes = { version = "1", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
-dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markdown.git", branch = "all-fixes", version = "0.21.0" }
+dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markdown.git", branch = "all-fixes" }
 dunce = "1.0.5"
 futures-util = "0.3.29"
 htmd = { git = "https://github.com/bjones1/htmd.git", branch = "dom-interface", version = "0.5" }
