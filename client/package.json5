@@ -94,8 +94,13 @@
         mocha: '^11.7.6',
         'npm-check-updates': '^22.2.9',
         prettier: '^3.9.5',
+        /* Typescript 7 support for eslint is blocked per (this
+           issue)\[https://github.com/typescript-eslint/typescript-eslint/issues/10940\].
+           Instead, see
+           [Running Typescript 7.0 Side-by-Side with TypeScript 6.0](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0)
+           for a workaround. */
         typescript: 'npm:@typescript/typescript6@^6.0.2',
-          "@typescript/native": "npm:typescript@^7.0.2",
+        "@typescript/native": "npm:typescript@^7.0.2",
         'typescript-eslint': '^8.64.0',
     },
     scripts: {
