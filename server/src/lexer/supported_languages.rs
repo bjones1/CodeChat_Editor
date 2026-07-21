@@ -79,7 +79,7 @@ fn make_language_lexer(
         ext_arr: ext_arr.iter().map(|x| Arc::new(x.to_string())).collect(),
         inline_comment_delim_arr: inline_comment_delim_arr
             .iter()
-            .map(|x| x.to_string())
+            .map(std::string::ToString::to_string)
             .collect(),
         block_comment_delim_arr: block_comment_delim_arr.to_vec(),
         string_delim_spec_arr: string_delim_spec_arr.to_vec(),
@@ -101,6 +101,7 @@ fn make_string_delimiter_spec(
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn make_heredoc_delim(
     start_prefix: &str,
     delim_ident_regex: &str,

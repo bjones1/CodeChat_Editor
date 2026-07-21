@@ -118,7 +118,7 @@ fn test_codechat_for_web_to_source() {
     let codechat_for_web = build_codechat_for_web("python", "", vec![]);
     assert_eq!(
         cast!(codechat_for_web_to_source(&codechat_for_web), Ok),
-        "".to_string()
+        String::new()
     );
 
     let codechat_for_web = build_codechat_for_web("undefined", "", vec![]);
@@ -228,7 +228,7 @@ fn test_codemirror_to_code_doc_blocks_py() {
 }
 
 #[test]
-#[should_panic]
+#[should_panic(expected = "assertion `left == right` failed")]
 fn test_codemirror_to_code_doc_blocks_error() {
     run_test(
         "python",
@@ -388,11 +388,11 @@ fn test_code_doc_blocks_to_source_css() {
             css_lexer
         )
         .unwrap(),
-        r#"Test_0
+        r"Test_0
 /* Test 1
 
    Test 2 */
-"#
+"
     );
 
     // Repeat the above tests with an indent.
@@ -409,11 +409,11 @@ fn test_code_doc_blocks_to_source_css() {
             css_lexer
         )
         .unwrap(),
-        r#"Test_0
+        r"Test_0
    /* Test 1
 
       Test 2 */
-"#
+"
     );
 
     // Basic code.
@@ -806,7 +806,7 @@ fn test_source_to_codechat_for_web_1() {
                 1,
                 "",
                 "//",
-                r#"<p><a id=one></a>1"#
+                r"<p><a id=one></a>1"
             ),]
         )))
     );
@@ -847,7 +847,7 @@ fn apply_str_diff(before: &str, diffs: &[StringDiff]) -> String {
             before.replace_range(from_index..to_index, &diff.insert);
         } else {
             before.insert_str(from_index, &diff.insert);
-        };
+        }
     }
     before
 }
@@ -902,7 +902,7 @@ fn test_diff_1() {
         &[StringDiff {
             from: 0,
             to: Some(2),
-            insert: "".to_string(),
+            insert: String::new(),
         }],
     );
 
@@ -931,7 +931,7 @@ fn test_diff_1() {
         &[StringDiff {
             from: 2,
             to: Some(6),
-            insert: "".to_string(),
+            insert: String::new(),
         }],
     );
 
@@ -960,7 +960,7 @@ fn test_diff_1() {
         &[StringDiff {
             from: 6,
             to: Some(8),
-            insert: "".to_string(),
+            insert: String::new(),
         }],
     );
 
@@ -1085,7 +1085,7 @@ fn test_diff_2() {
         vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
             from: 10,
             to: 11,
-            indent: "".to_string(),
+            indent: String::new(),
             delimiter: "#".to_string(),
             contents: "test1".to_string()
         })]
@@ -1114,7 +1114,7 @@ fn test_diff_2() {
             CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
                 from: 11,
                 to: 12,
-                indent: "".to_string(),
+                indent: String::new(),
                 delimiter: "#".to_string(),
                 contents: "test".to_string()
             }),
@@ -1137,7 +1137,7 @@ fn test_diff_2() {
         vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
             from: 11,
             to: 12,
-            indent: "".to_string(),
+            indent: String::new(),
             delimiter: "#".to_string(),
             contents: "test2".to_string()
         })]
@@ -1154,7 +1154,7 @@ fn test_diff_2() {
         vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
             from: 11,
             to: 12,
-            indent: "".to_string(),
+            indent: String::new(),
             delimiter: "#".to_string(),
             contents: "test2".to_string()
         })]
@@ -1272,7 +1272,7 @@ fn test_diff_2() {
             CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
                 from: 14,
                 to: 15,
-                indent: "".to_string(),
+                indent: String::new(),
                 delimiter: "#".to_string(),
                 contents: "test4a".to_string()
             }),
@@ -1297,7 +1297,7 @@ fn test_doc_block_html_to_markdown_1() {
                 "",
                 "<p>Index 0</p><p>Index 1.0<b>Index 1.1</b>012345</p>"
             )],
-            &Some((vec![1, 2], 3)),
+            Some(&(vec![1, 2], 3)),
         )
         .unwrap(),
         vec![build_doc_block(
@@ -1397,7 +1397,7 @@ fn test_hydrate_html_1() {
 }
 
 fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
-    let tree = html_to_tree(html, &None)?;
+    let tree = html_to_tree(html, None)?;
     dehydrating_walk_node(&tree);
     Ok(tree)
 }

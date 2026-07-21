@@ -78,7 +78,7 @@ pub async fn vscode_ide_websocket(
             CreateTranslationQueuesError::IdeInUse(connection_id_str) => {
                 return client_websocket(
                     connection_id_str,
-                    req,
+                    &req,
                     body,
                     app_state.ide_queues.clone(),
                 );
@@ -89,11 +89,12 @@ pub async fn vscode_ide_websocket(
     // Move data between the IDE and the processing task via queues. The
     // websocket connection between the client and the IDE will run in the
     // endpoint for that connection.
-    client_websocket(connection_id, req, body, app_state.ide_queues.clone())
+    client_websocket(connection_id, &req, body, app_state.ide_queues.clone())
 }
 
 // Given a (random) connection ID produced by the IDE, return a string that
 // gives a VSCode-specific ID.
+#[must_use]
 pub fn connection_id_raw_to_str(connection_id_raw: &str) -> String {
     format!("{VSC}{connection_id_raw}")
 }
@@ -126,7 +127,7 @@ pub fn vscode_ide_core(
 
             // Make sure it's the `Opened` message.
             let EditorMessageContents::Opened(ide_type) = first_message.message else {
-                let err = ResultErrTypes::UnexpectedMessage(format!("{:#?}", first_message));
+                let err = ResultErrTypes::UnexpectedMessage(format!("{first_message:#?}"));
                 error!("{err}");
                 send_response(&to_ide_tx, first_message.id, Err(err)).await;
 
@@ -137,113 +138,110 @@ pub fn vscode_ide_core(
             debug!("Received IDE Opened message.");
 
             // Ensure the IDE type (VSCode) is correct.
-            match ide_type {
-                IdeType::VSCode(is_self_hosted) => {
-                    // Get the address for the server.
-                    let port = *app_state_task.port.lock().unwrap();
-                    let address = match get_server_url(port).await {
-                        Ok(address) => address,
-                        Err(err) => {
-                            error!("{err:?}");
-                            break 'task;
-                        }
-                    };
-                    if is_self_hosted {
-                        // Send a response (successful) to the `Opened` message.
-                        debug!(
-                            "Sending response = OK to IDE Opened message, id {}.",
-                            first_message.id
-                        );
-                        send_response(&to_ide_tx, first_message.id, Ok(ResultOkTypes::Void)).await;
-                        // Send the HTML for the internal browser. The ID of
-                        // this message is `RESERVED_MESSAGE_ID`.
-                        let client_html = formatdoc!(
-                            r#"
-                            <!DOCTYPE html>
-                            <html>
-                                <head>
-                                </head>
-                                <body style="margin: 0px; padding: 0px; overflow: hidden">
-                                    <iframe src="{address}/vsc/cf/{connection_id_raw}" style="width: 100%; height: 100vh; border: none"></iframe>
-                                </body>
-                            </html>"#
-                        );
-                        debug!("Sending ClientHtml message to IDE: {client_html}");
-                        queue_send!(to_ide_tx.send(EditorMessage {
-                            id: RESERVED_MESSAGE_ID,
-                            message: EditorMessageContents::ClientHtml(client_html)
-                        }), 'task);
-
-                        // Wait for the response.
-                        let Some(message) = from_ide_rx.recv().await else {
-                            error!("{}", "IDE websocket received no data.");
-                            break 'task;
-                        };
-
-                        // Make sure it's the `Result` message with no errors.
-                        let res =
-                            // First, make sure the ID matches.
-                            if message.id != RESERVED_MESSAGE_ID {
-                                Err(format!("Unexpected message ID {}.", message.id))
-                            } else {
-                                match message.message {
-                                    EditorMessageContents::Result(message_result) => match message_result {
-                                        Err(err) => Err(format!("Error in ClientHtml: {err}")),
-                                        Ok(result_ok) =>
-                                            if let ResultOkTypes::Void = result_ok {
-                                                Ok(())
-                                            } else {
-                                                Err(format!(
-                                                    "Unexpected Result message with LoadFile contents {result_ok:?}."
-                                                ))
-                                            }
-                                    },
-                                    _ => Err(format!("Unexpected message {message:?}")),
-                                }
-                            };
-                        if let Err(err) = res {
-                            error!("{err}");
-                            // Send a `Closed` message using the next available
-                            // ID (`RESERVED_MESSAGE_ID + 1`).
-                            queue_send!(to_ide_tx.send(EditorMessage {
-                                id: RESERVED_MESSAGE_ID + 1.0,
-                                message: EditorMessageContents::Closed
-                            }), 'task);
-                            break 'task;
-                        };
-                    } else {
-                        // Open the Client in an external browser.
-                        if let Err(err) =
-                            webbrowser::open(&format!("{address}/vsc/cf/{connection_id_raw}"))
-                        {
-                            let err = ResultErrTypes::WebBrowserOpenFailed(err.to_string());
-                            error!("{err:?}");
-                            send_response(&to_ide_tx, first_message.id, Err(err)).await;
-
-                            // Send a `Closed` message; use an ID of
-                            // `RESERVED_MESSAGE_ID`, since this is the first
-                            // message from the IDE.
-                            queue_send!(to_ide_tx.send(EditorMessage{
-                                id: RESERVED_MESSAGE_ID,
-                                message: EditorMessageContents::Closed
-                            }), 'task);
-                            break 'task;
-                        }
-                        // Send a response (successful) to the `Opened` message.
-                        send_response(&to_ide_tx, first_message.id, Ok(ResultOkTypes::Void)).await;
+            if let IdeType::VSCode(is_self_hosted) = ide_type {
+                // Get the address for the server.
+                let port = *app_state_task.port.lock().unwrap();
+                let address = match get_server_url(port).await {
+                    Ok(address) => address,
+                    Err(err) => {
+                        error!("{err:?}");
+                        break 'task;
                     }
-                }
-                _ => {
-                    // This is the wrong IDE type. Report the error.
-                    let err = ResultErrTypes::InvalidIdeType(ide_type);
-                    error!("{err:?}");
-                    send_response(&to_ide_tx, first_message.id, Err(err)).await;
+                };
+                if is_self_hosted {
+                    // Send a response (successful) to the `Opened` message.
+                    debug!(
+                        "Sending response = OK to IDE Opened message, id {}.",
+                        first_message.id
+                    );
+                    send_response(&to_ide_tx, first_message.id, Ok(ResultOkTypes::Void)).await;
+                    // Send the HTML for the internal browser. The ID of
+                    // this message is `RESERVED_MESSAGE_ID`.
+                    let client_html = formatdoc!(
+                        r#"
+                        <!DOCTYPE html>
+                        <html>
+                            <head>
+                            </head>
+                            <body style="margin: 0px; padding: 0px; overflow: hidden">
+                                <iframe src="{address}/vsc/cf/{connection_id_raw}" style="width: 100%; height: 100vh; border: none"></iframe>
+                            </body>
+                        </html>"#
+                    );
+                    debug!("Sending ClientHtml message to IDE: {client_html}");
+                    queue_send!(to_ide_tx.send(EditorMessage {
+                        id: RESERVED_MESSAGE_ID,
+                        message: EditorMessageContents::ClientHtml(client_html)
+                    }), 'task);
 
-                    // Close the connection, again using the first available ID
-                    // of `RESERVED_MESSAGE_ID`.
-                    queue_send!(to_ide_tx.send(EditorMessage { id: RESERVED_MESSAGE_ID, message: EditorMessageContents::Closed}), 'task);
-                    break 'task;
+                    // Wait for the response.
+                    let Some(message) = from_ide_rx.recv().await else {
+                        error!("{}", "IDE websocket received no data.");
+                        break 'task;
+                    };
+
+                    // Make sure it's the `Result` message with no errors.
+                    let res =
+                        // First, make sure the ID matches.
+                        if message.id == RESERVED_MESSAGE_ID {
+                            match message.message {
+                                EditorMessageContents::Result(message_result) => match message_result {
+                                    Err(err) => Err(format!("Error in ClientHtml: {err}")),
+                                    Ok(result_ok) =>
+                                        if let ResultOkTypes::Void = result_ok {
+                                            Ok(())
+                                        } else {
+                                            Err(format!(
+                                                "Unexpected Result message with LoadFile contents {result_ok:?}."
+                                            ))
+                                        }
+                                },
+                                _ => Err(format!("Unexpected message {message:?}")),
+                            }
+                        } else {
+                            Err(format!("Unexpected message ID {}.", message.id))
+                        };
+                    if let Err(err) = res {
+                        error!("{err}");
+                        // Send a `Closed` message using the next available
+                        // ID (`RESERVED_MESSAGE_ID + 1`).
+                        queue_send!(to_ide_tx.send(EditorMessage {
+                            id: RESERVED_MESSAGE_ID + 1.0,
+                            message: EditorMessageContents::Closed
+                        }), 'task);
+                        break 'task;
+                    }
+                } else {
+                    // Open the Client in an external browser.
+                    if let Err(err) =
+                        webbrowser::open(&format!("{address}/vsc/cf/{connection_id_raw}"))
+                    {
+                        let err = ResultErrTypes::WebBrowserOpenFailed(err.to_string());
+                        error!("{err:?}");
+                        send_response(&to_ide_tx, first_message.id, Err(err)).await;
+
+                        // Send a `Closed` message; use an ID of
+                        // `RESERVED_MESSAGE_ID`, since this is the first
+                        // message from the IDE.
+                        queue_send!(to_ide_tx.send(EditorMessage{
+                            id: RESERVED_MESSAGE_ID,
+                            message: EditorMessageContents::Closed
+                        }), 'task);
+                        break 'task;
+                    }
+                    // Send a response (successful) to the `Opened` message.
+                    send_response(&to_ide_tx, first_message.id, Ok(ResultOkTypes::Void)).await;
                 }
+            } else {
+                // This is the wrong IDE type. Report the error.
+                let err = ResultErrTypes::InvalidIdeType(ide_type);
+                error!("{err:?}");
+                send_response(&to_ide_tx, first_message.id, Err(err)).await;
+
+                // Close the connection, again using the first available ID
+                // of `RESERVED_MESSAGE_ID`.
+                queue_send!(to_ide_tx.send(EditorMessage { id: RESERVED_MESSAGE_ID, message: EditorMessageContents::Closed}), 'task);
+                break 'task;
             }
             shutdown_only = false;
         }
@@ -288,7 +286,7 @@ pub async fn vscode_client_websocket(
 ) -> Result<HttpResponse, Error> {
     client_websocket(
         format!("{VSC}{connection_id}"),
-        req,
+        &req,
         body,
         app_state.client_queues.clone(),
     )

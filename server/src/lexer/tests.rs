@@ -33,12 +33,8 @@ fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBloc
         indent: indent.to_string(),
         delimiter: delimiter.to_string(),
         contents: contents.to_string(),
-        lines: contents.matches("\n").count()
-            + (if contents.chars().last().unwrap_or('\n') == '\n' {
-                0
-            } else {
-                1
-            }),
+        lines: contents.matches('\n').count()
+            + usize::from(contents.chars().last().unwrap_or('\n') != '\n'),
     })
 }
 
@@ -335,9 +331,9 @@ fn test_js() {
     // Indented block comments.
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
 /* Test
-   2 */"#,
+   2 */",
             js
         ),
         [
@@ -348,9 +344,9 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
   /* Test
-     2 */"#,
+     2 */",
             js
         ),
         [
@@ -361,10 +357,10 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
 /* Test
    2
- */"#,
+ */",
             js
         ),
         [
@@ -375,10 +371,10 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
   /* Test
      2
-   */"#,
+   */",
             js
         ),
         [
@@ -389,12 +385,12 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
   /* Test
      2
 
      3
-   */"#,
+   */",
             js
         ),
         [
@@ -406,9 +402,9 @@ fn test_js() {
     // Mis-indented block comments.
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
 /* Test
-  2 */"#,
+  2 */",
             js
         ),
         [
@@ -419,9 +415,9 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
  /* Test
-   2 */"#,
+   2 */",
             js
         ),
         [
@@ -459,8 +455,7 @@ fn test_js() {
     );
 }
 
-// TODO: re-enable this test when heredocs are supported.
-#[ignore]
+#[ignore = "Re-enable this test where heredocs are supported."]
 #[test]
 fn test_cpp() {
     let llc = compile_lexers(get_language_lexer_vec());
@@ -590,29 +585,29 @@ fn test_rust() {
 
     assert_eq!(
         source_lexer(
-            r#" /* Depth 1
+            r" /* Depth 1
   /* Depth 2 comment */
   /* Depth 2
     /* Depth 3 */ */
   /* Depth 2
     /* Depth 3 comment */
    */
-More depth 1 */"#,
+More depth 1 */",
             rust
         ),
         [
             build_code_block(" /* Depth 1\n"),
             build_doc_block("  ", "/*", "Depth 2 comment\n"),
             build_code_block(
-                r#"  /* Depth 2
+                r"  /* Depth 2
     /* Depth 3 */ */
   /* Depth 2
-"#
+"
             ),
             build_doc_block("    ", "/*", "Depth 3 comment\n"),
             build_code_block(
-                r#"   */
-More depth 1 */"#
+                r"   */
+More depth 1 */"
             ),
         ]
     );

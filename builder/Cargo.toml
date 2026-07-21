@@ -31,3 +31,7 @@ current_platform = "0.2.0"
 dunce = "1.0.5"
 path-slash = "0.2.1"
 regex = "1.11.1"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = 0 }
+doc_markdown = { level = "allow", priority = 1 }

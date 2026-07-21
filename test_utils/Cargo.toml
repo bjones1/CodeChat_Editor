@@ -7,3 +7,16 @@ edition = "2024"
 assert_fs = "1"
 assertables = "10"
 log = "0.4"
+
+[lints.clippy]
+# https://github.com/rust-lang/rust-clippy shows which categories are enabled by
+# default; https://doc.rust-lang.org/stable/clippy/lints.html for a description
+# of each of these categories.
+#
+# Individual lints below need an explicit `priority` higher than this group's
+# implicit 0, or Cargo errors with "lint group `pedantic` has the same
+# priority (0) as a lint" (see
+# https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section).
+pedantic = { level = "warn", priority = 0 }
+missing_panics_doc = { level = "allow", priority = 1 }
+doc_markdown = { level = "allow", priority = 1 }

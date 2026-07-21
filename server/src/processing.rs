@@ -57,7 +57,6 @@ use html5ever::{
     tree_builder::TreeBuilderOpts,
 };
 use imara_diff::{Algorithm, Diff, Hunk, InternedInput, TokenSource};
-use lazy_static::lazy_static;
 use markup5ever_rcdom::{Node, NodeData, RcDom, SerializableHandle};
 use minify_html;
 use phf::phf_map;
@@ -247,12 +246,13 @@ pub enum TranslationResultsString {
 //
 // Globals
 // -------
-lazy_static! {
-    /// Match the lexer directive in a source file.
-    static ref LEXER_DIRECTIVE: Regex = Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap();
-    /// If this matches, it means an unterminated fenced code block. This should
-    /// be replaced with the `</code></pre>` terminator.
-    static ref DOC_BLOCK_SEPARATOR_BROKEN_FENCE: Regex = Regex::new(concat!(
+/// Match the lexer directive in a source file.
+static LEXER_DIRECTIVE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap());
+/// If this matches, it means an unterminated fenced code block. This should
+/// be replaced with the `</code></pre>` terminator.
+static DOC_BLOCK_SEPARATOR_BROKEN_FENCE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
         // Allow the `.` wildcard to match newlines.
         "(?s)",
         // The first `<CodeChatEditor-fence>` will be munged when a fenced code
@@ -261,8 +261,10 @@ lazy_static! {
         // Non-greedy wildcard -- match the first separator, so we don't munch
         // multiple `DOC_BLOCK_SEPARATOR_STRING`s in one replacement.
         ".*?",
-        "<CodeChatEditor-separator></CodeChatEditor-separator>\n")).unwrap();
-}
+        "<CodeChatEditor-separator></CodeChatEditor-separator>\n"
+    ))
+    .unwrap()
+});
 
 // Use this as a way to end unterminated fenced code blocks and specific types
 // of HTML blocks. (The remaining types of HTML blocks are terminated by a blank
@@ -304,14 +306,14 @@ const DOC_BLOCK_SEPARATOR_SPLIT_STRING: &str =
     "<codechateditor-separator></codechateditor-separator>";
 // Correctly terminated fenced code blocks produce this, which can be removed
 // from the HTML produced by Markdown conversion.
-const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r#"<CodeChatEditor-fence>
+const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r"<CodeChatEditor-fence>
 </pre></script></style></textarea>-->?>]]>
 <CodeChatEditor-fence>
 ```````````````````````
 <CodeChatEditor-fence>
 ~~~~~~~~~~~~~~~~~~~~~~~
 </CodeChatEditor-fence>
-"#;
+";
 // The replacement string for the `DOC_BLOCK_SEPARATOR_BROKEN_FENCE` regex.
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
     "</code></pre>\n<CodeChatEditor-separator></CodeChatEditor-separator>\n";
@@ -376,6 +378,7 @@ impl<'de> Deserialize<'de> for CodeMirrorDocBlock {
 
 // Determine if the provided file is part of a project
 // ---------------------------------------------------
+#[must_use]
 pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     // To determine if this source code is part of a project, look for a project
     // file by searching the current directory, then all its parents, for a file
@@ -424,13 +427,10 @@ pub fn codechat_for_web_to_source(
 ) -> Result<String, CodechatForWebToSourceError> {
     let lexer_name = &codechat_for_web.metadata.mode;
     // Given the mode, find the lexer.
-    let lexer = match LEXERS.map_mode_to_lexer.get(lexer_name) {
-        Some(v) => v,
-        None => {
-            return Err(CodechatForWebToSourceError::InvalidLexer(
-                lexer_name.clone(),
-            ));
-        }
+    let Some(lexer) = LEXERS.map_mode_to_lexer.get(lexer_name) else {
+        return Err(CodechatForWebToSourceError::InvalidLexer(
+            lexer_name.clone(),
+        ));
     };
 
     // Extract the plain (not diffed) CodeMirror contents.
@@ -446,14 +446,14 @@ pub fn codechat_for_web_to_source(
         }
         // Translate the HTML document to Markdown.
         let converter = HtmlToMarkdownWrapped::new();
-        let tree = html_to_tree(&code_mirror.doc, &None)?;
+        let tree = html_to_tree(&code_mirror.doc, None)?;
         dehydrating_walk_node(&tree);
         return converter
             .convert(&tree)
             .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed);
     }
     let code_doc_block_vec_html = code_mirror_to_code_doc_blocks(code_mirror);
-    let code_doc_block_vec = doc_block_html_to_markdown(code_doc_block_vec_html, &None)
+    let code_doc_block_vec = doc_block_html_to_markdown(code_doc_block_vec_html, None)
         .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed)?;
     code_doc_block_vec_to_source(&code_doc_block_vec, lexer)
         .map_err(CodechatForWebToSourceError::CannotTranslateCodeChat)
@@ -461,6 +461,7 @@ pub fn codechat_for_web_to_source(
 
 /// Return the byte index of `s[utf_16_index]`, where the indexing operation is
 /// in UTF-16 code units.
+#[must_use]
 pub fn byte_index_of(s: &str, utf_16_index: usize) -> usize {
     let mut byte_index = 0;
     let mut current_index = 0;
@@ -498,13 +499,13 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
         // Append the code block, unless it's empty.
         let code_contents = &code_mirror.doc[byte_index_prev..byte_index];
         if !code_contents.is_empty() {
-            code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()))
+            code_doc_block_arr.push(CodeDocBlock::CodeBlock(code_contents.to_string()));
         }
         // Append the doc block.
         code_doc_block_arr.push(CodeDocBlock::DocBlock(DocBlock {
-            indent: codemirror_doc_block.indent.to_string(),
-            delimiter: codemirror_doc_block.delimiter.to_string(),
-            contents: codemirror_doc_block.contents.to_string(),
+            indent: codemirror_doc_block.indent.clone(),
+            delimiter: codemirror_doc_block.delimiter.clone(),
+            contents: codemirror_doc_block.contents.clone(),
             lines: 0,
         }));
         let byte_index_prev = byte_index;
@@ -610,7 +611,7 @@ pub fn doc_block_html_to_markdown(
     //
     // For this reason, when provided, this function must called with a vec
     // containing only one doc block.
-    dom_location: &Option<(Vec<usize>, usize)>,
+    dom_location: Option<&(Vec<usize>, usize)>,
 ) -> Result<Vec<CodeDocBlock>, HtmlToMarkdownWrappedError> {
     let mut converter = HtmlToMarkdownWrapped::new();
     let mut last_doc_block_index = None;
@@ -809,7 +810,7 @@ fn code_doc_block_vec_to_source(
             // This is code. Simply append it (by definition, indent and
             // delimiter are empty).
             {
-                file_contents += contents
+                file_contents += contents;
             }
         }
     }
@@ -890,7 +891,7 @@ pub fn source_to_codechat_for_web(
             // Create an initially-empty struct; the source code will be
             // translated to this.
             let mut code_mirror = CodeMirror {
-                doc: "".to_string(),
+                doc: String::new(),
                 doc_blocks: Vec::new(),
             };
 
@@ -945,7 +946,7 @@ pub fn source_to_codechat_for_web(
                 match code_or_doc_block {
                     CodeDocBlock::CodeBlock(code_string) => {
                         source.push_str(&code_string);
-                        len += len_utf16(&code_string)
+                        len += len_utf16(&code_string);
                     }
                     CodeDocBlock::DocBlock(doc_block) => {
                         // Create the doc block.
@@ -954,8 +955,8 @@ pub fn source_to_codechat_for_web(
                             // To. Note that the last doc block could be zero
                             // length, so handle this case.
                             to: len + max(doc_block.lines, 1),
-                            indent: doc_block.indent.to_string(),
-                            delimiter: doc_block.delimiter.to_string(),
+                            indent: doc_block.indent.clone(),
+                            delimiter: doc_block.delimiter.clone(),
                             // Used the markdown-translated replacement for this
                             // doc block, rather than the original string.
                             contents: minify(doc_block_contents_iter.next().unwrap())?,
@@ -1034,7 +1035,7 @@ pub fn minify(html: &str) -> Result<String, FromUtf8Error> {
 
 // Compute the length of the provided string in UTF16 characters.
 fn len_utf16(s: &str) -> usize {
-    s.chars().map(|c| c.len_utf16()).sum()
+    s.chars().map(char::len_utf16).sum()
 }
 
 // Like `source_to_codechat_for_web`, translate a source file to the CodeChat
@@ -1123,7 +1124,7 @@ pub const UNICODE_CURSOR_MARKER: char = '\u{E83B}';
 fn html_to_tree(
     html: &str,
     // See the same parameter from `doc_block_html_to_markdown`.
-    dom_location: &Option<(Vec<usize>, usize)>,
+    dom_location: Option<&(Vec<usize>, usize)>,
 ) -> io::Result<Rc<Node>> {
     let dom = parse_document(
         RcDom::default(),
@@ -1176,7 +1177,7 @@ fn html_to_tree(
 // A framework to transform HTML by parsing it to a DOM tree, walking the tree,
 // then serializing the tree back to an HTML string.
 pub fn transform_html<T: FnOnce(&Rc<Node>)>(html: &str, transform: T) -> io::Result<String> {
-    let tree = html_to_tree(html, &None)?;
+    let tree = html_to_tree(html, None)?;
     transform(&tree);
 
     // Serialize the transformed DOM back to a string.
@@ -1422,14 +1423,13 @@ pub fn remove_tinymce_data(
                 // since this will re-borrow it.
                 remove_tinymce_data(parent, index)
             };
-        } else {
-            // If we didn't remove this element, then filter out unwanted
-            // attributes.
-            attrs.borrow_mut().retain(|attr| {
-                !(attr.name.local.starts_with("data-mce-")
-                    || (attr.name.local == *"class" && attr.value.starts_with("mce-")))
-            });
         }
+        // If we didn't remove this element, then filter out unwanted
+        // attributes.
+        attrs.borrow_mut().retain(|attr| {
+            !(attr.name.local.starts_with("data-mce-")
+                || (attr.name.local == *"class" && attr.value.starts_with("mce-")))
+        });
     }
     Some(node.clone())
 }
@@ -1675,6 +1675,7 @@ static CUSTOM_ELEMENT_TO_CODE_BLOCK_LANGUAGE: phf::Map<&'static str, &'static st
 //
 // #### String diff
 /// Given two strings, return a list of changes between them.
+#[must_use]
 pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
     let mut change_spec: Vec<StringDiff> = Vec::new();
     // The previous value of `before.start` and the character index
@@ -1719,11 +1720,11 @@ pub fn diff_str(before: &str, after: &str) -> Vec<StringDiff> {
                 None
             },
             insert: if hunk_after.is_empty() {
-                "".to_string()
+                String::new()
             } else {
                 hunk_after.into_iter().collect()
             },
-        })
+        });
     }
 
     change_spec
@@ -1752,8 +1753,8 @@ impl<'a> TokenSource for CodeMirrorDocBlocksStruct<'a> {
     }
 }
 
-fn none_if_eq<T: PartialEq>(before: T, after: T) -> Option<T> {
-    if before == after { None } else { Some(after) }
+fn none_if_eq<T: PartialEq>(before: &T, after: T) -> Option<T> {
+    if before == &after { None } else { Some(after) }
 }
 
 fn none_if_eq_ref<T: PartialEq + Clone>(before: &T, after: &T) -> Option<T> {
@@ -1765,6 +1766,7 @@ fn none_if_eq_ref<T: PartialEq + Clone>(before: &T, after: &T) -> Option<T> {
 }
 
 /// Given two `CodeMirrorDocBlocks`, return a list of changes between them.
+#[must_use]
 pub fn diff_code_mirror_doc_blocks(
     before: &CodeMirrorDocBlockVec,
     after: &CodeMirrorDocBlockVec,
@@ -1801,11 +1803,11 @@ pub fn diff_code_mirror_doc_blocks(
                     CodeMirrorDocBlockUpdate {
                         from: prev_before_range_start_val.from,
                         from_new: none_if_eq(
-                            prev_before_range_start_val.from,
+                            &prev_before_range_start_val.from,
                             prev_after_range_start_val.from,
                         ),
                         to: none_if_eq(
-                            prev_before_range_start_val.to,
+                            &prev_before_range_start_val.to,
                             prev_after_range_start_val.to,
                         ),
                         indent: none_if_eq_ref(
@@ -1852,8 +1854,8 @@ pub fn diff_code_mirror_doc_blocks(
                 change_specs.push(CodeMirrorDocBlockTransaction::Update(
                     CodeMirrorDocBlockUpdate {
                         from: before_val.from,
-                        from_new: none_if_eq(before_val.from, after_val.from),
-                        to: none_if_eq(before_val.to, after_val.to),
+                        from_new: none_if_eq(&before_val.from, after_val.from),
+                        to: none_if_eq(&before_val.to, after_val.to),
                         indent: none_if_eq_ref(&before_val.indent, &after_val.indent),
                         delimiter: none_if_eq_ref(&before_val.delimiter, &after_val.delimiter),
                         contents: diff_str(&before_val.contents, &after_val.contents),

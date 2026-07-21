@@ -153,7 +153,7 @@ fn test_other_path() {
         .success();
 
     // Wait for the server to exit, since it locks the temp\_dir.
-    sleep(Duration::from_millis(3000));
+    sleep(Duration::from_secs(3));
 
     // Report any errors produced when removing the temporary directory.
     temp_dir.close().unwrap();

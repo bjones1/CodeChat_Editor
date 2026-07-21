@@ -41,6 +41,7 @@ pub mod vscode;
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
     sync::Arc,
     thread,
     time::Duration,
@@ -109,16 +110,16 @@ impl CodeChatEditorServer {
     // Creating the server could fail, so this must return an `io::Result`.
     pub fn new() -> std::io::Result<CodeChatEditorServer> {
         let capture_spool_path = webserver::ROOT_PATH.lock().unwrap().join("capture-spool");
-        Self::new_with_capture_spool(capture_spool_path)
+        Self::new_with_capture_spool(&capture_spool_path)
     }
 
     pub fn new_with_capture_spool(
-        capture_spool_path: std::path::PathBuf,
+        capture_spool_path: &Path,
     ) -> std::io::Result<CodeChatEditorServer> {
         // Start the server.
         let (server, app_state) = webserver::setup_server_with_capture_spool(
             // A port of 0 requests the OS to assign an open port.
-            &SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0),
+            &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             None,
             capture_spool_path,
         )?;
@@ -197,7 +198,7 @@ impl CodeChatEditorServer {
     // Like `get_message`, but with a timeout.
     pub async fn get_message_timeout(&self, timeout: Duration) -> Option<EditorMessage> {
         select! {
-            _ = sleep(timeout) => None,
+            () = sleep(timeout) => None,
             v = self.get_message() => v
         }
     }
@@ -271,13 +272,14 @@ impl CodeChatEditorServer {
             .await
     }
 
+    #[must_use]
     pub fn capture_status(&self) -> crate::capture::CaptureStatus {
         webserver::capture_status(&self.app_state)
     }
 
     pub fn configure_capture_service(
         &self,
-        base_url: String,
+        base_url: &str,
         token: Option<String>,
     ) -> Result<(), String> {
         self.app_state
@@ -333,7 +335,7 @@ impl CodeChatEditorServer {
                 metadata: SourceFileMetadata {
                     // The IDE doesn't need to provide the `mode`; this will
                     // determined by the server.
-                    mode: "".to_string(),
+                    mode: String::new(),
                 },
                 source: CodeMirrorDiffable::Plain(CodeMirror {
                     doc: contents.0,

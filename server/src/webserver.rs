@@ -27,12 +27,14 @@ pub mod tests;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    env, fs, io,
+    env, fs,
+    hash::BuildHasher,
+    io,
     net::SocketAddr,
     path::{self, MAIN_SEPARATOR_STR, Path, PathBuf},
     str::FromStr,
     string::FromUtf8Error,
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
     time::Duration,
 };
 
@@ -56,9 +58,11 @@ use dunce::simplified;
 use futures_util::StreamExt;
 use htmlize::{escape_attribute, escape_text};
 use indoc::formatdoc;
-use lazy_static::lazy_static;
 use log::{LevelFilter, error, info, warn};
-use log4rs::{self, config::load_config_file};
+use log4rs::{
+    self,
+    config::{Deserializers, load_config_file},
+};
 use mime::Mime;
 use mime_guess;
 use path_slash::{PathBufExt, PathExt};
@@ -464,7 +468,7 @@ macro_rules! queue_send_func {
 pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
     Duration::from_millis(2500)
 } else {
-    Duration::from_millis(15000)
+    Duration::from_secs(15)
 };
 
 /// The time to wait for a pong from the websocket in response to a ping sent by
@@ -486,36 +490,44 @@ pub const INITIAL_IDE_MESSAGE_ID: f64 = INITIAL_CLIENT_MESSAGE_ID + 1.0;
 /// assuming an average of 1 message/second.)
 pub const MESSAGE_ID_INCREMENT: f64 = 3.0;
 
-lazy_static! {
-    pub static ref ROOT_PATH: Arc<Mutex<PathBuf>> = Arc::new(Mutex::new(PathBuf::new()));
+pub static ROOT_PATH: LazyLock<Arc<Mutex<PathBuf>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(PathBuf::new())));
 
-    // Define the location of static files.
-    static ref CLIENT_STATIC_PATH: PathBuf = {
-        let mut client_static_path = ROOT_PATH.lock().unwrap().clone();
-        #[cfg(debug_assertions)]
-        client_static_path.push("client");
+// Define the location of static files.
+static CLIENT_STATIC_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
+    let mut client_static_path = ROOT_PATH.lock().unwrap().clone();
+    #[cfg(debug_assertions)]
+    client_static_path.push("client");
 
-        client_static_path.push("static");
-        client_static_path
-    };
+    client_static_path.push("static");
+    client_static_path
+});
 
-    // Read in the hashed names of files bundled by esbuild.
-    static ref BUNDLED_FILES_MAP: HashMap<String, String> = {
-        let mut hl = ROOT_PATH.lock().unwrap().clone();
-        #[cfg(debug_assertions)]
-        hl.push("server");
-        hl.push("hashLocations.json");
-        let json = fs::read_to_string(hl.clone()).unwrap_or_else(
-            |err| panic!("Error: Unable to read {:#?}: {err}", hl.to_string_lossy())
-        );
-        let hmm: HashMap<String, String> =
-            serde_json::from_str(&json).unwrap_or_else(|_| panic!("Unable to parse JSON in {:#?}", hl.to_string_lossy()));
-        hmm
-    };
+// Read in the hashed names of files bundled by esbuild.
+static BUNDLED_FILES_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    let mut hl = ROOT_PATH.lock().unwrap().clone();
+    #[cfg(debug_assertions)]
+    hl.push("server");
+    hl.push("hashLocations.json");
+    let json = fs::read_to_string(hl.clone())
+        .unwrap_or_else(|err| panic!("Error: Unable to read {:#?}: {err}", hl.to_string_lossy()));
+    let hmm: HashMap<String, String> = serde_json::from_str(&json)
+        .unwrap_or_else(|_| panic!("Unable to parse JSON in {:#?}", hl.to_string_lossy()));
+    hmm
+});
 
-    static ref CODECHAT_EDITOR_FRAMEWORK_JS: String = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").cloned().expect("Unable to find framework JS in bundled files map.");
-    static ref CODECHAT_EDITOR_PROJECT_CSS: String = BUNDLED_FILES_MAP.get("CodeChatEditorProject.css").cloned().expect("Unable to find project CSS in bundled files map.");
-}
+static CODECHAT_EDITOR_FRAMEWORK_JS: LazyLock<String> = LazyLock::new(|| {
+    BUNDLED_FILES_MAP
+        .get("CodeChatEditorFramework.js")
+        .cloned()
+        .expect("Unable to find framework JS in bundled files map.")
+});
+static CODECHAT_EDITOR_PROJECT_CSS: LazyLock<String> = LazyLock::new(|| {
+    BUNDLED_FILES_MAP
+        .get("CodeChatEditorProject.css")
+        .cloned()
+        .expect("Unable to find project CSS in bundled files map.")
+});
 
 // Define the location of the root path, which contains `static/`, `log4rs.yml`,
 // and `hashLocations.json` in a production build, or `client/` and `server/` in
@@ -624,7 +636,7 @@ pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> Cap
             data,
         );
 
-        capture.log(event);
+        capture.log(&event);
         capture.status()
     } else {
         CaptureStatus::disabled()
@@ -635,12 +647,12 @@ pub fn capture_status(app_state: &WebAppState) -> CaptureStatus {
     app_state
         .capture
         .as_ref()
-        .map(EventCapture::status)
-        .unwrap_or_else(CaptureStatus::disabled)
+        .map_or_else(CaptureStatus::disabled, EventCapture::status)
 }
 
 // Get the `mode` query parameter to determine `is_test_mode`; default to
 // `false`.
+#[must_use]
 pub fn get_test_mode(req: &HttpRequest) -> bool {
     let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
     if let Ok(query) = query_params {
@@ -726,7 +738,7 @@ pub async fn filesystem_endpoint(
     // with a leading slash, which gets absorbed into the URL to prevent a URL
     // such as "/fw/fsc/1//foo/bar/...". Restore it here.
     #[cfg(target_os = "windows")]
-    let fixed_file_path = request_file_path.replace("\\", "%5C");
+    let fixed_file_path = request_file_path.replace('\\', "%5C");
     // On OS X/Linux, the path starts with a leading slash, which gets absorbed
     // into the URL to prevent a URL such as "/fw/fsc/1//foo/bar/...". Restore
     // it here.
@@ -773,10 +785,7 @@ pub async fn filesystem_endpoint(
         // Get the processing queue; only keep the lock during this block.
         let processing_queue_tx = app_state.processing_task_queue_tx.lock().unwrap();
         let Some(processing_tx) = processing_queue_tx.get(&connection_id) else {
-            let msg = format!(
-                "Error: no processing task queue for connection id {}.",
-                connection_id
-            );
+            let msg = format!("Error: no processing task queue for connection id {connection_id}.");
             error!("{msg}");
             return http_not_found(&msg);
         };
@@ -819,7 +828,10 @@ pub async fn filesystem_endpoint(
                         }
                         v.into_response(req)
                     }
-                    Err(err) => http_not_found(&format!("Error opening file {path:?}: {err}.",)),
+                    Err(err) => http_not_found(&format!(
+                        "Error opening file \"{}\": {err}.",
+                        path.display()
+                    )),
                 }
             }
         },
@@ -872,9 +884,7 @@ pub async fn file_to_response(
     let file_path = &http_request.file_path;
     let Some(file_name) = file_path.file_name() else {
         return (
-            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
-                file_path.to_path_buf(),
-            )),
+            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(file_path.clone())),
             None,
         );
     };
@@ -954,7 +964,7 @@ pub async fn file_to_response(
             ),
         )
     } else {
-        ("".to_string(), "".to_string())
+        (String::new(), String::new())
     };
 
     // Do we need to respond with a [simple viewer](#Client-simple-viewer)?
@@ -996,13 +1006,13 @@ pub async fn file_to_response(
     let codechat_for_web = match translation_results_string {
         // The file type is binary. Ask the HTTP server to serve it raw.
         TranslationResultsString::Binary => return
-            (SimpleHttpResponse::Bin(file_path.to_path_buf()), None)
+            (SimpleHttpResponse::Bin(file_path.clone()), None)
         ,
         // The file type is unknown. Serve it raw.
         TranslationResultsString::Unknown => {
             return (
                 SimpleHttpResponse::Raw(
-                    file_contents.unwrap().to_string(),
+                    file_contents.unwrap().clone(),
                     mime_guess::from_path(file_path).first_or_text_plain(),
                 ),
                 None,
@@ -1040,18 +1050,14 @@ pub async fn file_to_response(
     // Provided info from the HTTP request, determine the following parameters.
     let Some(raw_dir) = file_path.parent() else {
         return (
-            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
-                file_path.to_path_buf(),
-            )),
+            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(file_path.clone())),
             None,
         );
     };
     let dir = path_display(raw_dir);
     let Some(file_path) = file_path.to_str() else {
         return (
-            SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
-                file_path.to_path_buf(),
-            )),
+            SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(file_path.clone())),
             None,
         );
     };
@@ -1112,24 +1118,20 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
     let file_path = &http_request.file_path;
     let Some(file_name) = file_path.file_name() else {
         return SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
-            file_path.to_path_buf(),
+            file_path.clone(),
         ));
     };
     let Some(file_name) = file_name.to_str() else {
-        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
-            file_path.to_path_buf(),
-        ));
+        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(file_path.clone()));
     };
     let file_name = escape_text(file_name);
 
     let Some(path_to_toc) = find_path_to_toc(file_path) else {
-        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotProject(
-            file_path.to_path_buf(),
-        ));
+        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotProject(file_path.clone()));
     };
     let Some(path_to_toc) = path_to_toc.to_str() else {
         return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
-            path_to_toc.to_path_buf(),
+            path_to_toc.clone(),
         ));
     };
     let path_to_toc = escape_text(path_to_toc);
@@ -1188,13 +1190,13 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
 /// allowing the user to edit the plain text of the source code in the IDE, or
 /// make GUI-enhanced edits of the source code rendered by the CodeChat Editor
 /// Client.
-pub fn client_websocket(
+pub fn client_websocket<S: BuildHasher + 'static>(
     connection_id: String,
-    req: HttpRequest,
+    req: &HttpRequest,
     body: web::Payload,
-    websocket_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    websocket_queues: Arc<Mutex<HashMap<String, WebsocketQueues, S>>>,
 ) -> Result<HttpResponse, Error> {
-    let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
+    let (response, mut session, mut msg_stream) = actix_ws::handle(req, body)?;
 
     // Websocket task: start a task to handle receiving `JointMessage` websocket
     // data from the CodeChat Editor Client and forwarding it to the IDE and
@@ -1207,16 +1209,15 @@ pub fn client_websocket(
 
         // Transfer the queues from the global state to this task.
         let (from_websocket_tx, mut to_websocket_rx, mut pending_messages) =
-            match websocket_queues.lock().unwrap().remove(&connection_id) {
-                Some(queues) => (
+            if let Some(queues) = websocket_queues.lock().unwrap().remove(&connection_id) {
+                (
                     queues.from_websocket_tx.clone(),
                     queues.to_websocket_rx,
                     queues.pending_messages,
-                ),
-                None => {
-                    error!("No websocket queues for connection id {connection_id}.");
-                    return;
-                }
+                )
+            } else {
+                error!("No websocket queues for connection id {connection_id}.");
+                return;
             };
 
         // Shutdown may occur in a controlled process or an immediate websocket
@@ -1253,7 +1254,7 @@ pub fn client_websocket(
         loop {
             select! {
                 // Send pings on a regular basis.
-                _ = sleep(WEBSOCKET_PING_DELAY) => {
+                () = sleep(WEBSOCKET_PING_DELAY) => {
                     if sent_ping {
                         // If we haven't received the answering pong, the
                         // websocket must be broken.
@@ -1274,6 +1275,7 @@ pub fn client_websocket(
                 Some(msg_wrapped) = aggregated_msg_stream.next() => {
                     match msg_wrapped {
                         Ok(msg) => {
+                            #[allow(clippy::match_wildcard_for_single_variants)]
                             match msg {
                                 // Send a pong in response to a ping.
                                 AggregatedMessage::Ping(bytes) => {
@@ -1347,6 +1349,7 @@ pub fn client_websocket(
                                     break;
                                 }
 
+                                // Lint allow on `match` above allows this: it's a catch-all for anything not know here.
                                 other => {
                                     warn!("Unexpected message {other:?}");
                                     break;
@@ -1432,7 +1435,7 @@ pub fn client_websocket(
             // Don't stop timers; the re-connection may handle them.
             info!("Websocket re-enqueued.");
             websocket_queues.lock().unwrap().insert(
-                connection_id.to_string(),
+                connection_id.clone(),
                 WebsocketQueues {
                     from_websocket_tx,
                     to_websocket_rx,
@@ -1487,13 +1490,13 @@ pub fn setup_server(
     credentials: Option<Credentials>,
 ) -> std::io::Result<(Server, Data<AppState>)> {
     let capture_spool_path = ROOT_PATH.lock().unwrap().join("capture-spool");
-    setup_server_with_capture_spool(addr, credentials, capture_spool_path)
+    setup_server_with_capture_spool(addr, credentials, &capture_spool_path)
 }
 
 pub fn setup_server_with_capture_spool(
     addr: &SocketAddr,
     credentials: Option<Credentials>,
-    capture_spool_path: PathBuf,
+    capture_spool_path: &Path,
 ) -> std::io::Result<(Server, Data<AppState>)> {
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
@@ -1558,7 +1561,7 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
     #[cfg(debug_assertions)]
     l4rs.push("server");
     let config_file = l4rs.join("log4rs.yml");
-    let mut config = load_config_file(&config_file, Default::default())?;
+    let mut config = load_config_file(&config_file, Deserializers::default())?;
     config.root_mut().set_level(level);
     log4rs::init_config(config)?;
     Ok(())
@@ -1569,21 +1572,25 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // closure passed to `HttpServer::new` and moved/cloned in." Putting this code
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
+#[must_use]
 pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
     let capture_spool_path = ROOT_PATH.lock().unwrap().join("capture-spool");
-    make_app_data_with_capture_spool(credentials, capture_spool_path)
+    make_app_data_with_capture_spool(credentials, &capture_spool_path)
 }
 
 fn make_app_data_with_capture_spool(
     credentials: Option<Credentials>,
-    capture_spool_path: PathBuf,
+    capture_spool_path: &Path,
 ) -> WebAppState {
     // Initialize capture with a durable local upload spool. The VS Code
     // extension supplies the CaptureWebService endpoint and bearer token at
     // runtime; this server never reads database credentials from disk or env.
-    let capture: Option<EventCapture> = match EventCapture::new(capture_spool_path.clone()) {
+    let capture: Option<EventCapture> = match EventCapture::new(capture_spool_path.to_path_buf()) {
         Ok(ec) => {
-            info!("Capture: enabled with local upload spool at {capture_spool_path:?}");
+            info!(
+                "Capture: enabled with local upload spool at \"{}\"",
+                capture_spool_path.display()
+            );
             Some(ec)
         }
         Err(err) => {
@@ -1708,7 +1715,7 @@ pub fn url_to_path(
         .map(|path_segment| {
             urlencoding::decode(path_segment)
                 .map_err(UrlToPathError::UnableToDecode)
-                .map(|path_seg| path_seg.replace("\\", "%5C"))
+                .map(|path_seg| path_seg.replace('\\', "%5C"))
         })
         .collect::<Result<Vec<String>, UrlToPathError>>()?;
 
@@ -1770,13 +1777,14 @@ pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, TryCanonicalizeError
 }
 
 // Given a file path, convert it to a URL, encoding as necessary.
+#[must_use]
 pub fn path_to_url(prefix: &str, connection_id: Option<&str>, file_path: &Path) -> String {
     // First, convert the path to use forward slashes.
     let pathname = simplified(file_path)
         .to_slash_lossy()
         // The convert each part of the path to a URL-encoded string. (This
         // avoids encoding the slashes.)
-        .split("/")
+        .split('/')
         .map(|s| urlencoding::encode(s))
         // Then put it all back together.
         .collect::<Vec<_>>()
@@ -1794,17 +1802,20 @@ pub fn path_to_url(prefix: &str, connection_id: Option<&str>, file_path: &Path) 
 
 // Given a string (which is probably a pathname), drop the leading slash if it's
 // present.
+#[must_use]
 pub fn drop_leading_slash(path_: &str) -> &str {
     path_.strip_prefix('/').unwrap_or(path_)
 }
 
 // Given a `Path`, transform it into a displayable HTML string (with any
 // necessary escaping).
+#[must_use]
 pub fn path_display(p: &Path) -> Cow<'_, str> {
     escape_text(simplified(p).to_string_lossy())
 }
 
 // Return a Not Found (404) error with the provided text (not HTML) body.
+#[must_use]
 pub fn http_not_found(msg: &str) -> HttpResponse {
     HttpResponse::NotFound()
         .content_type(ContentType::html())
@@ -1812,6 +1823,7 @@ pub fn http_not_found(msg: &str) -> HttpResponse {
 }
 
 // Wrap the provided HTML body in DOCTYPE/html/head tags.
+#[must_use]
 pub fn html_wrapper(body: &str) -> String {
     formatdoc!(
         r#"
@@ -1862,12 +1874,12 @@ pub async fn get_server_url(port: u16) -> Result<String, GetServerUrlError> {
             ])
             .status()
             .await?;
-        if !status.success() {
-            Err(GetServerUrlError::NonZeroExitStatus(status.code()))
-        } else {
+        if status.success() {
             Ok(format!(
                 "https://{codespace_name}-{port}.{codespace_domain}"
             ))
+        } else {
+            Err(GetServerUrlError::NonZeroExitStatus(status.code()))
         }
     } else {
         // We're running locally, so use localhost.

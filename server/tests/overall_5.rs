@@ -30,7 +30,7 @@ mod overall_common;
 // -------
 //
 // ### Standard library
-use std::path::PathBuf;
+use std::{fmt::Write, path::PathBuf};
 
 // ### Third-party
 use dunce::canonicalize;
@@ -83,11 +83,11 @@ async fn test_edit_preserves_cursor_scroll_in_large_doc_block_core(
     // the end of these paragraphs, which will cause a server re-translation
     // when it cleans this up.
     for i in 0..100 {
-        orig_text += &format!("/// P{i}\n///\n");
+        let _ = write!(orig_text, "/// P{i}\n///\n");
     }
     // 100 instances of a one-line code block, then a one-line doc block.
     for i in 0..100 {
-        orig_text += &format!("{i}\n// {i}\n");
+        let _ = write!(orig_text, "{i}\n// {i}\n");
     }
 
     let server_id = perform_loadfile(
@@ -190,7 +190,7 @@ async fn test_edit_preserves_cursor_scroll_in_large_doc_block_core(
                             StringDiff {
                                 from: 1210,
                                 to: Some(1214),
-                                insert: "".to_string()
+                                insert: String::new()
                             }
                         ],
                         doc_blocks: vec![],

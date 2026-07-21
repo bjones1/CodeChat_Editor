@@ -63,7 +63,6 @@ html5ever = "0.39"
 htmlize = "1.0.6"
 imara-diff = { version = "0.2", features = [] }
 indoc = "2.0.5"
-lazy_static = "1"
 # Ideally, we'd set this in a non-library place, but this also builds a CLI.
 # TODO: separate the CLI into a different crate.
 log = { version = "0.4", features = ["release_max_level_warn"] }
@@ -163,10 +162,20 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
 # https://github.com/rust-lang/rust-clippy shows which categories are enabled by
 # default; https://doc.rust-lang.org/stable/clippy/lints.html for a description
 # of each of these categories.
-pedantic = "warn"
+#
+# Individual lints below need an explicit `priority` higher than this group's
+# implicit 0, or Cargo errors with "lint group `pedantic` has the same
+# priority (0) as a lint" (see
+# https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section).
+pedantic = { level = "warn", priority = 0 }
 # Disable specific pedantic lints that don't apply. Use LP docs instead of
 # rustdoc for errors and panics.
-missing_errors_doc = "allow"
-missing_panics_doc = "allow"
+missing_errors_doc = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
 # This warns at the phrase "CodeChat Editor", so it's disabled.
-doc_markdown = "allow"
+doc_markdown = { level = "allow", priority = 1 }
+# TODO: allow this in tests, but be more careful in the main codebase.
+too_many_lines = { level = "allow", priority = 1 }
+float_cmp = { level = "allow", priority = 1 }
+# TODO: check/fix later.
+cast_possible_truncation = { level = "allow", priority = 1 }

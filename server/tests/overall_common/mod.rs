@@ -190,7 +190,7 @@ impl ExpectedMessages {
         );
     }
 
-    pub fn check(&mut self, editor_message: EditorMessage) {
+    pub fn check(&mut self, editor_message: &EditorMessage) {
         if let Some((ref mut editor_message_contents, is_dynamic)) =
             self.0.remove(&(editor_message.id as i64))
         {
@@ -198,7 +198,7 @@ impl ExpectedMessages {
                 && let EditorMessageContents::Update(emc) = editor_message_contents
                 && let Some(contents) = &mut emc.contents
             {
-                let version = get_version(&editor_message);
+                let version = get_version(editor_message);
                 contents.version = version;
             }
             // Special case:
@@ -216,7 +216,7 @@ impl ExpectedMessages {
         codechat_server: &CodeChatEditorServerLog,
         timeout: Duration,
     ) {
-        self.check(codechat_server.get_message_timeout(timeout).await.unwrap());
+        self.check(&codechat_server.get_message_timeout(timeout).await.unwrap());
     }
 
     pub async fn assert_all_messages(
@@ -226,7 +226,7 @@ impl ExpectedMessages {
     ) {
         while !self.0.is_empty() {
             if let Some(editor_message) = codechat_server.get_message_timeout(timeout).await {
-                self.check(editor_message);
+                self.check(&editor_message);
             } else {
                 panic!(
                     "No matching messages found. Unmatched messages:\n{:#?}",
@@ -240,7 +240,7 @@ impl ExpectedMessages {
 // Time to wait for browser/WebDriver-backed client-server messages. This
 // matches the client-side response window and gives CI enough room for autosave
 // and loadfile acknowledgements under matrix load.
-pub const TIMEOUT: Duration = Duration::from_millis(15000);
+pub const TIMEOUT: Duration = Duration::from_secs(15);
 
 // Browser-backed tests share a single WebDriver endpoint. Safari on macOS CI is
 // unreliable with overlapping sessions, so serialize the harness.
@@ -336,7 +336,7 @@ pub async fn harness<
         let client_html = cast!(&em_html.message, EditorMessageContents::ClientHtml);
         let find_str = "<iframe src=\"";
         let address_start = client_html.find(find_str).unwrap() + find_str.len();
-        let address_end = client_html[address_start..].find("\"").unwrap() + address_start;
+        let address_end = client_html[address_start..].find('"').unwrap() + address_start;
         let address = &client_html[address_start..address_end];
 
         // Open the Client and send it a file to load.
@@ -476,7 +476,7 @@ pub fn get_version(msg: &EditorMessage) -> f64 {
     let ccfw = cast!(&msg.message, EditorMessageContents::Update)
         .contents
         .as_ref();
-    ccfw.unwrap_or_else(|| panic!("No contents in message:\n{:#?}", msg))
+    ccfw.unwrap_or_else(|| panic!("No contents in message:\n{msg:#?}"))
         .version
 }
 
@@ -618,7 +618,7 @@ pub async fn beginning_of_document(
     // repeating `Up` past the first line is a no-op, so an overshoot is
     // harmless. Sent as a single `send_keys` call, along with `keys_after`, so
     // this produces one cursor update rather than one per repeated key.
-    let keys: TypingData = repeated_key(Key::Up, MAX_TEST_DOCUMENT_LINES) + keys_after;
+    let keys: TypingData = repeated_key(&Key::Up, MAX_TEST_DOCUMENT_LINES) + keys_after;
     element.send_keys(keys).await
 }
 
@@ -633,14 +633,15 @@ pub async fn end_of_document(
     element: &WebElement,
     keys_after: impl Into<TypingData> + std::fmt::Debug,
 ) -> Result<(), WebDriverError> {
-    let keys: TypingData = repeated_key(Key::Down, MAX_TEST_DOCUMENT_LINES) + Key::End + keys_after;
+    let keys: TypingData =
+        repeated_key(&Key::Down, MAX_TEST_DOCUMENT_LINES) + Key::End + keys_after;
     element.send_keys(keys).await
 }
 
 // Build a `TypingData` consisting of `key` repeated `count` times, for the
 // macOS repeated-arrow-key workaround in \[`beginning_of_document`\] and
 // \[`end_of_document`\].
-fn repeated_key(key: Key, count: u32) -> TypingData {
+fn repeated_key(key: &Key, count: u32) -> TypingData {
     std::iter::repeat_n(key.value(), count as usize)
         .collect::<String>()
         .into()
@@ -769,7 +770,7 @@ pub async fn assert_no_more_messages(codechat_server: &CodeChatEditorServerLog) 
         .get_message_timeout(Duration::from_millis(500))
         .await
     {
-        panic!("Unprocessed messages: {:#?}", msg);
+        panic!("Unprocessed messages: {msg:#?}");
     }
 }
 

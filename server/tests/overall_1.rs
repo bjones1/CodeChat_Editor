@@ -542,7 +542,7 @@ async fn test_server_core(
         assert_eq!(is_current, false);
         (toc_path.clone(), false)
     } else {
-        panic!("Unexpected path {msg_contents:?}.");
+        panic!("Unexpected path \"{}\".", msg_contents.display());
     };
     codechat_server
         .send_result_loadfile(server_id, None)
@@ -734,7 +734,7 @@ async fn test_client_core(
 }
 
 async fn wait_for_mocha_success(driver: &WebDriver) -> Result<(), WebDriverError> {
-    const MOCHA_TEST_TIMEOUT: Duration = Duration::from_millis(30000);
+    const MOCHA_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 
     let mocha_results = driver
         .query(By::Css("#mocha-stats .result"))

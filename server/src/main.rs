@@ -158,11 +158,10 @@ impl Cli {
                                 }
 
                                 return Ok(());
-                            } else {
-                                eprintln!(
-                                    "Unexpected response from server: {body}, status code = {status_code}"
-                                );
                             }
+                            eprintln!(
+                                "Unexpected response from server: {body}, status code = {status_code}"
+                            );
                         }
                         Err(err) => {
                             // Use this to skip the print from a nested if
@@ -202,7 +201,7 @@ impl Cli {
                             match self.test_mode {
                                 None => cmd = Command::new(&current_exe),
                                 Some(TestMode::NotFound) => {
-                                    cmd = Command::new("nonexistent-command")
+                                    cmd = Command::new("nonexistent-command");
                                 }
                                 Some(TestMode::Sleep) => {
                                     cmd = Command::new(&current_exe);
@@ -320,6 +319,8 @@ fn port_in_range(s: &str) -> Result<u16, String> {
         .parse()
         .map_err(|_| format!("`{s}` isn't a port number"))?;
     if PORT_RANGE.contains(&port) {
+        // Code above guarantees this is safe.
+        #[allow(clippy::cast_possible_truncation)]
         Ok(port as u16)
     } else {
         Err(format!(
@@ -347,7 +348,7 @@ fn parse_credentials(s: &str) -> Result<Credentials, String> {
 /// This is used by `ping` to transform the "access connections from any
 /// address" address into localhost, a valid destination address for a ping.
 fn fix_addr(addr: &SocketAddr) -> SocketAddr {
-    if addr.ip() == IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)) {
+    if addr.ip() == IpAddr::V4(Ipv4Addr::UNSPECIFIED) {
         let mut addr = *addr;
         addr.set_ip(IpAddr::V4(Ipv4Addr::LOCALHOST));
         addr
@@ -432,7 +433,7 @@ mod test {
     // ### `fix_addr`
     #[test]
     fn test_fix_addr_ipv4_unspecified() {
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080);
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 8080);
         let fixed = fix_addr(&addr);
         assert_eq!(fixed.ip(), IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert_eq!(fixed.port(), 8080);
@@ -449,7 +450,7 @@ mod test {
     #[test]
     fn test_fix_addr_specific_unchanged() {
         // A specific (non-unspecified) address is returned unchanged.
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
         assert_eq!(fix_addr(&addr), addr);
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5)), 1234);
         assert_eq!(fix_addr(&addr), addr);

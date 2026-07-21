@@ -53,6 +53,31 @@ use code_chat_editor::{
 };
 use test_utils::prep_test_dir;
 
+// Wait for the autosave timer to report the current cursor position, and check
+// it against the expected code line.
+async fn assert_cursor_line(
+    codechat_server: &CodeChatEditorServerLog,
+    client_id: &mut f64,
+    path_str: &str,
+    line: u32,
+) {
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: *client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.to_string(),
+                cursor_position: Some(CursorPosition::Line(line)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(*client_id, None).await.unwrap();
+    *client_id += MESSAGE_ID_INCREMENT;
+}
+
 // Tests
 // -----
 make_test!(test_xss, test_xss_core);
@@ -386,31 +411,6 @@ async fn test_arrow_key_navigation_core(
 
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
 
-    // Wait for the autosave timer to report the current cursor position, and
-    // check it against the expected code line.
-    async fn assert_cursor_line(
-        codechat_server: &CodeChatEditorServerLog,
-        client_id: &mut f64,
-        path_str: &str,
-        line: u32,
-    ) {
-        assert_eq!(
-            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-            EditorMessage {
-                id: *client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.to_string(),
-                    cursor_position: Some(CursorPosition::Line(line)),
-                    scroll_position: Some(1.0),
-                    is_re_translation: false,
-                    contents: None,
-                })
-            }
-        );
-        codechat_server.send_result(*client_id, None).await.unwrap();
-        *client_id += MESSAGE_ID_INCREMENT;
-    }
-
     // ### `ArrowDown` from a code line enters the doc block below it.
     //
     // Click near the start of line "b" (the last line of the top code block),
@@ -599,31 +599,6 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
 
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
 
-    // Wait for the autosave timer to report the current cursor position, and
-    // check it against the expected code line.
-    async fn assert_cursor_line(
-        codechat_server: &CodeChatEditorServerLog,
-        client_id: &mut f64,
-        path_str: &str,
-        line: u32,
-    ) {
-        assert_eq!(
-            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-            EditorMessage {
-                id: *client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.to_string(),
-                    cursor_position: Some(CursorPosition::Line(line)),
-                    scroll_position: Some(1.0),
-                    is_re_translation: false,
-                    contents: None,
-                })
-            }
-        );
-        codechat_server.send_result(*client_id, None).await.unwrap();
-        *client_id += MESSAGE_ID_INCREMENT;
-    }
-
     // Click directly on code line "c" -- the line immediately following the
     // multi-line doc block -- to give CodeMirror real focus there, then press
     // `Home` so the cursor sits at the exact line start `docBlockNavKeymap`'s
@@ -666,7 +641,7 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.to_string(),
+                file_path: path_str.clone(),
                 cursor_position: Some(CursorPosition::Line(8)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,

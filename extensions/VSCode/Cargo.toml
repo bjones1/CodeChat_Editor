@@ -52,3 +52,8 @@ codegen-units = 1
 lto = true
 panic = "abort"
 strip = "symbols"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = 0 }
+missing_errors_doc = { level = "allow", priority = 1 }
+doc_markdown = { level = "allow", priority = 1 }

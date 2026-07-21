@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `main.rs` -- Entrypoint for the CodeChat Editor Builder
+/// `main.rs` -- Entrypoint for the `CodeChat` Editor Builder
 /// =======================================================
 ///
 /// This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
@@ -163,7 +163,7 @@ fn run_script<T: AsRef<Path>, A: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Displa
         process.arg("/c").arg(script);
     } else {
         process = Command::new(script);
-    };
+    }
     process.args(args).current_dir(&dir);
     // A bit crude, but displays the command being run.
     println!("{dir}: {process:#?}");
@@ -181,7 +181,7 @@ fn run_script<T: AsRef<Path>, A: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Displa
 /// programs (`robocopy`/`rsync`) to accomplish this. Very important: the `src`
 /// **must** end with a `/`, otherwise the Windows and Linux copies aren't
 /// identical.
-fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Result<()> {
+fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<&P>) -> io::Result<()> {
     assert!(src.as_ref().to_string_lossy().ends_with('/'));
     let mut copy_process;
     let src = OsStr::new(src.as_ref());
@@ -248,7 +248,7 @@ fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Resu
     }
 
     // Print the command, in case this produces and error or takes a while.
-    println!("{:#?}", copy_process);
+    println!("{copy_process:#?}");
 
     // Check for errors.
     let exit_code = copy_process
@@ -355,7 +355,7 @@ fn patch_client_libs() -> io::Result<()> {
     quick_copy_dir(
         format!("{CLIENT_PATH}/node_modules/mathjax/"),
         format!("{CLIENT_PATH}/static/mathjax"),
-        Some("tex-chtml.js".to_string()),
+        Some(&"tex-chtml.js".to_string()),
     )?;
     quick_copy_dir(
         format!("{CLIENT_PATH}/node_modules/@mathjax/mathjax-newcm-font/chtml/"),
@@ -508,7 +508,7 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     )?;
     let mut eslint_args = vec!["eslint", "src"];
     if !eslint_check.is_empty() {
-        eslint_args.push(eslint_check)
+        eslint_args.push(eslint_check);
     }
     run_script("npx", &eslint_args, CLIENT_PATH, true)?;
     run_script("npx", &eslint_args, VSCODE_PATH, true)?;
@@ -770,7 +770,7 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
     )?;
     search_and_replace_file(
         format!("{CLIENT_PATH}/package.json5"),
-        r#"(\r?\n    version: ')[\d.]+(?:-[a-z\d]*)?(',\r?\n)"#,
+        r"(\r?\n    version: ')[\d.]+(?:-[a-z\d]*)?(',\r?\n)",
         &replacement_string,
     )?;
     Ok(())
