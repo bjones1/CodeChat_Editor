@@ -421,8 +421,12 @@ fn run_install(dev: bool) -> io::Result<()> {
             cargo binstall cargo-sort --no-confirm;
             info "cargo binstall cargo-audit";
             cargo binstall cargo-audit --no-confirm;
-            info "cargo binstall cargo-tarpaulin";
-            cargo binstall cargo-tarpaulin --no-confirm;
+            info "cargo binstall cargo-llvm-cov";
+            cargo binstall cargo-llvm-cov --no-confirm;
+            // Install the required llvm-tools component used by cargo-llvm-cov
+            // without prompting.
+            info "rustup component add llvm-tools-preview";
+            rustup component add llvm-tools-preview;
         )?;
     }
     Ok(())
@@ -835,15 +839,9 @@ fn run_postrelease(target: &str, tag: &str) -> io::Result<()> {
 
 fn run_coverage() -> io::Result<()> {
     run_cmd!(
-        info "cargo tarpaulin --skip-clean --out=html --target-dir=tarpaulin";
-        cargo tarpaulin --skip-clean --out=html --out=json --target-dir=tarpaulin;
-    )?;
-
-    // Open the resulting coverage report in the default web browser. The current
-    // working directory is `server/` (see `main`), so the report lives at
-    // `server/tarpaulin-report.html`.
-    let report = Path::new("tarpaulin-report.html");
-    open::that(report)
+        info "cargo llvm-cov --open";
+        cargo llvm-cov --open;
+    )
 }
 
 // CLI implementation

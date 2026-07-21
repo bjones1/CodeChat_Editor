@@ -360,7 +360,7 @@ fn fix_addr(addr: &SocketAddr) -> SocketAddr {
     }
 }
 
-#[cfg(not(tarpaulin_include))]
+#[cfg_attr(coverage, coverage(off))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let addr = SocketAddr::new(cli.host, cli.port);

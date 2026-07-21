@@ -144,6 +144,10 @@ strip = "symbols"
 [profile.dist]
 inherits = "release"
 
+# Code coverage
+# -------------
+#
 [lints.rust]
-# Avoid a lint about tarpaulin.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+# Avoid a lint about the `coverage` cfg set by `cargo llvm-cov` (see `bt
+# cover`).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }

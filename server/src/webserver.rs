@@ -538,17 +538,21 @@ pub fn set_root_path(
     };
     #[cfg(not(any(test, debug_assertions)))]
     let root_path = PathBuf::from(exe_dir);
-    #[cfg(any(test, debug_assertions))]
+    #[cfg(any(test, debug_assertions, coverage))]
     let mut root_path = PathBuf::from(exe_dir);
-    // When in debug or running tests, use the layout of the Git repo to find
-    // client files. In release mode, we assume the static folder is a
-    // subdirectory of the directory containing the executable.
+    // When running tests, the executable lives in an extra `deps` directory
+    // (e.g. `target/debug/deps/`) compared to a plain `cargo build`
+    // (`target/debug/`). In development, this extra directory level for the
+    // extension isn't needed.
     #[cfg(test)]
-    // In development, this extra directory level for the extension isn't
-    // needed.
     if extension_base_path.is_none() {
         root_path.push("..");
     }
+    // `cargo llvm-cov` builds into `target/llvm-cov-target/` instead of
+    // `target/`, which adds one extra directory level compared to a plain
+    // `cargo test`/`cargo build`; account for it here.
+    #[cfg(coverage)]
+    root_path.push("..");
     // Note that `debug_assertions` is also enabled for testing, so this adds to
     // the previous line when running tests.
     #[cfg(debug_assertions)]

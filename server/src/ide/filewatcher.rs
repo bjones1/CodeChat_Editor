@@ -89,7 +89,7 @@ pub const FILEWATCHER_PATH_PREFIX: &[&str] = &["fw", "fsc"];
 /// replaced by something better.
 ///
 /// Redirect from the root of the filesystem to the actual root path on this OS.
-#[cfg(not(tarpaulin_include))]
+#[cfg_attr(coverage, coverage(off))]
 pub async fn filewatcher_root_fs_redirect() -> impl Responder {
     HttpResponse::TemporaryRedirect()
         .insert_header((header::LOCATION, "/fw/fsb/"))
@@ -104,7 +104,7 @@ pub async fn filewatcher_root_fs_redirect() -> impl Responder {
 ///
 /// Omit code coverage -- this is a temporary interface, until IDE integration
 /// replaces this.
-#[cfg(not(tarpaulin_include))]
+#[cfg_attr(coverage, coverage(off))]
 #[get("/fw/fsb/{path:.*}")]
 async fn filewatcher_browser_endpoint(
     req: HttpRequest,
@@ -164,7 +164,7 @@ async fn filewatcher_browser_endpoint(
 ///
 /// Omit code coverage -- this is a temporary interface, until IDE integration
 /// replaces this.
-#[cfg(not(tarpaulin_include))]
+#[cfg_attr(coverage, coverage(off))]
 async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     // Special case on Windows: list drive letters.
     #[cfg(target_os = "windows")]
@@ -311,7 +311,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
 /// Copied almost verbatim from the
 /// [win\_partitions crate](https://docs.rs/crate/win_partitions/0.3.0/source/src/win_api.rs#144)
 /// when compilation errors broke the crate.
-#[cfg(not(tarpaulin_include))]
+#[cfg_attr(coverage, coverage(off))]
 #[cfg(target_os = "windows")]
 pub fn get_logical_drive() -> Result<Vec<char>, std::io::Error> {
     let bitmask = unsafe { GetLogicalDrives() };
