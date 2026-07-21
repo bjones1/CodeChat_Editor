@@ -151,3 +151,22 @@ inherits = "release"
 # Avoid a lint about the `coverage` cfg set by `cargo llvm-cov` (see `bt
 # cover`).
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+# Clippy config
+# -------------
+#
+# A good article: https://emschwartz.me/your-clippy-config-should-be-stricter.
+#
+# Docs on clippy: see `cargo clippy --help`, `cargo check --help` (the target
+# selection and feature selection flags seems to apply to clippy).
+[lints.clippy]
+# https://github.com/rust-lang/rust-clippy shows which categories are enabled by
+# default; https://doc.rust-lang.org/stable/clippy/lints.html for a description
+# of each of these categories.
+pedantic = "warn"
+# Disable specific pedantic lints that don't apply. Use LP docs instead of
+# rustdoc for errors and panics.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# This warns at the phrase "CodeChat Editor", so it's disabled.
+doc_markdown = "allow"
