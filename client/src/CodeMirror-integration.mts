@@ -703,6 +703,37 @@ const get_contents = (element: Element): [HTMLDivElement, boolean] => {
     return [contents_div, tinymce_inst != null];
 };
 
+// Allow only spaces and delete/backspaces when editing the indent of a doc
+// block. This is registered (see `DocBlockPlugin`'s `focusin` handler below)
+// as a `beforeinput` listener on a doc block's indent div. It's defined here,
+// as a single stable function reference, rather than as an inline arrow
+// function created inside the `focusin` handler: `addEventListener` only
+// skips re-adding a listener that's reference-equal to one already
+// registered on the same target, and `focusin` can fire repeatedly on the
+// same (unchanged, and therefore DOM-preserving -- see `DocBlockWidget.eq`)
+// indent div, e.g. by blurring then refocusing it. A fresh arrow function
+// per `focusin` call would defeat that dedup and accumulate listeners.
+const on_indent_beforeinput = (event: InputEvent) => {
+    // Only modify the behavior of inserts.
+    if (event.data) {
+        // Block any insert that's not an insert of spaces.
+        // TODO: need to support tabs.
+        if (event.data !== " ".repeat(event.data.length)) {
+            event.preventDefault();
+        }
+    }
+};
+
+// Signal that a doc block's indent is dirty. See `on_indent_beforeinput`
+// above for why this must be a stable function reference rather than an
+// inline closure.
+const on_indent_input = (event: Event) => {
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+        on_dirty(target);
+    }
+};
+
 // Determine if the element which generated the provided event was in a doc
 // block or not. If not, return false; if so, return the doc block div.
 const element_is_in_doc_block = (
@@ -1169,26 +1200,9 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 // needing to check if it's already present.
                 indent_div.addEventListener(
                     "beforeinput",
-                    // Allow only spaces and delete/backspaces when editing the
-                    // indent of a doc block.
-                    (event: InputEvent) => {
-                        // Only modify the behavior of inserts.
-                        if (event.data) {
-                            // Block any insert that's not an insert of spaces.
-                            // TODO: need to support tabs.
-                            if (event.data !== " ".repeat(event.data.length)) {
-                                event.preventDefault();
-                            }
-                        }
-                    },
+                    on_indent_beforeinput as EventListener,
                 );
-                indent_div.addEventListener("input", (event) => {
-                    // Signal that this indent is dirty.
-                    const target = event.target;
-                    if (target instanceof HTMLElement) {
-                        on_dirty(target);
-                    }
-                });
+                indent_div.addEventListener("input", on_indent_input);
 
                 // If the target is in the indent, not the contents, then the
                 // following code isn't needed.
@@ -1557,6 +1571,12 @@ export const CodeMirror_load = async (
             // For reloads, we need to remove previous instances; otherwise, Bad
             // Things happen.
             tinymce?.remove();
+            // Per the [docs](https://codemirror.net/docs/ref/#view.EditorView.destroy),
+            // this must be called to clean up the view (DOM-external state
+            // such as global event listeners) before discarding it; simply
+            // replacing `codechat_body`'s contents below doesn't do this and
+            // would otherwise leak the old view on every reload.
+            current_view.destroy();
         }
 
         codechat_body.innerHTML = `<div class="CodeChat-CodeMirror"></div><div id="${TINYMCE_INST}" class="CodeChat-doc-contents ${CODECHAT_DOC_HIDDEN}" spellcheck="true"></div>`;
@@ -1853,7 +1873,8 @@ export const CodeMirror_save = (): CodeMirrorDiffable => {
     const code_mirror: CodeMirror = current_view.state.toJSON(
         CodeMirror_JSON_fields,
     );
-    /// @ts-expect-error("This does exist.")
+    // @ts-expect-error -- `state.toJSON()` includes `selection` even though
+    // it's not part of the `CodeMirror` type; delete it before returning.
     delete code_mirror.selection;
 
     return { Plain: code_mirror };

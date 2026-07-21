@@ -1489,8 +1489,8 @@ impl TranslationTask {
     }
 }
 
-// If a string is encoded using CRLFs (Windows style), convert it to LFs only
-// (Unix style).
+// Given a string using LF-only (Unix style) line endings, convert it to CRLF
+// (Windows style) line endings if `eol_type` requests it.
 fn eol_convert(s: String, eol_type: &EolType) -> String {
     if eol_type == &EolType::Crlf {
         // There shouldn't be any Windows-style CRLFs -- but if there are,

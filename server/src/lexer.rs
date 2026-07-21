@@ -1014,11 +1014,18 @@ pub fn source_lexer(
                         while nesting_depth != 0 {
                             // Get the index of the next block comment
                             // delimiter.
-                            trace!(
-                                "Looking for a block comment delimiter in '{}'.",
-                                &source_code[comment_start_index
-                                    ..min(comment_start_index + 30, source_code.len())]
-                            );
+                            trace!("Looking for a block comment delimiter in '{}'.", {
+                                // Clamp to a valid char boundary, since
+                                // `comment_start_index + 30` is an
+                                // arbitrary byte offset that may land in
+                                // the middle of a multi-byte UTF-8
+                                // character.
+                                let mut end = min(comment_start_index + 30, source_code.len());
+                                while !source_code.is_char_boundary(end) {
+                                    end -= 1;
+                                }
+                                &source_code[comment_start_index..end]
+                            });
                             let delimiter_captures_wrapped =
                                 comment_delim_regex.captures(&source_code[comment_start_index..]);
                             if delimiter_captures_wrapped.is_none() {
@@ -1302,8 +1309,24 @@ pub fn source_lexer(
                                         // and delimiter have already been split
                                         // out for that line.
                                         for line in &split_contents[1..] {
+                                            // `indent_column` is a byte offset
+                                            // computed from the (ASCII)
+                                            // indent/delimiter widths; a line's
+                                            // contents may contain multi-byte
+                                            // UTF-8 characters, so `indent_column`
+                                            // might not land on a char boundary
+                                            // within `line`. Slicing at a
+                                            // non-boundary index would panic;
+                                            // guard against that. If it's not a
+                                            // valid boundary, this line can't
+                                            // consist solely of (single-byte)
+                                            // whitespace up to that column, so
+                                            // it's not indented.
                                             let this_line_indent = if line.len() < indent_column {
                                                 line
+                                            } else if !line.is_char_boundary(indent_column) {
+                                                is_indented = false;
+                                                break;
                                             } else {
                                                 &line[..indent_column]
                                             };

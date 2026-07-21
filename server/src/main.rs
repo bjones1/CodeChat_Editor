@@ -91,7 +91,7 @@ enum Commands {
         log: Option<LevelFilter>,
 
         /// Define the username:password used to limit access to the server. By
-        /// default, access is unlimited. The username may not contain a colon.-
+        /// default, access is unlimited. The username may not contain a colon.
         #[arg(short, long, value_parser = parse_credentials)]
         auth: Option<Credentials>,
     },
@@ -241,10 +241,12 @@ impl Cli {
                                 Ok(Some(status)) => {
                                     let mut stdout_buf = String::new();
                                     let mut stderr_buf = String::new();
-                                    let stdout = child.stdout.as_mut().unwrap();
-                                    let stderr = child.stderr.as_mut().unwrap();
-                                    stdout.read_to_string(&mut stdout_buf).unwrap();
-                                    stderr.read_to_string(&mut stderr_buf).unwrap();
+                                    if let Some(stdout) = child.stdout.as_mut() {
+                                        let _ = stdout.read_to_string(&mut stdout_buf);
+                                    }
+                                    if let Some(stderr) = child.stderr.as_mut() {
+                                        let _ = stderr.read_to_string(&mut stderr_buf);
+                                    }
                                     if status.success() {
                                         return Err(format!("Server unexpectedly shut down.\n{stdout_buf}\n{stderr_buf}").into());
                                     }

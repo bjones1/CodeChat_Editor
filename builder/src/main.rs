@@ -172,7 +172,10 @@ fn run_script<T: AsRef<Path>, A: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Displa
     if exit_code == Some(0) || (exit_code.is_some() && !check_exit_code) {
         Ok(())
     } else {
-        Err(io::Error::other("pnpm exit code indicates failure."))
+        Err(io::Error::other(format!(
+            "{}: exit code {exit_code:?} indicates failure.",
+            script.to_string_lossy()
+        )))
     }
 }
 

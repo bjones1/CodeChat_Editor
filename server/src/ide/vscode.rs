@@ -34,7 +34,7 @@ use actix_web::{
     error::{Error, ErrorBadRequest},
     get, web,
 };
-use htmlize::escape_text;
+use htmlize::{escape_attribute, escape_text};
 use indoc::formatdoc;
 use log::{debug, error};
 
@@ -156,7 +156,12 @@ pub fn vscode_ide_core(
                     );
                     send_response(&to_ide_tx, first_message.id, Ok(ResultOkTypes::Void)).await;
                     // Send the HTML for the internal browser. The ID of
-                    // this message is `RESERVED_MESSAGE_ID`.
+                    // this message is `RESERVED_MESSAGE_ID`. Escape the
+                    // connection ID before embedding it in an HTML
+                    // attribute, since it's supplied by whoever connects to
+                    // the IDE websocket and could otherwise be used to break
+                    // out of the `src` attribute and inject markup.
+                    let escaped_connection_id_raw = escape_attribute(connection_id_raw.as_str());
                     let client_html = formatdoc!(
                         r#"
                         <!DOCTYPE html>
@@ -164,7 +169,7 @@ pub fn vscode_ide_core(
                             <head>
                             </head>
                             <body style="margin: 0px; padding: 0px; overflow: hidden">
-                                <iframe src="{address}/vsc/cf/{connection_id_raw}" style="width: 100%; height: 100vh; border: none"></iframe>
+                                <iframe src="{address}/vsc/cf/{escaped_connection_id_raw}" style="width: 100%; height: 100vh; border: none"></iframe>
                             </body>
                         </html>"#
                     );

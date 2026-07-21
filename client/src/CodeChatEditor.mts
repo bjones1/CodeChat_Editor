@@ -726,7 +726,7 @@ export const on_error = (event: Event) => {
         // A simple `reason instanceof Error` fails here. Better would be
         // [Error.isError()](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/isError),
         // but this requires es2027.
-        if (typeof reason.message === "string") {
+        if (typeof reason?.message === "string") {
             // Extracts the text from `reject(new Error('Your text'))`.
             userMessage = reason.message;
         } else if (typeof reason === "string") {

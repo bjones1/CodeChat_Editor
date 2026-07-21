@@ -746,3 +746,26 @@ fn test_compiler() {
         "verilog"
     );
 }
+
+#[test]
+fn test_utf8_indent_no_panic() {
+    // Regression test: a multi-byte UTF-8 character in a block comment's
+    // continuation line must not cause a byte-index char-boundary panic when
+    // computing/removing the comment's indentation.
+    let llc = compile_lexers(get_language_lexer_vec());
+    // Use SQL, since (unlike C/C++) it's lexed by the regex-based lexer
+    // rather than the PEG-based parser.
+    let sql = llc.map_mode_to_lexer.get(&stringit("sql")).unwrap();
+    let s = "/* Test\n \u{65E5}\u{672C}\u{8A9E} text\n*/\n";
+    // This must not panic; also verify the contents are preserved intact
+    // (since the multi-byte character prevents this comment from being
+    // recognized as consistently indented, it should be left unchanged).
+    assert_eq!(
+        source_lexer(s, sql),
+        [build_doc_block(
+            "",
+            "/*",
+            "Test\n \u{65E5}\u{672C}\u{8A9E} text\n\n"
+        )]
+    );
+}

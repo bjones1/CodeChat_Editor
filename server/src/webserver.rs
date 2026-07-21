@@ -682,6 +682,15 @@ pub fn get_client_framework(
             ));
         }
     };
+    // `connection_id` may be attacker-controlled (for example, the VSCode
+    // extension's `/vsc/cf/{connection_id}` endpoint takes it directly from
+    // the URL). Since `ws_url` is embedded verbatim inside a `<script>`
+    // block below, escape `<` so a value such as `</script><script>...`
+    // can't prematurely close the script element and inject markup/script
+    // that the HTML parser would otherwise treat as a new tag. JSON string
+    // escapes (produced above) don't cover this, since `<` and `/` aren't
+    // special in JSON.
+    let ws_url = ws_url.replace('<', "\\u003C");
 
     // Build and return the webpage.
     Ok(formatdoc!(

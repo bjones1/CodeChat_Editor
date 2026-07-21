@@ -166,9 +166,10 @@ impl CodeChatEditorServer {
         })
     }
 
-    // This returns an error if the conversion to JSON fails, `None` if the
-    // queue is closed, or a JSON-encoded string containing the message
-    // otherwise.
+    // This returns `None` if both the incoming-message queue and the
+    // expired-message queue are closed, or the next available message
+    // (an incoming message, or a synthetic timeout `Result` for an
+    // unacknowledged message) otherwise.
     pub async fn get_message(&self) -> Option<EditorMessage> {
         // Get a message -- either an expired message result or an incoming
         // message.
@@ -232,11 +233,8 @@ impl CodeChatEditorServer {
             sleep(REPLY_TIMEOUT_MS).await;
             // Since the websocket failed to send a `Result`, produce a timeout
             // `Result` for it.
-            match expired_messages_tx.send(id).await {
-                Ok(join_handle) => join_handle,
-                Err(err) => {
-                    error!("Error -- unable to send expired message: {err}");
-                }
+            if let Err(err) = expired_messages_tx.send(id).await {
+                error!("Error -- unable to send expired message: {err}");
             }
         });
         // Add this to the list of pending message.

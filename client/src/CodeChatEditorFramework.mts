@@ -134,10 +134,21 @@ class WebSocketComm {
             );
             assert(id !== undefined);
             assert(message !== undefined);
-            const keys = Object.keys(message);
-            assert(keys.length === 1);
-            const key = keys[0] as KeysOfRustEnum<EditorMessageContents>;
-            const value = Object.values(message)[0];
+            // A Rust enum variant with no data (e.g. `RequestClose`) is
+            // serialized as a bare string rather than a single-key object; a
+            // variant with data is serialized as a single-key object. See
+            // `KeysOfRustEnum` for the same convention used by its type.
+            let key: KeysOfRustEnum<EditorMessageContents>;
+            let value: unknown;
+            if (typeof message === "string") {
+                key = message as KeysOfRustEnum<EditorMessageContents>;
+                value = undefined;
+            } else {
+                const keys = Object.keys(message);
+                assert(keys.length === 1);
+                key = keys[0] as KeysOfRustEnum<EditorMessageContents>;
+                value = Object.values(message)[0];
+            }
 
             // Process this message.
             switch (key) {
@@ -249,7 +260,7 @@ class WebSocketComm {
                 case "CurrentFile": {
                     // Note that we can ignore `value[1]` (if the file is text
                     // or binary); the server only sends text files here.
-                    const current_file = value[0] as string;
+                    const current_file = (value as [string, boolean | null])[0];
                     const testSuffix = testMode
                         ? // Append the test parameter correctly, depending if
                           // there are already parameters or not.

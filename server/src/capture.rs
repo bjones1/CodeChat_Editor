@@ -279,13 +279,14 @@ impl CaptureContext {
         data.entry("source".to_string())
             .or_insert_with(|| serde_json::json!("server_translation"));
 
+        let user_id = self.user_id.clone()?;
         self.server_sequence_number += 1;
 
         Some(CaptureEventWire {
             event_id: None,
             sequence_number: Some(self.server_sequence_number),
             schema_version: self.schema_version,
-            user_id: self.user_id.clone()?,
+            user_id,
             session_id: self.session_id.clone(),
             event_source: Some("server_translation".to_string()),
             language_id: None,

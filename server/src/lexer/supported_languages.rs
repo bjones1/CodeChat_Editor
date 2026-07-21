@@ -172,7 +172,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // raw string syntax in C++11 and newer is IMHO so rare we won't
             // encounter it in older code. See the C++
             // [string literals docs for the reasoning behind the start body regex.](https://en.cppreference.com/w/cpp/language/string_literal)
-            make_heredoc_delim("R\"", "[^()\\\\[[:space:]]]*", "(", ")", "\""),
+            make_heredoc_delim("R\"", "[^()\\\\\\s]*", "(", ")", "\""),
             SpecialCase::None,
             Some(pest_parser::c::parse_to_code_doc_blocks),
         ),

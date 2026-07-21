@@ -489,11 +489,18 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     // Walk through each doc block, inserting the previous code block followed
     // by the doc block.
     for codemirror_doc_block in doc_blocks {
-        // Translate `from`.
+        // Translate `from`. Use a checked subtraction, since a malformed (for
+        // example, out-of-order or overlapping) `doc_blocks` array sent by the
+        // Client could otherwise cause this to underflow and wrap around to a
+        // huge value, producing a confusing out-of-bounds slice panic below
+        // instead of a clear error at the point of the actual problem.
         let byte_index_prev = byte_index;
         byte_index += byte_index_of(
             &code_mirror.doc[byte_index..],
-            codemirror_doc_block.from - utf16_index,
+            codemirror_doc_block
+                .from
+                .checked_sub(utf16_index)
+                .expect("doc_blocks must be sorted, with non-overlapping from/to ranges"),
         );
         utf16_index = codemirror_doc_block.from;
         // Append the code block, unless it's empty.
@@ -512,7 +519,10 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
         // Translate `to`.
         byte_index += byte_index_of(
             &code_mirror.doc[byte_index..],
-            codemirror_doc_block.to - utf16_index,
+            codemirror_doc_block
+                .to
+                .checked_sub(utf16_index)
+                .expect("doc_blocks must be sorted, with non-overlapping from/to ranges"),
         );
         utf16_index = codemirror_doc_block.to;
         // Verify that everything between `from` and `to` is newlines.

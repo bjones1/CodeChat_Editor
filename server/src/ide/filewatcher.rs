@@ -529,7 +529,7 @@ fn processing_task(
                                     if debounced_event.event.paths.len() != 1 ||
                                         current_filepath.as_ref().is_none_or(|cfp| cfp != &debounced_event.event.paths[0])
                                     {
-                                        warn!("Modification to different file {}.", debounced_event.event.paths[0].to_string_lossy());
+                                        warn!("Modification to different file(s): {:?}.", debounced_event.event.paths);
                                     } else {
                                         let cfp = current_filepath.as_ref().unwrap();
                                         let Some(current_filepath_str) = cfp.to_str() else {
@@ -624,11 +624,15 @@ fn processing_task(
                                     break 'process Err(ResultErrTypes::FileUnwatchError(cfp.clone(), err.to_string()));
                                 }
                                 // Save this string to a file.
-                                if let Err(err) = fs::write(cfp.as_path(), plain.doc).await {
-                                    break 'process Err(ResultErrTypes::SaveFileError(cfp.clone(), err.to_string()));
-                                }
+                                let write_result = fs::write(cfp.as_path(), plain.doc).await;
+                                // Re-watch the file regardless of whether the
+                                // write succeeded, so a failed write doesn't
+                                // silently leave the file unwatched.
                                 if let Err(err) = debounced_watcher.watch(cfp, RecursiveMode::NonRecursive) {
                                     break 'process Err(ResultErrTypes::FileWatchError(cfp.clone(), err.to_string()));
+                                }
+                                if let Err(err) = write_result {
+                                    break 'process Err(ResultErrTypes::SaveFileError(cfp.clone(), err.to_string()));
                                 }
                                 Ok(ResultOkTypes::Void)
                             };
