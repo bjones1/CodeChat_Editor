@@ -31,16 +31,16 @@ use std::{path::PathBuf, time::Duration};
 use dunce::canonicalize;
 use indoc::formatdoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
+use thirtyfour::{By, Key, WebDriver, error::WebDriverError, prelude::ElementQueryable};
 use tokio::time::sleep;
 
 // ### Local
-use crate::make_test;
 use crate::common::{
     CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_line,
     click_element_top_left, end_of_line, optional_message, perform_loadfile,
     select_codechat_iframe,
 };
+use crate::make_test;
 use code_chat_editor::{
     processing::{CodeChatForWeb, CodeMirrorDiffable},
     webserver::{
@@ -150,7 +150,7 @@ async fn test_xss_core(
     // The doc block should render the image with its `onerror` attribute
     // stripped, leaving a harmless `<img>`.
     let body_css = "#CodeChat-body .CodeChat-doc-contents";
-    let body_content = driver.find(By::Css(body_css)).await.unwrap();
+    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
     let rendered = body_content.inner_html().await.unwrap();
     assert!(
         !rendered.contains("onerror"),
@@ -187,7 +187,7 @@ async fn test_xss_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Refind the editable contents and type a character to trigger an update.
-    let body_content = driver.find(By::Css(body_css)).await.unwrap();
+    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
     body_content.send_keys("z").await.unwrap();
 
     // A cursor-only update may precede the text update; accept it, then inspect
@@ -484,7 +484,8 @@ async fn test_arrow_key_navigation_core(
     // doc block 2's TinyMCE instance), then press `Home` so the cursor sits at
     // the exact line start `docBlockNavKeymap`'s `ArrowUp` handler looks for.
     let c_line = driver
-        .find(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
+        .query(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
+        .first()
         .await
         .unwrap();
     click_element_top_left(&driver, &c_line).await.unwrap();
@@ -604,7 +605,8 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
     // Confirm the click genuinely lands on code line "c" (i.e. `Line(9)`), not
     // inside the preceding doc block.
     let c_line = driver
-        .find(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
+        .query(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
+        .first()
         .await
         .unwrap();
     c_line.click().await.unwrap();

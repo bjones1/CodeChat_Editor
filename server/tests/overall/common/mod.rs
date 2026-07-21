@@ -55,7 +55,7 @@ use pretty_assertions::assert_eq;
 use serde_json::Value;
 use thirtyfour::{
     BrowserLogEntry, By, ChromiumLikeCapabilities, DesiredCapabilities, Key, LoggingPrefsLogLevel,
-    TypingData, WebDriver, WebElement, error::WebDriverError,
+    TypingData, WebDriver, WebElement, error::WebDriverError, prelude::ElementQueryable,
 };
 use tracing::{debug, error, info, warn};
 use tracing_log::LogTracer;
@@ -492,7 +492,11 @@ pub async fn goto_line(
     line: u32,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
-    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
+    let code_line = driver_ref
+        .query(By::Css(code_line_css))
+        .first()
+        .await
+        .unwrap();
     code_line
         .send_keys(
             Key::Alt
@@ -759,7 +763,11 @@ pub async fn click_element_top_left(
 #[allow(deprecated)]
 pub async fn select_codechat_iframe(driver_ref: &WebDriver) -> WebElement {
     // Target the iframe containing the Client.
-    let codechat_iframe = driver_ref.find(By::Css("#CodeChat-iframe")).await.unwrap();
+    let codechat_iframe = driver_ref
+        .query(By::Css("#CodeChat-iframe"))
+        .first()
+        .await
+        .unwrap();
     codechat_iframe.clone().enter_frame().await.unwrap();
 
     codechat_iframe

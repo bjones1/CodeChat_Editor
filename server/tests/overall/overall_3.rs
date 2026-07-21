@@ -32,12 +32,12 @@ use pretty_assertions::assert_eq;
 use thirtyfour::{By, Key, WebDriver, error::WebDriverError, extensions::query::ElementQueryable};
 
 // ### Local
-use crate::make_test;
 use crate::common::{
     CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_document,
     beginning_of_line, click_element_top_left, get_version, optional_message, perform_loadfile,
     select_codechat_iframe,
 };
+use crate::make_test;
 use code_chat_editor::{
     processing::{
         CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
@@ -95,7 +95,8 @@ async fn test_7_core(
     // with its `contenteditable` state.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     let doc_block = driver
-        .find(By::Css(".CodeChat-doc-contents"))
+        .query(By::Css(".CodeChat-doc-contents"))
+        .first()
         .await
         .unwrap();
     click_element_top_left(&driver, &doc_block).await.unwrap();
@@ -116,7 +117,7 @@ async fn test_7_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Refind it, since it's now switched with a TinyMCE editor.
-    let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
 
     // Move to the next lines.
     for expected_line in [2, 4, 6] {
@@ -185,7 +186,8 @@ async fn test_8_core(
     // with its `contenteditable` state.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     let doc_block = driver
-        .find(By::Css(".CodeChat-doc-contents"))
+        .query(By::Css(".CodeChat-doc-contents"))
+        .first()
         .await
         .unwrap();
     click_element_top_left(&driver, &doc_block).await.unwrap();
@@ -207,7 +209,7 @@ async fn test_8_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Refind it, since it's now switched with a TinyMCE editor.
-    let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
 
     beginning_of_line(&tinymce_contents, "").await.unwrap();
     assert_eq!(
@@ -532,7 +534,7 @@ async fn test_9_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Refind it, since it's now switched with a TinyMCE editor.
-    let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
 
     // The click above doesn't necessarily land exactly at the start of the
     // text (its position now depends on the contents div's layout, not the

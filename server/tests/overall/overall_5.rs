@@ -31,14 +31,14 @@ use std::{fmt::Write, path::PathBuf};
 // ### Third-party
 use dunce::canonicalize;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
+use thirtyfour::{By, Key, WebDriver, error::WebDriverError, prelude::ElementQueryable};
 
 // ### Local
-use crate::make_test;
 use crate::common::{
     CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_line, end_of_line,
     get_version, perform_loadfile, select_codechat_iframe,
 };
+use crate::make_test;
 use code_chat_editor::{
     processing::{
         CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
@@ -138,7 +138,7 @@ async fn test_edit_preserves_cursor_scroll_in_large_doc_block_core(
 
     // Make an edit in the middle of the big doc block: refind the paragraph,
     // since it's now switched to a TinyMCE editor, then type a character.
-    let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
     tinymce_contents.send_keys("x").await.unwrap();
 
     // A cursor-only update (carrying no `contents`) may precede the text update
@@ -286,7 +286,8 @@ async fn test_cursor_home_from_code_after_doc_block_core(
     // width of the screen is much larger than the width of a two-character
     // line.)
     let code_line = driver
-        .find(By::XPath("//*[contains(@class, 'cm-line')][text()='cc']"))
+        .query(By::XPath("//*[contains(@class, 'cm-line')][text()='cc']"))
+        .first()
         .await
         .unwrap();
     code_line.click().await.unwrap();
