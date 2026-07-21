@@ -20,12 +20,8 @@
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
 ///
-/// To run this test, execute `cargo test --test overall_1
+/// To run this test, execute `cargo test --test overall
 /// <optional_test_name>` in the `server/` directory.
-// Modules
-// -------
-mod overall_common;
-
 // Imports
 // -------
 //
@@ -41,7 +37,8 @@ use thirtyfour::{
 };
 
 // ### Local
-use crate::overall_common::{
+use crate::make_test;
+use crate::common::{
     CodeChatEditorServerLog, ExpectedMessages, TIMEOUT, assert_no_more_messages, beginning_of_line,
     get_version, goto_line, optional_message, perform_loadfile, select_codechat_iframe,
 };

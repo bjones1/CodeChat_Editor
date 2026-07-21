@@ -20,12 +20,8 @@
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
 ///
-/// To run this test, execute `cargo test --test overall_5 <optional_test_name>`
+/// To run this test, execute `cargo test --test overall <optional_test_name>`
 /// in the `server/` directory.
-// Modules
-// -------
-mod overall_common;
-
 // Imports
 // -------
 //
@@ -38,7 +34,8 @@ use pretty_assertions::assert_eq;
 use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
 
 // ### Local
-use crate::overall_common::{
+use crate::make_test;
+use crate::common::{
     CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_line, end_of_line,
     get_version, perform_loadfile, select_codechat_iframe,
 };

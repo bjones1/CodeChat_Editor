@@ -538,36 +538,25 @@ fn run_test() -> io::Result<()> {
     Ok(())
 }
 
-/// Repeatedly run the `overall_*` integration tests until one fails, to expose
-/// intermittent failures. This is a translation of `server/run_until_fail.ps1`.
+/// Repeatedly run the `overall` integration test modules until one fails, to
+/// expose intermittent failures.
 fn run_until_fail() -> io::Result<()> {
     // Provide a backtrace on a failing test, matching the script's
     // `RUST_BACKTRACE=1`.
     unsafe {
         env::set_var("RUST_BACKTRACE", "1");
     }
-    let tests = [
-        "overall_1",
-        "overall_2",
-        "overall_3",
-        "overall_4",
-        "overall_5",
-    ];
     let mut iteration = 0;
     loop {
         iteration += 1;
         // Clear the screen so only the current iteration's output is visible.
         print!("\x1b[2J\x1b[H");
         println!("--- Iteration {iteration} ---");
-        for test in tests {
-            // `run_cmd!` returns an error if `cargo test` exits non-zero, which
-            // breaks out of the loop -- the same behavior as the script.
-            run_cmd!(cargo test --test $test).map_err(|err| {
-                io::Error::other(format!(
-                    "Test {test} failed on iteration {iteration}: {err}"
-                ))
-            })?;
-        }
+        // `run_cmd!` returns an error if `cargo test` exits non-zero, which
+        // breaks out of the loop -- the same behavior as the script.
+        run_cmd!(cargo test --test overall).map_err(|err| {
+            io::Error::other(format!("Test failed on iteration {iteration}: {err}"))
+        })?;
     }
 }
 

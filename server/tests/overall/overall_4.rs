@@ -21,10 +21,6 @@
 /// tester. This file focuses on security: it verifies that malicious HTML
 /// supplied as a document's source is sanitized, so that embedded JavaScript
 /// never executes and is removed from the source code the Client produces.
-// Modules
-// -------
-mod overall_common;
-
 // Imports
 // -------
 //
@@ -39,7 +35,8 @@ use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
 use tokio::time::sleep;
 
 // ### Local
-use crate::overall_common::{
+use crate::make_test;
+use crate::common::{
     CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_line,
     click_element_top_left, end_of_line, optional_message, perform_loadfile,
     select_codechat_iframe,

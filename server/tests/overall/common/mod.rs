@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `overall_core/mod.rs` - test the overall system
+/// `overall/common/mod.rs` - test the overall system
 /// ===============================================
 ///
 /// These are functional tests of the overall system, performed by attaching a
@@ -449,7 +449,7 @@ macro_rules! make_test {
         #[tokio::test]
         #[tracing::instrument]
         async fn $test_name() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            $crate::overall_common::harness($test_core_name, prep_test_dir!()).await
+            $crate::common::harness($test_core_name, prep_test_dir!()).await
         }
     };
 
@@ -466,7 +466,7 @@ macro_rules! make_test {
         #[tracing::instrument]
         #[ignore = $reason]
         async fn $test_name() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            $crate::overall_common::harness($test_core_name, prep_test_dir!()).await
+            $crate::common::harness($test_core_name, prep_test_dir!()).await
         }
     };
 }
