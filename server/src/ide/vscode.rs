@@ -102,6 +102,7 @@ pub fn connection_id_raw_to_str(connection_id_raw: &str) -> String {
 // Create queues, perform the IDE startup sequence, then enter a loop
 // translating between the IDE and Client. The caller must provide a task to
 // move data to/from the IDE queues.
+#[allow(clippy::too_many_lines)]
 pub fn vscode_ide_core(
     connection_id_raw: String,
     app_state: WebAppState,

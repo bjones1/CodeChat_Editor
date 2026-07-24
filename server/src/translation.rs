@@ -451,6 +451,7 @@ struct TranslationTask {
 /// This is the processing task for the Visual Studio Code IDE. It handles all
 /// the core logic to moving data between the IDE and the client.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 pub async fn translation_task(
     connection_id_prefix: String,
     connection_id_raw: String,
@@ -855,6 +856,7 @@ impl TranslationTask {
     }
 
     // Pass a `Result` message to the Client, unless it's a `LoadFile` result.
+    #[allow(clippy::too_many_lines)]
     async fn ide_result(&mut self, ide_message: EditorMessage) -> bool {
         let EditorMessageContents::Result(ref result) = ide_message.message else {
             panic!("Should only be called with a result.");
@@ -996,6 +998,7 @@ impl TranslationTask {
         true
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn ide_update(&mut self, ide_message: EditorMessage) -> bool {
         let EditorMessageContents::Update(update) = ide_message.message else {
             panic!("Expected update message.");
@@ -1196,6 +1199,7 @@ impl TranslationTask {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn client_update(&mut self, client_message: EditorMessage) -> bool {
         let EditorMessageContents::Update(update_message_contents) = client_message.message else {
             panic!("Expected update message.");
@@ -1464,7 +1468,7 @@ impl TranslationTask {
 
                         // CodeMirror uses 1-based line numbers.
                         Some(CursorPosition::Line(
-                            (preceding_newlines + newlines_before_marker + 1) as u32,
+                            u32::try_from(preceding_newlines + newlines_before_marker + 1).ok()?,
                         ))
                     })()
                 } else {

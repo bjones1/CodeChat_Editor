@@ -983,6 +983,7 @@ enum UploadOutcome {
     TransientFailure,
 }
 
+#[allow(clippy::too_many_lines)]
 fn upload_next_batch(
     spool_path: &Path,
     config: &Arc<Mutex<CaptureServiceConfig>>,
@@ -1208,6 +1209,7 @@ fn update_spool_count(spool_path: &Path, status: &Arc<Mutex<CaptureStatus>>) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_next_batch(
     spool_path: &Path,
     cfg: &CaptureServiceConfig,

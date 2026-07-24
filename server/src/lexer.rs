@@ -307,6 +307,7 @@ const C_SHARP_VERBATIM_STRING_CLOSING: &str =
 /// ### Language "compiler"
 ///
 /// "Compile" a language description into regexes used to lex the language.
+#[allow(clippy::too_many_lines)]
 fn build_lexer_regex(
     // The language description to build regexes for.
     language_lexer: LanguageLexer,
@@ -645,6 +646,7 @@ pub fn compile_lexers(language_lexer_arr: Vec<LanguageLexer>) -> LanguageLexersC
 /// These linter warnings would IMHO make the code less readable.
 #[allow(clippy::bool_to_int_with_if)]
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn source_lexer(
     // The source code to lex.
     source_code: &str,

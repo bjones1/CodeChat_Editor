@@ -164,6 +164,7 @@ async fn filewatcher_browser_endpoint(
 /// Omit code coverage -- this is a temporary interface, until IDE integration
 /// replaces this.
 #[cfg_attr(coverage, coverage(off))]
+#[allow(clippy::too_many_lines)]
 async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     // Special case on Windows: list drive letters.
     #[cfg(target_os = "windows")]
@@ -359,6 +360,7 @@ async fn filewatcher_client_endpoint(
     .await
 }
 
+#[allow(clippy::too_many_lines)]
 fn processing_task(
     file_path: &Path,
     req: &HttpRequest,

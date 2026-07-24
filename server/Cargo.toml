@@ -174,8 +174,7 @@ missing_errors_doc = { level = "allow", priority = 1 }
 missing_panics_doc = { level = "allow", priority = 1 }
 # This warns at the phrase "CodeChat Editor", so it's disabled.
 doc_markdown = { level = "allow", priority = 1 }
-# TODO: allow this in tests, but be more careful in the main codebase.
-too_many_lines = { level = "allow", priority = 1 }
-float_cmp = { level = "allow", priority = 1 }
-# TODO: check/fix later.
-cast_possible_truncation = { level = "allow", priority = 1 }
+# Some lints relaxed for test code only via a single
+# `#![cfg_attr(test, allow(...))]` line in each crate root (`src/lib.rs`,
+# `src/main.rs`) and a plain `#![allow(...)]` in each `tests/*.rs` integration
+# test binary (which is entirely test code).

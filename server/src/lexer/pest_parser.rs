@@ -41,6 +41,7 @@
 #[macro_export]
 macro_rules! make_parse_to_code_doc_blocks {
     ($parser: ty) => {
+        #[allow(clippy::too_many_lines)]
         pub fn parse_to_code_doc_blocks(input: &str) -> Vec<$crate::lexer::CodeDocBlock> {
             // While Pest has no problem working with all types of line endings,
             // CodeMirror converts all line endings to `\n` then indexes strings

@@ -128,6 +128,7 @@ fn make_block_comment_delim(opening: &str, closing: &str, is_nestable: bool) -> 
 
 // Define lexers for each supported language.
 // ------------------------------------------
+#[allow(clippy::too_many_lines)]
 pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
     vec![
         // ### Linux shell scripts

@@ -364,7 +364,7 @@ pub struct UpdateMessageContents {
     pub cursor_position: Option<CursorPosition>,
     /// The line at the top of the screen.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scroll_position: Option<f32>,
+    pub scroll_position: Option<f64>,
     /// True if this is a re-translation, which can be ignored if the receiver's
     /// document is dirty. Therefore, this is written by the IDE and read by the
     /// Client and IDE; conversely, it's ignored by the Server. The IDE and
@@ -380,7 +380,11 @@ pub struct UpdateMessageContents {
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export)]
 pub enum CursorPosition {
-    /// The line the cursor is on.
+    /// The line the cursor is on. Use `u32`, not `u64`: JSON/JS `number` is an
+    /// f64, which loses precision above 2^53, and `u64` values aren't
+    /// type-checked against that limit, so a `u64` here could silently
+    /// corrupt on the JS side. `u32`'s max (~4.3 billion) is always exactly
+    /// representable, and no real source file has that many lines anyway.
     Line(u32),
     /// The exact location of the cursor in the HTML DOM. Only the Client and
     /// the Server may use this in messages to each other. The IDE will not
@@ -869,6 +873,7 @@ pub async fn try_read_as_text(file: &mut File) -> Option<String> {
 // file contents itself (if it's not editable by the Client). If responding with
 // a Client, also return an Update message which will provided the contents for
 // the Client.
+#[allow(clippy::too_many_lines)]
 pub async fn file_to_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
@@ -1199,6 +1204,7 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
 /// allowing the user to edit the plain text of the source code in the IDE, or
 /// make GUI-enhanced edits of the source code rendered by the CodeChat Editor
 /// Client.
+#[allow(clippy::too_many_lines)]
 pub fn client_websocket<S: BuildHasher + 'static>(
     connection_id: String,
     req: &HttpRequest,

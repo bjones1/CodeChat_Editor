@@ -552,6 +552,8 @@ pub enum HtmlToMarkdownWrappedError {
     HtmlToMarkdownFailed(#[from] std::io::Error),
     #[error("unable to word wrap Markdown")]
     WordWrapFailed(#[from] FormatError),
+    #[error("line width exceeds u32::MAX")]
+    LineWidthOverflow(#[from] std::num::TryFromIntError),
 }
 
 impl HtmlToMarkdownWrapped {
@@ -578,8 +580,9 @@ impl HtmlToMarkdownWrapped {
                 .build(),
         }
     }
-    fn set_line_width(&mut self, line_width: usize) {
-        self.word_wrap_config.line_width = line_width as u32;
+    fn set_line_width(&mut self, line_width: usize) -> Result<(), HtmlToMarkdownWrappedError> {
+        self.word_wrap_config.line_width = u32::try_from(line_width)?;
+        Ok(())
     }
 
     /// Convert one item in a stream of HTML to markdown. The HTML must be start
@@ -654,7 +657,7 @@ pub fn doc_block_html_to_markdown(
                         total_delimiter_width + doc_block.indent.chars().count(),
                         WORD_WRAP_COLUMN,
                     ),
-            ));
+            ))?;
             doc_block.contents = converter.next(&tree)?;
         }
     }
@@ -1447,6 +1450,7 @@ pub fn remove_tinymce_data(
 /// Walk a node, dehydrating it by removing TineMCE temporary attributes,
 /// changing math to pulldown-cmark's output, and changing graphviz/Mermaid to
 /// fenced code blocks.
+#[allow(clippy::too_many_lines)]
 fn dehydrating_walk_node(node: &Rc<Node>) {
     let mut index = 0;
     // Avoid a `while` loop, since accessing `node.children` requires a borrow
@@ -1759,7 +1763,7 @@ impl<'a> TokenSource for CodeMirrorDocBlocksStruct<'a> {
     }
 
     fn estimate_tokens(&self) -> u32 {
-        self.0.len() as u32
+        u32::try_from(self.0.len()).unwrap_or(u32::MAX)
     }
 }
 
@@ -1777,6 +1781,7 @@ fn none_if_eq_ref<T: PartialEq + Clone>(before: &T, after: &T) -> Option<T> {
 
 /// Given two `CodeMirrorDocBlocks`, return a list of changes between them.
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn diff_code_mirror_doc_blocks(
     before: &CodeMirrorDocBlockVec,
     after: &CodeMirrorDocBlockVec,
@@ -1898,8 +1903,8 @@ pub fn diff_code_mirror_doc_blocks(
     // doesn't matter, since it's not used.
     diff_all(
         &Hunk {
-            before: (before.len() as u32..0),
-            after: after.len() as u32..0,
+            before: (u32::try_from(before.len()).unwrap_or(u32::MAX)..0),
+            after: u32::try_from(after.len()).unwrap_or(u32::MAX)..0,
         },
         &mut change_specs,
     );

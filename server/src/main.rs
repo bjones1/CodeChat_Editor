@@ -110,6 +110,7 @@ enum Commands {
 // The following code implements the command-line interface for the CodeChat
 // Editor.
 impl Cli {
+    #[allow(clippy::too_many_lines)]
     fn run(self, addr: &SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
             Commands::Serve {
