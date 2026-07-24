@@ -290,6 +290,8 @@ pub async fn harness<
     //
     // Comment/uncomment these out to debug test failures.
     caps.add_arg("--headless")?;
+    // See [SO](https://stackoverflow.com/questions/78996364/chrome-129-headless-shows-blank-window) -- this prevents a blank windows popping up for each test. Tested with Chrome version 150.0.7871.47 (Official Build) (64-bit).
+    caps.add_arg("--window-position=-2400,-2400")?;
     //caps.add_arg("--auto-open-devtools-for-tabs")?;
     // Insert the code in a test to pause it for manual inspection.
     //use std::time::Duration;
