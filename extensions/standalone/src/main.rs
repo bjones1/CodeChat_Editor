@@ -47,7 +47,10 @@ use clap::{Parser, Subcommand};
 use log::{LevelFilter, error, info};
 
 // ### Local
-use code_chat_editor::webserver::{self, Credentials, GetServerUrlError, path_to_url};
+use code_chat_editor::{
+    ide::filewatcher::FilewatcherRoutes,
+    webserver::{self, Credentials, GetServerUrlError, LifecycleRoutes, path_to_url},
+};
 
 // Data structures
 // ---------------
@@ -124,10 +127,11 @@ impl Cli {
                     return Ok(());
                 }
                 webserver::main(
-                    None,
+                    &root_path(),
                     addr,
                     credentials.clone(),
                     log.unwrap_or(LevelFilter::Info),
+                    (FilewatcherRoutes, LifecycleRoutes),
                 )?;
             }
             Commands::Start { open } => {
@@ -361,6 +365,32 @@ fn fix_addr(addr: &SocketAddr) -> SocketAddr {
         addr
     } else {
         *addr
+    }
+}
+
+/// Compute the root path to pass to `webserver::main`; see its docs (and
+/// `webserver::set_root_path`'s) for what this must contain. In a `cargo
+/// dist`-packaged build, this binary sits alongside `client/static`,
+/// `log4rs.yml`, and `hashLocations.json` (see `dist.toml`'s `include`), so
+/// this program's own directory is already the root. In a dev build, this
+/// binary instead lives under `extensions/standalone/target/...`, so walk
+/// back up to the repository root.
+fn root_path() -> PathBuf {
+    let exe_dir = env::current_exe()
+        .expect("Unable to determine path to current executable.")
+        .parent()
+        .expect("Unable to find directory name containing the current executable.")
+        .to_path_buf();
+    if cfg!(not(debug_assertions)) {
+        return exe_dir;
+    }
+    // A test binary (from an inline `#[cfg(test)] mod test`) lives in an
+    // extra `deps` directory (e.g. `target/debug/deps/`) compared to a plain
+    // `cargo build`'s `target/debug/`.
+    if cfg!(test) {
+        exe_dir.join("../../../../..")
+    } else {
+        exe_dir.join("../../../..")
     }
 }
 

@@ -28,7 +28,8 @@ use std::{
 
 // ### Third-party
 use actix_web::{
-    HttpRequest, HttpResponse, Responder,
+    App, HttpRequest, HttpResponse, Responder,
+    dev::{ServiceFactory, ServiceRequest},
     error::{self, Error},
     get,
     http::header::{self, ContentType},
@@ -67,9 +68,9 @@ use crate::{
     processing::{CodeChatForWeb, CodeMirror, SourceFileMetadata},
     translation::{create_translation_queues, translation_task},
     webserver::{
-        EditorMessage, EditorMessageContents, RESERVED_MESSAGE_ID, UpdateMessageContents,
-        client_websocket, get_client_framework, html_wrapper, http_not_found, path_display,
-        send_response,
+        EditorMessage, EditorMessageContents, RESERVED_MESSAGE_ID, RegisterRoutes,
+        UpdateMessageContents, client_websocket, get_client_framework, html_wrapper,
+        http_not_found, path_display, send_response,
     },
 };
 
@@ -79,6 +80,29 @@ use crate::{
 static DRIVE_LETTER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new("^[a-zA-Z]:$").unwrap());
 
 pub const FILEWATCHER_PATH_PREFIX: &[&str] = &["fw", "fsc"];
+
+/// Registers the filewatcher IDE's routes. This IDE isn't used by every
+/// embedder of the `code_chat_editor` library (for example, the VSCode
+/// extension doesn't need it), so it's opt-in via
+/// [`crate::webserver::configure_app`]'s `register_routes` parameter instead
+/// of being wired in unconditionally.
+#[derive(Clone)]
+pub struct FilewatcherRoutes;
+
+impl RegisterRoutes for FilewatcherRoutes {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+    {
+        app.service(filewatcher_browser_endpoint)
+            .service(filewatcher_client_endpoint)
+            .service(filewatcher_websocket)
+            // Reroute to the filewatcher filesystem for typical user-requested
+            // URLs.
+            .route("/", web::get().to(filewatcher_root_fs_redirect))
+            .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
+    }
+}
 
 /// File browser endpoints
 /// ----------------------
@@ -780,12 +804,15 @@ mod tests {
             INITIAL_IDE_MESSAGE_ID, INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT,
             ResultErrTypes, ResultOkTypes, UpdateMessageContents, WebAppState, WebsocketQueues,
             configure_app, drop_leading_slash, make_app_data, send_response, set_root_path,
+            test_root_path,
         },
     };
     use test_utils::{
         cast, prep_test_dir,
         test_utils::{check_logger_errors, configure_testing_logger},
     };
+
+    use super::FilewatcherRoutes;
 
     async fn get_websocket_queues(
         // A path to the temporary directory where the source file is located.
@@ -794,9 +821,10 @@ mod tests {
         WebsocketQueues,
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error> + use<>,
     ) {
-        set_root_path(None).unwrap();
+        set_root_path(&test_root_path()).unwrap();
         let app_data = make_app_data(None);
-        let app = test::init_service(configure_app(App::new(), &app_data)).await;
+        let app =
+            test::init_service(configure_app(App::new(), &app_data, &FilewatcherRoutes)).await;
 
         // Load in a test source file to create a websocket.
         let uri = format!("/fw/fsb/{}/test.py", test_dir.to_string_lossy());

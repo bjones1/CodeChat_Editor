@@ -60,7 +60,7 @@ use crate::{
 };
 use crate::{
     translation::{EolType, find_eol_type},
-    webserver::main,
+    webserver::{LifecycleRoutes, main, test_root_path},
 };
 use test_utils::{
     cast,
@@ -73,10 +73,11 @@ use test_utils::{
 static WEBSERVER_HANDLE: LazyLock<JoinHandle<Result<(), Error>>> = LazyLock::new(|| {
     thread::spawn(|| {
         main(
-            None,
+            &test_root_path(),
             &SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT),
             None,
             log::LevelFilter::Debug,
+            LifecycleRoutes,
         )
     })
 });

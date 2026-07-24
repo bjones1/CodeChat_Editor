@@ -131,6 +131,7 @@ struct TypeScriptBuildOptions {
 // Constants
 // ---------
 static VSCODE_PATH: &str = "../extensions/VSCode";
+static STANDALONE_PATH: &str = "../extensions/standalone";
 static CLIENT_PATH: &str = "../client";
 static BUILDER_PATH: &str = "../builder";
 static TEST_UTILS_PATH: &str = "../test_utils";
@@ -383,6 +384,8 @@ fn run_install(dev: bool) -> io::Result<()> {
         cargo fetch --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo fetch";
         cargo fetch --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo fetch";
+        cargo fetch --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo fetch";
         cargo fetch --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo fetch";
@@ -444,6 +447,8 @@ fn run_update() -> io::Result<()> {
         cargo update --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo update";
         cargo update --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo update";
+        cargo update --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo update";
         cargo update --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo update";
@@ -457,6 +462,8 @@ fn run_update() -> io::Result<()> {
         cargo outdated --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo outdated";
         cargo outdated --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo outdated";
+        cargo outdated --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo outdated";
         cargo outdated --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo outdated";
@@ -483,6 +490,9 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         info "VSCode extension: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$VSCODE_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo clippy and fmt";
+        cargo clippy --all-targets --all-features --manifest-path=$STANDALONE_PATH/Cargo.toml -- $clippy_check_only;
+        cargo fmt --all $check --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$TEST_UTILS_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
@@ -493,6 +503,8 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cargo audit --file=$BUILDER_PATH/Cargo.lock --no-fetch;
         info "VSCode extension: cargo audit";
         cargo audit --file=$VSCODE_PATH/Cargo.lock --no-fetch;
+        info "Standalone: cargo audit";
+        cargo audit --file=$STANDALONE_PATH/Cargo.lock --no-fetch;
         info "test_utils: cargo audit";
         cargo audit --file=$TEST_UTILS_PATH/Cargo.lock --no-fetch;
 
@@ -503,6 +515,9 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cargo sort $check;
         cd $VSCODE_PATH;
         info "VSCode extension: cargo sort";
+        cargo sort $check;
+        cd ../standalone;
+        info "Standalone: cargo sort";
         cargo sort $check;
         info "test_utils: cargo sort";
         cd ../$TEST_UTILS_PATH;
@@ -533,6 +548,8 @@ fn run_test() -> io::Result<()> {
         cargo test --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo test";
         cargo test --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo test";
+        cargo test --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo test";
         cargo test --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo test";
@@ -569,6 +586,8 @@ fn run_build() -> io::Result<()> {
         cargo build --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "cargo build";
         cargo build;
+        info "Standalone: cargo build";
+        cargo build --manifest-path=$STANDALONE_PATH/Cargo.toml;
     )?;
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists(format!("{CLIENT_PATH}/static/bundled"))?;

@@ -23,4 +23,4 @@
 [dist]
 # Extra static files to include in each App (path relative to this Cargo.toml's
 # dir)
-include = ["log4rs.yml", "hashLocations.json", "../client/static"]
+include = ["../../server/log4rs.yml", "../../server/hashLocations.json", "../../client/static"]

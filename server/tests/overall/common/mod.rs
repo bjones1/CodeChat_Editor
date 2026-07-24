@@ -40,12 +40,14 @@
 // ### Standard library
 use std::{
     collections::HashMap,
-    env,
     error::Error,
     panic::AssertUnwindSafe,
     path::{Path, PathBuf},
     time::Duration,
 };
+// Only used on Linux, to check whether CI is running this test.
+#[cfg(target_os = "linux")]
+use std::env;
 
 use assert_fs::TempDir;
 // ### Third-party
@@ -66,7 +68,7 @@ use code_chat_editor::{
     ide::CodeChatEditorServer,
     webserver::{
         CursorPosition, EditorMessage, EditorMessageContents, MESSAGE_ID_INCREMENT, ResultErrTypes,
-        ResultOkTypes, UpdateMessageContents, set_root_path,
+        ResultOkTypes, UpdateMessageContents, set_root_path, test_root_path,
     },
 };
 use test_utils::cast;
@@ -313,8 +315,7 @@ pub async fn harness<
     // certain this is correct. Hopefully, it's good enough for testing.
     let ret = AssertUnwindSafe(async move {
         // ### Setup
-        let p = env::current_exe().unwrap().parent().unwrap().join("../..");
-        set_root_path(Some(&p)).unwrap();
+        set_root_path(&test_root_path()).unwrap();
         // Wrap the server so every call the test framework makes also drains
         // the browser's JavaScript console log (see `CodeChatEditorServerLog`).
         let codechat_server = CodeChatEditorServerLog::new(

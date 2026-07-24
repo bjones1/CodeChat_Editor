@@ -19,15 +19,16 @@
 // -------
 //
 // ### Standard library
-//
-// None.
-//
+#[cfg(not(target_os = "macos"))]
+use std::{thread::sleep, time::Duration};
+
 // ### Third-party
 use actix_web::{App, HttpResponse, HttpServer, web};
 use assert_cmd::Command;
 use predicates::{prelude::predicate, str::contains};
 
 // ### Local
+use test_utils::prep_test_dir;
 use tokio::task::spawn_blocking;
 
 // Support functions
@@ -170,4 +171,34 @@ fn test_port_out_of_range() {
 fn test_port_not_a_number() {
     let assert = get_server().args(["--port", "abc", "serve"]).assert();
     assert.failure().stderr(contains("isn't a port number"));
+}
+
+// Test startup outside the repo path. For some reason, this fails
+// intermittently on Mac. Ignore these failures.
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn test_other_path() {
+    let (temp_dir, test_dir) = prep_test_dir!();
+
+    // Start the server. Calling `output()` causes the program to hang; call
+    // `status()` instead. Since the `assert_cmd` crates doesn't offer this, use
+    // the std lib instead.
+    std::process::Command::new(get_server().get_program())
+        .args(["--port", "8083", "start"])
+        .current_dir(&test_dir)
+        .status()
+        .expect("failed to start server");
+
+    // Stop it.
+    get_server()
+        .args(["--port", "8083", "stop"])
+        .current_dir(&test_dir)
+        .assert()
+        .success();
+
+    // Wait for the server to exit, since it locks the temp\_dir.
+    sleep(Duration::from_secs(3));
+
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
 }

@@ -122,6 +122,7 @@ impl CodeChatEditorServer {
             &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             None,
             capture_spool_path,
+            webserver::NoExtraRoutes,
         )?;
         let server_handle = server.handle();
 

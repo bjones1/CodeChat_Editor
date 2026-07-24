@@ -86,14 +86,8 @@ use url::Url;
 // ### Local
 //use crate::capture::EventCapture;
 use crate::{
-    ide::{
-        filewatcher::{
-            filewatcher_browser_endpoint, filewatcher_client_endpoint,
-            filewatcher_root_fs_redirect, filewatcher_websocket,
-        },
-        vscode::{
-            serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
-        },
+    ide::vscode::{
+        serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
     },
     processing::{
         CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, find_path_to_toc,
@@ -537,48 +531,42 @@ static CODECHAT_EDITOR_PROJECT_CSS: LazyLock<String> = LazyLock::new(|| {
 // and `hashLocations.json` in a production build, or `client/` and `server/` in
 // a development build.
 pub fn set_root_path(
-    // The path where this extension's files reside. `None` if this is running
-    // an a standalone server, instead of as an extension loaded by an IDE.
-    extension_base_path: Option<&Path>,
+    // The root path to use, already resolved by the caller. Since the correct
+    // value depends entirely on that caller's own build/deployment layout
+    // (an installed VSCode extension's directory, a dev build's location
+    // under `target/`, a `cargo dist`-packaged binary's directory, ...), this
+    // function does no further adjustment -- it's the caller's job to land on
+    // the right directory, typically using its own `cfg!(debug_assertions)`/
+    // `cfg!(test)` checks. See `extensions/standalone/src/main.rs`'s
+    // `root_path` for an example.
+    base_path: &Path,
 ) -> io::Result<()> {
-    // If the extension provided a base path, use that; otherwise, get the path
-    // to this executable.
-    let exe_path;
-    let exe_dir = if let Some(ed) = extension_base_path {
-        ed
-    } else {
-        exe_path = env::current_exe().expect("Unable to determine path to current executable.");
-        exe_path
-            .parent()
-            .expect("Unable to find directory name containing the current executable.")
-    };
-    #[cfg(not(any(test, debug_assertions)))]
-    let root_path = PathBuf::from(exe_dir);
-    #[cfg(any(test, debug_assertions, coverage))]
-    let mut root_path = PathBuf::from(exe_dir);
-    // When running tests, the executable lives in an extra `deps` directory
-    // (e.g. `target/debug/deps/`) compared to a plain `cargo build`
-    // (`target/debug/`). In development, this extra directory level for the
-    // extension isn't needed.
-    #[cfg(test)]
-    if extension_base_path.is_none() {
-        root_path.push("..");
-    }
-    // `cargo llvm-cov` builds into `target/llvm-cov-target/` instead of
-    // `target/`, which adds one extra directory level compared to a plain
-    // `cargo test`/`cargo build`; account for it here.
-    #[cfg(coverage)]
-    root_path.push("..");
-    // Note that `debug_assertions` is also enabled for testing, so this adds to
-    // the previous line when running tests.
-    #[cfg(debug_assertions)]
-    root_path.push(if extension_base_path.is_some() {
-        "../.."
-    } else {
-        "../../.."
-    });
-    *ROOT_PATH.lock().unwrap() = root_path.canonicalize()?;
+    *ROOT_PATH.lock().unwrap() = base_path.canonicalize()?;
     Ok(())
+}
+
+// A `base_path` for this package's own test suites to pass to
+// `set_root_path`/`main` when they start a real webserver in-process
+// (`ide::vscode::tests`, `ide::filewatcher::tests`, and the `tests/overall`
+// integration tests). Not `#[cfg(test)]`-gated: integration tests under
+// `tests/` link this crate as a normal (non-`--test`) dependency, so a
+// `#[cfg(test)]` item wouldn't be visible to them. All these test binaries
+// are built under `server/target/debug/deps/...` (one directory deeper than a
+// plain `cargo build`'s `server/target/debug/`), or one directory deeper
+// still under `cargo llvm-cov`.
+#[must_use]
+pub fn test_root_path() -> PathBuf {
+    let exe_dir = env::current_exe()
+        .expect("Unable to determine path to current executable.")
+        .parent()
+        .expect("Unable to find directory name containing the current executable.")
+        .to_path_buf();
+    let exe_dir = if cfg!(coverage) {
+        exe_dir.join("..")
+    } else {
+        exe_dir
+    };
+    exe_dir.join("../../../..")
 }
 
 // Webserver functionality
@@ -1469,26 +1457,25 @@ pub fn client_websocket<S: BuildHasher + 'static>(
 // --------------
 #[actix_web::main]
 pub async fn main(
-    extension_base_path: Option<&Path>,
+    base_path: &Path,
     addr: &SocketAddr,
     credentials: Option<Credentials>,
     level: LevelFilter,
+    register_routes: impl RegisterRoutes,
 ) -> std::io::Result<()> {
-    init_server(extension_base_path, level)?;
-    let server = setup_server(addr, credentials)?.0;
+    init_server(base_path, level)?;
+    let server = setup_server(addr, credentials, register_routes)?.0;
     server.await
 }
 
 // Perform global init of the server. This must only be called once; it must be
 // called before the server is run.
 pub fn init_server(
-    // If provided, the path to the location of this extension's files. This is
-    // used to locate static files for the webserver, etc. When None, assume the
-    // default layout.
-    extension_base_path: Option<&Path>,
+    // See `set_root_path`'s docs for what this should contain.
+    base_path: &Path,
     level: LevelFilter,
 ) -> std::io::Result<()> {
-    set_root_path(extension_base_path)?;
+    set_root_path(base_path)?;
     // The unit tests include a test logger; don't config the logger in a test
     // build.
     #[cfg(test)]
@@ -1503,15 +1490,17 @@ pub fn init_server(
 pub fn setup_server(
     addr: &SocketAddr,
     credentials: Option<Credentials>,
+    register_routes: impl RegisterRoutes,
 ) -> std::io::Result<(Server, Data<AppState>)> {
     let capture_spool_path = ROOT_PATH.lock().unwrap().join("capture-spool");
-    setup_server_with_capture_spool(addr, credentials, &capture_spool_path)
+    setup_server_with_capture_spool(addr, credentials, &capture_spool_path, register_routes)
 }
 
 pub fn setup_server_with_capture_spool(
     addr: &SocketAddr,
     credentials: Option<Credentials>,
     capture_spool_path: &Path,
+    register_routes: impl RegisterRoutes,
 ) -> std::io::Result<(Server, Data<AppState>)> {
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
@@ -1525,6 +1514,7 @@ pub fn setup_server_with_capture_spool(
                 auth,
             )),
             &app_data_server,
+            &register_routes,
         )
     })
     // We only have one user; don't spawn lots of threads.
@@ -1628,13 +1618,77 @@ fn make_app_data_with_capture_spool(
     })
 }
 
-// Configure the web application. I'd like to make this return an
-// `App<AppEntry>`, but `AppEntry` is a private module.
-pub fn configure_app<T>(app: App<T>, app_data: &WebAppState) -> App<T>
+// A callback which adds IDE-specific routes to the web application.
+// `HttpServer::new` builds a fresh `App` per worker, and its inner service
+// factory type (`AppEntry`) is private to `actix-web`; a plain
+// `Fn(App<T>) -> App<T>` closure can't be named as a field or parameter type
+// generically enough to pass through `setup_server`. This trait sidesteps
+// that: its method is itself generic over `T`, so a single implementor works
+// for whatever `T` `HttpServer::new` picks internally.
+pub trait RegisterRoutes: Clone + Send + 'static {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>;
+}
+
+// A `RegisterRoutes` implementation which adds no additional routes.
+#[derive(Clone)]
+pub struct NoExtraRoutes;
+
+impl RegisterRoutes for NoExtraRoutes {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+    {
+        app
+    }
+}
+
+// Combine two `RegisterRoutes` implementors into one, so a caller (such as
+// the standalone CLI) can opt into more than one route group.
+impl<A: RegisterRoutes, B: RegisterRoutes> RegisterRoutes for (A, B) {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+    {
+        self.1.register(self.0.register(app))
+    }
+}
+
+// Registers the `/ping` and `/stop` process-lifecycle routes. These are only
+// meaningful when the server runs as an independent OS process that another
+// process must poll for liveness and can ask to shut down over HTTP -- the
+// standalone CLI's `start`/`stop` subcommands. The VSCode extension embeds
+// the server in-process and controls its lifecycle directly via
+// [`crate::ide::CodeChatEditorServer::stop_server`], so it doesn't need these
+// routes. This crate's own test harness (`ide::vscode::tests`) also registers
+// them, reusing `/ping` to detect when its shared test webserver has started.
+#[derive(Clone)]
+pub struct LifecycleRoutes;
+
+impl RegisterRoutes for LifecycleRoutes {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+    {
+        app.service(ping).service(stop)
+    }
+}
+
+// Configure the web application with the core routes shared by every IDE
+// integration. Callers (such as the filewatcher IDE) that need additional
+// routes should register them via `register_routes`, invoked after the core
+// routes are added. I'd like to make this return an `App<AppEntry>`, but
+// `AppEntry` is a private module.
+pub fn configure_app<T>(
+    app: App<T>,
+    app_data: &WebAppState,
+    register_routes: &impl RegisterRoutes,
+) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
 {
-    app
+    let app = app
         // Provide data to all endpoints -- the compiler lexers.
         .app_data(app_data.clone())
         // Serve static files per the
@@ -1645,19 +1699,11 @@ where
         ))
         // These endpoints serve the files from the filesystem and the
         // websockets.
-        .service(filewatcher_browser_endpoint)
-        .service(filewatcher_client_endpoint)
-        .service(filewatcher_websocket)
         .service(serve_vscode_fs)
         .service(vscode_ide_websocket)
         .service(vscode_client_websocket)
-        .service(vscode_client_framework)
-        .service(ping)
-        .service(stop)
-        // Reroute to the filewatcher filesystem for typical user-requested
-        // URLs.
-        .route("/", web::get().to(filewatcher_root_fs_redirect))
-        .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
+        .service(vscode_client_framework);
+    register_routes.register(app)
 }
 
 // Utilities
