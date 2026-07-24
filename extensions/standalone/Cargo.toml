@@ -16,44 +16,69 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# `Cargo.toml` -- Rust interface for the VSCode extension
-# =======================================================
+# `Cargo.toml` -- Rust build/package management config for the standalone CLI
+# =============================================================================
 #
 # General package configurations
 # ------------------------------
 [package]
 authors = ["Bryan A. Jones", "Peter Loux"]
 categories = ["development-tools", "text-editors"]
-description = "A programmer's word processor."
+description = "A programmer's word processor -- standalone command-line server."
 edition = "2024"
 homepage = "https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md"
 keywords = ["literate programming"]
 license = "GPL-3.0-only"
-name = "codechat-editor-vscode-extension"
-readme = "../README.md"
+name = "codechat-editor-standalone"
+readme = "../../README.md"
 repository = "https://github.com/bjones1/CodeChat_Editor"
 version = "0.2.0"
 
-[lib]
-crate-type = ["cdylib"]
-
+# Dependencies
+# ------------
 [dependencies]
+clap = { version = "4", features = ["derive"] }
 codechat-editor-server = { path = "../../server" }
 log = { version = "0.4", features = ["release_max_level_warn"] }
-napi = { version = "3.0.0", features = ["tokio_rt"] }
-napi-derive = "3.0.0"
-serde_json = "1.0.145"
+minreq = "3"
+tokio = { version = "1", features = ["full"] }
+webbrowser = "1.0.5"
 
-[build-dependencies]
-napi-build = "2"
+# ### Development-only dependencies
+[dev-dependencies]
+actix-rt = "2.9.0"
+actix-web = "4"
+assert_cmd = "2"
+assert_fs = "1"
+assertables = "10"
+predicates = "3.1.2"
+test_utils = { path = "../../test_utils" }
 
+# Release
+# -------
 [profile.release]
 codegen-units = 1
 lto = true
+opt-level = 3
 panic = "abort"
 strip = "symbols"
 
+# The profile that `cargo dist` will build with.
+[profile.dist]
+inherits = "release"
+
+# Code coverage
+# -------------
+#
+[lints.rust]
+# Avoid a lint about the `coverage` cfg set by `cargo llvm-cov` (see `bt
+# cover`).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+# Clippy config
+# -------------
 [lints.clippy]
 pedantic = { level = "warn", priority = 0 }
 missing_errors_doc = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
 doc_markdown = { level = "allow", priority = 1 }

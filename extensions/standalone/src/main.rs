@@ -47,7 +47,10 @@ use clap::{Parser, Subcommand};
 use log::{LevelFilter, error, info};
 
 // ### Local
-use code_chat_editor::webserver::{self, Credentials, GetServerUrlError, path_to_url};
+use code_chat_editor::{
+    ide::filewatcher::FilewatcherRoutes,
+    webserver::{self, Credentials, GetServerUrlError, LifecycleRoutes, path_to_url},
+};
 
 // Data structures
 // ---------------
@@ -91,7 +94,7 @@ enum Commands {
         log: Option<LevelFilter>,
 
         /// Define the username:password used to limit access to the server. By
-        /// default, access is unlimited. The username may not contain a colon.-
+        /// default, access is unlimited. The username may not contain a colon.
         #[arg(short, long, value_parser = parse_credentials)]
         auth: Option<Credentials>,
     },
@@ -110,6 +113,7 @@ enum Commands {
 // The following code implements the command-line interface for the CodeChat
 // Editor.
 impl Cli {
+    #[allow(clippy::too_many_lines)]
     fn run(self, addr: &SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
         match &self.command {
             Commands::Serve {
@@ -123,10 +127,11 @@ impl Cli {
                     return Ok(());
                 }
                 webserver::main(
-                    None,
+                    &root_path(),
                     addr,
                     credentials.clone(),
                     log.unwrap_or(LevelFilter::Info),
+                    (FilewatcherRoutes, LifecycleRoutes),
                 )?;
             }
             Commands::Start { open } => {
@@ -158,11 +163,10 @@ impl Cli {
                                 }
 
                                 return Ok(());
-                            } else {
-                                eprintln!(
-                                    "Unexpected response from server: {body}, status code = {status_code}"
-                                );
                             }
+                            eprintln!(
+                                "Unexpected response from server: {body}, status code = {status_code}"
+                            );
                         }
                         Err(err) => {
                             // Use this to skip the print from a nested if
@@ -202,7 +206,7 @@ impl Cli {
                             match self.test_mode {
                                 None => cmd = Command::new(&current_exe),
                                 Some(TestMode::NotFound) => {
-                                    cmd = Command::new("nonexistent-command")
+                                    cmd = Command::new("nonexistent-command");
                                 }
                                 Some(TestMode::Sleep) => {
                                     cmd = Command::new(&current_exe);
@@ -242,10 +246,12 @@ impl Cli {
                                 Ok(Some(status)) => {
                                     let mut stdout_buf = String::new();
                                     let mut stderr_buf = String::new();
-                                    let stdout = child.stdout.as_mut().unwrap();
-                                    let stderr = child.stderr.as_mut().unwrap();
-                                    stdout.read_to_string(&mut stdout_buf).unwrap();
-                                    stderr.read_to_string(&mut stderr_buf).unwrap();
+                                    if let Some(stdout) = child.stdout.as_mut() {
+                                        let _ = stdout.read_to_string(&mut stdout_buf);
+                                    }
+                                    if let Some(stderr) = child.stderr.as_mut() {
+                                        let _ = stderr.read_to_string(&mut stderr_buf);
+                                    }
                                     if status.success() {
                                         return Err(format!("Server unexpectedly shut down.\n{stdout_buf}\n{stderr_buf}").into());
                                     }
@@ -320,6 +326,8 @@ fn port_in_range(s: &str) -> Result<u16, String> {
         .parse()
         .map_err(|_| format!("`{s}` isn't a port number"))?;
     if PORT_RANGE.contains(&port) {
+        // Code above guarantees this is safe.
+        #[allow(clippy::cast_possible_truncation)]
         Ok(port as u16)
     } else {
         Err(format!(
@@ -347,7 +355,7 @@ fn parse_credentials(s: &str) -> Result<Credentials, String> {
 /// This is used by `ping` to transform the "access connections from any
 /// address" address into localhost, a valid destination address for a ping.
 fn fix_addr(addr: &SocketAddr) -> SocketAddr {
-    if addr.ip() == IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)) {
+    if addr.ip() == IpAddr::V4(Ipv4Addr::UNSPECIFIED) {
         let mut addr = *addr;
         addr.set_ip(IpAddr::V4(Ipv4Addr::LOCALHOST));
         addr
@@ -360,7 +368,33 @@ fn fix_addr(addr: &SocketAddr) -> SocketAddr {
     }
 }
 
-#[cfg(not(tarpaulin_include))]
+/// Compute the root path to pass to `webserver::main`; see its docs (and
+/// `webserver::set_root_path`'s) for what this must contain. In a `cargo
+/// dist`-packaged build, this binary sits alongside `client/static`,
+/// `log4rs.yml`, and `hashLocations.json` (see `dist.toml`'s `include`), so
+/// this program's own directory is already the root. In a dev build, this
+/// binary instead lives under `extensions/standalone/target/...`, so walk
+/// back up to the repository root.
+fn root_path() -> PathBuf {
+    let exe_dir = env::current_exe()
+        .expect("Unable to determine path to current executable.")
+        .parent()
+        .expect("Unable to find directory name containing the current executable.")
+        .to_path_buf();
+    if cfg!(not(debug_assertions)) {
+        return exe_dir;
+    }
+    // A test binary (from an inline `#[cfg(test)] mod test`) lives in an
+    // extra `deps` directory (e.g. `target/debug/deps/`) compared to a plain
+    // `cargo build`'s `target/debug/`.
+    if cfg!(test) {
+        exe_dir.join("../../../../..")
+    } else {
+        exe_dir.join("../../../..")
+    }
+}
+
+#[cfg_attr(coverage, coverage(off))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let addr = SocketAddr::new(cli.host, cli.port);
@@ -432,7 +466,7 @@ mod test {
     // ### `fix_addr`
     #[test]
     fn test_fix_addr_ipv4_unspecified() {
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8080);
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 8080);
         let fixed = fix_addr(&addr);
         assert_eq!(fixed.ip(), IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert_eq!(fixed.port(), 8080);
@@ -449,7 +483,7 @@ mod test {
     #[test]
     fn test_fix_addr_specific_unchanged() {
         // A specific (non-unspecified) address is returned unchanged.
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
         assert_eq!(fix_addr(&addr), addr);
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5)), 1234);
         assert_eq!(fix_addr(&addr), addr);

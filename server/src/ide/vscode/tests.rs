@@ -23,6 +23,7 @@ use std::{
     io::{Error, Read},
     net::SocketAddr,
     path::{self, Path, PathBuf},
+    sync::LazyLock,
     thread::{self, JoinHandle},
     time::{Duration, SystemTime},
 };
@@ -32,7 +33,6 @@ use assertables::{assert_contains, assert_ends_with, assert_starts_with};
 use dunce::simplified;
 use futures_util::{SinkExt, StreamExt};
 use indoc::indoc;
-use lazy_static::lazy_static;
 use minreq;
 use path_slash::PathExt;
 use pretty_assertions::assert_eq;
@@ -60,7 +60,7 @@ use crate::{
 };
 use crate::{
     translation::{EolType, find_eol_type},
-    webserver::main,
+    webserver::{LifecycleRoutes, main, test_root_path},
 };
 use test_utils::{
     cast,
@@ -69,18 +69,18 @@ use test_utils::{
 
 // Globals
 // -------
-lazy_static! {
-    // Run a single webserver for all tests.
-    static ref WEBSERVER_HANDLE: JoinHandle<Result<(), Error>> =
-        thread::spawn(|| {
-            main(
-                None,
-                &SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT),
-                None,
-                log::LevelFilter::Debug
-            )
-        });
-}
+// Run a single webserver for all tests.
+static WEBSERVER_HANDLE: LazyLock<JoinHandle<Result<(), Error>>> = LazyLock::new(|| {
+    thread::spawn(|| {
+        main(
+            &test_root_path(),
+            &SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT),
+            None,
+            log::LevelFilter::Debug,
+            LifecycleRoutes,
+        )
+    })
+});
 
 // Constants
 // ---------
@@ -112,7 +112,7 @@ async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
     let msg_txt = loop {
         let msg = select! {
             data = ws_stream.next() => data.unwrap().unwrap(),
-            _ = sleep(Duration::from_secs(6) - now.elapsed().unwrap()) => panic!("Timeout waiting for message")
+            () = sleep(Duration::from_secs(6).checked_sub(now.elapsed().unwrap()).unwrap()) => panic!("Timeout waiting for message")
         };
         match msg {
             Message::Close(_) => panic!("Unexpected close message."),
@@ -130,7 +130,7 @@ async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
 type WebSocketStreamTcp = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 async fn connect_async_server(prefix: &str, connection_id: &str) -> WebSocketStreamTcp {
-    connect_async(format!("ws://127.0.0.1:{IP_PORT}{prefix}/{connection_id}",))
+    connect_async(format!("ws://127.0.0.1:{IP_PORT}{prefix}/{connection_id}"))
         .await
         .expect("Failed to connect")
         .0
@@ -194,7 +194,7 @@ async fn open_client<S: AsyncRead + AsyncWrite + Unpin>(ws_ide: &mut WebSocketSt
 /// Perform all the setup for testing the Server via IDE and Client websockets.
 /// This should be invoked by the `prep_test!` macro; otherwise, test files
 /// won't be found.
-async fn _prep_test(
+async fn prep_test_core(
     connection_id: &str,
     test_full_name: &str,
 ) -> (TempDir, PathBuf, WebSocketStreamTcp, WebSocketStreamTcp) {
@@ -205,7 +205,7 @@ async fn _prep_test(
     let now = SystemTime::now();
     let mut started = false;
     while now.elapsed().unwrap() < WEBSERVER_START_TIMEOUT {
-        if minreq::get(format!("http://127.0.0.1:{IP_PORT}/ping",))
+        if minreq::get(format!("http://127.0.0.1:{IP_PORT}/ping"))
             .send()
             .is_ok_and(|response| response.as_bytes() == b"pong")
         {
@@ -224,13 +224,13 @@ async fn _prep_test(
     (temp_dir, test_dir, ws_ide, ws_client)
 }
 
-/// This calls `_prep_test` with the current function name. It must be a macro,
+/// This calls `prep_test_core` with the current function name. It must be a macro,
 /// so that it's called with the test function's name; calling it inside
-/// `_prep_test` would give the wrong name.
+/// `prep_test_core` would give the wrong name.
 macro_rules! prep_test {
     ($connection_id: ident) => {{
         use test_utils::function_name;
-        _prep_test($connection_id, function_name!())
+        prep_test_core($connection_id, function_name!())
     }};
 }
 
@@ -263,7 +263,7 @@ async fn test_vscode_ide_websocket1() {
         &EditorMessage {
             id: INITIAL_IDE_MESSAGE_ID,
             message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: "".to_string(),
+                file_path: String::new(),
                 cursor_position: None,
                 scroll_position: None,
                 is_re_translation: false,
@@ -349,7 +349,7 @@ async fn test_vscode_ide_websocket3() {
             .unwrap()
             .status_code,
             404
-        )
+        );
     });
 
     // The HTTP request produces a `LoadFile` message.
@@ -393,7 +393,7 @@ async fn test_vscode_ide_websocket3a() {
     let file_path = test_dir.join("test.py");
     // Force the path separator to be Window-style for this test, even on
     // non-Windows platforms.
-    let file_path_str = file_path.to_str().unwrap().to_string().replace("/", "\\");
+    let file_path_str = file_path.to_str().unwrap().to_string().replace('/', "\\");
 
     // Since we expect a 404 error, wait some to ensure the 404 results from not
     // finding the requested file, instead of the web server not being fully
@@ -412,7 +412,7 @@ async fn test_vscode_ide_websocket3a() {
             .unwrap()
             .status_code,
             404
-        )
+        );
     });
 
     // The HTTP request produces a `LoadFile` message.
@@ -507,7 +507,7 @@ async fn test_vscode_ide_websocket8() {
             .unwrap()
             .status_code,
             200
-        )
+        );
     });
 
     // This should produce a `LoadFile` message.
@@ -557,7 +557,7 @@ async fn test_vscode_ide_websocket8() {
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
                             to: 1,
-                            indent: "".to_string(),
+                            indent: String::new(),
                             delimiter: "#".to_string(),
                             contents: "<p>testing".to_string()
                         }],
@@ -689,7 +689,7 @@ async fn test_vscode_ide_websocket7() {
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
                             to: 1,
-                            indent: "".to_string(),
+                            indent: String::new(),
                             delimiter: "#".to_string(),
                             contents: "<p>more".to_string()
                         }]
@@ -769,7 +769,7 @@ async fn test_vscode_ide_websocket7() {
                         doc_blocks: vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
                             from: 6,
                             to: 7,
-                            indent: "".to_string(),
+                            indent: String::new(),
                             delimiter: "#".to_string(),
                             contents: "<p>most".to_string(),
                         },),],
@@ -828,7 +828,7 @@ async fn test_vscode_ide_websocket6() {
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
                             to: 1,
-                            indent: "".to_string(),
+                            indent: String::new(),
                             delimiter: "#".to_string(),
                             contents: "less\n".to_string(),
                         }],
@@ -996,7 +996,7 @@ async fn test_vscode_ide_websocket4() {
                         doc_blocks: vec![CodeMirrorDocBlock {
                             from: 0,
                             to: 1,
-                            indent: "".to_string(),
+                            indent: String::new(),
                             delimiter: "#".to_string(),
                             contents: "<p>test.py".to_string()
                         }],

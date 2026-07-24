@@ -41,6 +41,7 @@ pub mod vscode;
 use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
     sync::Arc,
     thread,
     time::Duration,
@@ -109,18 +110,19 @@ impl CodeChatEditorServer {
     // Creating the server could fail, so this must return an `io::Result`.
     pub fn new() -> std::io::Result<CodeChatEditorServer> {
         let capture_spool_path = webserver::ROOT_PATH.lock().unwrap().join("capture-spool");
-        Self::new_with_capture_spool(capture_spool_path)
+        Self::new_with_capture_spool(&capture_spool_path)
     }
 
     pub fn new_with_capture_spool(
-        capture_spool_path: std::path::PathBuf,
+        capture_spool_path: &Path,
     ) -> std::io::Result<CodeChatEditorServer> {
         // Start the server.
         let (server, app_state) = webserver::setup_server_with_capture_spool(
             // A port of 0 requests the OS to assign an open port.
-            &SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0),
+            &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             None,
             capture_spool_path,
+            webserver::NoExtraRoutes,
         )?;
         let server_handle = server.handle();
 
@@ -165,9 +167,10 @@ impl CodeChatEditorServer {
         })
     }
 
-    // This returns an error if the conversion to JSON fails, `None` if the
-    // queue is closed, or a JSON-encoded string containing the message
-    // otherwise.
+    // This returns `None` if both the incoming-message queue and the
+    // expired-message queue are closed, or the next available message
+    // (an incoming message, or a synthetic timeout `Result` for an
+    // unacknowledged message) otherwise.
     pub async fn get_message(&self) -> Option<EditorMessage> {
         // Get a message -- either an expired message result or an incoming
         // message.
@@ -197,7 +200,7 @@ impl CodeChatEditorServer {
     // Like `get_message`, but with a timeout.
     pub async fn get_message_timeout(&self, timeout: Duration) -> Option<EditorMessage> {
         select! {
-            _ = sleep(timeout) => None,
+            () = sleep(timeout) => None,
             v = self.get_message() => v
         }
     }
@@ -231,11 +234,8 @@ impl CodeChatEditorServer {
             sleep(REPLY_TIMEOUT_MS).await;
             // Since the websocket failed to send a `Result`, produce a timeout
             // `Result` for it.
-            match expired_messages_tx.send(id).await {
-                Ok(join_handle) => join_handle,
-                Err(err) => {
-                    error!("Error -- unable to send expired message: {err}");
-                }
+            if let Err(err) = expired_messages_tx.send(id).await {
+                error!("Error -- unable to send expired message: {err}");
             }
         });
         // Add this to the list of pending message.
@@ -271,13 +271,14 @@ impl CodeChatEditorServer {
             .await
     }
 
+    #[must_use]
     pub fn capture_status(&self) -> crate::capture::CaptureStatus {
         webserver::capture_status(&self.app_state)
     }
 
     pub fn configure_capture_service(
         &self,
-        base_url: String,
+        base_url: &str,
         token: Option<String>,
     ) -> Result<(), String> {
         self.app_state
@@ -327,13 +328,13 @@ impl CodeChatEditorServer {
         self.send_message_timeout(EditorMessageContents::Update(UpdateMessageContents {
             file_path,
             cursor_position: cursor_position.map(CursorPosition::Line),
-            scroll_position: scroll_position.map(|x| x as f32),
+            scroll_position,
             is_re_translation: false,
             contents: option_contents.map(|contents| CodeChatForWeb {
                 metadata: SourceFileMetadata {
                     // The IDE doesn't need to provide the `mode`; this will
                     // determined by the server.
-                    mode: "".to_string(),
+                    mode: String::new(),
                 },
                 source: CodeMirrorDiffable::Plain(CodeMirror {
                     doc: contents.0,

@@ -19,10 +19,6 @@
 /// These are functional tests of the overall system, performed by attaching a
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
-// Modules
-// -------
-mod overall_common;
-
 // Imports
 // -------
 //
@@ -40,11 +36,12 @@ use thirtyfour::{
 };
 
 // ### Local
-use crate::overall_common::{
+use crate::common::{
     CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_document,
     click_element_top_left, get_version, optional_message, perform_loadfile,
     select_codechat_iframe,
 };
+use crate::make_test;
 use code_chat_editor::{
     processing::{
         CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
@@ -395,7 +392,7 @@ async fn test_6_core(
 
     // Check the content.
     let body_css = "#CodeChat-body .CodeChat-doc-contents";
-    let body_content = driver.find(By::Css(body_css)).await.unwrap();
+    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
     click_element_top_left(&driver, &body_content)
         .await
         .unwrap();

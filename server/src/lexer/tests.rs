@@ -33,12 +33,8 @@ fn build_doc_block(indent: &str, delimiter: &str, contents: &str) -> CodeDocBloc
         indent: indent.to_string(),
         delimiter: delimiter.to_string(),
         contents: contents.to_string(),
-        lines: contents.matches("\n").count()
-            + (if contents.chars().last().unwrap_or('\n') == '\n' {
-                0
-            } else {
-                1
-            }),
+        lines: contents.matches('\n').count()
+            + usize::from(contents.chars().last().unwrap_or('\n') != '\n'),
     })
 }
 
@@ -335,9 +331,9 @@ fn test_js() {
     // Indented block comments.
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
 /* Test
-   2 */"#,
+   2 */",
             js
         ),
         [
@@ -348,9 +344,9 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
   /* Test
-     2 */"#,
+     2 */",
             js
         ),
         [
@@ -361,10 +357,10 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
 /* Test
    2
- */"#,
+ */",
             js
         ),
         [
@@ -375,10 +371,10 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
   /* Test
      2
-   */"#,
+   */",
             js
         ),
         [
@@ -389,12 +385,12 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
   /* Test
      2
 
      3
-   */"#,
+   */",
             js
         ),
         [
@@ -406,9 +402,9 @@ fn test_js() {
     // Mis-indented block comments.
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
 /* Test
-  2 */"#,
+  2 */",
             js
         ),
         [
@@ -419,9 +415,9 @@ fn test_js() {
 
     assert_eq!(
         source_lexer(
-            r#"test_1();
+            r"test_1();
  /* Test
-   2 */"#,
+   2 */",
             js
         ),
         [
@@ -459,8 +455,7 @@ fn test_js() {
     );
 }
 
-// TODO: re-enable this test when heredocs are supported.
-#[ignore]
+#[ignore = "Re-enable this test where heredocs are supported."]
 #[test]
 fn test_cpp() {
     let llc = compile_lexers(get_language_lexer_vec());
@@ -590,29 +585,29 @@ fn test_rust() {
 
     assert_eq!(
         source_lexer(
-            r#" /* Depth 1
+            r" /* Depth 1
   /* Depth 2 comment */
   /* Depth 2
     /* Depth 3 */ */
   /* Depth 2
     /* Depth 3 comment */
    */
-More depth 1 */"#,
+More depth 1 */",
             rust
         ),
         [
             build_code_block(" /* Depth 1\n"),
             build_doc_block("  ", "/*", "Depth 2 comment\n"),
             build_code_block(
-                r#"  /* Depth 2
+                r"  /* Depth 2
     /* Depth 3 */ */
   /* Depth 2
-"#
+"
             ),
             build_doc_block("    ", "/*", "Depth 3 comment\n"),
             build_code_block(
-                r#"   */
-More depth 1 */"#
+                r"   */
+More depth 1 */"
             ),
         ]
     );
@@ -749,5 +744,28 @@ fn test_compiler() {
             .lexer_name
             .as_str(),
         "verilog"
+    );
+}
+
+#[test]
+fn test_utf8_indent_no_panic() {
+    // Regression test: a multi-byte UTF-8 character in a block comment's
+    // continuation line must not cause a byte-index char-boundary panic when
+    // computing/removing the comment's indentation.
+    let llc = compile_lexers(get_language_lexer_vec());
+    // Use SQL, since (unlike C/C++) it's lexed by the regex-based lexer
+    // rather than the PEG-based parser.
+    let sql = llc.map_mode_to_lexer.get(&stringit("sql")).unwrap();
+    let s = "/* Test\n \u{65E5}\u{672C}\u{8A9E} text\n*/\n";
+    // This must not panic; also verify the contents are preserved intact
+    // (since the multi-byte character prevents this comment from being
+    // recognized as consistently indented, it should be left unchanged).
+    assert_eq!(
+        source_lexer(s, sql),
+        [build_doc_block(
+            "",
+            "/*",
+            "Test\n \u{65E5}\u{672C}\u{8A9E} text\n\n"
+        )]
     );
 }

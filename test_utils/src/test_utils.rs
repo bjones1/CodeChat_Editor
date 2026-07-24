@@ -104,6 +104,7 @@ macro_rules! prep_test_dir {
 // store files for testing. A subdirectory tree, named by the module path then
 // name of the test function by convention, contains everything needed for this
 // test. Copy this over to a temporary directory, then run tests there.
+#[must_use]
 pub fn prep_test_dir_impl(
     // The name of and Rust path to the test function to prepare files for. Call
     // `prep_test_dir!()` to provide this parameter.
@@ -206,6 +207,7 @@ pub fn check_logger_errors(num_expected_errors: usize) {
 //
 // Here, the call to `get` really does require a `&String`, so the code above is
 // necessary. Calling `stringit` instead avoids the warning.
+#[must_use]
 pub fn stringit(s: &str) -> String {
     s.to_string()
 }

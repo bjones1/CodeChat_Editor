@@ -73,13 +73,13 @@ export const init = async (
     // below can't be overridden by these options. The only exception is a value
     // for `setup`, which will be combined with the setup defined in this
     // function.
-    addiitionalOptions: RawEditorOptions,
+    additionalOptions: RawEditorOptions,
 ) => {
     // Merge the provided options with this basic setup, giving priority to the
     // settings below.
     const combinedOptions: RawEditorOptions = Object.assign(
         {},
-        addiitionalOptions,
+        additionalOptions,
         {
             // See the list of
             // [plugins](https://www.tiny.cloud/docs/tinymce/latest/plugins/).

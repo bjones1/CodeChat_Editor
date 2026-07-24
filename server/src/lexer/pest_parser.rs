@@ -41,6 +41,7 @@
 #[macro_export]
 macro_rules! make_parse_to_code_doc_blocks {
     ($parser: ty) => {
+        #[allow(clippy::too_many_lines)]
         pub fn parse_to_code_doc_blocks(input: &str) -> Vec<$crate::lexer::CodeDocBlock> {
             // While Pest has no problem working with all types of line endings,
             // CodeMirror converts all line endings to `\n` then indexes strings
@@ -283,30 +284,30 @@ mod test {
     fn test_pest_c_1() {
         assert_eq!(
             c::parse_to_code_doc_blocks(indoc!(
-                r#"
-                //"#
+                r"
+                //"
             )),
             vec![CodeDocBlock::DocBlock(DocBlock {
-                indent: "".to_string(),
+                indent: String::new(),
                 delimiter: "//".to_string(),
-                contents: "".to_string(),
+                contents: String::new(),
                 lines: 0,
             })],
         );
         assert_eq!(
             c::parse_to_code_doc_blocks(indoc!(
-                r#"
+                r"
                 code;
                 /* Testing
                    1,
 
                    2, 3
-                 */"#
+                 */"
             )),
             vec![
                 CodeDocBlock::CodeBlock("code;\n".to_string()),
                 CodeDocBlock::DocBlock(DocBlock {
-                    indent: "".to_string(),
+                    indent: String::new(),
                     delimiter: "/*".to_string(),
                     contents: "Testing\n1,\n\n2, 3\n".to_string(),
                     lines: 4,
@@ -315,18 +316,18 @@ mod test {
         );
         assert_eq!(
             c::parse_to_code_doc_blocks(indoc!(
-                r#"
+                r"
                 code;
                 /* Testing
                  * 1,
                  *
                  * 2, 3
-                 */"#
+                 */"
             )),
             vec![
                 CodeDocBlock::CodeBlock("code;\n".to_string()),
                 CodeDocBlock::DocBlock(DocBlock {
-                    indent: "".to_string(),
+                    indent: String::new(),
                     delimiter: "/*".to_string(),
                     contents: "Testing\n1,\n\n2, 3\n".to_string(),
                     lines: 4,
@@ -362,7 +363,7 @@ mod test {
                     .to_string()
                 ),
                 CodeDocBlock::DocBlock(DocBlock {
-                    indent: "".to_string(),
+                    indent: String::new(),
                     delimiter: "#".to_string(),
                     contents: "A comment.\n".to_string(),
                     lines: 1,
@@ -398,7 +399,7 @@ mod test {
                     .to_string()
                 ),
                 CodeDocBlock::DocBlock(DocBlock {
-                    indent: "".to_string(),
+                    indent: String::new(),
                     delimiter: "#".to_string(),
                     contents: "A comment.".to_string(),
                     lines: 1,
@@ -425,7 +426,7 @@ mod test {
                     .to_string()
                 ),
                 CodeDocBlock::DocBlock(DocBlock {
-                    indent: "".to_string(),
+                    indent: String::new(),
                     delimiter: "#".to_string(),
                     contents: "A comment.".to_string(),
                     lines: 1,
@@ -450,7 +451,7 @@ mod test {
                     .to_string()
                 ),
                 CodeDocBlock::DocBlock(DocBlock {
-                    indent: "".to_string(),
+                    indent: String::new(),
                     delimiter: "#".to_string(),
                     contents: "A comment.".to_string(),
                     lines: 1,

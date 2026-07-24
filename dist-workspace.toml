@@ -20,7 +20,7 @@
 # [cargo-dist](https://opensource.axo.dev/cargo-dist/)
 # ==============================================================================
 [workspace]
-members = ["cargo:server/"]
+members = ["cargo:extensions/standalone/"]
 
 # Config for 'dist'
 [dist]

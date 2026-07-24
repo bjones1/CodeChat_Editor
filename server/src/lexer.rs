@@ -24,10 +24,13 @@ pub mod supported_languages;
 // -------
 //
 // ### Standard library
-use std::{cmp::min, collections::HashMap, sync::Arc};
+use std::{
+    cmp::min,
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 
 // ### Third-party
-use lazy_static::lazy_static;
 use log::trace;
 use regex::Regex;
 
@@ -263,12 +266,13 @@ pub enum CodeDocBlock {
 //
 // Create constant regexes needed by the lexer, following the
 // [Regex docs recommendation](https://docs.rs/regex/1.6.0/regex/index.html#example-avoid-compiling-the-same-regex-in-a-loop).
-lazy_static! {
-    static ref WHITESPACE_ONLY_REGEX: Regex = Regex::new("^[[:space:]]*$").unwrap();
-    /// TODO: This regex should also allow termination on an unescaped `${`
-    /// sequence, which then must count matching braces to find the end of the
-    /// expression.
-    static ref TEMPLATE_LITERAL_CLOSING_REGEX: Regex = Regex::new(
+static WHITESPACE_ONLY_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("^[[:space:]]*$").unwrap());
+/// TODO: This regex should also allow termination on an unescaped `${`
+/// sequence, which then must count matching braces to find the end of the
+/// expression.
+static TEMPLATE_LITERAL_CLOSING_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
         // Allow `.` to match *any* character, including a newline. See the
         // [regex docs](https://docs.rs/regex/1.6.0/regex/index.html#grouping-and-flags).
         &("(?s)".to_string() +
@@ -285,11 +289,13 @@ lazy_static! {
         ")*" +
         // Now, find the end of the string: the string delimiter.
         "`"),
-    ).unwrap();
+    )
+    .unwrap()
+});
 
-    /// A vector of all supported languages.
-    pub static ref LEXERS: LanguageLexersCompiled = compile_lexers(get_language_lexer_vec());
-}
+/// A vector of all supported languages.
+pub static LEXERS: LazyLock<LanguageLexersCompiled> =
+    LazyLock::new(|| compile_lexers(get_language_lexer_vec()));
 
 // Support C# verbatim string literals, which end with a `"`; a `""` inserts a
 // single " in the string.
@@ -301,6 +307,7 @@ const C_SHARP_VERBATIM_STRING_CLOSING: &str =
 /// ### Language "compiler"
 ///
 /// "Compile" a language description into regexes used to lex the language.
+#[allow(clippy::too_many_lines)]
 fn build_lexer_regex(
     // The language description to build regexes for.
     language_lexer: LanguageLexer,
@@ -375,7 +382,7 @@ fn build_lexer_regex(
             // If this is a single-character string delimiter, then we're done.
             if delimiter.chars().count() < 2 {
                 return String::new();
-            };
+            }
 
             // Otherwise, build a vector of substrings of the delimiter: for a
             // delimiter of `'''`, we want `["", "'"", "''"]`.
@@ -487,7 +494,7 @@ fn build_lexer_regex(
 
             // Look for either the delimiter or a newline to terminate the
             // string.
-            (false, NewlineSupport::None) => Regex::new(&format!("{}|\n", escaped_delimiter)),
+            (false, NewlineSupport::None) => Regex::new(&format!("{escaped_delimiter}|\n")),
         }
         .unwrap();
         regex_builder(
@@ -560,7 +567,7 @@ fn build_lexer_regex(
                 ),
             );
         }
-    };
+    }
 
     // This must be last, since it includes one group (so the index of all
     // future items will be off by 1). Build a regex for a heredoc start.
@@ -594,6 +601,7 @@ fn build_lexer_regex(
 
 // Compile lexers
 // --------------
+#[must_use]
 pub fn compile_lexers(language_lexer_arr: Vec<LanguageLexer>) -> LanguageLexersCompiled {
     let mut language_lexers_compiled = LanguageLexersCompiled {
         language_lexer_compiled_vec: Vec::new(),
@@ -637,6 +645,8 @@ pub fn compile_lexers(language_lexer_arr: Vec<LanguageLexer>) -> LanguageLexersC
 ///
 /// These linter warnings would IMHO make the code less readable.
 #[allow(clippy::bool_to_int_with_if)]
+#[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn source_lexer(
     // The source code to lex.
     source_code: &str,
@@ -725,12 +735,13 @@ pub fn source_lexer(
                     }
                 }
                 CodeDocBlock::CodeBlock(ref mut _last_code_block) => {
-                    if indent.is_empty() && delimiter.is_empty() {
-                        // Code blocks should never need to be appended to a
-                        // previous entry.
-                        panic!("Attempted to append code block contents to a previous entry.")
-                        //_last_code_block.push_str(contents);
-                    }
+                    // Code blocks should never need to be appended to a
+                    // previous entry.
+                    //_last_code_block.push_str(contents);
+                    assert!(
+                        !(indent.is_empty() && delimiter.is_empty()),
+                        "Attempted to append code block contents to a previous entry."
+                    );
                 }
             }
         }
@@ -808,7 +819,7 @@ pub fn source_lexer(
                                    // match will be appended to the current code
                                    // block.
                                    |closing_regex: &Regex| {
-                trace!("Searching for the end of this token using the pattern '{:?}'.", closing_regex);
+                trace!("Searching for the end of this token using the pattern '{closing_regex:?}'.");
 
                 // Add the opening delimiter to the code.
                 source_code_unlexed_index += matching_group_str.len();
@@ -875,10 +886,9 @@ pub fn source_lexer(
                             &source_code[full_comment_start_index..source_code_unlexed_index];
 
                         trace!(
-                            "This is an inline comment. Source code before the line containing this comment is:\n'{}'\n\
-                        The text preceding this comment is: '{}'.\n\
-                        The comment is: '{}'\n",
-                            code_lines_before_comment, comment_line_prefix, full_comment
+                            "This is an inline comment. Source code before the line containing this comment is:\n'{code_lines_before_comment}'\n\
+                        The text preceding this comment is: '{comment_line_prefix}'.\n\
+                        The comment is: '{full_comment}'\n"
                         );
 
                         // **Next**, determine if this comment is a doc block.
@@ -933,13 +943,9 @@ pub fn source_lexer(
 
                             trace!(
                                 "This is a doc block. Possibly added the preceding code block\n\
-                            '{}'.\n\
-                            Added a doc block with indent = '{}', delimiter = '{}', and contents =\n\
-                            '{}'.\n",
-                                current_code_block,
-                                comment_line_prefix,
-                                matching_group_str,
-                                contents
+                            '{current_code_block}'.\n\
+                            Added a doc block with indent = '{comment_line_prefix}', delimiter = '{matching_group_str}', and contents =\n\
+                            '{contents}'.\n"
                             );
 
                             // We've now stored the current code block (which
@@ -964,8 +970,7 @@ pub fn source_lexer(
                             source_code_unlexed_index + matching_group_str.len();
 
                         trace!(
-                            "The opening delimiter is '{}', and the closing delimiter regex is '{}'.",
-                            matching_group_str, comment_delim_regex
+                            "The opening delimiter is '{matching_group_str}', and the closing delimiter regex is '{comment_delim_regex}'."
                         );
 
                         // For nested comments, only treat the innermost comment
@@ -1011,11 +1016,18 @@ pub fn source_lexer(
                         while nesting_depth != 0 {
                             // Get the index of the next block comment
                             // delimiter.
-                            trace!(
-                                "Looking for a block comment delimiter in '{}'.",
-                                &source_code[comment_start_index
-                                    ..min(comment_start_index + 30, source_code.len())]
-                            );
+                            trace!("Looking for a block comment delimiter in '{}'.", {
+                                // Clamp to a valid char boundary, since
+                                // `comment_start_index + 30` is an
+                                // arbitrary byte offset that may land in
+                                // the middle of a multi-byte UTF-8
+                                // character.
+                                let mut end = min(comment_start_index + 30, source_code.len());
+                                while !source_code.is_char_boundary(end) {
+                                    end -= 1;
+                                }
+                                &source_code[comment_start_index..end]
+                            });
                             let delimiter_captures_wrapped =
                                 comment_delim_regex.captures(&source_code[comment_start_index..]);
                             if delimiter_captures_wrapped.is_none() {
@@ -1070,10 +1082,8 @@ pub fn source_lexer(
                                 comment_start_index =
                                     source_code_unlexed_index + opening_delimiter.len();
                                 trace!(
-                                    "Found a nested opening block comment delimiter. Nesting depth: {}",
-                                    nesting_depth
+                                    "Found a nested opening block comment delimiter. Nesting depth: {nesting_depth}"
                                 );
-                                continue;
                             } else {
                                 // This is a closing comment delimiter.
                                 assert!(nesting_depth > 0);
@@ -1092,8 +1102,7 @@ pub fn source_lexer(
                                         + closing_delimiter_match.start()
                                         + closing_delimiter_match.len();
                                     trace!(
-                                        "Found a non-innermost closing block comment delimiter. Nesting depth: {}",
-                                        nesting_depth
+                                        "Found a non-innermost closing block comment delimiter. Nesting depth: {nesting_depth}"
                                     );
                                     continue;
                                 }
@@ -1146,10 +1155,7 @@ pub fn source_lexer(
                                     [closing_delimiter_end_index
                                         ..newline_or_eof_after_closing_delimiter_index];
 
-                                trace!(
-                                    "The post-comment line is '{}'.",
-                                    post_closing_delimiter_line
-                                );
+                                trace!("The post-comment line is '{post_closing_delimiter_line}'.");
 
                                 // Set the `current_code_block` to contain
                                 // preceding code (which might be multiple
@@ -1178,12 +1184,9 @@ pub fn source_lexer(
                                     newline_or_eof_after_closing_delimiter_index;
 
                                 trace!(
-                                    "current_code_block is '{}'\n\
-                            comment_line_prefix is '{}'\n\
-                            code_lines_before_comment is '{}'",
-                                    current_code_block,
-                                    comment_line_prefix,
-                                    code_lines_before_comment
+                                    "current_code_block is '{current_code_block}'\n\
+                            comment_line_prefix is '{comment_line_prefix}'\n\
+                            code_lines_before_comment is '{code_lines_before_comment}'"
                                 );
 
                                 // Next, determine if this is a doc block.
@@ -1308,8 +1311,24 @@ pub fn source_lexer(
                                         // and delimiter have already been split
                                         // out for that line.
                                         for line in &split_contents[1..] {
+                                            // `indent_column` is a byte offset
+                                            // computed from the (ASCII)
+                                            // indent/delimiter widths; a line's
+                                            // contents may contain multi-byte
+                                            // UTF-8 characters, so `indent_column`
+                                            // might not land on a char boundary
+                                            // within `line`. Slicing at a
+                                            // non-boundary index would panic;
+                                            // guard against that. If it's not a
+                                            // valid boundary, this line can't
+                                            // consist solely of (single-byte)
+                                            // whitespace up to that column, so
+                                            // it's not indented.
                                             let this_line_indent = if line.len() < indent_column {
                                                 line
+                                            } else if !line.is_char_boundary(indent_column) {
+                                                is_indented = false;
+                                                break;
                                             } else {
                                                 &line[..indent_column]
                                             };
@@ -1355,8 +1374,7 @@ pub fn source_lexer(
 
                                     // print the doc block
                                     trace!(
-                                        "Appending a doc block with indent '{}', delimiter '{}', and contents '{}'.",
-                                        comment_line_prefix, matching_group_str, contents
+                                        "Appending a doc block with indent '{comment_line_prefix}', delimiter '{matching_group_str}', and contents '{contents}'."
                                     );
 
                                     // advance `current_code_block_index` to
@@ -1380,7 +1398,7 @@ pub fn source_lexer(
                     // #### String-like syntax
                     RegexDelimType::String(closing_regex) => {
                         trace!("This is a string. ");
-                        append_code(closing_regex)
+                        append_code(closing_regex);
                     }
 
                     RegexDelimType::TemplateLiteral => {

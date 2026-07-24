@@ -20,12 +20,8 @@
 /// testing IDE to generate commands then observe results, along with a browser
 /// tester.
 ///
-/// To run this test, execute `cargo test --test overall_1
+/// To run this test, execute `cargo test --test overall
 /// <optional_test_name>` in the `server/` directory.
-// Modules
-// -------
-mod overall_common;
-
 // Imports
 // -------
 //
@@ -41,10 +37,11 @@ use thirtyfour::{
 };
 
 // ### Local
-use crate::overall_common::{
+use crate::common::{
     CodeChatEditorServerLog, ExpectedMessages, TIMEOUT, assert_no_more_messages, beginning_of_line,
     get_version, goto_line, optional_message, perform_loadfile, select_codechat_iframe,
 };
+use crate::make_test;
 use code_chat_editor::{
     lexer::supported_languages::MARKDOWN_MODE,
     processing::{
@@ -95,10 +92,10 @@ async fn test_server_core(
     // Verify the first doc block.
     let codechat_iframe = select_codechat_iframe(&driver).await;
     let indent_css = ".CodeChat-CodeMirror .CodeChat-doc-indent";
-    let doc_block_indent = driver.find(By::Css(indent_css)).await.unwrap();
+    let doc_block_indent = driver.query(By::Css(indent_css)).first().await.unwrap();
     assert_eq!(doc_block_indent.inner_html().await.unwrap(), "");
     let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
-    let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
+    let doc_block_contents = driver.query(By::Css(contents_css)).first().await.unwrap();
     assert_eq!(
         doc_block_contents.inner_html().await.unwrap(),
         "<p>Test</p>"
@@ -126,7 +123,7 @@ async fn test_server_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Refind it, since it's now switched with a TinyMCE editor.
-    let tinymce_contents = driver.find(By::Id("TinyMCE-inst")).await.unwrap();
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
     // Make an edit.
     tinymce_contents.send_keys("foo").await.unwrap();
 
@@ -222,7 +219,7 @@ async fn test_server_core(
     //
     // Verify the first line of code.
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
-    let code_line = driver.find(By::Css(code_line_css)).await.unwrap();
+    let code_line = driver.query(By::Css(code_line_css)).first().await.unwrap();
     assert_eq!(code_line.inner_html().await.unwrap(), "code()");
 
     // A click will update the current position and focus the code block.
@@ -330,14 +327,14 @@ async fn test_server_core(
     );
 
     // Verify them.
-    let doc_block_indent = driver.find(By::Css(indent_css)).await.unwrap();
+    let doc_block_indent = driver.query(By::Css(indent_css)).first().await.unwrap();
     assert_eq!(doc_block_indent.inner_html().await.unwrap(), "  ");
-    let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
+    let doc_block_contents = driver.query(By::Css(contents_css)).first().await.unwrap();
     assert_eq!(
         doc_block_contents.inner_html().await.unwrap(),
         "<p>Testfood</p>"
     );
-    let code_line = driver.find(By::Css(code_line_css)).await.unwrap();
+    let code_line = driver.query(By::Css(code_line_css)).first().await.unwrap();
     assert_eq!(code_line.inner_html().await.unwrap(), "code()bark");
 
     assert_eq!(
@@ -376,14 +373,14 @@ async fn test_server_core(
                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
            }
        );
-       let doc_block_indent = driver.find(By::Css(indent_css)).await.unwrap();
+       let doc_block_indent = driver.query(By::Css(indent_css)).first().await.unwrap();
        assert_eq!(doc_block_indent.inner_html().await.unwrap(), " ");
-       let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
+       let doc_block_contents = driver.query(By::Css(contents_css)).first().await.unwrap();
        assert_eq!(
            doc_block_contents.inner_html().await.unwrap(),
            "<p>food</p>"
        );
-       let code_line = driver.find(By::Css(code_line_css)).await.unwrap();
+       let code_line = driver.query(By::Css(code_line_css)).first().await.unwrap();
        assert_eq!(code_line.inner_html().await.unwrap(), "bark");
     */
     // ### Document-only tests
@@ -400,7 +397,7 @@ async fn test_server_core(
 
     // Check the content.
     let body_css = "#CodeChat-body .CodeChat-doc-contents";
-    let body_content = driver.find(By::Css(body_css)).await.unwrap();
+    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
     assert_eq!(
         body_content.inner_html().await.unwrap(),
         "<p>A <strong>markdown</strong> file.</p>"
@@ -542,7 +539,7 @@ async fn test_server_core(
         assert_eq!(is_current, false);
         (toc_path.clone(), false)
     } else {
-        panic!("Unexpected path {msg_contents:?}.");
+        panic!("Unexpected path \"{}\".", msg_contents.display());
     };
     codechat_server
         .send_result_loadfile(server_id, None)
@@ -563,7 +560,11 @@ async fn test_server_core(
     server_id += MESSAGE_ID_INCREMENT;
 
     // Look at the content, which should be an iframe.
-    let plain_content = driver.find(By::Css("#CodeChat-contents")).await.unwrap();
+    let plain_content = driver
+        .query(By::Css("#CodeChat-contents"))
+        .first()
+        .await
+        .unwrap();
     assert!(
         plain_content
             .outer_html()
@@ -578,9 +579,17 @@ async fn test_server_core(
     // #### PDF viewer
     //
     // Click on the link for the PDF to test.
-    let toc_iframe = driver.find(By::Css("#CodeChat-sidebar")).await.unwrap();
+    let toc_iframe = driver
+        .query(By::Css("#CodeChat-sidebar"))
+        .first()
+        .await
+        .unwrap();
     toc_iframe.enter_frame().await.unwrap();
-    let test_pdf = driver.find(By::LinkText("test.pdf")).await.unwrap();
+    let test_pdf = driver
+        .query(By::LinkText("test.pdf"))
+        .first()
+        .await
+        .unwrap();
     test_pdf.click().await.unwrap();
 
     // Respond to the current file, then load requests for the PDf and the TOC.
@@ -637,7 +646,11 @@ async fn test_server_core(
     //
     // Target the iframe containing the Client.
     codechat_iframe.clone().enter_frame().await.unwrap();
-    let plain_content = driver.find(By::Css("#CodeChat-contents")).await.unwrap();
+    let plain_content = driver
+        .query(By::Css("#CodeChat-contents"))
+        .first()
+        .await
+        .unwrap();
     assert!(
         plain_content
             .outer_html()
@@ -674,9 +687,13 @@ async fn test_client_core(
     let codechat_iframe = select_codechat_iframe(&driver).await;
 
     // Click on the link for the PDF to test.
-    let toc_iframe = driver.find(By::Css("#CodeChat-sidebar")).await.unwrap();
+    let toc_iframe = driver
+        .query(By::Css("#CodeChat-sidebar"))
+        .first()
+        .await
+        .unwrap();
     toc_iframe.enter_frame().await.unwrap();
-    let test_py = driver.find(By::LinkText("test.py")).await.unwrap();
+    let test_py = driver.query(By::LinkText("test.py")).first().await.unwrap();
     test_py.click().await.unwrap();
 
     // Respond to the current file, then load requests for the PDF and the TOC.
@@ -734,7 +751,7 @@ async fn test_client_core(
 }
 
 async fn wait_for_mocha_success(driver: &WebDriver) -> Result<(), WebDriverError> {
-    const MOCHA_TEST_TIMEOUT: Duration = Duration::from_millis(30000);
+    const MOCHA_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 
     let mocha_results = driver
         .query(By::Css("#mocha-stats .result"))
@@ -813,7 +830,7 @@ async fn test_client_updates_core(
     // transient contenteditable div, moving the cursor without marking the doc
     // block dirty on macOS Chrome.
     let contents_css = ".CodeChat-CodeMirror .CodeChat-doc-contents";
-    let doc_block_contents = driver.find(By::Css(contents_css)).await.unwrap();
+    let doc_block_contents = driver.query(By::Css(contents_css)).first().await.unwrap();
     doc_block_contents.click().await.unwrap();
     let doc_block_contents = driver
         .query(By::Css(
@@ -906,7 +923,7 @@ async fn test_client_updates_core(
 
     // Add an indented comment.
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
-    let code_line = driver.find(By::Css(code_line_css)).await.unwrap();
+    let code_line = driver.query(By::Css(code_line_css)).first().await.unwrap();
     beginning_of_line(&code_line, "# ").await.unwrap();
     // This should edit the (new) third line of the file after word wrap: `def
     // foo():`.
@@ -1000,7 +1017,7 @@ async fn test_client_updates_core(
         }
     );
     // Trigger a client edit to send the Client contents back.
-    let code_line = driver.find(By::Css(code_line_css)).await.unwrap();
+    let code_line = driver.query(By::Css(code_line_css)).first().await.unwrap();
     code_line.send_keys(" ").await.unwrap();
 
     let msg = optional_message(

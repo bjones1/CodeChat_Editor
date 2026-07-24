@@ -20,13 +20,16 @@
 //
 // ### Standard library
 use std::{
+    fmt::Write,
     path::{Path, PathBuf},
+    sync::LazyLock,
     time::Duration,
 };
 
 // ### Third-party
 use actix_web::{
-    HttpRequest, HttpResponse, Responder,
+    App, HttpRequest, HttpResponse, Responder,
+    dev::{ServiceFactory, ServiceRequest},
     error::{self, Error},
     get,
     http::header::{self, ContentType},
@@ -34,7 +37,6 @@ use actix_web::{
 };
 use dunce::simplified;
 use indoc::formatdoc;
-use lazy_static::lazy_static;
 use log::{error, info, warn};
 use notify_debouncer_full::{
     DebounceEventResult, new_debouncer,
@@ -66,20 +68,41 @@ use crate::{
     processing::{CodeChatForWeb, CodeMirror, SourceFileMetadata},
     translation::{create_translation_queues, translation_task},
     webserver::{
-        EditorMessage, EditorMessageContents, RESERVED_MESSAGE_ID, UpdateMessageContents,
-        client_websocket, get_client_framework, html_wrapper, http_not_found, path_display,
-        send_response,
+        EditorMessage, EditorMessageContents, RESERVED_MESSAGE_ID, RegisterRoutes,
+        UpdateMessageContents, client_websocket, get_client_framework, html_wrapper,
+        http_not_found, path_display, send_response,
     },
 };
 
 // Globals
 // -------
-lazy_static! {
-    /// Matches a bare drive letter. Only needed on Windows.
-    static ref DRIVE_LETTER_REGEX: Regex = Regex::new("^[a-zA-Z]:$").unwrap();
-}
+/// Matches a bare drive letter. Only needed on Windows.
+static DRIVE_LETTER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new("^[a-zA-Z]:$").unwrap());
 
 pub const FILEWATCHER_PATH_PREFIX: &[&str] = &["fw", "fsc"];
+
+/// Registers the filewatcher IDE's routes. This IDE isn't used by every
+/// embedder of the `code_chat_editor` library (for example, the VSCode
+/// extension doesn't need it), so it's opt-in via
+/// [`crate::webserver::configure_app`]'s `register_routes` parameter instead
+/// of being wired in unconditionally.
+#[derive(Clone)]
+pub struct FilewatcherRoutes;
+
+impl RegisterRoutes for FilewatcherRoutes {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+    {
+        app.service(filewatcher_browser_endpoint)
+            .service(filewatcher_client_endpoint)
+            .service(filewatcher_websocket)
+            // Reroute to the filewatcher filesystem for typical user-requested
+            // URLs.
+            .route("/", web::get().to(filewatcher_root_fs_redirect))
+            .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
+    }
+}
 
 /// File browser endpoints
 /// ----------------------
@@ -89,7 +112,7 @@ pub const FILEWATCHER_PATH_PREFIX: &[&str] = &["fw", "fsc"];
 /// replaced by something better.
 ///
 /// Redirect from the root of the filesystem to the actual root path on this OS.
-#[cfg(not(tarpaulin_include))]
+#[cfg_attr(coverage, coverage(off))]
 pub async fn filewatcher_root_fs_redirect() -> impl Responder {
     HttpResponse::TemporaryRedirect()
         .insert_header((header::LOCATION, "/fw/fsb/"))
@@ -104,7 +127,7 @@ pub async fn filewatcher_root_fs_redirect() -> impl Responder {
 ///
 /// Omit code coverage -- this is a temporary interface, until IDE integration
 /// replaces this.
-#[cfg(not(tarpaulin_include))]
+#[cfg_attr(coverage, coverage(off))]
 #[get("/fw/fsb/{path:.*}")]
 async fn filewatcher_browser_endpoint(
     req: HttpRequest,
@@ -146,7 +169,7 @@ async fn filewatcher_browser_endpoint(
     } else if canon_path.is_file() {
         // Get an ID for this connection.
         let connection_id_raw = get_connection_id_raw(&app_state);
-        return processing_task(&canon_path, req, app_state, connection_id_raw).await;
+        return processing_task(&canon_path, &req, app_state, connection_id_raw);
     }
 
     // It's not a directory or a file...we give up. For simplicity, don't handle
@@ -164,7 +187,8 @@ async fn filewatcher_browser_endpoint(
 ///
 /// Omit code coverage -- this is a temporary interface, until IDE integration
 /// replaces this.
-#[cfg(not(tarpaulin_include))]
+#[cfg_attr(coverage, coverage(off))]
+#[allow(clippy::too_many_lines)]
 async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
     // Special case on Windows: list drive letters.
     #[cfg(target_os = "windows")]
@@ -176,9 +200,10 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             Err(err) => return http_not_found(&format!("Unable to list drive letters: {err}.")),
         };
         for drive_letter in logical_drives {
-            drive_html.push_str(&format!(
-                "<li><a href='/fw/fsb/{drive_letter}:/'>{drive_letter}:</a></li>\n"
-            ));
+            let _ = writeln!(
+                drive_html,
+                "<li><a href='/fw/fsb/{drive_letter}:/'>{drive_letter}:</a></li>"
+            );
         }
 
         return HttpResponse::Ok()
@@ -233,7 +258,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             Err(err) => {
                 return http_not_found(&format!("Unable to read file in directory: {err}."));
             }
-        };
+        }
     }
     // Sort them -- case-insensitive on Windows, normally on Linux/OS X.
     #[cfg(target_os = "windows")]
@@ -258,13 +283,15 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
             Ok(v) => v,
             Err(err) => {
                 return http_not_found(&format!(
-                    "Unable to decode directory name '{err:?}' as UTF-8."
+                    "Unable to decode directory name '{}' as UTF-8.",
+                    Path::new(&err).display()
                 ));
             }
         };
         let encoded_dir = urlencoding::encode(&dir_name);
-        dir_html += &format!(
-            "<li><a href='/fw/fsb/{web_path}{separator}{encoded_dir}'>{dir_name}</a></li>\n",
+        let _ = writeln!(
+            dir_html,
+            "<li><a href='/fw/fsb/{web_path}{separator}{encoded_dir}'>{dir_name}</a></li>"
         );
     }
 
@@ -274,7 +301,10 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
         let file_name = match file.file_name().into_string() {
             Ok(v) => v,
             Err(err) => {
-                return http_not_found(&format!("Unable to decode file name {err:?} as UTF-8.",));
+                return http_not_found(&format!(
+                    "Unable to decode file name {} as UTF-8.",
+                    Path::new(&err).display()
+                ));
             }
         };
         let encoded_file = urlencoding::encode(&file_name);
@@ -311,7 +341,7 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
 /// Copied almost verbatim from the
 /// [win\_partitions crate](https://docs.rs/crate/win_partitions/0.3.0/source/src/win_api.rs#144)
 /// when compilation errors broke the crate.
-#[cfg(not(tarpaulin_include))]
+#[cfg_attr(coverage, coverage(off))]
 #[cfg(target_os = "windows")]
 pub fn get_logical_drive() -> Result<Vec<char>, std::io::Error> {
     let bitmask = unsafe { GetLogicalDrives() };
@@ -354,9 +384,10 @@ async fn filewatcher_client_endpoint(
     .await
 }
 
-async fn processing_task(
+#[allow(clippy::too_many_lines)]
+fn processing_task(
     file_path: &Path,
-    req: HttpRequest,
+    req: &HttpRequest,
     app_state: WebAppState,
     connection_id_raw: u32,
 ) -> Result<HttpResponse, Error> {
@@ -373,7 +404,7 @@ async fn processing_task(
     //
     // The path to the currently open CodeChat Editor file.
     let Ok(current_filepath) = file_path.to_path_buf().canonicalize() else {
-        let msg = format!("Unable to canonicalize path {file_path:?}.");
+        let msg = format!("Unable to canonicalize path {}.", file_path.display());
         error!("{msg}");
         return Err(error::ErrorBadRequest(msg));
     };
@@ -400,13 +431,12 @@ async fn processing_task(
 
     // Transfer the queues from the global state to this task.
     let (from_ide_tx, mut to_ide_rx) =
-        match app_state.ide_queues.lock().unwrap().remove(&connection_id) {
-            Some(queues) => (queues.from_websocket_tx.clone(), queues.to_websocket_rx),
-            None => {
-                let err = format!("No websocket queues for connection id {connection_id}.");
-                error!("{err}");
-                return Err(error::ErrorBadRequest(err));
-            }
+        if let Some(queues) = app_state.ide_queues.lock().unwrap().remove(&connection_id) {
+            (queues.from_websocket_tx.clone(), queues.to_websocket_rx)
+        } else {
+            let err = format!("No websocket queues for connection id {connection_id}.");
+            error!("{err}");
+            return Err(error::ErrorBadRequest(err));
         };
 
     // #### The filewatcher task.
@@ -451,7 +481,10 @@ async fn processing_task(
             // Provide it a file to open.
             if let Some(cfp) = &current_filepath {
                 let Some(cfp_str) = cfp.to_str() else {
-                    let err = format!("Unable to convert file path {cfp:?} to string.");
+                    let err = format!(
+                        "Unable to convert file path \"{}\" to string.",
+                        cfp.display()
+                    );
                     error!("{err}");
                     break 'task;
                 };
@@ -463,7 +496,7 @@ async fn processing_task(
                 // `queue_send` exits before this runs, the message didn't get
                 // sent, so the ID wasn't used.
                 id += MESSAGE_ID_INCREMENT;
-            };
+            }
 
             shutdown_only = false;
         }
@@ -522,11 +555,11 @@ async fn processing_task(
                                     if debounced_event.event.paths.len() != 1 ||
                                         current_filepath.as_ref().is_none_or(|cfp| cfp != &debounced_event.event.paths[0])
                                     {
-                                        warn!("Modification to different file {}.", debounced_event.event.paths[0].to_string_lossy());
+                                        warn!("Modification to different file(s): {:?}.", debounced_event.event.paths);
                                     } else {
                                         let cfp = current_filepath.as_ref().unwrap();
                                         let Some(current_filepath_str) = cfp.to_str() else {
-                                            error!("Unable to convert path {cfp:?} to string.");
+                                            error!("Unable to convert path \"{}\" to string.", cfp.display());
                                             break 'task;
                                         };
 
@@ -562,7 +595,7 @@ async fn processing_task(
                                                 contents: Some(CodeChatForWeb {
                                                     metadata: SourceFileMetadata {
                                                         // The IDE doesn't need to provide this.
-                                                        mode: "".to_string(),
+                                                        mode: String::new(),
                                                     },
                                                     source: crate::processing::CodeMirrorDiffable::Plain(CodeMirror {
                                                         doc: file_contents,
@@ -574,6 +607,7 @@ async fn processing_task(
                                                     // stays in sync with any diffs. Produce a
                                                     // whole number to avoid encoding
                                                     // difference with fractional values.
+                                                    #[allow(clippy::cast_precision_loss)]
                                                     version: random::<u64>() as f64,
                                                 }),
                                             }),
@@ -598,9 +632,8 @@ async fn processing_task(
                                     break 'process Err(ResultErrTypes::WrongFileUpdate(update_message_contents.file_path, current_filepath.clone()));
                                 }
                                 // Without code, there's nothing to save.
-                                let codechat_for_web = match update_message_contents.contents {
-                                    None => break 'process Ok(ResultOkTypes::Void),
-                                    Some(cfw) => cfw,
+                                let Some(codechat_for_web) = update_message_contents.contents else {
+                                    break 'process Ok(ResultOkTypes::Void)
                                 };
 
                                 // Translate from the CodeChatForWeb format to
@@ -614,14 +647,18 @@ async fn processing_task(
                                 // it, in order to avoid a watch notification
                                 // from this write.
                                 if let Err(err) = debounced_watcher.unwatch(cfp) {
-                                    break 'process Err(ResultErrTypes::FileUnwatchError(cfp.to_path_buf(), err.to_string()));
+                                    break 'process Err(ResultErrTypes::FileUnwatchError(cfp.clone(), err.to_string()));
                                 }
                                 // Save this string to a file.
-                                if let Err(err) = fs::write(cfp.as_path(), plain.doc).await {
-                                    break 'process Err(ResultErrTypes::SaveFileError(cfp.to_path_buf(), err.to_string()));
-                                }
+                                let write_result = fs::write(cfp.as_path(), plain.doc).await;
+                                // Re-watch the file regardless of whether the
+                                // write succeeded, so a failed write doesn't
+                                // silently leave the file unwatched.
                                 if let Err(err) = debounced_watcher.watch(cfp, RecursiveMode::NonRecursive) {
-                                    break 'process Err(ResultErrTypes::FileWatchError(cfp.to_path_buf(), err.to_string()));
+                                    break 'process Err(ResultErrTypes::FileWatchError(cfp.clone(), err.to_string()));
+                                }
+                                if let Err(err) = write_result {
+                                    break 'process Err(ResultErrTypes::SaveFileError(cfp.clone(), err.to_string()));
                                 }
                                 Ok(ResultOkTypes::Void)
                             };
@@ -635,15 +672,15 @@ async fn processing_task(
                                 if let Some(cfp) = &current_filepath
                                     && let Err(err) = debounced_watcher.unwatch(cfp)
                                 {
-                                    break 'err_exit Err(ResultErrTypes::FileUnwatchError(cfp.to_path_buf(), err.to_string()));
+                                    break 'err_exit Err(ResultErrTypes::FileUnwatchError(cfp.clone(), err.to_string()));
                                 }
                                 // Update to the new path, which is already
                                 // canonicalized.
-                                current_filepath = Some(file_path.to_path_buf());
+                                current_filepath = Some(file_path.clone());
 
                                 // Watch the new file.
                                 if let Err(err) = debounced_watcher.watch(&file_path, RecursiveMode::NonRecursive) {
-                                    break 'err_exit Err(ResultErrTypes::FileWatchError(file_path.to_path_buf(), err.to_string()));
+                                    break 'err_exit Err(ResultErrTypes::FileWatchError(file_path.clone(), err.to_string()));
                                 }
                                 // Indicate there was no error in the `Result`
                                 // message.
@@ -701,7 +738,7 @@ async fn processing_task(
         info!("Watcher closed.");
     });
 
-    match get_client_framework(get_test_mode(&req), "fw/ws", &connection_id_raw.to_string()) {
+    match get_client_framework(get_test_mode(req), "fw/ws", &connection_id_raw.clone()) {
         Ok(s) => Ok(HttpResponse::Ok().content_type(ContentType::html()).body(s)),
         Err(err) => Err(error::ErrorBadRequest(err)),
     }
@@ -717,13 +754,14 @@ pub async fn filewatcher_websocket(
 ) -> Result<HttpResponse, Error> {
     client_websocket(
         format!("{FW}{connection_id_raw}"),
-        req,
+        &req,
         body,
         app_state.client_queues.clone(),
     )
 }
 
 /// Return a unique ID for an IDE websocket connection.
+#[must_use]
 pub fn get_connection_id_raw(app_state: &WebAppState) -> u32 {
     let mut connection_id_raw = app_state.filewatcher_next_connection_id.lock().unwrap();
     *connection_id_raw += 1;
@@ -766,12 +804,15 @@ mod tests {
             INITIAL_IDE_MESSAGE_ID, INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT,
             ResultErrTypes, ResultOkTypes, UpdateMessageContents, WebAppState, WebsocketQueues,
             configure_app, drop_leading_slash, make_app_data, send_response, set_root_path,
+            test_root_path,
         },
     };
     use test_utils::{
         cast, prep_test_dir,
         test_utils::{check_logger_errors, configure_testing_logger},
     };
+
+    use super::FilewatcherRoutes;
 
     async fn get_websocket_queues(
         // A path to the temporary directory where the source file is located.
@@ -780,9 +821,10 @@ mod tests {
         WebsocketQueues,
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error> + use<>,
     ) {
-        set_root_path(None).unwrap();
+        set_root_path(&test_root_path()).unwrap();
         let app_data = make_app_data(None);
-        let app = test::init_service(configure_app(App::new(), &app_data)).await;
+        let app =
+            test::init_service(configure_app(App::new(), &app_data, &FilewatcherRoutes)).await;
 
         // Load in a test source file to create a websocket.
         let uri = format!("/fw/fsb/{}/test.py", test_dir.to_string_lossy());
@@ -815,7 +857,7 @@ mod tests {
                 println!("{} - {:?}", m.id, m.message);
                 m
             }
-            _ = sleep(Duration::from_secs(3)) => {
+            () = sleep(Duration::from_secs(3)) => {
                 // The backtrace shows what message the code was waiting for;
                 // otherwise, it's an unhelpful error message.
                 panic!("Timeout waiting for message:\n{}", Backtrace::force_capture());
@@ -985,7 +1027,7 @@ mod tests {
             ),
             (
                 INITIAL_CLIENT_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
-                EditorMessageContents::ClientHtml("".to_string()),
+                EditorMessageContents::ClientHtml(String::new()),
             ),
             (
                 INITIAL_CLIENT_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
@@ -1011,7 +1053,7 @@ mod tests {
             .send(EditorMessage {
                 id: INITIAL_CLIENT_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
                 message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: "".to_string(),
+                    file_path: String::new(),
                     cursor_position: None,
                     scroll_position: None,
                     is_re_translation: false,
@@ -1020,7 +1062,7 @@ mod tests {
                             mode: "cpp".to_string(),
                         },
                         source: CodeMirrorDiffable::Plain(CodeMirror {
-                            doc: "".to_string(),
+                            doc: String::new(),
                             doc_blocks: vec![],
                         }),
                         version: 0.0,

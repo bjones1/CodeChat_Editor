@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `overall_core/mod.rs` - test the overall system
+/// `overall/common/mod.rs` - test the overall system
 /// ===============================================
 ///
 /// These are functional tests of the overall system, performed by attaching a
@@ -40,12 +40,14 @@
 // ### Standard library
 use std::{
     collections::HashMap,
-    env,
     error::Error,
     panic::AssertUnwindSafe,
     path::{Path, PathBuf},
     time::Duration,
 };
+// Only used on Linux, to check whether CI is running this test.
+#[cfg(target_os = "linux")]
+use std::env;
 
 use assert_fs::TempDir;
 // ### Third-party
@@ -55,7 +57,7 @@ use pretty_assertions::assert_eq;
 use serde_json::Value;
 use thirtyfour::{
     BrowserLogEntry, By, ChromiumLikeCapabilities, DesiredCapabilities, Key, LoggingPrefsLogLevel,
-    TypingData, WebDriver, WebElement, error::WebDriverError,
+    TypingData, WebDriver, WebElement, error::WebDriverError, prelude::ElementQueryable,
 };
 use tracing::{debug, error, info, warn};
 use tracing_log::LogTracer;
@@ -66,7 +68,7 @@ use code_chat_editor::{
     ide::CodeChatEditorServer,
     webserver::{
         CursorPosition, EditorMessage, EditorMessageContents, MESSAGE_ID_INCREMENT, ResultErrTypes,
-        ResultOkTypes, UpdateMessageContents, set_root_path,
+        ResultOkTypes, UpdateMessageContents, set_root_path, test_root_path,
     },
 };
 use test_utils::cast;
@@ -190,7 +192,7 @@ impl ExpectedMessages {
         );
     }
 
-    pub fn check(&mut self, editor_message: EditorMessage) {
+    pub fn check(&mut self, editor_message: &EditorMessage) {
         if let Some((ref mut editor_message_contents, is_dynamic)) =
             self.0.remove(&(editor_message.id as i64))
         {
@@ -198,7 +200,7 @@ impl ExpectedMessages {
                 && let EditorMessageContents::Update(emc) = editor_message_contents
                 && let Some(contents) = &mut emc.contents
             {
-                let version = get_version(&editor_message);
+                let version = get_version(editor_message);
                 contents.version = version;
             }
             // Special case:
@@ -216,7 +218,7 @@ impl ExpectedMessages {
         codechat_server: &CodeChatEditorServerLog,
         timeout: Duration,
     ) {
-        self.check(codechat_server.get_message_timeout(timeout).await.unwrap());
+        self.check(&codechat_server.get_message_timeout(timeout).await.unwrap());
     }
 
     pub async fn assert_all_messages(
@@ -226,7 +228,7 @@ impl ExpectedMessages {
     ) {
         while !self.0.is_empty() {
             if let Some(editor_message) = codechat_server.get_message_timeout(timeout).await {
-                self.check(editor_message);
+                self.check(&editor_message);
             } else {
                 panic!(
                     "No matching messages found. Unmatched messages:\n{:#?}",
@@ -240,7 +242,7 @@ impl ExpectedMessages {
 // Time to wait for browser/WebDriver-backed client-server messages. This
 // matches the client-side response window and gives CI enough room for autosave
 // and loadfile acknowledgements under matrix load.
-pub const TIMEOUT: Duration = Duration::from_millis(15000);
+pub const TIMEOUT: Duration = Duration::from_secs(15);
 
 // Browser-backed tests share a single WebDriver endpoint. Safari on macOS CI is
 // unreliable with overlapping sessions, so serialize the harness.
@@ -290,6 +292,8 @@ pub async fn harness<
     //
     // Comment/uncomment these out to debug test failures.
     caps.add_arg("--headless")?;
+    // See [SO](https://stackoverflow.com/questions/78996364/chrome-129-headless-shows-blank-window) -- this prevents a blank windows popping up for each test. Tested with Chrome version 150.0.7871.47 (Official Build) (64-bit).
+    caps.add_arg("--window-position=-2400,-2400")?;
     //caps.add_arg("--auto-open-devtools-for-tabs")?;
     // Insert the code in a test to pause it for manual inspection.
     //use std::time::Duration;
@@ -311,8 +315,7 @@ pub async fn harness<
     // certain this is correct. Hopefully, it's good enough for testing.
     let ret = AssertUnwindSafe(async move {
         // ### Setup
-        let p = env::current_exe().unwrap().parent().unwrap().join("../..");
-        set_root_path(Some(&p)).unwrap();
+        set_root_path(&test_root_path()).unwrap();
         // Wrap the server so every call the test framework makes also drains
         // the browser's JavaScript console log (see `CodeChatEditorServerLog`).
         let codechat_server = CodeChatEditorServerLog::new(
@@ -336,7 +339,7 @@ pub async fn harness<
         let client_html = cast!(&em_html.message, EditorMessageContents::ClientHtml);
         let find_str = "<iframe src=\"";
         let address_start = client_html.find(find_str).unwrap() + find_str.len();
-        let address_end = client_html[address_start..].find("\"").unwrap() + address_start;
+        let address_end = client_html[address_start..].find('"').unwrap() + address_start;
         let address = &client_html[address_start..address_end];
 
         // Open the Client and send it a file to load.
@@ -449,7 +452,7 @@ macro_rules! make_test {
         #[tokio::test]
         #[tracing::instrument]
         async fn $test_name() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            $crate::overall_common::harness($test_core_name, prep_test_dir!()).await
+            $crate::common::harness($test_core_name, prep_test_dir!()).await
         }
     };
 
@@ -466,7 +469,7 @@ macro_rules! make_test {
         #[tracing::instrument]
         #[ignore = $reason]
         async fn $test_name() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            $crate::overall_common::harness($test_core_name, prep_test_dir!()).await
+            $crate::common::harness($test_core_name, prep_test_dir!()).await
         }
     };
 }
@@ -476,7 +479,7 @@ pub fn get_version(msg: &EditorMessage) -> f64 {
     let ccfw = cast!(&msg.message, EditorMessageContents::Update)
         .contents
         .as_ref();
-    ccfw.unwrap_or_else(|| panic!("No contents in message:\n{:#?}", msg))
+    ccfw.unwrap_or_else(|| panic!("No contents in message:\n{msg:#?}"))
         .version
 }
 
@@ -492,7 +495,11 @@ pub async fn goto_line(
     line: u32,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
-    let code_line = driver_ref.find(By::Css(code_line_css)).await.unwrap();
+    let code_line = driver_ref
+        .query(By::Css(code_line_css))
+        .first()
+        .await
+        .unwrap();
     code_line
         .send_keys(
             Key::Alt
@@ -618,7 +625,7 @@ pub async fn beginning_of_document(
     // repeating `Up` past the first line is a no-op, so an overshoot is
     // harmless. Sent as a single `send_keys` call, along with `keys_after`, so
     // this produces one cursor update rather than one per repeated key.
-    let keys: TypingData = repeated_key(Key::Up, MAX_TEST_DOCUMENT_LINES) + keys_after;
+    let keys: TypingData = repeated_key(&Key::Up, MAX_TEST_DOCUMENT_LINES) + keys_after;
     element.send_keys(keys).await
 }
 
@@ -633,14 +640,15 @@ pub async fn end_of_document(
     element: &WebElement,
     keys_after: impl Into<TypingData> + std::fmt::Debug,
 ) -> Result<(), WebDriverError> {
-    let keys: TypingData = repeated_key(Key::Down, MAX_TEST_DOCUMENT_LINES) + Key::End + keys_after;
+    let keys: TypingData =
+        repeated_key(&Key::Down, MAX_TEST_DOCUMENT_LINES) + Key::End + keys_after;
     element.send_keys(keys).await
 }
 
 // Build a `TypingData` consisting of `key` repeated `count` times, for the
 // macOS repeated-arrow-key workaround in \[`beginning_of_document`\] and
 // \[`end_of_document`\].
-fn repeated_key(key: Key, count: u32) -> TypingData {
+fn repeated_key(key: &Key, count: u32) -> TypingData {
     std::iter::repeat_n(key.value(), count as usize)
         .collect::<String>()
         .into()
@@ -758,7 +766,11 @@ pub async fn click_element_top_left(
 #[allow(deprecated)]
 pub async fn select_codechat_iframe(driver_ref: &WebDriver) -> WebElement {
     // Target the iframe containing the Client.
-    let codechat_iframe = driver_ref.find(By::Css("#CodeChat-iframe")).await.unwrap();
+    let codechat_iframe = driver_ref
+        .query(By::Css("#CodeChat-iframe"))
+        .first()
+        .await
+        .unwrap();
     codechat_iframe.clone().enter_frame().await.unwrap();
 
     codechat_iframe
@@ -769,7 +781,7 @@ pub async fn assert_no_more_messages(codechat_server: &CodeChatEditorServerLog) 
         .get_message_timeout(Duration::from_millis(500))
         .await
     {
-        panic!("Unprocessed messages: {:#?}", msg);
+        panic!("Unprocessed messages: {msg:#?}");
     }
 }
 

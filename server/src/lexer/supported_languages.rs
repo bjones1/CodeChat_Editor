@@ -79,7 +79,7 @@ fn make_language_lexer(
         ext_arr: ext_arr.iter().map(|x| Arc::new(x.to_string())).collect(),
         inline_comment_delim_arr: inline_comment_delim_arr
             .iter()
-            .map(|x| x.to_string())
+            .map(std::string::ToString::to_string)
             .collect(),
         block_comment_delim_arr: block_comment_delim_arr.to_vec(),
         string_delim_spec_arr: string_delim_spec_arr.to_vec(),
@@ -101,6 +101,7 @@ fn make_string_delimiter_spec(
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn make_heredoc_delim(
     start_prefix: &str,
     delim_ident_regex: &str,
@@ -127,6 +128,7 @@ fn make_block_comment_delim(opening: &str, closing: &str, is_nestable: bool) -> 
 
 // Define lexers for each supported language.
 // ------------------------------------------
+#[allow(clippy::too_many_lines)]
 pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
     vec![
         // ### Linux shell scripts
@@ -171,7 +173,7 @@ pub fn get_language_lexer_vec() -> Vec<LanguageLexer> {
             // raw string syntax in C++11 and newer is IMHO so rare we won't
             // encounter it in older code. See the C++
             // [string literals docs for the reasoning behind the start body regex.](https://en.cppreference.com/w/cpp/language/string_literal)
-            make_heredoc_delim("R\"", "[^()\\\\[[:space:]]]*", "(", ")", "\""),
+            make_heredoc_delim("R\"", "[^()\\\\\\s]*", "(", ")", "\""),
             SpecialCase::None,
             Some(pest_parser::c::parse_to_code_doc_blocks),
         ),

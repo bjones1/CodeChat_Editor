@@ -27,12 +27,14 @@ pub mod tests;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    env, fs, io,
+    env, fs,
+    hash::BuildHasher,
+    io,
     net::SocketAddr,
     path::{self, MAIN_SEPARATOR_STR, Path, PathBuf},
     str::FromStr,
     string::FromUtf8Error,
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
     time::Duration,
 };
 
@@ -56,9 +58,11 @@ use dunce::simplified;
 use futures_util::StreamExt;
 use htmlize::{escape_attribute, escape_text};
 use indoc::formatdoc;
-use lazy_static::lazy_static;
 use log::{LevelFilter, error, info, warn};
-use log4rs::{self, config::load_config_file};
+use log4rs::{
+    self,
+    config::{Deserializers, load_config_file},
+};
 use mime::Mime;
 use mime_guess;
 use path_slash::{PathBufExt, PathExt};
@@ -82,14 +86,8 @@ use url::Url;
 // ### Local
 //use crate::capture::EventCapture;
 use crate::{
-    ide::{
-        filewatcher::{
-            filewatcher_browser_endpoint, filewatcher_client_endpoint,
-            filewatcher_root_fs_redirect, filewatcher_websocket,
-        },
-        vscode::{
-            serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
-        },
+    ide::vscode::{
+        serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
     },
     processing::{
         CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, find_path_to_toc,
@@ -360,7 +358,7 @@ pub struct UpdateMessageContents {
     pub cursor_position: Option<CursorPosition>,
     /// The line at the top of the screen.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scroll_position: Option<f32>,
+    pub scroll_position: Option<f64>,
     /// True if this is a re-translation, which can be ignored if the receiver's
     /// document is dirty. Therefore, this is written by the IDE and read by the
     /// Client and IDE; conversely, it's ignored by the Server. The IDE and
@@ -376,7 +374,11 @@ pub struct UpdateMessageContents {
 #[derive(Debug, Serialize, Deserialize, PartialEq, TS)]
 #[ts(export)]
 pub enum CursorPosition {
-    /// The line the cursor is on.
+    /// The line the cursor is on. Use `u32`, not `u64`: JSON/JS `number` is an
+    /// f64, which loses precision above 2^53, and `u64` values aren't
+    /// type-checked against that limit, so a `u64` here could silently
+    /// corrupt on the JS side. `u32`'s max (~4.3 billion) is always exactly
+    /// representable, and no real source file has that many lines anyway.
     Line(u32),
     /// The exact location of the cursor in the HTML DOM. Only the Client and
     /// the Server may use this in messages to each other. The IDE will not
@@ -464,7 +466,7 @@ macro_rules! queue_send_func {
 pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
     Duration::from_millis(2500)
 } else {
-    Duration::from_millis(15000)
+    Duration::from_secs(15)
 };
 
 /// The time to wait for a pong from the websocket in response to a ping sent by
@@ -486,79 +488,85 @@ pub const INITIAL_IDE_MESSAGE_ID: f64 = INITIAL_CLIENT_MESSAGE_ID + 1.0;
 /// assuming an average of 1 message/second.)
 pub const MESSAGE_ID_INCREMENT: f64 = 3.0;
 
-lazy_static! {
-    pub static ref ROOT_PATH: Arc<Mutex<PathBuf>> = Arc::new(Mutex::new(PathBuf::new()));
+pub static ROOT_PATH: LazyLock<Arc<Mutex<PathBuf>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(PathBuf::new())));
 
-    // Define the location of static files.
-    static ref CLIENT_STATIC_PATH: PathBuf = {
-        let mut client_static_path = ROOT_PATH.lock().unwrap().clone();
-        #[cfg(debug_assertions)]
-        client_static_path.push("client");
+// Define the location of static files.
+static CLIENT_STATIC_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
+    let mut client_static_path = ROOT_PATH.lock().unwrap().clone();
+    #[cfg(debug_assertions)]
+    client_static_path.push("client");
 
-        client_static_path.push("static");
-        client_static_path
-    };
+    client_static_path.push("static");
+    client_static_path
+});
 
-    // Read in the hashed names of files bundled by esbuild.
-    static ref BUNDLED_FILES_MAP: HashMap<String, String> = {
-        let mut hl = ROOT_PATH.lock().unwrap().clone();
-        #[cfg(debug_assertions)]
-        hl.push("server");
-        hl.push("hashLocations.json");
-        let json = fs::read_to_string(hl.clone()).unwrap_or_else(
-            |err| panic!("Error: Unable to read {:#?}: {err}", hl.to_string_lossy())
-        );
-        let hmm: HashMap<String, String> =
-            serde_json::from_str(&json).unwrap_or_else(|_| panic!("Unable to parse JSON in {:#?}", hl.to_string_lossy()));
-        hmm
-    };
+// Read in the hashed names of files bundled by esbuild.
+static BUNDLED_FILES_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+    let mut hl = ROOT_PATH.lock().unwrap().clone();
+    #[cfg(debug_assertions)]
+    hl.push("server");
+    hl.push("hashLocations.json");
+    let json = fs::read_to_string(hl.clone())
+        .unwrap_or_else(|err| panic!("Error: Unable to read {:#?}: {err}", hl.to_string_lossy()));
+    let hmm: HashMap<String, String> = serde_json::from_str(&json)
+        .unwrap_or_else(|_| panic!("Unable to parse JSON in {:#?}", hl.to_string_lossy()));
+    hmm
+});
 
-    static ref CODECHAT_EDITOR_FRAMEWORK_JS: String = BUNDLED_FILES_MAP.get("CodeChatEditorFramework.js").cloned().expect("Unable to find framework JS in bundled files map.");
-    static ref CODECHAT_EDITOR_PROJECT_CSS: String = BUNDLED_FILES_MAP.get("CodeChatEditorProject.css").cloned().expect("Unable to find project CSS in bundled files map.");
-}
+static CODECHAT_EDITOR_FRAMEWORK_JS: LazyLock<String> = LazyLock::new(|| {
+    BUNDLED_FILES_MAP
+        .get("CodeChatEditorFramework.js")
+        .cloned()
+        .expect("Unable to find framework JS in bundled files map.")
+});
+static CODECHAT_EDITOR_PROJECT_CSS: LazyLock<String> = LazyLock::new(|| {
+    BUNDLED_FILES_MAP
+        .get("CodeChatEditorProject.css")
+        .cloned()
+        .expect("Unable to find project CSS in bundled files map.")
+});
 
 // Define the location of the root path, which contains `static/`, `log4rs.yml`,
 // and `hashLocations.json` in a production build, or `client/` and `server/` in
 // a development build.
 pub fn set_root_path(
-    // The path where this extension's files reside. `None` if this is running
-    // an a standalone server, instead of as an extension loaded by an IDE.
-    extension_base_path: Option<&Path>,
+    // The root path to use, already resolved by the caller. Since the correct
+    // value depends entirely on that caller's own build/deployment layout
+    // (an installed VSCode extension's directory, a dev build's location
+    // under `target/`, a `cargo dist`-packaged binary's directory, ...), this
+    // function does no further adjustment -- it's the caller's job to land on
+    // the right directory, typically using its own `cfg!(debug_assertions)`/
+    // `cfg!(test)` checks. See `extensions/standalone/src/main.rs`'s
+    // `root_path` for an example.
+    base_path: &Path,
 ) -> io::Result<()> {
-    // If the extension provided a base path, use that; otherwise, get the path
-    // to this executable.
-    let exe_path;
-    let exe_dir = if let Some(ed) = extension_base_path {
-        ed
-    } else {
-        exe_path = env::current_exe().expect("Unable to determine path to current executable.");
-        exe_path
-            .parent()
-            .expect("Unable to find directory name containing the current executable.")
-    };
-    #[cfg(not(any(test, debug_assertions)))]
-    let root_path = PathBuf::from(exe_dir);
-    #[cfg(any(test, debug_assertions))]
-    let mut root_path = PathBuf::from(exe_dir);
-    // When in debug or running tests, use the layout of the Git repo to find
-    // client files. In release mode, we assume the static folder is a
-    // subdirectory of the directory containing the executable.
-    #[cfg(test)]
-    // In development, this extra directory level for the extension isn't
-    // needed.
-    if extension_base_path.is_none() {
-        root_path.push("..");
-    }
-    // Note that `debug_assertions` is also enabled for testing, so this adds to
-    // the previous line when running tests.
-    #[cfg(debug_assertions)]
-    root_path.push(if extension_base_path.is_some() {
-        "../.."
-    } else {
-        "../../.."
-    });
-    *ROOT_PATH.lock().unwrap() = root_path.canonicalize()?;
+    *ROOT_PATH.lock().unwrap() = base_path.canonicalize()?;
     Ok(())
+}
+
+// A `base_path` for this package's own test suites to pass to
+// `set_root_path`/`main` when they start a real webserver in-process
+// (`ide::vscode::tests`, `ide::filewatcher::tests`, and the `tests/overall`
+// integration tests). Not `#[cfg(test)]`-gated: integration tests under
+// `tests/` link this crate as a normal (non-`--test`) dependency, so a
+// `#[cfg(test)]` item wouldn't be visible to them. All these test binaries
+// are built under `server/target/debug/deps/...` (one directory deeper than a
+// plain `cargo build`'s `server/target/debug/`), or one directory deeper
+// still under `cargo llvm-cov`.
+#[must_use]
+pub fn test_root_path() -> PathBuf {
+    let exe_dir = env::current_exe()
+        .expect("Unable to determine path to current executable.")
+        .parent()
+        .expect("Unable to find directory name containing the current executable.")
+        .to_path_buf();
+    let exe_dir = if cfg!(coverage) {
+        exe_dir.join("..")
+    } else {
+        exe_dir
+    };
+    exe_dir.join("../../../..")
 }
 
 // Webserver functionality
@@ -620,7 +628,7 @@ pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> Cap
             data,
         );
 
-        capture.log(event);
+        capture.log(&event);
         capture.status()
     } else {
         CaptureStatus::disabled()
@@ -631,12 +639,12 @@ pub fn capture_status(app_state: &WebAppState) -> CaptureStatus {
     app_state
         .capture
         .as_ref()
-        .map(EventCapture::status)
-        .unwrap_or_else(CaptureStatus::disabled)
+        .map_or_else(CaptureStatus::disabled, EventCapture::status)
 }
 
 // Get the `mode` query parameter to determine `is_test_mode`; default to
 // `false`.
+#[must_use]
 pub fn get_test_mode(req: &HttpRequest) -> bool {
     let query_params = web::Query::<HashMap<String, String>>::from_query(req.query_string());
     if let Ok(query) = query_params {
@@ -666,6 +674,15 @@ pub fn get_client_framework(
             ));
         }
     };
+    // `connection_id` may be attacker-controlled (for example, the VSCode
+    // extension's `/vsc/cf/{connection_id}` endpoint takes it directly from
+    // the URL). Since `ws_url` is embedded verbatim inside a `<script>`
+    // block below, escape `<` so a value such as `</script><script>...`
+    // can't prematurely close the script element and inject markup/script
+    // that the HTML parser would otherwise treat as a new tag. JSON string
+    // escapes (produced above) don't cover this, since `<` and `/` aren't
+    // special in JSON.
+    let ws_url = ws_url.replace('<', "\\u003C");
 
     // Build and return the webpage.
     Ok(formatdoc!(
@@ -722,7 +739,7 @@ pub async fn filesystem_endpoint(
     // with a leading slash, which gets absorbed into the URL to prevent a URL
     // such as "/fw/fsc/1//foo/bar/...". Restore it here.
     #[cfg(target_os = "windows")]
-    let fixed_file_path = request_file_path.replace("\\", "%5C");
+    let fixed_file_path = request_file_path.replace('\\', "%5C");
     // On OS X/Linux, the path starts with a leading slash, which gets absorbed
     // into the URL to prevent a URL such as "/fw/fsc/1//foo/bar/...". Restore
     // it here.
@@ -769,10 +786,7 @@ pub async fn filesystem_endpoint(
         // Get the processing queue; only keep the lock during this block.
         let processing_queue_tx = app_state.processing_task_queue_tx.lock().unwrap();
         let Some(processing_tx) = processing_queue_tx.get(&connection_id) else {
-            let msg = format!(
-                "Error: no processing task queue for connection id {}.",
-                connection_id
-            );
+            let msg = format!("Error: no processing task queue for connection id {connection_id}.");
             error!("{msg}");
             return http_not_found(&msg);
         };
@@ -815,7 +829,10 @@ pub async fn filesystem_endpoint(
                         }
                         v.into_response(req)
                     }
-                    Err(err) => http_not_found(&format!("Error opening file {path:?}: {err}.",)),
+                    Err(err) => http_not_found(&format!(
+                        "Error opening file \"{}\": {err}.",
+                        path.display()
+                    )),
                 }
             }
         },
@@ -844,6 +861,7 @@ pub async fn try_read_as_text(file: &mut File) -> Option<String> {
 // file contents itself (if it's not editable by the Client). If responding with
 // a Client, also return an Update message which will provided the contents for
 // the Client.
+#[allow(clippy::too_many_lines)]
 pub async fn file_to_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
@@ -868,9 +886,7 @@ pub async fn file_to_response(
     let file_path = &http_request.file_path;
     let Some(file_name) = file_path.file_name() else {
         return (
-            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
-                file_path.to_path_buf(),
-            )),
+            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(file_path.clone())),
             None,
         );
     };
@@ -950,7 +966,7 @@ pub async fn file_to_response(
             ),
         )
     } else {
-        ("".to_string(), "".to_string())
+        (String::new(), String::new())
     };
 
     // Do we need to respond with a [simple viewer](#Client-simple-viewer)?
@@ -992,13 +1008,13 @@ pub async fn file_to_response(
     let codechat_for_web = match translation_results_string {
         // The file type is binary. Ask the HTTP server to serve it raw.
         TranslationResultsString::Binary => return
-            (SimpleHttpResponse::Bin(file_path.to_path_buf()), None)
+            (SimpleHttpResponse::Bin(file_path.clone()), None)
         ,
         // The file type is unknown. Serve it raw.
         TranslationResultsString::Unknown => {
             return (
                 SimpleHttpResponse::Raw(
-                    file_contents.unwrap().to_string(),
+                    file_contents.unwrap().clone(),
                     mime_guess::from_path(file_path).first_or_text_plain(),
                 ),
                 None,
@@ -1036,18 +1052,14 @@ pub async fn file_to_response(
     // Provided info from the HTTP request, determine the following parameters.
     let Some(raw_dir) = file_path.parent() else {
         return (
-            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
-                file_path.to_path_buf(),
-            )),
+            SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(file_path.clone())),
             None,
         );
     };
     let dir = path_display(raw_dir);
     let Some(file_path) = file_path.to_str() else {
         return (
-            SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
-                file_path.to_path_buf(),
-            )),
+            SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(file_path.clone())),
             None,
         );
     };
@@ -1108,24 +1120,20 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
     let file_path = &http_request.file_path;
     let Some(file_name) = file_path.file_name() else {
         return SimpleHttpResponse::Err(SimpleHttpResponseError::ProjectPathShort(
-            file_path.to_path_buf(),
+            file_path.clone(),
         ));
     };
     let Some(file_name) = file_name.to_str() else {
-        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
-            file_path.to_path_buf(),
-        ));
+        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(file_path.clone()));
     };
     let file_name = escape_text(file_name);
 
     let Some(path_to_toc) = find_path_to_toc(file_path) else {
-        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotProject(
-            file_path.to_path_buf(),
-        ));
+        return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotProject(file_path.clone()));
     };
     let Some(path_to_toc) = path_to_toc.to_str() else {
         return SimpleHttpResponse::Err(SimpleHttpResponseError::PathNotString(
-            path_to_toc.to_path_buf(),
+            path_to_toc.clone(),
         ));
     };
     let path_to_toc = escape_text(path_to_toc);
@@ -1184,13 +1192,14 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
 /// allowing the user to edit the plain text of the source code in the IDE, or
 /// make GUI-enhanced edits of the source code rendered by the CodeChat Editor
 /// Client.
-pub fn client_websocket(
+#[allow(clippy::too_many_lines)]
+pub fn client_websocket<S: BuildHasher + 'static>(
     connection_id: String,
-    req: HttpRequest,
+    req: &HttpRequest,
     body: web::Payload,
-    websocket_queues: Arc<Mutex<HashMap<String, WebsocketQueues>>>,
+    websocket_queues: Arc<Mutex<HashMap<String, WebsocketQueues, S>>>,
 ) -> Result<HttpResponse, Error> {
-    let (response, mut session, mut msg_stream) = actix_ws::handle(&req, body)?;
+    let (response, mut session, mut msg_stream) = actix_ws::handle(req, body)?;
 
     // Websocket task: start a task to handle receiving `JointMessage` websocket
     // data from the CodeChat Editor Client and forwarding it to the IDE and
@@ -1203,16 +1212,15 @@ pub fn client_websocket(
 
         // Transfer the queues from the global state to this task.
         let (from_websocket_tx, mut to_websocket_rx, mut pending_messages) =
-            match websocket_queues.lock().unwrap().remove(&connection_id) {
-                Some(queues) => (
+            if let Some(queues) = websocket_queues.lock().unwrap().remove(&connection_id) {
+                (
                     queues.from_websocket_tx.clone(),
                     queues.to_websocket_rx,
                     queues.pending_messages,
-                ),
-                None => {
-                    error!("No websocket queues for connection id {connection_id}.");
-                    return;
-                }
+                )
+            } else {
+                error!("No websocket queues for connection id {connection_id}.");
+                return;
             };
 
         // Shutdown may occur in a controlled process or an immediate websocket
@@ -1249,7 +1257,7 @@ pub fn client_websocket(
         loop {
             select! {
                 // Send pings on a regular basis.
-                _ = sleep(WEBSOCKET_PING_DELAY) => {
+                () = sleep(WEBSOCKET_PING_DELAY) => {
                     if sent_ping {
                         // If we haven't received the answering pong, the
                         // websocket must be broken.
@@ -1270,6 +1278,7 @@ pub fn client_websocket(
                 Some(msg_wrapped) = aggregated_msg_stream.next() => {
                     match msg_wrapped {
                         Ok(msg) => {
+                            #[allow(clippy::match_wildcard_for_single_variants)]
                             match msg {
                                 // Send a pong in response to a ping.
                                 AggregatedMessage::Ping(bytes) => {
@@ -1343,6 +1352,7 @@ pub fn client_websocket(
                                     break;
                                 }
 
+                                // Lint allow on `match` above allows this: it's a catch-all for anything not know here.
                                 other => {
                                     warn!("Unexpected message {other:?}");
                                     break;
@@ -1428,7 +1438,7 @@ pub fn client_websocket(
             // Don't stop timers; the re-connection may handle them.
             info!("Websocket re-enqueued.");
             websocket_queues.lock().unwrap().insert(
-                connection_id.to_string(),
+                connection_id.clone(),
                 WebsocketQueues {
                     from_websocket_tx,
                     to_websocket_rx,
@@ -1447,26 +1457,25 @@ pub fn client_websocket(
 // --------------
 #[actix_web::main]
 pub async fn main(
-    extension_base_path: Option<&Path>,
+    base_path: &Path,
     addr: &SocketAddr,
     credentials: Option<Credentials>,
     level: LevelFilter,
+    register_routes: impl RegisterRoutes,
 ) -> std::io::Result<()> {
-    init_server(extension_base_path, level)?;
-    let server = setup_server(addr, credentials)?.0;
+    init_server(base_path, level)?;
+    let server = setup_server(addr, credentials, register_routes)?.0;
     server.await
 }
 
 // Perform global init of the server. This must only be called once; it must be
 // called before the server is run.
 pub fn init_server(
-    // If provided, the path to the location of this extension's files. This is
-    // used to locate static files for the webserver, etc. When None, assume the
-    // default layout.
-    extension_base_path: Option<&Path>,
+    // See `set_root_path`'s docs for what this should contain.
+    base_path: &Path,
     level: LevelFilter,
 ) -> std::io::Result<()> {
-    set_root_path(extension_base_path)?;
+    set_root_path(base_path)?;
     // The unit tests include a test logger; don't config the logger in a test
     // build.
     #[cfg(test)]
@@ -1481,15 +1490,17 @@ pub fn init_server(
 pub fn setup_server(
     addr: &SocketAddr,
     credentials: Option<Credentials>,
+    register_routes: impl RegisterRoutes,
 ) -> std::io::Result<(Server, Data<AppState>)> {
     let capture_spool_path = ROOT_PATH.lock().unwrap().join("capture-spool");
-    setup_server_with_capture_spool(addr, credentials, capture_spool_path)
+    setup_server_with_capture_spool(addr, credentials, &capture_spool_path, register_routes)
 }
 
 pub fn setup_server_with_capture_spool(
     addr: &SocketAddr,
     credentials: Option<Credentials>,
-    capture_spool_path: PathBuf,
+    capture_spool_path: &Path,
+    register_routes: impl RegisterRoutes,
 ) -> std::io::Result<(Server, Data<AppState>)> {
     // Pre-load the bundled files before starting the webserver.
     let _ = &*BUNDLED_FILES_MAP;
@@ -1503,6 +1514,7 @@ pub fn setup_server_with_capture_spool(
                 auth,
             )),
             &app_data_server,
+            &register_routes,
         )
     })
     // We only have one user; don't spawn lots of threads.
@@ -1554,7 +1566,7 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
     #[cfg(debug_assertions)]
     l4rs.push("server");
     let config_file = l4rs.join("log4rs.yml");
-    let mut config = load_config_file(&config_file, Default::default())?;
+    let mut config = load_config_file(&config_file, Deserializers::default())?;
     config.root_mut().set_level(level);
     log4rs::init_config(config)?;
     Ok(())
@@ -1565,21 +1577,25 @@ pub fn configure_logger(level: LevelFilter) -> Result<(), Box<dyn std::error::Er
 // closure passed to `HttpServer::new` and moved/cloned in." Putting this code
 // inside `configure_app` places it inside the closure which calls
 // `configure_app`, preventing globally shared state.
+#[must_use]
 pub fn make_app_data(credentials: Option<Credentials>) -> WebAppState {
     let capture_spool_path = ROOT_PATH.lock().unwrap().join("capture-spool");
-    make_app_data_with_capture_spool(credentials, capture_spool_path)
+    make_app_data_with_capture_spool(credentials, &capture_spool_path)
 }
 
 fn make_app_data_with_capture_spool(
     credentials: Option<Credentials>,
-    capture_spool_path: PathBuf,
+    capture_spool_path: &Path,
 ) -> WebAppState {
     // Initialize capture with a durable local upload spool. The VS Code
     // extension supplies the CaptureWebService endpoint and bearer token at
     // runtime; this server never reads database credentials from disk or env.
-    let capture: Option<EventCapture> = match EventCapture::new(capture_spool_path.clone()) {
+    let capture: Option<EventCapture> = match EventCapture::new(capture_spool_path.to_path_buf()) {
         Ok(ec) => {
-            info!("Capture: enabled with local upload spool at {capture_spool_path:?}");
+            info!(
+                "Capture: enabled with local upload spool at \"{}\"",
+                capture_spool_path.display()
+            );
             Some(ec)
         }
         Err(err) => {
@@ -1602,13 +1618,77 @@ fn make_app_data_with_capture_spool(
     })
 }
 
-// Configure the web application. I'd like to make this return an
-// `App<AppEntry>`, but `AppEntry` is a private module.
-pub fn configure_app<T>(app: App<T>, app_data: &WebAppState) -> App<T>
+// A callback which adds IDE-specific routes to the web application.
+// `HttpServer::new` builds a fresh `App` per worker, and its inner service
+// factory type (`AppEntry`) is private to `actix-web`; a plain
+// `Fn(App<T>) -> App<T>` closure can't be named as a field or parameter type
+// generically enough to pass through `setup_server`. This trait sidesteps
+// that: its method is itself generic over `T`, so a single implementor works
+// for whatever `T` `HttpServer::new` picks internally.
+pub trait RegisterRoutes: Clone + Send + 'static {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>;
+}
+
+// A `RegisterRoutes` implementation which adds no additional routes.
+#[derive(Clone)]
+pub struct NoExtraRoutes;
+
+impl RegisterRoutes for NoExtraRoutes {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+    {
+        app
+    }
+}
+
+// Combine two `RegisterRoutes` implementors into one, so a caller (such as
+// the standalone CLI) can opt into more than one route group.
+impl<A: RegisterRoutes, B: RegisterRoutes> RegisterRoutes for (A, B) {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+    {
+        self.1.register(self.0.register(app))
+    }
+}
+
+// Registers the `/ping` and `/stop` process-lifecycle routes. These are only
+// meaningful when the server runs as an independent OS process that another
+// process must poll for liveness and can ask to shut down over HTTP -- the
+// standalone CLI's `start`/`stop` subcommands. The VSCode extension embeds
+// the server in-process and controls its lifecycle directly via
+// [`crate::ide::CodeChatEditorServer::stop_server`], so it doesn't need these
+// routes. This crate's own test harness (`ide::vscode::tests`) also registers
+// them, reusing `/ping` to detect when its shared test webserver has started.
+#[derive(Clone)]
+pub struct LifecycleRoutes;
+
+impl RegisterRoutes for LifecycleRoutes {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+    {
+        app.service(ping).service(stop)
+    }
+}
+
+// Configure the web application with the core routes shared by every IDE
+// integration. Callers (such as the filewatcher IDE) that need additional
+// routes should register them via `register_routes`, invoked after the core
+// routes are added. I'd like to make this return an `App<AppEntry>`, but
+// `AppEntry` is a private module.
+pub fn configure_app<T>(
+    app: App<T>,
+    app_data: &WebAppState,
+    register_routes: &impl RegisterRoutes,
+) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
 {
-    app
+    let app = app
         // Provide data to all endpoints -- the compiler lexers.
         .app_data(app_data.clone())
         // Serve static files per the
@@ -1619,19 +1699,11 @@ where
         ))
         // These endpoints serve the files from the filesystem and the
         // websockets.
-        .service(filewatcher_browser_endpoint)
-        .service(filewatcher_client_endpoint)
-        .service(filewatcher_websocket)
         .service(serve_vscode_fs)
         .service(vscode_ide_websocket)
         .service(vscode_client_websocket)
-        .service(vscode_client_framework)
-        .service(ping)
-        .service(stop)
-        // Reroute to the filewatcher filesystem for typical user-requested
-        // URLs.
-        .route("/", web::get().to(filewatcher_root_fs_redirect))
-        .route("/fw/fsb", web::get().to(filewatcher_root_fs_redirect))
+        .service(vscode_client_framework);
+    register_routes.register(app)
 }
 
 // Utilities
@@ -1704,7 +1776,7 @@ pub fn url_to_path(
         .map(|path_segment| {
             urlencoding::decode(path_segment)
                 .map_err(UrlToPathError::UnableToDecode)
-                .map(|path_seg| path_seg.replace("\\", "%5C"))
+                .map(|path_seg| path_seg.replace('\\', "%5C"))
         })
         .collect::<Result<Vec<String>, UrlToPathError>>()?;
 
@@ -1766,13 +1838,14 @@ pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, TryCanonicalizeError
 }
 
 // Given a file path, convert it to a URL, encoding as necessary.
+#[must_use]
 pub fn path_to_url(prefix: &str, connection_id: Option<&str>, file_path: &Path) -> String {
     // First, convert the path to use forward slashes.
     let pathname = simplified(file_path)
         .to_slash_lossy()
         // The convert each part of the path to a URL-encoded string. (This
         // avoids encoding the slashes.)
-        .split("/")
+        .split('/')
         .map(|s| urlencoding::encode(s))
         // Then put it all back together.
         .collect::<Vec<_>>()
@@ -1790,17 +1863,20 @@ pub fn path_to_url(prefix: &str, connection_id: Option<&str>, file_path: &Path) 
 
 // Given a string (which is probably a pathname), drop the leading slash if it's
 // present.
+#[must_use]
 pub fn drop_leading_slash(path_: &str) -> &str {
     path_.strip_prefix('/').unwrap_or(path_)
 }
 
 // Given a `Path`, transform it into a displayable HTML string (with any
 // necessary escaping).
+#[must_use]
 pub fn path_display(p: &Path) -> Cow<'_, str> {
     escape_text(simplified(p).to_string_lossy())
 }
 
 // Return a Not Found (404) error with the provided text (not HTML) body.
+#[must_use]
 pub fn http_not_found(msg: &str) -> HttpResponse {
     HttpResponse::NotFound()
         .content_type(ContentType::html())
@@ -1808,6 +1884,7 @@ pub fn http_not_found(msg: &str) -> HttpResponse {
 }
 
 // Wrap the provided HTML body in DOCTYPE/html/head tags.
+#[must_use]
 pub fn html_wrapper(body: &str) -> String {
     formatdoc!(
         r#"
@@ -1858,12 +1935,12 @@ pub async fn get_server_url(port: u16) -> Result<String, GetServerUrlError> {
             ])
             .status()
             .await?;
-        if !status.success() {
-            Err(GetServerUrlError::NonZeroExitStatus(status.code()))
-        } else {
+        if status.success() {
             Ok(format!(
                 "https://{codespace_name}-{port}.{codespace_domain}"
             ))
+        } else {
+            Err(GetServerUrlError::NonZeroExitStatus(status.code()))
         }
     } else {
         // We're running locally, so use localhost.

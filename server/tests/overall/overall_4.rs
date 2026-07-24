@@ -21,10 +21,6 @@
 /// tester. This file focuses on security: it verifies that malicious HTML
 /// supplied as a document's source is sanitized, so that embedded JavaScript
 /// never executes and is removed from the source code the Client produces.
-// Modules
-// -------
-mod overall_common;
-
 // Imports
 // -------
 //
@@ -35,15 +31,16 @@ use std::{path::PathBuf, time::Duration};
 use dunce::canonicalize;
 use indoc::formatdoc;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, Key, WebDriver, error::WebDriverError};
+use thirtyfour::{By, Key, WebDriver, error::WebDriverError, prelude::ElementQueryable};
 use tokio::time::sleep;
 
 // ### Local
-use crate::overall_common::{
+use crate::common::{
     CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_line,
     click_element_top_left, end_of_line, optional_message, perform_loadfile,
     select_codechat_iframe,
 };
+use crate::make_test;
 use code_chat_editor::{
     processing::{CodeChatForWeb, CodeMirrorDiffable},
     webserver::{
@@ -52,6 +49,31 @@ use code_chat_editor::{
     },
 };
 use test_utils::prep_test_dir;
+
+// Wait for the autosave timer to report the current cursor position, and check
+// it against the expected code line.
+async fn assert_cursor_line(
+    codechat_server: &CodeChatEditorServerLog,
+    client_id: &mut f64,
+    path_str: &str,
+    line: u32,
+) {
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: *client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.to_string(),
+                cursor_position: Some(CursorPosition::Line(line)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(*client_id, None).await.unwrap();
+    *client_id += MESSAGE_ID_INCREMENT;
+}
 
 // Tests
 // -----
@@ -128,7 +150,7 @@ async fn test_xss_core(
     // The doc block should render the image with its `onerror` attribute
     // stripped, leaving a harmless `<img>`.
     let body_css = "#CodeChat-body .CodeChat-doc-contents";
-    let body_content = driver.find(By::Css(body_css)).await.unwrap();
+    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
     let rendered = body_content.inner_html().await.unwrap();
     assert!(
         !rendered.contains("onerror"),
@@ -165,7 +187,7 @@ async fn test_xss_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Refind the editable contents and type a character to trigger an update.
-    let body_content = driver.find(By::Css(body_css)).await.unwrap();
+    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
     body_content.send_keys("z").await.unwrap();
 
     // A cursor-only update may precede the text update; accept it, then inspect
@@ -386,31 +408,6 @@ async fn test_arrow_key_navigation_core(
 
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
 
-    // Wait for the autosave timer to report the current cursor position, and
-    // check it against the expected code line.
-    async fn assert_cursor_line(
-        codechat_server: &CodeChatEditorServerLog,
-        client_id: &mut f64,
-        path_str: &str,
-        line: u32,
-    ) {
-        assert_eq!(
-            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-            EditorMessage {
-                id: *client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.to_string(),
-                    cursor_position: Some(CursorPosition::Line(line)),
-                    scroll_position: Some(1.0),
-                    is_re_translation: false,
-                    contents: None,
-                })
-            }
-        );
-        codechat_server.send_result(*client_id, None).await.unwrap();
-        *client_id += MESSAGE_ID_INCREMENT;
-    }
-
     // ### `ArrowDown` from a code line enters the doc block below it.
     //
     // Click near the start of line "b" (the last line of the top code block),
@@ -487,7 +484,8 @@ async fn test_arrow_key_navigation_core(
     // doc block 2's TinyMCE instance), then press `Home` so the cursor sits at
     // the exact line start `docBlockNavKeymap`'s `ArrowUp` handler looks for.
     let c_line = driver
-        .find(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
+        .query(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
+        .first()
         .await
         .unwrap();
     click_element_top_left(&driver, &c_line).await.unwrap();
@@ -599,31 +597,6 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
 
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
 
-    // Wait for the autosave timer to report the current cursor position, and
-    // check it against the expected code line.
-    async fn assert_cursor_line(
-        codechat_server: &CodeChatEditorServerLog,
-        client_id: &mut f64,
-        path_str: &str,
-        line: u32,
-    ) {
-        assert_eq!(
-            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-            EditorMessage {
-                id: *client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.to_string(),
-                    cursor_position: Some(CursorPosition::Line(line)),
-                    scroll_position: Some(1.0),
-                    is_re_translation: false,
-                    contents: None,
-                })
-            }
-        );
-        codechat_server.send_result(*client_id, None).await.unwrap();
-        *client_id += MESSAGE_ID_INCREMENT;
-    }
-
     // Click directly on code line "c" -- the line immediately following the
     // multi-line doc block -- to give CodeMirror real focus there, then press
     // `Home` so the cursor sits at the exact line start `docBlockNavKeymap`'s
@@ -632,7 +605,8 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
     // Confirm the click genuinely lands on code line "c" (i.e. `Line(9)`), not
     // inside the preceding doc block.
     let c_line = driver
-        .find(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
+        .query(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
+        .first()
         .await
         .unwrap();
     c_line.click().await.unwrap();
@@ -666,7 +640,7 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.to_string(),
+                file_path: path_str.clone(),
                 cursor_position: Some(CursorPosition::Line(8)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,

@@ -35,8 +35,20 @@ use code_chat_editor::{ide, webserver};
 // ----
 #[napi]
 pub fn init_server(extension_base_path: String) -> Result<(), Error> {
+    // `extension_base_path` is this extension's install directory. In a dev
+    // build, that's `extensions/VSCode/`, two directories below the
+    // repository root that `webserver::set_root_path` needs; in a packaged
+    // build, `client/static`, `log4rs.yml`, and `hashLocations.json` are
+    // copied alongside the extension (see `builder`'s `run_postrelease`), so
+    // the extension's own directory is already the root.
+    let base_path = PathBuf::from(extension_base_path);
+    let base_path = if cfg!(debug_assertions) {
+        base_path.join("../..")
+    } else {
+        base_path
+    };
     webserver::init_server(
-        Some(&PathBuf::from(extension_base_path)),
+        &base_path,
         if cfg!(debug_assertions) {
             LevelFilter::Debug
         } else {
@@ -56,7 +68,7 @@ impl CodeChatEditorServer {
     #[napi(constructor)]
     pub fn new(capture_spool_path: String) -> Result<CodeChatEditorServer, Error> {
         Ok(CodeChatEditorServer(
-            ide::CodeChatEditorServer::new_with_capture_spool(PathBuf::from(capture_spool_path))?,
+            ide::CodeChatEditorServer::new_with_capture_spool(&PathBuf::from(capture_spool_path))?,
         ))
     }
 
@@ -96,13 +108,15 @@ impl CodeChatEditorServer {
     }
 
     #[napi]
+    // We must pass `base_url` as a `String` per NAPI requirements.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn configure_capture_service(
         &self,
         base_url: String,
         token: Option<String>,
     ) -> Result<(), Error> {
         self.0
-            .configure_capture_service(base_url, token)
+            .configure_capture_service(&base_url, token)
             .map_err(|err| Error::new(Status::GenericFailure, err))
     }
 
@@ -174,6 +188,6 @@ impl CodeChatEditorServer {
     // This returns after the server shuts down.
     #[napi]
     pub async fn stop_server(&self) {
-        self.0.stop_server().await
+        self.0.stop_server().await;
     }
 }

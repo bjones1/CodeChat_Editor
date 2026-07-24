@@ -212,11 +212,11 @@ use std::{
     fmt::Debug,
     path::{Path, PathBuf},
     rc::Rc,
+    sync::LazyLock,
 };
 
 use htmd::Node;
 // ### Third-party
-use lazy_static::lazy_static;
 use log::{debug, error, warn};
 use rand::random;
 use regex::Regex;
@@ -253,10 +253,8 @@ use crate::{
 // The max length of a message to show in the console.
 const MAX_MESSAGE_LENGTH: usize = 500;
 
-lazy_static! {
-        /// A regex to determine the type of the first EOL. See 'PROCESSINGS\`.
-    pub static ref EOL_FINDER: Regex = Regex::new("[^\r\n]*(\r?\n)").unwrap();
-}
+/// A regex to determine the type of the first EOL. See 'PROCESSINGS\`.
+pub static EOL_FINDER: LazyLock<Regex> = LazyLock::new(|| Regex::new("[^\r\n]*(\r?\n)").unwrap());
 
 // Data structures
 // ---------------
@@ -268,6 +266,7 @@ pub enum EolType {
 
 // Code
 // ----
+#[must_use]
 pub fn find_eol_type(s: &str) -> EolType {
     match EOL_FINDER.captures(s) {
         // Assume a line type for strings with no newlines.
@@ -452,6 +451,7 @@ struct TranslationTask {
 /// This is the processing task for the Visual Studio Code IDE. It handles all
 /// the core logic to moving data between the IDE and the client.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 pub async fn translation_task(
     connection_id_prefix: String,
     connection_id_raw: String,
@@ -474,7 +474,7 @@ pub async fn translation_task(
             .processing_task_queue_tx
             .lock()
             .unwrap()
-            .insert(connection_id.to_string(), from_http_tx);
+            .insert(connection_id.clone(), from_http_tx);
 
         let mut continue_loop = true;
         let mut tt = TranslationTask {
@@ -524,7 +524,7 @@ pub async fn translation_task(
                         EditorMessageContents::Closed |
                         EditorMessageContents::RequestClose => {
                             debug!("Forwarding it to the Client.");
-                            queue_send!(tt.to_client_tx.send(ide_message))
+                            queue_send!(tt.to_client_tx.send(ide_message));
                         },
 
                         EditorMessageContents::Result(_) => continue_loop = tt.ide_result(ide_message).await,
@@ -571,7 +571,7 @@ pub async fn translation_task(
 
                 // Handle HTTP requests.
                 Some(http_request) = tt.from_http_rx.recv() => {
-                    debug!("Received HTTP request for {:?} and sending LoadFile to IDE, id = {}.", http_request.file_path, tt.id);
+                    debug!("Received HTTP request for {} and sending LoadFile to IDE, id = {}.", http_request.file_path.display(), tt.id);
                     // Convert the request into a `LoadFile` message.
                     queue_send!(tt.to_ide_tx.send(EditorMessage {
                         id: tt.id,
@@ -609,7 +609,7 @@ pub async fn translation_task(
                         // Handle messages that are simply passed through.
                         EditorMessageContents::Closed => {
                             debug!("Forwarding it to the IDE.");
-                            queue_send!(tt.to_ide_tx.send(client_message))
+                            queue_send!(tt.to_ide_tx.send(client_message));
                         },
 
                         EditorMessageContents::Result(ref result) => {
@@ -619,7 +619,7 @@ pub async fn translation_task(
                             if matches!(result, Err(ResultErrTypes::OutOfSync(..))) {
                                 tt.sent_full = false;
                             }
-                            queue_send!(tt.to_ide_tx.send(client_message))
+                            queue_send!(tt.to_ide_tx.send(client_message));
                         },
 
                         // Open a web browser when requested.
@@ -655,7 +655,7 @@ pub async fn translation_task(
                         EditorMessageContents::CurrentFile(url_string, _is_text) => {
                             debug!("Forwarding translated path to IDE.");
                             let result = match url_to_path(&url_string, tt.prefix) {
-                                Err(err) => Err(ResultErrTypes::UrlToPathError(url_string.to_string(), err.to_string())),
+                                Err(err) => Err(ResultErrTypes::UrlToPathError(url_string.clone(), err.to_string())),
                                 Ok(file_path) => {
                                     match file_path.to_str() {
                                         None => Err(ResultErrTypes::NoPathToString(file_path)),
@@ -856,6 +856,7 @@ impl TranslationTask {
     }
 
     // Pass a `Result` message to the Client, unless it's a `LoadFile` result.
+    #[allow(clippy::too_many_lines)]
     async fn ide_result(&mut self, ide_message: EditorMessage) -> bool {
         let EditorMessageContents::Result(ref result) = ide_message.message else {
             panic!("Should only be called with a result.");
@@ -947,7 +948,7 @@ impl TranslationTask {
                         ),
                         // There's no file, so return empty contents, which will
                         // be ignored.
-                        "".to_string(),
+                        String::new(),
                     ),
                     Ok(mut fc) => {
                         let option_file_contents = try_read_as_text(&mut fc).await;
@@ -962,7 +963,7 @@ impl TranslationTask {
                             .await,
                             // If the file is binary, return empty contents,
                             // which will be ignored.
-                            option_file_contents.unwrap_or("".to_string()),
+                            option_file_contents.unwrap_or(String::new()),
                         )
                     }
                 }
@@ -978,7 +979,7 @@ impl TranslationTask {
             self.source_code = file_contents;
             self.eol = find_eol_type(&self.source_code);
             // We must clone here, since the original is placed in the TX queue.
-            self.code_mirror_doc = plain.doc.clone();
+            self.code_mirror_doc.clone_from(&plain.doc);
             self.code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
 
             debug!("Sending Update from LoadFile to Client, id = {}.", self.id);
@@ -997,6 +998,7 @@ impl TranslationTask {
         true
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn ide_update(&mut self, ide_message: EditorMessage) -> bool {
         let EditorMessageContents::Update(update) = ide_message.message else {
             panic!("Expected update message.");
@@ -1123,7 +1125,7 @@ impl TranslationTask {
                                                             metadata: SourceFileMetadata {
                                                                 // Since this is raw data, `mode` doesn't
                                                                 // matter.
-                                                                mode: "".to_string(),
+                                                                mode: String::new(),
                                                             },
                                                             source: CodeMirrorDiffable::Plain(CodeMirror {
                                                                 doc: code_mirror.doc.clone(),
@@ -1134,7 +1136,7 @@ impl TranslationTask {
                                                     }),
                                                 }));
                                                 self.source_code = code_mirror.doc;
-                                                self.code_mirror_doc = self.source_code.clone();
+                                                self.code_mirror_doc.clone_from(&self.source_code);
                                                 self.code_mirror_doc_blocks = Some(vec![]);
                                                 Ok(ResultOkTypes::Void)
                                             }
@@ -1197,6 +1199,7 @@ impl TranslationTask {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn client_update(&mut self, client_message: EditorMessage) -> bool {
         let EditorMessageContents::Update(update_message_contents) = client_message.message else {
             panic!("Expected update message.");
@@ -1231,7 +1234,7 @@ impl TranslationTask {
                                     "client",
                                 );
                             }
-                            self.code_mirror_doc = code_mirror.doc.clone();
+                            self.code_mirror_doc.clone_from(&code_mirror.doc);
                             self.code_mirror_doc_blocks = Some(code_mirror.doc_blocks.clone());
                             // We may need to change this version if we send a
                             // diff back to the Client.
@@ -1289,8 +1292,13 @@ impl TranslationTask {
                                             )))
                                 {
                                     // Use a whole number to avoid encoding
-                                    // differences with fractional values.
-                                    cfw_version = random::<u64>() as f64;
+                                    // differences with fractional values. Precision loss from the
+                                    // u64 -> f64 cast is fine, since we just need a unique-ish version number.
+                                    cfw_version = {
+                                        #[allow(clippy::cast_precision_loss)]
+                                        let v = random::<u64>() as f64;
+                                        v
+                                    };
                                     // The Client needs an update.
                                     let client_contents = self.diff_code_mirror(
                                         cfw.metadata.clone(),
@@ -1324,10 +1332,10 @@ impl TranslationTask {
                                     self.code_mirror_doc_blocks =
                                         Some(code_mirror_translated.doc_blocks);
                                 }
-                            };
+                            }
                             // Correct EOL endings for use with the IDE.
                             let new_source_code_eol = eol_convert(new_source_code, &self.eol);
-                            let ccfw = if self.sent_full && self.allow_source_diffs {
+                            let new_cfw = if self.sent_full && self.allow_source_diffs {
                                 Some(CodeChatForWeb {
                                     metadata: cfw.metadata,
                                     source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
@@ -1354,7 +1362,7 @@ impl TranslationTask {
                             };
                             self.version = cfw_version;
                             self.source_code = new_source_code_eol;
-                            ccfw
+                            new_cfw
                         }
                         Err(message) => {
                             let err = ResultErrTypes::CannotTranslateCodeChat(message.to_string());
@@ -1389,7 +1397,7 @@ impl TranslationTask {
                         let is_markdown = self
                             .code_mirror_doc_blocks
                             .as_ref()
-                            .is_none_or(|v| v.is_empty());
+                            .is_none_or(std::vec::Vec::is_empty);
 
                         // 1. Find the HTML (for a Markdown document) or the doc
                         //    block the cursor is in. Create a temporary
@@ -1440,7 +1448,7 @@ impl TranslationTask {
                         //    the HTML to Markdown.
                         let translated = doc_block_html_to_markdown(
                             vec![CodeDocBlock::DocBlock(doc_block)],
-                            &Some((dom_path, dom_offset)),
+                            Some(&(dom_path, dom_offset)),
                         )
                         .ok()?;
                         let CodeDocBlock::DocBlock(db) = &translated[0] else {
@@ -1460,7 +1468,7 @@ impl TranslationTask {
 
                         // CodeMirror uses 1-based line numbers.
                         Some(CursorPosition::Line(
-                            (preceding_newlines + newlines_before_marker + 1) as u32,
+                            u32::try_from(preceding_newlines + newlines_before_marker + 1).ok()?,
                         ))
                     })()
                 } else {
@@ -1485,13 +1493,13 @@ impl TranslationTask {
     }
 }
 
-// If a string is encoded using CRLFs (Windows style), convert it to LFs only
-// (Unix style).
+// Given a string using LF-only (Unix style) line endings, convert it to CRLF
+// (Windows style) line endings if `eol_type` requests it.
 fn eol_convert(s: String, eol_type: &EolType) -> String {
     if eol_type == &EolType::Crlf {
         // There shouldn't be any Windows-style CRLFs -- but if there are,
         // handle this nicely.
-        s.replace("\r\n", "\n").replace("\n", "\r\n")
+        s.replace("\r\n", "\n").replace('\n', "\r\n")
     } else {
         s
     }
@@ -1568,7 +1576,7 @@ fn doc_blocks_compare(a: &CodeMirrorDocBlockVec, b: &CodeMirrorDocBlockVec) -> b
 // `MAX_MESSAGE_LENGTH` characters of the provided value.
 fn debug_shorten<T: Debug>(val: T) -> String {
     if cfg!(debug_assertions) {
-        let msg = format!("{:?}", val);
+        let msg = format!("{val:?}");
         let max_index = msg
             .char_indices()
             .nth(MAX_MESSAGE_LENGTH)
@@ -1576,7 +1584,7 @@ fn debug_shorten<T: Debug>(val: T) -> String {
             .0;
         msg[..max_index].to_string()
     } else {
-        "".to_string()
+        String::new()
     }
 }
 
@@ -1692,14 +1700,14 @@ mod tests {
         let ide = vec![CodeMirrorDocBlock {
             from: 0,
             to: 20,
-            indent: "".to_string(),
+            indent: String::new(),
             delimiter: "//".to_string(),
             contents: "<ul><li><input checked type=checkbox>Task list</ul><p>Line<br> break<p>Non-breaking\u{a0} space.</p><iframe allowfullscreen frameborder=0 height=314 src=https://www.youtube.com/embed/Hp076_dxuVU width=560></iframe>".to_string(),
         }];
         let client = vec![CodeMirrorDocBlock {
             from: 0,
             to: 20,
-            indent: "".to_string(),
+            indent: String::new(),
             delimiter: "//".to_string(),
             contents: "<ul><li><input type=\"checkbox\" checked=\"checked\">Task list</li></ul><p>Line<br>break</p><p>Non-breaking&nbsp; space.</p><p><span contenteditable=\"false\" data-mce-object=\"iframe\" class=\"mce-preview-object mce-object-iframe\" data-mce-p-allowfullscreen=\"allowfullscreen\" data-mce-p-src=\"https://www.youtube.com/embed/Hp076_dxuVU\" data-mce-p-frameborder=\"0\"><iframe width=\"560\" height=\"314\" src=\"https://www.youtube.com/embed/Hp076_dxuVU\" allowfullscreen=\"allowfullscreen\" frameborder=\"0\"></iframe><span class=\"mce-shim\"></span></span></p>".to_string(),
         }];
@@ -1711,14 +1719,14 @@ mod tests {
         let ide = vec![CodeMirrorDocBlock {
             from: 0,
             to: 20,
-            indent: "".to_string(),
+            indent: String::new(),
             delimiter: "//".to_string(),
             contents: "<ol><li><ol><li>1</ol></ol>".to_string(),
         }];
         let client = vec![CodeMirrorDocBlock {
             from: 0,
             to: 20,
-            indent: "".to_string(),
+            indent: String::new(),
             delimiter: "//".to_string(),
             contents: "<ol> <li> <ol> <li> 1 </ol> </li> </ol> </li>".to_string(),
         }];

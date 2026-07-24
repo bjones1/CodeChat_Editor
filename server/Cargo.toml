@@ -45,15 +45,12 @@ actix-files = "0.6"
 actix-http = "3.9.0"
 actix-rt = "2.9.0"
 actix-server = "2.6.0"
-actix-service = "2.0.3"
 actix-web = "4"
 actix-web-httpauth = "0.8.2"
 actix-ws = "0.4"
 ammonia = "4.1.2"
-anyhow = "1.0.100"
 bytes = { version = "1", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-clap = { version = "4", features = ["derive"] }
 dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markdown.git", branch = "all-fixes" }
 dunce = "1.0.5"
 futures-util = "0.3.29"
@@ -63,10 +60,7 @@ html5ever = "0.39"
 htmlize = "1.0.6"
 imara-diff = { version = "0.2", features = [] }
 indoc = "2.0.5"
-lazy_static = "1"
-# Ideally, we'd set this in a non-library place, but this also builds a CLI.
-# TODO: separate the CLI into a different crate.
-log = { version = "0.4", features = ["release_max_level_warn"] }
+log = "0.4"
 log4rs = "1.3"
 markup5ever_rcdom = "0.39"
 mime = "0.3.17"
@@ -107,7 +101,6 @@ windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 # ### Development-only dependencies
 [dev-dependencies]
 actix-http = "3.9.0"
-assert_cmd = "2"
 assert_fs = "1"
 assertables = "10"
 futures = "0.3.31"
@@ -144,6 +137,38 @@ strip = "symbols"
 [profile.dist]
 inherits = "release"
 
+# Code coverage
+# -------------
+#
 [lints.rust]
-# Avoid a lint about tarpaulin.
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+# Avoid a lint about the `coverage` cfg set by `cargo llvm-cov` (see `bt
+# cover`).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+# Clippy config
+# -------------
+#
+# A good article: https://emschwartz.me/your-clippy-config-should-be-stricter.
+#
+# Docs on clippy: see `cargo clippy --help`, `cargo check --help` (the target
+# selection and feature selection flags seems to apply to clippy).
+[lints.clippy]
+# https://github.com/rust-lang/rust-clippy shows which categories are enabled by
+# default; https://doc.rust-lang.org/stable/clippy/lints.html for a description
+# of each of these categories.
+#
+# Individual lints below need an explicit `priority` higher than this group's
+# implicit 0, or Cargo errors with "lint group `pedantic` has the same
+# priority (0) as a lint" (see
+# https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section).
+pedantic = { level = "warn", priority = 0 }
+# Disable specific pedantic lints that don't apply. Use LP docs instead of
+# rustdoc for errors and panics.
+missing_errors_doc = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
+# This warns at the phrase "CodeChat Editor", so it's disabled.
+doc_markdown = { level = "allow", priority = 1 }
+# Some lints relaxed for test code only via a single
+# `#![cfg_attr(test, allow(...))]` line in each crate root (`src/lib.rs`,
+# `src/main.rs`) and a plain `#![allow(...)]` in each `tests/*.rs` integration
+# test binary (which is entirely test code).

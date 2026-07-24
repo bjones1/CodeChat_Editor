@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `main.rs` -- Entrypoint for the CodeChat Editor Builder
+/// `main.rs` -- Entrypoint for the `CodeChat` Editor Builder
 /// =======================================================
 ///
 /// This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
@@ -131,6 +131,7 @@ struct TypeScriptBuildOptions {
 // Constants
 // ---------
 static VSCODE_PATH: &str = "../extensions/VSCode";
+static STANDALONE_PATH: &str = "../extensions/standalone";
 static CLIENT_PATH: &str = "../client";
 static BUILDER_PATH: &str = "../builder";
 static TEST_UTILS_PATH: &str = "../test_utils";
@@ -163,7 +164,7 @@ fn run_script<T: AsRef<Path>, A: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Displa
         process.arg("/c").arg(script);
     } else {
         process = Command::new(script);
-    };
+    }
     process.args(args).current_dir(&dir);
     // A bit crude, but displays the command being run.
     println!("{dir}: {process:#?}");
@@ -172,7 +173,10 @@ fn run_script<T: AsRef<Path>, A: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Displa
     if exit_code == Some(0) || (exit_code.is_some() && !check_exit_code) {
         Ok(())
     } else {
-        Err(io::Error::other("pnpm exit code indicates failure."))
+        Err(io::Error::other(format!(
+            "{}: exit code {exit_code:?} indicates failure.",
+            script.to_string_lossy()
+        )))
     }
 }
 
@@ -181,7 +185,7 @@ fn run_script<T: AsRef<Path>, A: AsRef<OsStr>, P: AsRef<Path> + std::fmt::Displa
 /// programs (`robocopy`/`rsync`) to accomplish this. Very important: the `src`
 /// **must** end with a `/`, otherwise the Windows and Linux copies aren't
 /// identical.
-fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Result<()> {
+fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<&P>) -> io::Result<()> {
     assert!(src.as_ref().to_string_lossy().ends_with('/'));
     let mut copy_process;
     let src = OsStr::new(src.as_ref());
@@ -248,7 +252,7 @@ fn quick_copy_dir<P: AsRef<Path>>(src: P, dest: P, files: Option<P>) -> io::Resu
     }
 
     // Print the command, in case this produces and error or takes a while.
-    println!("{:#?}", copy_process);
+    println!("{copy_process:#?}");
 
     // Check for errors.
     let exit_code = copy_process
@@ -355,7 +359,7 @@ fn patch_client_libs() -> io::Result<()> {
     quick_copy_dir(
         format!("{CLIENT_PATH}/node_modules/mathjax/"),
         format!("{CLIENT_PATH}/static/mathjax"),
-        Some("tex-chtml.js".to_string()),
+        Some(&"tex-chtml.js".to_string()),
     )?;
     quick_copy_dir(
         format!("{CLIENT_PATH}/node_modules/@mathjax/mathjax-newcm-font/chtml/"),
@@ -380,6 +384,8 @@ fn run_install(dev: bool) -> io::Result<()> {
         cargo fetch --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo fetch";
         cargo fetch --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo fetch";
+        cargo fetch --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo fetch";
         cargo fetch --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo fetch";
@@ -421,8 +427,12 @@ fn run_install(dev: bool) -> io::Result<()> {
             cargo binstall cargo-sort --no-confirm;
             info "cargo binstall cargo-audit";
             cargo binstall cargo-audit --no-confirm;
-            info "cargo binstall cargo-tarpaulin";
-            cargo binstall cargo-tarpaulin --no-confirm;
+            info "cargo binstall cargo-llvm-cov";
+            cargo binstall cargo-llvm-cov --no-confirm;
+            // Install the required llvm-tools component used by cargo-llvm-cov
+            // without prompting.
+            info "rustup component add llvm-tools-preview";
+            rustup component add llvm-tools-preview;
         )?;
     }
     Ok(())
@@ -437,6 +447,8 @@ fn run_update() -> io::Result<()> {
         cargo update --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo update";
         cargo update --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo update";
+        cargo update --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo update";
         cargo update --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo update";
@@ -450,6 +462,8 @@ fn run_update() -> io::Result<()> {
         cargo outdated --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo outdated";
         cargo outdated --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo outdated";
+        cargo outdated --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo outdated";
         cargo outdated --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo outdated";
@@ -476,6 +490,9 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         info "VSCode extension: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$VSCODE_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo clippy and fmt";
+        cargo clippy --all-targets --all-features --manifest-path=$STANDALONE_PATH/Cargo.toml -- $clippy_check_only;
+        cargo fmt --all $check --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$TEST_UTILS_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
@@ -486,6 +503,8 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cargo audit --file=$BUILDER_PATH/Cargo.lock --no-fetch;
         info "VSCode extension: cargo audit";
         cargo audit --file=$VSCODE_PATH/Cargo.lock --no-fetch;
+        info "Standalone: cargo audit";
+        cargo audit --file=$STANDALONE_PATH/Cargo.lock --no-fetch;
         info "test_utils: cargo audit";
         cargo audit --file=$TEST_UTILS_PATH/Cargo.lock --no-fetch;
 
@@ -497,6 +516,9 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cd $VSCODE_PATH;
         info "VSCode extension: cargo sort";
         cargo sort $check;
+        cd ../standalone;
+        info "Standalone: cargo sort";
+        cargo sort $check;
         info "test_utils: cargo sort";
         cd ../$TEST_UTILS_PATH;
         cargo sort $check;
@@ -504,7 +526,7 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     )?;
     let mut eslint_args = vec!["eslint", "src"];
     if !eslint_check.is_empty() {
-        eslint_args.push(eslint_check)
+        eslint_args.push(eslint_check);
     }
     run_script("npx", &eslint_args, CLIENT_PATH, true)?;
     run_script("npx", &eslint_args, VSCODE_PATH, true)?;
@@ -526,6 +548,8 @@ fn run_test() -> io::Result<()> {
         cargo test --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "VSCode extension: cargo test";
         cargo test --manifest-path=$VSCODE_PATH/Cargo.toml;
+        info "Standalone: cargo test";
+        cargo test --manifest-path=$STANDALONE_PATH/Cargo.toml;
         info "test_utils: cargo test";
         cargo test --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo test";
@@ -534,36 +558,25 @@ fn run_test() -> io::Result<()> {
     Ok(())
 }
 
-/// Repeatedly run the `overall_*` integration tests until one fails, to expose
-/// intermittent failures. This is a translation of `server/run_until_fail.ps1`.
+/// Repeatedly run the `overall` integration test modules until one fails, to
+/// expose intermittent failures.
 fn run_until_fail() -> io::Result<()> {
     // Provide a backtrace on a failing test, matching the script's
     // `RUST_BACKTRACE=1`.
     unsafe {
         env::set_var("RUST_BACKTRACE", "1");
     }
-    let tests = [
-        "overall_1",
-        "overall_2",
-        "overall_3",
-        "overall_4",
-        "overall_5",
-    ];
     let mut iteration = 0;
     loop {
         iteration += 1;
         // Clear the screen so only the current iteration's output is visible.
         print!("\x1b[2J\x1b[H");
         println!("--- Iteration {iteration} ---");
-        for test in tests {
-            // `run_cmd!` returns an error if `cargo test` exits non-zero, which
-            // breaks out of the loop -- the same behavior as the script.
-            run_cmd!(cargo test --test $test).map_err(|err| {
-                io::Error::other(format!(
-                    "Test {test} failed on iteration {iteration}: {err}"
-                ))
-            })?;
-        }
+        // `run_cmd!` returns an error if `cargo test` exits non-zero, which
+        // breaks out of the loop -- the same behavior as the script.
+        run_cmd!(cargo test --test overall).map_err(|err| {
+            io::Error::other(format!("Test failed on iteration {iteration}: {err}"))
+        })?;
     }
 }
 
@@ -573,6 +586,8 @@ fn run_build() -> io::Result<()> {
         cargo build --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "cargo build";
         cargo build;
+        info "Standalone: cargo build";
+        cargo build --manifest-path=$STANDALONE_PATH/Cargo.toml;
     )?;
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists(format!("{CLIENT_PATH}/static/bundled"))?;
@@ -766,7 +781,7 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
     )?;
     search_and_replace_file(
         format!("{CLIENT_PATH}/package.json5"),
-        r#"(\r?\n    version: ')[\d.]+(?:-[a-z\d]*)?(',\r?\n)"#,
+        r"(\r?\n    version: ')[\d.]+(?:-[a-z\d]*)?(',\r?\n)",
         &replacement_string,
     )?;
     Ok(())
@@ -835,15 +850,9 @@ fn run_postrelease(target: &str, tag: &str) -> io::Result<()> {
 
 fn run_coverage() -> io::Result<()> {
     run_cmd!(
-        info "cargo tarpaulin --skip-clean --out=html --target-dir=tarpaulin";
-        cargo tarpaulin --skip-clean --out=html --out=json --target-dir=tarpaulin;
-    )?;
-
-    // Open the resulting coverage report in the default web browser. The current
-    // working directory is `server/` (see `main`), so the report lives at
-    // `server/tarpaulin-report.html`.
-    let report = Path::new("tarpaulin-report.html");
-    open::that(report)
+        info "cargo llvm-cov --open";
+        cargo llvm-cov --open;
+    )
 }
 
 // CLI implementation

@@ -18,7 +18,7 @@
 // =================================================================
 //
 // To run tests, change to the `server/` directory then run `./bt client-build`
-// to build any changes to the Client, followed by `cargo test --test overall_1
+// to build any changes to the Client, followed by `cargo test --test overall
 // test_client`. Or, add a `?test` parameter to any web page served by the
 // CodeChat Editor Server.
 //

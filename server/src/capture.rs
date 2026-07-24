@@ -105,6 +105,7 @@ pub enum CaptureEventType {
 }
 
 impl CaptureEventType {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::WriteDoc => "write_doc",
@@ -138,6 +139,7 @@ impl std::fmt::Display for CaptureEventType {
 
 /// Hash a local file path before it enters capture storage. The hash is stable
 /// enough to group edits to the same file while avoiding raw path collection.
+#[must_use]
 pub fn hash_capture_path(path: &str) -> String {
     hash_capture_text(path)
 }
@@ -147,10 +149,13 @@ fn hash_capture_token(token: &str) -> String {
 }
 
 fn hash_capture_text(value: &str) -> String {
+    use std::fmt::Write;
     Sha256::digest(value.as_bytes())
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+        .fold(String::new(), |mut acc, byte| {
+            let _ = write!(acc, "{byte:02x}");
+            acc
+        })
 }
 
 /// JSON payload received from local clients for capture events.
@@ -274,13 +279,14 @@ impl CaptureContext {
         data.entry("source".to_string())
             .or_insert_with(|| serde_json::json!("server_translation"));
 
+        let user_id = self.user_id.clone()?;
         self.server_sequence_number += 1;
 
         Some(CaptureEventWire {
             event_id: None,
             sequence_number: Some(self.server_sequence_number),
             schema_version: self.schema_version,
-            user_id: self.user_id.clone()?,
+            user_id,
             session_id: self.session_id.clone(),
             event_source: Some("server_translation".to_string()),
             language_id: None,
@@ -317,8 +323,8 @@ pub struct CaptureServiceConfig {
 }
 
 impl CaptureServiceConfig {
-    fn configured(base_url: String, token: Option<String>) -> Result<Self, String> {
-        let base_url = normalize_service_base_url(&base_url)?;
+    fn configured(base_url: &str, token: Option<String>) -> Result<Self, String> {
+        let base_url = normalize_service_base_url(base_url)?;
         Ok(Self {
             base_url: Some(base_url),
             token: token.filter(|token| !token.trim().is_empty()),
@@ -462,6 +468,7 @@ pub struct CaptureStatus {
 }
 
 impl CaptureStatus {
+    #[must_use]
     pub fn disabled() -> Self {
         Self {
             enabled: false,
@@ -517,6 +524,7 @@ pub struct CaptureEvent {
 }
 
 impl CaptureEvent {
+    #[must_use]
     pub fn new(
         user_id: String,
         file_hash: Option<String>,
@@ -541,6 +549,7 @@ impl CaptureEvent {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn with_columns(
         event_id: Option<String>,
         sequence_number: Option<i64>,
@@ -571,6 +580,7 @@ impl CaptureEvent {
         }
     }
 
+    #[must_use]
     pub fn now(
         user_id: String,
         file_hash: Option<String>,
@@ -732,7 +742,7 @@ impl EventCapture {
 
         thread::Builder::new()
             .name("codechat-capture-upload".to_string())
-            .spawn(move || upload_worker(rx, config_worker, status_worker, spool_worker))
+            .spawn(move || upload_worker(&rx, &config_worker, &status_worker, &spool_worker))
             .map_err(|err| {
                 io::Error::other(format!("Capture: failed to start upload worker: {err}"))
             })?;
@@ -745,7 +755,7 @@ impl EventCapture {
         })
     }
 
-    pub fn configure_service(&self, base_url: String, token: Option<String>) -> Result<(), String> {
+    pub fn configure_service(&self, base_url: &str, token: Option<String>) -> Result<(), String> {
         let mut new_config = CaptureServiceConfig::configured(base_url, token)?;
         let token_status = if new_config.token().is_some() {
             CaptureTokenStatus::Unverified
@@ -764,7 +774,7 @@ impl EventCapture {
             status.enabled = true;
             status.state = CaptureState::Spooling;
             status.token_status = token_status;
-            status.service_base_url = new_config.base_url.clone();
+            status.service_base_url.clone_from(&new_config.base_url);
             status.participant_id = None;
             status.instance_id = None;
             status.capture_enabled = None;
@@ -826,7 +836,7 @@ impl EventCapture {
 
     /// Durably append an event to the local FIFO spool, then ask the worker to
     /// upload as soon as service access permits.
-    pub fn log(&self, event: CaptureEvent) {
+    pub fn log(&self, event: &CaptureEvent) {
         debug!(
             "Capture: spooling event: type={}, user_id={}, file_hash={:?}",
             event.event_type, event.user_id, event.file_hash
@@ -846,7 +856,7 @@ impl EventCapture {
             }
         };
 
-        match append_spool_event(&self.spool_path, &event, spool_identity) {
+        match append_spool_event(&self.spool_path, event, spool_identity) {
             Ok(()) => {
                 update_status(&self.status, |status| {
                     if matches!(
@@ -881,15 +891,16 @@ impl EventCapture {
         }
     }
 
+    #[must_use]
     pub fn status(&self) -> CaptureStatus {
-        self.status
-            .lock()
-            .map(|status| status.clone())
-            .unwrap_or_else(|_| {
+        self.status.lock().map_or_else(
+            |_| {
                 let mut status = CaptureStatus::disabled();
                 status.last_error = Some("Capture status lock is poisoned".to_string());
                 status
-            })
+            },
+            |status| status.clone(),
+        )
     }
 }
 
@@ -901,15 +912,18 @@ fn update_status(status: &Arc<Mutex<CaptureStatus>>, f: impl FnOnce(&mut Capture
 }
 
 fn upload_worker(
-    rx: mpsc::Receiver<WorkerMsg>,
-    config: Arc<Mutex<CaptureServiceConfig>>,
-    status: Arc<Mutex<CaptureStatus>>,
-    spool_path: PathBuf,
+    rx: &mpsc::Receiver<WorkerMsg>,
+    config: &Arc<Mutex<CaptureServiceConfig>>,
+    status: &Arc<Mutex<CaptureStatus>>,
+    spool_path: &Path,
 ) {
-    info!("Capture: upload worker started with spool at {spool_path:?}.");
+    info!(
+        "Capture: upload worker started with spool at {}.",
+        spool_path.display()
+    );
     let mut retry_delay = Duration::from_millis(INITIAL_RETRY_DELAY_MS);
     loop {
-        match upload_next_batch(&spool_path, &config, &status) {
+        match upload_next_batch(spool_path, config, status) {
             UploadOutcome::UploadedBatch => {
                 retry_delay = Duration::from_millis(INITIAL_RETRY_DELAY_MS);
                 continue;
@@ -927,7 +941,7 @@ fn upload_worker(
         }
 
         let wait_for = if matches!(
-            capture_status_state(&status),
+            capture_status_state(status),
             CaptureState::ServiceUnavailable
         ) {
             retry_delay
@@ -936,8 +950,7 @@ fn upload_worker(
         };
 
         match rx.recv_timeout(wait_for) {
-            Ok(WorkerMsg::Flush) => {}
-            Err(RecvTimeoutError::Timeout) => {}
+            Ok(WorkerMsg::Flush) | Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => {
                 warn!("Capture: upload worker channel closed; worker exiting.");
                 break;
@@ -945,7 +958,7 @@ fn upload_worker(
         }
 
         if matches!(
-            capture_status_state(&status),
+            capture_status_state(status),
             CaptureState::ServiceUnavailable
         ) {
             retry_delay = retry_delay
@@ -958,8 +971,7 @@ fn upload_worker(
 fn capture_status_state(status: &Arc<Mutex<CaptureStatus>>) -> CaptureState {
     status
         .lock()
-        .map(|status| status.state)
-        .unwrap_or(CaptureState::Disabled)
+        .map_or(CaptureState::Disabled, |status| status.state)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -971,6 +983,7 @@ enum UploadOutcome {
     TransientFailure,
 }
 
+#[allow(clippy::too_many_lines)]
 fn upload_next_batch(
     spool_path: &Path,
     config: &Arc<Mutex<CaptureServiceConfig>>,
@@ -1078,7 +1091,10 @@ fn upload_next_batch(
             if !run_if_capture_config_snapshot_is_current(config, &cfg, || {
                 for file in &batch.files {
                     if let Err(err) = fs::remove_file(file) {
-                        warn!("Capture: unable to remove uploaded spool file {file:?}: {err}");
+                        warn!(
+                            "Capture: unable to remove uploaded spool file {}: {err}",
+                            file.display()
+                        );
                     }
                 }
                 update_status(status, |status| {
@@ -1099,11 +1115,7 @@ fn upload_next_batch(
             UploadOutcome::UploadedBatch
         }
         Err(err) => match err.status_code {
-            Some(401) => {
-                apply_http_error_if_current(config, status, &cfg, &err);
-                UploadOutcome::Paused
-            }
-            Some(403) => {
+            Some(401 | 403) => {
                 apply_http_error_if_current(config, status, &cfg, &err);
                 UploadOutcome::Paused
             }
@@ -1197,6 +1209,7 @@ fn update_spool_count(spool_path: &Path, status: &Arc<Mutex<CaptureStatus>>) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_next_batch(
     spool_path: &Path,
     cfg: &CaptureServiceConfig,
@@ -1333,8 +1346,7 @@ fn spool_record_matches_current_identity(record: &SpoolRecord, cfg: &CaptureServ
 
     cfg.participant_id
         .as_deref()
-        .map(|participant_id| record.event.user_id == participant_id)
-        .unwrap_or(false)
+        .is_some_and(|participant_id| record.event.user_id == participant_id)
 }
 
 fn read_spool_record(path: &Path) -> Result<SpoolRecord, String> {
@@ -1593,10 +1605,10 @@ fn quarantine_files(
     }
 
     for file in files {
-        let file_name = file
-            .file_name()
-            .map(|name| name.to_owned())
-            .unwrap_or_else(|| "capture-event.json".into());
+        let file_name = file.file_name().map_or_else(
+            || "capture-event.json".into(),
+            std::borrow::ToOwned::to_owned,
+        );
         let target = quarantine.join(file_name);
         if let Err(err) = fs::rename(file, &target).or_else(|_| {
             fs::copy(file, &target)?;
@@ -1604,13 +1616,16 @@ fn quarantine_files(
         }) {
             update_status(status, |status| {
                 status.failed_events += 1;
-                status.last_error = Some(format!("Unable to quarantine {file:?}: {err}"));
+                status.last_error = Some(format!("Unable to quarantine {}: {err}", file.display()));
             });
             continue;
         }
         let reason_path = target.with_extension("reason.txt");
         if let Err(err) = fs::write(&reason_path, reason) {
-            warn!("Capture: unable to write quarantine reason {reason_path:?}: {err}");
+            warn!(
+                "Capture: unable to write quarantine reason \"{}\": {err}",
+                reason_path.display()
+            );
         }
         update_status(status, |status| {
             status.quarantined_events += 1;
@@ -1658,7 +1673,7 @@ mod tests {
 
     fn capture_service_config(token: &str, generation: u64) -> CaptureServiceConfig {
         let mut cfg = CaptureServiceConfig::configured(
-            "https://capture.example/dev".to_string(),
+            "https://capture.example/dev",
             Some(token.to_string()),
         )
         .expect("capture service config should parse");
@@ -1672,9 +1687,8 @@ mod tests {
         generation: u64,
         participant_id: &str,
     ) -> CaptureServiceConfig {
-        let mut cfg =
-            CaptureServiceConfig::configured(base_url.to_string(), Some(token.to_string()))
-                .expect("capture service config should parse");
+        let mut cfg = CaptureServiceConfig::configured(base_url, Some(token.to_string()))
+            .expect("capture service config should parse");
         cfg.generation = generation;
         cfg.participant_id = Some(participant_id.to_string());
         cfg.instance_id = Some(format!("{participant_id}-instance"));
@@ -1827,7 +1841,7 @@ mod tests {
         let _ = fs::remove_dir_all(&spool_path);
 
         let capture = EventCapture::new(spool_path.clone()).expect("capture worker should start");
-        capture.log(CaptureEvent::with_columns(
+        capture.log(&CaptureEvent::with_columns(
             Some("event-1".to_string()),
             Some(1),
             Some(2),
@@ -2151,14 +2165,14 @@ mod tests {
         let _ = fs::remove_dir_all(&spool_path);
 
         let mut old_cfg = CaptureServiceConfig::configured(
-            "https://capture.example/dev".to_string(),
+            "https://capture.example/dev",
             Some("old-token".to_string()),
         )
         .expect("old config should parse");
         old_cfg.participant_id = Some("old-user".to_string());
         old_cfg.instance_id = Some("old-instance".to_string());
         let mut new_cfg = CaptureServiceConfig::configured(
-            "https://capture.example/dev".to_string(),
+            "https://capture.example/dev",
             Some("new-token".to_string()),
         )
         .expect("new config should parse");
@@ -2208,12 +2222,12 @@ mod tests {
         let _ = fs::remove_dir_all(&spool_path);
 
         let old_cfg = CaptureServiceConfig::configured(
-            "https://capture.example/dev".to_string(),
+            "https://capture.example/dev",
             Some("old-token".to_string()),
         )
         .expect("old config should parse");
         let mut new_cfg = CaptureServiceConfig::configured(
-            "https://capture.example/dev".to_string(),
+            "https://capture.example/dev",
             Some("new-token".to_string()),
         )
         .expect("new config should parse");
@@ -2246,7 +2260,7 @@ mod tests {
         let _ = fs::remove_dir_all(&spool_path);
 
         let cfg = CaptureServiceConfig::configured(
-            "https://capture.example/dev".to_string(),
+            "https://capture.example/dev",
             Some("token".to_string()),
         )
         .expect("config should parse");
