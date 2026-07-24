@@ -45,12 +45,10 @@ actix-files = "0.6"
 actix-http = "3.9.0"
 actix-rt = "2.9.0"
 actix-server = "2.6.0"
-actix-service = "2.0.3"
 actix-web = "4"
 actix-web-httpauth = "0.8.2"
 actix-ws = "0.4"
 ammonia = "4.1.2"
-anyhow = "1.0.100"
 bytes = { version = "1", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 dprint-plugin-markdown = { git = "https://github.com/bjones1/dprint-plugin-markdown.git", branch = "all-fixes" }
