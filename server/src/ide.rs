@@ -29,9 +29,9 @@
 //!
 //! All internal fields are private so that IDE extensions are forced to use
 //! only this public interface, hiding the implementation details of the server.
-//! Sub-modules (`filewatcher` — file watcher support, `vscode`) contain
-//! IDE-specific logic.
-pub mod filewatcher;
+//! The `vscode` sub-module contains IDE-specific logic. (The file watcher
+//! "IDE" lives in `extensions/standalone`, since it's used only by that
+//! binary.)
 pub mod vscode;
 
 // Imports
@@ -65,7 +65,7 @@ use tokio::{
 // ### Local
 use crate::{
     capture::CaptureEventWire,
-    ide::vscode::{connection_id_raw_to_str, vscode_ide_core},
+    ide::vscode::{VscodeRoutes, connection_id_raw_to_str, vscode_ide_core},
     processing::{CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata},
     translation::{CreatedTranslationQueues, create_translation_queues},
     webserver::{
@@ -122,7 +122,7 @@ impl CodeChatEditorServer {
             &SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
             None,
             capture_spool_path,
-            webserver::NoExtraRoutes,
+            VscodeRoutes,
         )?;
         let server_handle = server.handle();
 

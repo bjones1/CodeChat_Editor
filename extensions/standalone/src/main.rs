@@ -13,6 +13,17 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+//
+// Relax a few pedantic Clippy lints for test code only; see the `[lints.clippy]`
+// section in `Cargo.toml` for the full-crate (production) lint config.
+#![cfg_attr(
+    test,
+    allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::float_cmp
+    )
+)]
 //! `main.rs` -- Entrypoint for the CodeChat Editor Server
 //! ======================================================
 //!
@@ -47,10 +58,12 @@ use clap::{Parser, Subcommand};
 use log::{LevelFilter, error, info};
 
 // ### Local
-use code_chat_editor::{
-    ide::filewatcher::FilewatcherRoutes,
-    webserver::{self, Credentials, GetServerUrlError, LifecycleRoutes, path_to_url},
+use code_chat_editor::webserver::{
+    self, Credentials, GetServerUrlError, LifecycleRoutes, path_to_url,
 };
+use filewatcher::FilewatcherRoutes;
+
+mod filewatcher;
 
 // Data structures
 // ---------------

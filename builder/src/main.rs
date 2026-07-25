@@ -80,7 +80,9 @@ enum Commands {
         #[arg(short, long, default_value_t = false)]
         check: bool,
     },
-    /// Run lints and tests.
+    /// Run formatters and linters, build all files, build for release, then run tests.
+    Full,
+    /// Run all tests.
     Test,
     /// Repeatedly run the `overall_*` tests until one fails. Useful for
     /// shaking out intermittent test failures.
@@ -427,6 +429,8 @@ fn run_install(dev: bool) -> io::Result<()> {
             cargo binstall cargo-sort --no-confirm;
             info "cargo binstall cargo-audit";
             cargo binstall cargo-audit --no-confirm;
+            info "cargo binstall cargo-machete";
+            cargo binstall cargo-machete --no-confirm;
             info "cargo binstall cargo-llvm-cov";
             cargo binstall cargo-llvm-cov --no-confirm;
             // Install the required llvm-tools component used by cargo-llvm-cov
@@ -524,6 +528,26 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cargo sort $check;
 
     )?;
+    // `cargo machete` recurses into subdirectories on its own, so a single
+    // invocation from the repo root covers every crate. It's run outside the
+    // block above and branched here (rather than interpolating a `--fix`
+    // variable that may be empty) because passing it an empty string
+    // argument makes it treat the empty string as an invalid path and error
+    // out. The `cargo-machete` binary is invoked directly (rather than via
+    // `cargo machete`) since going through cargo's subcommand dispatch from
+    // inside this already-running `cargo run` process causes cargo-machete to
+    // misparse its own arguments.
+    if check_only {
+        run_cmd!(
+            info "cargo machete";
+            cargo-machete --with-metadata --skip-target-dir ..;
+        )?;
+    } else {
+        run_cmd!(
+            info "cargo machete";
+            cargo-machete --with-metadata --skip-target-dir --fix ..;
+        )?;
+    }
     let mut eslint_args = vec!["eslint", "src"];
     if !eslint_check.is_empty() {
         eslint_args.push(eslint_check);
@@ -534,7 +558,7 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     run_script("pnpm", &["audit", "--prod"], VSCODE_PATH, false)
 }
 
-fn run_test() -> io::Result<()> {
+fn run_full() -> io::Result<()> {
     run_format_and_lint(true)?;
     run_build()?;
     // Verify that compiling for release produces no errors.
@@ -543,6 +567,10 @@ fn run_test() -> io::Result<()> {
         info "dist build";
         dist build;
     )?;
+    run_test()
+}
+
+fn run_test() -> io::Result<()> {
     run_cmd!(
         info "Builder: cargo test";
         cargo test --manifest-path=$BUILDER_PATH/Cargo.toml;
@@ -866,6 +894,7 @@ impl Cli {
             Commands::Install { dev } => run_install(*dev),
             Commands::Update => run_update(),
             Commands::Flint { check } => run_format_and_lint(*check),
+            Commands::Full => run_full(),
             Commands::Test => run_test(),
             Commands::RunUntilFail => run_until_fail(),
             Commands::Build => run_build(),

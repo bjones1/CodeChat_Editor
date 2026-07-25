@@ -37,22 +37,34 @@ version = "0.2.0"
 # Dependencies
 # ------------
 [dependencies]
+actix-rt = "2.9.0"
+actix-web = "4"
 clap = { version = "4", features = ["derive"] }
 codechat-editor-server = { path = "../../server" }
+dunce = "1.0.5"
+indoc = "2.0.5"
 log = { version = "0.4", features = ["release_max_level_warn"] }
 minreq = "3"
+notify-debouncer-full = "0.7"
+rand = "0.10"
+regex = "1"
 tokio = { version = "1", features = ["full"] }
+urlencoding = "2"
 webbrowser = "1.0.5"
+
+# [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
 
 # ### Development-only dependencies
 [dev-dependencies]
-actix-rt = "2.9.0"
-actix-web = "4"
+actix-http = "3.9.0"
 assert_cmd = "2"
-assert_fs = "1"
-assertables = "10"
+path-slash = "0.2.1"
 predicates = "3.1.2"
+pretty_assertions = "1.4.1"
 test_utils = { path = "../../test_utils" }
+url = "2.5.2"
 
 # Release
 # -------

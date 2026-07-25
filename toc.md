@@ -32,7 +32,6 @@ Implementation
     * [log4rs.yml](server/log4rs.yml)
   * [Capture events schema](server/scripts/capture_events_schema.sql)
   * [ide.rs](server/src/ide.rs)
-    * [filewatcher.rs](server/src/ide/filewatcher.rs)
     * [vscode.rs](server/src/ide/vscode.rs)
   * [translation.rs](server/src/translation.rs)
   * [processing.rs](server/src/processing.rs)
@@ -83,6 +82,11 @@ Implementation
     * [lib.rs](extensions/VSCode/src/lib.rs)
     * [Cargo.toml](extensions/VSCode/Cargo.toml)
     * [Developer documentation](extensions/VSCode/developer.md)
+  * Standalone
+    * [main.rs](extensions/standalone/src/main.rs)
+    * [filewatcher.rs](extensions/standalone/src/filewatcher.rs)
+    * [cli.rs](extensions/standalone/tests/cli.rs)
+    * [Cargo.toml](extensions/standalone/Cargo.toml)
 * Development tools
   * [CLAUDE.md](CLAUDE.md)
   * Builder

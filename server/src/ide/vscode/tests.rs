@@ -52,15 +52,16 @@ use crate::webserver::{
     INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT, ResultErrTypes,
 };
 use crate::{
+    ide::vscode::VscodeRoutes,
+    translation::{EolType, find_eol_type},
+    webserver::{LifecycleRoutes, main, test_root_path},
+};
+use crate::{
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockTransaction, SourceFileMetadata, StringDiff,
     },
     webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
-};
-use crate::{
-    translation::{EolType, find_eol_type},
-    webserver::{LifecycleRoutes, main, test_root_path},
 };
 use test_utils::{
     cast,
@@ -77,7 +78,7 @@ static WEBSERVER_HANDLE: LazyLock<JoinHandle<Result<(), Error>>> = LazyLock::new
             &SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT),
             None,
             log::LevelFilter::Debug,
-            LifecycleRoutes,
+            (VscodeRoutes, LifecycleRoutes),
         )
     })
 });

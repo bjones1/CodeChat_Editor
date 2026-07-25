@@ -30,7 +30,8 @@ pub mod tests;
 //
 // ### Third-party
 use actix_web::{
-    HttpRequest, HttpResponse,
+    App, HttpRequest, HttpResponse,
+    dev::{ServiceFactory, ServiceRequest},
     error::{Error, ErrorBadRequest},
     get, web,
 };
@@ -46,9 +47,9 @@ use crate::{
         translation_task,
     },
     webserver::{
-        EditorMessage, EditorMessageContents, IdeType, RESERVED_MESSAGE_ID, ResultErrTypes,
-        ResultOkTypes, WebAppState, client_websocket, filesystem_endpoint, get_client_framework,
-        get_server_url, html_wrapper, send_response,
+        EditorMessage, EditorMessageContents, IdeType, RESERVED_MESSAGE_ID, RegisterRoutes,
+        ResultErrTypes, ResultOkTypes, WebAppState, client_websocket, filesystem_endpoint,
+        get_client_framework, get_server_url, html_wrapper, send_response,
     },
 };
 
@@ -59,6 +60,24 @@ const VSC: &str = "vsc-";
 
 // Code
 // ----
+//
+// Registers the VSCode IDE's routes with the server's `configure_app` (see
+// `crate::webserver::RegisterRoutes`).
+#[derive(Clone)]
+pub struct VscodeRoutes;
+
+impl RegisterRoutes for VscodeRoutes {
+    fn register<T>(&self, app: App<T>) -> App<T>
+    where
+        T: ServiceFactory<ServiceRequest, Config = (), Error = Error, InitError = ()>,
+    {
+        app.service(serve_vscode_fs)
+            .service(vscode_ide_websocket)
+            .service(vscode_client_websocket)
+            .service(vscode_client_framework)
+    }
+}
+
 #[get("/vsc/ws-ide/{connection_id_raw}")]
 pub async fn vscode_ide_websocket(
     connection_id_raw: web::Path<String>,

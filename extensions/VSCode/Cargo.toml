@@ -34,6 +34,11 @@ readme = "../README.md"
 repository = "https://github.com/bjones1/CodeChat_Editor"
 version = "0.2.0"
 
+# `cargo machete` doesn't scan `build.rs`, so it can't see `napi-build` used
+# there.
+[package.metadata.cargo-machete]
+ignored = ["napi-build"]
+
 [lib]
 crate-type = ["cdylib"]
 

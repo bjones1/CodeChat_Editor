@@ -85,14 +85,9 @@ use url::Url;
 
 // ### Local
 //use crate::capture::EventCapture;
-use crate::{
-    ide::vscode::{
-        serve_vscode_fs, vscode_client_framework, vscode_client_websocket, vscode_ide_websocket,
-    },
-    processing::{
-        CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, find_path_to_toc,
-        source_to_codechat_for_web_string,
-    },
+use crate::processing::{
+    CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, find_path_to_toc,
+    source_to_codechat_for_web_string,
 };
 
 use crate::capture::{
@@ -547,8 +542,8 @@ pub fn set_root_path(
 
 // A `base_path` for this package's own test suites to pass to
 // `set_root_path`/`main` when they start a real webserver in-process
-// (`ide::vscode::tests`, `ide::filewatcher::tests`, and the `tests/overall`
-// integration tests). Not `#[cfg(test)]`-gated: integration tests under
+// (`ide::vscode::tests` and the `tests/overall` integration tests). Not
+// `#[cfg(test)]`-gated: integration tests under
 // `tests/` link this crate as a normal (non-`--test`) dependency, so a
 // `#[cfg(test)]` item wouldn't be visible to them. All these test binaries
 // are built under `server/target/debug/deps/...` (one directory deeper than a
@@ -1675,9 +1670,9 @@ impl RegisterRoutes for LifecycleRoutes {
     }
 }
 
-// Configure the web application with the core routes shared by every IDE
-// integration. Callers (such as the filewatcher IDE) that need additional
-// routes should register them via `register_routes`, invoked after the core
+// Configure the web application with the core, IDE-agnostic routes (static
+// file serving). Every IDE integration (VSCode, the filewatcher IDE, ...)
+// registers its own routes via `register_routes`, invoked after the core
 // routes are added. I'd like to make this return an `App<AppEntry>`, but
 // `AppEntry` is a private module.
 pub fn configure_app<T>(
@@ -1696,13 +1691,7 @@ where
         .service(actix_files::Files::new(
             "/static",
             CLIENT_STATIC_PATH.as_os_str(),
-        ))
-        // These endpoints serve the files from the filesystem and the
-        // websockets.
-        .service(serve_vscode_fs)
-        .service(vscode_ide_websocket)
-        .service(vscode_client_websocket)
-        .service(vscode_client_framework);
+        ));
     register_routes.register(app)
 }
 

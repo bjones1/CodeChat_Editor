@@ -51,41 +51,34 @@ use tokio::{
     select,
     sync::mpsc,
 };
-use urlencoding;
 #[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::GetLogicalDrives;
 
 // ### Local
-use crate::{
-    processing::CodeMirrorDiffable,
+use code_chat_editor::{
+    processing::{CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata},
     queue_send,
-    webserver::{
-        INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT, ResultErrTypes, ResultOkTypes, WebAppState,
-        filesystem_endpoint, get_test_mode,
-    },
-};
-use crate::{
-    processing::{CodeChatForWeb, CodeMirror, SourceFileMetadata},
     translation::{create_translation_queues, translation_task},
     webserver::{
-        EditorMessage, EditorMessageContents, RESERVED_MESSAGE_ID, RegisterRoutes,
-        UpdateMessageContents, client_websocket, get_client_framework, html_wrapper,
-        http_not_found, path_display, send_response,
+        EditorMessage, EditorMessageContents, INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT,
+        RESERVED_MESSAGE_ID, RegisterRoutes, ResultErrTypes, ResultOkTypes, UpdateMessageContents,
+        WebAppState, client_websocket, filesystem_endpoint, get_client_framework, get_test_mode,
+        html_wrapper, http_not_found, path_display, send_response,
     },
 };
 
 // Globals
 // -------
 /// Matches a bare drive letter. Only needed on Windows.
+#[cfg(windows)]
 static DRIVE_LETTER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new("^[a-zA-Z]:$").unwrap());
 
 pub const FILEWATCHER_PATH_PREFIX: &[&str] = &["fw", "fsc"];
 
-/// Registers the filewatcher IDE's routes. This IDE isn't used by every
-/// embedder of the `code_chat_editor` library (for example, the VSCode
-/// extension doesn't need it), so it's opt-in via
-/// [`crate::webserver::configure_app`]'s `register_routes` parameter instead
-/// of being wired in unconditionally.
+/// Registers the filewatcher IDE's routes with the server's `configure_app`
+/// (see `code_chat_editor::webserver::RegisterRoutes`). This IDE is used only
+/// by this standalone binary -- other embedders of the `code_chat_editor`
+/// library (for example, the VSCode extension) don't need it.
 #[derive(Clone)]
 pub struct FilewatcherRoutes;
 
@@ -597,7 +590,7 @@ fn processing_task(
                                                         // The IDE doesn't need to provide this.
                                                         mode: String::new(),
                                                     },
-                                                    source: crate::processing::CodeMirrorDiffable::Plain(CodeMirror {
+                                                    source: CodeMirrorDiffable::Plain(CodeMirror {
                                                         doc: file_contents,
                                                         doc_blocks: vec![],
                                                     }),
@@ -787,14 +780,7 @@ mod tests {
         dev::{Service, ServiceResponse},
         test,
     };
-    use dunce::simplified;
-    use path_slash::PathExt;
-    use pretty_assertions::assert_eq;
-    use tokio::{select, sync::mpsc::Receiver, time::sleep};
-    use url::Url;
-
-    use super::FW;
-    use crate::{
+    use code_chat_editor::{
         processing::{
             CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata, TranslationResults,
             source_to_codechat_for_web,
@@ -804,9 +790,15 @@ mod tests {
             INITIAL_IDE_MESSAGE_ID, INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT,
             ResultErrTypes, ResultOkTypes, UpdateMessageContents, WebAppState, WebsocketQueues,
             configure_app, drop_leading_slash, make_app_data, send_response, set_root_path,
-            test_root_path,
         },
     };
+    use dunce::simplified;
+    use path_slash::PathExt;
+    use pretty_assertions::assert_eq;
+    use tokio::{select, sync::mpsc::Receiver, time::sleep};
+    use url::Url;
+
+    use super::FW;
     use test_utils::{
         cast, prep_test_dir,
         test_utils::{check_logger_errors, configure_testing_logger},
@@ -821,7 +813,11 @@ mod tests {
         WebsocketQueues,
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error> + use<>,
     ) {
-        set_root_path(&test_root_path()).unwrap();
+        // Use this crate's own `root_path`, which correctly locates the repo
+        // root regardless of whether the test binary lives under
+        // `extensions/standalone/target/...` or (as a plain `cargo build`)
+        // deeper still under `.../target/debug/deps`.
+        set_root_path(&crate::root_path()).unwrap();
         let app_data = make_app_data(None);
         let app =
             test::init_service(configure_app(App::new(), &app_data, &FilewatcherRoutes)).await;

@@ -26,11 +26,17 @@ use assertables::{assert_ends_with, assert_not_contains, assert_starts_with};
 
 // ### Local
 use super::{path_to_url, url_to_path};
-use crate::ide::{filewatcher::FILEWATCHER_PATH_PREFIX, vscode::tests::IP_PORT};
+use crate::ide::vscode::tests::IP_PORT;
 use test_utils::{cast, prep_test_dir};
 
 // Tests
 // -----
+// An arbitrary set of URL path segments used only as example test data for
+// `url_to_path`'s `expected_prefix` parameter -- it matches the filewatcher
+// IDE's own prefix (see `extensions/standalone/src/filewatcher.rs`), but any
+// prefix would do here.
+const PATH_PREFIX: &[&str] = &["fw", "fsc"];
+
 #[test]
 fn test_url_to_path() {
     let (temp_dir, test_dir) = prep_test_dir!();
@@ -43,7 +49,7 @@ fn test_url_to_path() {
                     "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}path%20spaces/foo.py",
                     if cfg!(windows) { "C:/" } else { "" }
                 ),
-                FILEWATCHER_PATH_PREFIX
+                PATH_PREFIX
             ),
             Ok
         ),
@@ -61,7 +67,7 @@ fn test_url_to_path() {
                     "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}foo%5Cbar.py",
                     if cfg!(windows) { "C:/" } else { "" }
                 ),
-                FILEWATCHER_PATH_PREFIX
+                PATH_PREFIX
             ),
             Ok
         ),
@@ -78,7 +84,7 @@ fn test_url_to_path() {
             &format!(
                 "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{test_dir_str}/test%20spaces.py"
             ),
-            FILEWATCHER_PATH_PREFIX
+            PATH_PREFIX
         )
         .unwrap()
         .canonicalize()
