@@ -670,7 +670,6 @@ name = "codechat-editor-server"
 version = "0.2.0"
 dependencies = [
  "actix-files",
- "actix-http",
  "actix-rt",
  "actix-server",
  "actix-web",
@@ -695,7 +694,6 @@ dependencies = [
  "minify-html",
  "minreq",
  "normalize-line-endings",
- "notify-debouncer-full",
  "path-slash",
  "pest",
  "pest_derive",
@@ -716,26 +714,34 @@ dependencies = [
  "url",
  "urlencoding",
  "webbrowser",
- "windows",
 ]
 
 [[package]]
 name = "codechat-editor-standalone"
 version = "0.2.0"
 dependencies = [
+ "actix-http",
  "actix-rt",
  "actix-web",
  "assert_cmd",
- "assert_fs",
- "assertables",
  "clap",
  "codechat-editor-server",
+ "dunce",
+ "indoc",
  "log",
  "minreq",
+ "notify-debouncer-full",
+ "path-slash",
  "predicates",
+ "pretty_assertions",
+ "rand 0.10.2",
+ "regex",
  "test_utils",
  "tokio",
+ "url",
+ "urlencoding",
  "webbrowser",
+ "windows",
 ]
 
 [[package]]
@@ -979,6 +985,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3c877555693c14d2f84191cfd3ad8582790fc52b5e2274b40b59cf5f5cea25c7"
 
 [[package]]
+name = "diff"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
+
+[[package]]
 name = "difflib"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1073,9 +1085,9 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "either"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
+checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
 
 [[package]]
 name = "embedded-io"
@@ -2211,9 +2223,9 @@ checksum = "d211803b9b6b570f68772237e415a029d5a50c65d382910b879fb19d3271f94d"
 
 [[package]]
 name = "oxc-browserslist"
-version = "3.0.11"
+version = "3.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50a403a3c6be65be7bc7730d07d959ec6c143e4ff8117da485df78cd5582260a"
+checksum = "6967692b4c51de292573c3f5eed236b6df29ac47d122379ad3a9d209776a9cf3"
 dependencies = [
  "miniz_oxide 0.9.1",
  "postcard",
@@ -2905,6 +2917,16 @@ checksum = "d0de1b847b39c8131db0467e9df1ff60e6d0562ab8e9a16e568ad0fdb372e2f2"
 dependencies = [
  "predicates-core",
  "termtree",
+]
+
+[[package]]
+name = "pretty_assertions"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ae130e2f271fbc2ac3a40fb1d07180839cdbbe443c7a27e1e3c13c5cac0116d"
+dependencies = [
+ "diff",
+ "yansi",
 ]
 
 [[package]]
@@ -4405,6 +4427,12 @@ dependencies = [
  "log",
  "markup5ever",
 ]
+
+[[package]]
+name = "yansi"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "yoke"
