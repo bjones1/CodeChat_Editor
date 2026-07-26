@@ -100,7 +100,7 @@ async fn test_start_no_response() {
 fn test_stop_no_server() {
     let assert = get_server()
         // Use a port that nothing is listening on.
-        .args(["--port", "8084", "stop"])
+        .args(["--port", "8083", "stop"])
         .assert();
     assert.failure().stderr(contains("Failed to stop server"));
 }
@@ -172,8 +172,7 @@ fn test_port_not_a_number() {
     assert.failure().stderr(contains("isn't a port number"));
 }
 
-// Test startup outside the repo path. For some reason, this fails
-// intermittently on Mac. Ignore these failures.
+// Test startup outside the repo path.
 #[test]
 fn test_other_path() {
     let (temp_dir, test_dir) = prep_test_dir!();
@@ -182,14 +181,14 @@ fn test_other_path() {
     // `status()` instead. Since the `assert_cmd` crates doesn't offer this, use
     // the std lib instead.
     std::process::Command::new(get_server().get_program())
-        .args(["--port", "8083", "start"])
+        .args(["--port", "8086", "start"])
         .current_dir(&test_dir)
         .status()
         .expect("failed to start server");
 
     // Stop it.
     get_server()
-        .args(["--port", "8083", "stop"])
+        .args(["--port", "8086", "stop"])
         .current_dir(&test_dir)
         .assert()
         .success();
