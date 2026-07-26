@@ -788,12 +788,12 @@ fn test_source_to_codechat_for_web_1() {
                 // <a id="one"></a>1
                 "#
             ),
-            &"cpp".to_string(),
+            Path::new("foo.cpp"),
             0.0,
             false,
-            false
+            None
         ),
-        Ok(TranslationResults::CodeChat(build_codechat_for_web(
+        Ok(build_codechat_for_web(
             "cpp",
             "\n",
             vec![build_codemirror_doc_block(
@@ -803,7 +803,7 @@ fn test_source_to_codechat_for_web_1() {
                 "//",
                 r"<p><a id=one></a>1"
             ),]
-        )))
+        ))
     );
 }
 
