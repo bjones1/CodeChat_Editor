@@ -571,7 +571,7 @@ export const restoreSelection = ({
 // Save CodeChat Editor contents if dirty; send the current selection and scroll
 // position.
 const sendUpdate = async (onlyIfDirty: boolean = false) => {
-    if (onlyIfDirty && !isDirty) {
+    if (onlyIfDirty && !getIsDirty()) {
         return;
     }
     clearAutoUpdateTimer();
@@ -582,8 +582,8 @@ const sendUpdate = async (onlyIfDirty: boolean = false) => {
         "CodeChat Editor Client: sent Update - saving document/updating cursor location.",
     );
     // Don't wait for a response to change `isDirty`; this boogers up logic.
-    webSocketComm().sendMessage({ Update: await saveLp(isDirty) });
-    isDirty = false;
+    webSocketComm().sendMessage({ Update: await saveLp(getIsDirty()) });
+    setIsDirty(false);
 };
 
 // ### Auto update feature
@@ -685,6 +685,7 @@ const onClick = (event: MouseEvent) => {
         }
     }
 };
+
 // Save the current document, then navigate to the provided URL, which must be a
 // reference to another CodeChat Editor document.
 const saveThenNavigate = (codeChatEditorUrl: URL) => {
@@ -695,13 +696,17 @@ const saveThenNavigate = (codeChatEditorUrl: URL) => {
             codeChatEditorUrl,
         );
     };
-    // Navigate after the save completes. If the save fails, still navigate --
-    // otherwise the user is stranded on the current page with only a generic
-    // error toast -- but report the failure so the lost save isn't silent.
-    sendUpdate(true).then(navigate, (reason) => {
-        showToast(`Error saving before navigation: ${reason}`);
+    if (getIsDirty()) {
+        // Navigate after the save completes. If the save fails, still navigate --
+        // otherwise the user is stranded on the current page with only a generic
+        // error toast -- but report the failure so the lost save isn't silent.
+        sendUpdate(true).then(navigate, (reason) => {
+            showToast(`Error saving before navigation: ${reason}`);
+            navigate();
+        });
+    } else {
         navigate();
-    });
+    }
 };
 
 // This can be called by the framework. Therefore, make no assumptions about
