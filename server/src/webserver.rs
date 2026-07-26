@@ -1155,7 +1155,7 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
                                 }}
                                 navigateEvent.intercept();
                                 navigation.removeEventListener("navigate", on_navigate);
-                                parent.window.CodeChatEditorFramework.webSocketComm.current_file(new URL(navigateEvent.destination.url));
+                                parent.window.CodeChatEditorFramework.webSocketComm.currentFile(new URL(navigateEvent.destination.url));
                             }};
 
                             const on_load_func = () => {{
