@@ -19,7 +19,6 @@
 // -------
 //
 // ### Standard library
-#[cfg(not(target_os = "macos"))]
 use std::{thread::sleep, time::Duration};
 
 // ### Third-party
@@ -28,7 +27,6 @@ use assert_cmd::Command;
 use predicates::{prelude::predicate, str::contains};
 
 // ### Local
-#[cfg(not(target_os = "macos"))]
 use test_utils::prep_test_dir;
 use tokio::task::spawn_blocking;
 
@@ -102,7 +100,7 @@ async fn test_start_no_response() {
 fn test_stop_no_server() {
     let assert = get_server()
         // Use a port that nothing is listening on.
-        .args(["--port", "8083", "stop"])
+        .args(["--port", "8084", "stop"])
         .assert();
     assert.failure().stderr(contains("Failed to stop server"));
 }
@@ -176,7 +174,6 @@ fn test_port_not_a_number() {
 
 // Test startup outside the repo path. For some reason, this fails
 // intermittently on Mac. Ignore these failures.
-#[cfg(not(target_os = "macos"))]
 #[test]
 fn test_other_path() {
     let (temp_dir, test_dir) = prep_test_dir!();
