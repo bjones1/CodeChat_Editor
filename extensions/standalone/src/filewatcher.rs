@@ -19,13 +19,13 @@
 // -------
 //
 // ### Standard library
+#[cfg(windows)]
+use std::sync::LazyLock;
 use std::{
     fmt::Write,
     path::{Path, PathBuf},
     time::Duration,
 };
-#[cfg(windows)]
-use std::sync::LazyLock;
 
 // ### Third-party
 use actix_web::{
