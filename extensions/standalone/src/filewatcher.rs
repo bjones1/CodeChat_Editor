@@ -22,9 +22,10 @@
 use std::{
     fmt::Write,
     path::{Path, PathBuf},
-    sync::LazyLock,
     time::Duration,
 };
+#[cfg(windows)]
+use std::sync::LazyLock;
 
 // ### Third-party
 use actix_web::{
@@ -43,6 +44,7 @@ use notify_debouncer_full::{
     notify::{EventKind, RecursiveMode},
 };
 use rand::random;
+#[cfg(windows)]
 use regex::Regex;
 use tokio::{
     fs::DirEntry,
