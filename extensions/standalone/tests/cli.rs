@@ -28,6 +28,7 @@ use assert_cmd::Command;
 use predicates::{prelude::predicate, str::contains};
 
 // ### Local
+#[cfg(not(target_os = "macos"))]
 use test_utils::prep_test_dir;
 use tokio::task::spawn_blocking;
 
