@@ -573,9 +573,6 @@ async fn test_server_core(
             .starts_with("<iframe src=\"test.txt?raw")
     );
 
-    // TODO: This isn't editable in the Client. Only perform edits in the IDE.
-    // However, this code needs revising, so testing it is skipped for now.
-
     // #### PDF viewer
     //
     // Click on the link for the PDF to test.
