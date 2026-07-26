@@ -55,4 +55,4 @@ jobs:
           rustup update
           cd server
           ./bt install --dev
-          ./bt test
+          ./bt full
