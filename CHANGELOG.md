@@ -24,6 +24,14 @@ Changelog
 
 * No changes.
 
+Version 0.2.1 -- 2026-Jul-26
+----------------------------
+
+* When navigating away from the current document, save only if the document was
+  modified.
+* Split the server into standalone code as another type of extension.
+* Fix potential security vulnerabilities.
+
 Version 0.2.0 -- 2026-Jul-20
 ----------------------------
 

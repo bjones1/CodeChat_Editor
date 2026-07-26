@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "codechat-editor-server"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "actix-files",
  "actix-rt",
@@ -618,7 +618,7 @@ dependencies = [
 
 [[package]]
 name = "codechat-editor-vscode-extension"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "codechat-editor-server",
  "log",
