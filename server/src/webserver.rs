@@ -689,8 +689,8 @@ pub fn get_client_framework(
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>The CodeChat Editor</title>
                 <script type="module">
-                    import {{ page_init }} from "/{}"
-                    page_init({ws_url}, {is_test_mode})
+                    import {{ pageInit }} from "/{}"
+                    pageInit({ws_url}, {is_test_mode})
                 </script>
             </head>
             <body style="margin: 0px; padding: 0px; overflow: hidden">

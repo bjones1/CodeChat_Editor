@@ -25,7 +25,7 @@ export const DEBUG_ENABLED = false;
 export const MAX_MESSAGE_LENGTH = 50000;
 
 /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-export const console_log = (...args: any) => {
+export const consoleLog = (...args: any) => {
     if (DEBUG_ENABLED) {
         console.log(...args);
     }

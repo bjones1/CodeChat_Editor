@@ -19,7 +19,7 @@
 //
 // The time, in ms, to wait between the last user edit and sending updated data
 // to the Server.
-export const auto_update_timeout_ms = 300;
+export const autoUpdateTimeoutMs = 300;
 
 // Produce a whole random number. Fractional numbers aren't consistently
 // converted to the same number across JavaScript and Rust. Note that the mantissa of a JavaScript `Number`

@@ -48,15 +48,15 @@ import "./third-party/wc-mermaid/wc-mermaid.js";
 
 // #### Local
 import { assert } from "./assert.mjs";
-import { console_log, DEBUG_ENABLED } from "./debug_enabled.mjs";
+import { consoleLog, DEBUG_ENABLED } from "./debug_enabled.mjs";
 import {
-    apply_diff_str,
-    CodeMirror_load,
-    CodeMirror_save,
+    applyDiffStr,
+    codeMirrorLoad,
+    codeMirrorSave,
     mathJaxTypeset,
     mathJaxUnTypeset,
-    scroll_to_line as codemirror_scroll_to_line,
-    set_CodeMirror_positions,
+    scrollToLine as codemirrorScrollToLine,
+    setCodeMirrorPositions,
 } from "./CodeMirror-integration.mjs";
 import "./graphviz-webcomponent-setup.mjs";
 // This must be imported *after* the previous setup import, so it's placed here,
@@ -74,10 +74,10 @@ import {
     CodeMirrorDiffable,
     UpdateMessageContents,
     CodeMirror,
-    auto_update_timeout_ms,
+    autoUpdateTimeoutMs,
     rand,
 } from "./shared.mjs";
-import { show_toast } from "./show_toast.mjs";
+import { showToast } from "./show_toast.mjs";
 
 // ### CSS
 import "./css/CodeChatEditor.css";
@@ -89,6 +89,12 @@ import { CursorPosition } from "./rust-types/CursorPosition.js";
 // <a id="EditorMode"></a>Define all possible editor modes; these are passed as
 // a [query string](https://en.wikipedia.org/wiki/Query_string)
 // (`http://path/to/foo.py?mode=toc`, for example) to the page's URL.
+//
+// The member names below are looked up by the string value of the `mode`
+// query parameter (see the numeric-enum reverse-mapping trick used where this
+// is read), so they must stay exactly these lowercase strings rather than
+// following the usual PascalCase member naming convention.
+/* eslint-disable @typescript-eslint/naming-convention */
 enum EditorMode {
     // Display the source code using CodeChat, but disallow editing.
     view,
@@ -100,25 +106,26 @@ enum EditorMode {
     // Show only raw source code; ignore doc blocks, treating them also as code.
     raw,
 }
+/* eslint-enable @typescript-eslint/naming-convention */
 
 // Tell TypeScript about the global namespace this program defines.
 declare global {
     interface Window {
         CodeChatEditor: {
             // Called by the Client Framework.
-            open_lp: (
-                codechat_for_web: CodeChatForWeb,
-                is_re_translation: boolean,
-                cursor_position?: CursorPosition,
-                scroll_line?: number,
+            openLp: (
+                codechatForWeb: CodeChatForWeb,
+                isReTranslation: boolean,
+                cursorPosition?: CursorPosition,
+                scrollLine?: number,
             ) => Promise<void>;
-            do_debug: () => void;
-            send_update: (_only_if_dirty: boolean) => Promise<void>;
-            scroll_to_line: (
-                cursor_position?: CursorPosition,
-                scroll_line?: number,
+            doDebug: () => void;
+            sendUpdate: (_only_if_dirty: boolean) => Promise<void>;
+            scrollToLine: (
+                cursorPosition?: CursorPosition,
+                scrollLine?: number,
             ) => void;
-            show_toast: (text: string) => void;
+            showToast: (text: string) => void;
             allow_navigation: boolean;
         };
         CodeChatEditor_test: unknown;
@@ -134,9 +141,9 @@ let autoUpdateTimeoutId: null | number = null;
 
 // Store the lexer info for the currently-loaded language.
 //
-// <a id="current_metadata"></a>This mirrors the data provided by the server --
+// <a id="currentMetadata"></a>This mirrors the data provided by the server --
 // see [SourceFileMetadata](../../server/src/webserver.rs#SourceFileMetadata).
-let current_metadata: {
+let currentMetadata: {
     mode: string;
 };
 
@@ -147,40 +154,40 @@ const webSocketComm = () => parent.window.CodeChatEditorFramework.webSocketComm;
 let ignoreTinyMceDirty = false;
 
 // True if the document is dirty (needs saving).
-let is_dirty = false;
+let isDirty = false;
 
-export const set_is_dirty = (value: boolean = true) => {
-    is_dirty = value;
+export const setIsDirty = (value: boolean = true) => {
+    isDirty = value;
 };
 
-export const get_is_dirty = () => is_dirty;
+export const getIsDirty = () => isDirty;
 
 // ### TinyMCE dynamic import
 //
 // TinyMCE is dynamically imported when `init` is called.
 export const init = async (options: RawEditorOptions) => {
-    const tinymce_config = await import("./tinymce-config.mjs");
-    tinymce = tinymce_config.tinymce;
-    return await tinymce_config.init(options);
+    const tinymceConfig = await import("./tinymce-config.mjs");
+    tinymce = tinymceConfig.tinymce;
+    return await tinymceConfig.init(options);
 };
 // The imported module is stored in this variable.
 export let tinymce: undefined | TinyMCE = undefined;
 // A single TinyMCE instance is used for all doc blocks. Avoid accessing this
 // through `tinymce.activeEditor`, which fails if the editor isn't active.
-export const tinymce_instance = () => tinymce?.get(0);
+export const tinymceInstance = () => tinymce?.get(0);
 
 // Page initialization
 // -------------------
 
 // This is copied from
 // [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/DOMContentLoaded_event#checking_whether_loading_is_already_complete).
-export const on_dom_content_loaded = (on_load_func: () => void) => {
+export const onDomContentLoaded = (onLoadFunc: () => void) => {
     if (document.readyState === "loading") {
         // Loading hasn't finished yet.
-        document.addEventListener("DOMContentLoaded", on_load_func);
+        document.addEventListener("DOMContentLoaded", onLoadFunc);
     } else {
         // `DOMContentLoaded` has already fired.
-        on_load_func();
+        onLoadFunc();
     }
 };
 
@@ -188,26 +195,26 @@ export const on_dom_content_loaded = (on_load_func: () => void) => {
 // -------------
 //
 // True if this is a CodeChat Editor document (not a source file).
-const is_doc_only = () => {
+const isDocOnly = () => {
     // This might be called by the framework before a document is loaded. So,
-    // make sure `current_metadata` exists first.
-    return current_metadata?.["mode"] === "markdown";
+    // make sure `currentMetadata` exists first.
+    return currentMetadata?.["mode"] === "markdown";
 };
 
-const open_lp = async (
-    codechat_for_web: CodeChatForWeb,
-    is_re_translation: boolean,
-    cursor_position?: CursorPosition,
-    scroll_line?: number,
+const openLp = async (
+    codechatForWeb: CodeChatForWeb,
+    isReTranslation: boolean,
+    cursorPosition?: CursorPosition,
+    scrollLine?: number,
 ) =>
     // Wait for the DOM to load before opening the file.
     await new Promise<void>((resolve) =>
-        on_dom_content_loaded(async () => {
-            await _open_lp(
-                codechat_for_web,
-                is_re_translation,
-                cursor_position,
-                scroll_line,
+        onDomContentLoaded(async () => {
+            await _openLp(
+                codechatForWeb,
+                isReTranslation,
+                cursorPosition,
+                scrollLine,
             );
             resolve();
         }),
@@ -219,13 +226,13 @@ const open_lp = async (
 // since this modifies the content based on cleanup rules before returning it --
 // which causes applying diffs to this unexpectedly modified content to produce
 // incorrect results. This text is the unmodified content sent from the IDE.
-let doc_content = "";
+let docContent = "";
 
 // For debugging, allow the extension or server to run this routine by sending
 // the appropriate message.
-const do_debug = () => {
+const doDebug = () => {
     if (DEBUG_ENABLED) {
-        tinymce_instance()?.save({ format: "raw" });
+        tinymceInstance()?.save({ format: "raw" });
     }
 };
 
@@ -233,20 +240,20 @@ const do_debug = () => {
 // server has already lexed the source file into code and doc blocks; this
 // function transforms the code and doc blocks into HTML and updates the current
 // web page with the results.
-const _open_lp = async (
+const _openLp = async (
     // A data structure provided by the server, containing the source and
     // associated metadata. See [`AllSource`](#AllSource).
-    codechat_for_web: CodeChatForWeb,
-    is_re_translation: boolean,
-    cursor_position?: CursorPosition,
-    scroll_line?: number,
+    codechatForWeb: CodeChatForWeb,
+    isReTranslation: boolean,
+    cursorPosition?: CursorPosition,
+    scrollLine?: number,
 ) => {
-    // Note that globals, such as `is_dirty` and document contents, may change
+    // Note that globals, such as `isDirty` and document contents, may change
     // between `await` calls. The only call to `await` is based on TinyMCE init,
     // which should only cause an async delay on its first execution. So, we
     // should be OK for the rest of this function.
     //
-    // Now, make all decisions about `is_dirty`: if the text is dirty, do some
+    // Now, make all decisions about `isDirty`: if the text is dirty, do some
     // special processing; simply applying the update could cause either data
     // loss (overwriting edits made since the last autosave) or data corruption
     // (applying a diff to updated text, causing the diff to be mis-applied).
@@ -263,8 +270,8 @@ const _open_lp = async (
     //    2. In normal mode, we don't have a backup copy of the full text.
     //       Report an `OutOfSync` error, which causes the IDE to send the full
     //       text which will then overwrite changes made in the Client.
-    if (get_is_dirty() && is_re_translation) {
-        console_log(`Ignoring re-translation because Client is dirty.`);
+    if (getIsDirty() && isReTranslation) {
+        consoleLog(`Ignoring re-translation because Client is dirty.`);
         return;
     }
 
@@ -283,32 +290,32 @@ const _open_lp = async (
         const _editorMode: EditorMode =
             EditorMode[mode as keyof typeof EditorMode] ?? EditorMode.edit;
 
-        // Get the <code>[current_metadata](#current_metadata)</code> from the
+        // Get the <code>[currentMetadata](#currentMetadata)</code> from the
         // provided `code_chat_for_web` struct and store it as a global
         // variable.
-        current_metadata = codechat_for_web["metadata"];
-        const source = codechat_for_web["source"];
-        const codechat_body = document.getElementById("CodeChat-body");
-        assert(codechat_body instanceof HTMLDivElement);
-        if (is_doc_only()) {
+        currentMetadata = codechatForWeb["metadata"];
+        const source = codechatForWeb["source"];
+        const codechatBody = document.getElementById("CodeChat-body");
+        assert(codechatBody instanceof HTMLDivElement);
+        if (isDocOnly()) {
             // Per the
             // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
             // "If you modify the page to remove content that contains typeset
             // mathematics, you will need to tell MathJax about that so that it
             // knows the typeset math that you are removing is no longer on the
             // page."
-            window.MathJax?.typesetClear?.(codechat_body);
+            window.MathJax?.typesetClear?.(codechatBody);
             // Note that `==` is intentional: `null` (no editor instance) or
             // `undefined` (TinyMCE not loaded).
-            if (tinymce_instance() == null) {
+            if (tinymceInstance() == null) {
                 // We shouldn't have a diff if the editor hasn't been
                 // initialized.
                 assert("Plain" in source);
                 // Special case: a CodeChat Editor document's HTML is stored
                 // in`source.doc`. We don't need the CodeMirror editor at all;
                 // instead, treat it like a single doc block contents div.
-                doc_content = source.Plain.doc;
-                codechat_body.innerHTML = `<div class="CodeChat-doc-contents" spellcheck="true">${doc_content}</div>`;
+                docContent = source.Plain.doc;
+                codechatBody.innerHTML = `<div class="CodeChat-doc-contents" spellcheck="true">${docContent}</div>`;
                 await init({
                     selector: ".CodeChat-doc-contents",
                     // In the doc-only mode, add auto update functionality.
@@ -321,14 +328,14 @@ const _open_lp = async (
                     setup: (editor: Editor) => {
                         editor.on("Dirty", () => {
                             if (!ignoreTinyMceDirty) {
-                                set_is_dirty(true);
+                                setIsDirty(true);
                                 startAutoUpdateTimer();
                             }
                         });
 
                         editor.on("input", () => {
                             ignoreTinyMceDirty = true;
-                            set_is_dirty(true);
+                            setIsDirty(true);
                             startAutoUpdateTimer();
                         });
 
@@ -345,29 +352,29 @@ const _open_lp = async (
                         );
                     },
                 });
-                tinymce_instance()!.focus();
+                tinymceInstance()!.focus();
             } else {
                 // Save the cursor location before the update, then restore it
                 // afterwards, if TinyMCE has focus.
-                const sel = tinymce_instance()!.hasFocus()
+                const sel = tinymceInstance()!.hasFocus()
                     ? saveSelection()
                     : undefined;
-                doc_content =
+                docContent =
                     "Plain" in source
                         ? source.Plain.doc
-                        : apply_diff_str(doc_content, source.Diff.doc);
-                tinymce_instance()!.setContent(doc_content);
+                        : applyDiffStr(docContent, source.Diff.doc);
+                tinymceInstance()!.setContent(docContent);
                 if (sel !== undefined) {
                     restoreSelection(sel);
                 }
             }
-            await mathJaxTypeset(codechat_body);
-            scroll_to_line(cursor_position, scroll_line);
+            await mathJaxTypeset(codechatBody);
+            scrollToLine(cursorPosition, scrollLine);
         } else {
-            if (get_is_dirty() && "Diff" in source) {
+            if (getIsDirty() && "Diff" in source) {
                 // Send an `OutOfSync` response, so that the IDE will send the
                 // full text to overwrite these changes with.
-                webSocketComm().send_result(
+                webSocketComm().sendResult(
                     // Pick a rarely-used ID, since we're not responding to a
                     // specific message.
                     0,
@@ -376,12 +383,12 @@ const _open_lp = async (
                     { OutOfSync: [0, 0] },
                 );
             } else {
-                await CodeMirror_load(
-                    codechat_body,
-                    codechat_for_web,
+                await codeMirrorLoad(
+                    codechatBody,
+                    codechatForWeb,
                     [],
-                    cursor_position,
-                    scroll_line,
+                    cursorPosition,
+                    scrollLine,
                 );
             }
         }
@@ -392,7 +399,7 @@ const _open_lp = async (
         // contents have been overwritten by contents from the IDE. By the same
         // reasoning, restart the auto update timer.
         clearAutoUpdateTimer();
-        set_is_dirty(false);
+        setIsDirty(false);
 
         // <a id="CodeChatEditor_test"></a>If tests should be run, then the
         // [following global variable](CodeChatEditor-test.mts#CodeChatEditor_test)
@@ -403,25 +410,25 @@ const _open_lp = async (
     }
 };
 
-const save_lp = async (
-    // Avoid relying on the global `is_dirty`, which may change during an
+const saveLp = async (
+    // Avoid relying on the global `isDirty`, which may change during an
     // `await`.
-    is_dirty_now: boolean,
+    isDirtyNow: boolean,
 ) => {
     const update: UpdateMessageContents = {
         // The Framework will fill in this value.
         file_path: "",
         is_re_translation: false,
     };
-    if (is_doc_only()) {
+    if (isDocOnly()) {
         const location = saveSelection();
         // If there's a selection (cursor location), send it to the server,
         // which will locate the corresponding line.
-        if (location.selection_offset !== undefined) {
+        if (location.selectionOffset !== undefined) {
             update.cursor_position = {
                 DomLocation: {
-                    dom_path: location.selection_path,
-                    dom_offset: location.selection_offset,
+                    dom_path: location.selectionPath,
+                    dom_offset: location.selectionOffset,
                     // Use this since it's a Markdown-only file; the server will
                     // ignore this value.
                     from: 0,
@@ -429,48 +436,48 @@ const save_lp = async (
             };
         }
     } else {
-        set_CodeMirror_positions(update);
+        setCodeMirrorPositions(update);
     }
 
     // Add the contents only if the document is dirty.
-    if (is_dirty_now) {
+    if (isDirtyNow) {
         /// @ts-expect-error("Declare here; it will be completed later.")
-        let code_mirror_diffable: CodeMirrorDiffable = {};
-        if (is_doc_only()) {
+        let codeMirrorDiffable: CodeMirrorDiffable = {};
+        if (isDocOnly()) {
             // Untypeset all math before saving the document.
-            const codechat_body = document.getElementById("CodeChat-body");
-            assert(codechat_body instanceof HTMLDivElement);
-            mathJaxUnTypeset(codechat_body);
+            const codechatBody = document.getElementById("CodeChat-body");
+            assert(codechatBody instanceof HTMLDivElement);
+            mathJaxUnTypeset(codechatBody);
             // Use a try/finally to ensure that the document is retypeset even
             // if errors occur.
             try {
                 // To save a document only, simply get the HTML from the only
                 // Tiny MCE div. Update the `doc_contents` to stay in sync with
                 // the Server.
-                doc_content = tinymce_instance()!.save({ format: "raw" });
+                docContent = tinymceInstance()!.save({ format: "raw" });
                 // The `save()` flushes any duplicate `Dirty` events. After
                 // this, following `Dirty` events are genuine.
                 ignoreTinyMceDirty = false;
                 (
-                    code_mirror_diffable as {
+                    codeMirrorDiffable as {
                         Plain: CodeMirror;
                     }
                 ).Plain = {
-                    doc: doc_content,
+                    doc: docContent,
                     doc_blocks: [],
                 };
             } finally {
                 // Retypeset all math after saving the document.
-                await mathJaxTypeset(codechat_body);
+                await mathJaxTypeset(codechatBody);
             }
         } else {
-            code_mirror_diffable = CodeMirror_save();
-            assert("Plain" in code_mirror_diffable);
+            codeMirrorDiffable = codeMirrorSave();
+            assert("Plain" in codeMirrorDiffable);
         }
         update.contents = {
-            metadata: current_metadata,
+            metadata: currentMetadata,
             version: rand(),
-            source: code_mirror_diffable,
+            source: codeMirrorDiffable,
         };
     }
 
@@ -484,100 +491,99 @@ export const saveSelection = () => {
     // element 10 of the root TinyMCE div's children (selecting an ol tag),
     // element 5 of the ol's children (selecting the last li tag), element 0 of
     // the li's children (a text node where the actual click landed; the offset
-    // in this node is placed in `selection_offset`.)
+    // in this node is placed in `selectionOffset`.)
     const sel = window.getSelection();
-    const selection_path = [];
-    const selection_offset = sel?.anchorOffset;
+    const selectionPath = [];
+    const selectionOffset = sel?.anchorOffset;
     if (sel?.anchorNode) {
         // Find a path from the selection back to the containing div.
         for (
-            let current_node = sel.anchorNode;
+            let currentNode = sel.anchorNode;
             // Continue until we find the div which contains the doc block
             // contents: either it's not an element (such as a div), ...
-            !(current_node instanceof Element) ||
+            !(currentNode instanceof Element) ||
             // or it's not the doc block contents div.
-            (!current_node.classList.contains("CodeChat-doc-contents") &&
+            (!currentNode.classList.contains("CodeChat-doc-contents") &&
                 // Sometimes, the parent of a custom node (`wc-mermaid`) skips
                 // the TinyMCE div and returns the overall div. I don't know
                 // why.
-                !current_node.classList.contains("CodeChat-doc"));
-            current_node = current_node.parentNode!
+                !currentNode.classList.contains("CodeChat-doc"));
+            currentNode = currentNode.parentNode!
         ) {
             // Store the index of this node in its' parent list of child
             // nodes/children.
-            const p = current_node.parentNode;
+            const p = currentNode.parentNode;
             // In case we go off the rails, give up if there are no more
             // parents.
             if (p === null) {
                 return {
-                    selection_path: [],
-                    selection_offset: undefined,
+                    selectionPath: [],
+                    selectionOffset: undefined,
                 };
             }
-            selection_path.unshift(
-                Array.prototype.indexOf.call(p.childNodes, current_node),
+            selectionPath.unshift(
+                Array.prototype.indexOf.call(p.childNodes, currentNode),
             );
         }
     }
-    return { selection_path, selection_offset };
+    return { selectionPath, selectionOffset };
 };
 
 // Restore the selection produced by `saveSelection` to the active TinyMCE
 // instance.
 export const restoreSelection = ({
-    selection_path,
-    selection_offset,
+    selectionPath,
+    selectionOffset,
 }: {
-    selection_path: number[];
-    selection_offset?: number;
+    selectionPath: number[];
+    selectionOffset?: number;
 }) => {
     // Copy the selection over to TinyMCE by indexing the selection path to find
     // the selected node.
-    if (selection_path.length && typeof selection_offset === "number") {
-        let selection_node: Node =
-            tinymce_instance()!.getContentAreaContainer();
-        // Avoid mutating `selection_path` by making a copy of it.
-        const selection_path_copy = [...selection_path];
-        while (selection_path_copy.length) {
-            const new_selection_node =
-                selection_node.childNodes[selection_path_copy.shift()!];
+    if (selectionPath.length && typeof selectionOffset === "number") {
+        let selectionNode: Node = tinymceInstance()!.getContentAreaContainer();
+        // Avoid mutating `selectionPath` by making a copy of it.
+        const selectionPathCopy = [...selectionPath];
+        while (selectionPathCopy.length) {
+            const newSelectionNode =
+                selectionNode.childNodes[selectionPathCopy.shift()!];
             // If we get lost during the descent, then stop just before that.
-            if (!(new_selection_node instanceof Node)) {
+            if (!(newSelectionNode instanceof Node)) {
                 break;
             }
-            selection_node = new_selection_node;
+            selectionNode = newSelectionNode;
         }
         // In case of edits, avoid an offset past the end of the node. Note that
         // the maximum value is `length`, not `length - 1`, which represents a
         // selection at the very end of the text node.
-        const final_selection_offset = Math.min(
-            selection_offset,
-            selection_node.nodeValue?.length ?? 0,
+        const finalSelectionOffset = Math.min(
+            selectionOffset,
+            selectionNode.nodeValue?.length ?? 0,
         );
         // Use that to set the selection.
-        tinymce_instance()!.selection.setCursorLocation(
-            selection_node,
-            final_selection_offset,
+        tinymceInstance()!.selection.setCursorLocation(
+            selectionNode,
+            finalSelectionOffset,
         );
     }
 };
 
 // Save CodeChat Editor contents if dirty; send the current selection and scroll
 // position.
-const send_update = async (only_if_dirty: boolean = false) => {
-    if (only_if_dirty && !is_dirty) {
+const sendUpdate = async (onlyIfDirty: boolean = false) => {
+    if (onlyIfDirty && !isDirty) {
         return;
     }
     clearAutoUpdateTimer();
 
     // <a id="save"></a>Save the provided contents back to the filesystem, by
     // sending an update message over the websocket.
-    console_log(
+    consoleLog(
         "CodeChat Editor Client: sent Update - saving document/updating cursor location.",
     );
-    // Don't wait for a response to change `is_dirty`; this boogers up logic.
-    webSocketComm().send_message({ Update: await save_lp(is_dirty) });
-    is_dirty = false;
+    // Don't wait for a response to change `isDirty`; this boogers up logic.
+    webSocketComm().sendMessage({ Update: await saveLp(isDirty) });
+    isDirty = false;
 };
 
 // ### Auto update feature
@@ -591,9 +597,9 @@ export const startAutoUpdateTimer = () => {
     clearAutoUpdateTimer();
     // ...then start another timeout which updates the document when it expires.
     autoUpdateTimeoutId = window.setTimeout(() => {
-        console_log("CodeChat Editor Client: auto updating.");
-        send_update();
-    }, auto_update_timeout_ms);
+        consoleLog("CodeChat Editor Client: auto updating.");
+        sendUpdate();
+    }, autoUpdateTimeoutMs);
 };
 
 const clearAutoUpdateTimer = () => {
@@ -608,7 +614,7 @@ const clearAutoUpdateTimer = () => {
 //
 // The TOC and this page calls this when a hyperlink is clicked. This saves the
 // current document before navigating.
-const on_navigate = (navigateEvent: NavigateEvent) => {
+const onNavigate = (navigateEvent: NavigateEvent) => {
     if (
         // Some of this was copied from
         // [Modern client-side routing: the Navigation API](https://developer.chrome.com/docs/web-platform/navigation-api/#deciding_how_to_handle_a_navigation).
@@ -638,14 +644,14 @@ const on_navigate = (navigateEvent: NavigateEvent) => {
 
     // Intercept this navigation so we can save the document first.
     navigateEvent.intercept();
-    console_log("CodeChat Editor Client: saving document before navigation.");
-    save_then_navigate(new URL(navigateEvent.destination.url));
+    consoleLog("CodeChat Editor Client: saving document before navigation.");
+    saveThenNavigate(new URL(navigateEvent.destination.url));
 };
 
 // This is able to intercept clicks on links that the Navigation API doesn't,
 // specifically those that TinyMCE generates (since they're always set to open
 // in a new tab).
-const on_click = (event: MouseEvent) => {
+const onClick = (event: MouseEvent) => {
     // TinyMCE by default tries to open all links in a new tab. Look for and fix
     // these.
     if (
@@ -662,7 +668,7 @@ const on_click = (event: MouseEvent) => {
             // being edited in the CodeChat Editor. If two tabs are open, which
             // is the current file for the IDE?
             event.preventDefault();
-            save_then_navigate(new URL(url));
+            saveThenNavigate(new URL(url));
         } else {
             // This is navigation to some external link. Let that proceed
             // without interruption in a pure browser environment. However,
@@ -672,7 +678,7 @@ const on_click = (event: MouseEvent) => {
             // requested link.
             if (window.location.pathname.startsWith("/vsc")) {
                 event.preventDefault();
-                parent.window.CodeChatEditorFramework.webSocketComm.send_message(
+                parent.window.CodeChatEditorFramework.webSocketComm.sendMessage(
                     { OpenUrl: url },
                 );
             }
@@ -681,43 +687,40 @@ const on_click = (event: MouseEvent) => {
 };
 // Save the current document, then navigate to the provided URL, which must be a
 // reference to another CodeChat Editor document.
-const save_then_navigate = (codeChatEditorUrl: URL) => {
+const saveThenNavigate = (codeChatEditorUrl: URL) => {
     const navigate = () => {
         // Avoid recursion!
-        window.navigation.removeEventListener("navigate", on_navigate);
-        parent.window.CodeChatEditorFramework.webSocketComm.current_file(
+        window.navigation.removeEventListener("navigate", onNavigate);
+        parent.window.CodeChatEditorFramework.webSocketComm.currentFile(
             codeChatEditorUrl,
         );
     };
     // Navigate after the save completes. If the save fails, still navigate --
     // otherwise the user is stranded on the current page with only a generic
     // error toast -- but report the failure so the lost save isn't silent.
-    send_update(true).then(navigate, (reason) => {
-        show_toast(`Error saving before navigation: ${reason}`);
+    sendUpdate(true).then(navigate, (reason) => {
+        showToast(`Error saving before navigation: ${reason}`);
         navigate();
     });
 };
 
 // This can be called by the framework. Therefore, make no assumptions about
 // variables being valid; it be called before a file is loaded, etc.
-const scroll_to_line = (
-    cursor_position?: CursorPosition,
-    scroll_line?: number,
-) => {
-    if (is_doc_only()) {
+const scrollToLine = (cursorPosition?: CursorPosition, scrollLine?: number) => {
+    if (isDocOnly()) {
         // TODO.
     } else {
-        codemirror_scroll_to_line(cursor_position, scroll_line);
+        codemirrorScrollToLine(cursorPosition, scrollLine);
     }
 };
 
 // A global error handler: this is called on any uncaught exception.
-export const on_error = (event: Event) => {
-    let err_str: string;
+export const onError = (event: Event) => {
+    let errStr: string;
     if (event instanceof ErrorEvent) {
-        err_str = `${event.filename}:${event.lineno}: ${event.message}`;
+        errStr = `${event.filename}:${event.lineno}: ${event.message}`;
         if (event.error?.stack) {
-            err_str += `\n${event.error.stack}`;
+            errStr += `\n${event.error.stack}`;
         }
     } else if (event instanceof PromiseRejectionEvent) {
         const reason = event.reason;
@@ -733,38 +736,38 @@ export const on_error = (event: Event) => {
             // Extracts the text from `reject('Your text')`.
             userMessage = reason;
         }
-        err_str = `Promise rejected: ${userMessage}`;
+        errStr = `Promise rejected: ${userMessage}`;
         if (reason instanceof Error && reason.stack) {
-            err_str += `\n${reason.stack}`;
+            errStr += `\n${reason.stack}`;
         }
     } else {
-        err_str = `Unexpected error ${typeof event}: ${event}`;
+        errStr = `Unexpected error ${typeof event}: ${event}`;
     }
-    show_toast(err_str);
+    showToast(errStr);
     console.error(event);
 };
 
 // Load the dynamic content into the static page. Place this last, since we need
 // functions above defined before assigning them to the `CodeChatEditor`
 // namespace.
-on_dom_content_loaded(async () => {
+onDomContentLoaded(async () => {
     // Intercept links in this document to save before following the link.
-    window.navigation.addEventListener("navigate", on_navigate);
+    window.navigation.addEventListener("navigate", onNavigate);
     const ccb = document.getElementById("CodeChat-sidebar");
     if (ccb instanceof HTMLIFrameElement) {
-        ccb.contentWindow?.navigation.addEventListener("navigate", on_navigate);
+        ccb.contentWindow?.navigation.addEventListener("navigate", onNavigate);
     }
-    document.addEventListener("click", on_click);
+    document.addEventListener("click", onClick);
     // Provide basic error reporting for uncaught errors.
-    window.addEventListener("unhandledrejection", on_error);
-    window.addEventListener("error", on_error);
+    window.addEventListener("unhandledrejection", onError);
+    window.addEventListener("error", onError);
 
     window.CodeChatEditor = {
-        do_debug,
-        open_lp,
-        send_update,
-        scroll_to_line,
-        show_toast,
+        doDebug,
+        openLp,
+        sendUpdate,
+        scrollToLine,
+        showToast,
         allow_navigation: false,
     };
 });

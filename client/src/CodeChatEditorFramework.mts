@@ -28,12 +28,12 @@
 //
 // ### Third-party
 import ReconnectingWebSocket from "./third-party/ReconnectingWebSocket.cjs";
-import { show_toast as show_toast_core } from "./show_toast.mjs";
+import { showToast as showToastCore } from "./show_toast.mjs";
 
 // ### Local
 import { assert } from "./assert.mjs";
 import {
-    console_log,
+    consoleLog,
     DEBUG_ENABLED,
     MAX_MESSAGE_LENGTH,
 } from "./debug_enabled.mjs";
@@ -45,7 +45,7 @@ import {
     MessageResult,
     UpdateMessageContents,
 } from "./shared.mjs";
-import { on_error, on_dom_content_loaded } from "./CodeChatEditor.mjs";
+import { onError, onDomContentLoaded } from "./CodeChatEditor.mjs";
 import { ResultErrTypes } from "./rust-types/ResultErrTypes.js";
 import { CursorPosition } from "./rust-types/CursorPosition.js";
 
@@ -64,24 +64,24 @@ let webSocketComm: WebSocketComm;
 class WebSocketComm {
     // Use a unique ID for each websocket message sent. See the Implementation
     // section on Message IDs for more information.
-    ws_id = 4;
+    wsId = 4;
 
     // The websocket used by this class. Really a `ReconnectingWebSocket`, but
     // that's not a type.
     ws: WebSocket;
 
     // A map of message id to (timer id, callback) for all pending messages.
-    pending_messages: Record<
+    pendingMessages: Record<
         number,
         {
-            timer_id: number;
+            timerId: number;
             callback: () => void;
         }
     > = {};
 
     // The current filename of the file being edited. This is provided by the
     // IDE and passed back to it, but not otherwise used by the Framework.
-    current_filename: string | undefined = undefined;
+    currentFilename: string | undefined = undefined;
 
     // The version number of the current file. This default value will be
     // overwritten when the first `Update` is sent.
@@ -90,7 +90,7 @@ class WebSocketComm {
     // True when the iframe is loading, so that an `Update` should be postponed
     // until the page load is finished. Otherwise, the page is fully loaded, so
     // the `Update` may be applied immediately.
-    is_loading = false;
+    isLoading = false;
 
     // A promise to serialize calls to and from the Client. This is important: a
     // `CurrentFile` requires the Client to save, then switch to a new web page.
@@ -98,39 +98,39 @@ class WebSocketComm {
     // finished executing.
     promise = Promise.resolve();
 
-    constructor(ws_url: string) {
+    constructor(wsUrl: string) {
         // The `ReconnectingWebSocket` doesn't provide ALL the `WebSocket`
         // methods. Ignore this, since we can't use `ReconnectingWebSocket` as a
         // type.
         /// @ts-expect-error("This is legacy, third-party code.")
-        this.ws = new ReconnectingWebSocket!(ws_url);
+        this.ws = new ReconnectingWebSocket!(wsUrl);
         // Identify this client on connection.
         this.ws.onopen = () => {
-            console_log(
+            consoleLog(
                 `CodeChat Editor Client: websocket to CodeChat Server open.`,
             );
         };
 
         // Provide logging to help track down errors.
         this.ws.onerror = (event: Event) => {
-            report_error(`CodeChat Editor Client: websocket error.`, event);
+            reportError(`CodeChat Editor Client: websocket error.`, event);
         };
 
         this.ws.onclose = (event: CloseEvent) => {
-            console_log(
+            consoleLog(
                 `CodeChat Editor Client: websocket ${event.wasClean ? "" : "*NOT*"} cleanly closed ${event.reason}. This should only happen on shutdown.`,
             );
-            console_log(event);
+            consoleLog(event);
         };
 
         // Handle websocket messages.
         this.ws.onmessage = (event: MessageEvent) => {
             // Parse the received message, which must be a single element of a
             // dictionary representing an `EditorMessage`.
-            const joint_message = JSON.parse(event.data) as EditorMessage;
-            const { id, message } = joint_message;
-            console_log(
-                `CodeChat Editor Client: received data id = ${id}, message = ${format_struct(message)}`,
+            const jointMessage = JSON.parse(event.data) as EditorMessage;
+            const { id, message } = jointMessage;
+            consoleLog(
+                `CodeChat Editor Client: received data id = ${id}, message = ${formatStruct(message)}`,
             );
             assert(id !== undefined);
             assert(message !== undefined);
@@ -154,28 +154,28 @@ class WebSocketComm {
             switch (key) {
                 case "Update": {
                     // Load this data in.
-                    const current_update = value as UpdateMessageContents;
+                    const currentUpdate = value as UpdateMessageContents;
                     // The rest of this should run after all other messages have
                     // been processed.
                     this.promise = this.promise.finally(async () => {
-                        // Check or update the `current_filename`.
-                        if (this.current_filename === undefined) {
-                            this.current_filename = current_update.file_path;
+                        // Check or update the `currentFilename`.
+                        if (this.currentFilename === undefined) {
+                            this.currentFilename = currentUpdate.file_path;
                         } else if (
-                            current_update.file_path !== this.current_filename
+                            currentUpdate.file_path !== this.currentFilename
                         ) {
-                            const msg = `Ignoring update for ${current_update.file_path} because it's not the current file ${this.current_filename}.`;
-                            report_error(msg);
-                            this.send_result(id, {
+                            const msg = `Ignoring update for ${currentUpdate.file_path} because it's not the current file ${this.currentFilename}.`;
+                            reportError(msg);
+                            this.sendResult(id, {
                                 IgnoredUpdate: [
-                                    current_update.file_path,
-                                    this.current_filename,
+                                    currentUpdate.file_path,
+                                    this.currentFilename,
                                 ],
                             });
                             return;
                         }
-                        const contents = current_update.contents;
-                        const cursor_position = current_update.cursor_position;
+                        const contents = currentUpdate.contents;
+                        const cursorPosition = currentUpdate.cursor_position;
                         if (contents !== undefined) {
                             // Check and update the version. If this is a diff,
                             // ensure the diff was made against the version of
@@ -185,15 +185,15 @@ class WebSocketComm {
                                     contents.source.Diff.version !==
                                     this.version
                                 ) {
-                                    if (current_update.is_re_translation) {
-                                        console_log(
+                                    if (currentUpdate.is_re_translation) {
+                                        consoleLog(
                                             `Ignoring out-of-sync re-translation update.`,
                                         );
                                     } else {
-                                        report_error(
+                                        reportError(
                                             `Out of sync: Client version ${this.version} !== incoming version ${contents.source.Diff.version}.`,
                                         );
-                                        this.send_result(id, {
+                                        this.sendResult(id, {
                                             OutOfSync: [
                                                 this.version,
                                                 contents.source.Diff.version,
@@ -211,15 +211,15 @@ class WebSocketComm {
                             // load of the iframe; it doesn't change when the
                             // iframe's `src` attribute is changed. So, we have
                             // to track this manually instead.
-                            if (!this.is_loading) {
+                            if (!this.isLoading) {
                                 // Wait until after the DOM is ready, since we
                                 // rely on content set in
-                                // `on_dom_content_loaded` in the Client.
-                                await set_content(
+                                // `onDomContentLoaded` in the Client.
+                                await setContent(
                                     contents,
-                                    current_update.is_re_translation,
-                                    current_update.cursor_position,
-                                    current_update.scroll_position,
+                                    currentUpdate.is_re_translation,
+                                    currentUpdate.cursor_position,
+                                    currentUpdate.scroll_position,
                                 );
                             } else {
                                 // If the page is still loading, wait until the
@@ -230,13 +230,13 @@ class WebSocketComm {
                                 // `onload` callback to be set immediately.
                                 await new Promise<void>(
                                     (resolve) =>
-                                        (root_iframe!.onload = async () => {
-                                            this.is_loading = false;
-                                            await set_content(
+                                        (rootIframe!.onload = async () => {
+                                            this.isLoading = false;
+                                            await setContent(
                                                 contents,
-                                                current_update.is_re_translation,
-                                                current_update.cursor_position,
-                                                current_update.scroll_position,
+                                                currentUpdate.is_re_translation,
+                                                currentUpdate.cursor_position,
+                                                currentUpdate.scroll_position,
                                             );
                                             resolve();
                                         }),
@@ -244,15 +244,15 @@ class WebSocketComm {
                             }
                         } else {
                             // We might receive a message while the Client is
-                            // reloading; during this period, `scroll_to_line`
+                            // reloading; during this period, `scrollToLine`
                             // isn't defined.
-                            root_iframe!.contentWindow?.CodeChatEditor?.scroll_to_line?.(
-                                cursor_position,
-                                current_update.scroll_position,
+                            rootIframe!.contentWindow?.CodeChatEditor?.scrollToLine?.(
+                                cursorPosition,
+                                currentUpdate.scroll_position,
                             );
                         }
 
-                        this.send_result(id);
+                        this.sendResult(id);
                     });
                     break;
                 }
@@ -260,11 +260,11 @@ class WebSocketComm {
                 case "CurrentFile": {
                     // Note that we can ignore `value[1]` (if the file is text
                     // or binary); the server only sends text files here.
-                    const current_file = (value as [string, boolean | null])[0];
+                    const currentFile = (value as [string, boolean | null])[0];
                     const testSuffix = testMode
                         ? // Append the test parameter correctly, depending if
                           // there are already parameters or not.
-                          current_file.indexOf("?") === -1
+                          currentFile.indexOf("?") === -1
                             ? "?test"
                             : "&test"
                         : "";
@@ -273,22 +273,22 @@ class WebSocketComm {
                     this.promise = this.promise.finally(async () => {
                         // If the page is still loading, then don't save.
                         // Otherwise, save the editor contents if necessary.
-                        const cce = get_client();
-                        await cce?.send_update(true);
+                        const cce = getClient();
+                        await cce?.sendUpdate(true);
                         // Now, it's safe to load a new file. Tell the client to
                         // allow this navigation -- the document it contains has
                         // already been saved.
                         if (cce !== undefined) {
                             cce.allow_navigation = true;
                         }
-                        this.set_root_iframe_src(current_file + testSuffix);
-                        // The `current_file` is a URL-encoded path, not a
+                        this.setRootIframeSrc(currentFile + testSuffix);
+                        // The `currentFile` is a URL-encoded path, not a
                         // filesystem path. So, we can't use it for
-                        // `current_filename`. Instead, signal that the
-                        // `current_filename` should be set on the next `Update`
+                        // `currentFilename`. Instead, signal that the
+                        // `currentFilename` should be set on the next `Update`
                         // message.
-                        this.current_filename = undefined;
-                        this.send_result(id);
+                        this.currentFilename = undefined;
+                        this.sendResult(id);
                     });
                     break;
                 }
@@ -297,37 +297,37 @@ class WebSocketComm {
                     // If the result has the magic ID, then call a debug
                     // routine.
                     if (id === 1e6 && DEBUG_ENABLED) {
-                        root_iframe!.contentWindow?.CodeChatEditor?.do_debug();
+                        rootIframe!.contentWindow?.CodeChatEditor?.doDebug();
                         break;
                     }
                     // Cancel the timer for this message and remove it from
-                    // `pending_messages`.
-                    const pending_message = this.pending_messages[id];
-                    if (pending_message !== undefined) {
-                        const { timer_id, callback } = pending_message;
-                        clearTimeout(timer_id);
+                    // `pendingMessages`.
+                    const pendingMessage = this.pendingMessages[id];
+                    if (pendingMessage !== undefined) {
+                        const { timerId, callback } = pendingMessage;
+                        clearTimeout(timerId);
                         callback();
-                        delete this.pending_messages[id];
+                        delete this.pendingMessages[id];
                     }
 
                     // Report if this was an error.
-                    const result_contents = value as MessageResult;
-                    if ("Err" in result_contents) {
-                        report_error(
-                            `Error in message ${id}: ${JSON.stringify(result_contents.Err)}.`,
-                            result_contents.Err,
+                    const resultContents = value as MessageResult;
+                    if ("Err" in resultContents) {
+                        reportError(
+                            `Error in message ${id}: ${JSON.stringify(resultContents.Err)}.`,
+                            resultContents.Err,
                         );
                     }
                     break;
                 }
 
                 default: {
-                    const msg = `Received unhandled message ${key}(${format_struct(
+                    const msg = `Received unhandled message ${key}(${formatStruct(
                         value,
                     )})`;
-                    report_error(msg);
-                    this.send_result(id, {
-                        ClientIllegalMessageReceived: `${key}(${format_struct(
+                    reportError(msg);
+                    this.sendResult(id, {
+                        ClientIllegalMessageReceived: `${key}(${formatStruct(
                             value,
                         )})`,
                     });
@@ -341,50 +341,50 @@ class WebSocketComm {
     /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
     close = (...args: any) => this.ws.close(...args);
 
-    set_root_iframe_src = (url: string) => {
+    setRootIframeSrc = (url: string) => {
         // Set the new src to (re)load content. At startup, the `srcdoc`
         // attribute shows some welcome text. Remove it so that we can now
         // assign the `src` attribute.
-        root_iframe!.removeAttribute("srcdoc");
-        root_iframe!.src = url;
-        // Track the `is_loading` status.
-        this.is_loading = true;
-        root_iframe!.onload = () => (this.is_loading = false);
+        rootIframe!.removeAttribute("srcdoc");
+        rootIframe!.src = url;
+        // Track the `isLoading` status.
+        this.isLoading = true;
+        rootIframe!.onload = () => (this.isLoading = false);
     };
 
     // Report an error from the server.
-    report_server_timeout = (message_id: number) => {
-        delete this.pending_messages[message_id];
-        report_error(`Error: server timeout for message id ${message_id}`);
+    reportServerTimeout = (messageId: number) => {
+        delete this.pendingMessages[messageId];
+        reportError(`Error: server timeout for message id ${messageId}`);
     };
 
     // Send a message expecting a result to the server.
-    send_message = (
+    sendMessage = (
         message: EditorMessageContents,
         callback: () => void = () => 0,
     ) => {
-        const id = this.ws_id;
+        const id = this.wsId;
         // The Client gets every third ID -- the IDE gets another third, while
         // the Server gets the final third.
-        this.ws_id += 3;
+        this.wsId += 3;
         // Add in the current filename to the message, if it's an `Update`.
         if (typeof message == "object" && "Update" in message) {
-            assert(this.current_filename !== undefined);
-            message.Update.file_path = this.current_filename!;
+            assert(this.currentFilename !== undefined);
+            message.Update.file_path = this.currentFilename!;
             // Update the version of this file if it's provided.
             this.version = message.Update.contents?.version ?? this.version;
         }
-        console_log(
-            `CodeChat Editor Client: sent message ${id}, ${format_struct(message)}`,
+        consoleLog(
+            `CodeChat Editor Client: sent message ${id}, ${formatStruct(message)}`,
         );
         const jm: EditorMessage = {
             id: id,
             message: message,
         };
         this.ws.send(JSON.stringify(jm));
-        this.pending_messages[id] = {
-            timer_id: window.setTimeout(
-                this.report_server_timeout,
+        this.pendingMessages[id] = {
+            timerId: window.setTimeout(
+                this.reportServerTimeout,
                 RESPONSE_TIMEOUT_MS,
                 id,
             ),
@@ -393,7 +393,7 @@ class WebSocketComm {
     };
 
     // This is called by the Client when the user navigates to another webpage.
-    current_file = (url: URL) => {
+    currentFile = (url: URL) => {
         // TODO: should we delay execution of user navigation until all previous
         // actions have finished, or ignore them and immediately perform the
         // user navigation?
@@ -401,31 +401,31 @@ class WebSocketComm {
             if (url.host === window.location.host) {
                 // If this points to the Server, then tell the IDE to load a new
                 // file.
-                this.send_message(
+                this.sendMessage(
                     { CurrentFile: [url.toString(), null] },
                     () => {
-                        this.set_root_iframe_src(url.toString());
+                        this.setRootIframeSrc(url.toString());
                     },
                 );
             } else {
                 // Otherwise, navigate to the provided page.
-                this.set_root_iframe_src(url.toString());
+                this.setRootIframeSrc(url.toString());
             }
-            // Read the `current_filename` from the next `Update` message.
-            this.current_filename = undefined;
+            // Read the `currentFilename` from the next `Update` message.
+            this.currentFilename = undefined;
         });
     };
 
     // Send a result (a response to a message from the server) back to the
     // server.
-    send_result = (id: number, result?: ResultErrTypes) => {
+    sendResult = (id: number, result?: ResultErrTypes) => {
         const message: EditorMessageContents = {
             Result: result === undefined ? { Ok: "Void" } : { Err: result },
         };
-        console_log(
-            `CodeChat Editor Client: sending result id = ${id}, message = ${format_struct(message)}`,
+        consoleLog(
+            `CodeChat Editor Client: sending result id = ${id}, message = ${formatStruct(message)}`,
         );
-        // We can't simply call `send_message` because that function expects a
+        // We can't simply call `sendMessage` because that function expects a
         // result message back from the server.
         const jm: EditorMessage = {
             id,
@@ -435,74 +435,74 @@ class WebSocketComm {
     };
 }
 
-// Return the `CodeChatEditor` object if the `root_iframe` contains the Client;
+// Return the `CodeChatEditor` object if the `rootIframe` contains the Client;
 // otherwise, this is `undefined`.
-const get_client = () => root_iframe?.contentWindow?.CodeChatEditor;
+const getClient = () => rootIframe?.contentWindow?.CodeChatEditor;
 
 // Assign content to either the Client (if it's loaded) or the webpage (if not)
-// in the `root_iframe`.
-const set_content = async (
+// in the `rootIframe`.
+const setContent = async (
     contents: CodeChatForWeb,
-    is_re_translation: boolean,
-    cursor_position?: CursorPosition,
-    scroll_line?: number,
+    isReTranslation: boolean,
+    cursorPosition?: CursorPosition,
+    scrollLine?: number,
 ) => {
-    const client = get_client();
+    const client = getClient();
     if (client === undefined) {
         // See if this is the [simple viewer](#Client-simple-viewer). Otherwise,
         // it's just the bare document to replace.
         const contentsElement =
-            root_iframe!.contentDocument?.getElementById("CodeChat-contents");
+            rootIframe!.contentDocument?.getElementById("CodeChat-contents");
         const cw =
             (contentsElement instanceof HTMLIFrameElement
                 ? contentsElement.contentWindow
-                : undefined) ?? root_iframe!.contentWindow!;
+                : undefined) ?? rootIframe!.contentWindow!;
         cw.document.open();
         assert("Plain" in contents.source);
         cw.document.write(contents.source.Plain.doc);
         cw.document.close();
     } else {
-        await root_iframe!.contentWindow!.CodeChatEditor.open_lp(
+        await rootIframe!.contentWindow!.CodeChatEditor.openLp(
             contents,
-            is_re_translation,
-            cursor_position,
-            scroll_line,
+            isReTranslation,
+            cursorPosition,
+            scrollLine,
         );
     }
 };
 
 // The iframe element which composes this page.
-let root_iframe: HTMLIFrameElement | undefined;
+let rootIframe: HTMLIFrameElement | undefined;
 
 // True when in test mode.
 let testMode = false;
 
 // Load the dynamic content into the static page.
-export const page_init = (
+export const pageInit = (
     // The pathname for the websocket to use. The remainder of the URL is
     // derived from the hosting page's URL. See the
     // [Location docs](https://developer.mozilla.org/en-US/docs/Web/API/Location)
     // for a nice, interactive definition of the components of a URL.
-    ws_pathname: string,
+    wsPathname: string,
     // Test mode flag
     testMode_: boolean,
 ) => {
     testMode = testMode_;
-    on_dom_content_loaded(() => {
+    onDomContentLoaded(() => {
         // Provide basic error reporting for uncaught errors.
-        window.addEventListener("unhandledrejection", on_error);
-        window.addEventListener("error", on_error);
+        window.addEventListener("unhandledrejection", onError);
+        window.addEventListener("error", onError);
 
         // If the hosting page uses HTTPS, then use a secure websocket (WSS
         // protocol); otherwise, use an insecure websocket (WS).
         const protocol = window.location.protocol === "http:" ? "ws:" : "wss:";
         // Build a websocket address based on the URL of the current page.
         webSocketComm = new WebSocketComm(
-            `${protocol}//${window.location.host}/${ws_pathname}`,
+            `${protocol}//${window.location.host}/${wsPathname}`,
         );
-        const iframe_element = document.getElementById("CodeChat-iframe");
-        assert(iframe_element instanceof HTMLIFrameElement);
-        root_iframe = iframe_element;
+        const iframeElement = document.getElementById("CodeChat-iframe");
+        assert(iframeElement instanceof HTMLIFrameElement);
+        rootIframe = iframeElement;
         window.CodeChatEditorFramework = {
             webSocketComm,
         };
@@ -519,29 +519,26 @@ declare global {
     }
 }
 
-const show_toast = (text: string) => {
-    if (get_client() === undefined) {
-        show_toast_core(text);
+const showToast = (text: string) => {
+    if (getClient() === undefined) {
+        showToastCore(text);
     } else {
-        root_iframe!.contentWindow!.CodeChatEditor.show_toast(text);
+        rootIframe!.contentWindow!.CodeChatEditor.showToast(text);
     }
 };
 
 // Format a complex data structure as a string when in debug mode.
 /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-export const format_struct = (complex_data_structure: any): string =>
+export const formatStruct = (complexDataStructure: any): string =>
     DEBUG_ENABLED
-        ? JSON.stringify(complex_data_structure).substring(
-              0,
-              MAX_MESSAGE_LENGTH,
-          )
+        ? JSON.stringify(complexDataStructure).substring(0, MAX_MESSAGE_LENGTH)
         : "";
 
 /*eslint-disable-next-line @typescript-eslint/no-explicit-any */
-const report_error = (text: string, ...objs: any) => {
+const reportError = (text: string, ...objs: any) => {
     console.error(text);
     if (objs.length > 0) {
         console.log(...objs);
     }
-    show_toast(text);
+    showToast(text);
 };

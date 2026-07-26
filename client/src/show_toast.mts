@@ -14,12 +14,12 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// `show_toast.mts` -- Show a toast message
+// `showToast.mts` -- Show a toast message
 // =============================================================================
 import Toastify from "toastify-js";
 import "toastify-js/src/toastify.css";
 
-export const show_toast = (text: string) =>
+export const showToast = (text: string) =>
     Toastify({
         text,
         duration: 20000,

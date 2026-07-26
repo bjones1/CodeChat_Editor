@@ -40,7 +40,7 @@ import { CodeChatEditorServer, initServer } from "./index.js";
 
 // ### Local packages
 import {
-    auto_update_timeout_ms,
+    autoUpdateTimeoutMs,
     CaptureEventWire,
     CaptureStatus,
     EditorMessage,
@@ -53,7 +53,7 @@ import {
 import {
     DEBUG_ENABLED,
     MAX_MESSAGE_LENGTH,
-    console_log,
+    consoleLog,
 } from "../../../client/src/debug_enabled.mjs";
 import { ResultErrTypes } from "../../../client/src/rust-types/ResultErrTypes.js";
 import {
@@ -2109,7 +2109,7 @@ export const activate = (context: vscode.ExtensionContext) => {
         vscode.commands.registerCommand(
             "extension.codeChatEditorActivate",
             async () => {
-                console_log("CodeChat Editor extension: starting.");
+                consoleLog("CodeChat Editor extension: starting.");
 
                 if (!subscribed) {
                     subscribed = true;
@@ -2127,7 +2127,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 ignore_text_document_change = false;
                                 return;
                             }
-                            console_log(
+                            consoleLog(
                                 `CodeChat Editor extension: text changed - ${
                                     event.reason
                                 }, ${format_struct(event.contentChanges)}.`,
@@ -2197,7 +2197,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                     return;
                                 }
 
-                                console_log(
+                                consoleLog(
                                     "CodeChat Editor extension: sending updated cursor/scroll position.",
                                 );
 
@@ -2348,7 +2348,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                         webview_panel.onDidDispose(async () => {
                             // Shut down the render client when the webview
                             // panel closes.
-                            console_log(
+                            consoleLog(
                                 "CodeChat Editor extension: shut down webview.",
                             );
                             // Closing the webview abruptly closes the Client,
@@ -2374,7 +2374,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                 }
 
                 // Start the server.
-                console_log("CodeChat Editor extension: starting server.");
+                consoleLog("CodeChat Editor extension: starting server.");
                 codeChatEditorServer = new CodeChatEditorServer(
                     vscode.Uri.joinPath(
                         context.globalStorageUri,
@@ -2390,7 +2390,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                 const hosted_in_ide =
                     codechat_client_location ===
                     CodeChatEditorClientLocation.html;
-                console_log(
+                consoleLog(
                     `CodeChat Editor extension: sending message Opened(${hosted_in_ide}).`,
                 );
                 await codeChatEditorServer.sendMessageOpened(hosted_in_ide);
@@ -2413,7 +2413,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                 while (codeChatEditorServer) {
                     const message_raw = await codeChatEditorServer.getMessage();
                     if (message_raw === null) {
-                        console_log("CodeChat Editor extension: queue closed.");
+                        consoleLog("CodeChat Editor extension: queue closed.");
                         break;
                     }
 
@@ -2421,7 +2421,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                     const { id, message } = JSON.parse(
                         message_raw,
                     ) as EditorMessage;
-                    console_log(
+                    consoleLog(
                         `CodeChat Editor extension: Received data id = ${id}, message = ${format_struct(
                             message,
                         )}.`,
@@ -2492,7 +2492,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                         });
                                         // Send an `Update` with the full text to
                                         // re-sync the Client.
-                                        console_log(
+                                        consoleLog(
                                             "CodeChat Editor extension: sending update because Client is out of sync.",
                                         );
                                         send_update(true);
@@ -2598,7 +2598,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 // VS Code can only apply line-based cursor
                                 // locations. DOM locations should be converted
                                 // by the server before reaching the extension.
-                                console_log(
+                                consoleLog(
                                     "CodeChat Editor extension: ignoring DOM cursor location in VS Code update.",
                                 );
                             }
@@ -2707,7 +2707,7 @@ export const activate = (context: vscode.ExtensionContext) => {
                                 doc === undefined
                                     ? null
                                     : [doc.getText(), version];
-                            console_log(
+                            consoleLog(
                                 `CodeChat Editor extension: Result(LoadFile(id = ${id}, ${format_struct(load_file_result)}))`,
                             );
                             await codeChatEditorServer.sendResultLoadfile(
@@ -2753,11 +2753,11 @@ export const activate = (context: vscode.ExtensionContext) => {
 
 // On deactivation, close everything down.
 export const deactivate = async () => {
-    console_log("CodeChat Editor extension: deactivating.");
+    consoleLog("CodeChat Editor extension: deactivating.");
 
     await stop_client("extension_deactivate");
     webview_panel?.dispose();
-    console_log("CodeChat Editor extension: deactivated.");
+    consoleLog("CodeChat Editor extension: deactivated.");
 };
 
 // Supporting functions
@@ -2776,7 +2776,7 @@ const format_struct = (complex_data_structure: any): string =>
 // Send a result (a response to a message from the server) back to the server.
 const sendResult = async (id: number, result?: ResultErrTypes) => {
     assert(codeChatEditorServer);
-    console_log(
+    consoleLog(
         `CodeChat Editor extension: sending Result(id = ${id}, ${format_struct(
             result,
         )}).`,
@@ -2811,7 +2811,7 @@ const send_update = (this_is_dirty: boolean) => {
                     // needing to reload the Client with each cycle.
                     current_editor = ate;
                     const current_file = ate.document.fileName;
-                    console_log(
+                    consoleLog(
                         `CodeChat Editor extension: sending CurrentFile(${current_file}}).`,
                     );
                     try {
@@ -2847,7 +2847,7 @@ const send_update = (this_is_dirty: boolean) => {
                     : null;
                 is_dirty = false;
 
-                console_log(
+                consoleLog(
                     `CodeChat Editor extension: sending Update(${file_path}, ${cursor_position}, ${scroll_position}, ${format_struct(
                         option_contents,
                     )})`,
@@ -2859,18 +2859,18 @@ const send_update = (this_is_dirty: boolean) => {
                     scroll_position,
                 );
             }
-        }, auto_update_timeout_ms);
+        }, autoUpdateTimeoutMs);
     }
 };
 
 // Gracefully shut down the render client if possible. Shut down the client as
 // well.
 const stop_client = async (closedBy: string = "client_stopped") => {
-    console_log("CodeChat Editor extension: stopping client.");
+    consoleLog("CodeChat Editor extension: stopping client.");
     const active = vscode.window.activeTextEditor;
     await endExtensionCaptureSession(active?.document.fileName, closedBy);
     if (codeChatEditorServer !== undefined) {
-        console_log("CodeChat Editor extension: stopping server.");
+        consoleLog("CodeChat Editor extension: stopping server.");
         await codeChatEditorServer.stopServer();
         codeChatEditorServer = undefined;
     }

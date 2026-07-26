@@ -32,7 +32,7 @@ import { ChangeSpec, EditorState, EditorSelection } from "@codemirror/state";
 import { CodeMirror, CodeMirrorDocBlockTuple } from "./shared.mjs";
 import {
     DocBlockPlugin,
-    CodeMirror_JSON_fields,
+    codeMirrorJsonFields,
 } from "./CodeMirror-integration.mjs";
 
 // Re-export everything that [CodeChatEditor.mts](CodeChatEditor.mts) exports.
@@ -80,9 +80,9 @@ window.CodeChatEditor_test = () => {
                 // On teardown, put the Mocha div at the beginning of the body.
                 // Testing causes body to be wiped, so don't do this until all
                 // tests are done.
-                const mocha_div = document.getElementById("mocha")!;
+                const mochaDiv = document.getElementById("mocha")!;
                 const ccb = document.getElementById("CodeChat-body")!;
-                ccb.insertBefore(mocha_div, ccb.firstChild);
+                ccb.insertBefore(mochaDiv, ccb.firstChild);
             },
         ],
     });
@@ -93,23 +93,20 @@ window.CodeChatEditor_test = () => {
         suite("CodeMirror checks", function () {
             test("insert/delete/replace expectations", function () {
                 // Create a div to hold an editor.
-                const codechat_body = document.getElementById(
+                const codechatBody = document.getElementById(
                     "CodeChat-body",
                 ) as HTMLDivElement;
-                const testing_div = document.createElement("div");
-                testing_div.id = "testing-div";
-                codechat_body.insertBefore(
-                    testing_div,
-                    codechat_body.firstChild,
-                );
+                const testingDiv = document.createElement("div");
+                testingDiv.id = "testing-div";
+                codechatBody.insertBefore(testingDiv, codechatBody.firstChild);
 
                 // Test insert at beginning of doc block.
-                const after_state = run_CodeMirror_test(
+                const afterState = runCodeMirrorTest(
                     "a\nbcd",
                     [[1, 2, "", "#", "test"]],
                     { from: 1, insert: "\n" },
                 );
-                assert.deepEqual(after_state, {
+                assert.deepEqual(afterState, {
                     doc: "a\n\nbcd",
                     doc_blocks: [[1, 3, "", "#", "test"]],
                 });
@@ -167,23 +164,23 @@ window.CodeChatEditor_test = () => {
     mocha.run();
 };
 
-const run_CodeMirror_test = (
+const runCodeMirrorTest = (
     doc: string,
-    doc_blocks: [CodeMirrorDocBlockTuple],
+    docBlocks: [CodeMirrorDocBlockTuple],
     changes: ChangeSpec,
 ): CodeMirror => {
     // Create the CodeChat Editor for testing.
-    const editor_state_json = {
+    const editorStateJson = {
         doc,
         selection: EditorSelection.single(0).toJSON(),
-        doc_blocks,
+        doc_blocks: docBlocks,
     };
     const state = EditorState.fromJSON(
-        editor_state_json,
+        editorStateJson,
         {
             extensions: [DocBlockPlugin],
         },
-        CodeMirror_JSON_fields,
+        codeMirrorJsonFields,
     );
     const view = new EditorView({
         parent: document.getElementById("testing-div")!,
@@ -192,7 +189,7 @@ const run_CodeMirror_test = (
 
     // Run a transaction, then extract at the results.
     view.dispatch({ changes });
-    const after_state = view.state.toJSON(CodeMirror_JSON_fields);
-    delete after_state.selection;
-    return after_state;
+    const afterState = view.state.toJSON(codeMirrorJsonFields);
+    delete afterState.selection;
+    return afterState;
 };
