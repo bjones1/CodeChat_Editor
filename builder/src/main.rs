@@ -803,6 +803,11 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
         &replacement_string,
     )?;
     search_and_replace_file(
+        format!("{STANDALONE_PATH}/Cargo.toml"),
+        cargo_regex,
+        &replacement_string,
+    )?;
+    search_and_replace_file(
         format!("{VSCODE_PATH}/package.json"),
         r#"(\r?\n    "version": ")[\d.]+(?:-[a-z\d]*)?(",\r?\n)"#,
         &replacement_string,
