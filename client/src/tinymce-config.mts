@@ -143,8 +143,10 @@ export const init = async (
                 "bold italic underline codeformat | quicklink h2 h3",
 
             // Needed to allow custom elements.
-            extended_valid_elements: "graphviz-graph[scale],wc-mermaid",
-            custom_elements: "graphviz-graph,wc-mermaid",
+            extended_valid_elements:
+                "graphviz-graph[scale],wc-mermaid,xref[contenteditable|ref],fragment[contenteditable|id]",
+            // Per the [docs](https://www.tiny.cloud/docs/tinymce/latest/content-filtering/#custom_elements), `~` marks tags as an inline element, not a block element.
+            custom_elements: "graphviz-graph,wc-mermaid,~xref,~fragment",
         },
     );
 

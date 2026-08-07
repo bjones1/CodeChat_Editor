@@ -21,69 +21,132 @@
 /// ================================================================
 ///
 /// The cache stores the location (file name and ID) and contents (inner HTML or
-/// code/doc blocks for fragments) of a target. Targets are HTML elements with
-/// an ID.
+/// code/doc blocks for fragments) of a target. Targets are HTML elements
+/// (excluding `<fragment>`s) with an ID.
 ///
 /// The goal of the cache is to support cross-references and gather elements,
 /// and to ensure that all IDs are unique within a project. This means that
 /// cross-references and gather elements persist across moving or renaming
 /// files, since the IDs will be found in the cache.
 ///
+/// Non-project files support a subset of this functionality: the "project"
+/// consists only of the current file. Only targets, gather elements,
+/// cross-references, and fragments to items within the file work as expected;
+/// references to other files do not.
+///
+/// The cache reflects data read directly from disk/IDE; content edited in the Client does not update the cache until it's written to disk/IDE, at which point the cache much re-process this unknown file. Since the Client is designed around an autosave principle which updates disk/IDE regularly, there's little gap between the two.
+///
 /// Cross references
 /// ----------------
 ///
-/// An `<xref ref="id">...Generated contents...</xref>` is a cross reference.
-/// The `id` specifies the destination; the cache then updates the `generated
-/// contents` based on the location and contents of the target of the provided
-/// ID. This element does not allow an `id` attribute.
+/// A `<xref ref="id"></xref>` is a cross reference to a `Target` or a gather
+/// element. The `id` specifies the destination; the cache then hydrates the
+/// contents based on the location and contents of the target of the
+/// provided `id` to e.g. `<xref ref="id" contenteditable="false"><a
+/// href="../path/to/page#id">Inner HTML from target</a></xref>`; this hydrated
+/// form is only present in the Client.
 ///
-/// Gather elements
-/// ---------------
+/// Details:
 ///
-/// A gather element such as `<h3 data-gather="id1 id2...">Bazzy things</h3>`
-/// becomes a list of the contents of fragments it refers to after processing by
-/// the cache. A fragment's content by default includes the contents of the
-/// current doc block and the contents of the following code/doc block;
-/// fragments are not allowed in Markdown documents. Fragments may include the
-/// `following` attribute to enclose a specific number of the following code/doc
-/// blocks; for example, `<fragment id="bar" following="3">` includes the
-/// current doc block along with the next 3 code/doc blocks; `following` must be
-/// a whole number. The fragment's contents will be replaced with links to any
-/// referring doc blocks. TODO: also allow a `<fragment end="bar"/>` to indicate
-/// the last code/doc block of a fragment.
+/// * This element does not allow an `id` attribute.
 ///
-/// Gather elements may include an `id`. Fragment contents may not include a
-/// gather element. They do support indirection: gather element A includes
-/// contents from fragment B, which contains an cross reference to target C.
-/// Changes to target C makes B and A dirty.
+/// * The inner HTML is always taken before cache hydration, to prevent circular
+///   dependencies:
 ///
-/// Example output of the gather tag `<p data-gather="id1 id2...">Bazzy
-/// things</p>`:
+///   ```html
+///   <h1 id="a">See <xref ref="b"></xref></h1>   <!-- file a -->
+///   <h1 id="b">See <xref ref="a"></xref></h1>   <!-- file b -->
+///   ```
+///
+///   Including cache hydration would cause the inner HTML to be updated each
+///   time the file is processed, outdating the other file.
+///
+/// * The inner HTML is cleaned to allow only the
+///   [permitted content for an `<a>` element](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#technical_summary).
+///
+/// * If the `id` referred to isn't found or refers to a duplicate id, the inner
+///   text is instead an appropriate error message.
+///
+/// * If the cross reference is to a gather element, the text is the gather
+///   element's inner HTML, not the gathered code/doc blocks.
+///
+/// Fragments and gather elements
+/// -----------------------------
+///
+/// A gather element such as `<h3 id="bar" data-gather="id1 id2...">Bazzy
+/// things</h3>` is a `Target` with the `data-gather` attribute. It becomes a
+/// list of the contents of fragments it refers to after hydration by the cache.
+/// An example fragment tag, after cache hydration: `<fragment id="id1"
+/// contenteditable="false">See <a href="path/to/gather#bar">Bazzy things</a>,
+/// <a href="path/to/another/gather#zap">Zappy things</a></fragment>`. A
+/// fragment's content by default includes the contents of the current doc block
+/// and the contents of the following code/doc block; fragments are not allowed
+/// in Markdown documents (in the case, the fragment contents consist of an error message). Fragments may include the `following` attribute to
+/// enclose a specific number of the following code/doc blocks; for example,
+/// `<fragment id="bar" following="3"></fragment>` includes the current doc
+/// block along with the next 3 code/doc blocks; `following` must be a whole
+/// number.
+///
+/// Details:
+///
+/// * Fragment contents may not include a gather element; in this case, the
+///   gather element list of contents will simply include an error message.
+/// * Fragments do support indirection: gather element A includes contents from
+///   fragment B, which contains a cross reference to target C. Changes to
+///   target C makes B and A outdated.
+/// * If a gather element refers to an `id` that is a `Target` or a
+///   `GatherElement`, not a `Fragment`, the resulting output for this in the
+///   list of fragments is an error message.
+/// * If a gather element refers to an `id` that wasn't found or is a duplicate,
+///   its contents will be replaced by an error message.
+/// * Fragments store an HTML rendering of the code and doc blocks they contain,
+///   excluding the content produced by hydrating the `<fragment>` tags, to
+///   avoid duplication and circular dependencies.
+/// * A `<fragment following=0>` is valid; it contains only the current doc
+///   block. The `following` attribute is clamped if it would exceed the number of code/doc blocks in the document. If the `following` value cannot be parsed to a whole number, an error message replaces the fragment content.
+/// * A gather element, as a type of `Target`, requires an `id`. A `data-gather`
+///   attribute on an element without an `id` produces an error message which
+///   requests the missing `id`.
+/// * All ids must be valid [CSS identifiers](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/ident) per [MDN recommendations](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/id). Invalid ids produce error messages in the hydrated tag content.
+///
+/// Example hydration of the gather tag `<h3 id="bar" data-gather="id1
+/// id2...">Bazzy things</h3>`:
 ///
 /// ```html
-/// <p class="cc-gather mceNonEditable" data-backlink="id1 id2...">Bazzy things</p>
-/// <p class="cc-gather-item-link mceNonEditable">From <a href="link-to-first-tag">:</p>
-/// (first item content)
-/// ...
-/// <p class="cc-gather-item-link mceNonEditable">From <a href="link-to-last-tag">:</p>
-/// (last item content)
+/// <h3 class="cc-gather" id="bar" data-gather="id1 id2...">
+///   Bazzy things
+/// </h3>
+/// <div class="cc-gather-items" contenteditable="false">
+///   <p class="cc-gather-item-link">
+///     From <a href="link/to/first/tag#id1">Path to file</a>:
+///   </p>
+///   (first item content)
+///   ...
+///   <p class="cc-gather-item-link">
+///     From <a href="link/to/last/tag#idn">Path to file</a>:
+///   </p>
+///   (last item content)
+/// </div>
 /// ```
 ///
 /// Search
 /// ------
 ///
-/// The cache supports searching the contents of all targets.
+/// The cache supports searching the (cleaned) inner HTML of all `Target`s and gather
+/// elements; search does not include `Fragment` contents.
 ///
-/// Goals
-/// -----
+/// ### Auto-assignment of ids
 ///
-/// * Given a path to a file, retrieve the associated location, numbering, and
-///   contents (a list of all targets in the containing file).
-/// * Perform a search of all Target contents, returning a list of matching
-///   targets.
-/// * Given an id, retrieve the associated `Target`, all `Target`s which
-///   reference this id but don't depend on it, and all `Target`s which
-///   reference this anchor and also depend on it.
+/// If `id="*"` on either a fragment, target, or gather element, the cache
+/// replaces this with an random autogenerated `id` placed in the resulting HTML
+/// contents, but this new `id` is not yet recorded in the cache. The file is
+/// then marked as `Unknown` when it is saved; when re-read, this `id` is then
+/// incorporated into the cache. This helps avoid cases where the cache and file
+/// contents become unsynchronized: if the `id` is placed in the cache before
+/// the write and the write fails, or if the file is never written (it was being
+/// scanned, but not actively edited, so the file contents wasn't written back).
+///
+/// The autogenerated id must be a valid [CSS identifier](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/ident). Autogenerated ids must be checked to make sure they don't collide with an existing id.
 ///
 /// Design
 /// ------
@@ -92,27 +155,39 @@
 /// `Arc<Mutex<Cache>>`; all consistency comes from that one lock, so no
 /// per-item locking (and therefore no lock ordering) is needed. Items refer to
 /// each other by key -- files by path, targets and fragments by id -- rather
-/// than by `Arc`/`Weak` pointers. This keeps the structure acyclic, `Send`,
-/// and (in the future) serializable, and avoids garbage-collecting stale weak
+/// than by `Arc`/`Weak` pointers. This keeps the structure acyclic, `Send`, and
+/// (in the future) serializable, and avoids garbage-collecting stale weak
 /// references.
+///
+/// Cached state always converged by design:
+///
+/// 1. `Target::inner_html`` is a pure function of the source (pre-hydration) — depends on nothing.
+/// 2. `<xref>`` hydration depends on layer 1 only.
+/// 3. `Fragment::content`` depends on source + layer 2.
+/// 4. Gather-list hydration depends on layer 3, and nothing reads layer 4.
+///
+/// Because no layer reads a higher one, propagation terminates.
 ///
 /// Updating the cache is a two-phase process:
 ///
 /// 1. Collect: while walking a file's DOM, record all cacheable facts
 ///    (`FileFacts`) -- targets, cross-references, fragments, and gather
 ///    elements -- without touching the cache. This keeps the non-`Send` DOM
-///    types out of the cache and off its critical section.
+///    types out of the cache and off its critical section. Fact collection
+///    ignores content expanded by the cache (the contents of `xref` and
+///    `fragment` tags; the content following a gather tag).
 /// 2. Commit: `Cache::commit_file` applies the facts in one transaction,
 ///    diffing them against the file's previous state to compute the set of
 ///    other files made outdated by this update.
 ///
-/// Dependencies are tracked at file granularity: each target or fragment
-/// stores the set of files (its `dependents`) whose rendered output depends on
-/// it. This suffices because the only action ever taken on a dependent is
-/// marking its containing file outdated, and it makes indirection (gather A
-/// includes fragment B, whose content cross-references target C) work without
-/// extra machinery: a change to C outdates B's file; reprocessing B's file
-/// changes B's content, which outdates A's file.
+/// Dependencies are tracked at file granularity: each target or fragment stores
+/// the set of files (its `dependents` and, for gather elements,
+/// `dependent_ids`) whose rendered output depends on it. This suffices because
+/// the only action ever taken on a dependent is marking its containing file
+/// outdated, and it makes indirection (gather A includes fragment B, whose
+/// content cross-references target C) work without extra machinery: a change to
+/// C outdates B's file; reprocessing B's file changes B's content, which
+/// outdates A's file.
 ///
 /// An id referenced before (or without) being defined is recorded in
 /// `Cache::unresolved`, which maps the id to the set of files waiting on it.
@@ -120,25 +195,11 @@
 /// initial dependents; when a defined id disappears, its dependents move back
 /// to `unresolved`.
 ///
-/// Duplicate ids are never renamed (file timestamps can't reliably identify
-/// the original, and renaming would silently modify user content). Instead,
-/// the first definition wins and later definitions are reported in
-/// `CommitOutcome::duplicates` for the caller to surface as warnings.
+/// Duplicate ids are never renamed (file timestamps can't reliably identify the
+/// original, and renaming would silently modify user content). Instead,
+/// duplicates are reported as errors to the user.
 ///
-/// Thinking space:
-///
-/// * Any file can be submitted for a cache update. After the update finishes,
-///   the Server checks to see if this update was to the file currently being
-///   edited in the Client.
-/// * Non-project files support a subset of this functionality: basically, treat
-///   the project as a single file. Backlinks to other files work; tags and
-///   backlinks within the current file work.
-///
-/// Code changes elsewhere:
-///
-/// 1. (Longer-term) modify the pulldown-cmark HTML writer to preserve line
-///    numbers.
-/// 2. Revise the TOC loader to use mdbook's code to process and update the TOC.
+/// All file names (stored as `PathBuf`) must be canonicalized absolute paths.
 // Imports
 // -------
 //
@@ -160,23 +221,15 @@ use std::{
 
 // Data structures
 // ---------------
-//
 /// This defines the cache used to store all targets in a project.
 pub struct Cache {
     /// Provide rapid access to a file by its absolute path; it must be within
     /// the project's root directory. This owns all per-file data.
     pub(super) files: HashMap<PathBuf, FileEntry>,
-    /// Provide rapid access to a `Target` or `Fragment` by its unique id: the
-    /// value is the path of the file whose `FileEntry` defines the id. Whether
-    /// the id names a target or a fragment is determined by looking it up in
-    /// that entry; see `resolve_id`.
-    pub(super) ids: HashMap<String, PathBuf>,
-    /// Ids that appeared in cross-references or gather elements but aren't
-    /// (currently) defined by any file, mapped to the set of files which
-    /// reference them. When such an id appears, these files are marked
-    /// outdated and become the id's initial dependents.
-    pub(super) unresolved: HashMap<String, HashSet<PathBuf>>,
-    /// All files with unknown content.
+    /// Provide rapid access to a `Target`/gather element or `Fragment` by its
+    /// id.
+    pub(super) ids: HashMap<String, IdEntry>,
+    /// All files for which `FileEntry::status == FileStatus::Unknown`.
     pub(super) pending_files: Vec<PathBuf>,
     /// The root directory of this project.
     pub(super) root: PathBuf,
@@ -190,8 +243,9 @@ pub struct Cache {
 #[derive(Default)]
 pub(super) struct FileEntry {
     /// Metadata used to determine if this data represents the actual state of
-    /// the file; if the file is newer, then this file is implicitly `Unknown`.
-    /// `None` if the file doesn't exist or the metadata can't be determined.
+    /// the file; if the file is newer, then this file's status must be changed
+    /// to `Unknown`. `None` if the file doesn't exist or the metadata can't be
+    /// determined.
     pub(super) metadata: Option<Metadata>,
     /// The status of this file. Note that this overlaps with
     /// `Cache::pending_files` and should be kept in sync with it.
@@ -203,7 +257,38 @@ pub(super) struct FileEntry {
     /// All fragments on this page, keyed by id.
     pub(super) fragments: HashMap<String, Fragment>,
     /// All gather elements on this page.
-    pub(super) gathers: Vec<GatherElement>,
+    pub(super) gathers: Vec<String>,
+}
+
+/// Given an id, this enum list the possible relationship between an id and the
+/// `Target`/gather element or `Fragment` which define that id.
+///
+/// If an id changes its state (Single -> Multiple, Missing -> Single, etc.), then all dependencies must be `Outdated`; for `Single` or `Multiple`, `resolve_id` will produce a `Target` with the dependencies; for `Missing`, the dependencies are already provided.
+pub(super) struct IdEntry {
+    state: IdState,
+    /// When `state == Missing`, this contains a list of all files that reference it. Otherwise, the contents are:
+    ///
+    /// - For a `Fragment`, this contains all gather elements referencing this `Fragment`. If this `Fragment`'s
+    ///   state changes, then these need to be rebuilt. This represents one half
+    ///   of the bidirectional link between `Fragment`s and gather elements derived from processing gather elements.
+    ///
+    /// - For a `Target` or gather element, this contains all files which cross reference this target. If this `Target`'s
+    ///   state changes, then these need to be rebuilt.
+    ///
+    /// Any change to `IdState` outdates every file in its dependents; likewise, any change to the state of the `Target`/gather element/`Fragment` this id refers to outdates every dependent.
+    dependents: HashSet<PathBuf>
+}
+
+pub(super) enum IdState {
+    /// The expected relationship: this `id` maps to exactly one `Target`/gather
+    /// element or `Fragment`.
+    Single(PathBuf),
+    /// Duplicate id: one id maps to multiple `Target`s/gather elements or
+    /// `Fragment`s; the value indicates the number of definitions in that file.
+    Multiple(HashMap<PathBuf, u32>),
+    /// Ids that appeared in cross-references or gather elements but aren't
+    /// (currently) defined by any file.
+    Missing
 }
 
 /// The status of a file from the cache's perspective.
@@ -221,28 +306,28 @@ pub(super) enum FileStatus {
 }
 
 /// Contains all information about a target. A target is any HTML element with
-/// an id; the id (globally unique within the project) is the key of
-/// `FileEntry::targets`, and the containing file is the entry holding this
-/// value, so neither is duplicated here.
+/// an id; the id (which should be globally unique within the project; duplicate
+/// ids are flagged as errors) is the key of `FileEntry::targets`, and the
+/// containing file is the entry holding this value, so neither is duplicated
+/// here.
 pub(super) struct Target {
-    /// The inner HTML of this element. Together with its id, this defines the
-    /// state of the `Target` that cross-references depend on.
+    /// The inner HTML of this element. Together with its id and the path which contains this Target, this defines the
+    /// state of the `Target` that cross-references depend on. This is a cleaned form (see cross-references) of the inner HTML present in the actual element.
     pub(super) inner_html: String,
-    /// All files containing cross references to this target. If this
-    /// `Target`'s state changes, then these need to be rebuilt.
-    pub(super) dependents: HashSet<PathBuf>,
-    /// The line number of this target in its file. Always 0 until the
-    /// pulldown-cmark HTML writer preserves line numbers; see the TODO in the
-    /// module docs.
+    /// IDs gathered, if this is a gather element; empty otherwise. This is additional state that `Fragment`s also depend on. This
+    /// represents one half of the bidirectional link between `Fragment`s and
+    /// gather elements; this half is directly defined by the gather element.
+    pub(super) gather_ids: Vec<String>,
+    /// The line number of this target in its file. It is not state; therefore, changes to this do not cause all dependents to be outdated. Always 0 until the
+    /// pulldown-cmark HTML writer preserves line numbers. TODO: when the URL
+    /// given to the Client includes an anchor, the Client must use the anchor
+    /// to find the corresponding Target (the anchor is the id), then use this
+    /// field to identify the line on which that id resides in order to scroll
+    /// to the appropriate location in the document.
     pub(super) line: usize,
-    /// The index of the doc block which contains this `Target` in the vec of
-    /// `CodeDocBlock`s for this file.
-    pub(super) doc_block_index: usize,
 }
 
-/// This defines a cross reference to a `Target`. Currently, this could probably
-/// be simplified to just the `id`; keeping the struct to make any future
-/// changes easier.
+/// This defines a cross reference to a `Target`.
 pub(super) struct Xref {
     /// The id cross-referenced.
     pub(super) id: String,
@@ -259,35 +344,18 @@ pub(super) struct Fragment {
     /// finalized and the caller stores the result via
     /// `Cache::update_fragment_content`.
     pub(super) content: String,
-    /// All files containing gather elements referencing this `Fragment`. If
-    /// this `Fragment`'s state changes, then these need to be rebuilt.
-    pub(super) dependents: HashSet<PathBuf>,
     /// The line number of this `Fragment` in its file; see `Target::line`.
     pub(super) line: usize,
-    /// The index of the first doc block of this `Fragment` in the vec of
-    /// `CodeDocBlock`s for this file.
-    pub(super) doc_block_start_index: usize,
-    /// The index of the last code/doc block of this `Fragment` in the vec of
-    /// `CodeDocBlock`s for this file.
-    pub(super) code_doc_block_end_index: usize,
-}
-
-/// This defines a list of `Fragment`s to combine.
-pub(super) struct GatherElement {
-    /// The ids gathered.
-    pub(super) ids: Vec<String>,
-    /// The inner HTML of this gather element.
-    pub(super) inner_html: String,
-    /// The index of the doc block which contains this element in the vec of
-    /// `CodeDocBlock`s for this file.
-    pub(super) doc_block_index: usize,
 }
 
 // ### Facts
 //
-// Plain data collected while walking a file's DOM, then applied to the cache
-// in a single transaction by `Cache::commit_file`. Keeping these free of DOM
-// types lets the walk run without holding the cache lock.
+// TODO: this and all following code is outdated with respect to the contents
+// above and should be updated.
+//
+// Plain data collected while walking a file's DOM, then applied to the cache in
+// a single transaction by `Cache::commit_file`. Keeping these free of DOM types
+// lets the walk run without holding the cache lock.
 /// All cacheable facts found in one file.
 #[derive(Default)]
 pub(super) struct FileFacts {
@@ -297,8 +365,6 @@ pub(super) struct FileFacts {
     pub(super) xrefs: Vec<String>,
     /// Every fragment, in document order.
     pub(super) fragments: Vec<FragmentFact>,
-    /// Every gather element, in document order.
-    pub(super) gathers: Vec<GatherFact>,
 }
 
 /// A target found in the DOM; see `Target` for field documentation.
@@ -307,7 +373,10 @@ pub(super) struct TargetFact {
     pub(super) id: String,
     pub(super) inner_html: String,
     pub(super) line: usize,
+    /// The index of the doc block which contains this `Target` in the vec of
+    /// `CodeDocBlock`s for this file.
     pub(super) doc_block_index: usize,
+    pub(super) gather_ids: Vec<String>
 }
 
 /// A fragment found in the DOM; see `Fragment` for field documentation. The
@@ -317,40 +386,21 @@ pub(super) struct FragmentFact {
     /// The id of this fragment.
     pub(super) id: String,
     pub(super) line: usize,
+    /// The index of the first doc block of this `Fragment` in the vec of
+    /// `CodeDocBlock`s for this file.
     pub(super) doc_block_start_index: usize,
+    /// The index of the last code/doc block of this `Fragment` in the vec of
+    /// `CodeDocBlock`s for this file.
     pub(super) code_doc_block_end_index: usize,
 }
 
-/// A gather element found in the DOM; see `GatherElement` for field
-/// documentation.
-pub(super) struct GatherFact {
-    pub(super) ids: Vec<String>,
-    pub(super) inner_html: String,
-    pub(super) doc_block_index: usize,
-}
-
 // ### Commit results
-//
 /// The result of committing one file's facts to the cache.
 pub(super) struct CommitOutcome {
     /// Files (other than the committed file) whose rendered output is
     /// invalidated by this commit; their status has already been set to
     /// `Outdated`. The caller should schedule them for reprocessing.
     pub(super) outdated: HashSet<PathBuf>,
-    /// Ids in the committed file that duplicate an already-defined id. These
-    /// definitions were ignored (the first definition wins); the caller should
-    /// surface them as warnings.
-    pub(super) duplicates: Vec<DuplicateId>,
-}
-
-/// Describes one duplicate id found during a commit.
-#[derive(Debug, PartialEq, Eq)]
-pub(super) struct DuplicateId {
-    /// The duplicated id.
-    pub(super) id: String,
-    /// The file containing the winning definition. If this is the committed
-    /// file itself, the id was defined twice within that file.
-    pub(super) defined_in: PathBuf,
 }
 
 /// The result of looking up an id; borrows from the cache, so it must be used
@@ -370,6 +420,8 @@ pub(super) enum IdResolution<'a> {
     },
     /// No file defines this id.
     Missing,
+    /// Multiple files define this id.
+    Multiple(&'a HashSet<PathBuf>)
 }
 
 // Code
@@ -379,14 +431,14 @@ impl Cache {
         Cache {
             files: HashMap::new(),
             ids: HashMap::new(),
-            unresolved: HashMap::new(),
             pending_files: vec![],
+            // TODO: this should be a required parameter to construct the cache.
             root: PathBuf::new(),
         }
     }
 
     /// Apply the facts collected from one file's DOM walk to the cache in a
-    /// single transaction. This satisfies two requirements:
+    /// single transaction. This satisfies several requirements:
     ///
     /// * Determine if any files containing cross-references need to be rebuilt
     ///   due to changes in the `Target`s in this file: any target which was
@@ -394,16 +446,24 @@ impl Cache {
     ///   that "modified" refers only to the `Target` state that
     ///   cross-references depend on (its id and inner HTML).
     /// * Determine if any files containing gather elements need to be rebuilt
-    ///   due to changes in the `Fragment`s in this file. Fragment additions
-    ///   and deletions are handled here; content changes are detected by
-    ///   `update_fragment_content`, since a fragment's rendered content is
-    ///   only known after doc block processing completes.
+    ///   due to changes in the `Fragment`s in this file. Fragment additions and
+    ///   deletions are handled here; content changes are detected by
+    ///   `update_fragment_content`, since a fragment's rendered content is only
+    ///   known after doc block processing completes.
+    /// * Determine if any files containing `Fragment`s need to be rebuilt due
+    ///   to changes in the `gather_ids` of the gather element which references
+    ///   them.
     ///
-    /// Because cross-references and gather elements carry no id to match them
-    /// against their previous versions, the diff instead unlinks all of the
-    /// old version's outgoing references, then links all of the new version's.
-    /// Dependency sets are only ever mutated by this round trip, never used to
-    /// detect change, so it causes no spurious rebuilds.
+    /// Because cross-references carry no id to match them against their
+    /// previous versions, the diff instead unlinks all of the old version's
+    /// outgoing references, then links all of the new version's. Dependency
+    /// sets are only ever mutated by this round trip, never used to detect
+    /// change, so it causes no spurious rebuilds.
+    ///
+    /// TODO: this implementation should be revised based on changes made to the
+    /// spec but not yet committed.
+    ///
+    /// TODO: add a `remove_file` function, which probably calls this with an empty set of `FileFacts` to remove all data that used to be in this file first.
     pub(super) fn commit_file(
         &mut self,
         // The file whose facts these are.
@@ -414,15 +474,15 @@ impl Cache {
         metadata: Option<Metadata>,
         // The facts collected from the file's DOM.
         facts: FileFacts,
-        // The outcome: outdated files and duplicate ids; see `CommitOutcome`.
+        // The outcome: outdated files. Reprocessing these outdated files may
+        // reveal additional outdated files.
     ) -> CommitOutcome {
         let mut outdated: HashSet<PathBuf> = HashSet::new();
-        let mut duplicates: Vec<DuplicateId> = Vec::new();
 
         // ### Unlink the old version's outgoing references
         //
-        // Remove this file from the dependents of every id its previous
-        // version referenced; the new version's references are linked below.
+        // Remove this file from the dependents of every id its previous version
+        // referenced; the new version's references are linked below.
         let old_refs: Vec<String> = if let Some(entry) = self.files.get(path) {
             entry
                 .xrefs
@@ -498,8 +558,8 @@ impl Cache {
                 }
                 old_target.dependents
             } else if let Some(waiters) = self.unresolved.remove(&fact.id) {
-                // The id was referenced before it existed: the files waiting
-                // on it must be rebuilt, and they become its dependents.
+                // The id was referenced before it existed: the files waiting on
+                // it must be rebuilt, and they become its dependents.
                 outdated.extend(waiters.iter().cloned());
                 waiters
             } else {
@@ -540,10 +600,9 @@ impl Cache {
             }
             self.ids.insert(fact.id.clone(), path.to_path_buf());
             let (content, dependents) = if let Some(old_fragment) = old_fragments.remove(&fact.id) {
-                // The fragment survives: keep its old content until the
-                // caller supplies the new content via
-                // `update_fragment_content`, which also detects content
-                // changes.
+                // The fragment survives: keep its old content until the caller
+                // supplies the new content via `update_fragment_content`, which
+                // also detects content changes.
                 (old_fragment.content, old_fragment.dependents)
             } else if let Some(waiters) = self.unresolved.remove(&fact.id) {
                 outdated.extend(waiters.iter().cloned());
@@ -566,10 +625,10 @@ impl Cache {
         // ### Process deleted definitions
         //
         // Anything left in the old maps wasn't matched by a same-kind
-        // definition in the new version. Its dependents must be rebuilt. If
-        // the id changed kind (target to fragment or vice versa) the
-        // dependents transfer to the new definition; otherwise the id is gone
-        // and its dependents wait in `unresolved` for it to reappear.
+        // definition in the new version. Its dependents must be rebuilt. If the
+        // id changed kind (target to fragment or vice versa) the dependents
+        // transfer to the new definition; otherwise the id is gone and its
+        // dependents wait in `unresolved` for it to reappear.
         for (id, old_target) in old_targets {
             outdated.extend(old_target.dependents.iter().cloned());
             if let Some(new_fragment) = new_fragments.get_mut(&id) {
@@ -606,6 +665,8 @@ impl Cache {
         // ### Store the new state
         let entry = self.files.get_mut(path).expect("entry was created above");
         entry.metadata = metadata;
+        // TODO: if this contained autogenerated IDs, mark this as "unknown if
+        // saved".
         entry.status = FileStatus::UpToDate;
         entry.targets = new_targets;
         entry.fragments = new_fragments;
@@ -615,8 +676,15 @@ impl Cache {
             .into_iter()
             .map(|fact| GatherElement {
                 ids: fact.ids,
-                inner_html: fact.inner_html,
-                doc_block_index: fact.doc_block_index,
+                target: Target {
+                    inner_html: fact.inner_html,
+                    // TODO: fix. This should be a `xref`s to this
+                    // `GatherElement`.
+                    dependents: HashSet::new(),
+                    // TODO: fix.
+                    line: 0,
+                    doc_block_index: fact.doc_block_index,
+                },
             })
             .collect();
 
@@ -662,8 +730,8 @@ impl Cache {
     }
 
     /// Store a fragment's rendered content, once the caller has finalized its
-    /// doc blocks. If the content changed, all files containing gather
-    /// elements which reference the fragment are marked outdated.
+    /// doc blocks. If the content changed, all files containing gather elements
+    /// which reference the fragment are marked outdated.
     pub(super) fn update_fragment_content(
         &mut self,
         // The file containing the fragment.
@@ -821,8 +889,7 @@ mod tests {
         let outcome = cache.commit_file(&b, None, facts_xref("foo"));
         assert!(outcome.outdated.is_empty());
 
-        // The target must know its dependent and resolve to its defining
-        // file.
+        // The target must know its dependent and resolve to its defining file.
         let IdResolution::Target { path, target } = cache.resolve_id("foo") else {
             panic!("expected a target");
         };
@@ -855,8 +922,7 @@ mod tests {
         assert_eq!(target.dependents, HashSet::from([b.clone()]));
     }
 
-    // Verify that only a change to a target's content outdates its
-    // dependents.
+    // Verify that only a change to a target's content outdates its dependents.
     #[test]
     fn test_target_change_outdates_dependents() {
         let mut cache = Cache::new();
@@ -887,8 +953,7 @@ mod tests {
         cache.commit_file(&a, None, facts_target("foo", "Foo!"));
         cache.commit_file(&b, None, facts_xref("foo"));
 
-        // Delete the target: the dependent is rebuilt and now waits on the
-        // id.
+        // Delete the target: the dependent is rebuilt and now waits on the id.
         let outcome = cache.commit_file(&a, None, FileFacts::default());
         assert_eq!(outcome.outdated, HashSet::from([b.clone()]));
         assert!(matches!(cache.resolve_id("foo"), IdResolution::Missing));
@@ -899,8 +964,7 @@ mod tests {
         assert_eq!(outcome.outdated, HashSet::from([b.clone()]));
     }
 
-    // Verify that duplicate ids are reported, with the first definition
-    // winning.
+    // Verify that duplicate ids are reported.
     #[test]
     fn test_duplicate_ids() {
         let mut cache = Cache::new();
@@ -951,16 +1015,15 @@ mod tests {
         cache.commit_file(&a, None, facts_target("foo", "Foo!"));
         cache.commit_file(&b, None, facts_xref("foo"));
 
-        // Recommit `b` without the cross-reference; changing the target must
-        // no longer outdate `b`.
+        // Recommit `b` without the cross-reference; changing the target must no
+        // longer outdate `b`.
         cache.commit_file(&b, None, FileFacts::default());
         let outcome = cache.commit_file(&a, None, facts_target("foo", "Bar!"));
         assert!(outcome.outdated.is_empty());
     }
 
-    // Verify the fragment/gather flow: a gather element depends on a
-    // fragment, and only a change to the fragment's content outdates the
-    // gathering file.
+    // Verify the fragment/gather flow: a gather element depends on a fragment,
+    // and only a change to the fragment's content outdates the gathering file.
     #[test]
     fn test_fragment_gather_flow() {
         let mut cache = Cache::new();
@@ -1011,9 +1074,9 @@ mod tests {
         cache.commit_file(&a, None, facts_target("foo", "Foo!"));
         cache.commit_file(&b, None, facts_xref("foo"));
 
-        // The id becomes a fragment: the cross-referencing file must be
-        // rebuilt (its cross-reference is now an error), and the dependency
-        // edge transfers.
+        // The id becomes a fragment: the cross-referencing file must be rebuilt
+        // (its cross-reference is now an error), and the dependency edge
+        // transfers.
         let outcome = cache.commit_file(
             &a,
             None,

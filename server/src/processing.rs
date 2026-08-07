@@ -251,8 +251,8 @@ pub enum TranslationResultsString {
 /// Match the lexer directive in a source file.
 static LEXER_DIRECTIVE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"CodeChat Editor lexer: (\w+)").unwrap());
-/// If this matches, it means an unterminated fenced code block. This should
-/// be replaced with the `</code></pre>` terminator.
+/// If this matches, it means an unterminated fenced code block. This should be
+/// replaced with the `</code></pre>` terminator.
 static DOC_BLOCK_SEPARATOR_BROKEN_FENCE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
         // Allow the `.` wildcard to match newlines.
@@ -953,8 +953,9 @@ pub fn source_to_codechat_for_web(
                     }
                 })
                 // Add the doc block separator string between each doc block;
-                // the separator contains the index of this doc block.
+                // the separator contains the index of this doc block in the vec of code/doc blocks.
                 .fold(String::new(), |mut acc: String, x: (usize, &str)| {
+                    // TODO: why are we skipping empty doc blocks here? This seems incorrect. Remove this and run tests.
                     if !acc.is_empty() {
                         acc.push_str(&DOC_BLOCK_SEPARATOR_STRING.replace("{}", &x.0.to_string()));
                     }
@@ -1033,38 +1034,46 @@ static MINIFY_OPTIONS: LazyLock<minify_html::Cfg> = LazyLock::new(|| {
     cfg
 });
 
-// A static config for Ammonia.
+// A static config for Ammonia. TODO: additional updates based on cache spec.
 static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     // Add custom tags produced during hydration, plus `input` (task list
     // checkboxes produced by pulldown-cmark) and `iframe` (embedded media
     // inserted via TinyMCE), neither of which Ammonia allows by default.
-    b.add_tags(&["wc-mermaid", "graphviz-graph", "input", "iframe"])
-        // Allow any element to be assigned an ID.
-        .add_generic_attributes(&["id"])
-        // This allows math produced by pulldown-cmark and updated by the
-        // hydration code.
-        .add_allowed_classes(
-            "span",
-            &["math", "math-inline", "math-display", "mceNonEditable"],
-        )
-        // `code` tags can have `class=language-*`. Since Ammonia doesn't
-        // support a regex like this, just allow anything.
-        .add_tag_attributes("code", &["class"])
-        // Task list checkboxes are rendered as `<input type="checkbox"
-        // checked>`.
-        .add_tag_attributes("input", &["type", "checked", "disabled"])
-        // Allow the attributes TinyMCE/the IDE place on embedded `<iframe>`s.
-        .add_tag_attributes(
-            "iframe",
-            &["width", "height", "src", "allowfullscreen", "frameborder"],
-        )
-        // Keep HTML comments, which Ammonia strips by default.
-        .strip_comments(false)
-        // For now, don't change this. We can't tell if the user included this
-        // manually and it should not be stripped without some extra work
-        // (perhaps adding custom attributes?).
-        .link_rel(None);
+    b.add_tags(&[
+        "wc-mermaid",
+        "graphviz-graph",
+        "xref",
+        "fragment",
+        "input",
+        "iframe",
+    ])
+    // Allow any element to be assigned an ID and to be a gather element.
+    .add_generic_attributes(&["id", "data-gather"])
+    // This allows math produced by pulldown-cmark and updated by the hydration
+    // code.
+    .add_allowed_classes(
+        "span",
+        &["math", "math-inline", "math-display", "mceNonEditable"],
+    )
+    // `code` tags can have `class=language-*`. Since Ammonia doesn't support a
+    // regex like this, just allow anything.
+    .add_tag_attributes("code", &["class"])
+    // Task list checkboxes are rendered as `<input type="checkbox" checked>`.
+    .add_tag_attributes("input", &["type", "checked", "disabled"])
+    // Allow the attributes TinyMCE/the IDE place on embedded `<iframe>`s.
+    .add_tag_attributes(
+        "iframe",
+        &["width", "height", "src", "allowfullscreen", "frameborder"],
+    )
+    .add_tag_attributes("xref", &["contenteditable", "ref"])
+    .add_tag_attributes("fragment", &["contenteditable", "id"])
+    // Keep HTML comments, which Ammonia strips by default.
+    .strip_comments(false)
+    // For now, don't change this. We can't tell if the user included this
+    // manually and it should not be stripped without some extra work (perhaps
+    // adding custom attributes?).
+    .link_rel(None);
     b
 });
 
@@ -1245,9 +1254,8 @@ pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
     Ok(html_out)
 }
 
-/// Serialize a node's children back to an HTML string -- the node's inner
-/// HTML. This defines the contents of a target or gather element stored in the
-/// cache.
+/// Serialize a node's children back to an HTML string -- the node's inner HTML.
+/// This defines the contents of a target or gather element stored in the cache.
 fn node_inner_html(node: &Rc<Node>) -> io::Result<String> {
     let so = SerializeOpts {
         // Serialize only the node's children, not the node itself.
@@ -1285,8 +1293,8 @@ fn hydrate_html(
 ) -> io::Result<(String, Vec<Rc<Node>>)> {
     let dom = html_to_dom(html, None)?;
     // Read the file's metadata before taking the cache lock, so that no I/O
-    // happens while the lock is held. This captures the state of the file
-    // whose content is being processed.
+    // happens while the lock is held. This captures the state of the file whose
+    // content is being processed.
     let metadata = file.metadata().ok();
     // ### Collect facts
     //
@@ -1315,23 +1323,22 @@ fn hydrate_html(
             .lock()
             .unwrap()
             .commit_file(file, metadata, mem::take(&mut walk_context.facts));
-    // TODO: patch the DOM using the committed cache state (re-lock the cache
+    // TODO: patch the DOM using the committed cache state. Should keep the cache lock above
     // and use `Cache::resolve_id`):
     //
     // 1. For each node in `walk_context.xrefs`, replace its generated contents
-    //    with a link to its target; if the id resolves to a `Fragment` or is
-    //    missing, insert an error message instead.
+    //    with a link to its target or an error message.
     // 2. For each node in `walk_context.fragments`, insert links to the gather
     //    elements which reference it.
-    // 3. Report each id in `commit.duplicates` as a warning in the DOM; the
-    //    first definition of an id wins, and later definitions are ignored.
-    // 4. Schedule reprocessing for each file in `commit.outdated`.
+    // 3. For each node in `walk_context.gathers`, insert a list of fragments as
+    //    the next sibling.
+    // 4. Schedule reprocessing for each file in `commit.outdated`.
     //
     // TODO: on return, once doc block contents are finalized, store each
-    // fragment's content with `Cache::update_fragment_content` (which marks
-    // the files containing affected gather elements as outdated), then update
-    // each gather element's DOM data (a list containing a link to each
-    // fragment followed by its contents).
+    // fragment's content with `Cache::update_fragment_content` (which marks the
+    // files containing affected gather elements as outdated), then update each
+    // gather element's DOM data (a list containing a link to each fragment
+    // followed by its contents). Note that fragment contents must be filtered to remove `<fragment>`s and their contents.
 
     Ok((dom_to_html(dom)?, walk_context.gathers))
 }
@@ -1373,7 +1380,7 @@ struct WalkContext {
     fragments: Vec<Rc<Node>>,
     /// DOM for all `GatherElement`s.
     gathers: Vec<Rc<Node>>,
-    /// The current doc block index, based on parsing the HTML for
+    /// The current doc block index in the vec of code/doc blocks, based on parsing the HTML for
     /// `codechateditor-separator` elements, which contain this value.
     doc_block_index: usize,
 }
@@ -1459,8 +1466,8 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> io::Res
                 // via `Cache::update_fragment_content`.
                 if let Some(id) = id {
                     // The `following` attribute selects how many code/doc
-                    // blocks after the current doc block the fragment
-                    // encloses; the default is 1.
+                    // blocks after the current doc block the fragment encloses;
+                    // the default is 1.
                     let following = get_attr_value(child, "following")
                         .and_then(|following| following.trim().parse::<usize>().ok())
                         .unwrap_or(1);
@@ -1663,7 +1670,7 @@ pub fn remove_tinymce_data(
 
 /// Walk a node, dehydrating it by removing TineMCE temporary attributes,
 /// changing math to pulldown-cmark's output, and changing graphviz/Mermaid to
-/// fenced code blocks.
+/// fenced code blocks. TODO: this should also remove all cache-hydrated content.
 #[allow(clippy::too_many_lines)]
 fn dehydrating_walk_node(node: &Rc<Node>) {
     let mut index = 0;
