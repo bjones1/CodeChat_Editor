@@ -62,7 +62,6 @@ comprehensibility of the code. Guidelines for comments:
   value in the data structure should be preceded by a command explaining its
   role.
 * Comments in the code should be limited to those that:
-*
   1. Document a connection which cannot easily be determined by inspection --
      for example, explaining the relationship between a web client Ajax call and
      the backend server which handles it.
