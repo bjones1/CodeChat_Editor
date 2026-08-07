@@ -1357,7 +1357,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                                 resolve(),
                         );
                         // Untypeset math in the old doc block and the current
-                        // doc block before moving its contents around.
+                        // doc block before moving its contents around. TODO: `tinymceDiv === null` in production at least once.
                         const tinymceDiv =
                             document.getElementById(TINYMCE_INST)!;
                         mathJaxUnTypeset(tinymceDiv);
