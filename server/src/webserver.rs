@@ -86,7 +86,7 @@ use url::Url;
 // ### Local
 //use crate::capture::EventCapture;
 use crate::processing::{
-    CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, cache::Cache,
+    CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, cache::CacheMap,
     find_path_to_toc, source_to_codechat_for_web_string,
 };
 
@@ -416,7 +416,7 @@ pub struct AppState {
     // Added to support capture - JDS - 11/2025
     pub capture: Option<EventCapture>,
     /// A hash of project path to Cache.
-    pub cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
+    pub cache: CacheMap,
 }
 
 pub type WebAppState = web::Data<AppState>;
@@ -861,7 +861,7 @@ pub async fn file_to_response(
     // The HTTP request presented to the processing task.
     http_request: &ProcessingTaskHttpRequest,
     // The map of project caches.
-    cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
+    cache: &CacheMap,
     // The version of this file.
     version: f64,
     // Path to the file currently being edited. This path should be cleaned by

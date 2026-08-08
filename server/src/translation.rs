@@ -212,7 +212,7 @@ use std::{
     fmt::Debug,
     path::{Path, PathBuf},
     rc::Rc,
-    sync::{Arc, LazyLock, Mutex},
+    sync::LazyLock,
 };
 
 // ### Third-party
@@ -233,7 +233,7 @@ use crate::{
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockVec, SourceFileMetadata, TranslationResultsString, UNICODE_CURSOR_MARKER,
-        byte_index_of, cache::Cache, codechat_for_web_to_source, diff_code_mirror_doc_blocks,
+        byte_index_of, cache::CacheMap, codechat_for_web_to_source, diff_code_mirror_doc_blocks,
         diff_str, doc_block_html_to_markdown, minify, remove_tinymce_data,
         source_to_codechat_for_web_string, transform_html,
     },
@@ -402,7 +402,7 @@ struct TranslationTask {
     to_client_tx: Sender<EditorMessage>,
     from_client_rx: Receiver<EditorMessage>,
     from_http_rx: Receiver<ProcessingTaskHttpRequest>,
-    cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
+    cache: CacheMap,
 
     // These parameters are internal state.
     /// The file currently loaded in the Client.
@@ -930,7 +930,7 @@ impl TranslationTask {
                 (
                     file_to_response(
                         &http_request,
-                        self.cache.clone(),
+                        &self.cache,
                         new_version,
                         &self.current_file,
                         Some(&file_contents),
@@ -958,7 +958,7 @@ impl TranslationTask {
                         (
                             file_to_response(
                                 &http_request,
-                                self.cache.clone(),
+                                &self.cache,
                                 self.version,
                                 &self.current_file,
                                 option_file_contents.as_ref(),
@@ -1041,7 +1041,7 @@ impl TranslationTask {
                                     &self.current_file,
                                     contents.version,
                                     false,
-                                    self.cache.clone(),
+                                    &self.cache,
                                 ) {
                                     Err(err) => {
                                         Err(ResultErrTypes::CannotTranslateSource(err.to_string()))
@@ -1252,7 +1252,7 @@ impl TranslationTask {
                                 &clean_file_path,
                                 cfw.version,
                                 false,
-                                self.cache.clone(),
+                                &self.cache,
                             ) && let TranslationResultsString::CodeChat(ccfw) = ccfws.0
                                 && let CodeMirrorDiffable::Plain(code_mirror_translated) =
                                     ccfw.source

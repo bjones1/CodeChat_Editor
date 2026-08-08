@@ -34,6 +34,7 @@ use indoc::{formatdoc, indoc};
 use markup5ever_rcdom::Node;
 use predicates::prelude::predicate::str;
 use pretty_assertions::assert_eq;
+use regex::Regex;
 
 // ### Local
 use super::{
@@ -51,7 +52,7 @@ use crate::{
         HtmlToMarkdownWrapped, SourceToCodeChatForWebError, UNICODE_CURSOR_MARKER, byte_index_of,
         cache::Cache, code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks,
         codechat_for_web_to_source, dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str,
-        doc_block_html_to_markdown, html_to_dom, hydrate_html, markdown_to_html,
+        doc_block_html_to_markdown, html_to_dom, hydrate_html, is_css_identifier, markdown_to_html,
         source_to_codechat_for_web,
     },
 };
@@ -1323,10 +1324,9 @@ fn test_hydrate_html_1() {
             "
             )),
             Path::new("foo.md"),
-            Arc::new(Mutex::new(Cache::new()))
+            &Arc::new(Mutex::new(Cache::default()))
         )
-        .unwrap()
-        .0,
+        .unwrap(),
         indoc!(
             "
             <wc-mermaid>flowchart LR
@@ -1347,10 +1347,9 @@ fn test_hydrate_html_1() {
             "
             )),
             Path::new("foo.md"),
-            Arc::new(Mutex::new(Cache::new()))
+            &Arc::new(Mutex::new(Cache::default()))
         )
-        .unwrap()
-        .0,
+        .unwrap(),
         indoc!(
             "
             <graphviz-graph>digraph {
@@ -1376,10 +1375,9 @@ fn test_hydrate_html_1() {
             "
             )),
             Path::new("foo.md"),
-            Arc::new(Mutex::new(Cache::new()))
+            &Arc::new(Mutex::new(Cache::default()))
         )
-        .unwrap()
-        .0,
+        .unwrap(),
         indoc!(
             r#"
             <p><span class="math math-inline mceNonEditable" contenteditable="false">\({a}_1, b_{2}\)</span>
@@ -1396,10 +1394,9 @@ fn test_hydrate_html_1() {
         hydrate_html(
             &markdown_to_html("1. foo\u{a0}\n2. bar \n3. baz&#32;"),
             Path::new("foo.md"),
-            Arc::new(Mutex::new(Cache::new()))
+            &Arc::new(Mutex::new(Cache::default()))
         )
-        .unwrap()
-        .0,
+        .unwrap(),
         indoc!(
             "
             <ol>
@@ -1409,6 +1406,254 @@ fn test_hydrate_html_1() {
             </ol>
             "
         )
+    );
+}
+
+// ### Cache hydration tests
+//
+// Verify that a cross-reference to a target in the same file hydrates to a
+// link whose text is the target's inner HTML.
+#[test]
+fn test_hydrate_xref_same_file() {
+    assert_eq!(
+        source_to_codechat_for_web(
+            "// <h1 id=\"a\">Title</h1>\nlet x = 1;\n// See <xref ref=\"a\"></xref>",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
+        Ok(build_codechat_for_web(
+            "javascript",
+            "\nlet x = 1;\n\n",
+            vec![
+                build_codemirror_doc_block(0, 1, "", "//", "<h1 id=a>Title</h1>"),
+                build_codemirror_doc_block(
+                    12,
+                    13,
+                    "",
+                    "//",
+                    "<p>See <xref contenteditable=false ref=a><a href=#a>Title</a></xref>"
+                )
+            ]
+        ))
+    );
+}
+
+// Verify that a cross-reference to an unknown id hydrates to an error message.
+#[test]
+fn test_hydrate_xref_missing() {
+    assert_eq!(
+        source_to_codechat_for_web(
+            "// See <xref ref=\"nope\"></xref>",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
+        Ok(build_codechat_for_web(
+            "javascript",
+            "\n",
+            vec![build_codemirror_doc_block(
+                0,
+                1,
+                "",
+                "//",
+                "<p>See <xref contenteditable=false ref=nope><span class=cc-error>id \"nope\" not found</span></xref>"
+            )]
+        ))
+    );
+}
+
+// Verify that a gather element and the fragment it lists hydrate in a single
+// pass over their common file: the gather element receives the fragment's
+// contents (the fragment's doc block plus the following code block), and the
+// fragment receives a backlink to the gather element.
+#[test]
+fn test_hydrate_gather_same_file() {
+    let translation = source_to_codechat_for_web(
+        "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>\nlet a = 1;\n// <fragment id=\"frag\"></fragment>Doc.\nlet b = 2;\n// End.",
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    let contents: Vec<&str> = code_mirror
+        .doc_blocks
+        .iter()
+        .map(|doc_block| doc_block.contents.as_str())
+        .collect();
+    // The gather element gains the `cc-gather` class and is followed by the
+    // gathered list: a link to the fragment, then the fragment's contents.
+    assert_eq!(
+        contents[0],
+        "<h3 class=cc-gather data-gather=frag id=gath>Gathered</h3><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=#frag>foo.js</a>:<p>Doc.<pre><code>let b = 2;\n</code></pre></div>"
+    );
+    // The fragment renders a backlink to the gather element.
+    assert_eq!(
+        contents[1],
+        "<p><fragment contenteditable=false id=frag>See <a href=#gath>Gathered</a></fragment>Doc."
+    );
+    assert_eq!(contents[2], "<p>End.");
+}
+
+// Verify that cross-file hydration works through a shared project cache:
+// hrefs lead from the referring file to the target's file, and reprocessing
+// the referring file after the target changed picks up the new content.
+#[test]
+fn test_hydrate_xref_cross_file() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+
+    // Define the target in one file...
+    source_to_codechat_for_web(
+        "// <h1 id=\"t\">Title</h1>",
+        Path::new("a.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    // ...and reference it from another.
+    let reference = "// See <xref ref=\"t\"></xref>";
+    let translation = source_to_codechat_for_web(
+        reference,
+        Path::new("b.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[0].contents,
+        "<p>See <xref contenteditable=false ref=t><a href=a.js#t>Title</a></xref>"
+    );
+
+    // Change the target's inner HTML, then reprocess the referencing file: the
+    // link text must update.
+    source_to_codechat_for_web(
+        "// <h1 id=\"t\">New title</h1>",
+        Path::new("a.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    let translation =
+        source_to_codechat_for_web(reference, Path::new("b.js"), 0.0, false, Some(cache)).unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[0].contents,
+        "<p>See <xref contenteditable=false ref=t><a href=a.js#t>New title</a></xref>"
+    );
+}
+
+// Verify that a fragment in a Markdown document is an error.
+#[test]
+fn test_hydrate_fragment_in_markdown() {
+    assert_eq!(
+        source_to_codechat_for_web(
+            "<fragment id=\"f\"></fragment>",
+            Path::new("foo.md"),
+            0.0,
+            false,
+            None
+        ),
+        Ok(build_codechat_for_web(
+            MARKDOWN_MODE,
+            "<p><fragment contenteditable=false id=f><span class=cc-error>fragments are not allowed in Markdown documents</span></fragment>",
+            vec![]
+        ))
+    );
+}
+
+// Verify auto-assignment of ids: `id="*"` is replaced by a generated, valid
+// CSS identifier which is *not* recorded in the cache, and which the cache
+// picks up only once the file carrying it is written and processed again.
+#[test]
+fn test_auto_assign_id() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translation = source_to_codechat_for_web(
+        "// <h1 id=\"*\">Title</h1>",
+        Path::new("a.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    // Recover the generated id from the hydrated output.
+    let contents = &code_mirror.doc_blocks[0].contents;
+    let id = Regex::new("<h1 id=([^>]+)>")
+        .unwrap()
+        .captures(contents)
+        .expect("the `id` attribute must survive hydration")[1]
+        .to_string();
+    assert!(is_css_identifier(&id));
+    // Nothing is cached until the file holding the new id is written: a write
+    // which never happens (or fails) must not leave the cache describing an id
+    // no file contains.
+    assert!(!cache.lock().unwrap().ids.contains_key(&id));
+
+    // Saving the file writes the generated id to disk; processing what was
+    // written records it, so cross-references to it now resolve.
+    source_to_codechat_for_web(
+        &format!("// <h1 id=\"{id}\">Title</h1>"),
+        Path::new("a.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    let translation = source_to_codechat_for_web(
+        &format!("// See <xref ref=\"{id}\"></xref>"),
+        Path::new("b.js"),
+        0.0,
+        false,
+        Some(cache),
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[0].contents,
+        format!("<p>See <xref contenteditable=false ref={id}><a href=a.js#{id}>Title</a></xref>")
+    );
+}
+
+// Verify that dehydration removes all hydration artifacts, so that saving
+// hydrated content writes clean source: `<xref>` and `<fragment>` contents are
+// emptied, the gather list is removed, and the `cc-gather` class and
+// `contenteditable` attributes are dropped.
+#[test]
+fn test_dehydrate_hydration_artifacts() {
+    assert_eq!(
+        codechat_for_web_to_source(&build_codechat_for_web(
+            "javascript",
+            "\nlet b = 2;",
+            vec![
+                build_codemirror_doc_block(
+                    0,
+                    1,
+                    "",
+                    "//",
+                    "<h3 id=\"gath\" data-gather=\"frag\" class=\"cc-gather\">Gathered</h3><div class=\"cc-gather-items\" contenteditable=\"false\"><p>Doc.</p></div><p>See <xref ref=\"t\" contenteditable=\"false\"><a href=\"#t\">Title</a></xref> and <fragment id=\"frag\" contenteditable=\"false\">See <a href=\"#gath\">Gathered</a></fragment>too.</p>"
+                ),
+            ]
+        ))
+        .unwrap(),
+        "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>\n//\n// See <xref ref=\"t\"></xref> and <fragment id=\"frag\"></fragment>too.\nlet b = 2;"
     );
 }
 

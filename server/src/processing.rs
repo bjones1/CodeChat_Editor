@@ -1,6 +1,3 @@
-// TODO: Remove this after implementing the cache.
-#![allow(unused)]
-
 // Copyright (C) 2025 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -69,6 +66,7 @@ use html5ever::{
 use imara_diff::{Algorithm, Diff, Hunk, InternedInput, TokenSource};
 use markup5ever_rcdom::{Node, NodeData, RcDom, SerializableHandle};
 use minify_html;
+use path_slash::PathBufExt as _;
 use phf::phf_map;
 use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
@@ -81,9 +79,9 @@ use crate::{
         CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
         supported_languages::MARKDOWN_MODE,
     },
-    processing::cache::{FileFacts, FragmentFact, GatherFact, TargetFact},
+    processing::cache::{FileFacts, FragmentFact, IdResolution, TargetFact},
 };
-use cache::Cache;
+use cache::{Cache, CacheMap};
 
 // Data structures
 // ---------------
@@ -273,6 +271,14 @@ static DOC_BLOCK_SEPARATOR_BROKEN_FENCE: LazyLock<Regex> = LazyLock::new(|| {
 static DOC_BLOCK_SEPARATOR_SPLIT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"<codechateditor-separator>\d+</codechateditor-separator>").unwrap()
 });
+/// Match a valid
+/// [CSS identifier](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/ident),
+/// which all cached ids must be. This is a slight simplification of the CSS
+/// grammar: escape sequences aren't recognized, and all code points above
+/// U+0080 are accepted.
+static CSS_IDENTIFIER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(?:--|-?[_a-zA-Z\x{0080}-\x{10FFFF}])[-_a-zA-Z0-9\x{0080}-\x{10FFFF}]*$").unwrap()
+});
 
 // Use this as a way to end unterminated fenced code blocks and specific types
 // of HTML blocks. (The remaining types of HTML blocks are terminated by a blank
@@ -322,6 +328,9 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r"<CodeChatEditor-fence>
 // which it replaces here.
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
     "</code></pre>\n<CodeChatEditor-separator>$1</CodeChatEditor-separator>\n";
+// The value of an `id` attribute which requests that the cache assign an id;
+// see `Auto-assignment of ids` in `cache.rs`.
+const AUTO_ID: &str = "*";
 // The column at which to word wrap doc blocks.
 const WORD_WRAP_COLUMN: usize = 80;
 // The minimum width for doc block word wrap, since large indents may leave
@@ -853,6 +862,7 @@ pub enum SourceToCodeChatForWebError {
 //
 // Given the contents of a file, classify it and (for CodeChat Editor files)
 // convert it to the `CodeChatForWeb` format.
+#[allow(clippy::too_many_lines)]
 pub fn source_to_codechat_for_web(
     // The file's contents.
     file_contents: &str,
@@ -899,7 +909,14 @@ pub fn source_to_codechat_for_web(
     let cache = if let Some(project_cache) = cache {
         project_cache
     } else {
-        Arc::new(Mutex::new(Cache::new()))
+        // A non-project file uses a throwaway cache whose "project" is the
+        // file's directory: only references within this file resolve.
+        Arc::new(Mutex::new(Cache::new(
+            file_path
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .to_path_buf(),
+        )))
     };
     let code_doc_block_arr;
     let codechat_for_web = CodeChatForWeb {
@@ -908,12 +925,13 @@ pub fn source_to_codechat_for_web(
         },
         version,
         source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
-            // Document-only files are easy: just encode the contents. Tags are
-            // only supported in source files.
+            // Document-only files are easy: just encode the contents.
+            // Fragments aren't supported in Markdown documents; `hydrate_html`
+            // reports them as errors.
             let dry_html = markdown_to_html(file_contents);
-            let html = hydrate_html(&dry_html, file_path, cache)
+            let html = hydrate_html(&dry_html, file_path, &cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
-            let html = minify(&html.0)?;
+            let html = minify(&html)?;
             CodeMirrorDiffable::Plain(CodeMirror {
                 doc: html,
                 doc_blocks: vec![],
@@ -952,13 +970,14 @@ pub fn source_to_codechat_for_web(
                         None
                     }
                 })
-                // Add the doc block separator string between each doc block;
-                // the separator contains the index of this doc block in the vec of code/doc blocks.
+                // Precede each doc block with the separator string; the
+                // separator contains the index of this doc block in the vec of
+                // code/doc blocks. The separator appears before *every* doc
+                // block (including the first), so the DOM walk always knows the
+                // current doc block index and empty doc blocks stay aligned
+                // with their separators.
                 .fold(String::new(), |mut acc: String, x: (usize, &str)| {
-                    // TODO: why are we skipping empty doc blocks here? This seems incorrect. Remove this and run tests.
-                    if !acc.is_empty() {
-                        acc.push_str(&DOC_BLOCK_SEPARATOR_STRING.replace("{}", &x.0.to_string()));
-                    }
+                    acc.push_str(&DOC_BLOCK_SEPARATOR_STRING.replace("{}", &x.0.to_string()));
                     acc.push_str(x.1);
                     acc
                 });
@@ -973,13 +992,48 @@ pub fn source_to_codechat_for_web(
                 .replace_all(&html, DOC_BLOCK_SEPARATOR_MENDED_FENCE);
             // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
-            // 3. Hydrate the cleaned HTML.
-            let (html, _tags) = hydrate_html(&html, file_path, cache)
+            // 3. Hydrate the cleaned HTML: commit this file's facts to the
+            //    cache, then patch cross-references and fragment backlinks.
+            let (dom, walk_context) = hydrate_dom(&html, file_path, &cache, false)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
-            // 4. Split on the separator.
+            // 4. Serialize and split on the separator, giving each doc block's
+            //    hydrated HTML -- the form in which fragment contents are
+            //    stored. The piece before the first separator isn't a doc
+            //    block; discard it.
+            let intermediate_html = dom_to_html(&dom)
+                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
+            let mut chunk_iter = DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&intermediate_html);
+            chunk_iter.next();
+            // Pair the index of each doc block in `code_doc_block_arr` with its
+            // hydrated HTML.
+            let mut doc_block_html: HashMap<usize, &str> = HashMap::new();
+            for (index, code_doc_block) in code_doc_block_arr.iter().enumerate() {
+                if matches!(code_doc_block, CodeDocBlock::DocBlock(_))
+                    && let Some(chunk) = chunk_iter.next()
+                {
+                    doc_block_html.insert(index, chunk);
+                }
+            }
+            // 5. Store each fragment's content in the cache, which marks the
+            //    files containing gather elements listing changed fragments as
+            //    outdated.
+            store_fragment_contents(
+                &walk_context,
+                Some((&code_doc_block_arr, &doc_block_html)),
+                &cache,
+            );
+            // 6. Hydrate gather lists, now that every fragment's content --
+            //    including those defined in this file -- is in the cache.
+            hydrate_gathers(&walk_context, &cache)
+                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
+            // 7. Serialize the fully-hydrated DOM and split it into the final
+            //    doc block contents, again discarding the piece before the
+            //    first separator.
+            let html = dom_to_html(&dom)
+                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             let mut doc_block_contents_iter: regex::Split<'_, '_> =
                 DOC_BLOCK_SEPARATOR_SPLIT_REGEX.split(&html);
-            // 5. TODO Cache updates: process `tags`.
+            doc_block_contents_iter.next();
 
             // Translate each `CodeDocBlock` to its `CodeMirror` equivalent.
             let mut len = len_utf16(&code_mirror.doc);
@@ -1034,7 +1088,7 @@ static MINIFY_OPTIONS: LazyLock<minify_html::Cfg> = LazyLock::new(|| {
     cfg
 });
 
-// A static config for Ammonia. TODO: additional updates based on cache spec.
+// A static config for Ammonia.
 static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     // Add custom tags produced during hydration, plus `input` (task list
@@ -1051,11 +1105,31 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     // Allow any element to be assigned an ID and to be a gather element.
     .add_generic_attributes(&["id", "data-gather"])
     // This allows math produced by pulldown-cmark and updated by the hydration
-    // code.
+    // code, plus hydration error messages.
     .add_allowed_classes(
         "span",
-        &["math", "math-inline", "math-display", "mceNonEditable"],
+        &[
+            "math",
+            "math-inline",
+            "math-display",
+            "mceNonEditable",
+            "cc-error",
+        ],
     )
+    // Classes produced by gather-element hydration. The `cc-gather` class may
+    // appear on any element with an `id` and `data-gather`; Ammonia only
+    // supports per-tag class allowlists, so list the elements which plausibly
+    // serve as gather elements.
+    .add_allowed_classes("h1", &["cc-gather"])
+    .add_allowed_classes("h2", &["cc-gather"])
+    .add_allowed_classes("h3", &["cc-gather"])
+    .add_allowed_classes("h4", &["cc-gather"])
+    .add_allowed_classes("h5", &["cc-gather"])
+    .add_allowed_classes("h6", &["cc-gather"])
+    .add_allowed_classes("p", &["cc-gather", "cc-gather-item-link"])
+    .add_allowed_classes("div", &["cc-gather", "cc-gather-items"])
+    // The gather-items list is generated content, marked non-editable.
+    .add_tag_attributes("div", &["contenteditable"])
     // `code` tags can have `class=language-*`. Since Ammonia doesn't support a
     // regex like this, just allow anything.
     .add_tag_attributes("code", &["class"])
@@ -1067,13 +1141,70 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
         &["width", "height", "src", "allowfullscreen", "frameborder"],
     )
     .add_tag_attributes("xref", &["contenteditable", "ref"])
-    .add_tag_attributes("fragment", &["contenteditable", "id"])
+    .add_tag_attributes("fragment", &["contenteditable", "id", "following"])
     // Keep HTML comments, which Ammonia strips by default.
     .strip_comments(false)
     // For now, don't change this. We can't tell if the user included this
     // manually and it should not be stripped without some extra work (perhaps
     // adding custom attributes?).
     .link_rel(None);
+    b
+});
+
+// Clean HTML for storage as a `Target`'s inner HTML, per the spec in
+// `cache.rs`: only the
+// [permitted content for an `<a>` element](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#technical_summary)
+// is allowed (phrasing content, excluding interactive content), since this HTML
+// becomes the text of a hydrated cross-reference link. Disallowed tags are
+// stripped but their text is kept; `id` attributes are stripped because they
+// aren't in the allowlist, preventing duplicate ids when the HTML is rendered
+// in a referencing file.
+static CLEAN_TARGET_HTML: LazyLock<Builder> = LazyLock::new(|| {
+    let mut b = Builder::default();
+    b.tags(HashSet::from([
+        "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em", "i", "img", "kbd",
+        "mark", "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strong", "sub", "sup",
+        "time", "u", "var", "wbr",
+    ]))
+    // Keep hydrated math legible in link text.
+    .add_allowed_classes(
+        "span",
+        &["math", "math-inline", "math-display", "mceNonEditable"],
+    )
+    .link_rel(None);
+    b
+});
+
+// Clean HTML for storage as a `Fragment`'s content, per the spec in `cache.rs`:
+// like `AMMONIA_OPTIONS`, but `id` and `data-gather` attributes are stripped
+// (they aren't in any allowlist) to prevent duplicate ids when the content is
+// rendered in a gather list, and `<fragment>` elements are removed *along with
+// their contents* -- backlink hydration is excluded from fragment content (see
+// layer 4 in the `cache.rs` design), which is what keeps a gather element and
+// the fragments it lists from outdating each other forever.
+static CLEAN_FRAGMENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
+    let mut b = Builder::default();
+    b.add_tags(&["wc-mermaid", "graphviz-graph", "xref", "input", "iframe"])
+        .clean_content_tags(HashSet::from(["fragment"]))
+        .add_allowed_classes(
+            "span",
+            &[
+                "math",
+                "math-inline",
+                "math-display",
+                "mceNonEditable",
+                "cc-error",
+            ],
+        )
+        .add_tag_attributes("code", &["class"])
+        .add_tag_attributes("input", &["type", "checked", "disabled"])
+        .add_tag_attributes(
+            "iframe",
+            &["width", "height", "src", "allowfullscreen", "frameborder"],
+        )
+        .add_tag_attributes("xref", &["contenteditable", "ref"])
+        .strip_comments(false)
+        .link_rel(None);
     b
 });
 
@@ -1102,7 +1233,7 @@ pub fn source_to_codechat_for_web_string(
     // True if this file is a TOC.
     is_toc: bool,
     // The map of Caches.
-    cache: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>,
+    cache: &CacheMap,
 ) -> Result<
     (
         // The resulting translation.
@@ -1117,11 +1248,23 @@ pub fn source_to_codechat_for_web_string(
     // named `toc.md`.
     let path_to_toc = find_path_to_toc(file_path);
     let cache: Option<Arc<Mutex<Cache>>> = path_to_toc.as_ref().map(|path_to_toc| {
+        // The project root is the directory containing `toc.md`. `path_to_toc`
+        // is relative to the file's directory; canonicalize the combination so
+        // that every file in a project keys the same cache, and different
+        // projects key different caches.
+        let toc_path = file_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(path_to_toc);
+        let root = toc_path
+            .parent()
+            .map_or_else(PathBuf::new, Path::to_path_buf);
+        let root = dunce::canonicalize(&root).unwrap_or(root);
         cache
             .lock()
             .unwrap()
-            .entry(path_to_toc.to_path_buf())
-            .or_insert(Arc::new(Mutex::new(Cache::new())))
+            .entry(root.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(Cache::new(root.clone()))))
             .clone()
     });
 
@@ -1232,11 +1375,11 @@ fn html_to_dom(
 pub fn transform_html<T: FnOnce(&Rc<Node>)>(html: &str, transform: T) -> io::Result<String> {
     let tree = html_to_dom(html, None)?;
     transform(&tree);
-    dom_to_html(tree)
+    dom_to_html(&tree)
 }
 
 // Transform a DOM tree back to an HTML string.
-pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
+pub fn dom_to_html(dom: &Rc<Node>) -> io::Result<String> {
     // Serialize the transformed DOM back to a string.
     let so = SerializeOpts {
         // Don't include the body node in the output.
@@ -1244,11 +1387,7 @@ pub fn dom_to_html(dom: Rc<Node>) -> io::Result<String> {
         ..Default::default()
     };
     let mut bytes = vec![];
-    serialize(
-        &mut bytes,
-        &SerializableHandle::from(get_dom_body(&dom)),
-        so,
-    )?;
+    serialize(&mut bytes, &SerializableHandle::from(get_dom_body(dom)), so)?;
     let html_out = String::from_utf8(bytes).map_err(io::Error::other)?;
 
     Ok(html_out)
@@ -1283,19 +1422,69 @@ fn get_dom_body(document: &Rc<Node>) -> Rc<Node> {
 // HTML produced from Markdown needs additional processing, termed hydration:
 //
 // * Transform math, Mermaid, GraphViz, etc. nodes.
+// * Hydrate cross-references, fragments, and gather elements from the project
+//   cache.
 // * (Eventually) record document structure information.
-// * (Eventually) assign a unique ID to all links that don't have one.
 // * (Eventually) fill in autocomplete fields.
-fn hydrate_html(
+//
+// Hydration is layered (see the `Design` section in `cache.rs`); the layers
+// which depend on fragment contents (gather lists) can only run after doc
+// blocks are finalized, so hydration is split into phases:
+//
+// 1. `hydrate_dom`: collect facts from the DOM, commit them to the cache, then
+//    patch `<xref>` contents and `<fragment>` backlinks.
+// 2. `store_fragment_contents`: once each doc block's hydrated HTML is known,
+//    store each fragment's content in the cache.
+// 3. `hydrate_gathers`: insert each gather element's list of fragment
+//    contents, now all present in the cache.
+//
+// This function runs all three phases for a Markdown document, where phase 2
+// needs no doc block data (fragments aren't allowed in Markdown documents, so
+// every fragment's content is an error message).
+fn hydrate_html(html: &str, file: &Path, cache: &Arc<Mutex<Cache>>) -> io::Result<String> {
+    let (dom, walk_context) = hydrate_dom(html, file, cache, true)?;
+    store_fragment_contents(&walk_context, None, cache);
+    hydrate_gathers(&walk_context, cache)?;
+    dom_to_html(&dom)
+}
+
+/// Phase 1 of hydration: parse the HTML, walk the DOM (transforming
+/// math/Mermaid/GraphViz and collecting cacheable facts), commit the facts to
+/// the cache, then patch the content the commit makes available: each
+/// `<xref>`'s link and each `<fragment>`'s backlinks (or error messages).
+/// Gather lists are *not* inserted here; they depend on fragment contents,
+/// which aren't final until doc blocks are (see `hydrate_gathers`).
+fn hydrate_dom(
+    // The HTML to hydrate.
     html: &str,
+    // The file this HTML was produced from.
     file: &Path,
-    cache: Arc<Mutex<Cache>>,
-) -> io::Result<(String, Vec<Rc<Node>>)> {
+    // The cache for the project containing this file.
+    cache: &Arc<Mutex<Cache>>,
+    // True when this is a Markdown document, in which fragments aren't allowed.
+    is_markdown: bool,
+    // The parsed, patched DOM plus the walk results needed by later phases.
+) -> io::Result<(Rc<Node>, WalkContext)> {
     let dom = html_to_dom(html, None)?;
-    // Read the file's metadata before taking the cache lock, so that no I/O
-    // happens while the lock is held. This captures the state of the file whose
-    // content is being processed.
+    // Read the file's metadata and canonicalize its path before taking the
+    // cache lock, so that no I/O happens while the lock is held. The metadata
+    // captures the state of the file whose content is being processed; the
+    // canonicalization satisfies the cache's requirement that all paths are
+    // canonicalized and absolute. (Canonicalization fails for files which don't
+    // exist on disk -- such as tests -- in which case the path is used as-is.)
     let metadata = file.metadata().ok();
+    let path = dunce::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    // ### Assign requested ids
+    //
+    // Replace each `id="*"` with a freshly generated id before facts are
+    // collected, so that everything downstream sees a real id. These ids reach
+    // the Client but are deliberately kept out of the cache until this file is
+    // written and re-read; see `Auto-assignment of ids` in `cache.rs`.
+    let mut auto_ids: HashSet<String> = HashSet::new();
+    {
+        let cache_guard = cache.lock().unwrap();
+        assign_auto_ids(&dom, &cache_guard, &mut auto_ids);
+    }
     // ### Collect facts
     //
     // Walk the DOM, collecting all cacheable facts -- targets,
@@ -1304,43 +1493,532 @@ fn hydrate_html(
     // critical section; see the design discussion in `cache.rs`.
     let mut walk_context = WalkContext {
         facts: FileFacts::default(),
+        path,
+        is_markdown,
+        auto_ids,
         doc_block_index: 0,
         xrefs: Vec::new(),
         fragments: Vec::new(),
         gathers: Vec::new(),
+        gathers_error: Vec::new(),
+        gather_block_indices: Vec::new(),
     };
-    walk_context = hydrating_walk_node(dom.clone(), walk_context)?;
+    walk_context = hydrating_walk_node(&dom, walk_context)?;
     // ### Commit facts
     //
     // Apply the collected facts to the cache in a single transaction. This
     // diffs them against the file's previous state: added, deleted, and
     // modified targets and fragments mark the files which depend on them as
-    // outdated, this file is linked to every id it references (via
-    // `Cache::unresolved` for ids with no definition yet), and duplicate ids
-    // are reported.
-    let commit =
-        cache
-            .lock()
-            .unwrap()
-            .commit_file(file, metadata, mem::take(&mut walk_context.facts));
-    // TODO: patch the DOM using the committed cache state. Should keep the cache lock above
-    // and use `Cache::resolve_id`):
+    // outdated, this file is linked to every id it references, and duplicate
+    // ids are recorded.
+    let mut cache_guard = cache.lock().unwrap();
+    // TODO: schedule reprocessing for each file in `commit.outdated`.
+    let _commit = cache_guard.commit_file(
+        &walk_context.path,
+        metadata,
+        mem::take(&mut walk_context.facts),
+    );
+    // ### Patch cross-references
     //
-    // 1. For each node in `walk_context.xrefs`, replace its generated contents
-    //    with a link to its target or an error message.
-    // 2. For each node in `walk_context.fragments`, insert links to the gather
-    //    elements which reference it.
-    // 3. For each node in `walk_context.gathers`, insert a list of fragments as
-    //    the next sibling.
-    // 4. Schedule reprocessing for each file in `commit.outdated`.
+    // Layer 2: each `<xref>`'s content depends only on its target's inner HTML,
+    // which the commit just placed in the cache.
+    for (id, node) in &walk_context.xrefs {
+        set_attr(node, "contenteditable", "false");
+        let children = xref_content(&cache_guard, id, &walk_context.path)?;
+        set_element_children(node, children);
+    }
+    // ### Patch fragment backlinks
     //
-    // TODO: on return, once doc block contents are finalized, store each
-    // fragment's content with `Cache::update_fragment_content` (which marks the
-    // files containing affected gather elements as outdated), then update each
-    // gather element's DOM data (a list containing a link to each fragment
-    // followed by its contents). Note that fragment contents must be filtered to remove `<fragment>`s and their contents.
+    // Layer 4: each `<fragment>` renders a backlink to every gather element
+    // which lists it, all of which the commit just placed in the cache. A
+    // fragment in an error state renders the error instead.
+    for fragment in &walk_context.fragments {
+        set_attr(&fragment.node, "contenteditable", "false");
+        // A duplicate id is only detectable after the commit, so it can't be
+        // recorded in `FragmentHydration::error` during the walk; unlike that
+        // error, it doesn't replace the fragment's cached content (resolving
+        // the duplicate elsewhere wouldn't reprocess this file, which would
+        // leave stale error text in the cache).
+        let duplicate = fragment.error.is_none()
+            && matches!(
+                cache_guard.resolve_id(&fragment.id),
+                IdResolution::Multiple(_)
+            );
+        let children = if let Some(message) = &fragment.error {
+            vec![error_span(message)]
+        } else if duplicate {
+            vec![error_span(&format!(
+                "id \"{}\" is defined more than once",
+                fragment.id
+            ))]
+        } else {
+            fragment_backlinks(&cache_guard, &fragment.id, &walk_context.path)?
+        };
+        set_element_children(&fragment.node, children);
+    }
+    drop(cache_guard);
+    Ok((dom, walk_context))
+}
 
-    Ok((dom_to_html(dom)?, walk_context.gathers))
+/// Replace every `id="*"` -- a request that the cache assign an id -- with a
+/// freshly generated one, recording the ids assigned. Per the spec in
+/// `cache.rs`, these ids are placed in the HTML but not recorded in the cache;
+/// the fact collection walk uses the recorded set to skip them.
+fn assign_auto_ids(
+    // The node whose descendants are scanned.
+    node: &Rc<Node>,
+    // The cache, already locked by the caller; it supplies ids which don't
+    // collide with any it knows of.
+    cache: &Cache,
+    // The ids assigned so far, extended by this call.
+    assigned: &mut HashSet<String>,
+) {
+    for child in node.children.borrow().iter() {
+        // An `<xref>` doesn't allow an `id`, so it gets no auto-assigned one
+        // either; a `<fragment>`, a target, and a gather element all do.
+        if get_node_tag_name(child) != Some("xref")
+            && get_attr_value(child, "id").as_deref() == Some(AUTO_ID)
+        {
+            let id = cache.new_id(assigned);
+            set_attr(child, "id", &id);
+            assigned.insert(id);
+        }
+        // Skip content the cache generates, for the reason given in
+        // `hydrating_walk_node`.
+        let skip_descend = matches!(get_node_tag_name(child), Some("xref" | "fragment"))
+            || is_gather_items_div(child);
+        if !skip_descend {
+            assign_auto_ids(child, cache, assigned);
+        }
+    }
+}
+
+/// The content of one hydrated `<xref>`: a link to its target, or an error
+/// message.
+fn xref_content(
+    // The cache, already locked by the caller.
+    cache: &Cache,
+    // The id the cross-reference names.
+    id: &str,
+    // The canonicalized path of the file containing the cross-reference.
+    path: &Path,
+    // The nodes to place inside the `<xref>` element.
+) -> io::Result<Vec<Rc<Node>>> {
+    if !is_css_identifier(id) {
+        return Ok(vec![error_span(&format!(
+            "\"{id}\" is not a valid CSS identifier"
+        ))]);
+    }
+    Ok(match cache.resolve_id(id) {
+        IdResolution::Target {
+            path: target_path,
+            target,
+        } => {
+            let href = format!("{}#{id}", relative_url(path, target_path));
+            vec![new_element(
+                "a",
+                vec![("href", href)],
+                parse_html_fragment(&target.inner_html)?,
+            )]
+        }
+        IdResolution::Fragment { .. } => vec![error_span(&format!(
+            "id \"{id}\" names a fragment; a cross-reference must name a target or gather element"
+        ))],
+        IdResolution::Missing => vec![error_span(&format!("id \"{id}\" not found"))],
+        IdResolution::Multiple(_) => vec![error_span(&format!(
+            "id \"{id}\" is defined more than once"
+        ))],
+    })
+}
+
+/// The content of one hydrated `<fragment>`: a backlink to each gather element
+/// which lists it, e.g. `See <a href="...#bar">Bazzy things</a>, <a
+/// href="...#zap">Zappy things</a>`; empty if nothing gathers it.
+fn fragment_backlinks(
+    // The cache, already locked by the caller.
+    cache: &Cache,
+    // The fragment's id.
+    id: &str,
+    // The canonicalized path of the file containing the fragment.
+    path: &Path,
+    // The nodes to place inside the `<fragment>` element.
+) -> io::Result<Vec<Rc<Node>>> {
+    let backlinks = cache.gathers_referencing(id);
+    if backlinks.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut children = vec![new_text("See ")];
+    for (index, backlink) in backlinks.iter().enumerate() {
+        if index > 0 {
+            children.push(new_text(", "));
+        }
+        let href = format!("{}#{}", relative_url(path, backlink.path), backlink.id);
+        children.push(new_element(
+            "a",
+            vec![("href", href)],
+            parse_html_fragment(&backlink.target.inner_html)?,
+        ));
+    }
+    Ok(children)
+}
+
+/// Phase 2 of hydration: store each fragment's content in the cache, which
+/// marks the files containing gather elements listing changed fragments as
+/// outdated.
+fn store_fragment_contents(
+    // The walk results from `hydrate_dom`.
+    walk_context: &WalkContext,
+    // The file's code/doc blocks, paired with a map from the index of each doc
+    // block in that slice to its hydrated HTML. `None` for Markdown documents,
+    // where every fragment's content is an error message.
+    blocks: Option<(&[CodeDocBlock], &HashMap<usize, &str>)>,
+    // The cache for the project containing this file.
+    cache: &Arc<Mutex<Cache>>,
+) {
+    let mut cache_guard = cache.lock().unwrap();
+    for fragment in &walk_context.fragments {
+        if !fragment.cached {
+            continue;
+        }
+        let content = if let Some(message) = &fragment.error {
+            error_html(message)
+        } else if let Some((code_doc_blocks, chunks)) = blocks {
+            render_fragment_content(fragment, walk_context, code_doc_blocks, chunks)
+        } else {
+            // Unreachable: every fragment in a Markdown document has its
+            // `error` set during the walk.
+            error_html("fragments are not allowed in Markdown documents")
+        };
+        // TODO: schedule reprocessing for each outdated file returned here.
+        let _outdated =
+            cache_guard.update_fragment_content(&walk_context.path, &fragment.id, content);
+    }
+}
+
+/// Render one fragment's content: the hydrated HTML of the code/doc blocks it
+/// encloses, cleaned per the spec in `cache.rs`.
+fn render_fragment_content(
+    // The fragment to render.
+    fragment: &FragmentHydration,
+    // The walk results, which locate the file's gather elements.
+    walk_context: &WalkContext,
+    // The file's code/doc blocks.
+    code_doc_blocks: &[CodeDocBlock],
+    // A map from the index of each doc block in `code_doc_blocks` to its
+    // hydrated HTML.
+    chunks: &HashMap<usize, &str>,
+    // The fragment's content, rendered as HTML.
+) -> String {
+    if code_doc_blocks.is_empty() {
+        return String::new();
+    }
+    // Clamp `following` to the number of code/doc blocks in the document.
+    let end = fragment.end.min(code_doc_blocks.len() - 1);
+    // A fragment may not contain a gather element: the gather element's
+    // hydrated list isn't part of the source, so including it would nest
+    // generated content inside generated content.
+    if walk_context
+        .gather_block_indices
+        .iter()
+        .any(|index| (fragment.start..=end).contains(index))
+    {
+        return error_html("a fragment may not contain a gather element");
+    }
+    let mut content = String::new();
+    for (index, code_doc_block) in code_doc_blocks
+        .iter()
+        .enumerate()
+        .take(end + 1)
+        .skip(fragment.start)
+    {
+        match code_doc_block {
+            CodeDocBlock::DocBlock(_) => {
+                if let Some(chunk) = chunks.get(&index) {
+                    content.push_str(&CLEAN_FRAGMENT_HTML.clean(chunk).to_string());
+                }
+            }
+            CodeDocBlock::CodeBlock(code) => {
+                content.push_str("<pre><code>");
+                content.push_str(&htmlize::escape_text(code));
+                content.push_str("</code></pre>");
+            }
+        }
+    }
+    content
+}
+
+/// Phase 3 of hydration: mark each gather element with the `cc-gather` class
+/// and insert its list of gathered fragment contents as its next sibling. This
+/// must run after `store_fragment_contents`, so that same-file fragments'
+/// contents are present in the cache (cross-file contents already are).
+fn hydrate_gathers(
+    // The walk results from `hydrate_dom`.
+    walk_context: &WalkContext,
+    // The cache for the project containing this file.
+    cache: &Arc<Mutex<Cache>>,
+) -> io::Result<()> {
+    let cache_guard = cache.lock().unwrap();
+    for node in &walk_context.gathers {
+        add_class(node, "cc-gather");
+        // Build the list of gathered items, in `data-gather` order.
+        let gather_ids: Vec<String> = get_attr_value(node, "data-gather")
+            .map(|gather_ids| gather_ids.split_whitespace().map(str::to_string).collect())
+            .unwrap_or_default();
+        let mut items: Vec<Rc<Node>> = Vec::new();
+        for id in &gather_ids {
+            if !is_css_identifier(id) {
+                items.push(error_span(&format!(
+                    "\"{id}\" is not a valid CSS identifier"
+                )));
+                continue;
+            }
+            match cache_guard.resolve_id(id) {
+                IdResolution::Fragment {
+                    path: fragment_path,
+                    fragment,
+                } => {
+                    let relative = relative_url(&walk_context.path, fragment_path);
+                    let href = format!("{relative}#{id}");
+                    // Label an intra-file link with the file's own name, since
+                    // the relative path to the same file is empty.
+                    let link_text = if relative.is_empty() {
+                        fragment_path
+                            .file_name()
+                            .map_or_else(String::new, |name| name.to_string_lossy().to_string())
+                    } else {
+                        relative
+                    };
+                    items.push(new_element(
+                        "p",
+                        vec![("class", "cc-gather-item-link".to_string())],
+                        vec![
+                            new_text("From "),
+                            new_element("a", vec![("href", href)], vec![new_text(&link_text)]),
+                            new_text(":"),
+                        ],
+                    ));
+                    items.extend(parse_html_fragment(&fragment.content)?);
+                }
+                IdResolution::Target { .. } => items.push(error_span(&format!(
+                    "id \"{id}\" names a target, not a fragment"
+                ))),
+                IdResolution::Missing => items.push(error_span(&format!("id \"{id}\" not found"))),
+                IdResolution::Multiple(_) => items.push(error_span(&format!(
+                    "id \"{id}\" is defined more than once"
+                ))),
+            }
+        }
+        insert_after(node, &gather_items_div(items));
+    }
+    // Elements with `data-gather` but no usable `id` display an error in place
+    // of a gather list.
+    for (node, message) in &walk_context.gathers_error {
+        insert_after(node, &gather_items_div(vec![error_span(message)]));
+    }
+    Ok(())
+}
+
+/// Build the `<div class="cc-gather-items" contenteditable="false">` which
+/// holds a gather element's hydrated list.
+fn gather_items_div(children: Vec<Rc<Node>>) -> Rc<Node> {
+    new_element(
+        "div",
+        vec![
+            ("class", "cc-gather-items".to_string()),
+            ("contenteditable", "false".to_string()),
+        ],
+        children,
+    )
+}
+
+// ### Hydration helpers
+/// Report whether the given id is a valid CSS identifier; all cached ids must
+/// be.
+fn is_css_identifier(id: &str) -> bool {
+    CSS_IDENTIFIER.is_match(id)
+}
+
+/// Render an error message produced during hydration as an HTML string.
+fn error_html(message: &str) -> String {
+    format!(
+        "<span class=\"cc-error\">{}</span>",
+        htmlize::escape_text(message)
+    )
+}
+
+/// Build the DOM node form of a hydration error message.
+fn error_span(message: &str) -> Rc<Node> {
+    new_element(
+        "span",
+        vec![("class", "cc-error".to_string())],
+        vec![new_text(message)],
+    )
+}
+
+/// Compute a relative URL (with forward slashes) leading from the directory of
+/// `from_file` to `to_file`. Returns an empty string when both name the same
+/// file, producing intra-page `#id` links. Both paths must be canonicalized
+/// (per the cache's requirements) for the result to be meaningful; references
+/// across Windows drives aren't supported.
+fn relative_url(from_file: &Path, to_file: &Path) -> String {
+    if from_file == to_file {
+        return String::new();
+    }
+    let from_dir: Vec<_> = from_file
+        .parent()
+        .unwrap_or_else(|| Path::new(""))
+        .components()
+        .collect();
+    let to_components: Vec<_> = to_file.components().collect();
+    // Find the common prefix of the two paths, stopping short of `to_file`'s
+    // file name.
+    let limit = from_dir.len().min(to_components.len().saturating_sub(1));
+    let mut common = 0;
+    while common < limit && from_dir[common] == to_components[common] {
+        common += 1;
+    }
+    let mut relative = PathBuf::new();
+    for _ in common..from_dir.len() {
+        relative.push("..");
+    }
+    for component in &to_components[common..] {
+        relative.push(component);
+    }
+    relative.to_slash_lossy().into_owned()
+}
+
+/// Build an element node with the given attributes and children.
+fn new_element(
+    // The element's tag name.
+    tag: &str,
+    // The element's attributes, as (name, value) pairs.
+    attrs: Vec<(&str, String)>,
+    // The element's children.
+    children: Vec<Rc<Node>>,
+) -> Rc<Node> {
+    let node = Node::new(NodeData::Element {
+        name: QualName::new(None, Namespace::from(""), LocalName::from(tag)),
+        attrs: RefCell::new(
+            attrs
+                .into_iter()
+                .map(|(name, value)| Attribute {
+                    name: QualName::new(None, Namespace::from(""), LocalName::from(name)),
+                    value: value.into(),
+                })
+                .collect(),
+        ),
+        template_contents: RefCell::new(None),
+        mathml_annotation_xml_integration_point: false,
+    });
+    set_element_children(&node, children);
+    node
+}
+
+/// Build a text node.
+fn new_text(text: &str) -> Rc<Node> {
+    Node::new(NodeData::Text {
+        contents: RefCell::new(text.into()),
+    })
+}
+
+/// Replace a node's children with the given nodes, updating their parent
+/// links.
+fn set_element_children(node: &Rc<Node>, children: Vec<Rc<Node>>) {
+    for child in &children {
+        child.parent.set(Some(Rc::downgrade(node)));
+    }
+    *node.children.borrow_mut() = children;
+}
+
+/// Parse an HTML string into a list of detached nodes, ready to insert into
+/// another DOM.
+fn parse_html_fragment(html: &str) -> io::Result<Vec<Rc<Node>>> {
+    let dom = html_to_dom(html, None)?;
+    let body = get_dom_body(&dom);
+    let children: Vec<Rc<Node>> = body.children.borrow().clone();
+    body.children.borrow_mut().clear();
+    for child in &children {
+        child.parent.set(None);
+    }
+    Ok(children)
+}
+
+/// Insert `sibling` immediately after `node` in `node`'s parent.
+fn insert_after(node: &Rc<Node>, sibling: &Rc<Node>) {
+    // Read the parent link non-destructively: `Cell` only supports `take`.
+    let parent_weak = node.parent.take();
+    node.parent.set(parent_weak.clone());
+    let Some(parent) = parent_weak.and_then(|weak| weak.upgrade()) else {
+        return;
+    };
+    let mut children = parent.children.borrow_mut();
+    if let Some(position) = children.iter().position(|child| Rc::ptr_eq(child, node)) {
+        sibling.parent.set(Some(Rc::downgrade(&parent)));
+        children.insert(position + 1, sibling.clone());
+    }
+}
+
+/// Set (adding if not present) an attribute on an element node.
+fn set_attr(node: &Rc<Node>, name: &str, value: &str) {
+    if let NodeData::Element { attrs, .. } = &node.data {
+        let mut attrs = attrs.borrow_mut();
+        if let Some(attr) = attrs.iter_mut().find(|attr| &*attr.name.local == name) {
+            attr.value = value.into();
+        } else {
+            attrs.push(Attribute {
+                name: QualName::new(None, Namespace::from(""), LocalName::from(name)),
+                value: value.into(),
+            });
+        }
+    }
+}
+
+/// Remove an attribute from an element node, if present.
+fn remove_attr(node: &Rc<Node>, name: &str) {
+    if let NodeData::Element { attrs, .. } = &node.data {
+        attrs.borrow_mut().retain(|attr| &*attr.name.local != name);
+    }
+}
+
+/// Report whether an element node's `class` attribute contains the given class.
+fn has_class(node: &Rc<Node>, class: &str) -> bool {
+    get_attr_value(node, "class")
+        .is_some_and(|classes| classes.split_whitespace().any(|token| token == class))
+}
+
+/// Add a class to an element node's `class` attribute.
+fn add_class(node: &Rc<Node>, class: &str) {
+    if !has_class(node, class) {
+        let classes = match get_attr_value(node, "class") {
+            Some(existing) if !existing.is_empty() => format!("{existing} {class}"),
+            _ => class.to_string(),
+        };
+        set_attr(node, "class", &classes);
+    }
+}
+
+/// Remove a class from an element node's `class` attribute, dropping the
+/// attribute entirely if no classes remain.
+fn remove_class(node: &Rc<Node>, class: &str) {
+    if has_class(node, class)
+        && let Some(existing) = get_attr_value(node, "class")
+    {
+        let remaining: Vec<&str> = existing
+            .split_whitespace()
+            .filter(|token| *token != class)
+            .collect();
+        if remaining.is_empty() {
+            remove_attr(node, "class");
+        } else {
+            set_attr(node, "class", &remaining.join(" "));
+        }
+    }
+}
+
+/// Report whether this node is a hydrated gather list: `<div
+/// class="cc-gather-items">`.
+fn is_gather_items_div(node: &Rc<Node>) -> bool {
+    get_node_tag_name(node) == Some("div") && has_class(node, "cc-gather-items")
 }
 
 // Get the value of an attribute on an element node.
@@ -1361,7 +2039,7 @@ fn get_text_content(node: &Rc<Node>) -> String {
     let mut text = String::new();
     for child in node.children.borrow().iter() {
         if let NodeData::Text { contents } = &child.data {
-            text.push_str(&contents.borrow())
+            text.push_str(&contents.borrow());
         }
     }
     text
@@ -1371,22 +2049,65 @@ fn get_text_content(node: &Rc<Node>) -> String {
 /// blocks.
 struct WalkContext {
     /// The cacheable facts collected so far; applied to the cache by
-    /// `Cache::commit_file` after the walk completes.
+    /// `Cache::commit_file` after the walk completes (which empties this
+    /// field).
     facts: FileFacts,
-    /// DOM for all xrefs found in this file, kept so their generated contents
-    /// can be patched after the cache commit.
-    xrefs: Vec<Rc<Node>>,
-    /// DOM for all `Fragment`s.
-    fragments: Vec<Rc<Node>>,
-    /// DOM for all `GatherElement`s.
+    /// The canonicalized path of the file being hydrated.
+    path: PathBuf,
+    /// True when hydrating a Markdown document, in which fragments aren't
+    /// allowed.
+    is_markdown: bool,
+    /// The ids `assign_auto_ids` generated for this file's `id="*"` elements.
+    /// These are excluded from `facts`: they belong to the cache only after the
+    /// file carrying them is written and re-read.
+    auto_ids: HashSet<String>,
+    /// Each cross-reference found: its destination id and its `<xref>` node,
+    /// kept so the generated contents can be patched after the cache commit.
+    xrefs: Vec<(String, Rc<Node>)>,
+    /// Each fragment found, with everything the later hydration phases need.
+    fragments: Vec<FragmentHydration>,
+    /// DOM for all gather elements, i.e. targets with a non-empty
+    /// `TargetFact::gather_ids`.
     gathers: Vec<Rc<Node>>,
+    /// Elements whose `data-gather` can't be hydrated (a missing or invalid
+    /// `id`), with the error message to display in place of their gather
+    /// lists.
+    gathers_error: Vec<(Rc<Node>, String)>,
+    /// The `doc_block_index` of each gather element; a fragment whose block
+    /// range contains one of these is an error.
+    gather_block_indices: Vec<usize>,
     /// The current doc block index in the vec of code/doc blocks, based on parsing the HTML for
     /// `codechateditor-separator` elements, which contain this value.
     doc_block_index: usize,
 }
 
+/// Everything the hydration phases after the DOM walk need to know about one
+/// `<fragment>` element.
+struct FragmentHydration {
+    /// The fragment's DOM node.
+    node: Rc<Node>,
+    /// The fragment's id.
+    id: String,
+    /// The index of the fragment's first code/doc block; see
+    /// `FragmentFact::doc_block_start_index`.
+    start: usize,
+    /// The index of the fragment's last code/doc block, before clamping to the
+    /// number of blocks in the document; see
+    /// `FragmentFact::code_doc_block_end_index`.
+    end: usize,
+    /// When set, the fragment is in an error state detected during the walk
+    /// (fragment in a Markdown document, or an unparsable `following`
+    /// attribute): the message replaces both the hydrated tag content and the
+    /// cached fragment content.
+    error: Option<String>,
+    /// False when the fragment wasn't recorded in `FileFacts` (its id is
+    /// invalid), so no content may be stored for it.
+    cached: bool,
+}
+
 /// Hydrate the HTML of newly-translated doc blocks.
-fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> io::Result<WalkContext> {
+#[allow(clippy::too_many_lines)]
+fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Result<WalkContext> {
     for child in node.children.borrow_mut().iter_mut() {
         let possible_replacement_child =
         // Perform replacements of GraphViz and Mermaid graphs:
@@ -1436,7 +2157,7 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> io::Res
 
         // Replace the child if we found a replacement.
         if let Some(replacement_child) = possible_replacement_child {
-            replacement_child.parent.set(Some(Rc::downgrade(&node)));
+            replacement_child.parent.set(Some(Rc::downgrade(node)));
             *child = replacement_child;
         }
 
@@ -1456,8 +2177,8 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> io::Res
                 // after the cache commit. Note that this element doesn't allow
                 // an `id` attribute, so it's never a target.
                 if let Some(ref_id) = get_attr_value(child, "ref") {
-                    walk_context.facts.xrefs.push(ref_id);
-                    walk_context.xrefs.push(child.clone());
+                    walk_context.facts.xrefs.push(ref_id.clone());
+                    walk_context.xrefs.push((ref_id, child.clone()));
                 }
             } else if tag_name == "fragment" {
                 // A fragment; without an id it's meaningless, so it's ignored.
@@ -1468,46 +2189,122 @@ fn hydrating_walk_node(node: Rc<Node>, mut walk_context: WalkContext) -> io::Res
                     // The `following` attribute selects how many code/doc
                     // blocks after the current doc block the fragment encloses;
                     // the default is 1.
-                    let following = get_attr_value(child, "following")
-                        .and_then(|following| following.trim().parse::<usize>().ok())
-                        .unwrap_or(1);
-                    walk_context.facts.fragments.push(FragmentFact {
+                    let (following, following_error) = match get_attr_value(child, "following") {
+                        None => (1, None),
+                        Some(following) => match following.trim().parse::<usize>() {
+                            Ok(count) => (count, None),
+                            Err(_) => (
+                                0,
+                                Some(format!(
+                                    "the \"following\" attribute (\"{following}\") must be a whole number"
+                                )),
+                            ),
+                        },
+                    };
+                    // Determine the fragment's error state, if any; see
+                    // `FragmentHydration`. A fragment with an invalid id isn't
+                    // cached at all; neither is one whose id was auto-assigned
+                    // during this pass, which is otherwise hydrated normally
+                    // (nothing can reference an id no file contains yet, so its
+                    // backlinks are empty).
+                    let (error, cached) = if !is_css_identifier(&id) {
+                        (
+                            Some(format!("\"{id}\" is not a valid CSS identifier")),
+                            false,
+                        )
+                    } else if walk_context.is_markdown {
+                        (
+                            Some("fragments are not allowed in Markdown documents".to_string()),
+                            true,
+                        )
+                    } else {
+                        (following_error, true)
+                    };
+                    let cached = cached && !walk_context.auto_ids.contains(&id);
+                    if cached {
+                        walk_context.facts.fragments.push(FragmentFact {
+                            id: id.clone(),
+                            line: 0,
+                            doc_block_start_index: walk_context.doc_block_index,
+                            code_doc_block_end_index: walk_context.doc_block_index + following,
+                        });
+                    }
+                    walk_context.fragments.push(FragmentHydration {
+                        node: child.clone(),
                         id,
-                        line: 0,
-                        doc_block_start_index: walk_context.doc_block_index,
-                        code_doc_block_end_index: walk_context.doc_block_index + following,
-                    });
-                    walk_context.fragments.push(child.clone());
-                }
-            } else {
-                // A gather element; it may also carry an id, which makes it a
-                // target as well.
-                if let Some(gather_ids) = get_attr_value(child, "data-gather") {
-                    walk_context.facts.gathers.push(GatherFact {
-                        ids: gather_ids.split_whitespace().map(str::to_string).collect(),
-                        inner_html: node_inner_html(child)?,
-                        doc_block_index: walk_context.doc_block_index,
-                    });
-                    walk_context.gathers.push(child.clone());
-                }
-                // Any other element with an id is a target.
-                if let Some(id) = id
-                    && !id.is_empty()
-                {
-                    walk_context.facts.targets.push(TargetFact {
-                        id,
-                        inner_html: node_inner_html(child)?,
-                        // Line numbers aren't available until the
-                        // pulldown-cmark HTML writer preserves them; see the
-                        // TODO in `cache.rs`.
-                        line: 0,
-                        doc_block_index: walk_context.doc_block_index,
+                        start: walk_context.doc_block_index,
+                        end: walk_context.doc_block_index + following,
+                        error,
+                        cached,
                     });
                 }
+            } else if let Some(id) = id
+                && !id.is_empty()
+            {
+                // Any other element with an id is a target. A `data-gather`
+                // attribute makes that target a gather element; the two are one
+                // kind of cached item, since a gather element is also a valid
+                // cross-reference destination.
+                let gather_ids: Vec<String> = get_attr_value(child, "data-gather")
+                    .map(|gather_ids| gather_ids.split_whitespace().map(str::to_string).collect())
+                    .unwrap_or_default();
+                if is_css_identifier(&id) {
+                    if !gather_ids.is_empty() {
+                        walk_context.gathers.push(child.clone());
+                        walk_context
+                            .gather_block_indices
+                            .push(walk_context.doc_block_index);
+                    }
+                    // An id auto-assigned during this pass isn't cached, so no
+                    // fact is recorded for it. A gather element is still
+                    // hydrated above: its list depends on `data-gather`, not on
+                    // its own id.
+                    if !walk_context.auto_ids.contains(&id) {
+                        walk_context.facts.targets.push(TargetFact {
+                            id,
+                            // Clean the inner HTML for storage; note that it's
+                            // captured before any hydration of descendants, per
+                            // the spec in `cache.rs`.
+                            inner_html: CLEAN_TARGET_HTML
+                                .clean(&node_inner_html(child)?)
+                                .to_string(),
+                            // Line numbers aren't available until the
+                            // pulldown-cmark HTML writer preserves them; see the
+                            // TODO in `cache.rs`.
+                            line: 0,
+                            doc_block_index: walk_context.doc_block_index,
+                            gather_ids,
+                        });
+                    }
+                } else if !gather_ids.is_empty() {
+                    // An invalid id isn't cached; each reference to it reports
+                    // the invalid id itself. A gather element with an invalid
+                    // id can't hydrate, so it displays the error.
+                    walk_context.gathers_error.push((
+                        child.clone(),
+                        format!("\"{id}\" is not a valid CSS identifier"),
+                    ));
+                }
+            } else if get_attr_value(child, "data-gather").is_some() {
+                // `data-gather` on an element without an id: display an error
+                // requesting the missing id, per the spec in `cache.rs`.
+                walk_context.gathers_error.push((
+                    child.clone(),
+                    "a gather element requires an \"id\" attribute".to_string(),
+                ));
             }
         }
 
-        walk_context = hydrating_walk_node(child.clone(), walk_context)?;
+        // Don't descend into elements whose contents the cache generates
+        // (`<xref>`, `<fragment>`, and hydrated gather lists): facts must never
+        // be collected from generated content. (Such content only appears here
+        // if hand-written source contains it; dehydration removes it from saved
+        // files.)
+        let skip_descend = matches!(get_node_tag_name(child), Some("xref" | "fragment"))
+            || is_gather_items_div(child);
+        if !skip_descend {
+            walk_context = hydrating_walk_node(child, walk_context)?;
+        }
     }
 
     Ok(walk_context)
@@ -1669,8 +2466,10 @@ pub fn remove_tinymce_data(
 }
 
 /// Walk a node, dehydrating it by removing TineMCE temporary attributes,
-/// changing math to pulldown-cmark's output, and changing graphviz/Mermaid to
-/// fenced code blocks. TODO: this should also remove all cache-hydrated content.
+/// changing math to pulldown-cmark's output, changing graphviz/Mermaid to
+/// fenced code blocks, and removing all cache-hydrated content (`<xref>` and
+/// `<fragment>` contents, gather lists, and the classes/attributes hydration
+/// adds), so that none of it is written back to source.
 #[allow(clippy::too_many_lines)]
 fn dehydrating_walk_node(node: &Rc<Node>) {
     let mut index = 0;
@@ -1682,6 +2481,26 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
         // unchanged to process what is now at this position.
         if remove_tinymce_data(node, index).is_none() {
             continue;
+        }
+
+        // Remove cache-hydration artifacts.
+        {
+            let child = node.children.borrow()[index].clone();
+            // A hydrated gather list is entirely generated content; remove the
+            // node. The slot now holds the next child, so leave `index`
+            // unchanged.
+            if is_gather_items_div(&child) {
+                node.children.borrow_mut().remove(index);
+                continue;
+            }
+            // The contents of these elements are generated by the cache; the
+            // `contenteditable` attribute is added during hydration.
+            if matches!(get_node_tag_name(&child), Some("xref" | "fragment")) {
+                remove_attr(&child, "contenteditable");
+                child.children.borrow_mut().clear();
+            }
+            // Hydration marks gather elements with this class.
+            remove_class(&child, "cc-gather");
         }
 
         // Compute the replacement (if any) inside a block so `borrow_mut` is
