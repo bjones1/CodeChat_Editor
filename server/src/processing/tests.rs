@@ -1411,8 +1411,8 @@ fn test_hydrate_html_1() {
 
 // ### Cache hydration tests
 //
-// Verify that a cross-reference to a target in the same file hydrates to a
-// link whose text is the target's inner HTML.
+// Verify that a cross-reference to a target in the same file hydrates to a link
+// whose text is the target's inner HTML.
 #[test]
 fn test_hydrate_xref_same_file() {
     assert_eq!(
@@ -1501,9 +1501,9 @@ fn test_hydrate_gather_same_file() {
     assert_eq!(contents[2], "<p>End.");
 }
 
-// Verify that cross-file hydration works through a shared project cache:
-// hrefs lead from the referring file to the target's file, and reprocessing
-// the referring file after the target changed picks up the new content.
+// Verify that cross-file hydration works through a shared project cache: hrefs
+// lead from the referring file to the target's file, and reprocessing the
+// referring file after the target changed picks up the new content.
 #[test]
 fn test_hydrate_xref_cross_file() {
     let cache = Arc::new(Mutex::new(Cache::default()));
@@ -1575,9 +1575,9 @@ fn test_hydrate_fragment_in_markdown() {
     );
 }
 
-// Verify auto-assignment of ids: `id="*"` is replaced by a generated, valid
-// CSS identifier which is *not* recorded in the cache, and which the cache
-// picks up only once the file carrying it is written and processed again.
+// Verify auto-assignment of ids: `id="*"` is replaced by a generated, valid CSS
+// identifier which is *not* recorded in the cache, and which the cache picks up
+// only once the file carrying it is written and processed again.
 #[test]
 fn test_auto_assign_id() {
     let cache = Arc::new(Mutex::new(Cache::default()));
@@ -1797,8 +1797,9 @@ fn test_dehydrate_html_1() {
         )
     );
 
-    // A trailing empty paragraph (`<p><br></p>`) is converted to `<p>&nbsp;</p>`
-    // by `dehydrating_walk_node`, preserving it as a non-breaking space.
+    // A trailing empty paragraph (`<p><br></p>`) is converted to
+    // `<p>&nbsp;</p>` by `dehydrating_walk_node`, preserving it as a
+    // non-breaking space.
     assert_eq!(
         converter
             .convert(

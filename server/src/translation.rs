@@ -532,8 +532,8 @@ pub async fn translation_task(
                         EditorMessageContents::Result(_) => continue_loop = tt.ide_result(ide_message).await,
                         EditorMessageContents::Update(_) => continue_loop = tt.ide_update(ide_message).await,
                         EditorMessageContents::Capture(capture_event) => {
-                            // Capture messages affect both upload spooling and the
-                            // translation-layer context used for future
+                            // Capture messages affect both upload spooling and
+                            // the translation-layer context used for future
                             // server-classified write events.
                             let control_only = capture_control_only(&capture_event);
                             tt.capture_context.update_from_wire(&capture_event);
@@ -641,7 +641,8 @@ pub async fn translation_task(
                         EditorMessageContents::Update(_) => continue_loop = tt.client_update(client_message).await,
                         EditorMessageContents::Capture(capture_event) => {
                             // Same capture handling as IDE messages: update the
-                            // context first, then store only non-control events.
+                            // context first, then store only non-control
+                            // events.
                             let control_only = capture_control_only(&capture_event);
                             tt.capture_context.update_from_wire(&capture_event);
                             if control_only {
@@ -1298,8 +1299,10 @@ impl TranslationTask {
                                             )))
                                 {
                                     // Use a whole number to avoid encoding
-                                    // differences with fractional values. Precision loss from the
-                                    // u64 -> f64 cast is fine, since we just need a unique-ish version number.
+                                    // differences with fractional values.
+                                    // Precision loss from the u64 -> f64 cast
+                                    // is fine, since we just need a unique-ish
+                                    // version number.
                                     cfw_version = {
                                         #[allow(clippy::cast_precision_loss)]
                                         let v = random::<u64>() as f64;
@@ -1642,7 +1645,7 @@ mod tests {
                 "capture_active": true,
             }),
         ));
-        // A session_start activates server-side translated write capture.
+        // A session\_start activates server-side translated write capture.
         assert!(
             context
                 .capture_event(CaptureEventType::WriteCode, None, serde_json::json!({}))
@@ -1655,7 +1658,7 @@ mod tests {
                 "capture_active": false,
             }),
         ));
-        // A session_end deactivates translated write capture so stale context
+        // A session\_end deactivates translated write capture so stale context
         // cannot continue generating spooled capture events.
         assert!(
             context

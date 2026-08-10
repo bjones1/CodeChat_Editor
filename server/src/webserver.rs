@@ -371,8 +371,8 @@ pub struct UpdateMessageContents {
 pub enum CursorPosition {
     /// The line the cursor is on. Use `u32`, not `u64`: JSON/JS `number` is an
     /// f64, which loses precision above 2^53, and `u64` values aren't
-    /// type-checked against that limit, so a `u64` here could silently
-    /// corrupt on the JS side. `u32`'s max (~4.3 billion) is always exactly
+    /// type-checked against that limit, so a `u64` here could silently corrupt
+    /// on the JS side. `u32`'s max (~4.3 billion) is always exactly
     /// representable, and no real source file has that many lines anyway.
     Line(u32),
     /// The exact location of the cursor in the HTML DOM. Only the Client and
@@ -486,7 +486,7 @@ pub const INITIAL_MESSAGE_ID: f64 = RESERVED_MESSAGE_ID + 3.0;
 // The initial value for a Client. This value **must** be the same on the
 // Client. This is a manual process, since
 // [ts-rs](https://docs.rs/ts-rs/latest/ts_rs/) only generates types, not
-// constants. <fragment id="cc-kK31yjXjJd"></fragment>
+// constants.
 pub const INITIAL_CLIENT_MESSAGE_ID: f64 = INITIAL_MESSAGE_ID + 1.0;
 const_assert!(INITIAL_CLIENT_MESSAGE_ID == 4.0);
 // The initial value for an IDE.
@@ -542,9 +542,9 @@ static CODECHAT_EDITOR_PROJECT_CSS: LazyLock<String> = LazyLock::new(|| {
 // a development build.
 pub fn set_root_path(
     // The root path to use, already resolved by the caller. Since the correct
-    // value depends entirely on that caller's own build/deployment layout
-    // (an installed VSCode extension's directory, a dev build's location
-    // under `target/`, a `cargo dist`-packaged binary's directory, ...), this
+    // value depends entirely on that caller's own build/deployment layout (an
+    // installed VSCode extension's directory, a dev build's location under
+    // `target/`, a `cargo dist`-packaged binary's directory, ...), this
     // function does no further adjustment -- it's the caller's job to land on
     // the right directory, typically using its own `cfg!(debug_assertions)`/
     // `cfg!(test)` checks. See `extensions/standalone/src/main.rs`'s
@@ -558,12 +558,12 @@ pub fn set_root_path(
 // A `base_path` for this package's own test suites to pass to
 // `set_root_path`/`main` when they start a real webserver in-process
 // (`ide::vscode::tests` and the `tests/overall` integration tests). Not
-// `#[cfg(test)]`-gated: integration tests under
-// `tests/` link this crate as a normal (non-`--test`) dependency, so a
-// `#[cfg(test)]` item wouldn't be visible to them. All these test binaries
-// are built under `server/target/debug/deps/...` (one directory deeper than a
-// plain `cargo build`'s `server/target/debug/`), or one directory deeper
-// still under `cargo llvm-cov`.
+// `#[cfg(test)]`-gated: integration tests under `tests/` link this crate as a
+// normal (non-`--test`) dependency, so a `#[cfg(test)]` item wouldn't be
+// visible to them. All these test binaries are built under
+// `server/target/debug/deps/...` (one directory deeper than a plain `cargo
+// build`'s `server/target/debug/`), or one directory deeper still under `cargo
+// llvm-cov`.
 #[must_use]
 pub fn test_root_path() -> PathBuf {
     let exe_dir = env::current_exe()
@@ -611,9 +611,9 @@ pub fn log_capture_event(app_state: &WebAppState, wire: CaptureEventWire) -> Cap
             serde_json::json!({ "value": data })
         };
         // Prefer hashing a raw local path on the server so all capture
-        // transports use the same path-to-hash rule. The raw path is not stored;
-        // `file_hash` remains only as a backward-compatible/server-originated
-        // alternative.
+        // transports use the same path-to-hash rule. The raw path is not
+        // stored; `file_hash` remains only as a
+        // backward-compatible/server-originated alternative.
         let file_hash = wire
             .file_path
             .as_deref()
@@ -685,13 +685,13 @@ pub fn get_client_framework(
         }
     };
     // `connection_id` may be attacker-controlled (for example, the VSCode
-    // extension's `/vsc/cf/{connection_id}` endpoint takes it directly from
-    // the URL). Since `ws_url` is embedded verbatim inside a `<script>`
-    // block below, escape `<` so a value such as `</script><script>...`
-    // can't prematurely close the script element and inject markup/script
-    // that the HTML parser would otherwise treat as a new tag. JSON string
-    // escapes (produced above) don't cover this, since `<` and `/` aren't
-    // special in JSON.
+    // extension's `/vsc/cf/{connection_id}` endpoint takes it directly from the
+    // URL). Since `ws_url` is embedded verbatim inside a `<script>` block
+    // below, escape `<` so a value such as `</script><script>...` can't
+    // prematurely close the script element and inject markup/script that the
+    // HTML parser would otherwise treat as a new tag. JSON string escapes
+    // (produced above) don't cover this, since `<` and `/` aren't special in
+    // JSON.
     let ws_url = ws_url.replace('<', "\\u003C");
 
     // Build and return the webpage.
@@ -1363,7 +1363,8 @@ pub fn client_websocket<S: BuildHasher + 'static>(
                                     break;
                                 }
 
-                                // Lint allow on `match` above allows this: it's a catch-all for anything not know here.
+                                // Lint allow on `match` above allows this: it's
+                                // a catch-all for anything not know here.
                                 other => {
                                     warn!("Unexpected message {other:?}");
                                     break;
@@ -1632,11 +1633,11 @@ fn make_app_data_with_capture_spool(
 
 // A callback which adds IDE-specific routes to the web application.
 // `HttpServer::new` builds a fresh `App` per worker, and its inner service
-// factory type (`AppEntry`) is private to `actix-web`; a plain
-// `Fn(App<T>) -> App<T>` closure can't be named as a field or parameter type
-// generically enough to pass through `setup_server`. This trait sidesteps
-// that: its method is itself generic over `T`, so a single implementor works
-// for whatever `T` `HttpServer::new` picks internally.
+// factory type (`AppEntry`) is private to `actix-web`; a plain `Fn(App<T>) ->
+// App<T>` closure can't be named as a field or parameter type generically
+// enough to pass through `setup_server`. This trait sidesteps that: its method
+// is itself generic over `T`, so a single implementor works for whatever `T`
+// `HttpServer::new` picks internally.
 pub trait RegisterRoutes: Clone + Send + 'static {
     fn register<T>(&self, app: App<T>) -> App<T>
     where
@@ -1656,8 +1657,8 @@ impl RegisterRoutes for NoExtraRoutes {
     }
 }
 
-// Combine two `RegisterRoutes` implementors into one, so a caller (such as
-// the standalone CLI) can opt into more than one route group.
+// Combine two `RegisterRoutes` implementors into one, so a caller (such as the
+// standalone CLI) can opt into more than one route group.
 impl<A: RegisterRoutes, B: RegisterRoutes> RegisterRoutes for (A, B) {
     fn register<T>(&self, app: App<T>) -> App<T>
     where
@@ -1670,9 +1671,9 @@ impl<A: RegisterRoutes, B: RegisterRoutes> RegisterRoutes for (A, B) {
 // Registers the `/ping` and `/stop` process-lifecycle routes. These are only
 // meaningful when the server runs as an independent OS process that another
 // process must poll for liveness and can ask to shut down over HTTP -- the
-// standalone CLI's `start`/`stop` subcommands. The VSCode extension embeds
-// the server in-process and controls its lifecycle directly via
-// [`crate::ide::CodeChatEditorServer::stop_server`], so it doesn't need these
+// standalone CLI's `start`/`stop` subcommands. The VSCode extension embeds the
+// server in-process and controls its lifecycle directly via
+// \[`crate::ide::CodeChatEditorServer::stop_server`\], so it doesn't need these
 // routes. This crate's own test harness (`ide::vscode::tests`) also registers
 // them, reusing `/ping` to detect when its shared test webserver has started.
 #[derive(Clone)]
@@ -1687,11 +1688,11 @@ impl RegisterRoutes for LifecycleRoutes {
     }
 }
 
-// Configure the web application with the core, IDE-agnostic routes (static
-// file serving). Every IDE integration (VSCode, the filewatcher IDE, ...)
-// registers its own routes via `register_routes`, invoked after the core
-// routes are added. I'd like to make this return an `App<AppEntry>`, but
-// `AppEntry` is a private module.
+// Configure the web application with the core, IDE-agnostic routes (static file
+// serving). Every IDE integration (VSCode, the filewatcher IDE, ...) registers
+// its own routes via `register_routes`, invoked after the core routes are
+// added. I'd like to make this return an `App<AppEntry>`, but `AppEntry` is a
+// private module.
 pub fn configure_app<T>(
     app: App<T>,
     app_data: &WebAppState,

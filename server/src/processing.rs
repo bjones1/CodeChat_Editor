@@ -925,9 +925,9 @@ pub fn source_to_codechat_for_web(
         },
         version,
         source: if lexer.language_lexer.lexer_name.as_str() == MARKDOWN_MODE {
-            // Document-only files are easy: just encode the contents.
-            // Fragments aren't supported in Markdown documents; `hydrate_html`
-            // reports them as errors.
+            // Document-only files are easy: just encode the contents. Fragments
+            // aren't supported in Markdown documents; `hydrate_html` reports
+            // them as errors.
             let dry_html = markdown_to_html(file_contents);
             let html = hydrate_html(&dry_html, file_path, &cache)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
@@ -1435,8 +1435,8 @@ fn get_dom_body(document: &Rc<Node>) -> Rc<Node> {
 //    patch `<xref>` contents and `<fragment>` backlinks.
 // 2. `store_fragment_contents`: once each doc block's hydrated HTML is known,
 //    store each fragment's content in the cache.
-// 3. `hydrate_gathers`: insert each gather element's list of fragment
-//    contents, now all present in the cache.
+// 3. `hydrate_gathers`: insert each gather element's list of fragment contents,
+//    now all present in the cache.
 //
 // This function runs all three phases for a Markdown document, where phase 2
 // needs no doc block data (fragments aren't allowed in Markdown documents, so
@@ -1921,8 +1921,7 @@ fn new_text(text: &str) -> Rc<Node> {
     })
 }
 
-/// Replace a node's children with the given nodes, updating their parent
-/// links.
+/// Replace a node's children with the given nodes, updating their parent links.
 fn set_element_children(node: &Rc<Node>, children: Vec<Rc<Node>>) {
     for child in &children {
         child.parent.set(Some(Rc::downgrade(node)));
@@ -2070,14 +2069,14 @@ struct WalkContext {
     /// `TargetFact::gather_ids`.
     gathers: Vec<Rc<Node>>,
     /// Elements whose `data-gather` can't be hydrated (a missing or invalid
-    /// `id`), with the error message to display in place of their gather
-    /// lists.
+    /// `id`), with the error message to display in place of their gather lists.
     gathers_error: Vec<(Rc<Node>, String)>,
     /// The `doc_block_index` of each gather element; a fragment whose block
     /// range contains one of these is an error.
     gather_block_indices: Vec<usize>,
-    /// The current doc block index in the vec of code/doc blocks, based on parsing the HTML for
-    /// `codechateditor-separator` elements, which contain this value.
+    /// The current doc block index in the vec of code/doc blocks, based on
+    /// parsing the HTML for `codechateditor-separator` elements, which contain
+    /// this value.
     doc_block_index: usize,
 }
 
@@ -2269,8 +2268,8 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                                 .clean(&node_inner_html(child)?)
                                 .to_string(),
                             // Line numbers aren't available until the
-                            // pulldown-cmark HTML writer preserves them; see the
-                            // TODO in `cache.rs`.
+                            // pulldown-cmark HTML writer preserves them; see
+                            // the TODO in `cache.rs`.
                             line: 0,
                             doc_block_index: walk_context.doc_block_index,
                             gather_ids,
