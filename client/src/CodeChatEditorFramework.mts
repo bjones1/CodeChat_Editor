@@ -64,6 +64,7 @@ let webSocketComm: WebSocketComm;
 class WebSocketComm {
     // Use a unique ID for each websocket message sent. See the Implementation
     // section on Message IDs for more information.
+    // <fragment id="cc-Vk22aRyJ3s"></fragment>
     wsId = 4;
 
     // The websocket used by this class. Really a `ReconnectingWebSocket`, but

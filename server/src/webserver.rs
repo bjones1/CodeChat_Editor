@@ -456,6 +456,15 @@ macro_rules! queue_send_func {
     };
 }
 
+// See
+// [Static Assertions in Rust](https://www.kdab.com/static-assertions-in-rust/).
+#[macro_export]
+macro_rules! const_assert {
+    ($cond:expr) => {
+        const _: () = assert!($cond);
+    };
+}
+
 /// Globals
 /// -------
 // The timeout for a reply from a websocket, in ms. Use a short timeout to speed
@@ -470,12 +479,16 @@ pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
 /// this server.
 const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 
-/// A few message IDs reserve for used during startup or for sending errors.
+/// A few message IDs reserved for use during startup or for sending errors.
 pub const RESERVED_MESSAGE_ID: f64 = 0.0;
 /// The initial value for the server's message ID.
 pub const INITIAL_MESSAGE_ID: f64 = RESERVED_MESSAGE_ID + 3.0;
-// The initial value for a Client.
+// The initial value for a Client. This value **must** be the same on the
+// Client. This is a manual process, since
+// [ts-rs](https://docs.rs/ts-rs/latest/ts_rs/) only generates types, not
+// constants. <fragment id="cc-kK31yjXjJd"></fragment>
 pub const INITIAL_CLIENT_MESSAGE_ID: f64 = INITIAL_MESSAGE_ID + 1.0;
+const_assert!(INITIAL_CLIENT_MESSAGE_ID == 4.0);
 // The initial value for an IDE.
 pub const INITIAL_IDE_MESSAGE_ID: f64 = INITIAL_CLIENT_MESSAGE_ID + 1.0;
 /// The increment for a message ID. Since the Client, IDE, and Server all

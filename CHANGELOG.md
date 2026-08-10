@@ -22,7 +22,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* No changes yet.
+* Added support for <xref ref="cc-TRCKclsxwW"></xref> and <xref ref="cc-swJ6a-FiK3"></xref>.
 
 Version 0.2.2 -- 2026-Aug-28
 ----------------------------

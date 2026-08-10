@@ -1,5 +1,4 @@
-// `style_guide.cpp` - Literate programming using the CodeChat Editor
-// ==================================================================
+// <h1 id="cc-nNZ6Gs2uWD"><code>style_guide.cpp</code> - Literate programming using the CodeChat Editor</h1>
 //
 // This document, written as a C++ source file, primarily demonstrates the use
 // of the CodeChat Editor in literate programming. It should be viewed using the
