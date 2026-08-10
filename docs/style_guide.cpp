@@ -40,7 +40,7 @@ const char* CODE_BLOCK =
   // doc blocks with differing indents cannot be combined.
 /* Doc blocks may use either inline comments (`//` in C++) or block comments
    (like this comment). Doc blocks with differing delimiters cannot be combined. */
-// Doc blocks are interpreted using Markdown (specifically, 
+// Doc blocks are interpreted using Markdown (specifically,
 // [CommonMark](https://commonmark.org/)), enabling the use of headings,
 // *emphasis*, **strong emphasis**, `monospaced fonts`, and much more; see a
 // [brief overview of Markdown](https://commonmark.org/help/).
@@ -68,9 +68,9 @@ const char* CODE_BLOCK =
 // any pieces of code that took significant development or debug time, or which
 // contain difficult to understand code.
 //
-// **Phase 3 - post-writing.** Re-read what you wrote. Does this still make
-// sense?​ Update your overall approach based on what you discover. Get another
-// person to review what you wrote, then implement their ideas and suggestions.
+// **Phase 3 - post-writing.** Re-read what you wrote. Update your overall
+// approach based on what you discover. Have an LLM or another person review
+// what you wrote, then implement their ideas and suggestions.
 //
 // <a id="organization"></a>Organization
 // -------------------------------------
@@ -115,7 +115,7 @@ class LedBlinker {
 // Formulas should be placed near code that implements them, along with good
 // explanations of the equations used. For example:
 //
-// This function computes an accurate value for $g$, the acceleration due to
+// This function computes an accurate value for $g$, the acceleration due to
 // Earth's gravity.
 //
 // Return value: $g$, in $m/s^2$.
@@ -130,16 +130,16 @@ double accurate_g(
     // For more detail, see
     // [Theoretical Gravity](https://en.wikipedia.org/wiki/Theoretical_gravity).
     //
-    // The formulas used by this function are based on
-    // the [International Gravity Formula IGF) 1980](https://en.wikipedia.org/wiki/Normal_gravity_formula#International_gravity_formula_1980) 
-    // from the parameters of
-    // the [Geodetic Reference System 1980 (GRS80)](https://en.wikipedia.org/wiki/GRS_80),
-    // which determines the gravity from the position of latitude, and
-    // the [Free Air Correction (FAC)](https://en.wikipedia.org/wiki/Gravity_of_Earth#Free_air_correction)
+    // The formulas used by this function are based on the
+    // [International Gravity Formula IGF) 1980](https://en.wikipedia.org/wiki/Normal_gravity_formula#International_gravity_formula_1980)
+    // from the parameters of the
+    // [Geodetic Reference System 1980 (GRS80)](https://en.wikipedia.org/wiki/GRS_80),
+    // which determines the gravity from the position of latitude, and the
+    // [Free Air Correction (FAC)](https://en.wikipedia.org/wiki/Gravity_of_Earth#Free_air_correction)
     // which corrects for height above and below mean sea level in free air.
     //
     // Compute the International Gravity Formula (IGF):\
-    // $IGF = 9.780327 (1 + 0.0053024 \\sin^2 \\phi – 0.0000058 \\sin^2 2\\phi)$
+    // $IGF = 9.780327 (1 + 0.0053024 \\sin^2 \\phi – 0.0000058 \\sin^2 2\\phi)$
     double IGF = 9.780327 * (
         1 + 0.0053024 * pow(sin(degrees_latitude), 2)
         - 0.0000058 * pow(sin(2 * degrees_latitude), 2)
@@ -171,7 +171,7 @@ double accurate_g(
 //   to ensure this consistency.
 // * Employ [DRY](https://en.wikipedia.org/wiki/Don%27t_repeat_yourself)
 //   principles.
-// * Address warnings, not only errors; preferably, use a 
+// * Address warnings, not only errors; preferably, use a
 //   [linter](https://en.wikipedia.org/wiki/Lint_(software)).
 // * Write automated tests; employ
 //   [test-driven development](https://en.wikipedia.org/wiki/Test-driven_development).
@@ -200,7 +200,7 @@ double accurate_g(
 //
 // * Don't drag and drop an image into the Editor – this creates a mess.
 //   Instead, save all images to a file, then use an SVG or PNG image for
-//   text/line art​ or a JPEG image for photos​. The Markdown syntax to insert an
+//   text/line art​ or a JPEG image for photos​. The Markdown syntax to insert an
 //   image is `![Alt text](https://url.to/image.svg)`.
 // * Indent your comments to match the indentation of nearby code; don't
 //   purposelessly vary the comment indentation.

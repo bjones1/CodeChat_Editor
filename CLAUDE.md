@@ -48,25 +48,54 @@ All build commands must be executed from the `server/` directory.
 * To build (bundle) only the Client, execute `./bt client-build`.
 * To run tests, execute `cargo test`.
 
-Comments
---------
+Code style
+----------
 
 This program uses a literate programming approach to improve the overall
-comprehensibility of the code. Guidelines for comments:
+comprehensibility of the code. Guidelines:
 
-* Functions should be preceded by a comment that summarizes their overall
-  purpose. Each parameter should be preceded by a comment briefly explaining its
-  purpose; the return value when preset should be preceded by a comment
-  explaining the data it carries.
-* Data structures should be preceded by a command explaining their purpose; each
-  value in the data structure should be preceded by a command explaining its
-  role.
-* Comments in the code should be limited to those that:
+* Use meaningful, descriptive names for variables, classes, functions, etc. Code
+  should be as self-documenting as possible.
+* Use headings in comments to appropriately organize the contents. Near the top
+  of the file, include a single level-1 heading, providing the title of the
+  file. For source files, include the file name at the beginning of the title,
+  in a monospaced font. Following the title, include additional heading levels
+  to provide a natural outline of your code.
+* Comments in the code should only supply what self-documenting code cannot:
   1. Document a connection which cannot easily be determined by inspection --
-     for example, explaining the relationship between a web client Ajax call and
-     the backend server which handles it.
+     for example, explaining the relationship between a web client HTTP request
+     and the backend server endpoint which handles it.
   2. Explain behavior which can only be determined by run-time inspection or
-     debugging; behavior which can be directly derived from the code should
+     debugging; behavior which can be directly derived from the code should not
      produce a comment.
-  3. Capture requirements or higher-level behavior which specifies the overall
+  3. Capture design choices, requirements, etc. which specifies the overall
      purpose of the code at a higher level than the implementation.
+  4. Provides a link to external references (a manual, specification, etc.) to
+     explain a subtle design choice.
+* Place comments with formulas near code that implements them, along with good
+  explanations of the equations used, using LaTeX-style syntax: $x^2$.
+* Use units when describing physical quantities:
+
+  ```C++
+  // The acceleration due to gravity in $m/s^2$.
+  const double accel_m_s2 = 9.8067;
+  ```
+
+* Place documentation before the corresponding code. Precede function parameters
+  with descriptive comment. For example:
+
+  ```C++
+  // This class blinks an LED based on the number of pushbutton presses recorded.
+  class LedBlinker {
+      // Store the number of pushbutton presses.
+      unsigned int pb_presses;
+
+      // Blink the LED based on the number of pushbutton presses.
+      //
+      // Returns the number of blinks performed; this value is <= `pb_presses`.
+      unsigned int blink_led(
+          // The time, in ms, between blinks.
+          unsigned int blink_time_ms
+      );
+  };
+  ```
