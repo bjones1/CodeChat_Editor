@@ -19,6 +19,7 @@
 // `.eslintrc.yml` -- Configure ESLint for this project
 // ====================================================
 import eslintPluginPrettierRecommended from "eslint-plugin-prettier/recommended";
+import prettier from "eslint-plugin-prettier";
 import css from "@eslint/css";
 import eslint from "@eslint/js";
 import { defineConfig } from "eslint/config";
@@ -120,8 +121,16 @@ export default defineConfig(
             files: ["**/*.css"],
             ignores: ["src/third-party/**"],
             language: "css/css",
-            plugins: { css },
+            // The `prettier/prettier` rule is enabled directly instead of
+            // extending `eslint-plugin-prettier/recommended`, since that config
+            // additionally disables the JavaScript stylistic rules which
+            // conflict with Prettier -- rules that don't exist (and whose
+            // plugins aren't loaded) under the CSS language.
+            plugins: { css, prettier },
             extends: ["css/recommended"],
+            rules: {
+                "prettier/prettier": "error",
+            },
         },
     ]),
 );
