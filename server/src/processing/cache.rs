@@ -109,7 +109,12 @@
 ///   excluding the content produced by hydrating the `<fragment>` tags, to
 ///   avoid duplication and circular dependencies. See layer 4 under `Design`:
 ///   this exclusion is what keeps a gather element and the fragments it lists
-///   from outdating each other forever.
+///   from outdating each other forever. The HTML rendering of a fragment
+///   reproduces the layout of the source it came from: each doc block includes
+///   its indent, each line of a code block is preceded by that line's number,
+///   and the two are aligned -- a doc block and a line of code indented
+///   equally in the source begin in the same column, with the line numbers in
+///   a gutter of their own to the left of both.
 /// * The backlinks a `<fragment>` hydrates to are derived from the gather
 ///   elements which list it: for each such element, its containing file, its
 ///   `id`, and its inner HTML (the link text). A fragment's rendered output
