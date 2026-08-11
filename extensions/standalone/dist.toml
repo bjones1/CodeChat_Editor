@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Bryan A. Jones.
+# Copyright (C) 2026 Bryan A. Jones.
 #
 # This file is part of the CodeChat Editor.
 #
@@ -23,4 +23,8 @@
 [dist]
 # Extra static files to include in each App (path relative to this Cargo.toml's
 # dir)
-include = ["../../server/log4rs.yml", "../../server/hashLocations.json", "../../client/static"]
+include = [
+    "../../server/log4rs.yml",
+    "../../server/hashLocations.json",
+    "../../client/static",
+]

@@ -1,4 +1,4 @@
-Copyright (C) 2025 Bryan A. Jones.
+Copyright (C) 2026 Bryan A. Jones.
 
 This file is part of the CodeChat Editor.
 
@@ -32,11 +32,13 @@ Authoring support\
 
 <a id="ide-integration"></a>IDE/text editor integration\
   [1.2 Vision](README.md#vision-ide-integration)\
+
  
 [1.3 Specification § IDE/text editor integration](README.md#specification-ide-integration)
 
 <a id="programming-language-support"></a>Programming language support\
   [1.2 Vision](README.md#vision-programming-language-support)\
+
  
 [1.3 Specification § Programming language support](README.md#implementation-programming-language-support)
 

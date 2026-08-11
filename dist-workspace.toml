@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Bryan A. Jones.
+# Copyright (C) 2026 Bryan A. Jones.
 #
 # This file is part of the CodeChat Editor.
 #
@@ -31,7 +31,12 @@ ci = "github"
 # The installers to generate for each app
 installers = []
 # Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
 # Skip checking whether the specified configuration files are up to date
 allow-dirty = ["ci"]
 license-files = ["LICENSE.md"]
