@@ -486,7 +486,7 @@ pub const INITIAL_MESSAGE_ID: f64 = RESERVED_MESSAGE_ID + 3.0;
 // The initial value for a Client. This value **must** be the same on the
 // Client. This is a manual process, since
 // [ts-rs](https://docs.rs/ts-rs/latest/ts_rs/) only generates types, not
-// constants.
+// constants. <fragment id="cc-kK31yjXjJd"></fragment>
 pub const INITIAL_CLIENT_MESSAGE_ID: f64 = INITIAL_MESSAGE_ID + 1.0;
 const_assert!(INITIAL_CLIENT_MESSAGE_ID == 4.0);
 // The initial value for an IDE.
