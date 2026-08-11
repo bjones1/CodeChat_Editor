@@ -48,7 +48,8 @@ body {
 
 /* TODO: This is a overly simple, non-responsive layout to create a sidebar
    containing the table of contents. Fix. */
-#CodeChat-sidebar, #CodeChat-sidebar-nav {
+#CodeChat-sidebar,
+#CodeChat-sidebar-nav {
     width: var(--sidebar-width);
     height: calc(100vh - 2 * var(--body-padding));
     border: 0px;
