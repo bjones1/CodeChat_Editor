@@ -524,6 +524,7 @@ static BUNDLED_FILES_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     hmm
 });
 
+// <fragment id="oy0vDtlUs6"></fragment>
 static CODECHAT_EDITOR_FRAMEWORK_JS: LazyLock<String> = LazyLock::new(|| {
     BUNDLED_FILES_MAP
         .get("CodeChatEditorFramework.js")
@@ -909,6 +910,7 @@ pub async fn file_to_response(
         ""
     };
     let codechat_editor_js_name = format!("CodeChatEditor{js_test_suffix}.js");
+    // <fragment id="POHIjx6j3N"></fragment>.
     let Some(codechat_editor_js) = BUNDLED_FILES_MAP.get(&codechat_editor_js_name) else {
         return (
             SimpleHttpResponse::Err(SimpleHttpResponseError::BundledFileNotFound(

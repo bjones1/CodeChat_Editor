@@ -645,6 +645,8 @@ fn run_client_build(
     let distflag = if dist { "--minify" } else { "--sourcemap" };
 
     // The main build for the Client.
+    //
+    // <h4 id="Icn3ToCCYu" data-gather="PEsfbFhMYN oy0vDtlUs6 POHIjx6j3N">Overall client build pipeline</h4>
     run_script(
         &esbuild,
         &[
@@ -652,7 +654,6 @@ fn run_client_build(
             "src/CodeChatEditor.mts",
             "src/CodeChatEditor-test.mts",
             "src/css/CodeChatEditorProject.css",
-            "src/css/CodeChatEditor.css",
             "--bundle",
             "--outdir=./static/bundled",
             distflag,

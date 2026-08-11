@@ -1,0 +1,249 @@
+/* Copyright (C) 2025 Bryan A. Jones.
+
+   This file is part of the CodeChat Editor.
+
+   The CodeChat Editor is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by the Free
+   Software Foundation, either version 3 of the License, or (at your option) any
+   later version.
+
+   The CodeChat Editor is distributed in the hope that it will be useful, but
+   WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+   FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+   details.
+
+   You should have received a copy of the GNU General Public License along with
+   the CodeChat Editor. If not, see
+   [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+
+   `CodeChatEditorBase.css` -- Ordinary styles for the CodeChat Editor
+   ===================================================================
+
+   These are the styles a theme is allowed to override; the cascade which
+   arranges that lives in [CodeChatEditor.css](CodeChatEditor.css), the entry
+   point which imports both this file and the theme. Nothing here is imported
+   directly.
+
+   TODO: do a much better job of grouping common styles. Rename styles based on
+   whether they style a code or doc block. */
+/* Styles for the entire page layout
+   ---------------------------------
+
+   This is used only to store a reused variable value. See the
+   [CSS docs](https://drafts.csswg.org/css-variables/). */
+:root {
+    --top-height: 3.7rem;
+    --body-padding: 0.2rem;
+    --body-height: calc(100vh - var(--top-height) - 2 * var(--body-padding));
+}
+
+/* See [box sizing](https://css-tricks.com/box-sizing/) for the following
+   technique to use `border-box` sizing. */
+html {
+    box-sizing: border-box;
+}
+
+*,
+*:before,
+*:after {
+    box-sizing: inherit;
+}
+
+body {
+    /* For box model simplicity, switch the padding and margin. */
+    padding: var(--body-padding);
+    margin: 0px;
+}
+
+/* Provide space at the top of the screen for the filename and TinyMCE menu bar. */
+#CodeChat-top {
+    height: var(--top-height);
+}
+
+/* The rest of the screen is the editor area. Omit this for printing, so the
+   text flows across multiple pages. */
+@media not print {
+     /* ### Height and scrollbars
+
+        When in document-only mode, the editor is a child of the body. */
+    #CodeChat-body > .CodeChat-doc-contents {
+        height: var(--body-height);
+        overflow: auto
+    }
+
+    /* Otherwise, set this per the
+       [CodeMirror docs](https://codemirror.net/examples/styling/). */
+    .cm-editor {
+        height: var(--body-height);
+    }
+    .cm-scroller {
+        overflow: auto
+    }
+}
+
+/* Misc styling
+   ------------
+
+   Make the filename compact. */
+#CodeChat-filename p {
+    margin: 0px;
+    white-space: nowrap;
+}
+
+/* Error overlay. When visible, obscure the screen. */
+#error-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    /* The toast z-index is 10000. */
+    z-index: 9999;
+    display: none;
+    opacity: 0.8;
+    background-color: gray;
+}
+
+.centered-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* Pulls element back exactly to its own middle */
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+/* Doc block styling
+   ----------------- */
+.CodeChat-doc {
+    /* Use
+       [flexbox layout](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Flexible_Box_Layout/Basic_Concepts_of_Flexbox)
+       to style doc blocks. The goal of this layout is:
+
+       \<max line number spaces> \<padding to match the ACE editor> \<doc block
+       indent> \<doc block contents>
+
+       where:
+
+       * `<div class="CodeChat-doc-indent">` contains \<doc block indent>
+       * `<div class="CodeChat-TinyMCE">` contains the \<doc block contents> */
+    display: flex;
+    padding: 0px 2px 0px 6px;
+    /* Establish a positioning context for an empty `.CodeChat-doc-indent`;
+       see below. */
+    position: relative;
+}
+
+/* Preserve whitespace in the indent of a doc block. */
+.CodeChat-doc-indent {
+    /* Make this \<doc block indent> not expand or shrink, but take exactly the
+       width required by the text (spaces) it contains. */
+    flex: 0 0 auto;
+    white-space: pre;
+    tab-size: 4;
+}
+
+/* An empty indent would otherwise collapse to a zero-size element, which
+   isn't reliably clickable (a real mousedown/click can't hit-test a
+   too-small target -- the browser resolves the click point to whatever
+   sits behind/beside it instead) -- so it could never be focused to become
+   editable (see the inline `onmousedown` handler in `DocBlockWidget.toDOM`
+   and the `focusout` handler in `DocBlockPlugin`, which toggle
+   `contenteditable` on and off). Give it a nonzero, clickable size via
+   `position: absolute` rather than sizing it in normal flow (e.g.
+   `min-width`): per the
+   [Flexbox spec](https://www.w3.org/TR/css-flexbox-1/#abspos-items), an
+   absolutely-positioned flex item is removed from flex layout entirely, so
+   this can't shift `.CodeChat-doc-contents`'s horizontal start away from its
+   natural position -- which matters because the browser's native
+   caret-boundary walk (used for arrow-key navigation between adjacent doc
+   blocks; see `docBlockNavKeymap` in `CodeMirror-integration.mts`) tracks
+   the caret's horizontal position across lines, and a shifted contents
+   start throws that off. Position it at the indent's usual (here, zero)
+   offset from the block's left padding, so it visually and functionally
+   sits where the (empty) indent belongs. */
+.CodeChat-doc-indent:empty {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1ch;
+    height: 100%;
+}
+
+/* Reset what CodeMirror messes up for doc blocks. */
+.CodeChat-doc-contents {
+    font-family: inherit;
+    line-height: initial;
+    white-space: normal;
+    flex-grow: 1;
+}
+
+/* Remove the editor's border when it's selected, since this hides the cursor
+   when the cursor is at the beginning of a line and isn't necessary (the entire
+   screen is an editor, not just that region.) Note that the `focus-visible`
+   attribute is only visible briefly, but this eliminated that visual flicker. */
+.CodeChat-doc-contents.mce-edit-focus,
+.CodeChat-doc-contents:focus-visible {
+    outline: 0px;
+}
+
+/* Used to hide the TinyMCE editor instance when it's not in use. */
+.CodeChat-doc-hidden {
+    display: none;
+}
+
+/* Combined code/doc block styling
+   -------------------------------
+
+   <span id="remove-space">A doc block must occupy exactly the vertical space
+   its text needs, so that it butts against the code block above and below it
+   just as it does in the source. Doc block elements typically carry a top and
+   bottom margin (and sometimes padding), which would instead open a gap at each
+   of those two edges; remove it there, while leaving the spacing *between* a
+   doc block's own elements alone.
+
+   The element which produces the gap at the top edge isn't necessarily the
+   contents' first child. A first child's top margin
+   [collapses](https://www.w3.org/TR/CSS22/box.html#collapsing-margins) with its
+   parent's whenever no border or padding separates the two, so the gap can come
+   from the first element of the first element of ... the contents, to any
+   depth; the same holds at the bottom edge with last children. What must
+   therefore be selected is every element reachable from the contents by
+   following first children only -- which is what the `:not()` expresses, by
+   discarding any element which lies beneath an element that isn't a first
+   child. Those are interior to the doc block (the second and later `<li>`s of a
+   list and their contents, for instance), and their spacing is preserved.
+
+   Each container scopes its own exclusion so that these rules nest correctly:
+   the gathered fragments the
+   [rules in CodeChatEditor.css](CodeChatEditor.css#cc-fragment-doc-contents)
+   lay out sit inside an editor doc block, yet each is a doc block in its own
+   right, whose edges are found relative to its own `.cc-fragment-doc-contents`
+   rather than to the `.CodeChat-doc-contents` enclosing the whole gather
+   list.</span> */
+.CodeChat-doc-contents
+    :first-child:not(.CodeChat-doc-contents :not(:first-child) *),
+.cc-fragment-doc-contents
+    :first-child:not(.cc-fragment-doc-contents :not(:first-child) *) {
+    margin-top: 0px;
+    padding-top: 0px;
+}
+
+/* [Remove the space](remove-space) at a doc block's bottom edge. */
+.CodeChat-doc-contents
+    :last-child:not(.CodeChat-doc-contents :not(:last-child) *),
+.cc-fragment-doc-contents
+    :last-child:not(.cc-fragment-doc-contents :not(:last-child) *) {
+    margin-bottom: 0px;
+    padding-bottom: 0px;
+}
+
+/* Provide nicer defaults for tables. */
+.CodeChat-doc-contents table,
+.CodeChat-doc-contents th,
+.CodeChat-doc-contents td {
+    border-collapse: collapse;
+    padding-left: 4px;
+    padding-right: 4px;
+    border: 1px solid;
+}

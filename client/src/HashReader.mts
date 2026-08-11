@@ -72,6 +72,7 @@ const outputContents: Record<string, string> = {};
 let numFound = 0;
 for (const output in metafile.outputs) {
     const outputInfo = metafile.outputs[output];
+    // <fragment id="PEsfbFhMYN"></fragment>
     switch (outputInfo.entryPoint) {
         case "src/CodeChatEditorFramework.mts":
             outputContents["CodeChatEditorFramework.js"] = output;

@@ -1488,10 +1488,12 @@ fn test_hydrate_gather_same_file() {
         .map(|doc_block| doc_block.contents.as_str())
         .collect();
     // The gather element gains the `cc-gather` class and is followed by the
-    // gathered list: a link to the fragment, then the fragment's contents.
+    // gathered list: a link to the fragment, then the fragment's contents. The
+    // fragment's doc block is line 3 of `foo.js` and its code block begins on
+    // line 4.
     assert_eq!(
         contents[0],
-        "<h3 class=cc-gather data-gather=frag id=gath>Gathered</h3><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=#frag>foo.js</a>:<p>Doc.<pre><code>let b = 2;\n</code></pre></div>"
+        "<h3 class=cc-gather data-gather=frag id=gath>Gathered</h3><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=#frag>foo.js</a>:<div class=cc-fragment-doc><pre class=cc-fragment-indent><span class=cc-line-number>3</span></pre><div class=cc-fragment-doc-contents><p>Doc.</div></div><pre class=cc-fragment-code><span class=cc-line-number>4</span>let b = 2;\n</pre></div>"
     );
     // The fragment renders a backlink to the gather element.
     assert_eq!(
@@ -1499,6 +1501,63 @@ fn test_hydrate_gather_same_file() {
         "<p><fragment contenteditable=false id=frag>See <a href=#gath>Gathered</a></fragment>Doc."
     );
     assert_eq!(contents[2], "<p>End.");
+}
+
+// Verify that a rendered fragment preserves the layout of the source it came
+// from: each doc block keeps its indent, and each line of a code block and the
+// first line of each doc block are preceded by their line numbers in the source.
+#[test]
+fn test_hydrate_gather_indent_and_line_numbers() {
+    let translation = source_to_codechat_for_web(
+        indoc!(
+            r#"
+            // <h3 id="gath" data-gather="frag">Gathered</h3>
+            let a = 1;
+            // A doc block
+            // spanning two lines.
+            let b = 2;
+              // <fragment id="frag" following="2"></fragment>Indented doc.
+              let c = 3;
+              let d = 4;
+              // More docs.
+            let e = 5;
+            "#
+        ),
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    // The gathered list follows the gather element, in the same doc block. The
+    // fragment covers its own doc block (line 6) plus the two blocks following
+    // it: the code on lines 7-8, then the doc block on line 9 -- so the line
+    // numbers must count the two lines of the doc block above as well. Both of
+    // the fragment's doc blocks are indented two spaces in the source, so both
+    // carry that indent here.
+    assert_eq!(
+        code_mirror.doc_blocks[0]
+            .contents
+            .split_once("</a>:")
+            .expect("the gathered list must link to the fragment")
+            .1,
+        concat!(
+            "<div class=cc-fragment-doc>",
+            "<pre class=cc-fragment-indent><span class=cc-line-number>6</span>  </pre>",
+            "<div class=cc-fragment-doc-contents><p>Indented doc.</div></div>",
+            "<pre class=cc-fragment-code>",
+            "<span class=cc-line-number>7</span>  let c = 3;\n",
+            "<span class=cc-line-number>8</span>  let d = 4;\n",
+            "</pre>",
+            "<div class=cc-fragment-doc>",
+            "<pre class=cc-fragment-indent><span class=cc-line-number>9</span>  </pre>",
+            "<div class=cc-fragment-doc-contents><p>More docs.</div></div>",
+            "</div>"
+        )
+    );
 }
 
 // Verify that cross-file hydration works through a shared project cache: hrefs
@@ -1648,12 +1707,48 @@ fn test_dehydrate_hydration_artifacts() {
                     1,
                     "",
                     "//",
-                    "<h3 id=\"gath\" data-gather=\"frag\" class=\"cc-gather\">Gathered</h3><div class=\"cc-gather-items\" contenteditable=\"false\"><p>Doc.</p></div><p>See <xref ref=\"t\" contenteditable=\"false\"><a href=\"#t\">Title</a></xref> and <fragment id=\"frag\" contenteditable=\"false\">See <a href=\"#gath\">Gathered</a></fragment>too.</p>"
+                    // The gather list holds a rendered fragment: an indented,
+                    // line-numbered doc block and a line-numbered code block.
+                    "<h3 id=\"gath\" data-gather=\"frag\" class=\"cc-gather\">Gathered</h3><div class=\"cc-gather-items\" contenteditable=\"false\"><div class=\"cc-fragment-doc\"><pre class=\"cc-fragment-indent\"><span class=\"cc-line-number\">3</span>  </pre><div class=\"cc-fragment-doc-contents\"><p>Doc.</p></div></div><pre class=\"cc-fragment-code\"><span class=\"cc-line-number\">4</span>let b = 2;\n</pre></div><p>See <xref ref=\"t\" contenteditable=\"false\"><a href=\"#t\">Title</a></xref> and <fragment id=\"frag\" contenteditable=\"false\">See <a href=\"#gath\">Gathered</a></fragment>too.</p>"
                 ),
             ]
         ))
         .unwrap(),
         "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>\n//\n// See <xref ref=\"t\"></xref> and <fragment id=\"frag\"></fragment>too.\nlet b = 2;"
+    );
+}
+
+// Verify that the `contenteditable` attribute TinyMCE's anchor plugin adds to
+// an empty named anchor (`<a id="foo"></a>`) is dropped when the anchor is
+// saved, in both a Markdown document and a doc block. Only the plugin's
+// serializer removes that attribute, and the Client's raw-format save bypasses
+// it; see `remove_tinymce_data`.
+#[test]
+fn test_dehydrate_named_anchor() {
+    assert_eq!(
+        codechat_for_web_to_source(&build_codechat_for_web(
+            MARKDOWN_MODE,
+            "<h2><a id=\"notes\" contenteditable=\"false\"></a>Notes</h2><p>Read the <a href=\"#notes\" contenteditable=\"false\">notes</a>.</p>",
+            vec![]
+        ))
+        .unwrap(),
+        "<a id=\"notes\"></a>Notes\n-----------------------\n\nRead the [notes](#notes).\n"
+    );
+
+    assert_eq!(
+        codechat_for_web_to_source(&build_codechat_for_web(
+            "javascript",
+            "\nlet a = 1;",
+            vec![build_codemirror_doc_block(
+                0,
+                1,
+                "",
+                "//",
+                "<p><a id=\"notes\" contenteditable=\"false\"></a>Notes</p>"
+            )]
+        ))
+        .unwrap(),
+        "// <a id=\"notes\"></a>Notes\nlet a = 1;"
     );
 }
 

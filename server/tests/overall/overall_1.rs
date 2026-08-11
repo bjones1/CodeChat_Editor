@@ -699,7 +699,7 @@ async fn test_client_core(
         codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
         EditorMessage {
             id: client_id,
-            message: EditorMessageContents::CurrentFile(path_str, Some(true))
+            message: EditorMessageContents::CurrentFile(path_str.clone(), Some(true))
         }
     );
     codechat_server.send_result(client_id, None).await.unwrap();
@@ -732,17 +732,44 @@ async fn test_client_core(
     codechat_iframe.clone().enter_frame().await.unwrap();
     wait_for_mocha_success(&driver).await.unwrap();
 
+    // The Client acknowledges the Server's last request; along with it, the
+    // gathered-fragment layout tests focus a doc block, which promotes it to an
+    // editor and reports the resulting cursor position to the IDE. Where that
+    // cursor lands and how many such updates arrive depend on the browser's
+    // timing, so accept any number of them, in any order, and stop once the
+    // Client falls silent.
     server_id -= MESSAGE_ID_INCREMENT;
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: server_id,
-            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+    let mut result_seen = false;
+    while let Some(message) = codechat_server
+        .get_message_timeout(if result_seen {
+            Duration::from_millis(500)
+        } else {
+            TIMEOUT
+        })
+        .await
+    {
+        match &message.message {
+            EditorMessageContents::Result(Ok(ResultOkTypes::Void)) if !result_seen => {
+                assert_eq!(message.id, server_id);
+                result_seen = true;
+            }
+            // A cursor-position update carries a cursor position and no file
+            // contents. Requiring both keeps this from also absorbing an update
+            // which reports neither -- that would be a regression in cursor
+            // reporting, not the timing variation this loop tolerates.
+            EditorMessageContents::Update(update)
+                if update.contents.is_none() && update.cursor_position.is_some() =>
+            {
+                assert_eq!(update.file_path, path_str);
+                codechat_server.send_result(message.id, None).await.unwrap();
+            }
+            _ => panic!("Unprocessed message: {message:#?}"),
         }
+    }
+    assert!(
+        result_seen,
+        "The Client never acknowledged the last request."
     );
-    //server_id += 2.0 * MESSAGE_ID_INCREMENT;
-
-    assert_no_more_messages(&codechat_server).await;
 
     Ok(())
 }
@@ -771,21 +798,26 @@ async fn wait_for_mocha_success(driver: &WebDriver) -> Result<(), WebDriverError
 }
 
 async fn mocha_failure_text(driver: &WebDriver) -> String {
-    let failures = driver
-        .find_all(By::Css("#mocha-report .fail"))
+    // Read the report with JavaScript instead of `WebElement::text`, which
+    // reports only *rendered* text: a test which rearranges the page (the
+    // gathered-fragment tests turn a doc block into an editor, which moves the
+    // editor's div to the end of the body) can leave the report unrendered,
+    // reducing a failure to "no details found".
+    let failure_text = driver
+        .execute(
+            "return Array.from(document.querySelectorAll('#mocha-report .fail'))
+                .map((failure) => failure.textContent)
+                .join('\\n\\n');",
+            vec![],
+        )
         .await
+        .ok()
+        .and_then(|result| result.json().as_str().map(str::to_string))
         .unwrap_or_default();
-    let mut failure_texts = Vec::new();
-    for failure in failures {
-        let text = failure.text().await.unwrap_or_default();
-        if !text.trim().is_empty() {
-            failure_texts.push(text);
-        }
-    }
-    if failure_texts.is_empty() {
+    if failure_text.trim().is_empty() {
         "Mocha reported a failure, but no failure details were found.".to_string()
     } else {
-        failure_texts.join("\n\n")
+        failure_text
     }
 }
 

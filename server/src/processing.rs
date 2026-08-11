@@ -1114,6 +1114,9 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
             "math-display",
             "mceNonEditable",
             "cc-error",
+            // The line number preceding each line of a code block in a rendered
+            // fragment; see `render_fragment_content`.
+            "cc-line-number",
         ],
     )
     // Classes produced by gather-element hydration. The `cc-gather` class may
@@ -1127,7 +1130,22 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     .add_allowed_classes("h5", &["cc-gather"])
     .add_allowed_classes("h6", &["cc-gather"])
     .add_allowed_classes("p", &["cc-gather", "cc-gather-item-link"])
-    .add_allowed_classes("div", &["cc-gather", "cc-gather-items"])
+    // The `cc-fragment-*` classes lay out one doc block of a rendered fragment:
+    // its source indent, then its contents. See `render_fragment_content`.
+    .add_allowed_classes(
+        "div",
+        &[
+            "cc-gather",
+            "cc-gather-items",
+            "cc-fragment-doc",
+            "cc-fragment-doc-contents",
+        ],
+    )
+    // The doc block indents and the code blocks of a rendered fragment; see
+    // `render_fragment_content`. Listing these here rather than allowing a
+    // `class` attribute on any `pre` (as `code` below does) keeps a doc block's
+    // hand-written `<pre>` from claiming the layout these name.
+    .add_allowed_classes("pre", &["cc-fragment-indent", "cc-fragment-code"])
     // The gather-items list is generated content, marked non-editable.
     .add_tag_attributes("div", &["contenteditable"])
     // `code` tags can have `class=language-*`. Since Ammonia doesn't support a
@@ -1696,7 +1714,44 @@ fn store_fragment_contents(
 }
 
 /// Render one fragment's content: the hydrated HTML of the code/doc blocks it
-/// encloses, cleaned per the spec in `cache.rs`.
+/// encloses, cleaned per the spec in `cache.rs`. Per that spec, the rendering
+/// reproduces the layout of the source it came from: each doc block carries the
+/// indent it had there, each line of a code block and the first line of each doc
+/// block are preceded by their line numbers, and equal indents in the source
+/// line up in the rendering.
+///
+/// ### Why a doc block's indent and a code block are `<pre>`s
+///
+/// The whitespace in those two *is* the layout, so everything which rewrites
+/// this HTML on its way to the screen must be told to leave it alone -- and both
+/// TinyMCE and the minifier key whitespace sensitivity on the tag name, with no
+/// class- or selector-based equivalent. (`CodeChat-doc-indent` needs no such
+/// treatment: the Client builds it outside the TinyMCE editable region, so
+/// nothing rewrites it.) Of the tag names both tools treat as
+/// whitespace-sensitive by default, `pre` is the one which fits, and each tool
+/// extends that treatment to everything nested inside it, covering the line
+/// numbers as well.
+///
+/// The cost of a standard tag name is that a theme's `pre` styling -- a font
+/// size, a padding -- would otherwise reach these and shift one relative to the
+/// other. The alignment rules in `CodeChatEditor.css` therefore sit outside the
+/// cascade layer holding the themes, and begin by discarding what a theme
+/// declared; see the comments there. That defense belongs to the cascade rather
+/// than to the selectors, so it isn't a specificity race a theme might win.
+///
+/// ### Renaming either class
+///
+/// Each of these spells the names out independently -- they cross a Rust/CSS/
+/// TypeScript boundary, so no single definition can be shared -- and all must
+/// change together:
+///
+/// 1. This function, which emits them.
+/// 2. `AMMONIA_OPTIONS` in this file, which allows only these classes on a
+///    `<pre>`.
+/// 3. The alignment rules in
+///    [CodeChatEditor.css](../../client/src/css/CodeChatEditor.css).
+/// 4. The expected HTML in `processing/tests.rs` and the layout tests in
+///    [CodeChatEditor-test.mts](../../client/src/CodeChatEditor-test.mts).
 fn render_fragment_content(
     // The fragment to render.
     fragment: &FragmentHydration,
@@ -1724,6 +1779,17 @@ fn render_fragment_content(
     {
         return error_html("a fragment may not contain a gather element");
     }
+    // The number of the source line on which the fragment's first block begins.
+    // Line numbers are one-based, matching the editor's gutter; every block
+    // before the fragment occupies its full height in the source (a doc block
+    // becomes that many blank lines -- see the `"\n".repeat(doc_block.lines)`
+    // in `source_to_codechat_for_web`), so summing those heights locates the
+    // fragment.
+    let mut line = 1 + code_doc_blocks
+        .iter()
+        .take(fragment.start)
+        .map(code_doc_block_lines)
+        .sum::<usize>();
     let mut content = String::new();
     for (index, code_doc_block) in code_doc_blocks
         .iter()
@@ -1732,19 +1798,64 @@ fn render_fragment_content(
         .skip(fragment.start)
     {
         match code_doc_block {
-            CodeDocBlock::DocBlock(_) => {
+            CodeDocBlock::DocBlock(doc_block) => {
                 if let Some(chunk) = chunks.get(&index) {
+                    content.push_str("<div class=\"cc-fragment-doc\">");
+                    // The indent is always given an element, even when it's
+                    // empty: that element also supplies the doc side of the
+                    // line-number gutter, which every doc block needs in order
+                    // to line up with the code around it. Only the doc block's
+                    // first line is numbered -- the block's remaining source
+                    // lines have no fixed correspondence to the lines its
+                    // rendered contents occupy, since the comment delimiters are
+                    // gone and the text reflows.
+                    content.push_str(
+                        "<pre class=\"cc-fragment-indent\"><span class=\"cc-line-number\">",
+                    );
+                    content.push_str(&line.to_string());
+                    content.push_str("</span>");
+                    content.push_str(&htmlize::escape_text(&doc_block.indent));
+                    content.push_str("</pre><div class=\"cc-fragment-doc-contents\">");
                     content.push_str(&CLEAN_FRAGMENT_HTML.clean(chunk).to_string());
+                    content.push_str("</div></div>");
                 }
+                line += doc_block.lines;
             }
             CodeDocBlock::CodeBlock(code) => {
-                content.push_str("<pre><code>");
-                content.push_str(&htmlize::escape_text(code));
-                content.push_str("</code></pre>");
+                content.push_str("<pre class=\"cc-fragment-code\">");
+                // `split_inclusive` keeps the newline ending each line, and
+                // yields nothing for an empty code block, so the code is
+                // reproduced exactly except for the numbers inserted here. The
+                // line number comes first on every line, which also keeps the
+                // code from beginning with the newline an HTML parser drops
+                // when it directly follows a `<pre>`.
+                for source_line in code.split_inclusive('\n') {
+                    content.push_str("<span class=\"cc-line-number\">");
+                    content.push_str(&line.to_string());
+                    content.push_str("</span>");
+                    content.push_str(&htmlize::escape_text(source_line));
+                    line += 1;
+                }
+                content.push_str("</pre>");
             }
         }
     }
     content
+}
+
+/// The number of source lines a code/doc block occupies, used to compute the
+/// line numbers a fragment's code blocks display.
+fn code_doc_block_lines(
+    // The block to measure.
+    code_doc_block: &CodeDocBlock,
+    // Its height in source lines.
+) -> usize {
+    match code_doc_block {
+        CodeDocBlock::DocBlock(doc_block) => doc_block.lines,
+        // The last line of a file need not end with a newline, so count line
+        // endings inclusively rather than counting newlines.
+        CodeDocBlock::CodeBlock(code) => code.split_inclusive('\n').count(),
+    }
 }
 
 /// Phase 3 of hydration: mark each gather element with the `cc-gather` class
@@ -2456,9 +2567,26 @@ pub fn remove_tinymce_data(
         }
         // If we didn't remove this element, then filter out unwanted
         // attributes.
+        //
+        // A `contenteditable` attribute is one of these on most elements:
+        // TinyMCE's anchor plugin marks every empty named anchor (`<a
+        // id="foo"></a>`) non-editable when it parses a doc block, and undoes
+        // that only in its serializer -- which the Client bypasses by saving in
+        // the raw format (see the note on `docContent` in
+        // [CodeChatEditor.mts](../../client/src/CodeChatEditor.mts)). Without
+        // this, that attribute is written back to the source file.
+        //
+        // The exceptions are the elements which legitimately carry it here:
+        // `div`, `xref`, and `fragment` are the only tags `AMMONIA_OPTIONS`
+        // allows it on, so only they can have received it from the source file;
+        // the cache-generated copies on `<xref>` and `<fragment>` are removed
+        // by `dehydrating_walk_node`. A math `<span>`'s copy must survive until
+        // `replace_math_node` recognizes the span and rebuilds it without one.
+        let keeps_contenteditable = matches!(&*name.local, "div" | "span" | "xref" | "fragment");
         attrs.borrow_mut().retain(|attr| {
             !(attr.name.local.starts_with("data-mce-")
-                || (attr.name.local == *"class" && attr.value.starts_with("mce-")))
+                || (attr.name.local == *"class" && attr.value.starts_with("mce-"))
+                || (!keeps_contenteditable && attr.name.local == *"contenteditable"))
         });
     }
     Some(node.clone())

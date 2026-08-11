@@ -157,6 +157,163 @@ window.CodeChatEditor_test = () => {
                 );
             });
         });
+
+        // These check the layout the Server's `render_fragment_content`
+        // (`processing.rs`) and the `cc-*` styles in
+        // [CodeChatEditor.css](css/CodeChatEditor.css) produce together, which
+        // no test of either alone can see: a fragment gathered into a list must
+        // reproduce the layout of the source it came from. The fragment
+        // gathered in `test.py` is the case that matters -- a doc block and the
+        // line of code below it are both indented four spaces there.
+        suite("Gathered fragment layout", function () {
+            // The gather list is drawn by CodeMirror as the doc block holding
+            // the gather element scrolls into view.
+            const gatherItems = async () => {
+                await waitFor(
+                    "gathered fragment",
+                    () =>
+                        document.querySelector(
+                            ".cc-gather-items .cc-fragment-code",
+                        ) !== null,
+                );
+                return document.querySelector(".cc-gather-items")!;
+            };
+
+            // The vertical position of each line number in the rendered code
+            // block, which says whether its lines are stacked as they are in
+            // the source or run together onto one line. Search from the copy of
+            // the gather list under test rather than from the document:
+            // focusing a doc block promotes it to a TinyMCE instance which
+            // holds its own copy of the list, and a search spanning both would
+            // report the two copies' positions interleaved.
+            const lineNumberTops = (gatherItems: ParentNode) =>
+                Array.from(
+                    gatherItems.querySelectorAll(
+                        ".cc-fragment-code .cc-line-number",
+                    ),
+                ).map((lineNumber) => lineNumber.getBoundingClientRect().top);
+
+            test("aligns doc block indents with code", async function (this: Mocha.Context) {
+                this.timeout(MOCHA_TEST_TIMEOUT_MS);
+
+                const items = await gatherItems();
+                const indent = items.querySelector(".cc-fragment-indent")!;
+                const code = items.querySelector(".cc-fragment-code")!;
+
+                // An indent aligns with the code below it only if the two are
+                // measured in the same character width.
+                const indentStyle = getComputedStyle(indent);
+                const codeStyle = getComputedStyle(code);
+                assert.equal(indentStyle.fontFamily, codeStyle.fontFamily);
+                assert.equal(indentStyle.fontSize, codeStyle.fontSize);
+
+                // The doc block and the code are each preceded by their line
+                // numbers in `test.py`.
+                const docLineNumber = indent.querySelector(".cc-line-number")!;
+                assert.equal(docLineNumber.textContent, "7");
+                const codeLineNumber = code.querySelector(".cc-line-number")!;
+                assert.equal(codeLineNumber.textContent, "9");
+
+                // The two gutters must be the same width, since each holds the
+                // column its side's content begins in.
+                assert.closeTo(
+                    docLineNumber.getBoundingClientRect().width,
+                    codeLineNumber.getBoundingClientRect().width,
+                    1,
+                );
+
+                // The doc block's contents begin where its indent ends...
+                const docStart = items
+                    .querySelector(".cc-fragment-doc-contents")!
+                    .getBoundingClientRect().left;
+                // ...and the code on the next line must begin in that same
+                // column: each line number fills a gutter of the same width, and
+                // the four spaces which follow the code's match the four the doc
+                // block is indented by.
+                const codeText = Array.from(code.childNodes).find(
+                    (node) => node.nodeType === Node.TEXT_NODE,
+                ) as Text;
+                assert.equal(codeText.data.slice(0, 4), "    ");
+                const codeIndent = document.createRange();
+                codeIndent.setStart(codeText, 0);
+                codeIndent.setEnd(codeText, 4);
+                assert.closeTo(
+                    codeIndent.getBoundingClientRect().right,
+                    docStart,
+                    1,
+                );
+            });
+
+            // The source `test.py` gathers a doc block with the code block
+            // directly beneath it, so the rendering must place them the same
+            // way: the paragraph the doc block becomes carries a top and bottom
+            // margin which would otherwise open a gap the source doesn't have.
+            // The `remove-space` rules in
+            // [CodeChatEditor.css](css/CodeChatEditor.css) trim it.
+            test("puts a doc block directly against the code below it", async function (this: Mocha.Context) {
+                this.timeout(MOCHA_TEST_TIMEOUT_MS);
+
+                const items = await gatherItems();
+                const docContents = items.querySelector(
+                    ".cc-fragment-doc-contents",
+                )!;
+                const paragraph = docContents.firstElementChild!;
+                assert.equal(paragraph.tagName, "P");
+
+                // The doc block is exactly as tall as its text...
+                const paragraphBox = paragraph.getBoundingClientRect();
+                const docContentsBox = docContents.getBoundingClientRect();
+                assert.closeTo(paragraphBox.top, docContentsBox.top, 1);
+                assert.closeTo(paragraphBox.bottom, docContentsBox.bottom, 1);
+
+                // ...and the code block begins where the doc block ends.
+                const docBox = items
+                    .querySelector(".cc-fragment-doc")!
+                    .getBoundingClientRect();
+                const codeBox = items
+                    .querySelector(".cc-fragment-code")!
+                    .getBoundingClientRect();
+                assert.closeTo(docBox.bottom, codeBox.top, 1);
+            });
+
+            test("puts each line of a code block on its own line", async function (this: Mocha.Context) {
+                this.timeout(MOCHA_TEST_TIMEOUT_MS);
+
+                const items = await gatherItems();
+                // The newlines separating a code block's lines are part of the
+                // code; losing them runs the whole block onto one line.
+                assert.include(
+                    items.querySelector(".cc-fragment-code")!.textContent!,
+                    "\n",
+                );
+                const asRendered = lineNumberTops(items);
+                assert.lengthOf(asRendered, 2);
+                assert.isAbove(asRendered[1], asRendered[0]);
+
+                // Focusing a doc block promotes it to a TinyMCE instance, which
+                // reparses the block's HTML. TinyMCE collapses the whitespace
+                // in every element it doesn't consider whitespace-sensitive,
+                // which is why a rendered fragment's code and indents are
+                // `<pre>`s; see `render_fragment_content` in
+                // [processing.rs](../../server/src/processing.rs).
+                (
+                    items.closest(".CodeChat-doc-contents") as HTMLDivElement
+                ).focus();
+                await waitFor(
+                    "the doc block to become editable",
+                    () =>
+                        document.querySelector(
+                            "#TinyMCE-inst .cc-gather-items .cc-fragment-code",
+                        ) !== null,
+                );
+                const editedItems = document.querySelector(
+                    "#TinyMCE-inst .cc-gather-items",
+                )!;
+                const afterEditing = lineNumberTops(editedItems);
+                assert.lengthOf(afterEditing, 2);
+                assert.isAbove(afterEditing[1], afterEditing[0]);
+            });
+        });
     });
 
     // Avoid an infinite loop of tests calling this again.

@@ -67,6 +67,7 @@ Implementation
       * [show\_toast.mts](client/src/show_toast.mts)
     * [global.d.ts](client/src/global.d.ts)
   * Styles
+    * [CodeChatEditorBase.css](client/src/css/CodeChatEditorBase.css)
     * [CodeChatEditor.css](client/src/css/CodeChatEditor.css)
     * [CodeChatEditorProject.css](client/src/css/CodeChatEditorProject.css)
     * Themes

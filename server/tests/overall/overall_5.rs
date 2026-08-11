@@ -39,11 +39,13 @@ use thirtyfour::{
 
 // ### Local
 use crate::common::{
-    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_line, end_of_line,
-    get_version, perform_loadfile, select_codechat_iframe,
+    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_line,
+    click_element_top_left, end_of_line, get_version, optional_message, perform_loadfile,
+    select_codechat_iframe,
 };
 use crate::make_test;
 use code_chat_editor::{
+    lexer::supported_languages::MARKDOWN_MODE,
     processing::{
         CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
     },
@@ -465,6 +467,139 @@ async fn test_cursor_home_from_code_after_doc_block_core(
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    //client_id += MESSAGE_ID_INCREMENT;
+
+    assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
+make_test!(
+    test_named_anchor_round_trip,
+    test_named_anchor_round_trip_core
+);
+
+// Regression test: an empty named anchor (`<a id="notes"></a>`, the pattern the
+// manual uses to give a section a stable link target) must survive an edit
+// unchanged. TinyMCE's anchor plugin marks every such anchor
+// `contenteditable="false"` when it parses a document, and removes that mark
+// only in its serializer -- which the Client bypasses by saving in TinyMCE's raw
+// format. Without the Server dropping the attribute during dehydration (see
+// `remove_tinymce_data` in [processing.rs](../../src/processing.rs)), editing
+// the document writes it into the source file.
+async fn test_named_anchor_round_trip_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.md")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let version = 0.0;
+    let orig_text = "<a id=\"notes\"></a>Notes\n-----------------------\n".to_string();
+    perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.md",
+        Some((orig_text, version)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // The premise of this test: TinyMCE marks the anchor non-editable in the
+    // rendered document. If a TinyMCE upgrade drops that behavior, this
+    // assertion fails first, and the Server-side workaround it forces can be
+    // revisited.
+    let body_css = "#CodeChat-body .CodeChat-doc-contents";
+    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
+    let rendered = body_content.inner_html().await.unwrap();
+    assert!(
+        rendered.contains("contenteditable"),
+        "Expected TinyMCE to mark the named anchor non-editable: {rendered}"
+    );
+
+    // Click into the heading, then type a character there. The Client converts
+    // the edited HTML back to source and sends it to the IDE as an `Update`;
+    // since the heading's text changed, the diff it carries spans the line the
+    // anchor is on.
+    click_element_top_left(&driver, &body_content)
+        .await
+        .unwrap();
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: None,
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Refind the editable contents, since the click switched them to a TinyMCE
+    // editor.
+    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
+    body_content.send_keys("z").await.unwrap();
+
+    // A cursor-only update may precede the text update; accept it, then inspect
+    // the text update.
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(1)),
+            scroll_position: None,
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
+    let client_version = get_version(&msg);
+    // The click places the caret at the start of the heading, so the typed
+    // character precedes the anchor. It lengthens the heading, so the underline
+    // beneath it grows by one character as well. Critically, the anchor itself
+    // is unchanged: it carries no `contenteditable` attribute, even though the
+    // HTML the Client sent (see the `mce-item-anchor` class in this test's log)
+    // does.
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: None,
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: MARKDOWN_MODE.to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(48),
+                            insert: "z<a id=\"notes\"></a>Notes\n------------------------\n"
+                                .to_string(),
+                        }],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
+                }),
             })
         }
     );
