@@ -60,7 +60,8 @@ comprehensibility of the code. Guidelines:
   of the file, include a single level-1 heading, providing the title of the
   file. For source files, include the file name at the beginning of the title,
   in a monospaced font. Following the title, include additional heading levels
-  to provide a natural outline of your code.
+  to provide a natural outline of the code.
+
 * Comments in the code should only supply what self-documenting code cannot:
   1. Document a connection which cannot easily be determined by inspection --
      for example, explaining the relationship between a web client HTTP request
@@ -82,7 +83,7 @@ comprehensibility of the code. Guidelines:
   ```
 
 * Place documentation before the corresponding code. Precede function parameters
-  with descriptive comment. For example:
+  with descriptive comments. For example:
 
   ```C++
   // This class blinks an LED based on the number of pushbutton presses recorded.
