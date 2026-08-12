@@ -36,7 +36,7 @@ use tokio::time::sleep;
 
 // ### Local
 use crate::common::{
-    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_line,
+    CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages, beginning_of_line,
     click_element_top_left, end_of_line, optional_message, perform_loadfile,
     select_codechat_iframe,
 };
@@ -149,8 +149,7 @@ async fn test_xss_core(
     //
     // The doc block should render the image with its `onerror` attribute
     // stripped, leaving a harmless `<img>`.
-    let body_css = "#CodeChat-body .CodeChat-doc-contents";
-    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
+    let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
     let rendered = body_content.inner_html().await.unwrap();
     assert!(
         !rendered.contains("onerror"),
@@ -187,7 +186,7 @@ async fn test_xss_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Refind the editable contents and type a character to trigger an update.
-    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
+    let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
     body_content.send_keys("z").await.unwrap();
 
     // A cursor-only update may precede the text update; accept it, then inspect

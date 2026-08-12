@@ -38,8 +38,9 @@ use thirtyfour::{
 
 // ### Local
 use crate::common::{
-    CodeChatEditorServerLog, ExpectedMessages, TIMEOUT, assert_no_more_messages, beginning_of_line,
-    get_version, goto_line, optional_message, perform_loadfile, select_codechat_iframe,
+    CodeChatEditorServerLog, DOC_BLOCK_CSS, ExpectedMessages, TIMEOUT, assert_no_more_messages,
+    beginning_of_line, get_version, goto_line, optional_message, perform_loadfile,
+    select_codechat_iframe,
 };
 use crate::make_test;
 use code_chat_editor::{
@@ -396,8 +397,7 @@ async fn test_server_core(
     .await;
 
     // Check the content.
-    let body_css = "#CodeChat-body .CodeChat-doc-contents";
-    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
+    let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
     assert_eq!(
         body_content.inner_html().await.unwrap(),
         "<p>A <strong>markdown</strong> file.</p>"

@@ -31,7 +31,7 @@ use std::{
 
 // ### Third-party
 use indoc::{formatdoc, indoc};
-use markup5ever_rcdom::Node;
+use markup5ever_rcdom::{Node, NodeData};
 use predicates::prelude::predicate::str;
 use pretty_assertions::assert_eq;
 use regex::Regex;
@@ -1307,6 +1307,360 @@ fn test_doc_block_html_to_markdown_1() {
                 "
             )
         )]
+    );
+}
+
+// Empty block round trips
+// -----------------------
+//
+// Companion to `test_nested_list_creation` in
+// [overall_5.rs](../../tests/overall/overall_5.rs), which drives one of these
+// cases through the Client with a WebDriver. The test here exercises just the
+// two translations involved, without the browser: the HTML TinyMCE builds for a
+// newly-created, still-empty block, converted to Markdown, then that Markdown
+// converted back to HTML the way the Server's re-translation does.
+//
+// TinyMCE marks an otherwise-empty block by placing a `<br
+// data-mce-bogus="1">` inside it, since a block with no content at all can't
+// hold the caret. Markdown has no such placeholder, so each empty block must be
+// expressible in Markdown some other way -- or the block the user just created
+// vanishes on the round trip, before they can type anything into it. The blocks
+// whose Markdown syntax can't stand alone when empty are rewritten during
+// dehydration, replacing the `<br>` with a non-breaking space -- inside a
+// paragraph, for the blocks which can't hold that character directly; see
+// `empty_block_needs_placeholder` and
+// `empty_block_needs_placeholder_paragraph` in
+// [processing.rs](../processing.rs). The cases below cover the blocks a user can
+// empty out in the editor, both those which need that rewrite and those which
+// survive without it.
+//
+// This test deliberately doesn't pin down the exact Markdown produced, since
+// more than one encoding of an empty block is reasonable. It checks only that
+// the round trip preserves the document's structure and its text.
+
+// One empty-block case.
+struct EmptyBlockCase {
+    // The editing action which produces `html`, used in failure messages.
+    name: &'static str,
+    // The HTML TinyMCE builds for that action. The `data-mce-bogus="1"`
+    // attribute TinyMCE puts on the placeholder `<br>` is omitted, since the
+    // dehydration performed by `doc_block_html_to_markdown` removes it before
+    // the conversion sees it; a plain `<br>` is therefore equivalent here.
+    html: &'static str,
+}
+
+const EMPTY_BLOCK_CASES: &[EmptyBlockCase] = &[
+    // ### Empty list items
+    //
+    // `End`, `Enter`, `Tab` at the end of a list item: the case
+    // `test_nested_list_creation` drives through the browser. Without the
+    // dehydration rewrite these lose the nested list, since -- per the
+    // [CommonMark spec](https://spec.commonmark.org/0.31.2/#list-items) -- a
+    // list may interrupt a paragraph only if its first item is non-empty. The
+    // marker emitted for an empty item directly after paragraph text is
+    // therefore read as a lazy continuation of that paragraph: the word wrap
+    // pass, which re-parses the `*   Item one\n    *` produced by
+    // HTML-to-Markdown conversion, writes `* Item one *` to the file.
+    EmptyBlockCase {
+        name: "empty item nested under an item's text",
+        html: "<ul><li>Item one<ul><li><br></li></ul></li><li>Item two</li></ul>",
+    },
+    EmptyBlockCase {
+        name: "empty item nested under an ordered item's text",
+        html: "<ol><li>Item one<ol><li><br></li></ol></li></ol>",
+    },
+    EmptyBlockCase {
+        name: "empty item nested two levels deep",
+        html: "<ul><li>Item one<ul><li>Item 1a<ul><li><br></li></ul></li></ul></li></ul>",
+    },
+    // Only the nested list's *first* item must be non-empty for it to interrupt
+    // the text above it, so an empty item with a non-empty sibling depends on
+    // which of the two comes first.
+    EmptyBlockCase {
+        name: "empty first item of a nested list",
+        html: "<ul><li>Item one<ul><li><br></li><li>Item 1b</li></ul></li></ul>",
+    },
+    EmptyBlockCase {
+        name: "empty last item of a nested list",
+        html: "<ul><li>Item one<ul><li>Item 1a</li><li><br></li></ul></li></ul>",
+    },
+    // The placeholder satisfies only half of the CommonMark rule above: the
+    // list's first item must be non-empty, *and* an ordered list must be
+    // numbered from 1. A list numbered from anything else is read as a lazy
+    // continuation of the text above it no matter what its items contain, so
+    // this case needs the other half of the fix -- the blank line
+    // `separate_ordered_lists_from_preceding_text` in
+    // [processing.rs](../processing.rs) inserts, which stops the list from
+    // interrupting a paragraph at all. Reachable by emptying the only item of a
+    // nested list which the file numbers from 3.
+    EmptyBlockCase {
+        name: "empty item nested under an item's text, in a list numbered from 3",
+        html: "<ul><li>Item one<ol start=\"3\"><li><br></li></ol></li></ul>",
+    },
+    // The same rule with nothing empty in the document: the numbering alone
+    // costs the list its ability to interrupt a paragraph, so this case depends
+    // on that blank line and on nothing else in this test.
+    EmptyBlockCase {
+        name: "non-empty list numbered from 3 nested under an item's text",
+        html: "<ul><li>Item one<ol start=\"3\"><li>Item three</li></ol></li></ul>",
+    },
+    // No paragraph text precedes the nested list here, so the CommonMark rule
+    // above doesn't apply even without the rewrite: the nested marker lands on
+    // a line of its own (`*\n  *`), where it starts a list instead of
+    // continuing a paragraph.
+    EmptyBlockCase {
+        name: "empty item nested under an empty item",
+        html: "<ul><li><ul><li><br></li></ul></li></ul>",
+    },
+    // `End`, `Enter` at the end of a list item, without the `Tab`: a sibling
+    // item rather than a nested one. The list is already open, so its marker
+    // isn't interrupting a paragraph.
+    EmptyBlockCase {
+        name: "empty item at the end of a list",
+        html: "<ul><li>Item one</li><li><br></li></ul>",
+    },
+    EmptyBlockCase {
+        name: "empty item between two items",
+        html: "<ul><li>Item one</li><li><br></li><li>Item two</li></ul>",
+    },
+    EmptyBlockCase {
+        name: "empty item at the start of a list",
+        html: "<ul><li><br></li><li>Item one</li></ul>",
+    },
+    EmptyBlockCase {
+        name: "empty item at the end of an ordered list",
+        html: "<ol><li>Item one</li><li><br></li></ol>",
+    },
+    EmptyBlockCase {
+        name: "empty task list item",
+        html: "<ul><li><input disabled type=\"checkbox\">Task</li>\
+               <li><input disabled type=\"checkbox\"><br></li></ul>",
+    },
+    // A second paragraph inside a list item makes the list loose, so the empty
+    // block here is a `<p>` -- the paragraph case below -- but inside a
+    // container.
+    EmptyBlockCase {
+        name: "empty paragraph appended to a list item",
+        html: "<ul><li><p>Item one</p><p><br></p></li></ul>",
+    },
+    // ### Empty headings
+    //
+    // Levels 1 and 2 are written as setext headings, whose `=` or `-` underline
+    // needs text above it. Without the rewrite these vanish outright rather
+    // than becoming stray text: HTML-to-Markdown conversion emits nothing at
+    // all for a heading whose only content is the placeholder `<br>`.
+    EmptyBlockCase {
+        name: "empty heading",
+        html: "<h1><br></h1>",
+    },
+    EmptyBlockCase {
+        name: "empty heading after a paragraph",
+        html: "<p>Text</p><h2><br></h2>",
+    },
+    // An empty setext heading followed by text puts its underline between the
+    // placeholder and that text, where a `-` underline could just as well be
+    // read as a bullet marker or a thematic break.
+    EmptyBlockCase {
+        name: "empty heading before a paragraph",
+        html: "<h1><br></h1><p>Text</p>",
+    },
+    EmptyBlockCase {
+        name: "empty level 2 heading before a paragraph",
+        html: "<h2><br></h2><p>Text</p>",
+    },
+    // Levels 3 and up are written as ATX headings instead, whose `#` prefix
+    // marks an empty heading's place; they pass with or without the rewrite,
+    // which lists them anyway. This case is here to keep that true: it fails if
+    // a future encoding of an empty heading works for setext headings but not
+    // for ATX ones.
+    EmptyBlockCase {
+        name: "empty headings at levels 3 through 6",
+        html: "<h3><br></h3><h4><br></h4><h5><br></h5><h6><br></h6>",
+    },
+    // ### Empty blocks carrying attributes
+    //
+    // The rewrite applies only to a block with no attributes. These cases pin
+    // down what saves the blocks it therefore skips: with an attribute to
+    // preserve, the converter emits the block as raw HTML -- placeholder `<br>`
+    // and all -- instead of Markdown, and raw HTML survives the round trip
+    // unchanged.
+    EmptyBlockCase {
+        name: "empty centered paragraph",
+        html: "<p style=\"text-align: center;\"><br></p>",
+    },
+    EmptyBlockCase {
+        name: "empty heading with a named anchor's id",
+        html: "<h2 id=\"notes\"><br></h2>",
+    },
+    // ### Empty block quotes
+    //
+    // TinyMCE wraps block quote contents in a paragraph, so these reach
+    // dehydration as a `<p><br></p>`, which the rewrite handles.
+    EmptyBlockCase {
+        name: "empty block quote",
+        html: "<blockquote><p><br></p></blockquote>",
+    },
+    // A block quote with no paragraph inside doesn't come from the editor; it
+    // comes from a file whose Markdown contains a block quote with no content (a
+    // lone `>`). The rewrite supplies the paragraph TinyMCE would have, since a
+    // placeholder alone can't save this shape: the `>` is emitted once per line
+    // of the block quote's content, and a placeholder-only block quote has no
+    // content lines.
+    EmptyBlockCase {
+        name: "empty block quote with no paragraph inside",
+        html: "<blockquote><br></blockquote>",
+    },
+    // Unlike a list, a block quote may interrupt a paragraph even when empty.
+    EmptyBlockCase {
+        name: "empty block quote after a paragraph",
+        html: "<p>Text</p><blockquote><p><br></p></blockquote>",
+    },
+    EmptyBlockCase {
+        name: "empty paragraph appended to a block quote",
+        html: "<blockquote><p>Quote</p><p><br></p></blockquote>",
+    },
+    // ### Empty table cells
+    //
+    // A GFM table cell may be empty -- its row's pipes hold its place -- so
+    // these need no rewrite.
+    EmptyBlockCase {
+        name: "empty table body cell",
+        html: "<table><thead><tr><th>H1</th><th>H2</th></tr></thead>\
+               <tbody><tr><td>a</td><td><br></td></tr></tbody></table>",
+    },
+    EmptyBlockCase {
+        name: "empty table header cell",
+        html: "<table><thead><tr><th>H1</th><th><br></th></tr></thead>\
+               <tbody><tr><td>a</td><td>b</td></tr></tbody></table>",
+    },
+    EmptyBlockCase {
+        name: "empty table row",
+        html: "<table><thead><tr><th>H1</th><th>H2</th></tr></thead>\
+               <tbody><tr><td>a</td><td>b</td></tr>\
+               <tr><td><br></td><td><br></td></tr></tbody></table>",
+    },
+    // A cell holding a paragraph can't be written as a GFM table at all, since
+    // a cell's content is a single line; the converter emits the whole table as
+    // raw HTML instead, which survives the round trip unchanged.
+    EmptyBlockCase {
+        name: "empty paragraph in a table cell",
+        html: "<table><thead><tr><th>H1</th></tr></thead>\
+               <tbody><tr><td><p><br></p></td></tr></tbody></table>",
+    },
+    // ### Empty paragraphs
+    //
+    // The original case the rewrite was written for: a paragraph containing
+    // only a `<br>` produces a blank line, which no longer separates anything.
+    EmptyBlockCase {
+        name: "empty paragraph at the end of a document",
+        html: "<p>Text</p><p><br></p>",
+    },
+    EmptyBlockCase {
+        name: "empty paragraph between two paragraphs",
+        html: "<p>One</p><p><br></p><p>Two</p>",
+    },
+    // `Enter` pressed twice. Each placeholder needs a blank line on both sides
+    // to stay a paragraph of its own, so consecutive empty paragraphs cost more
+    // separators than a single one does.
+    EmptyBlockCase {
+        name: "two consecutive empty paragraphs",
+        html: "<p>One</p><p><br></p><p><br></p><p>Two</p>",
+    },
+];
+
+// Run one case through the round trip a save performs -- HTML to Markdown, then
+// (as the Server's re-translation does) that Markdown back to HTML -- and report
+// what the round trip changed, if anything.
+fn check_empty_block_round_trip(case: &EmptyBlockCase) -> Option<String> {
+    let code_doc_block_vec =
+        doc_block_html_to_markdown(vec![build_doc_block("", "", case.html)], None).unwrap();
+    let CodeDocBlock::DocBlock(doc_block) = &code_doc_block_vec[0] else {
+        panic!(
+            "Expected a doc block, but saw {:#?}.",
+            code_doc_block_vec[0]
+        );
+    };
+    let markdown = &doc_block.contents;
+    let html = markdown_to_html(markdown);
+    // Print both stages before reporting, so that a run shows the whole round
+    // trip for every case, not just the ones which failed.
+    println!(
+        "--- {}\nHTML in:\n{}\nMarkdown:\n{markdown}\nHTML out:\n{html}",
+        case.name, case.html
+    );
+
+    // Compare against the dehydrated input, since dehydration is part of the
+    // conversion under test: its `<p><br></p>` rewrite must count as preserving
+    // the paragraph, not as changing it.
+    let before = structure_and_text(&dehydrate_html(case.html).unwrap());
+    let after = structure_and_text(&html_to_dom(&html, None).unwrap());
+    if before == after {
+        return None;
+    }
+    Some(format!(
+        "The round trip changed the document's structure or text.\n\
+         Before:   {}\nAfter:    {}\nHTML in:  {}\nMarkdown: {markdown:?}\nHTML out: {html}",
+        before.join(" "),
+        after.join(" "),
+        case.html
+    ))
+}
+
+// A description of the document rooted at `node` which the round trip must
+// preserve: the name and nesting depth of each element, and each run of text, in
+// document order.
+//
+// Two things are deliberately left out. Whitespace, so that differences in word
+// wrapping and indentation -- and the non-breaking space an empty block may be
+// encoded as -- don't count as changes; whitespace runs within a text node are
+// collapsed rather than removed, so that two words merging into one still does.
+// And `<br>` elements, since an empty block is legitimately encoded some other
+// way, as the dehydration rewrite does by replacing the `<br>` with that
+// non-breaking space.
+fn structure_and_text(node: &Rc<Node>) -> Vec<String> {
+    fn walk(node: &Rc<Node>, depth: usize, description: &mut Vec<String>) {
+        match &node.data {
+            NodeData::Element { name, .. } => {
+                if &*name.local != "br" {
+                    description.push(format!("{depth}:<{}>", name.local));
+                }
+            }
+            NodeData::Text { contents } => {
+                let text = contents.borrow();
+                let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                if !collapsed.is_empty() {
+                    description.push(format!("{depth}:{collapsed:?}"));
+                }
+            }
+            _ => {}
+        }
+        for child in node.children.borrow().iter() {
+            walk(child, depth + 1, description);
+        }
+    }
+
+    let mut description = Vec::new();
+    walk(node, 0, &mut description);
+    description
+}
+
+// Check that every empty block a user can create in the editor survives the
+// round trip, reporting all failures rather than stopping at the first, so that
+// the effect of a change on every case is visible in a single run.
+#[test]
+fn test_empty_block_round_trip() {
+    let problems: Vec<_> = EMPTY_BLOCK_CASES
+        .iter()
+        .filter_map(|case| {
+            check_empty_block_round_trip(case).map(|problem| format!("{}: {problem}", case.name))
+        })
+        .collect();
+    assert!(
+        problems.is_empty(),
+        "{} of {} empty-block cases failed:\n\n{}",
+        problems.len(),
+        EMPTY_BLOCK_CASES.len(),
+        problems.join("\n\n")
     );
 }
 

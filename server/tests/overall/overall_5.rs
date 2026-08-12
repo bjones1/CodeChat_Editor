@@ -26,7 +26,7 @@
 // -------
 //
 // ### Standard library
-use std::{fmt::Write, path::PathBuf};
+use std::{fmt::Write, path::PathBuf, time::Duration};
 
 // ### Third-party
 use dunce::canonicalize;
@@ -39,7 +39,7 @@ use thirtyfour::{
 
 // ### Local
 use crate::common::{
-    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_line,
+    CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages, beginning_of_line,
     click_element_top_left, end_of_line, get_version, optional_message, perform_loadfile,
     select_codechat_iframe,
 };
@@ -478,6 +478,215 @@ async fn test_cursor_home_from_code_after_doc_block_core(
     Ok(())
 }
 
+// Regression test: a nested list created inside an existing list must survive
+// the autosave which immediately follows.
+//
+// Pressing `Enter` then `Tab` at the end of a list item is the standard way to
+// begin a sub-list; TinyMCE responds by nesting a new, still-empty list item
+// inside the current one (`<li>Item one<ul><li><br></li></ul></li>`). The
+// autosave that follows sends that HTML to the Server, which translates it to
+// Markdown, then re-translates the result back to the Client. Before the empty
+// blocks `empty_block_needs_placeholder` lists (see
+// [processing.rs](../../src/processing.rs)) were given a placeholder, the empty
+// nested item survived neither leg: the Markdown became `* Item one *`, so the
+// re-translation replaced the nested list with a stray `*` appended to the
+// parent item's text -- wiping out the sub-list the user just created, before
+// they could type anything into it.
+//
+// This test drives that sequence and checks the document the user is left with;
+// it deliberately doesn't pin down the exact Markdown produced, since more than
+// one encoding of an empty nested item is reasonable.
+//
+// The other empty blocks TinyMCE can create -- empty items elsewhere in a list,
+// empty block quotes, table cells, headings, and paragraphs -- are covered
+// without a browser by `test_empty_block_round_trip` in
+// [processing/tests.rs](../../src/processing/tests.rs).
+make_test!(test_nested_list_creation, test_nested_list_creation_core);
+
+async fn test_nested_list_creation_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.md")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let version = 0.0;
+    let orig_text = "*   Item one\n*   Item two\n".to_string();
+    let server_id = perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.md",
+        Some((orig_text, version)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // Click into the list, which places the caret at the start of the first
+    // item and switches the doc block to a TinyMCE editor.
+    let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
+    click_element_top_left(&driver, &body_content)
+        .await
+        .unwrap();
+    let client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: None,
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    // The remaining messages are acknowledged by ID in the drain loop below,
+    // rather than by tracking the expected ID here.
+    //client_id += MESSAGE_ID_INCREMENT;
+
+    // Refind the editable contents, since the click switched them to a TinyMCE
+    // editor, then create a sub-list under the first item: `End` to reach the
+    // end of "Item one", `Enter` for a new item, `Tab` to indent it. Send them
+    // as one `send_keys` call, so this produces a single autosave rather than
+    // one per key.
+    let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
+    body_content
+        .send_keys(Key::End + Key::Enter + Key::Tab)
+        .await
+        .unwrap();
+
+    // The premise of this test: TinyMCE nests a new list inside the first item.
+    // This runs before the autosave round trip completes, so it sees the
+    // document as TinyMCE built it. If a TinyMCE upgrade changes how `Tab`
+    // indents a list item, this assertion fails first, distinguishing that from
+    // the round-trip bug the assertions below check for.
+    assert!(
+        has_nested_list(&driver).await,
+        "Expected `Enter` then `Tab` to nest a new list inside the first item: {}",
+        doc_block_html(&driver).await
+    );
+
+    // Acknowledge messages until the Client goes quiet. Both the number of
+    // messages and their order vary here (a cursor-only update can precede or
+    // follow the update carrying the edit, and the Server's re-translation adds
+    // an acknowledgement of its own), and this test's assertions are about the
+    // document that results, not about the message sequence -- so accept
+    // whatever arrives, keeping the last update which carried contents.
+    let mut last_contents_update: Option<EditorMessage> = None;
+    // Whether the Client acknowledged the Server's re-translation.
+    let mut re_translation_acknowledged = false;
+    let mut timeout = TIMEOUT;
+    while let Some(msg) = codechat_server.get_message_timeout(timeout).await {
+        match &msg.message {
+            EditorMessageContents::Update(update) => {
+                let has_contents = update.contents.is_some();
+                codechat_server.send_result(msg.id, None).await.unwrap();
+                if has_contents {
+                    last_contents_update = Some(msg);
+                }
+            }
+            // The Client's acknowledgement of the Server's re-translation,
+            // which carries the Server's ID rather than the Client's; it needs
+            // no reply. Any re-translation will do, so compare against the first
+            // ID the Server can use rather than requiring exactly one.
+            EditorMessageContents::Result(Ok(ResultOkTypes::Void)) => {
+                assert!(
+                    msg.id >= server_id,
+                    "Expected the acknowledgement of a re-translation from the Server."
+                );
+                re_translation_acknowledged = true;
+            }
+            other => panic!("Unexpected message: {other:#?}"),
+        }
+        // Only the first message is worth a full wait; after that, a gap this
+        // long means the round trip has settled.
+        timeout = QUIESCENT_TIMEOUT;
+    }
+
+    // Both legs of the round trip must have actually happened before the
+    // document is worth checking. Without these two assertions, a test in which
+    // the edit never reached the Server -- or the Server's re-translation never
+    // reached the Client -- would inspect the document TinyMCE built and pass no
+    // matter what the Server does with an empty nested item.
+    let last_update = last_contents_update.unwrap_or_else(|| {
+        panic!("The Client sent no update carrying contents, so the edit never reached the Server.")
+    });
+    assert!(
+        re_translation_acknowledged,
+        "The Client never acknowledged a re-translation from the Server, so the document below \
+         is the one TinyMCE built rather than the round trip's result.\nLast update carrying \
+         contents: {last_update:#?}"
+    );
+
+    // The sub-list must still be there after the round trip. Failing this is
+    // the bug: the Server's re-translation replaced it with a literal `*` in
+    // the first item's text.
+    assert!(
+        has_nested_list(&driver).await,
+        "The nested list was removed by the round trip through the Server.\n\
+         Document: {}\nLast update carrying contents: {last_update:#?}",
+        doc_block_html(&driver).await
+    );
+
+    // The Markdown sent to the IDE is what a save writes to the file: creating
+    // an empty nested item must not append a list marker to the item above it.
+    // (A fix which doesn't save the empty nested item at all is acceptable,
+    // hence checking only the Markdown that was actually sent. The document
+    // itself needs no equivalent check, since it's built from this Markdown.)
+    let EditorMessageContents::Update(update) = &last_update.message else {
+        unreachable!("Only an update is stored above.");
+    };
+    let source_text: String = match &update.contents.as_ref().unwrap().source {
+        CodeMirrorDiffable::Diff(diff) => diff.doc.iter().map(|d| d.insert.as_str()).collect(),
+        CodeMirrorDiffable::Plain(plain) => plain.doc.clone(),
+    };
+    assert!(
+        !source_text.contains("Item one *"),
+        "The Markdown sent to the IDE appends the nested item's list marker to the \
+         item above it: {source_text:?}"
+    );
+
+    Ok(())
+}
+
+// Support for `test_nested_list_creation`
+// ---------------------------------------
+//
+// A list nested inside the first item of the doc block's list.
+const NESTED_LIST_CSS: &str = "#CodeChat-body .CodeChat-doc-contents > ul > li > ul";
+
+// How long to wait for a further message once the Client has started
+// responding: long enough to cover the gap between the messages one edit
+// produces, short enough to keep the test quick once they stop.
+const QUIESCENT_TIMEOUT: Duration = Duration::from_secs(2);
+
+// Whether the document currently contains a nested list.
+async fn has_nested_list(driver: &WebDriver) -> bool {
+    !driver
+        .find_all(By::Css(NESTED_LIST_CSS))
+        .await
+        .unwrap()
+        .is_empty()
+}
+
+// The doc block's HTML, for use in assertion failure messages.
+async fn doc_block_html(driver: &WebDriver) -> String {
+    driver
+        .query(By::Css(DOC_BLOCK_CSS))
+        .first()
+        .await
+        .unwrap()
+        .inner_html()
+        .await
+        .unwrap()
+}
+
 make_test!(
     test_named_anchor_round_trip,
     test_named_anchor_round_trip_core
@@ -517,8 +726,7 @@ async fn test_named_anchor_round_trip_core(
     // rendered document. If a TinyMCE upgrade drops that behavior, this
     // assertion fails first, and the Server-side workaround it forces can be
     // revisited.
-    let body_css = "#CodeChat-body .CodeChat-doc-contents";
-    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
+    let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
     let rendered = body_content.inner_html().await.unwrap();
     assert!(
         rendered.contains("contenteditable"),
@@ -551,7 +759,7 @@ async fn test_named_anchor_round_trip_core(
 
     // Refind the editable contents, since the click switched them to a TinyMCE
     // editor.
-    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
+    let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
     body_content.send_keys("z").await.unwrap();
 
     // A cursor-only update may precede the text update; accept it, then inspect

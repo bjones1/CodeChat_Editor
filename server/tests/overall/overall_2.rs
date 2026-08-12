@@ -37,8 +37,8 @@ use thirtyfour::{
 
 // ### Local
 use crate::common::{
-    CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_document,
-    click_element_top_left, get_version, optional_message, perform_loadfile,
+    CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages,
+    beginning_of_document, click_element_top_left, get_version, optional_message, perform_loadfile,
     select_codechat_iframe,
 };
 use crate::make_test;
@@ -391,8 +391,7 @@ async fn test_6_core(
     select_codechat_iframe(&driver).await;
 
     // Check the content.
-    let body_css = "#CodeChat-body .CodeChat-doc-contents";
-    let body_content = driver.query(By::Css(body_css)).first().await.unwrap();
+    let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
     click_element_top_left(&driver, &body_content)
         .await
         .unwrap();

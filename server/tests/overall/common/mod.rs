@@ -244,6 +244,10 @@ impl ExpectedMessages {
 // and loadfile acknowledgements under matrix load.
 pub const TIMEOUT: Duration = Duration::from_secs(15);
 
+// The editable contents of a CodeChat Editor document -- a file translated
+// entirely to a single doc block, with no CodeMirror editor around it.
+pub const DOC_BLOCK_CSS: &str = "#CodeChat-body .CodeChat-doc-contents";
+
 // Browser-backed tests share a single WebDriver endpoint. Safari on macOS CI is
 // unreliable with overlapping sessions, so serialize the harness.
 pub(crate) static WEB_DRIVER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
