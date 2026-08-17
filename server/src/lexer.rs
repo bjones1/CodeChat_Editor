@@ -13,11 +13,11 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-mod pest_parser;
-/// `lexer.rs` -- Lex source code into code and doc blocks
-/// ======================================================
+//! `lexer.rs` -- Lex source code into code and doc blocks
+//! ======================================================
 // Submodule definitions
 // ---------------------
+mod pest_parser;
 pub mod supported_languages;
 
 // Imports
@@ -37,36 +37,35 @@ use regex::Regex;
 // ### Local
 use supported_languages::get_language_lexer_vec;
 
-/// Data structures
-/// ---------------
-///
-/// ### Language definition
-///
-/// These data structures define everything the lexer needs in order to analyze
-/// a programming language:
-///
-/// * It defines block and inline comment delimiters; these (when correctly
-///   formatted) become doc blocks.
-/// * It defines strings: what is the escape character? Are newlines allowed? If
-///   so, must newlines be escaped?
-/// * It defines heredocs in a flexible form (see `HeredocDelim` for more
-///   details).
-/// * It associates a CodeMirror mode and filename extensions with the lexer.
-///
-/// This lexer ignores line continuation characters; in C/C++/Python, it's a `\`
-/// character followed immediately by a newline
-/// ([C reference](https://www.open-std.org/jtc1/sc22/WG14/www/docs/n1256.pdf#page22),
-/// [Python reference](https://docs.python.org/3/reference/lexical_analysis.html#explicit-line-joining)).
-/// From a lexer perspective, supporting these adds little value:
-///
-/// 1. It would allow the lexer to recognize the following C/C++ snippet as a
-///    doc block: `// This is an odd\` `two-line inline comment.` However, this
-///    is such unusual syntax (most authors would instead use either a block
-///    comment or another inline comment) that recognizing it adds little value.
-/// 2. I'm unaware of any valid syntax in which ignoring a line continuation
-///    would cause the lexer to mis-recognize code as a comment. (Escaped
-///    newlines in strings, a separate case, are handled correctly).
-///
+// Data structures
+// ---------------
+//
+// ### Language definition
+//
+// These data structures define everything the lexer needs in order to analyze
+// a programming language:
+//
+// * It defines block and inline comment delimiters; these (when correctly
+//   formatted) become doc blocks.
+// * It defines strings: what is the escape character? Are newlines allowed? If
+//   so, must newlines be escaped?
+// * It defines heredocs in a flexible form (see `HeredocDelim` for more
+//   details).
+// * It associates a CodeMirror mode and filename extensions with the lexer.
+//
+// This lexer ignores line continuation characters; in C/C++/Python, it's a `\`
+// character followed immediately by a newline
+// ([C reference](https://www.open-std.org/jtc1/sc22/WG14/www/docs/n1256.pdf#page22),
+// [Python reference](https://docs.python.org/3/reference/lexical_analysis.html#explicit-line-joining)).
+// From a lexer perspective, supporting these adds little value:
+//
+// 1. It would allow the lexer to recognize the following C/C++ snippet as a
+//    doc block: `// This is an odd\` `two-line inline comment.` However, this
+//    is such unusual syntax (most authors would instead use either a block
+//    comment or another inline comment) that recognizing it adds little value.
+// 2. I'm unaware of any valid syntax in which ignoring a line continuation
+//    would cause the lexer to mis-recognize code as a comment. (Escaped
+//    newlines in strings, a separate case, are handled correctly).
 /// This struct defines the delimiters for a block comment.
 #[derive(Clone)]
 pub struct BlockCommentDelim {

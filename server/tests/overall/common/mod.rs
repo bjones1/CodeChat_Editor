@@ -13,27 +13,27 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `overall/common/mod.rs` - test the overall system
-/// ===============================================
-///
-/// These are functional tests of the overall system, performed by attaching a
-/// testing IDE to generate commands then observe results, along with a browser
-/// tester.
-///
-/// A second challenge revolves around the lack of an async `Drop` trait: the
-/// web driver server should be started before any test, left running during all
-/// tests, then terminated as the test program exits. The web driver must be
-/// initialized before a test then stopped at the end of that test. Both are
-/// ideal for this missing Drop trait. As a workaround:
-///
-/// * The web driver server relies on the C `atexit` call to stop the server.
-///   However, when tests fail, this doesn't get called, leaving the server
-///   running. This causes the server to fail to start on the next test run,
-///   since it's still running. Therefore, errors when starting the web driver
-///   server are ignored by design.
-/// * Tests are run in an async block, and any panics produced inside it are
-///   caught using `catch_unwind()`. The driver is shut down before returning an
-///   error due to the panic.
+//! `overall/common/mod.rs` - test the overall system
+//! ===============================================
+//!
+//! These are functional tests of the overall system, performed by attaching a
+//! testing IDE to generate commands then observe results, along with a browser
+//! tester.
+//!
+//! A second challenge revolves around the lack of an async `Drop` trait: the
+//! web driver server should be started before any test, left running during all
+//! tests, then terminated as the test program exits. The web driver must be
+//! initialized before a test then stopped at the end of that test. Both are
+//! ideal for this missing Drop trait. As a workaround:
+//!
+//! * The web driver server relies on the C `atexit` call to stop the server.
+//!   However, when tests fail, this doesn't get called, leaving the server
+//!   running. This causes the server to fail to start on the next test run,
+//!   since it's still running. Therefore, errors when starting the web driver
+//!   server are ignored by design.
+//! * Tests are run in an async block, and any panics produced inside it are
+//!   caught using `catch_unwind()`. The driver is shut down before returning an
+//!   error due to the panic.
 // Imports
 // -------
 //

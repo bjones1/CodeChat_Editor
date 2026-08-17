@@ -13,14 +13,14 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `overall_4.rs` - test the overall system
-/// ========================================
-///
-/// These are functional tests of the overall system, performed by attaching a
-/// testing IDE to generate commands then observe results, along with a browser
-/// tester. This file focuses on security: it verifies that malicious HTML
-/// supplied as a document's source is sanitized, so that embedded JavaScript
-/// never executes and is removed from the source code the Client produces.
+//! `overall_4.rs` - test the overall system
+//! ========================================
+//!
+//! These are functional tests of the overall system, performed by attaching a
+//! testing IDE to generate commands then observe results, along with a browser
+//! tester. This file focuses on security: it verifies that malicious HTML
+//! supplied as a document's source is sanitized, so that embedded JavaScript
+//! never executes and is removed from the source code the Client produces.
 // Imports
 // -------
 //

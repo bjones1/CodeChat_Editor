@@ -1,50 +1,49 @@
-/// Copyright (C) 2026 Bryan A. Jones.
-///
-/// This file is part of the CodeChat Editor. The CodeChat Editor is free
-/// software: you can redistribute it and/or modify it under the terms of the
-/// GNU General Public License as published by the Free Software Foundation,
-/// either version 3 of the License, or (at your option) any later version.
-///
-/// The CodeChat Editor is distributed in the hope that it will be useful, but
-/// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-/// or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-/// more details.
-///
-/// You should have received a copy of the GNU General Public License along with
-/// the CodeChat Editor. If not, see
-/// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-///
-/// `supported_languages.rs` - Provide lexer info for all supported languages
-/// =========================================================================
-///
-/// This file contains a data structure which describes all supported languages;
-/// the [lexer](../lexer.rs) uses this lex a given language.
-///
-/// Lexer implementation
-/// --------------------
-///
-/// Ordering matters: all these delimiters end up in a large regex separated by
-/// an or operator. The regex or operator matches from left to right. So, longer
-/// Python string delimiters must be specified first (leftmost): `"""` (a
-/// multi-line Python string) must come before `"`. The resulting regex will
-/// then have `"""|"`, which will first search for the multi-line triple quote,
-/// then if that's not found, the single quote. A regex of `"|"""` would never
-/// match the triple quote, since the single quote would match first.
-///
-/// Note that the lexers here should be complemented by the appropriate
-/// CodeMirror mode in
-/// [CodeMirror-integration.mts](../../../client/src/CodeMirror-integration.mts).
-///
-/// ### <a id="string_delimiter_doubling"></a>String delimiter doubling
-///
-/// Some languages allow inserting the string delimiter within a string by
-/// putting two back-to-back delimiters in the string. For example, SQL's string
-/// delimiter is a single quote. To insert a single quote in a string, double
-/// it: `'She''s here.'`, for example. From a lexer perspective, we don't need
-/// extra logic to handle this; instead, it's treated as two back-to-back
-/// strings. In this case, they would be `'She'` and `'s here.'`. While this
-/// doesn't parse the string correctly, it does correctly identify where
-/// comments can't be, which is all that the lexer needs to do.
+// Copyright (C) 2026 Bryan A. Jones.
+//
+// This file is part of the CodeChat Editor. The CodeChat Editor is free
+// software: you can redistribute it and/or modify it under the terms of the GNU
+// General Public License as published by the Free Software Foundation, either
+// version 3 of the License, or (at your option) any later version.
+//
+// The CodeChat Editor is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+// FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+// details.
+//
+// You should have received a copy of the GNU General Public License along with
+// the CodeChat Editor. If not, see
+// [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+//! `supported_languages.rs` - Provide lexer info for all supported languages
+//! =========================================================================
+//!
+//! This file contains a data structure which describes all supported languages;
+//! the [lexer](../lexer.rs) uses this lex a given language.
+//!
+//! Lexer implementation
+//! --------------------
+//!
+//! Ordering matters: all these delimiters end up in a large regex separated by
+//! an or operator. The regex or operator matches from left to right. So, longer
+//! Python string delimiters must be specified first (leftmost): `"""` (a
+//! multi-line Python string) must come before `"`. The resulting regex will
+//! then have `"""|"`, which will first search for the multi-line triple quote,
+//! then if that's not found, the single quote. A regex of `"|"""` would never
+//! match the triple quote, since the single quote would match first.
+//!
+//! Note that the lexers here should be complemented by the appropriate
+//! CodeMirror mode in
+//! [CodeMirror-integration.mts](../../../client/src/CodeMirror-integration.mts).
+//!
+//! ### <a id="string_delimiter_doubling"></a>String delimiter doubling
+//!
+//! Some languages allow inserting the string delimiter within a string by
+//! putting two back-to-back delimiters in the string. For example, SQL's string
+//! delimiter is a single quote. To insert a single quote in a string, double
+//! it: `'She''s here.'`, for example. From a lexer perspective, we don't need
+//! extra logic to handle this; instead, it's treated as two back-to-back
+//! strings. In this case, they would be `'She'` and `'s here.'`. While this
+//! doesn't parse the string correctly, it does correctly identify where
+//! comments can't be, which is all that the lexer needs to do.
 // Imports
 // -------
 //

@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `vscode.rs` -- Implement server-side functionality for the Visual Studio
-/// Code IDE
-/// ========================================================================
+//! `vscode.rs` -- Implement server-side functionality for the Visual Studio
+//! Code IDE
+//! ========================================================================
 // Modules
 // -------
 #[cfg(test)]

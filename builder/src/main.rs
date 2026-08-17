@@ -13,21 +13,21 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `main.rs` -- Entrypoint for the `CodeChat` Editor Builder
-/// =======================================================
-///
-/// This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
-/// of the release process. To update the `./release.yaml` file this tool
-/// creates:
-///
-/// 1. Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
-/// 2. Run `dist init` and accept the defaults, then run `dist generate`.
-/// 3. Review changes to `./release.yaml`, reapplying hand edits.
-/// 4. Revert the changes to `server/dist-workspace.toml`.
-/// 5. Test
-///
-/// Keep the `DIST_VERSION` consistent with the version of dist in
-/// `dist-workspace.toml` on release.
+//! `main.rs` -- Entrypoint for the `CodeChat` Editor Builder
+//! =======================================================
+//!
+//! This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
+//! of the release process. To update the `./release.yaml` file this tool
+//! creates:
+//!
+//! 1. Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
+//! 2. Run `dist init` and accept the defaults, then run `dist generate`.
+//! 3. Review changes to `./release.yaml`, reapplying hand edits.
+//! 4. Revert the changes to `server/dist-workspace.toml`.
+//! 5. Test
+//!
+//! Keep the `DIST_VERSION` consistent with the version of dist in
+//! `dist-workspace.toml` on release.
 // Imports
 // -------
 //

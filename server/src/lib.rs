@@ -24,11 +24,11 @@
         clippy::float_cmp
     )
 )]
-/// `lib.rs` -- Define library modules for the CodeChat Editor Server
-/// =================================================================
-///
-/// TODO: Add the ability to use
-/// [plugins](https://zicklag.github.io/rust-tutorials/rust-plugins.html).
+//! `lib.rs` -- Define library modules for the CodeChat Editor Server
+//! =================================================================
+//!
+//! TODO: Add the ability to use
+//! [plugins](https://zicklag.github.io/rust-tutorials/rust-plugins.html).
 pub mod capture;
 pub mod ide;
 pub mod lexer;

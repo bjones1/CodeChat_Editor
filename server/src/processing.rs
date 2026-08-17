@@ -13,9 +13,9 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `processing.rs` -- Transform source code to its web-editable equivalent and
-/// back
-/// ===========================================================================
+//! `processing.rs` -- Transform source code to its web-editable equivalent and
+//! back
+//! ===========================================================================
 // Modules
 // -------
 pub mod cache;
@@ -54,8 +54,7 @@ use dprint_plugin_markdown::{
     format_text,
 };
 use htmd::{
-    HtmlToMarkdown,
-    options::{LinkStyle, TranslationMode},
+    HtmlToMarkdown, options::{BrStyle, LinkStyle, TranslationMode},
 };
 use html5ever::{
     Attribute, LocalName, Namespace, ParseOpts, QualName, parse_document, serialize,
@@ -67,7 +66,7 @@ use imara_diff::{Algorithm, Diff, Hunk, InternedInput, TokenSource};
 use markup5ever_rcdom::{Node, NodeData, RcDom, SerializableHandle};
 use minify_html;
 use path_slash::PathBufExt as _;
-use phf::{phf_map, phf_set};
+use phf::phf_map;
 use pulldown_cmark::{Options, Parser, html};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -578,6 +577,7 @@ impl HtmlToMarkdownWrapped {
                 .options(htmd::options::Options {
                     link_style: LinkStyle::Inlined,
                     translation_mode: TranslationMode::Faithful,
+                    br_style: BrStyle::Raw,
                     ..Default::default()
                 })
                 .build(),
@@ -602,6 +602,7 @@ impl HtmlToMarkdownWrapped {
     /// at the root, not continue a previous incomplete section of the DOM.
     fn next(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
         let converted = self.html_to_markdown.tree_to_markdown(tree);
+        println!("htmd output: {converted:#?}");
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
                 // A return value of `None` means the text was unchanged or
@@ -2761,65 +2762,9 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
         // are removed before the `<p><br></p>` check below.
         if let Some(child) = child_to_walk {
             dehydrating_walk_node(&child);
-            // If this child is an empty block TinyMCE marked with a `<br>` --
-            // `<p><br></p>`, for example -- change the `<br>` to `&nbsp;`. The
-            // `<br>` alone is dropped by HTML-to-Markdown conversion, so
-            // replace it with a non-breaking space to preserve the empty block.
-            if is_empty_block_with_br(&child) {
-                let nbsp = Node::new(NodeData::Text {
-                    contents: RefCell::new("\u{a0}".into()),
-                });
-                nbsp.parent.set(Some(Rc::downgrade(&child)));
-                *child.children.borrow_mut() = vec![nbsp];
-            }
         }
         index += 1;
     }
-}
-
-/// Blocks whose Markdown representation can't hold a placeholder-only `<br>`.
-///
-/// TinyMCE marks a block the user emptied (or just created) with a `<br>`, since
-/// a block with no content at all can't hold the caret. HTML-to-Markdown
-/// conversion drops that `<br>`, leaving Markdown which no longer describes the
-/// block: a level 1 or 2 heading with no content produces no text at all, since
-/// it's written as a setext heading, whose `=` or `-` underline needs text above
-/// it; a list item with no content produces a marker which -- per the
-/// [CommonMark spec](https://spec.commonmark.org/0.31.2/#list-items) -- can't
-/// interrupt a paragraph, so a nested item created at the end of an item's text
-/// is re-parsed as a lazy continuation of that text. Both lose the block. The
-/// blocks listed here therefore need a placeholder character in the Markdown.
-///
-/// A block left out of this list must either mark its place in Markdown when
-/// empty -- a table row's pipes do, with nothing between them -- or always reach
-/// dehydration wrapped in a block which is on the list. A block quote is the
-/// second kind, and not the first: `<blockquote><br></blockquote>` converts to
-/// nothing at all, since the `>` is emitted once per line of the block quote's
-/// content and a placeholder-only block quote has no content lines. Empty block
-/// quotes survive only because TinyMCE wraps their contents in a paragraph,
-/// making them `<blockquote><p><br></p></blockquote>`, and the `<p>` is on the
-/// list.
-///
-/// Headings of level 3 and up are the first kind -- they're written as ATX
-/// headings, whose `#` prefix marks an empty heading's place -- so they don't
-/// need to be listed. They are anyway, so that every empty heading is encoded
-/// the same way regardless of level.
-static EMPTY_BLOCK_NEEDS_PLACEHOLDER: phf::Set<&'static str> = phf_set! {
-    "p", "li", "h1", "h2", "h3", "h4", "h5", "h6",
-};
-
-/// Returns true if `node` is a block from `EMPTY_BLOCK_NEEDS_PLACEHOLDER` with
-/// no attributes whose only child is a `<br>` element with no attributes --
-/// `<p><br></p>`, for example.
-fn is_empty_block_with_br(node: &Rc<Node>) -> bool {
-    get_node_tag_name(node).is_some_and(|name| EMPTY_BLOCK_NEEDS_PLACEHOLDER.contains(name))
-        && matches!(&node.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty())
-        // ...with exactly one child, a `<br>` element with no attributes.
-        && node.children.borrow().len() == 1
-        && node.children.borrow().first().is_some_and(|br| {
-            get_node_tag_name(br) == Some("br")
-                && matches!(&br.data, NodeData::Element { attrs, .. } if attrs.borrow().is_empty())
-        })
 }
 
 fn get_node_tag_name(node: &Rc<Node>) -> Option<&str> {

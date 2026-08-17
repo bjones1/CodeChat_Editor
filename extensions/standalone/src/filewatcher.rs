@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `filewatcher.rs` -- Implement the File Watcher "IDE"
-/// ====================================================
+//! `filewatcher.rs` -- Implement the File Watcher "IDE"
+//! ====================================================
 // Imports
 // -------
 //

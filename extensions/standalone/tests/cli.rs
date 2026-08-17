@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `cli.rs` - Test the CLI interface
-/// =================================
+//! `cli.rs` - Test the CLI interface
+//! =================================
 // Imports
 // -------
 //

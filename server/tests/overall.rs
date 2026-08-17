@@ -21,15 +21,15 @@
     clippy::cast_possible_truncation,
     clippy::float_cmp
 )]
-/// `overall.rs` - test the overall system
-/// =======================================
-///
-/// This file combines all the `overall_*` test modules into a single test
-/// executable, so that a single instance of the web driver server is shared by
-/// all of them. See `overall/common/mod.rs` for the shared test harness.
-///
-/// To run these tests, execute `cargo test --test overall
-/// <optional_test_name>` in the `server/` directory.
+//! `overall.rs` - test the overall system
+//! =======================================
+//!
+//! This file combines all the `overall_*` test modules into a single test
+//! executable, so that a single instance of the web driver server is shared by
+//! all of them. See `overall/common/mod.rs` for the shared test harness.
+//!
+//! To run these tests, execute `cargo test --test overall
+//! <optional_test_name>` in the `server/` directory.
 #[path = "overall/common/mod.rs"]
 mod common;
 #[path = "overall/overall_1.rs"]

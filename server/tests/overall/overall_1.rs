@@ -13,15 +13,15 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-/// `overall_1.rs` - test the overall system
-/// ========================================
-///
-/// These are functional tests of the overall system, performed by attaching a
-/// testing IDE to generate commands then observe results, along with a browser
-/// tester.
-///
-/// To run this test, execute `cargo test --test overall
-/// <optional_test_name>` in the `server/` directory.
+//! `overall_1.rs` - test the overall system
+//! ========================================
+//!
+//! These are functional tests of the overall system, performed by attaching a
+//! testing IDE to generate commands then observe results, along with a browser
+//! tester.
+//!
+//! To run this test, execute `cargo test --test overall
+//! <optional_test_name>` in the `server/` directory.
 // Imports
 // -------
 //
