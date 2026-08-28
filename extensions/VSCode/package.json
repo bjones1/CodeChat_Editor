@@ -41,7 +41,7 @@
         "type": "git",
         "url": "https://github.com/bjones1/CodeChat_Editor"
     },
-    "version": "0.2.1",
+    "version": "0.2.2",
     "activationEvents": [
         "onCommand:extension.codeChatEditorActivate",
         "onCommand:extension.codeChatEditorDeactivate",
@@ -118,26 +118,26 @@
         "@emnapi/core": "^1.11.3",
         "@emnapi/runtime": "^1.11.3",
         "@eslint/js": "^10.0.1",
-        "@napi-rs/cli": "^3.7.4",
+        "@napi-rs/cli": "^3.8.6",
         "@tybys/wasm-util": "^0.10.3",
         "@types/escape-html": "^1.0.4",
-        "@types/node": "^26.1.1",
+        "@types/node": "^26.4.0",
         "@types/vscode": "1.61.0",
-        "@typescript-eslint/eslint-plugin": "^8.65.0",
-        "@typescript-eslint/parser": "^8.65.0",
+        "@typescript-eslint/eslint-plugin": "^8.68.0",
+        "@typescript-eslint/parser": "^8.68.0",
         "@typescript/native": "npm:typescript@^7.0.2",
         "@vscode/vsce": "^3.9.2",
         "chalk": "^5.6.2",
-        "esbuild": "^0.28.1",
-        "eslint": "^10.8.0",
+        "esbuild": "^0.28.2",
+        "eslint": "^10.9.1",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-import": "^2.32.0",
         "eslint-plugin-node": "^11.1.0",
         "eslint-plugin-prettier": "^5.5.6",
-        "npm-run-all2": "^9.0.2",
+        "npm-run-all2": "^9.0.3",
         "prettier": "^3.9.6",
         "typescript": "npm:@typescript/typescript6@^6.0.2",
-        "typescript-eslint": "^8.65.0"
+        "typescript-eslint": "^8.68.0"
     },
     "optionalDependencies": {
         "bufferutil": "^4.1.0"

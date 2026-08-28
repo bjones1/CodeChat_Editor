@@ -22,6 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+* No changes yet.
+
+Version 0.2.2 -- 2026-Aug-28
+----------------------------
+
 * Fix capture token validation and event upload against HTTPS capture service
   endpoints by enabling platform certificate verification and proxy support in
   the Rust HTTP client.
