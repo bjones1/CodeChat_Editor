@@ -2310,6 +2310,19 @@ mod tests {
     }
 
     #[test]
+    fn minreq_https_feature_is_enabled() {
+        let err = minreq::get("https://127.0.0.1:1/")
+            .with_timeout(1)
+            .send()
+            .expect_err("local HTTPS request should fail before a response");
+
+        assert!(
+            !matches!(err, minreq::Error::HttpsFeatureNotEnabled),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn service_url_normalization_accepts_dev_base_and_routes() {
         assert_eq!(
             normalize_service_base_url(

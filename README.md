@@ -63,8 +63,10 @@ again. The capture service endpoint can be changed in the user-level
 for this token-bearing endpoint. Token-bearing requests require HTTPS except for
 localhost development endpoints.
 
-Developer builds must keep the Rust `minreq` dependency compiled with HTTPS
-support. Without that feature, token validation and event upload to the AWS
+Developer builds must keep the Rust `minreq` dependency compiled with
+`https-rustls-probe` and `proxy` support. Capture HTTPS requests validate with
+the host platform certificate store and honor standard proxy environment
+variables. Without HTTPS support, token validation and event upload to the AWS
 capture service report as unavailable even when the service itself is healthy.
 
 Structure

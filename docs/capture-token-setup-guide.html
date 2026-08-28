@@ -306,8 +306,8 @@
       </p>
       <ul>
         <li>Email address must end in <code>msstate.edu</code>.</li>
-        <li>Current class code is <code>ECE9990</code>. It is case-sensitive.</li>
-        <li>Current registration portal: <a href="http://3.146.138.182/capture-registration/" target="_blank" rel="noopener noreferrer">http://3.146.138.182/capture-registration/</a></li>
+        <li>The class code is supplied by your instructor or research team and is case-sensitive.</li>
+        <li>Use only the HTTPS registration portal link provided for your class or study.</li>
       </ul>
     </section>
 
@@ -316,15 +316,14 @@
         <div class="step-number">1</div>
         <h2>Request A Token</h2>
         <ol>
-          <li>Open the registration portal in a browser.</li>
+          <li>Open the HTTPS registration portal link provided by your instructor or research team in a browser.</li>
           <li>Enter your Mississippi State email address.</li>
-          <li>Enter the class code exactly as provided: <code>ECE9990</code>.</li>
+          <li>Enter the class code exactly as provided.</li>
           <li>Select <strong>Email Access Token</strong>.</li>
           <li>Check your email for the CodeChat Capture token message.</li>
         </ol>
         <p class="muted">
-          The token begins with <code>cccap_v1_</code>. Copy the whole token,
-          including that prefix.
+          Copy the entire token from the email exactly as shown.
         </p>
       </article>
 
@@ -377,10 +376,10 @@
     </section>
 
     <section class="panel">
-      <h2>What A Successful Setup Looks Like</h2>
+      <h2>Capture Status Reference</h2>
       <p>
-        When capture is ready, the CodeChat capture status bar item should show
-        one of the active states below. You can click the status bar item or run
+        The CodeChat capture status bar item shows the current capture state.
+        You can click the status bar item or run
         <strong>Manage CodeChat Editor Capture</strong> to see more detail.
       </p>
 
@@ -413,6 +412,21 @@
             <td>The local CodeChat server is starting or reconnecting.</td>
             <td>Wait a few seconds, then recheck the status.</td>
           </tr>
+          <tr>
+            <td><span class="badge warn">Capture: Waiting</span></td>
+            <td>CodeChat is checking capture readiness or waiting for a server response.</td>
+            <td>Wait a few seconds, then validate the token if this status does not clear.</td>
+          </tr>
+          <tr>
+            <td><span class="badge warn">Capture: Off</span></td>
+            <td>Capture recording is off for the current VS Code session.</td>
+            <td>Run <strong>Manage CodeChat Editor Capture</strong>, then turn recording on.</td>
+          </tr>
+          <tr>
+            <td><span class="badge bad">Capture: Error</span></td>
+            <td>CodeChat encountered a local or remote capture error.</td>
+            <td>Open the <strong>CodeChat Capture</strong> output channel and contact the instructor or research team if it persists.</td>
+          </tr>
         </tbody>
       </table>
     </section>
@@ -424,7 +438,7 @@
         <li>Select <strong>CodeChat Capture</strong> from the Output dropdown.</li>
         <li>Look for a line similar to this after token validation:</li>
       </ol>
-      <pre><code>capture token status: accepted participant_id=... instance_id=...</code></pre>
+      <pre><code>capture token status: Accepted participant_id=... instance_id=...</code></pre>
       <p>
         After turning capture on and editing a file, the same output channel
         should show queued capture events such as <code>session_start</code>,
@@ -439,7 +453,6 @@
         <li>The email contains the clear access token. Treat it like a password.</li>
         <li>Do not paste the token into source code, assignments, screenshots, chat messages, or bug reports.</li>
         <li>CodeChat stores the token in VS Code SecretStorage, not in workspace settings or repository files.</li>
-        <li>The database stores only an HMAC token hash in <code>capture_admin.instances.token_hash</code>.</li>
         <li>The capture system stores and checks only a protected hash of the token.</li>
       </ul>
     </section>
@@ -463,7 +476,7 @@
           <tr>
             <td>The portal rejects the request.</td>
             <td>The email is not an <code>msstate.edu</code> address, or the class code is wrong.</td>
-            <td>Use your Mississippi State email address and enter <code>ECE9990</code> exactly.</td>
+            <td>Use your Mississippi State email address and enter the class code exactly as provided.</td>
           </tr>
           <tr>
             <td><span class="badge warn">Capture: Waiting for token</span></td>

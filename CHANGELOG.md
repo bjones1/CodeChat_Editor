@@ -23,7 +23,13 @@ Changelog
 -----------------------------------------------------------
 
 * Fix capture token validation and event upload against HTTPS capture service
-  endpoints by enabling HTTPS support in the Rust HTTP client.
+  endpoints by enabling platform certificate verification and proxy support in
+  the Rust HTTP client.
+* Add a capture transport regression test that fails if the Rust HTTP client is
+  built without HTTPS support.
+* Remove the insecure dev portal URL, public class code, token-shape hint, and
+  internal database schema detail from the student capture setup guide, and
+  align the documented capture statuses and log casing with the extension.
 * Resolve cargo-audit failures from vulnerable `webbrowser` and `rkyv`
   dependency paths, and document the temporary `h2` advisory ignore required
   until `actix-http` exposes an `h2` 0.4.16+ dependency path.
