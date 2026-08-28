@@ -44,6 +44,9 @@ Editor: Enter Capture Token** from the command palette, paste the token, then
 turn on consent and recording. The capture status item shows whether the token
 is accepted, rejected, unavailable, or disabled by the portal.
 
+For the student-facing walkthrough, see the
+[CodeChat Capture Token Setup Guide](../../docs/capture-token-setup-guide.html).
+
 The token is imported through the VS Code UI and persisted only in VS Code
 SecretStorage. It is never written to settings, workspace files, or a JSON
 configuration file. The participant identity used in capture events comes from
@@ -60,6 +63,10 @@ user-level
 `CodeChatEditor.Capture.ServiceBaseUrl` setting. Workspace values are ignored
 for this token-bearing endpoint. Token-bearing service requests must use HTTPS,
 except for localhost development endpoints.
+
+Developer builds must compile the bundled Rust server with `minreq` HTTPS
+support. The AWS capture endpoint uses HTTPS, so a build without that feature
+will show token validation and capture upload as unavailable.
 
 Additional documentation
 ------------------------

@@ -22,7 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* No changes.
+* Fix capture token validation and event upload against HTTPS capture service
+  endpoints by enabling HTTPS support in the Rust HTTP client.
+* Add a student-facing CodeChat Capture token setup guide.
+* Document the capture token storage, upload spool, AWS service path, and
+  CaptureWebService-only database boundary.
 
 Version 0.2.1 -- 2026-Jul-26
 ----------------------------

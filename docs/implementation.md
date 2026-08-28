@@ -90,7 +90,10 @@ The service endpoint is read only from the user/application-level
 `CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values are ignored so
 a repository cannot redirect a stored token. Bearer-token requests require
 HTTPS, with `http://localhost` and `http://127.0.0.1` allowed only for local
-development.
+development. The bundled Rust HTTP client uses `minreq` with the `https`
+feature enabled; without that feature, AWS HTTPS status checks and event uploads
+fail before reaching CaptureWebService and the extension reports the service as
+unavailable.
 
 The upload worker deletes spooled events only after the service returns `202`.
 After a token has been accepted at least once, transient service or network
@@ -101,6 +104,18 @@ events queued under an old token remain local until that matching token is
 configured again. Authentication failures pause upload until a valid token is
 entered, malformed or oversized events are moved to the spool quarantine
 directory, and blocking service calls use bounded request timeouts.
+
+The AWS end-to-end path exercised during integration testing is:
+
+```
+VS Code extension -> local CodeChat server -> CaptureWebService HTTPS API
+  -> API Gateway/Lambda -> SQS -> writer Lambda -> capture.events
+```
+
+The verified extension-generated event stream includes `session_start`,
+`write_doc`, `reflection_prompt_inserted`, and `save`. Additional service
+contract tests submit representative well-formed event batches for optional
+study/debug/build event types through the same public HTTPS API.
 
 <a id="an-implementation"></a>Architecture
 ------------------------------------------
