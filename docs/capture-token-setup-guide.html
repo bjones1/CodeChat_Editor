@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CodeChat Capture Token Setup Guide</title>
+  <style>
+    :root {
+      --msu-maroon: #5d1725;
+      --msu-maroon-dark: #3f0f19;
+      --msu-gray: #f4f5f7;
+      --ink: #202731;
+      --muted: #5d6878;
+      --line: #d8dee8;
+      --good: #116b3a;
+      --warn: #986400;
+      --bad: #9f1f2f;
+      --code-bg: #f7f2f4;
+      --panel: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--msu-gray);
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.55;
+    }
+
+    header {
+      background: var(--msu-maroon);
+      color: #fff;
+      padding: 34px 24px 30px;
+      border-bottom: 6px solid var(--msu-maroon-dark);
+    }
+
+    main {
+      width: min(1040px, calc(100% - 32px));
+      margin: 28px auto 48px;
+    }
+
+    h1,
+    h2,
+    h3 {
+      line-height: 1.18;
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      max-width: 860px;
+    }
+
+    h2 {
+      font-size: 1.55rem;
+      margin-bottom: 12px;
+    }
+
+    h3 {
+      font-size: 1.08rem;
+      margin-bottom: 8px;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    a {
+      color: var(--msu-maroon);
+      font-weight: 700;
+    }
+
+    code {
+      background: var(--code-bg);
+      border: 1px solid #ead7dd;
+      border-radius: 5px;
+      color: var(--msu-maroon-dark);
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 0.95em;
+      padding: 0.1rem 0.28rem;
+    }
+
+    pre {
+      background: #171b22;
+      border-radius: 8px;
+      color: #f6f7f9;
+      overflow-x: auto;
+      padding: 16px;
+      white-space: pre-wrap;
+    }
+
+    pre code {
+      background: transparent;
+      border: 0;
+      color: inherit;
+      padding: 0;
+    }
+
+    ul,
+    ol {
+      margin-top: 8px;
+      padding-left: 1.35rem;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    .eyebrow {
+      color: #f1dfe4;
+      font-size: 0.92rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      color: #f8edf0;
+      font-size: 1.08rem;
+      margin-top: 14px;
+      max-width: 850px;
+    }
+
+    .doc-meta {
+      border-left: 4px solid #b68a94;
+      color: #f8edf0;
+      margin-top: 18px;
+      padding-left: 12px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    .two-column {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 18px 38px rgba(32, 39, 49, 0.08);
+      padding: 22px;
+    }
+
+    .step {
+      border-top: 5px solid var(--msu-maroon);
+    }
+
+    .step-number {
+      align-items: center;
+      background: var(--msu-maroon);
+      border-radius: 999px;
+      color: #fff;
+      display: inline-flex;
+      font-weight: 800;
+      height: 2rem;
+      justify-content: center;
+      margin-bottom: 12px;
+      width: 2rem;
+    }
+
+    .callout {
+      border-left: 5px solid var(--msu-maroon);
+      padding: 15px 18px;
+    }
+
+    .callout.good {
+      border-left-color: var(--good);
+    }
+
+    .callout.warn {
+      border-left-color: var(--warn);
+    }
+
+    .callout.bad {
+      border-left-color: var(--bad);
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .status-table,
+    .trouble-table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .status-table th,
+    .status-table td,
+    .trouble-table th,
+    .trouble-table td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .status-table th,
+    .trouble-table th {
+      color: var(--muted);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+    }
+
+    .badge {
+      border-radius: 999px;
+      display: inline-block;
+      font-size: 0.82rem;
+      font-weight: 800;
+      padding: 0.14rem 0.55rem;
+      white-space: nowrap;
+    }
+
+    .badge.good {
+      background: #e8f4ed;
+      color: var(--good);
+    }
+
+    .badge.warn {
+      background: #fff4d9;
+      color: var(--warn);
+    }
+
+    .badge.bad {
+      background: #fde9ed;
+      color: var(--bad);
+    }
+
+    .checklist li {
+      margin-bottom: 9px;
+    }
+
+    footer {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 26px;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      header {
+        padding: 28px 18px 24px;
+      }
+
+      main {
+        width: min(100% - 22px, 1040px);
+      }
+
+      .two-column {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      header {
+        color: #000;
+        background: #fff;
+        border-bottom: 2px solid #000;
+      }
+
+      .panel {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+
+      a {
+        color: #000;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">Mississippi State University | Department of Electrical &amp; Computer Engineering</div>
+    <h1>CodeChat Capture Token Setup Guide</h1>
+    <p class="subtitle">
+      Use this guide to obtain a CodeChat Capture access token, store it in the
+      CodeChat VS Code extension, and turn on dissertation study capture.
+    </p>
+    <p class="doc-meta">
+      Current environment: AWS dev/test deployment. This system is not production yet.
+      Last updated: August 28, 2026.
+    </p>
+  </header>
+
+  <main>
+    <section class="panel callout warn">
+      <h2>Before You Start</h2>
+      <p>
+        You need a Mississippi State email address, the class code supplied by
+        the instructor, and the CodeChat Editor extension installed in Visual
+        Studio Code.
+      </p>
+      <ul>
+        <li>Email address must end in <code>msstate.edu</code>.</li>
+        <li>Current class code is <code>ECE9990</code>. It is case-sensitive.</li>
+        <li>Current registration portal: <a href="http://3.146.138.182/capture-registration/" target="_blank" rel="noopener noreferrer">http://3.146.138.182/capture-registration/</a></li>
+      </ul>
+    </section>
+
+    <section class="grid two-column" aria-label="Setup steps">
+      <article class="panel step">
+        <div class="step-number">1</div>
+        <h2>Request A Token</h2>
+        <ol>
+          <li>Open the registration portal in a browser.</li>
+          <li>Enter your Mississippi State email address.</li>
+          <li>Enter the class code exactly as provided: <code>ECE9990</code>.</li>
+          <li>Select <strong>Email Access Token</strong>.</li>
+          <li>Check your email for the CodeChat Capture token message.</li>
+        </ol>
+        <p class="muted">
+          The token begins with <code>cccap_v1_</code>. Copy the whole token,
+          including that prefix.
+        </p>
+      </article>
+
+      <article class="panel step">
+        <div class="step-number">2</div>
+        <h2>Enter The Token In CodeChat</h2>
+        <ol>
+          <li>Open Visual Studio Code.</li>
+          <li>Open the Command Palette with <code>Ctrl+Shift+P</code>.</li>
+          <li>Run <strong>Manage CodeChat Editor Capture</strong>.</li>
+          <li>Select <strong>Enter Capture Token</strong>.</li>
+          <li>Paste the token from the email and press <code>Enter</code>.</li>
+        </ol>
+        <p class="muted">
+          You can also run <strong>CodeChat Editor: Enter Capture Token</strong>
+          directly from the Command Palette.
+        </p>
+      </article>
+
+      <article class="panel step">
+        <div class="step-number">3</div>
+        <h2>Validate The Token</h2>
+        <ol>
+          <li>After the token is entered, CodeChat attempts to validate it.</li>
+          <li>Look for a message saying <strong>CodeChat capture token accepted.</strong></li>
+          <li>If you are unsure, open <strong>Manage CodeChat Editor Capture</strong> again.</li>
+          <li>Select <strong>Validate Capture Token</strong>.</li>
+        </ol>
+        <p class="muted">
+          A valid token should produce a participant ID and an instance ID in
+          the capture status details.
+        </p>
+      </article>
+
+      <article class="panel step">
+        <div class="step-number">4</div>
+        <h2>Turn Capture On</h2>
+        <ol>
+          <li>Open the Command Palette with <code>Ctrl+Shift+P</code>.</li>
+          <li>Run <strong>Manage CodeChat Editor Capture</strong>.</li>
+          <li>Select <strong>Give Consent and Record Study Events</strong>.</li>
+          <li>Enable the CodeChat Editor if it is not already running.</li>
+          <li>Open, edit, and save a study file normally.</li>
+        </ol>
+        <p class="muted">
+          Consent persists. <strong>Record Study Events</strong> is session-local,
+          so turn it on again after reopening VS Code.
+        </p>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>What A Successful Setup Looks Like</h2>
+      <p>
+        When capture is ready, the CodeChat capture status bar item should show
+        one of the active states below. You can click the status bar item or run
+        <strong>Manage CodeChat Editor Capture</strong> to see more detail.
+      </p>
+
+      <table class="status-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Meaning</th>
+            <th>What To Do</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge good">Capture: Remote</span></td>
+            <td>Capture is on and events are reaching the remote capture system.</td>
+            <td>Continue working normally.</td>
+          </tr>
+          <tr>
+            <td><span class="badge good">Capture: Uploading</span></td>
+            <td>CodeChat is actively uploading queued capture events.</td>
+            <td>Continue working normally.</td>
+          </tr>
+          <tr>
+            <td><span class="badge warn">Capture: Queued</span></td>
+            <td>Events are stored locally and waiting to upload.</td>
+            <td>Check your network connection if this does not clear.</td>
+          </tr>
+          <tr>
+            <td><span class="badge warn">Capture: Starting</span></td>
+            <td>The local CodeChat server is starting or reconnecting.</td>
+            <td>Wait a few seconds, then recheck the status.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>Verify In VS Code</h2>
+      <ol>
+        <li>Open <strong>View &gt; Output</strong>.</li>
+        <li>Select <strong>CodeChat Capture</strong> from the Output dropdown.</li>
+        <li>Look for a line similar to this after token validation:</li>
+      </ol>
+      <pre><code>capture token status: accepted participant_id=... instance_id=...</code></pre>
+      <p>
+        After turning capture on and editing a file, the same output channel
+        should show queued capture events such as <code>session_start</code>,
+        <code>save</code>, <code>write_doc</code>, or <code>write_code</code>,
+        depending on the activity performed.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Token Privacy</h2>
+      <ul class="checklist">
+        <li>The email contains the clear access token. Treat it like a password.</li>
+        <li>Do not paste the token into source code, assignments, screenshots, chat messages, or bug reports.</li>
+        <li>CodeChat stores the token in VS Code SecretStorage, not in workspace settings or repository files.</li>
+        <li>The database stores only an HMAC token hash in <code>capture_admin.instances.token_hash</code>.</li>
+        <li>The capture system stores and checks only a protected hash of the token.</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Troubleshooting</h2>
+      <table class="trouble-table">
+        <thead>
+          <tr>
+            <th>Symptom</th>
+            <th>Likely Cause</th>
+            <th>Fix</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>No token email arrives.</td>
+            <td>The email address was mistyped, the message went to junk mail, or the current AWS dev email service is limited to verified recipients.</td>
+            <td>Confirm the email address, check junk mail, then request another token.</td>
+          </tr>
+          <tr>
+            <td>The portal rejects the request.</td>
+            <td>The email is not an <code>msstate.edu</code> address, or the class code is wrong.</td>
+            <td>Use your Mississippi State email address and enter <code>ECE9990</code> exactly.</td>
+          </tr>
+          <tr>
+            <td><span class="badge warn">Capture: Waiting for token</span></td>
+            <td>No accepted token is stored in VS Code.</td>
+            <td>Run <strong>Manage CodeChat Editor Capture</strong>, then <strong>Enter Capture Token</strong>.</td>
+          </tr>
+          <tr>
+            <td><span class="badge warn">Capture: Waiting for consent</span></td>
+            <td>Recording was turned on before consent.</td>
+            <td>Run <strong>Give Consent and Record Study Events</strong>, or turn consent on separately.</td>
+          </tr>
+          <tr>
+            <td><span class="badge warn">Capture: Paused</span></td>
+            <td>Consent is on, but <strong>Record Study Events</strong> is off for this VS Code session.</td>
+            <td>Run <strong>Manage CodeChat Editor Capture</strong>, then <strong>Turn Record Study Events On</strong>.</td>
+          </tr>
+          <tr>
+            <td><span class="badge bad">Capture: Token rejected</span></td>
+            <td>The pasted token is wrong, incomplete, or revoked.</td>
+            <td>Clear the token, paste it again from the email, then validate it.</td>
+          </tr>
+          <tr>
+            <td><span class="badge bad">Capture: Disabled by portal</span></td>
+            <td>The participant or instance is disabled in the capture database.</td>
+            <td>Contact the instructor or research team.</td>
+          </tr>
+          <tr>
+            <td><span class="badge warn">Capture: Service unavailable</span></td>
+            <td>The network or remote capture system is temporarily unavailable.</td>
+            <td>Keep working. If the same token was previously accepted, CodeChat will keep matching events queued locally and upload them when the service returns. If this status does not clear, update to the current CodeChat build.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel callout good">
+      <h2>End-To-End Checklist</h2>
+      <ul class="checklist">
+        <li>Portal accepted the Mississippi State email address and class code.</li>
+        <li>Token email arrived.</li>
+        <li>Token was pasted into CodeChat through the VS Code UI.</li>
+        <li>CodeChat reported that the token was accepted.</li>
+        <li>Status details show a participant ID and instance ID.</li>
+        <li><strong>Give Consent and Record Study Events</strong> was selected.</li>
+        <li>The capture status bar shows an active, queued, or uploading state.</li>
+        <li>The <strong>CodeChat Capture</strong> output channel shows capture activity.</li>
+      </ul>
+    </section>
+
+    <footer>
+      CodeChat Capture dev/test setup guide. Do not include real capture tokens in shared copies of this document.
+    </footer>
+  </main>
+</body>
+</html>

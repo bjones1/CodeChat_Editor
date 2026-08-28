@@ -33,6 +33,9 @@ Capture** or **CodeChat Editor: Enter Capture Token** from the command palette,
 paste the token, then turn on consent and recording from the same capture
 manager.
 
+For detailed student/tester setup steps, see the
+[CodeChat Capture Token Setup Guide](docs/capture-token-setup-guide.html).
+
 The token is imported through the VS Code UI and persisted only in VS Code
 SecretStorage. It is never written to workspace settings, repository files, or a
 JSON configuration file. The extension asks CaptureWebService for token status;
@@ -59,6 +62,10 @@ again. The capture service endpoint can be changed in the user-level
 `CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values are ignored
 for this token-bearing endpoint. Token-bearing requests require HTTPS except for
 localhost development endpoints.
+
+Developer builds must keep the Rust `minreq` dependency compiled with HTTPS
+support. Without that feature, token validation and event upload to the AWS
+capture service report as unavailable even when the service itself is healthy.
 
 Structure
 ---------
