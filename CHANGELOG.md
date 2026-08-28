@@ -24,6 +24,9 @@ Changelog
 
 * Fix capture token validation and event upload against HTTPS capture service
   endpoints by enabling HTTPS support in the Rust HTTP client.
+* Resolve cargo-audit failures from vulnerable `webbrowser` and `rkyv`
+  dependency paths, and document the temporary `h2` advisory ignore required
+  until `actix-http` exposes an `h2` 0.4.16+ dependency path.
 * Add a student-facing CodeChat Capture token setup guide.
 * Document the capture token storage, upload spool, AWS service path, and
   CaptureWebService-only database boundary.
