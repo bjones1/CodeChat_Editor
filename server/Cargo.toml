@@ -65,7 +65,7 @@ markup5ever_rcdom = "0.39"
 mime = "0.3.17"
 mime_guess = "2.0.5"
 minify-html = { git = "https://github.com/bjones1/minify-html.git", branch = "dev", version = "0.18.1" }
-minreq = { version = "3", features = ["https"] }
+minreq = { version = "3", features = ["https-rustls-probe", "proxy"] }
 normalize-line-endings = "0.3.0"
 path-slash = "0.2.1"
 pest = "2.7.14"

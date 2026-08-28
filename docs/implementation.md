@@ -90,9 +90,11 @@ The service endpoint is read only from the user/application-level
 `CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values are ignored so
 a repository cannot redirect a stored token. Bearer-token requests require
 HTTPS, with `http://localhost` and `http://127.0.0.1` allowed only for local
-development. The bundled Rust HTTP client uses `minreq` with the `https`
-feature enabled; without that feature, AWS HTTPS status checks and event uploads
-fail before reaching CaptureWebService and the extension reports the service as
+development. The bundled Rust HTTP client uses `minreq` with the
+`https-rustls-probe` and `proxy` features enabled, so HTTPS requests validate
+with the host platform certificate store and honor standard proxy environment
+variables. Without HTTPS support, AWS HTTPS status checks and event uploads fail
+before reaching CaptureWebService and the extension reports the service as
 unavailable.
 
 The upload worker deletes spooled events only after the service returns `202`.
