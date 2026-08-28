@@ -484,6 +484,9 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     } else {
         ("", "", "--fix")
     };
+    // RUSTSEC-2026-0258 is h2 0.3.x via actix-http; remove this ignore once
+    // actix-http publishes a compatible release on h2 0.4.16 or newer.
+    let h2_advisory_ignore = "RUSTSEC-2026-0258";
     run_cmd!(
         info "cargo clippy and fmt";
         cargo clippy --all-targets --all-features -- $clippy_check_only;
@@ -502,15 +505,15 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
         cargo fmt --all $check --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
 
         info "cargo audit";
-        cargo audit;
+        cargo audit --ignore $h2_advisory_ignore;
         info "Builder: cargo audit";
-        cargo audit --file=$BUILDER_PATH/Cargo.lock --no-fetch;
+        cargo audit --file=$BUILDER_PATH/Cargo.lock --no-fetch --ignore $h2_advisory_ignore;
         info "VSCode extension: cargo audit";
-        cargo audit --file=$VSCODE_PATH/Cargo.lock --no-fetch;
+        cargo audit --file=$VSCODE_PATH/Cargo.lock --no-fetch --ignore $h2_advisory_ignore;
         info "Standalone: cargo audit";
-        cargo audit --file=$STANDALONE_PATH/Cargo.lock --no-fetch;
+        cargo audit --file=$STANDALONE_PATH/Cargo.lock --no-fetch --ignore $h2_advisory_ignore;
         info "test_utils: cargo audit";
-        cargo audit --file=$TEST_UTILS_PATH/Cargo.lock --no-fetch;
+        cargo audit --file=$TEST_UTILS_PATH/Cargo.lock --no-fetch --ignore $h2_advisory_ignore;
 
         info "cargo sort";
         cargo sort $check;
