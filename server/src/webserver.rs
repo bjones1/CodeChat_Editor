@@ -814,22 +814,20 @@ pub async fn filesystem_endpoint(
             SimpleHttpResponse::Raw(body, content_type) => {
                 HttpResponse::Ok().content_type(content_type).body(body)
             }
-            SimpleHttpResponse::Bin(path) => {
-                match actix_files::NamedFile::open_async(&path).await {
-                    Ok(mut v) => {
-                        if path.extension().is_some_and(|ext| ext == "pdf") {
-                            let mut cd = v.content_disposition().clone();
-                            cd.disposition = DispositionType::Inline;
-                            v = v.set_content_disposition(cd);
-                        }
-                        v.into_response(req)
+            SimpleHttpResponse::Bin(path) => match actix_files::NamedFile::open(&path) {
+                Ok(mut v) => {
+                    if path.extension().is_some_and(|ext| ext == "pdf") {
+                        let mut cd = v.content_disposition().clone();
+                        cd.disposition = DispositionType::Inline;
+                        v = v.set_content_disposition(cd);
                     }
-                    Err(err) => http_not_found(&format!(
-                        "Error opening file \"{}\": {err}.",
-                        path.display()
-                    )),
+                    v.into_response(req)
                 }
-            }
+                Err(err) => http_not_found(&format!(
+                    "Error opening file \"{}\": {err}.",
+                    path.display()
+                )),
+            },
         },
         Err(err) => http_not_found(&format!("Error: {err}")),
     }

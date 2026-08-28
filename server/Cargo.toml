@@ -41,7 +41,7 @@ name = "code_chat_editor"
 # Dependencies
 # ------------
 [dependencies]
-actix-files = "0.6"
+actix-files = "0.7"
 actix-rt = "2.9.0"
 actix-server = "2.6.0"
 actix-web = "4"
