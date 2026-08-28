@@ -22,7 +22,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* No changes yet.
+* No changes yet..
 
 Version 0.2.2 -- 2026-Aug-28
 ----------------------------
