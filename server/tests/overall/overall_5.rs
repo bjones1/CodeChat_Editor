@@ -31,7 +31,11 @@ use std::{fmt::Write, path::PathBuf};
 // ### Third-party
 use dunce::canonicalize;
 use pretty_assertions::assert_eq;
-use thirtyfour::{By, Key, WebDriver, error::WebDriverError, prelude::ElementQueryable};
+use thirtyfour::{
+    By, Key, WebDriver,
+    error::WebDriverError,
+    prelude::{ElementQueryable, ElementWaitable},
+};
 
 // ### Local
 use crate::common::{
@@ -138,7 +142,14 @@ async fn test_edit_preserves_cursor_scroll_in_large_doc_block_core(
 
     // Make an edit in the middle of the big doc block: refind the paragraph,
     // since it's now switched to a TinyMCE editor, then type a character.
-    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
+    let tinymce_contents = driver
+        .query(By::Css(
+            ".CodeChat-CodeMirror #TinyMCE-inst:not(.CodeChat-doc-hidden)",
+        ))
+        .first()
+        .await
+        .unwrap();
+    tinymce_contents.wait_until().clickable().await.unwrap();
     tinymce_contents.send_keys("x").await.unwrap();
 
     // A cursor-only update (carrying no `contents`) may precede the text update
