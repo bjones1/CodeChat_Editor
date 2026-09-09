@@ -277,7 +277,7 @@ async fn test_cursor_home_from_code_after_doc_block_core(
     let path = canonicalize(test_dir.join("test.py")).unwrap();
     let path_str = path.to_str().unwrap().to_string();
     let ide_version = 0.0;
-    let orig_text = "# a<br>\n# b\ncc\n".to_string();
+    let orig_text = "# a\n#\n# b\ncc\n".to_string();
     perform_loadfile(
         &codechat_server,
         &test_dir,
@@ -294,7 +294,7 @@ async fn test_cursor_home_from_code_after_doc_block_core(
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
 
     // Click on the two-character code block ("cc"), which focuses CodeMirror
-    // and reports the cursor at line 3. The click is in the middle of the
+    // and reports the cursor at line 4. The click is in the middle of the
     // element, which places the cursor at the end of the line (given that the
     // width of the screen is much larger than the width of a two-character
     // line.)
@@ -310,7 +310,7 @@ async fn test_cursor_home_from_code_after_doc_block_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(3)),
+                cursor_position: Some(CursorPosition::Line(4)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,
@@ -330,7 +330,7 @@ async fn test_cursor_home_from_code_after_doc_block_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(3)),
+                cursor_position: Some(CursorPosition::Line(4)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,
@@ -350,7 +350,7 @@ async fn test_cursor_home_from_code_after_doc_block_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(3)),
+                cursor_position: Some(CursorPosition::Line(4)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,
@@ -371,7 +371,7 @@ async fn test_cursor_home_from_code_after_doc_block_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(2)),
+                cursor_position: Some(CursorPosition::Line(3)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,
@@ -422,7 +422,7 @@ async fn test_cursor_home_from_code_after_doc_block_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(3)),
+                cursor_position: Some(CursorPosition::Line(4)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,
@@ -443,7 +443,7 @@ async fn test_cursor_home_from_code_after_doc_block_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(3)),
+                cursor_position: Some(CursorPosition::Line(4)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,
@@ -463,7 +463,7 @@ async fn test_cursor_home_from_code_after_doc_block_core(
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(3)),
+                cursor_position: Some(CursorPosition::Line(4)),
                 scroll_position: Some(1.0),
                 is_re_translation: false,
                 contents: None,

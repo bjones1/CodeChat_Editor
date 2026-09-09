@@ -48,13 +48,14 @@ use ammonia::Builder;
 use dprint_plugin_markdown::{
     FormatError,
     configuration::{
-        Configuration, ConfigurationBuilder, EmphasisKind, HeadingKind, StrongKind, TextWrap,
-        UnorderedListKind,
+        Configuration, ConfigurationBuilder, EmphasisKind, HeadingKind, ListUnorderedMarker,
+        StrongKind, TextWrap,
     },
     format_text,
 };
 use htmd::{
-    HtmlToMarkdown, options::{BrStyle, LinkStyle, TranslationMode},
+    HtmlToMarkdown,
+    options::{BrStyle, LinkStyle, TranslationMode},
 };
 use html5ever::{
     Attribute, LocalName, Namespace, ParseOpts, QualName, parse_document, serialize,
@@ -577,7 +578,8 @@ impl HtmlToMarkdownWrapped {
                 .options(htmd::options::Options {
                     link_style: LinkStyle::Inlined,
                     translation_mode: TranslationMode::Faithful,
-                    br_style: BrStyle::Raw,
+                    // Note that this is ignored in Faithful mode.
+                    br_style: BrStyle::Backslash,
                     ..Default::default()
                 })
                 .build(),
@@ -586,10 +588,11 @@ impl HtmlToMarkdownWrapped {
             word_wrap_config: ConfigurationBuilder::new()
                 .emphasis_kind(EmphasisKind::Asterisks)
                 .strong_kind(StrongKind::Asterisks)
-                .unordered_list_kind(UnorderedListKind::Asterisks)
+                .list_unordered_marker(ListUnorderedMarker::Asterisks)
                 .text_wrap(TextWrap::Always)
                 .heading_kind(HeadingKind::Setext)
-                .allow_fenced_blank_lines(true)
+                .code_block_preserve_blank_lines(true)
+                .code_block_preserve_indentation(true)
                 .build(),
         }
     }

@@ -3,7 +3,6 @@
 // and `mark_unknown` -- which nothing calls yet.
 #![allow(unused_variables)]
 #![allow(unused)]
-
 // Copyright (C) 2026 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
