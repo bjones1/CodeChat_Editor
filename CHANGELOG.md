@@ -22,6 +22,11 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+* No changes.
+
+Version 0.2.3 -- 2026-Sep-09
+----------------------------
+
 * Alpha: added support for <xref ref="cc-TRCKclsxwW"></xref> and <xref ref="cc-swJ6a-FiK3"></xref>.
 * Improved Client editing experience -- fewer places exist where starting a new
   heading, list item, etc. is removed immediately after creation.
