@@ -489,7 +489,7 @@ class DocBlockWidget extends WidgetType {
             // The contents of this doc block. Make it focusable by assigning a
             // tab stop, but not editable (until it's replaced by the TinyMCE
             // editor).
-            `<div class="CodeChat-doc-contents" spellcheck="true" tabIndex="0">` +
+            `<div class="CodeChat-doc-contents" spellcheck="true" tabIndex="-1">` +
             this.contents +
             "</div>";
         // TODO: this is an async call. However, CodeMirror doesn't provide
@@ -1383,7 +1383,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                             // If the contents aren't editable, then the div
                             // won't receive a `focusin` message (it instead
                             // goes to a CodeMirror layer).
-                            oldContentsDiv.tabIndex = 0;
+                            oldContentsDiv.tabIndex = -1;
                             oldContentsDiv.innerHTML =
                                 tinymceInstance()!.save();
                             tinymceDiv.parentNode!.insertBefore(
@@ -1683,6 +1683,16 @@ export const codeMirrorLoad = async (
                     parser,
                     basicSetup,
                     EditorView.lineWrapping,
+                    // CodeMirror marks its editing surface `role="textbox"`
+                    // but supplies no accessible name, so a screen reader
+                    // announces the element holding the user's source code as
+                    // an unlabeled text field. Point it at the filename the
+                    // Server renders into the page header, which names the
+                    // file and its directory: the label then follows whatever
+                    // file is open without this code having to learn the path.
+                    EditorView.contentAttributes.of({
+                        "aria-labelledby": "CodeChat-filename",
+                    }),
                     exceptionSink,
                     autosaveExtension,
                     // Make tab an indent per the
@@ -1921,8 +1931,29 @@ const reportError = (text: string) => {
 };
 
 const haltOnError = (text: string): never => {
-    document.getElementById("error-overlay")!.style.display = "block";
+    // Name the failure inside the overlay, which `aria-describedby` points at.
+    // The error handler also turns this text into a toast, but a toast lies
+    // outside the modal overlay, where a screen reader honoring `aria-modal`
+    // won't read it; the overlay must therefore describe itself.
+    document.getElementById("error-overlay-message")!.textContent = text;
+    const errorOverlay = document.getElementById("error-overlay")!;
+    errorOverlay.style.display = "block";
+    // The overlay only paints over the page it replaces; the elements beneath
+    // it stay focusable, so tabbing walks into a UI which is no longer visible
+    // and no longer works. Marking them `inert` removes them from both the tab
+    // order and the accessibility tree. Toastify appends its toasts to `body`
+    // as well; exempt them, since the error report which follows this call
+    // arrives as a toast and must stay readable and dismissable.
+    for (const element of document.body.children) {
+        if (
+            element !== errorOverlay &&
+            element instanceof HTMLElement &&
+            !element.classList.contains("toastify")
+        ) {
+            element.inert = true;
+        }
+    }
+    errorOverlay.focus();
     console.error(text);
-    // The error handler will make this a toast.
     throw new Error(text);
 };

@@ -85,6 +85,9 @@
         '@typescript-eslint/eslint-plugin': '^8.70.0',
         '@typescript-eslint/parser': '^8.70.0',
         '@typescript/native': 'npm:typescript@^7.0.2',
+        /* The accessibility audit engine driven by the Server's
+           `overall_a11y` browser tests. */
+        'axe-core': '^4.10.2',
         chai: '^6.2.2',
         esbuild: '^0.28.2',
         eslint: '^10.10.0',

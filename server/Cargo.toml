@@ -96,6 +96,9 @@ webbrowser = "1.0.5"
 [dev-dependencies]
 assert_fs = "1"
 assertables = "10"
+# Used by the accessibility tests to timestamp the reports they write, so that
+# a stale report is visible as stale.
+chrono = "0.4"
 futures = "0.3.31"
 predicates = "3.1.2"
 pretty_assertions = "1.4.1"

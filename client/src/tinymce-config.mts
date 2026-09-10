@@ -124,6 +124,12 @@ export const init = async (
             // Prevent drag-and-dropping images; this create a mess. See the
             // [docs](https://www.tiny.cloud/docs/tinymce/latest/copy-and-paste/#paste_data_images).
             paste_data_images: false,
+            // TinyMCE's "Get all features" promotional link breaks accessibility. It carries `aria-hidden="true"` yet remains in the tab order, which is the
+            // `aria-hidden-focus` failure: a keyboard user lands on a control their screen
+            // reader has been told does not exist. Separately, its text fails contrast at
+            // 4.31:1 (`#086be6` on `#e8f1f8`) against the 4.5:1 requirement.
+            // Disable it.
+            promotion: false,
 
             // ### Settings for plugins
             //

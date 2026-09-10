@@ -703,6 +703,7 @@ pub fn get_client_framework(
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
+                <meta name="description" content="A programmer's word processor: the CodeChat Editor interleaves your source code with its documentation, rendering comments as rich text you can edit in place.">
                 <title>The CodeChat Editor</title>
                 <script type="module">
                     import {{ pageInit }} from "/{}"
@@ -710,21 +711,40 @@ pub fn get_client_framework(
                 </script>
             </head>
             <body style="margin: 0px; padding: 0px; overflow: hidden">
-                <iframe id="CodeChat-iframe"
-                    style="width:100%; height:100vh; border:none;"
-                    srcdoc="<!DOCTYPE html>
-                    <html lang='en'>
-                        <body style='background-color:#f0f0ff'>
-                            <div style='display:flex;justify-content:center;align-items:center;height:95vh;'>
-                                <div style='text-align:center;font-family:Trebuchet MS;'>
-                                    <h1>The CodeChat Editor</h1>
-                                    <p>Waiting for initial render. Switch the active source code window to begin.</p>
+                <main>
+                    <!-- This page is a shell whose only content is the iframe
+                         below, so it has nothing to title visibly; the heading
+                         is hidden from sight but left in the accessibility
+                         tree, where it names the page for a screen reader
+                         moving by heading. Hide it by clipping rather than by
+                         `display: none`, which would remove it from that tree
+                         as well. -->
+                    <h1 style="position: absolute;
+                               width: 1px;
+                               height: 1px;
+                               margin: -1px;
+                               padding: 0px;
+                               border: 0px;
+                               overflow: hidden;
+                               clip-path: inset(50%);
+                               white-space: nowrap">The CodeChat Editor</h1>
+                    <iframe id="CodeChat-iframe"
+                        style="width:100%; height:100vh; border:none;"
+                        title="The CodeChat Editor main window"
+                        srcdoc="<!DOCTYPE html>
+                        <html lang='en'>
+                            <body style='background-color:#f0f0ff'>
+                                <div style='display:flex;justify-content:center;align-items:center;height:95vh;'>
+                                    <div style='text-align:center;font-family:Trebuchet MS;'>
+                                        <h1>The CodeChat Editor</h1>
+                                        <p>Waiting for initial render. Switch the active source code window to begin.</p>
+                                    </div>
                                 </div>
-                            </div>
-                        </body>
-                    </html>"
-                >
-                </iframe>
+                            </body>
+                        </html>"
+                    >
+                    </iframe>
+                </main>
             </body>
         </html>"#,
         *CODECHAT_EDITOR_FRAMEWORK_JS
@@ -970,7 +990,7 @@ pub async fn file_to_response(
     let (sidebar_iframe, sidebar_css) = if is_project {
         (
             format!(
-                r#"<nav id="CodeChat-sidebar-nav"><iframe src="{}?mode=toc" id="CodeChat-sidebar"></iframe></nav>"#,
+                r#"<nav id="CodeChat-sidebar-nav"><iframe src="{}?mode=toc" id="CodeChat-sidebar" title="CodeChat Editor table of contents"></iframe></nav>"#,
                 escape_attribute(path_to_toc.unwrap().to_slash_lossy())
             ),
             format!(
@@ -1004,12 +1024,12 @@ pub async fn file_to_response(
                     // For the [PDF.js viewer](#pdf.js), pass the file to view
                     // as the query parameter.
                     format!(
-                        r#"<iframe src="/static/pdfjs-main.html?{}" style="height: 100vh; border: 0px" id="CodeChat-contents"></iframe>"#,
+                        r#"<iframe src="/static/pdfjs-main.html?{}" style="height: 100vh; border: 0px" id="CodeChat-contents" title="CodeChat Editor contents"></iframe>"#,
                         escape_attribute(&http_request.url)
                     )
                 } else {
                     format!(
-                        r#"<iframe src="{}?raw" style="height: 100vh" id="CodeChat-contents"></iframe>"#,
+                        r#"<iframe src="{}?raw" style="height: 100vh" id="CodeChat-contents" title="CodeChat Editor contents"></iframe>"#,
                         escape_attribute(file_name)
                     )
                 },
@@ -1051,9 +1071,11 @@ pub async fn file_to_response(
                             <link rel="stylesheet" href="/{codechat_editor_css}">
                         </head>
                         <body class="CodeChat-theme-light">
-                            <div class="CodeChat-TOC">
-                                {html}
-                            </div>
+                            <nav>
+                                <div class="CodeChat-TOC">
+                                    {html}
+                                </div>
+                            </nav>
                         </body>
                     </html>"#,
                 )),
@@ -1091,7 +1113,21 @@ pub async fn file_to_response(
                     {sidebar_css}
                 </head>
                 <body class="CodeChat-theme-light">
-                    <div id="error-overlay"><h1 class="centered-text">Fatal error</h1></div>
+                    <!-- The overlay is a modal announcement: `haltOnError` in
+                         `CodeMirror-integration.mts` fills in the message,
+                         reveals it, then moves focus here. It uses
+                         `alertdialog` rather than `alert` because only a
+                         dialog role supports `aria-modal`, and that modality
+                         is what tells a screen reader to ignore the dead UI
+                         behind the overlay. -->
+                    <div id="error-overlay" role="alertdialog" aria-modal="true"
+                        aria-labelledby="error-overlay-title"
+                        aria-describedby="error-overlay-message" tabindex="-1">
+                        <div class="centered-text">
+                            <h1 id="error-overlay-title">Fatal error</h1>
+                            <p id="error-overlay-message"></p>
+                        </div>
+                    </div>
                     {sidebar_iframe}
                     <div id="CodeChat-contents">
                         <header id="CodeChat-top">
@@ -1188,7 +1224,7 @@ fn make_simple_viewer(http_request: &ProcessingTaskHttpRequest, html: &str) -> S
                         <link rel="stylesheet" href="/{}">
                     </head>
                     <body class="CodeChat-theme-light">
-                        <iframe src="{path_to_toc}?mode=toc" id="CodeChat-sidebar"></iframe>
+                        <iframe src="{path_to_toc}?mode=toc" id="CodeChat-sidebar" title="CodeChat Editor table of contents"></iframe>
                         {html}
                     </body>
                 </html>"#,

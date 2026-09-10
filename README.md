@@ -7,7 +7,7 @@ its basic features and use. In contrast, the [style guide](docs/style_guide.cpp)
 provides strategies for effectively employing the CodeChat Editor to improve the
 software development process.
 
-<iframe title="YouTube video player" src="https://www.youtube.com/embed/videoseries?si=QNrYCiTLVCpxpAbD&amp;list=PLOJAqFa3UI2FJncc-OBRPhh17NJXQP6ve" width="560" height="315" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen="allowfullscreen" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+<iframe width="560" height="315" src="https://www.youtube.com/embed/videoseries?si=QNrYCiTLVCpxpAbD&amp;list=PLOJAqFa3UI2FJncc-OBRPhh17NJXQP6ve" allowfullscreen="allowfullscreen" frameborder="0"></iframe>
 
 Full manual
 -----------
@@ -22,6 +22,14 @@ Installation
 Install the
 [CodeChat Editor extension for Visual Studio code](extensions/VSCode/README.md).
 For developers, see [building from source](docs/design.md).
+
+Accessibility
+-------------
+
+When using the CodeChat Editor Client, the accessibility features change
+depending on context (code block or dock block). In a code block, press Esc then
+press tab/shift-tab to navigate. In a doc block, tab alone navigates; to view
+all doc block keyboard shortcuts press Alt+0 (Windows, Linux) or ⌥0 (MacOS).
 
 Research capture
 ----------------
@@ -52,16 +60,15 @@ writer role remains inside the service deployment.
 Events are sanitized, written to a durable local FIFO spool in VS Code's global
 extension storage, then uploaded to CaptureWebService. Spooled events carry only
 a non-secret token hash/service identity so events from an old token are not
-uploaded under a new token. Offline
-recording is allowed only after the same token and service URL have previously
-been verified as capture-enabled; a token disabled by the portal remains
-disabled while the service is unavailable. If the network or service is
-unavailable after the token has been accepted at least once, queued events remain
-in the spool and upload as soon as the matching token and service are available
-again. The capture service endpoint can be changed in the user-level
-`CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values are ignored
-for this token-bearing endpoint. Token-bearing requests require HTTPS except for
-localhost development endpoints.
+uploaded under a new token. Offline recording is allowed only after the same
+token and service URL have previously been verified as capture-enabled; a token
+disabled by the portal remains disabled while the service is unavailable. If the
+network or service is unavailable after the token has been accepted at least
+once, queued events remain in the spool and upload as soon as the matching token
+and service are available again. The capture service endpoint can be changed in
+the user-level `CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values
+are ignored for this token-bearing endpoint. Token-bearing requests require
+HTTPS except for localhost development endpoints.
 
 Developer builds must keep the Rust `minreq` dependency compiled with
 `https-rustls-probe` and `proxy` support. Capture HTTPS requests validate with
@@ -79,13 +86,11 @@ blocks. These blocks are separated by newlines; the image below shows the
 in the CodeChat Editor (using the VSCode extension). Specifically, this
 screenshot shows:
 
-* <span style="font-size: 20pt;">❶</span>: a doc block. Doc blocks must have one
-  space after the comment delimiter.
-* <span style="font-size: 20pt;">❷</span>: a code block. Comments on the same
-  line as code are not interpreted as doc blocks.
-* <span style="font-size: 20pt;">❸</span>: varying indents before a doc block.
-* <span style="font-size: 20pt;">❹</span>: [Markdown](https://commonmark.org/)
-  in a doc block; see a
+* ❶: a doc block. Doc blocks must have one space after the comment delimiter.
+* ❷: a code block. Comments on the same line as code are not interpreted as doc
+  blocks.
+* ❸: varying indents before a doc block.
+* ❹: [Markdown](https://commonmark.org/) in a doc block; see a
   [brief overview of Markdown](https://commonmark.org/help/).
 
 ![Image showing code blocks and doc blocks in Visual Studio Code](docs/code-blocks-doc-blocks.png)
@@ -146,10 +151,10 @@ cross-reference. If the id resides in a file within a [project](#cc-DscjSxRZHF),
 then any file in that same project can refer to that id using a hyperlink or
 cross-reference. For example:
 
-| Source                              | Rendered                          |
-| ----------------------------------- | --------------------------------- |
-| `[Style guide](#cc-nNZ6Gs2uWD)`     | [Style guide](#cc-nNZ6Gs2uWD)     |
-| `<xref ref="cc-nNZ6Gs2uWD"></xref>` | <xref ref="cc-nNZ6Gs2uWD"></xref> |
+| Source                              | Rendered                      |
+| ----------------------------------- | ----------------------------- |
+| `[Style guide](#cc-nNZ6Gs2uWD)`     | [Style guide](#cc-nNZ6Gs2uWD) |
+| `<xref ref="cc-nNZ6Gs2uWD"></xref>` | <br>                          |
 
 In projects, each id must be unique throughout the entire project. To simplify
 the creation of unique ids, items assigned an `id="*"` with be replaced with a
@@ -180,7 +185,7 @@ To do so:
    data-gather="some_unique_id1 some_unique_id2 ...">Gathered code</h4>`. Below
    the the result of a gather tag for these fragments:
 
-<h4 data-gather="cc-kK31yjXjJd cc-Vk22aRyJ3s" id="cc-4YrLCPA4-S">Starting websocket ID</h4>
+<h4 id="cc-4YrLCPA4-S">Starting websocket ID</h4>
 
 Images
 ------
@@ -221,33 +226,11 @@ Diagrams
 The CodeChat Editor supports diagrams created by
 [Mermaid](https://mermaid.js.org/). For example,
 
-<table>
-  <thead>
-    <tr>
-      <th>Source</th>
-      <th>Rendered</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-
-````markdown
-```mermaid
-graph TD; A --> B;
+<table><thead><tr><th>Source</th><th>Rendered</th></tr></thead><tbody><tr><td><pre><code class="language-markdown">```mermaid
+graph TD; A --&gt; B;
 ```
-````
-
-</td><td>
-
-```mermaid
-graph TD; A --> B;
-```
-
-</td>
-    </tr>
-  </tbody>
-</table>
+</code></pre></td><td><pre><code class="language-mermaid">graph TD; A --&gt; B;
+</code></pre></td></tr></tbody></table>
 
 The [Mermaid live editor](https://mermaid.live/) provide an focused environment
 for creating Mermaid chart.
@@ -257,33 +240,11 @@ for creating Mermaid chart.
 The CodeChat Editor supports diagrams created by
 [Graphviz](https://graphviz.org/). For example,
 
-<table>
-  <thead>
-    <tr>
-      <th>Source</th>
-      <th>Rendered</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>
-
-````markdown
-```graphviz
-digraph { A -> B }
+<table><thead><tr><th>Source</th><th>Rendered</th></tr></thead><tbody><tr><td><pre><code class="language-markdown">```graphviz
+digraph { A -&gt; B }
 ```
-````
-
-</td><td>
-
-```graphviz
-digraph { A -> B }
-```
-
-</td>
-    </tr>
-  </tbody>
-</table>
+</code></pre></td><td><pre><code class="language-graphviz">digraph { A -&gt; B }
+</code></pre></td></tr></tbody></table>
 
 Several on-line tools, such as [Edotor](https://edotor.net/), provide a focused
 editing experience.
@@ -346,8 +307,8 @@ the user-level `CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values
 are ignored for this token-bearing endpoint. Token-bearing requests require
 HTTPS except for localhost development endpoints.
 
-<a id="supported-languages"></a>Supported languages
----------------------------------------------------
+<a id="supported-languages" contenteditable="false"></a>Supported languages
+---------------------------------------------------------------------------
 
 * C/C++
 * C#
@@ -398,8 +359,8 @@ You should have received a [copy](LICENSE.html) of the GNU General Public
 License along with the CodeChat Editor. If not, see
 [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
 
-<a id="notes"></a>Notes
------------------------
+<a id="notes" contenteditable="false"></a>Notes
+-----------------------------------------------
 
 1. The image used comes from
    [Monitor icons created by prettycons - Flaticon](https://www.flaticon.com/free-icons/monitor "monitor icons").

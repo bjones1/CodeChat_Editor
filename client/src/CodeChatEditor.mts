@@ -315,7 +315,7 @@ const _openLp = async (
                 // in`source.doc`. We don't need the CodeMirror editor at all;
                 // instead, treat it like a single doc block contents div.
                 docContent = source.Plain.doc;
-                codechatBody.innerHTML = `<div class="CodeChat-doc-contents" spellcheck="true">${docContent}</div>`;
+                codechatBody.innerHTML = `<div class="CodeChat-doc-contents" spellcheck="true" tabindex="-1">${docContent}</div>`;
                 await init({
                     selector: ".CodeChat-doc-contents",
                     // In the doc-only mode, add auto update functionality.

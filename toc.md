@@ -13,6 +13,7 @@ Design
 
 * [CodeChat Editor Design](docs/design.md)
 * [Implementation](docs/implementation.md)
+* [Accessibility review](docs/accessibility_review.md)
 
 Implementation
 ==============
@@ -53,6 +54,7 @@ Implementation
       * [overall_3.rs](server/tests/overall/overall_3.rs)
       * [overall_4.rs](server/tests/overall/overall_4.rs)
       * [overall_5.rs](server/tests/overall/overall_5.rs)
+      * [overall_a11y.rs](server/tests/overall/overall_a11y.rs)
   * [Cargo.toml](server/Cargo.toml)
 * [Client](client/readme.md)
   * Editor
