@@ -227,6 +227,16 @@ jobs:
       - build-global-artifacts
     # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
     if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    # Pin this job to the "marketplace-publish" GitHub Environment so its OIDC
+    # token's subject claim is stable (repo:...:environment:marketplace-publish),
+    # matching the federated credential configured on the Azure managed identity.
+    environment: marketplace-publish
+    # Job-level permissions REPLACE (not merge with) the workflow-level
+    # permissions above, so contents:write must be repeated here alongside the
+    # new id-token:write needed for OIDC login to Azure.
+    permissions:
+      contents: write
+      id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"
@@ -277,6 +287,17 @@ jobs:
         run: |
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
+      # Sign in to Microsoft Entra ID via OIDC (no secret involved) so the
+      # `vsce publish --azure-credential` calls below can get a Marketplace
+      # access token. Requires `id-token: write` (above) and a federated
+      # credential on this managed identity trusting this repo's
+      # "marketplace-publish" GitHub Environment.
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: 144c1898-0dd4-449b-bc7b-9ee72919a565
+          tenant-id: 351e566f-3458-409c-8271-b3fb4b59c505
+          subscription-id: 9137d49b-639e-42b6-98d2-418fc572cd09
       - name: Create GitHub Release
         env:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
@@ -284,17 +305,16 @@ jobs:
           ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
           RELEASE_COMMIT: "${{ github.sha }}"
           APP_VERSION: ${{ fromJson(needs.plan.outputs.val).releases[0].app_version }}
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
           VSCE_PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--pre-release' || '' }}"
           VSCE_ARGS: --changelog-path docs/changelog.md
         run: |
           npm install -g @vscode/vsce
           # vsce doesn't support prerelease portions of a semver, so strip that
           # out of the `APP_VERSION` before use.
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-win32-x64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-linux-x64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-x64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
-          npx vsce publish --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-arm64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
+          npx vsce publish --azure-credential --packagePath target/distrib/extensions/VSCode/codechat-editor-client-win32-x64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
+          npx vsce publish --azure-credential --packagePath target/distrib/extensions/VSCode/codechat-editor-client-linux-x64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
+          npx vsce publish --azure-credential --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-x64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
+          npx vsce publish --azure-credential --packagePath target/distrib/extensions/VSCode/codechat-editor-client-darwin-arm64-${APP_VERSION%%-*}.vsix $VSCE_ARGS $VSCE_PRERELEASE_FLAG
 
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
