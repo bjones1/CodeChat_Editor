@@ -212,7 +212,9 @@ async fn test_5_core(
         .first()
         .await
         .unwrap();
-    doc_block_contents.click().await.unwrap();
+    click_element_top_left(&driver, &doc_block_contents)
+        .await
+        .unwrap();
     // The click produces an updated cursor/scroll location after an autosave
     // delay.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
