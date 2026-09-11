@@ -7,6 +7,7 @@ User documentation
 * [The CodeChat Editor manual](README.md)
 * [The CodeChat Editor extension for Visual Studio Code manual](extensions/VSCode/README.md)
 * [Literate programming using the CodeChat Editor](docs/style_guide.cpp)
+* [Capture token setup guide](docs/capture-token-setup-guide.html)
 
 Design
 ======
@@ -19,7 +20,6 @@ Implementation
 ==============
 
 * [Server](server/readme.md)
-  * [main.rs](server/src/main.rs)
   * [lib.rs](server/src/lib.rs)
   * [lexer.rs](server/src/lexer.rs)
     * [Lexer walkthrough](server/src/lexer/lexer-walkthrough.md)
@@ -31,13 +31,17 @@ Implementation
       * [python.pest](server/src/lexer/pest/python.pest)
   * [webserver.rs](server/src/webserver.rs)
     * [log4rs.yml](server/log4rs.yml)
-  * [Capture events schema](server/scripts/capture_events_schema.sql)
+  * [capture.rs](server/src/capture.rs)
+    * [Capture events schema](server/scripts/capture_events_schema.sql)
   * [ide.rs](server/src/ide.rs)
     * [vscode.rs](server/src/ide/vscode.rs)
   * [translation.rs](server/src/translation.rs)
   * [processing.rs](server/src/processing.rs)
+    * [cache.rs](server/src/processing/cache.rs)
   * Tests
     * [Test utilities](test_utils/readme.md)
+      * [Cargo.toml](test_utils/Cargo.toml)
+      * [lib.rs](test_utils/src/lib.rs)
       * [test\_utils.rs](test_utils/src/test_utils.rs)
       * [testing\_logger.rs](test_utils/src/testing_logger.rs)
       * [test\_macros.rs](test_utils/src/test_macros.rs)
@@ -45,7 +49,6 @@ Implementation
     * Webserver [tests.rs](server/src/webserver/tests.rs)
     * ide/vscode [tests.rs](server/src/ide/vscode/tests.rs)
     * Processing [tests.rs](server/src/processing/tests.rs)
-    * [cli.rs](server/tests/cli.rs)
     * Webdriver-based
       * [overall.rs](server/tests/overall.rs)
       * [overall_common/mod.rs](server/tests/overall/common/mod.rs)
@@ -67,6 +70,7 @@ Implementation
       * [shared.mts](client/src/shared.mts)
       * [assert.mts](client/src/assert.mts)
       * [show\_toast.mts](client/src/show_toast.mts)
+      * [debug\_enabled.mts](client/src/debug_enabled.mts)
     * [global.d.ts](client/src/global.d.ts)
   * Styles
     * [CodeChatEditorBase.css](client/src/css/CodeChatEditorBase.css)
@@ -80,11 +84,16 @@ Implementation
     * [HTML to Markdown conversion test document](docs/Markdown_HTML.js)
     * [PDF test](docs/helloworld.pdf)
 * [Extensions](extensions/readme.md)
-  * [Visual Studio Code](extensions/VSCode/developer.md)
-    * [extension.ts](extensions/VSCode/src/extension.ts)
-    * [lib.rs](extensions/VSCode/src/lib.rs)
-    * [Cargo.toml](extensions/VSCode/Cargo.toml)
+  * [Developer documentation](extensions/developer.md)
+  * Visual Studio Code
     * [Developer documentation](extensions/VSCode/developer.md)
+    * [extension.ts](extensions/VSCode/src/extension.ts)
+    * [capture-policy.ts](extensions/VSCode/src/capture-policy.ts)
+      * [capture-policy.test.mjs](extensions/VSCode/src/capture-policy.test.mjs)
+    * [lib.rs](extensions/VSCode/src/lib.rs)
+      * [build.rs](extensions/VSCode/build.rs)
+    * [Cargo.toml](extensions/VSCode/Cargo.toml)
+    * [LICENSE.md](extensions/VSCode/LICENSE.md)
   * Standalone
     * [main.rs](extensions/standalone/src/main.rs)
     * [filewatcher.rs](extensions/standalone/src/filewatcher.rs)
@@ -95,18 +104,30 @@ Implementation
   * Builder
     * [builder/Cargo.toml](builder/Cargo.toml)
     * [builder/src/main.rs](builder/src/main.rs)
+    * [server/bt](server/bt) - shortcut to run the build tool
+    * [server/bt.ps1](server/bt.ps1) - PowerShell shortcut to run the build tool
+  * Continuous integration
+    * [check.yml](.github/workflows/check.yml)
+    * [release.yml](.github/workflows/release.yml)
+  * Development environment
+    * [devcontainer.json](.devcontainer/devcontainer.json)
+      * [postCreateCommand.sh](.devcontainer/postCreateCommand.sh)
+      * [postStartCommand.sh](.devcontainer/postStartCommand.sh)
   * Git
+    * [.gitignore](.gitignore)
     * [server/.gitignore](server/.gitignore)
     * [client/static/.gitignore](client/static/.gitignore)
     * [client/.gitignore](client/.gitignore)
+    * [client/src/.gitignore](client/src/.gitignore)
     * [extensions/VSCode/.gitignore](extensions/VSCode/.gitignore)
     * [builder/.gitignore](builder/.gitignore)
   * NPM/esbuild
     * [HashReader.mts](client/src/HashReader.mts)
-    * client/package.json
+    * [client/package.json5](client/package.json5)
     * [client/tsconfig.json](client/tsconfig.json)
     * [client/eslint.config.js](client/eslint.config.js)
     * [client/.prettierrc.json5](client/.prettierrc.json5)
+    * [client/.prettierignore](client/.prettierignore)
     * [extensions/VSCode/eslint.config.js](extensions/VSCode/eslint.config.js)
     * [extensions/VSCode/tsconfig.json](extensions/VSCode/tsconfig.json)
     * [extensions/VSCode/jsconfig.json](extensions/VSCode/jsconfig.json)
@@ -120,7 +141,8 @@ Implementation
 Misc
 ====
 
-* [New project template](new-project-template/README.md)
+* [New project template](examples/new-project-template/README.md)
+  * [Template table of contents](examples/new-project-template/toc.md)
 * [Table of contents](toc.md)
 * [Changelog](CHANGELOG.md)
 * [Index](docs/index.md)

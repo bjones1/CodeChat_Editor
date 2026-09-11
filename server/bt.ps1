@@ -22,3 +22,5 @@
 $manifest_path = Join-Path -Path $PSScriptRoot -ChildPath ../builder/Cargo.toml
 echo $manifest_path
 cargo run --manifest-path=$manifest_path -- $args
+
+# CodeChat Editor lexer: python
