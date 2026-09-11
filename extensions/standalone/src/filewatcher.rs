@@ -36,7 +36,6 @@ use actix_web::{
     http::header::{self, ContentType},
     web,
 };
-use dunce::simplified;
 use indoc::formatdoc;
 use log::{error, info, warn};
 use notify_debouncer_full::{
@@ -64,8 +63,9 @@ use code_chat_editor::{
     webserver::{
         EditorMessage, EditorMessageContents, INITIAL_IDE_MESSAGE_ID, MESSAGE_ID_INCREMENT,
         RESERVED_MESSAGE_ID, RegisterRoutes, ResultErrTypes, ResultOkTypes, UpdateMessageContents,
-        WebAppState, client_websocket, filesystem_endpoint, get_client_framework, get_test_mode,
-        html_wrapper, http_not_found, path_display, send_response,
+        WebAppState, canonicalize, client_websocket, filesystem_endpoint, get_client_framework,
+        get_test_mode, html_wrapper, http_not_found, path_display, request_path_to_file_path,
+        send_response,
     },
 };
 
@@ -144,14 +144,16 @@ async fn filewatcher_browser_endpoint(
     }
     // All other cases (for example, `C:\a\path\to\file.txt`) are OK.
 
-    // For Linux/OS X, prepend a slash, so that `a/path/to/file.txt` becomes
-    // `/a/path/to/file.txt`.
-    #[cfg(not(target_os = "windows"))]
-    let fixed_path = "/".to_string() + &fixed_path;
+    // Restore the separator which `path_to_url` dropped, using the same
+    // conversion the Client's `fsc` route applies to the paths it captures.
+    // Links in a directory listing are built from the path this route captured,
+    // so both the listing's links and the URL `main.rs` opens arrive here in
+    // the spelling `path_to_url` produces.
+    let fixed_path = request_path_to_file_path(&fixed_path);
 
     // Handle any
     // [errors](https://doc.rust-lang.org/std/fs/fn.canonicalize.html#errors).
-    let canon_path = match Path::new(&fixed_path).canonicalize() {
+    let canon_path = match canonicalize(Path::new(&fixed_path)) {
         Ok(p) => p,
         Err(err) => {
             return Ok(http_not_found(&format!(
@@ -398,12 +400,12 @@ fn processing_task(
     // First, allocate variables needed by these two tasks.
     //
     // The path to the currently open CodeChat Editor file.
-    let Ok(current_filepath) = file_path.to_path_buf().canonicalize() else {
+    let Ok(current_filepath) = canonicalize(file_path) else {
         let msg = format!("Unable to canonicalize path {}.", file_path.display());
         error!("{msg}");
         return Err(error::ErrorBadRequest(msg));
     };
-    let mut current_filepath = Some(PathBuf::from(simplified(&current_filepath)));
+    let mut current_filepath = Some(current_filepath);
 
     let connection_id_raw = connection_id_raw.to_string();
     let connection_id = format!("{FW}{connection_id_raw}");
@@ -791,7 +793,8 @@ mod tests {
             EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID,
             INITIAL_IDE_MESSAGE_ID, INITIAL_MESSAGE_ID, IdeType, MESSAGE_ID_INCREMENT,
             ResultErrTypes, ResultOkTypes, UpdateMessageContents, WebAppState, WebsocketQueues,
-            configure_app, drop_leading_slash, make_app_data, send_response, set_root_path,
+            configure_app, drop_leading_slash, make_app_data, path_to_url, send_response,
+            set_root_path,
         },
     };
     use dunce::simplified;
@@ -823,8 +826,10 @@ mod tests {
         let app =
             test::init_service(configure_app(App::new(), &app_data, &FilewatcherRoutes)).await;
 
-        // Load in a test source file to create a websocket.
-        let uri = format!("/fw/fsb/{}/test.py", test_dir.to_string_lossy());
+        // Load in a test source file to create a websocket. Build the URL the
+        // way `main.rs` does, so that this exercises the same `path_to_url`
+        // output the directory browser actually receives.
+        let uri = format!("{}/test.py", path_to_url("/fw/fsb", None, test_dir));
         let req = test::TestRequest::get().uri(&uri).to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());

@@ -43,7 +43,7 @@
 //
 // ### Standard library
 use std::{
-    env, fs,
+    env,
     io::{self, Read},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     ops::RangeInclusive,
@@ -170,7 +170,11 @@ impl Cli {
                                 // it should work.
                                 if let Some(open_path) = open {
                                     let address = get_server_url(ping_addr.port())?;
-                                    let open_path = fs::canonicalize(open_path)?;
+                                    // Use the webserver's `canonicalize`, so
+                                    // that a file on a network share gets the
+                                    // same spelling the `fsb` route produces
+                                    // for it.
+                                    let open_path = webserver::canonicalize(open_path)?;
                                     let open_path =
                                         path_to_url(&format!("{address}/fw/fsb"), None, &open_path);
                                     webbrowser::open(&open_path)?;
