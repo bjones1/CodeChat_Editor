@@ -605,7 +605,6 @@ impl HtmlToMarkdownWrapped {
     /// at the root, not continue a previous incomplete section of the DOM.
     fn next(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
         let converted = self.html_to_markdown.tree_to_markdown(tree);
-        println!("htmd output: {converted:#?}");
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
                 // A return value of `None` means the text was unchanged or
