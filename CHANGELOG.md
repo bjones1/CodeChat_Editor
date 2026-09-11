@@ -24,12 +24,14 @@ Changelog
 
 * No changes.
 
-Version 0.2.3 -- 2026-Sep-09
+Version 0.2.3 -- 2026-Sep-10
 ----------------------------
 
 * Alpha: added support for <xref ref="cc-TRCKclsxwW"></xref> and <xref ref="cc-swJ6a-FiK3"></xref>.
 * Improved Client editing experience -- fewer places exist where starting a new
   heading, list item, etc. is removed immediately after creation.
+* Improved accessibility; added accessibility documentation to the
+  [user docs](README.md).
 
 Version 0.2.2 -- 2026-Aug-28
 ----------------------------
