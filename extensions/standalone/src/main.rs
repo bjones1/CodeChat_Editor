@@ -14,8 +14,9 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
-// Relax a few pedantic Clippy lints for test code only; see the `[lints.clippy]`
-// section in `Cargo.toml` for the full-crate (production) lint config.
+// Relax a few pedantic Clippy lints for test code only; see the
+// `[lints.clippy]` section in `Cargo.toml` for the full-crate (production) lint
+// config.
 #![cfg_attr(
     test,
     allow(
@@ -164,9 +165,9 @@ impl Cli {
                                 // Open a web browser if requested. TODO: show
                                 // an error if running in a Codespace, since
                                 // this doesn't work. See
-                                // https://github.com/Byron/open-rs/issues/108
-                                // -- if `open` used `$BROWSER` (following
-                                // Pyhton), it should work.
+                                // https://github.com/Byron/open-rs/issues/108 --
+                                // if `open` used `$BROWSER` (following Pyhton),
+                                // it should work.
                                 if let Some(open_path) = open {
                                     let address = get_server_url(ping_addr.port())?;
                                     let open_path = fs::canonicalize(open_path)?;
@@ -384,10 +385,10 @@ fn fix_addr(addr: &SocketAddr) -> SocketAddr {
 /// Compute the root path to pass to `webserver::main`; see its docs (and
 /// `webserver::set_root_path`'s) for what this must contain. In a `cargo
 /// dist`-packaged build, this binary sits alongside `client/static`,
-/// `log4rs.yml`, and `hashLocations.json` (see `dist.toml`'s `include`), so
-/// this program's own directory is already the root. In a dev build, this
-/// binary instead lives under `extensions/standalone/target/...`, so walk
-/// back up to the repository root.
+/// `log4rs.yml`, and `hashLocations.json` (see the `include` list in
+/// `dist-workspace.toml`), so this program's own directory is already the root.
+/// In a dev build, this binary instead lives under the workspace's shared
+/// `target/` directory in the repository root, so walk back up to it.
 fn root_path() -> PathBuf {
     let exe_dir = env::current_exe()
         .expect("Unable to determine path to current executable.")
@@ -397,13 +398,13 @@ fn root_path() -> PathBuf {
     if cfg!(not(debug_assertions)) {
         return exe_dir;
     }
-    // A test binary (from an inline `#[cfg(test)] mod test`) lives in an
-    // extra `deps` directory (e.g. `target/debug/deps/`) compared to a plain
-    // `cargo build`'s `target/debug/`.
+    // A test binary (from an inline `#[cfg(test)] mod test`) lives in an extra
+    // `deps` directory (e.g. `target/debug/deps/`) compared to a plain `cargo
+    // build`'s `target/debug/`.
     if cfg!(test) {
-        exe_dir.join("../../../../..")
+        exe_dir.join("../../..")
     } else {
-        exe_dir.join("../../../..")
+        exe_dir.join("../..")
     }
 }
 

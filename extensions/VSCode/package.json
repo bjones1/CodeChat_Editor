@@ -121,7 +121,7 @@
         "@napi-rs/cli": "^3.9.0",
         "@tybys/wasm-util": "^0.10.3",
         "@types/escape-html": "^1.0.4",
-        "@types/node": "^26.5.0",
+        "@types/node": "^26.5.1",
         "@types/vscode": "1.61.0",
         "@typescript-eslint/eslint-plugin": "^8.70.0",
         "@typescript-eslint/parser": "^8.70.0",

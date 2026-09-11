@@ -561,10 +561,9 @@ pub fn set_root_path(
 // (`ide::vscode::tests` and the `tests/overall` integration tests). Not
 // `#[cfg(test)]`-gated: integration tests under `tests/` link this crate as a
 // normal (non-`--test`) dependency, so a `#[cfg(test)]` item wouldn't be
-// visible to them. All these test binaries are built under
-// `server/target/debug/deps/...` (one directory deeper than a plain `cargo
-// build`'s `server/target/debug/`), or one directory deeper still under `cargo
-// llvm-cov`.
+// visible to them. All these test binaries are built under the workspace's
+// shared `target/debug/deps/...`, which sits directly in the repository root,
+// or one directory deeper still under `cargo llvm-cov`.
 #[must_use]
 pub fn test_root_path() -> PathBuf {
     let exe_dir = env::current_exe()
@@ -577,7 +576,8 @@ pub fn test_root_path() -> PathBuf {
     } else {
         exe_dir
     };
-    exe_dir.join("../../../..")
+    // `deps` -> `debug` -> `target` -> the repository root.
+    exe_dir.join("../../..")
 }
 
 // Webserver functionality

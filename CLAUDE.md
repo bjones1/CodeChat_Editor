@@ -47,8 +47,7 @@ All build commands must be executed from the `server/` directory.
 
 * To build the entire project, execute `./bt build`.
 * To format and lint the entire project, execute `./bt flint`.
-* To build (bundle) only the Client, execute `./bt client-build`.
-* To run tests, execute `cargo test`.
+* To run all tests, execute `./bt test`.
 
 Commenting guide
 ----------------

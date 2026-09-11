@@ -17,33 +17,46 @@
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
 # `Cargo.toml` -- Rust build/package management config for the standalone CLI
-# =============================================================================
+# ===========================================================================
 #
 # General package configurations
 # ------------------------------
 [package]
-authors = ["Bryan A. Jones", "Peter Loux"]
-categories = ["development-tools", "text-editors"]
+authors.workspace = true
+categories.workspace = true
 description = "A programmer's word processor -- standalone command-line server."
-edition = "2024"
-homepage = "https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md"
-keywords = ["literate programming"]
-license = "GPL-3.0-only"
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
 name = "codechat-editor-standalone"
 readme = "../../README.md"
-repository = "https://github.com/bjones1/CodeChat_Editor"
-version = "0.2.3"
+repository.workspace = true
+version.workspace = true
 
 # Dependencies
 # ------------
+#
+# `cargo sort` orders a `[target]` table ahead of `[dependencies]`, so the
+# platform-specific dependencies lead this section.
+#
+# ### Windows-only dependencies
+#
+# See the
+# [Cargo docs](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies)
+# on platform-specific dependencies.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
+
+# ### All-platform dependencies
 [dependencies]
 actix-rt = "2.9.0"
 actix-web = "4"
 clap = { version = "4", features = ["derive"] }
-codechat-editor-server = { path = "../../server" }
+codechat-editor-server.workspace = true
 dunce = "1.0.5"
 indoc = "2.0.5"
-log = { version = "0.4", features = ["release_max_level_warn"] }
+log.workspace = true
 minreq = "3"
 notify-debouncer-full = "0.7"
 rand = "0.10"
@@ -52,10 +65,6 @@ tokio = { version = "1", features = ["full"] }
 urlencoding = "2"
 webbrowser = "1.0.5"
 
-# [Windows-only dependencies](https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#platform-specific-dependencies).
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_Storage_FileSystem"] }
-
 # ### Development-only dependencies
 [dev-dependencies]
 actix-http = "3.9.0"
@@ -63,34 +72,12 @@ assert_cmd = "2"
 path-slash = "0.2.1"
 predicates = "3.1.2"
 pretty_assertions = "1.4.1"
-test_utils = { path = "../../test_utils" }
+test_utils.workspace = true
 url = "2.5.2"
 
-# Release
-# -------
-[profile.release]
-codegen-units = 1
-lto = true
-opt-level = 3
-panic = "abort"
-strip = "symbols"
-
-# The profile that `cargo dist` will build with.
-[profile.dist]
-inherits = "release"
-
-# Code coverage
-# -------------
+# Lints
+# -----
 #
-[lints.rust]
-# Avoid a lint about the `coverage` cfg set by `cargo llvm-cov` (see `bt
-# cover`).
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
-
-# Clippy config
-# -------------
-[lints.clippy]
-pedantic = { level = "warn", priority = 0 }
-missing_errors_doc = { level = "allow", priority = 1 }
-missing_panics_doc = { level = "allow", priority = 1 }
-doc_markdown = { level = "allow", priority = 1 }
+# Profiles and lint configuration live in the workspace root manifest.
+[lints]
+workspace = true

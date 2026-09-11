@@ -1,22 +1,15 @@
 [package]
+edition.workspace = true
 name = "test_utils"
+# Test helpers shared between packages; never published on its own.
+publish = false
 version = "0.1.0"
-edition = "2024"
 
 [dependencies]
 assert_fs = "1"
 assertables = "10"
-log = "0.4"
+log.workspace = true
 
-[lints.clippy]
-# https://github.com/rust-lang/rust-clippy shows which categories are enabled by
-# default; https://doc.rust-lang.org/stable/clippy/lints.html for a description
-# of each of these categories.
-#
-# Individual lints below need an explicit `priority` higher than this group's
-# implicit 0, or Cargo errors with "lint group `pedantic` has the same
-# priority (0) as a lint" (see
-# https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section).
-pedantic = { level = "warn", priority = 0 }
-missing_panics_doc = { level = "allow", priority = 1 }
-doc_markdown = { level = "allow", priority = 1 }
+# Lint configuration lives in the workspace root manifest.
+[lints]
+workspace = true

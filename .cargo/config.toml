@@ -11,8 +11,15 @@
 # See also the
 # [cargo config docs](https://doc.rust-lang.org/cargo/reference/config.html#configuration-format)
 # for environment variable setting.
+#
+# This file sits at the workspace root rather than in `server/` because Cargo
+# discovers configuration by walking up from the *current* directory: once a
+# command runs from the repository root, a `server/.cargo/config.toml` is never
+# read and `ts-rs` silently writes its output elsewhere. `relative = true`
+# resolves against this file's parent directory, so the path holds no matter
+# which member directory Cargo was invoked from.
 [env]
-TS_RS_EXPORT_DIR = { value = "../client/src/rust-types", relative = true }
+TS_RS_EXPORT_DIR = { value = "client/src/rust-types", relative = true }
 # Set the extension for the imported files: import JavaScript (`.js`) files, per
 # TypeScript's convention.
 TS_RS_IMPORT_EXTENSION = "ts"

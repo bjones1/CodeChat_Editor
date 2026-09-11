@@ -113,9 +113,9 @@ Implementation
     * [extensions/VSCode/.vscodeignore](extensions/VSCode/.vscodeignore)
     * [.prettierignore](.prettierignore)
   * Misc
-    * [config.toml](server/.cargo/config.toml) - for Rust code coverage
+    * [Cargo.toml](Cargo.toml) - workspace manifest
+    * [config.toml](.cargo/config.toml) - for Rust code coverage
     * [dist-workspace.toml](dist-workspace.toml) - cargo-dist configuration
-    * [dist.toml](server/dist.toml) - additional cargo-dist configuration
 
 Misc
 ====
