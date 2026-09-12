@@ -14,16 +14,17 @@
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //! `main.rs` -- Entrypoint for the `CodeChat` Editor Builder
-//! =======================================================
+//! =========================================================
 //!
 //! This code uses [dist](https://opensource.axo.dev/cargo-dist/book/) as a part
-//! of the release process. To update the `./release.yaml` file this tool
-//! creates:
+//! of the release process. To update the `.github/workflows/release.yml` file
+//! this tool creates:
 //!
-//! 1. Edit `server/dist-workspace.toml`: change `allow-dirty` to `[]`.
+//! 1. Edit `dist-workspace.toml` in the repository root: change `allow-dirty`
+//!    to `[]`.
 //! 2. Run `dist init` and accept the defaults, then run `dist generate`.
-//! 3. Review changes to `./release.yaml`, reapplying hand edits.
-//! 4. Revert the changes to `server/dist-workspace.toml`.
+//! 3. Review changes to `.github/workflows/release.yml`, reapplying hand edits.
+//! 4. Revert the changes to `dist-workspace.toml`.
 //! 5. Test
 //!
 //! Keep the `DIST_VERSION` consistent with the version of dist in
@@ -80,12 +81,13 @@ enum Commands {
         #[arg(short, long, default_value_t = false)]
         check: bool,
     },
-    /// Run formatters and linters, build all files, build for release, then run tests.
+    /// Run formatters and linters, build all files, build for release, then run
+    /// tests.
     Full,
     /// Run all tests.
     Test,
-    /// Repeatedly run the `overall_*` tests until one fails. Useful for
-    /// shaking out intermittent test failures.
+    /// Repeatedly run the `overall_*` tests until one fails. Useful for shaking
+    /// out intermittent test failures.
     RunUntilFail,
     /// Build everything.
     Build,
@@ -132,11 +134,18 @@ struct TypeScriptBuildOptions {
 
 // Constants
 // ---------
+//
+// These paths are relative to `server/`, which `main` makes the current
+// directory.
 static VSCODE_PATH: &str = "../extensions/VSCode";
-static STANDALONE_PATH: &str = "../extensions/standalone";
 static CLIENT_PATH: &str = "../client";
+// The workspace manifest, which records the version the released packages
+// inherit.
+static WORKSPACE_MANIFEST_PATH: &str = "../Cargo.toml";
+// This program's own package. It sits outside the workspace (see its
+// `Cargo.toml`), so `--workspace` never reaches it and every tool below needs a
+// second, explicit pass over it.
 static BUILDER_PATH: &str = "../builder";
-static TEST_UTILS_PATH: &str = "../test_utils";
 static NAPI_TARGET: &str = "NAPI_TARGET";
 static DIST_VERSION: &str = "0.32.0";
 
@@ -382,16 +391,10 @@ fn run_install(dev: bool) -> io::Result<()> {
     patch_client_libs()?;
     run_script("pnpm", &["install"], VSCODE_PATH, true)?;
     run_cmd!(
-        info "Builder: cargo fetch";
-        cargo fetch --manifest-path=$BUILDER_PATH/Cargo.toml;
-        info "VSCode extension: cargo fetch";
-        cargo fetch --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "Standalone: cargo fetch";
-        cargo fetch --manifest-path=$STANDALONE_PATH/Cargo.toml;
-        info "test_utils: cargo fetch";
-        cargo fetch --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo fetch";
         cargo fetch;
+        info "Builder: cargo fetch";
+        cargo fetch --manifest-path=$BUILDER_PATH/Cargo.toml;
     )?;
     if dev {
         // Install the cargo binstall binary, taken from the
@@ -447,32 +450,28 @@ fn run_update() -> io::Result<()> {
     patch_client_libs()?;
     run_script("pnpm", &["update"], VSCODE_PATH, true)?;
     run_cmd!(
-        info "Builder: cargo update";
-        cargo update --manifest-path=$BUILDER_PATH/Cargo.toml;
-        info "VSCode extension: cargo update";
-        cargo update --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "Standalone: cargo update";
-        cargo update --manifest-path=$STANDALONE_PATH/Cargo.toml;
-        info "test_utils: cargo update";
-        cargo update --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo update";
         cargo update;
+        info "Builder: cargo update";
+        cargo update --manifest-path=$BUILDER_PATH/Cargo.toml;
     )?;
     // Simply display outdated dependencies, but don't consider them an error.
     run_script("pnpm", &["outdated"], CLIENT_PATH, false)?;
     run_script("pnpm", &["outdated"], VSCODE_PATH, false)?;
     run_cmd!(
-        info "Builder: cargo outdated";
-        cargo outdated --manifest-path=$BUILDER_PATH/Cargo.toml;
-        info "VSCode extension: cargo outdated";
-        cargo outdated --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "Standalone: cargo outdated";
-        cargo outdated --manifest-path=$STANDALONE_PATH/Cargo.toml;
-        info "test_utils: cargo outdated";
-        cargo outdated --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
         info "cargo outdated";
-        cargo outdated;
+        cargo outdated --workspace;
     )?;
+    // `cargo outdated` 0.19.0 joins a relative `--manifest-path` onto the
+    // current directory but never normalizes the result, so the `..` in
+    // `../builder/Cargo.toml` survives. Cargo then compares that path literally
+    // against the canonicalized workspace root it discovers and rejects the
+    // manifest as "a member of the wrong workspace". Running in `builder/`
+    // avoids the flag, and therefore the bug.
+    //
+    // TODO: fold this back into the `run_cmd!` above once cargo-outdated
+    // normalizes the path it builds.
+    run_script("cargo", &["outdated"], BUILDER_PATH, true)?;
     Ok(())
 }
 
@@ -487,59 +486,41 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     // RUSTSEC-2026-0258 is h2 0.3.x via actix-http; remove this ignore once
     // actix-http publishes a compatible release on h2 0.4.16 or newer.
     let h2_advisory_ignore = "RUSTSEC-2026-0258";
+    // `--workspace` reaches every workspace member from any member directory,
+    // so each tool runs once for the workspace plus once for `builder`. The
+    // lockfile paths are relative to `server/`, where this runs.
+    //
+    // `cargo sort` is the exception: its `--workspace` expands the manifest at
+    // the path it's given -- the current directory by default -- rather than
+    // the workspace root cargo would discover, so from `server/` it checks only
+    // `server/Cargo.toml`. Passing `..` aims it at the workspace root instead.
     run_cmd!(
         info "cargo clippy and fmt";
-        cargo clippy --all-targets --all-features -- $clippy_check_only;
+        cargo clippy --workspace --all-targets --all-features -- $clippy_check_only;
         cargo fmt --all $check;
         info "Builder: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$BUILDER_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$BUILDER_PATH/Cargo.toml;
-        info "VSCode extension: cargo clippy and fmt";
-        cargo clippy --all-targets --all-features --manifest-path=$VSCODE_PATH/Cargo.toml -- $clippy_check_only;
-        cargo fmt --all $check --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "Standalone: cargo clippy and fmt";
-        cargo clippy --all-targets --all-features --manifest-path=$STANDALONE_PATH/Cargo.toml -- $clippy_check_only;
-        cargo fmt --all $check --manifest-path=$STANDALONE_PATH/Cargo.toml;
-        info "test_utils: cargo clippy and fmt";
-        cargo clippy --all-targets --all-features --manifest-path=$TEST_UTILS_PATH/Cargo.toml -- $clippy_check_only;
-        cargo fmt --all $check --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
 
         info "cargo audit";
-        cargo audit --ignore $h2_advisory_ignore;
+        cargo audit --file=../Cargo.lock --ignore $h2_advisory_ignore;
         info "Builder: cargo audit";
         cargo audit --file=$BUILDER_PATH/Cargo.lock --no-fetch --ignore $h2_advisory_ignore;
-        info "VSCode extension: cargo audit";
-        cargo audit --file=$VSCODE_PATH/Cargo.lock --no-fetch --ignore $h2_advisory_ignore;
-        info "Standalone: cargo audit";
-        cargo audit --file=$STANDALONE_PATH/Cargo.lock --no-fetch --ignore $h2_advisory_ignore;
-        info "test_utils: cargo audit";
-        cargo audit --file=$TEST_UTILS_PATH/Cargo.lock --no-fetch --ignore $h2_advisory_ignore;
 
         info "cargo sort";
-        cargo sort $check;
-        cd $BUILDER_PATH;
+        cargo sort --workspace $check ..;
         info "Builder: cargo sort";
-        cargo sort $check;
-        cd $VSCODE_PATH;
-        info "VSCode extension: cargo sort";
-        cargo sort $check;
-        cd ../standalone;
-        info "Standalone: cargo sort";
-        cargo sort $check;
-        info "test_utils: cargo sort";
-        cd ../$TEST_UTILS_PATH;
-        cargo sort $check;
-
+        cargo sort $check $BUILDER_PATH;
     )?;
     // `cargo machete` recurses into subdirectories on its own, so a single
     // invocation from the repo root covers every crate. It's run outside the
     // block above and branched here (rather than interpolating a `--fix`
-    // variable that may be empty) because passing it an empty string
-    // argument makes it treat the empty string as an invalid path and error
-    // out. The `cargo-machete` binary is invoked directly (rather than via
-    // `cargo machete`) since going through cargo's subcommand dispatch from
-    // inside this already-running `cargo run` process causes cargo-machete to
-    // misparse its own arguments.
+    // variable that may be empty) because passing it an empty string argument
+    // makes it treat the empty string as an invalid path and error out. The
+    // `cargo-machete` binary is invoked directly (rather than via `cargo
+    // machete`) since going through cargo's subcommand dispatch from inside
+    // this already-running `cargo run` process causes cargo-machete to misparse
+    // its own arguments.
     if check_only {
         run_cmd!(
             info "cargo machete";
@@ -574,17 +555,15 @@ fn run_full() -> io::Result<()> {
 }
 
 fn run_test() -> io::Result<()> {
+    // `builder` is tested through its own manifest. Its test binaries are
+    // separate files from the `builder` executable this program is running
+    // from, and its feature resolution matches the `cargo run` which started
+    // that executable, so nothing here needs to relink the running binary.
     run_cmd!(
+        info "cargo test";
+        cargo test --workspace;
         info "Builder: cargo test";
         cargo test --manifest-path=$BUILDER_PATH/Cargo.toml;
-        info "VSCode extension: cargo test";
-        cargo test --manifest-path=$VSCODE_PATH/Cargo.toml;
-        info "Standalone: cargo test";
-        cargo test --manifest-path=$STANDALONE_PATH/Cargo.toml;
-        info "test_utils: cargo test";
-        cargo test --manifest-path=$TEST_UTILS_PATH/Cargo.toml;
-        info "cargo test";
-        cargo test;
     )?;
     Ok(())
 }
@@ -612,13 +591,12 @@ fn run_until_fail() -> io::Result<()> {
 }
 
 fn run_build() -> io::Result<()> {
+    // Deliberately no `builder` pass: `cargo run` already rebuilt this program
+    // before it began executing, and rebuilding it here would have to relink
+    // the running executable.
     run_cmd!(
-        info "Builder: cargo build";
-        cargo build --manifest-path=$BUILDER_PATH/Cargo.toml;
         info "cargo build";
-        cargo build;
-        info "Standalone: cargo build";
-        cargo build --manifest-path=$STANDALONE_PATH/Cargo.toml;
+        cargo build --workspace;
     )?;
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists(format!("{CLIENT_PATH}/static/bundled"))?;
@@ -646,7 +624,9 @@ fn run_client_build(
 
     // The main build for the Client.
     //
-    // <h4 id="Icn3ToCCYu" data-gather="PEsfbFhMYN oy0vDtlUs6 POHIjx6j3N">Overall client build pipeline</h4>
+    // <h4 data-gather="PEsfbFhMYN oy0vDtlUs6 POHIjx6j3N" id="Icn3ToCCYu">
+    //   Overall client build pipeline
+    // </h4>
     run_script(
         &esbuild,
         &[
@@ -666,8 +646,8 @@ fn run_client_build(
         true,
     )?;
 
-    // <a id="#pdf.js"></a>The PDF viewer for use with VSCode. Build it separately,
-    // since it's loaded apart from the rest of the Client.
+    // <a id="#pdf.js"></a>The PDF viewer for use with VSCode. Build it
+    // separately, since it's loaded apart from the rest of the Client.
     run_script(
         &esbuild,
         &[
@@ -800,17 +780,11 @@ fn run_extensions_build(
 fn run_change_version(new_version: &String) -> io::Result<()> {
     let cargo_regex = r#"(\r?\nversion = ")[\d.]+(?:-[a-z\d]*)?("\r?\n)"#;
     let replacement_string = format!("${{1}}{new_version}${{2}}");
-    search_and_replace_file("Cargo.toml", cargo_regex, &replacement_string)?;
-    search_and_replace_file(
-        format!("{VSCODE_PATH}/Cargo.toml"),
-        cargo_regex,
-        &replacement_string,
-    )?;
-    search_and_replace_file(
-        format!("{STANDALONE_PATH}/Cargo.toml"),
-        cargo_regex,
-        &replacement_string,
-    )?;
+    // The Server and both extensions inherit `version` from
+    // `[workspace.package]`, so the workspace manifest is the only Rust
+    // manifest to rewrite. `builder` and `test_utils` keep their own versions
+    // and are never released.
+    search_and_replace_file(WORKSPACE_MANIFEST_PATH, cargo_regex, &replacement_string)?;
     search_and_replace_file(
         format!("{VSCODE_PATH}/package.json"),
         r#"(\r?\n    "version": ")[\d.]+(?:-[a-z\d]*)?(",\r?\n)"#,
@@ -922,13 +896,15 @@ impl Cli {
 }
 
 fn main() -> io::Result<()> {
-    // Change to the `server/` directory, so it can be run from anywhere.
-    let mut root_path = PathBuf::from(env::current_exe().unwrap().parent().unwrap());
-    root_path.push("../../../server");
+    // Change to the `server/` directory, so it can be run from anywhere. Locate
+    // it relative to this package's manifest. `bt` always runs this through
+    // `cargo run`, so the source tree is present.
+    let mut root_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    root_path.push("../server");
     // Use `dunce.canonicalize`, since UNC paths booger up some of the build
     // tools (cargo can't delete the builder's binary, NPM doesn't accept UNC
     // paths.)
-    root_path = canonicalize(root_path).unwrap();
+    let root_path = canonicalize(root_path).unwrap();
     env::set_current_dir(root_path).unwrap();
 
     let cli = Cli::parse();

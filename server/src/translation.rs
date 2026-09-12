@@ -557,7 +557,11 @@ pub async fn translation_task(
                                             path_to_url(&tt.prefix_str, Some(&tt.connection_id_raw), &clean_file_path), Some(true)
                                         )
                                     }));
-                                    tt.current_file = file_path.into();
+                                    // Store the canonicalized path, not the
+                                    // path the IDE sent: the comparisons
+                                    // against `current_file` below assume every
+                                    // path has one spelling.
+                                    tt.current_file = clean_file_path;
                                     // Since this is a new file, mark it as
                                     // unsent in full.
                                     tt.sent_full = false;
@@ -581,7 +585,7 @@ pub async fn translation_task(
                             (http_request.file_path.clone(),
                             // Assign a version to this `LoadFile` request only
                             // if it's the current file and loaded as the file
-                            // to edit, not as the sidebar TOC. We can us a
+                            // to edit, not as the sidebar TOC. We can use a
                             // simple comparison, since both file names have
                             // already been canonicalized.
                             http_request.file_path == tt.current_file &&

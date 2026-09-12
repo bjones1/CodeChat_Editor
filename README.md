@@ -7,7 +7,15 @@ its basic features and use. In contrast, the [style guide](docs/style_guide.cpp)
 provides strategies for effectively employing the CodeChat Editor to improve the
 software development process.
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/videoseries?si=QNrYCiTLVCpxpAbD&amp;list=PLOJAqFa3UI2FJncc-OBRPhh17NJXQP6ve" allowfullscreen="allowfullscreen" frameborder="0"></iframe>
+<p>
+  <iframe
+    width="560"
+    height="315"
+    src="https://www.youtube.com/embed/videoseries?si=QNrYCiTLVCpxpAbD&amp;list=PLOJAqFa3UI2FJncc-OBRPhh17NJXQP6ve"
+    allowfullscreen="allowfullscreen"
+    frameborder="0"
+  ></iframe>
+</p>
 
 Full manual
 -----------
@@ -151,10 +159,10 @@ cross-reference. If the id resides in a file within a [project](#cc-DscjSxRZHF),
 then any file in that same project can refer to that id using a hyperlink or
 cross-reference. For example:
 
-| Source                              | Rendered                      |
-| ----------------------------------- | ----------------------------- |
-| `[Style guide](#cc-nNZ6Gs2uWD)`     | [Style guide](#cc-nNZ6Gs2uWD) |
-| `<xref ref="cc-nNZ6Gs2uWD"></xref>` | <br>                          |
+| Source                              | Rendered                          |
+| ----------------------------------- | --------------------------------- |
+| `[Style guide](#cc-nNZ6Gs2uWD)`     | [Style guide](#cc-nNZ6Gs2uWD)     |
+| `<xref ref="cc-nNZ6Gs2uWD"></xref>` | <xref ref="cc-nNZ6Gs2uWD"></xref> |
 
 In projects, each id must be unique throughout the entire project. To simplify
 the creation of unique ids, items assigned an `id="*"` with be replaced with a
@@ -185,7 +193,9 @@ To do so:
    data-gather="some_unique_id1 some_unique_id2 ...">Gathered code</h4>`. Below
    the the result of a gather tag for these fragments:
 
-<h4 id="cc-4YrLCPA4-S">Starting websocket ID</h4>
+<h4 data-gather="cc-kK31yjXjJd cc-Vk22aRyJ3s" id="cc-4YrLCPA4-S">
+  Starting websocket ID
+</h4>
 
 Images
 ------
@@ -226,25 +236,66 @@ Diagrams
 The CodeChat Editor supports diagrams created by
 [Mermaid](https://mermaid.js.org/). For example,
 
-<table><thead><tr><th>Source</th><th>Rendered</th></tr></thead><tbody><tr><td><pre><code class="language-markdown">```mermaid
-graph TD; A --&gt; B;
-```
-</code></pre></td><td><pre><code class="language-mermaid">graph TD; A --&gt; B;
-</code></pre></td></tr></tbody></table>
+<table>
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Rendered</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
 
-The [Mermaid live editor](https://mermaid.live/) provide an focused environment
-for creating Mermaid chart.
+````markdown
+```mermaid
+graph TD; A --> B;
+```
+````
+
+</td><td>
+
+```mermaid
+graph TD; A --> B;
+```
+
+</td>
+    </tr>
+  </tbody>
+</table>
 
 ### Graphviz
 
 The CodeChat Editor supports diagrams created by
 [Graphviz](https://graphviz.org/). For example,
 
-<table><thead><tr><th>Source</th><th>Rendered</th></tr></thead><tbody><tr><td><pre><code class="language-markdown">```graphviz
-digraph { A -&gt; B }
+<table>
+  <thead>
+    <tr>
+      <th>Source</th>
+      <th>Rendered</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+
+````markdown
+```graphviz
+digraph { A -> B }
 ```
-</code></pre></td><td><pre><code class="language-graphviz">digraph { A -&gt; B }
-</code></pre></td></tr></tbody></table>
+````
+
+</td><td>
+
+```graphviz
+digraph { A -> B }
+```
+
+</td>
+    </tr>
+  </tbody>
+</table>
 
 Several on-line tools, such as [Edotor](https://edotor.net/), provide a focused
 editing experience.
@@ -307,8 +358,8 @@ the user-level `CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values
 are ignored for this token-bearing endpoint. Token-bearing requests require
 HTTPS except for localhost development endpoints.
 
-<a id="supported-languages" contenteditable="false"></a>Supported languages
----------------------------------------------------------------------------
+<a id="supported-languages"></a>Supported languages
+---------------------------------------------------
 
 * C/C++
 * C#

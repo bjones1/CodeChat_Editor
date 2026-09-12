@@ -22,17 +22,17 @@
 # General package configurations
 # ------------------------------
 [package]
-authors = ["Bryan A. Jones", "Peter Loux"]
-categories = ["development-tools", "text-editors"]
+authors.workspace = true
+categories.workspace = true
 description = "A programmer's word processor."
-edition = "2024"
-homepage = "https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md"
-keywords = ["literate programming"]
-license = "GPL-3.0-only"
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
 name = "codechat-editor-vscode-extension"
 readme = "../README.md"
-repository = "https://github.com/bjones1/CodeChat_Editor"
-version = "0.2.3"
+repository.workspace = true
+version.workspace = true
 
 # `cargo machete` doesn't scan `build.rs`, so it can't see `napi-build` used
 # there.
@@ -43,8 +43,8 @@ ignored = ["napi-build"]
 crate-type = ["cdylib"]
 
 [dependencies]
-codechat-editor-server = { path = "../../server" }
-log = { version = "0.4", features = ["release_max_level_warn"] }
+codechat-editor-server.workspace = true
+log.workspace = true
 napi = { version = "3.0.0", features = ["tokio_rt"] }
 napi-derive = "3.0.0"
 serde_json = "1.0.145"
@@ -52,13 +52,9 @@ serde_json = "1.0.145"
 [build-dependencies]
 napi-build = "2"
 
-[profile.release]
-codegen-units = 1
-lto = true
-panic = "abort"
-strip = "symbols"
-
-[lints.clippy]
-pedantic = { level = "warn", priority = 0 }
-missing_errors_doc = { level = "allow", priority = 1 }
-doc_markdown = { level = "allow", priority = 1 }
+# Lints
+# -----
+#
+# Profiles and lint configuration live in the workspace root manifest.
+[lints]
+workspace = true

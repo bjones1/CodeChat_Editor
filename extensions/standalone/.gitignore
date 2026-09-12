@@ -16,15 +16,8 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# `dist.toml` - Configure [cargo-dist](https://opensource.axo.dev/cargo-dist/)
-# ============================================================================
-#
-# Config for `dist`.
-[dist]
-# Extra static files to include in each App (path relative to this Cargo.toml's
-# dir)
-include = [
-    "../../server/log4rs.yml",
-    "../../server/hashLocations.json",
-    "../../client/static",
-]
+# `.gitignore` -- files for Git to ignore
+# =======================================
+app.log
+
+# CodeChat Editor lexer: python.

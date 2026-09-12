@@ -31,7 +31,7 @@ use std::{
     hash::BuildHasher,
     io,
     net::SocketAddr,
-    path::{self, MAIN_SEPARATOR_STR, Path, PathBuf},
+    path::{self, Component, MAIN_SEPARATOR_STR, Path, PathBuf, Prefix},
     str::FromStr,
     string::FromUtf8Error,
     sync::{Arc, LazyLock, Mutex},
@@ -65,7 +65,7 @@ use log4rs::{
 };
 use mime::Mime;
 use mime_guess;
-use path_slash::{PathBufExt, PathExt};
+use path_slash::PathBufExt;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use tokio::{
@@ -552,7 +552,7 @@ pub fn set_root_path(
     // `root_path` for an example.
     base_path: &Path,
 ) -> io::Result<()> {
-    *ROOT_PATH.lock().unwrap() = base_path.canonicalize()?;
+    *ROOT_PATH.lock().unwrap() = canonicalize(base_path)?;
     Ok(())
 }
 
@@ -561,10 +561,9 @@ pub fn set_root_path(
 // (`ide::vscode::tests` and the `tests/overall` integration tests). Not
 // `#[cfg(test)]`-gated: integration tests under `tests/` link this crate as a
 // normal (non-`--test`) dependency, so a `#[cfg(test)]` item wouldn't be
-// visible to them. All these test binaries are built under
-// `server/target/debug/deps/...` (one directory deeper than a plain `cargo
-// build`'s `server/target/debug/`), or one directory deeper still under `cargo
-// llvm-cov`.
+// visible to them. All these test binaries are built under the workspace's
+// shared `target/debug/deps/...`, which sits directly in the repository root,
+// or one directory deeper still under `cargo llvm-cov`.
 #[must_use]
 pub fn test_root_path() -> PathBuf {
     let exe_dir = env::current_exe()
@@ -577,7 +576,8 @@ pub fn test_root_path() -> PathBuf {
     } else {
         exe_dir
     };
-    exe_dir.join("../../../..")
+    // `deps` -> `debug` -> `target` -> the repository root.
+    exe_dir.join("../../..")
 }
 
 // Webserver functionality
@@ -752,6 +752,42 @@ pub fn get_client_framework(
 }
 
 // ### Serve file
+//
+/// A filesystem route hands its handler the file's path percent-decoded, with
+/// the separator which `path_to_url` dropped still missing. Restore it, so that
+/// the result names the same file the URL was built from. Every route which
+/// captures a file's path this way -- the Client's `fsc` route and the
+/// standalone editor's `fsb` directory browser -- must agree on this
+/// conversion, so they share it.
+#[must_use]
+pub fn request_path_to_file_path(
+    // The file path captured by the route, such as `C:/foo/bar.py`.
+    request_file_path: &str,
+    // Output: the path, ready to canonicalize.
+) -> String {
+    if cfg!(target_os = "windows") {
+        // HTTP doesn't treat a backslash as a path separator, but Windows
+        // does. Re-encode any backslash, so that both agree on where this
+        // path's components divide.
+        let backslashes_encoded = request_file_path.replace('\\', "%5C");
+        // A Windows path begins with a drive letter, unless it names a network
+        // share: `path_to_url` spells a UNC path as `//server/share/...`, and
+        // the route's match absorbs the first of those two separators along
+        // with the one which ends the connection ID.
+        if backslashes_encoded.starts_with('/') {
+            format!("/{backslashes_encoded}")
+        } else {
+            backslashes_encoded
+        }
+    } else {
+        // Restore the leading slash which the route's match absorbed. An
+        // unsaved file has no location on disk, so `try_canonicalize` leaves
+        // its path relative; `url_to_path` prepends the slash to that path
+        // too, so both conversions name such a file the same way.
+        format!("/{request_file_path}")
+    }
+}
+
 /// This could be a plain text file (for example, one not recognized as source
 /// code that this program supports), a binary file (image/video/etc.), a
 /// CodeChat Editor file, or a non-existent file. Determine which type this file
@@ -763,19 +799,7 @@ pub async fn filesystem_endpoint(
     req: &HttpRequest,
     app_state: &WebAppState,
 ) -> HttpResponse {
-    // On Windows, backslashes in the `request_file_path` will be treated as
-    // path separators; however, HTTP does not treat them as path separators.
-    // Therefore, re-encode them to prevent inconsistency between the way HTTP
-    // and this program interpret file paths. On OS X/Linux, the path starts
-    // with a leading slash, which gets absorbed into the URL to prevent a URL
-    // such as "/fw/fsc/1//foo/bar/...". Restore it here.
-    #[cfg(target_os = "windows")]
-    let fixed_file_path = request_file_path.replace('\\', "%5C");
-    // On OS X/Linux, the path starts with a leading slash, which gets absorbed
-    // into the URL to prevent a URL such as "/fw/fsc/1//foo/bar/...". Restore
-    // it here.
-    #[cfg(not(target_os = "windows"))]
-    let fixed_file_path = format!("/{request_file_path}");
+    let fixed_file_path = request_path_to_file_path(&request_file_path);
     // TODO: security: ensure the resulting path is within the current project /
     // some expected directory.
     let file_path = match try_canonicalize(&fixed_file_path) {
@@ -1813,27 +1837,101 @@ pub fn url_to_path(
     // Strip the expected prefix; the remainder is a file path.
     let path_segments_suffix = path_segments_vec[expected_prefix.len() + 1..].to_vec();
 
-    // URL decode each segment; however, re-encode the `\`, since this isn't a
-    // valid path separator in a URL but is incorrectly treated as such on
-    // Windows.
+    // URL decode each segment. On Windows, re-encode the `\`, since this isn't
+    // a valid path separator in a URL but is incorrectly treated as such by
+    // Windows; `request_path_to_file_path` does the same to the path a route
+    // captures. On OS X/Linux a `\` is an ordinary character in a file name, so
+    // leave it alone.
     let path_segments_suffix_decoded = path_segments_suffix
         .iter()
         .map(|path_segment| {
             urlencoding::decode(path_segment)
                 .map_err(UrlToPathError::UnableToDecode)
-                .map(|path_seg| path_seg.replace('\\', "%5C"))
+                .map(|path_seg| {
+                    if cfg!(target_os = "windows") {
+                        path_seg.replace('\\', "%5C")
+                    } else {
+                        path_seg.into_owned()
+                    }
+                })
         })
         .collect::<Result<Vec<String>, UrlToPathError>>()?;
 
     // Join the segments into a path.
     let path_str = path_segments_suffix_decoded.join(MAIN_SEPARATOR_STR);
 
-    // On non-Windows systems, the path should start with a `/`. Windows paths
-    // should already start with a drive letter.
-    #[cfg(not(target_os = "windows"))]
-    let path_str = "/".to_string() + &path_str;
+    // Restore the separator which `path_to_url` dropped. On non-Windows
+    // systems, that's the leading `/` of every absolute path. A Windows path
+    // instead begins with a drive letter, unless it names a network share: an
+    // empty first segment marks the `//server/share` spelling of a UNC path,
+    // which needs the first of its two leading separators back.
+    let path_str = if cfg!(target_os = "windows") {
+        if path_segments_suffix_decoded
+            .first()
+            .is_some_and(String::is_empty)
+        {
+            MAIN_SEPARATOR_STR.to_string() + &path_str
+        } else {
+            path_str
+        }
+    } else {
+        MAIN_SEPARATOR_STR.to_string() + &path_str
+    };
 
     try_canonicalize(&path_str).map_err(UrlToPathError::UrlNotFile)
+}
+
+// The prefix `canonicalize` produces for a file on a network share.
+const VERBATIM_UNC_PREFIX: &str = r"\\?\UNC\";
+
+/// Decide whether the components of a path on a network share survive the loss
+/// of that prefix. `dunce` asks this question only of a path on a drive, so ask
+/// it that way instead: a server or share name obeys the rules which apply to a
+/// file name, and the drive's longer prefix only makes dunce's length check
+/// stricter than it needs to be here.
+fn is_safe_to_strip_verbatim_unc(
+    // A path on a network share, with the verbatim prefix already removed:
+    // `server\share\...`.
+    share_path: &str,
+    // Output: whether the path can be spelled without the verbatim prefix.
+) -> bool {
+    let as_disk_path = PathBuf::from(format!(r"\\?\C:\{share_path}"));
+    simplified(&as_disk_path) != as_disk_path.as_path()
+}
+
+/// Convert a path to the most compatible form which still names the same file.
+/// `dunce::simplified` does this for a path on a drive, but leaves a path on a
+/// network share in the verbatim `\\?\UNC\server\share\...` form which
+/// `canonicalize` returns. Reduce that to `\\server\share\...`, the spelling
+/// IDEs send and the rest of this program compares against.
+#[must_use]
+pub fn simplify(
+    // The path to convert.
+    path: &Path,
+    // Output: the path, in its most compatible form.
+) -> Cow<'_, Path> {
+    match path
+        .to_str()
+        .and_then(|path_str| path_str.strip_prefix(VERBATIM_UNC_PREFIX))
+    {
+        Some(share_path) if is_safe_to_strip_verbatim_unc(share_path) => {
+            Cow::Owned(PathBuf::from(format!(r"\\{share_path}")))
+        }
+        _ => Cow::Borrowed(simplified(path)),
+    }
+}
+
+/// `std::fs::canonicalize`, followed by `simplify`, so that every canonical
+/// path in this program uses one spelling of a given file. Prefer this to
+/// `std::fs::canonicalize`, whose result on Windows names a file on a network
+/// share in a verbatim form which matches neither the path an IDE sends nor the
+/// URL the Client requests.
+pub fn canonicalize(
+    // The path to canonicalize; it must name an existing file.
+    path: &Path,
+    // Output: the canonical path, or the error `canonicalize` reported.
+) -> io::Result<PathBuf> {
+    Ok(simplify(&fs::canonicalize(path)?).into_owned())
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1856,8 +1954,8 @@ pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, TryCanonicalizeError
             file_path: file_path.to_string(),
             error: err.to_string(),
         }),
-        Ok(path_buf) => match path_buf.canonicalize() {
-            Ok(p) => Ok(PathBuf::from(simplified(&p))),
+        Ok(path_buf) => match canonicalize(&path_buf) {
+            Ok(p) => Ok(p),
             // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
             // fails if the path doesn't exist. For unsaved files, this is
             // expected; in this case, we can't correct case based on the actual
@@ -1884,21 +1982,65 @@ pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, TryCanonicalizeError
 
 // Given a file path, convert it to a URL, encoding as necessary.
 #[must_use]
-pub fn path_to_url(prefix: &str, connection_id: Option<&str>, file_path: &Path) -> String {
-    // First, convert the path to use forward slashes.
-    let pathname = simplified(file_path)
-        .to_slash_lossy()
-        // The convert each part of the path to a URL-encoded string. (This
-        // avoids encoding the slashes.)
-        .split('/')
-        .map(|s| urlencoding::encode(s))
-        // Then put it all back together.
+pub fn path_to_url(
+    // The URL path segments which precede the file's path.
+    prefix: &str,
+    // The connection ID to place between the prefix and the file's path, when
+    // the URL needs one.
+    connection_id: Option<&str>,
+    // The path to convert.
+    file_path: &Path,
+    // Output: a URL naming the given file.
+) -> String {
+    // Convert each of the path's components to a URL path segment. A Windows
+    // path prefix is the only component whose text contains separators of its
+    // own -- the backslashes in `\\server\share` -- so each form of prefix
+    // needs its own translation; every other component becomes a single
+    // segment. Each verbatim prefix translates to the same segments as the
+    // legacy prefix naming the same file, so a path needs no simplification
+    // first.
+    let mut segments: Vec<String> = Vec::new();
+    for component in file_path.components() {
+        match component {
+            Component::Prefix(prefix_component) => match prefix_component.kind() {
+                // A drive letter forms one segment, such as `C:`.
+                Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => {
+                    segments.push(format!("{}:", drive as char));
+                }
+                // Spell a UNC path as a URL does: `//server/share`. The empty
+                // segment supplies the doubled slash, which identifies the URL
+                // as a UNC path when it's converted back to a path.
+                Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share) => {
+                    segments.push(String::new());
+                    segments.push(server.to_string_lossy().into_owned());
+                    segments.push(share.to_string_lossy().into_owned());
+                }
+                // A device namespace such as `\\.\COM1`, or a verbatim prefix
+                // naming neither a drive nor a share, doesn't refer to a file
+                // in a directory tree, so no URL names it. Pass its text
+                // through as one segment, which at least produces a readable
+                // error when the Client requests it.
+                Prefix::DeviceNS(_) | Prefix::Verbatim(_) => {
+                    warn!(
+                        "Unable to convert the path prefix of {} to a URL.",
+                        file_path.display()
+                    );
+                    segments.push(prefix_component.as_os_str().to_string_lossy().into_owned());
+                }
+            },
+            // Dropping the root directory avoids a doubled slash in the URL;
+            // the separator which precedes the next segment stands in for it.
+            Component::RootDir => {}
+            _ => segments.push(component.as_os_str().to_string_lossy().into_owned()),
+        }
+    }
+    // Percent-encode each segment, which avoids encoding the separators, then
+    // join the segments back into a path.
+    let pathname = segments
+        .iter()
+        .map(|segment| urlencoding::encode(segment))
         .collect::<Vec<_>>()
         .join("/");
-    // On Windows, path names start with a drive letter. On Linux/OS X, they
-    // start with a forward slash -- don't put a double forward slash in the
-    // resulting path.
-    let pathname = drop_leading_slash(&pathname);
     if let Some(connection_id) = connection_id {
         format!("{prefix}/{connection_id}/{pathname}")
     } else {

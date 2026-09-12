@@ -80,6 +80,7 @@ use crate::{
         supported_languages::MARKDOWN_MODE,
     },
     processing::cache::{FileFacts, FragmentFact, IdResolution, TargetFact},
+    webserver::canonicalize,
 };
 use cache::{Cache, CacheMap};
 
@@ -1280,7 +1281,7 @@ pub fn source_to_codechat_for_web_string(
         let root = toc_path
             .parent()
             .map_or_else(PathBuf::new, Path::to_path_buf);
-        let root = dunce::canonicalize(&root).unwrap_or(root);
+        let root = canonicalize(&root).unwrap_or(root);
         cache
             .lock()
             .unwrap()
@@ -1494,7 +1495,7 @@ fn hydrate_dom(
     // canonicalized and absolute. (Canonicalization fails for files which don't
     // exist on disk -- such as tests -- in which case the path is used as-is.)
     let metadata = file.metadata().ok();
-    let path = dunce::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+    let path = canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
     // ### Assign requested ids
     //
     // Replace each `id="*"` with a freshly generated id before facts are

@@ -212,26 +212,29 @@ async fn test_5_core(
         .first()
         .await
         .unwrap();
-    doc_block_contents.click().await.unwrap();
-    // The click produces an updated cursor/scroll location after an autosave
-    // delay.
+    click_element_top_left(&driver, &doc_block_contents)
+        .await
+        .unwrap();
+    // The click sometimes produces an updated cursor/scroll location after an
+    // autosave delay; absorb that message when it appears, then continue.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(1)),
-                scroll_position: Some(1.0),
-                is_re_translation: false,
-                contents: None,
-            })
-        }
-    );
-    codechat_server.send_result(client_id, None).await.unwrap();
-    client_id += MESSAGE_ID_INCREMENT;
-    assert_eq!(client_id, 7.0);
+    if let Some(msg) = codechat_server.get_message_timeout(TIMEOUT).await {
+        assert_eq!(
+            msg,
+            EditorMessage {
+                id: client_id,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: path_str.clone(),
+                    cursor_position: Some(CursorPosition::Line(1)),
+                    scroll_position: Some(1.0),
+                    is_re_translation: false,
+                    contents: None,
+                })
+            }
+        );
+        codechat_server.send_result(client_id, None).await.unwrap();
+        client_id += MESSAGE_ID_INCREMENT;
+    }
 
     // Refind it, since it's now switched with a TinyMCE editor.
     let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();

@@ -1,4 +1,4 @@
-Copyright (C) 2026 Bryan A. Jones.
+<span id="_mce_caret"></span>Copyright (C) 2026 Bryan A. Jones.
 
 This file is part of the CodeChat Editor.
 
@@ -24,10 +24,17 @@ Changelog
 
 * No changes.
 
+Version 0.2.4 -- 2026-Sep-11
+----------------------------
+
+* Fixed bug: Windows UNC paths now work correctly.
+* Restored mangled contents of [README](README.md).
+
 Version 0.2.3 -- 2026-Sep-10
 ----------------------------
 
-* Alpha: added support for <xref ref="cc-TRCKclsxwW"></xref> and <xref ref="cc-swJ6a-FiK3"></xref>.
+* Alpha: added support for <xref ref="cc-TRCKclsxwW"></xref> and
+  <xref ref="cc-swJ6a-FiK3"></xref>.
 * Improved Client editing experience -- fewer places exist where starting a new
   heading, list item, etc. is removed immediately after creation.
 * Improved accessibility; added accessibility documentation to the

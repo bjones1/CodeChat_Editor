@@ -19,9 +19,21 @@
 # `Cargo.toml` -- Rust build/package management config for the builder
 # ====================================================================
 [package]
-name = "builder"
-version = "0.1.0"
 edition = "2024"
+name = "builder"
+# A development tool, never a released artifact.
+publish = false
+version = "0.1.0"
+
+# Workspace
+# ---------
+#
+# This package is deliberately *not* a member of the workspace rooted at the
+# repository root, which excludes it; this empty table makes it a workspace root
+# of its own, See the note in the root `Cargo.toml` for the full explanation.
+#
+# It must follow `[package]`, which `cargo sort` requires to come first.
+[workspace]
 
 [dependencies]
 axotag = "0.3.0"
@@ -32,6 +44,13 @@ dunce = "1.0.5"
 path-slash = "0.2.1"
 regex = "1.11.1"
 
+# Lints
+# -----
+#
+# Kept here rather than inherited, since this package is its own workspace.
+# These match the root workspace's settings.
 [lints.clippy]
 pedantic = { level = "warn", priority = 0 }
+missing_errors_doc = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
 doc_markdown = { level = "allow", priority = 1 }

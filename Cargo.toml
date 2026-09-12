@@ -1,0 +1,153 @@
+# Copyright (C) 2026 Bryan A. Jones.
+#
+# This file is part of the CodeChat Editor.
+#
+# The CodeChat Editor is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option) any
+# later version.
+#
+# The CodeChat Editor is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# the CodeChat Editor. If not, see
+# [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+#
+# `Cargo.toml` -- Workspace manifest for the CodeChat Editor
+# ==========================================================
+#
+# Every Rust package in this repository except `builder` is a member of this one
+# workspace. Sharing one `target/` only avoids recompilation when the packages
+# agree on the *features* of their common dependencies. Cargo resolves features
+# across the whole set of packages selected by a single invocation, so enabling
+# a feature for one member changes the compiled artifact of that dependency and
+# of everything above it in the graph. `log`'s static-max-level features are the
+# case which forced this repository apart, so `[workspace.dependencies]` below
+# fixes them in one place for every member.
+#
+# `builder` is the exception: it is excluded and keeps its own `target/`
+# directory and `Cargo.lock`. `bt` runs it via `cargo run`, so its binary is
+# executing while it drives the rest of the build, and Windows refuses to relink
+# a running executable.
+[workspace]
+members = [
+    "extensions/VSCode",
+    "extensions/standalone",
+    "server",
+    "test_utils",
+]
+exclude = [
+    # `builder` is deliberately its own workspace; see the note above.
+    "builder",
+    # `@napi-rs/cli` ships a test fixture containing a `Cargo.toml`. Nothing
+    # builds it, but excluding it keeps Cargo from adopting it if a tool happens
+    # to run from that directory.
+    "extensions/VSCode/node_modules",
+]
+# A virtual manifest -- one with no `[package]` -- defaults to feature resolver
+# version 1 no matter which edition its members declare, and resolver 1 unifies
+# features across build dependencies and target-specific dependencies. The
+# standalone package's `cfg(windows)` dependency on `windows` resolves
+# differently under the two, so state the resolver explicitly.
+resolver = "3"
+
+# Shared package metadata
+# -----------------------
+[workspace.package]
+authors = ["Bryan A. Jones", "Peter Loux"]
+categories = ["development-tools", "text-editors"]
+edition = "2024"
+homepage = "https://codechat-editor.onrender.com/fw/fsb/opt/render/project/src/README.md"
+keywords = ["literate programming"]
+license = "GPL-3.0-only"
+repository = "https://github.com/bjones1/CodeChat_Editor"
+version = "0.2.4"
+
+# Shared dependencies
+# -------------------
+[workspace.dependencies]
+codechat-editor-server = { path = "server" }
+# `log`'s `release_max_level_warn` feature compiles out `info!` and below, but
+# only where `debug_assertions` is off -- `STATIC_MAX_LEVEL` is a `match
+# cfg!(debug_assertions)`, so debug builds and `cargo test` keep every level
+# regardless. Because a feature changes `log`'s compiled artifact, and with it
+# the fingerprint of the 40-odd packages above `log` in this graph (`actix-web`,
+# `tokio`, `h2`, `rustls`, `html5ever`, the Server itself), enabling it for only
+# the extensions would compile that entire subtree twice. It is therefore
+# declared once, for every member.
+log = { version = "0.4", features = ["release_max_level_warn"] }
+test_utils = { path = "test_utils" }
+
+# Shared lints
+# ------------
+#
+# Members inherit these with `lints.workspace = true`, which replaces rather
+# than merges with a package's own `[lints]` table -- so this is the union of
+# what the packages allowed individually.
+[workspace.lints.rust]
+# Avoid a lint about the `coverage` cfg set by `cargo llvm-cov` (see `bt
+# cover`).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+
+# A good article: https://emschwartz.me/your-clippy-config-should-be-stricter.
+#
+# Docs on clippy: see `cargo clippy --help`, `cargo check --help` (the target
+# selection and feature selection flags seems to apply to clippy).
+[workspace.lints.clippy]
+# https://github.com/rust-lang/rust-clippy shows which categories are enabled by
+# default; https://doc.rust-lang.org/stable/clippy/lints.html for a description
+# of each of these categories.
+#
+# Individual lints below need an explicit `priority` higher than this group's
+# implicit 0, or Cargo errors with "lint group `pedantic` has the same priority
+# (0) as a lint" (see
+# https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section).
+pedantic = { level = "warn", priority = 0 }
+# Disable specific pedantic lints that don't apply. Use LP docs instead of
+# rustdoc for errors and panics.
+missing_errors_doc = { level = "allow", priority = 1 }
+missing_panics_doc = { level = "allow", priority = 1 }
+# This warns at the phrase "CodeChat Editor", so it's disabled.
+doc_markdown = { level = "allow", priority = 1 }
+# Some lints relaxed for test code only via a single `#![cfg_attr(test,
+# allow(...))]` line in each crate root (`src/lib.rs`, `src/main.rs`) and a
+# plain `#![allow(...)]` in each `tests/*.rs` integration test binary (which is
+# entirely test code).
+
+# Use local packages for development
+# ----------------------------------
+#
+# Cargo honors `[patch]` only in the workspace root manifest.
+[patch.crates-io]
+# Commented out for now; uncomment to resume use.
+#actix = { path = "../actix/actix" }
+#actix-rt = { path = "../actix-net/actix-rt" }
+
+# Release
+# -------
+#
+# Cargo honors `[profile]` only in the workspace root manifest; the members'
+# profiles were identical apart from `opt-level`, which `release` already
+# defaults to 3.
+#
+# Specify release-only features for pulldown. See the
+# [docs](https://docs.rs/crate/pulldown-cmark/latest).
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = "symbols"
+
+# Distribution
+# ------------
+#
+# This uses [cargo dist](https://opensource.axo.dev/cargo-dist) to build
+# binaries across multiple platforms using github's CI/CD.
+#
+# The profile that `cargo dist` will build with.
+[profile.dist]
+inherits = "release"
