@@ -216,8 +216,25 @@ async fn test_5_core(
         .await
         .unwrap();
     // The click sometimes produces an updated cursor/scroll location after an
-    // autosave delay. Absorb this laser, in the first of the two
-    // \`optional\_message\`\` calls below.
+    // autosave delay; absorb that message when it appears, then continue.
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    if let Some(msg) = codechat_server.get_message_timeout(TIMEOUT).await {
+        assert_eq!(
+            msg,
+            EditorMessage {
+                id: client_id,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: path_str.clone(),
+                    cursor_position: Some(CursorPosition::Line(1)),
+                    scroll_position: Some(1.0),
+                    is_re_translation: false,
+                    contents: None,
+                })
+            }
+        );
+        codechat_server.send_result(client_id, None).await.unwrap();
+        client_id += MESSAGE_ID_INCREMENT;
+    }
 
     // Refind it, since it's now switched with a TinyMCE editor.
     let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
@@ -228,7 +245,10 @@ async fn test_5_core(
     // Make an edit.
     tinymce_contents.send_keys("foo").await.unwrap();
 
-    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    // Verify the updated text.
+    //
+    // Update the version from the value provided by the client, which varies
+    // randomly.
     let msg = optional_message(
         &codechat_server,
         &mut client_id,
@@ -241,10 +261,6 @@ async fn test_5_core(
         }),
     )
     .await;
-    // Verify the updated text.
-    //
-    // Update the version from the value provided by the client, which varies
-    // randomly.
     let client_version = get_version(&msg);
     assert_eq!(
         msg,

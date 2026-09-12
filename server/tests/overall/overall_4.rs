@@ -648,7 +648,25 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
         }
     );
     codechat_server.send_result(client_id, None).await.unwrap();
-    //client_id += MESSAGE_ID_INCREMENT;
+    client_id += MESSAGE_ID_INCREMENT;
+    // Sometimes, there's another message as well.
+    if let Some(msg) = codechat_server.get_message_timeout(TIMEOUT).await {
+        assert_eq!(
+            msg,
+            EditorMessage {
+                id: client_id,
+                message: EditorMessageContents::Update(UpdateMessageContents {
+                    file_path: path_str.clone(),
+                    cursor_position: Some(CursorPosition::Line(1)),
+                    scroll_position: Some(1.0),
+                    is_re_translation: false,
+                    contents: None,
+                })
+            }
+        );
+        codechat_server.send_result(client_id, None).await.unwrap();
+        //client_id += MESSAGE_ID_INCREMENT;
+    }
 
     // `Line(8)` only proves the caret is somewhere on the paragraph's *last*
     // source line -- it can't distinguish that line's start from its end.
