@@ -170,8 +170,6 @@ async fn test_edit_preserves_cursor_scroll_in_large_doc_block_core(
         codechat_server.send_result(client_id, None).await.unwrap();
         client_id += MESSAGE_ID_INCREMENT;
     };
-    // use std::time::Duration; use tokio::time::sleep;
-    // sleep(Duration::from\_hours(1)).await;
 
     let client_version = get_version(&msg);
     assert_eq!(
@@ -181,7 +179,7 @@ async fn test_edit_preserves_cursor_scroll_in_large_doc_block_core(
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: path_str.clone(),
                 cursor_position: Some(CursorPosition::Line(105)),
-                scroll_position: Some(1.0),
+                scroll_position: scroll_position_before,
                 is_re_translation: false,
                 contents: Some(CodeChatForWeb {
                     metadata: SourceFileMetadata {
