@@ -24,7 +24,7 @@ Changelog
 
 * No changes.
 
-Version 0.2.4 -- 2026-Sep-11
+Version 0.2.4 -- 2026-Sep-13
 ----------------------------
 
 * Fixed bug: Windows UNC paths now work correctly.
