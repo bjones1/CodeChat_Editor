@@ -483,8 +483,8 @@ const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
 pub const RESERVED_MESSAGE_ID: f64 = 0.0;
 /// The initial value for the server's message ID.
 pub const INITIAL_MESSAGE_ID: f64 = RESERVED_MESSAGE_ID + 3.0;
-// The initial value for a Client. This value **must** be the same on the
-// Client. This is a manual process, since
+// The initial websocket message ID for a Client. This value **must** be the
+// same on the Client. This is a manual process, since
 // [ts-rs](https://docs.rs/ts-rs/latest/ts_rs/) only generates types, not
 // constants. <fragment id="cc-kK31yjXjJd"></fragment>
 pub const INITIAL_CLIENT_MESSAGE_ID: f64 = INITIAL_MESSAGE_ID + 1.0;
@@ -752,7 +752,6 @@ pub fn get_client_framework(
 }
 
 // ### Serve file
-//
 /// A filesystem route hands its handler the file's path percent-decoded, with
 /// the separator which `path_to_url` dropped still missing. Restore it, so that
 /// the result names the same file the URL was built from. Every route which
@@ -766,9 +765,9 @@ pub fn request_path_to_file_path(
     // Output: the path, ready to canonicalize.
 ) -> String {
     if cfg!(target_os = "windows") {
-        // HTTP doesn't treat a backslash as a path separator, but Windows
-        // does. Re-encode any backslash, so that both agree on where this
-        // path's components divide.
+        // HTTP doesn't treat a backslash as a path separator, but Windows does.
+        // Re-encode any backslash, so that both agree on where this path's
+        // components divide.
         let backslashes_encoded = request_file_path.replace('\\', "%5C");
         // A Windows path begins with a drive letter, unless it names a network
         // share: `path_to_url` spells a UNC path as `//server/share/...`, and
@@ -782,8 +781,8 @@ pub fn request_path_to_file_path(
     } else {
         // Restore the leading slash which the route's match absorbed. An
         // unsaved file has no location on disk, so `try_canonicalize` leaves
-        // its path relative; `url_to_path` prepends the slash to that path
-        // too, so both conversions name such a file the same way.
+        // its path relative; `url_to_path` prepends the slash to that path too,
+        // so both conversions name such a file the same way.
         format!("/{request_file_path}")
     }
 }
