@@ -37,6 +37,7 @@ Implementation
     * [vscode.rs](server/src/ide/vscode.rs)
   * [translation.rs](server/src/translation.rs)
   * [processing.rs](server/src/processing.rs)
+    * [Cache spec](server/src/processing/cache-spec.md)
     * [cache.rs](server/src/processing/cache.rs)
   * Tests
     * [Test utilities](test_utils/readme.md)
