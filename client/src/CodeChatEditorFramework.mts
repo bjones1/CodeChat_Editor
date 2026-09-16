@@ -62,9 +62,8 @@ const RESPONSE_TIMEOUT_MS = 15000;
 let webSocketComm: WebSocketComm;
 
 class WebSocketComm {
-    // Use a unique ID for each websocket message sent. See the Implementation
-    // section on Message IDs for more information.
-    // <fragment id="cc-Vk22aRyJ3s"></fragment>
+    // The initial websocket ID for a Client. Use a unique ID for each websocket
+    // message sent. <fragment id="cc-Vk22aRyJ3s"></fragment>
     wsId = 4;
 
     // The websocket used by this class. Really a `ReconnectingWebSocket`, but
@@ -214,8 +213,8 @@ class WebSocketComm {
                             // to track this manually instead.
                             if (!this.isLoading) {
                                 // Wait until after the DOM is ready, since we
-                                // rely on content set in
-                                // `onDomContentLoaded` in the Client.
+                                // rely on content set in `onDomContentLoaded`
+                                // in the Client.
                                 await setContent(
                                     contents,
                                     currentUpdate.is_re_translation,
