@@ -724,8 +724,21 @@ fn run_extensions_build(
     let esbuild = PathBuf::from_slash("node_modules/.bin/esbuild");
     let distflag = if dist { "--minify" } else { "--sourcemap" };
 
-    // The NAPI build.
-    let mut napi_args = vec!["napi", "build", "--platform", "--output-dir", "src"];
+    // The NAPI build. `--js` aims the generated loader at
+    // `src/index-generated.js` instead of its default `src/index.js`, which
+    // is a tracked file carrying hand-written load tracing. The generated
+    // loader is therefore unused at run time; it's kept, and ignored by Git,
+    // as the reference to re-derive `src/index.js` from after a NAPI-RS
+    // upgrade changes what NAPI-RS emits.
+    let mut napi_args = vec![
+        "napi",
+        "build",
+        "--platform",
+        "--output-dir",
+        "src",
+        "--js",
+        "index-generated.js",
+    ];
     if dist {
         napi_args.push("--release");
     }

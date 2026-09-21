@@ -29,9 +29,11 @@ log4rs.yml
 hashLocations.json
 static/
 
-# NAPI-RS
+# NAPI-RS. `src/index.js` is tracked rather than generated -- see the
+# comment at the top of that file, and the `--js` flag in the builder's
+# NAPI build.
 src/index.d.ts
-src/index.js
+src/index-generated.js
 src/codechat-editor-client.win32-x64-msvc.node
 .windows/
 *.log
