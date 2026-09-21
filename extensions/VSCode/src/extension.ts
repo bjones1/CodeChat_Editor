@@ -36,7 +36,7 @@ import vscode, {
     TextEditor,
     TextEditorRevealType,
 } from "vscode";
-import { CodeChatEditorServer, initServer } from "./index.js";
+import type { CodeChatEditorServer } from "./index.js";
 
 // ### Local packages
 import {
@@ -125,14 +125,11 @@ let version = 0.0;
 
 // An object to start/stop the CodeChat Editor Server.
 let codeChatEditorServer: CodeChatEditorServer | undefined;
-// Before using `CodeChatEditorServer`, we must initialize it.
-{
-    const ext = vscode.extensions.getExtension(
-        "CodeChat.codechat-editor-client",
-    );
-    assert(ext !== undefined);
-    initServer(ext.extensionPath);
-}
+
+// The in-flight or completed load of the native module holding the CodeChat
+// Editor Server, started on demand by `load_native_module`.
+type NativeModule = typeof import("./index.js");
+let native_module: Promise<NativeModule> | undefined;
 
 // ---
 //
@@ -2015,6 +2012,56 @@ function queueCaptureEvent(
 // Activation/deactivation
 // -----------------------
 //
+// Import the native module, initializing the Server it contains on the first
+// successful import. Diagnostics which instrument the startup sequence belong
+// here: this is the earliest point at which a failure of the native module can
+// be reported, since the extension is by now fully loaded and running.
+const load_native_module = (
+    // This extension's context. Its `extensionPath` gives the extension's
+    // install directory, from which the Server locates the Client's files.
+    context: vscode.ExtensionContext,
+    // The imported, initialized module.
+): Promise<NativeModule> => {
+    if (native_module === undefined) {
+        // Store the promise before the `await` below hands control back to
+        // the event loop, so that a caller arriving while the load is in
+        // flight joins it rather than starting a second one.
+        native_module = (async () => {
+            let loaded: NativeModule;
+            try {
+                // The NAPI-RS-generated loader (`index.js`) throws while
+                // being imported when it finds no binding for this
+                // platform, so a static `import` of it would abort this
+                // module's load -- taking the extension down before
+                // `activate` runs, and before any diagnostic placed here
+                // could report why. A dynamic `import` instead defers that
+                // failure into a `try` block which can report it.
+                loaded = await import("./index.js");
+            } catch (e) {
+                // Discard a failed import, so that it's retried when this
+                // command runs again instead of leaving a permanently
+                // rejected promise in place. Repeating it costs nothing:
+                // the bundler memoizes a successful import and resets a
+                // failed one -- see the `try`/`catch` in the `__commonJS`
+                // helper of the bundle in `out/extension.js`.
+                native_module = undefined;
+                throw e;
+            }
+            // `initServer` performs the Server's global setup, which
+            // `webserver::init_server` documents as callable only once.
+            // Deliberately leave `native_module` in place when it throws:
+            // the rejected promise then replays that first failure to every
+            // later caller, whereas retrying would run the setup a second
+            // time and report a complaint about the already-installed
+            // logger in place of the problem which actually stopped the
+            // Server. Recovering from this requires reloading the window.
+            loaded.initServer(context.extensionPath);
+            return loaded;
+        })();
+    }
+    return native_module;
+};
+
 // This is invoked when the extension is activated. It either creates a new
 // CodeChat Editor Server instance or reveals the currently running one.
 export const activate = (context: vscode.ExtensionContext) => {
@@ -2110,6 +2157,21 @@ export const activate = (context: vscode.ExtensionContext) => {
             "extension.codeChatEditorActivate",
             async () => {
                 consoleLog("CodeChat Editor extension: starting.");
+
+                // Load the native module first, so that failing to load it
+                // leaves behind neither a webview panel nor subscriptions to
+                // editor events.
+                let native: NativeModule;
+                try {
+                    native = await load_native_module(context);
+                } catch (e) {
+                    // Report this even when `quiet_next_error` is set.
+                    quiet_next_error = false;
+                    show_error(
+                        `Unable to load the CodeChat Editor Server: ${format_error_chain(e)}`,
+                    );
+                    return;
+                }
 
                 if (!subscribed) {
                     subscribed = true;
@@ -2375,7 +2437,7 @@ export const activate = (context: vscode.ExtensionContext) => {
 
                 // Start the server.
                 consoleLog("CodeChat Editor extension: starting server.");
-                codeChatEditorServer = new CodeChatEditorServer(
+                codeChatEditorServer = new native.CodeChatEditorServer(
                     vscode.Uri.joinPath(
                         context.globalStorageUri,
                         "capture-spool",
@@ -2772,6 +2834,44 @@ const format_struct = (complex_data_structure: any): string =>
               complex_data_structure ?? "null/undefined",
           ).substring(0, MAX_MESSAGE_LENGTH)
         : "";
+
+// Format an error together with its chain of causes. The NAPI-RS loader places
+// only a generic summary in the error it throws, recording the load failure of
+// each candidate binding in a nested `cause`; without walking the chain, the
+// message naming the actual problem is lost.
+const format_error_chain = (
+    // The error to format, of whatever type a `catch` block received.
+    error: unknown,
+    // The chain of messages, outermost first.
+): string => {
+    const messages: string[] = [];
+    // A `cause` chain which loops back on itself would spin here forever.
+    // This runs only once something has already gone wrong, so it must not
+    // be what takes the extension host down.
+    const seen = new Set<unknown>();
+    let current = error;
+    while (current !== undefined && current !== null && !seen.has(current)) {
+        seen.add(current);
+        // A `catch` block receives whatever was thrown, and `String` throws
+        // in turn when that is a symbol.
+        messages.push(
+            current instanceof Error
+                ? current.message
+                : typeof current === "symbol"
+                  ? current.toString()
+                  : String(current),
+        );
+        // Test for `cause` rather than reading it directly: it is absent
+        // both on errors which record no cause and on the runtimes which
+        // predate it, and the test supplies the property's type, which the
+        // TypeScript library this file compiles against lacks.
+        current =
+            current instanceof Error && "cause" in current
+                ? current.cause
+                : undefined;
+    }
+    return messages.join("\n  caused by: ");
+};
 
 // Send a result (a response to a message from the server) back to the server.
 const sendResult = async (id: number, result?: ResultErrTypes) => {
