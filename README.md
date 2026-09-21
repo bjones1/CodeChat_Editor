@@ -39,51 +39,6 @@ depending on context (code block or dock block). In a code block, press Esc then
 press tab/shift-tab to navigate. In a doc block, tab alone navigates; to view
 all doc block keyboard shortcuts press Alt+0 (Windows, Linux) or ⌥0 (MacOS).
 
-Research capture
-----------------
-
-The VS Code extension can record dissertation study capture events when a
-participant explicitly opts in. A participant first registers in the capture
-portal, which emails a capture token. In VS Code, run **Manage CodeChat Editor
-Capture** or **CodeChat Editor: Enter Capture Token** from the command palette,
-paste the token, then turn on consent and recording from the same capture
-manager.
-
-For detailed student/tester setup steps, see the
-[CodeChat Capture Token Setup Guide](docs/capture-token-setup-guide.html).
-
-The token is imported through the VS Code UI and persisted only in VS Code
-SecretStorage. It is never written to workspace settings, repository files, or a
-JSON configuration file. The extension asks CaptureWebService for token status;
-the status item and capture manager show whether the token is accepted,
-rejected, unavailable, or disabled by the portal. The participant ID used in
-events comes from that status response, not from the token text.
-
-CodeChat no longer connects directly to the remote capture database and no
-longer reads or stores database credentials. The old local JSON database-secret
-configuration path has been removed. Capture events now leave CodeChat only by
-calling CaptureWebService with the portal-issued bearer token; any database
-writer role remains inside the service deployment.
-
-Events are sanitized, written to a durable local FIFO spool in VS Code's global
-extension storage, then uploaded to CaptureWebService. Spooled events carry only
-a non-secret token hash/service identity so events from an old token are not
-uploaded under a new token. Offline recording is allowed only after the same
-token and service URL have previously been verified as capture-enabled; a token
-disabled by the portal remains disabled while the service is unavailable. If the
-network or service is unavailable after the token has been accepted at least
-once, queued events remain in the spool and upload as soon as the matching token
-and service are available again. The capture service endpoint can be changed in
-the user-level `CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values
-are ignored for this token-bearing endpoint. Token-bearing requests require
-HTTPS except for localhost development endpoints.
-
-Developer builds must keep the Rust `minreq` dependency compiled with
-`https-rustls-probe` and `proxy` support. Capture HTTPS requests validate with
-the host platform certificate store and honor standard proxy environment
-variables. Without HTTPS support, token validation and event upload to the AWS
-capture service report as unavailable even when the service itself is healthy.
-
 Structure
 ---------
 
@@ -326,37 +281,9 @@ Research capture
 ----------------
 
 The VS Code extension can record dissertation study capture events when a
-participant explicitly opts in. A participant first registers in the capture
-portal, which emails a capture token. In VS Code, run **Manage CodeChat Editor
-Capture** or **CodeChat Editor: Enter Capture Token** from the command palette,
-paste the token, then turn on consent and recording from the same capture
-manager.
-
-The token is imported through the VS Code UI and persisted only in VS Code
-SecretStorage. It is never written to workspace settings, repository files, or a
-JSON configuration file. The extension asks CaptureWebService for token status;
-the status item and capture manager show whether the token is accepted,
-rejected, unavailable, or disabled by the portal. The participant ID used in
-events comes from that status response, not from the token text.
-
-CodeChat no longer connects directly to the remote capture database and no
-longer reads or stores database credentials. The old local JSON database-secret
-configuration path has been removed. Capture events now leave CodeChat only by
-calling CaptureWebService with the portal-issued bearer token; any database
-writer role remains inside the service deployment.
-
-Events are sanitized, written to a durable local FIFO spool in VS Code's global
-extension storage, then uploaded to CaptureWebService. Spooled events carry only
-a non-secret token hash/service identity so events from an old token are not
-uploaded under a new token. Offline recording is allowed only after the same
-token and service URL have previously been verified as capture-enabled; a token
-disabled by the portal remains disabled while the service is unavailable. If the
-network or service is unavailable after the token has been accepted at least
-once, queued events remain in the spool and upload as soon as the matching token
-and service are available again. The capture service endpoint can be changed in
-the user-level `CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values
-are ignored for this token-bearing endpoint. Token-bearing requests require
-HTTPS except for localhost development endpoints.
+participant explicitly opts in. See the
+[capture token setup guide](capture-token-setup-guide.html) for more
+information.
 
 <a id="supported-languages"></a>Supported languages
 ---------------------------------------------------
@@ -410,8 +337,8 @@ You should have received a [copy](LICENSE.html) of the GNU General Public
 License along with the CodeChat Editor. If not, see
 [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
 
-<a id="notes" contenteditable="false"></a>Notes
------------------------------------------------
+<a id="notes"></a>Notes
+-----------------------
 
 1. The image used comes from
    [Monitor icons created by prettycons - Flaticon](https://www.flaticon.com/free-icons/monitor "monitor icons").
