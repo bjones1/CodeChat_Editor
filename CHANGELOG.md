@@ -1,4 +1,4 @@
-<span id="_mce_caret"></span>Copyright (C) 2026 Bryan A. Jones.
+Copyright (C) 2026 Bryan A. Jones.
 
 This file is part of the CodeChat Editor.
 
@@ -23,6 +23,12 @@ Changelog
 -----------------------------------------------------------
 
 * No changes.
+
+Version 0.2.5 -- 2026-Sep-21
+----------------------------
+
+* Improve diagnostics when first loading the CodeChat Editor Server in the
+  VSCode extension.
 
 Version 0.2.4 -- 2026-Sep-13
 ----------------------------
