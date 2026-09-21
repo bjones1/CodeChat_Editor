@@ -150,7 +150,7 @@ export const init = async (
 
             // Needed to allow custom elements.
             extended_valid_elements:
-                "graphviz-graph[scale],wc-mermaid,xref[contenteditable|ref],fragment[contenteditable|id]",
+                "graphviz-graph[scale],wc-mermaid,xref[contenteditable|ref],fragment[contenteditable|following|id]",
             // Per the [docs](https://www.tiny.cloud/docs/tinymce/latest/content-filtering/#custom_elements), `~` marks tags as an inline element, not a block element.
             custom_elements: "graphviz-graph,wc-mermaid,~xref,~fragment",
         },

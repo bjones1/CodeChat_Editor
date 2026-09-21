@@ -2340,7 +2340,9 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                             id: id.clone(),
                             line: 0,
                             doc_block_start_index: walk_context.doc_block_index,
-                            code_doc_block_end_index: walk_context.doc_block_index + following,
+                            code_doc_block_end_index: walk_context
+                                .doc_block_index
+                                .saturating_add(following),
                         });
                     }
                     walk_context.fragments.push(FragmentHydration {

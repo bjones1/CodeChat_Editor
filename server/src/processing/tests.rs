@@ -1320,20 +1320,6 @@ fn test_doc_block_html_to_markdown_1() {
 // newly-created, still-empty block, converted to Markdown, then that Markdown
 // converted back to HTML the way the Server's re-translation does.
 //
-// TinyMCE marks an otherwise-empty block by placing a `<br
-// data-mce-bogus="1">` inside it, since a block with no content at all can't
-// hold the caret. Markdown has no such placeholder, so each empty block must be
-// expressible in Markdown some other way -- or the block the user just created
-// vanishes on the round trip, before they can type anything into it. The blocks
-// whose Markdown syntax can't stand alone when empty are rewritten during
-// dehydration, replacing the `<br>` with a non-breaking space -- inside a
-// paragraph, for the blocks which can't hold that character directly; see
-// `empty_block_needs_placeholder` and
-// `empty_block_needs_placeholder_paragraph` in
-// [processing.rs](../processing.rs). The cases below cover the blocks a user can
-// empty out in the editor, both those which need that rewrite and those which
-// survive without it.
-//
 // This test deliberately doesn't pin down the exact Markdown produced, since
 // more than one encoding of an empty block is reasonable. It checks only that
 // the round trip preserves the document's structure and its text.
@@ -2252,7 +2238,7 @@ fn test_dehydrate_html_1() {
     );
 
     // A trailing empty paragraph (`<p><br></p>`) is converted to
-    // `<p>&nbsp;</p>` by `dehydrating_walk_node`, preserving it as a
+    // `<p><br></p>` by `dehydrating_walk_node`, preserving it as a
     // non-breaking space.
     assert_eq!(
         converter
