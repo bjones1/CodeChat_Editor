@@ -7,8 +7,9 @@ const { readFileSync, readdirSync } = require('fs')
 // Verbose load tracing
 // --------------------
 //
-// Everything below, up to the end of this section, is hand-written; the
-// rest of this file is the loader NAPI-RS generates. The builder passes
+// This section and the one which follows it are hand-written, as is the
+// diagnosis they feed into the error thrown at the end of the file; the rest
+// of this file is the loader NAPI-RS generates. The builder passes
 // `--js index-generated.js` so that a NAPI build writes its loader beside
 // this one rather than over it, leaving `index-generated.js` as the
 // reference to re-derive this file from when a NAPI-RS upgrade changes
@@ -94,6 +95,293 @@ const __dbgChain = (label, errors) => {
     // Indent a multi-line stack so that it reads as one entry in the log.
     if (stack) __dbg(NL_INDENT.slice(1) + stack.split(CR).join(SPACE).split(LF).join(NL_INDENT))
   })
+}
+
+// Diagnosing a Windows load failure
+// ---------------------------------
+//
+// `LoadLibraryExW` reports a dependency it cannot find as
+// `ERROR_MOD_NOT_FOUND` against the path it was asked to load, not against the
+// dependency. An artifact which the directory listing logged below shows
+// sitting in place is therefore named as the file which could not be found,
+// and Windows offers no way to ask which dependency was actually absent. So
+// read the artifact's own import table and look for each name it holds along
+// the directories the loader searches: `uv_dlopen` passes
+// `LOAD_WITH_ALTERED_SEARCH_PATH`, which searches the artifact's directory
+// first, then the system directory and `PATH`.
+const { closeSync, existsSync, openSync, readSync } = require('fs')
+const { basename, dirname, join } = require('path')
+
+// A name beginning with `api-ms-` or `ext-ms-` is an API set rather than a
+// library: the loader resolves it through a schema held in the kernel, and no
+// file of that name exists on disk, so searching directories can never find
+// one.
+const __napiIsApiSet = (dllName) => /^(api|ext)-ms-/i.test(dllName)
+
+// The libraries which arrive with the Visual C++ redistributable rather than
+// with Windows. A build which links the C runtime dynamically imports
+// `VCRUNTIME140.dll` from this set, and a machine which has never installed
+// the redistributable does not have it -- the failure which
+// `.cargo/config.toml` now heads off by linking that runtime statically.
+const __napiIsRedistributableDll = (dllName) =>
+  /^(vcruntime|msvcp|concrt|vcomp|vccorlib)\d+(_\w+)?\.dll$/i.test(dllName)
+
+// Microsoft's permalink to the current redistributable, which covers every
+// release from 2015 on. It is the architecture of *this process* which
+// decides the download: an x64 VSCode emulated on an ARM64 machine loads an
+// x64 artifact, which the ARM64 redistributable cannot satisfy.
+const __napiRedistributableUrl = () =>
+  `https://aka.ms/vs/17/release/vc_redist.${process.arch === 'arm64' ? 'arm64' : process.arch === 'ia32' ? 'x86' : 'x64'}.exe`
+
+// The `Machine` field of the COFF header, in the terms `process.arch` uses.
+// An artifact built for the wrong architecture fails to load exactly as one
+// whose dependencies are missing does, so the field is read to tell the two
+// apart.
+const __napiMachineArch = {
+  0x014c: 'ia32',
+  0x01c4: 'arm',
+  0x8664: 'x64',
+  0xaa64: 'arm64',
+}
+
+// Read a run of bytes from an open file. The artifact runs to tens of
+// megabytes, so follow the offsets its headers hold rather than reading the
+// whole of it.
+const __napiReadAt = (
+  // The open file to read from.
+  fd,
+  // The offset to read at.
+  position,
+  // How many bytes to read.
+  length,
+  // The bytes read, which fall short of `length` only at end of file.
+) => {
+  const buffer = Buffer.alloc(length)
+  const read = readSync(fd, buffer, 0, length, position)
+  return buffer.subarray(0, read)
+}
+
+// List the libraries named in a Windows executable's import table.
+const __napiPeImports = (
+  // The path of the artifact to read.
+  artifactPath,
+  // The COFF `Machine` field and the imported names, or `null` for a file
+  // which does not parse as a Windows executable -- itself a finding, since a
+  // truncated or overwritten artifact fails to load in the same way as one
+  // whose dependencies are missing.
+) => {
+  const fd = openSync(artifactPath, 'r')
+  try {
+    // An `MZ` signature, then the offset of the PE header at the end of the
+    // DOS header which follows it.
+    const dosHeader = __napiReadAt(fd, 0, 0x40)
+    if (dosHeader.length < 0x40 || dosHeader.readUInt16LE(0) !== 0x5a4d) {
+      return null
+    }
+    const peOffset = dosHeader.readUInt32LE(0x3c)
+    // A 4-byte `PE\0\0` signature, then the 20-byte COFF header, which counts
+    // the sections and sizes the optional header following it.
+    const coffHeader = __napiReadAt(fd, peOffset, 24)
+    if (coffHeader.length < 24 || coffHeader.readUInt32LE(0) !== 0x00004550) {
+      return null
+    }
+    const machine = coffHeader.readUInt16LE(4)
+    const sectionCount = coffHeader.readUInt16LE(6)
+    const optionalHeaderSize = coffHeader.readUInt16LE(20)
+    const optionalHeader = __napiReadAt(fd, peOffset + 24, optionalHeaderSize)
+    if (optionalHeader.length < optionalHeaderSize) {
+      return null
+    }
+    // A 64-bit image -- `PE32+`, magic `0x20b` -- widens five fields of the
+    // optional header to 64 bits -- `ImageBase` and the four stack and heap
+    // sizes, gaining 20 bytes -- and drops a sixth, `BaseOfData`, losing 4,
+    // so the data directories sit 16 bytes further along than in a 32-bit
+    // image. Each directory is an address followed by a size, and the second
+    // of them is the import table.
+    const directories = optionalHeader.readUInt16LE(0) === 0x20b ? 112 : 96
+    const importRva = optionalHeader.readUInt32LE(directories + 8)
+    if (importRva === 0) {
+      return { machine, names: [] }
+    }
+    const sectionTable = __napiReadAt(
+      fd,
+      peOffset + 24 + optionalHeaderSize,
+      40 * sectionCount,
+    )
+    if (sectionTable.length < 40 * sectionCount) {
+      return null
+    }
+    const sections = []
+    for (let index = 0; index < sectionCount; index++) {
+      const entry = sectionTable.subarray(40 * index, 40 * (index + 1))
+      sections.push({
+        virtualAddress: entry.readUInt32LE(12),
+        // A section's size on disk and its size once mapped differ; the
+        // larger of the two bounds it.
+        size: Math.max(entry.readUInt32LE(8), entry.readUInt32LE(16)),
+        rawOffset: entry.readUInt32LE(20),
+      })
+    }
+    // Addresses in the import table are relative to the image as the loader
+    // maps it, which is not how it sits in the file: each section lands at
+    // its own offset, so only an address falling inside a section can be
+    // read at all.
+    const fileOffset = (rva) => {
+      const section = sections.find(
+        (candidate) =>
+          rva >= candidate.virtualAddress &&
+          rva < candidate.virtualAddress + candidate.size,
+      )
+      return section === undefined
+        ? null
+        : section.rawOffset + (rva - section.virtualAddress)
+    }
+    let descriptor = fileOffset(importRva)
+    if (descriptor === null) {
+      return null
+    }
+    const names = []
+    // The table holds one 20-byte descriptor per library and ends with a
+    // descriptor of all zeros. Only the name at offset 12 matters here; the
+    // rest addresses the individual functions imported.
+    while (true) {
+      const entry = __napiReadAt(fd, descriptor, 20)
+      if (entry.length < 20 || entry.every((byte) => byte === 0)) {
+        break
+      }
+      const nameOffset = fileOffset(entry.readUInt32LE(12))
+      if (nameOffset === null) {
+        return null
+      }
+      // `MAX_PATH` bounds the name, which ends at its first NUL.
+      const name = __napiReadAt(fd, nameOffset, 260)
+      const end = name.indexOf(0)
+      names.push(name.toString('latin1', 0, end === -1 ? name.length : end))
+      descriptor += 20
+    }
+    return { machine, names }
+  } finally {
+    closeSync(fd)
+  }
+}
+
+// Report which of the libraries an artifact imports cannot be found along the
+// path the loader searches.
+const __napiMissingImports = (
+  // The path of the artifact to examine.
+  artifactPath,
+  // The architecture the artifact was built for -- `undefined` for a machine
+  // type this does not name -- together with the names which no searched
+  // directory holds, or `null` where the import table could not be read.
+) => {
+  const parsed = __napiPeImports(artifactPath)
+  if (parsed === null) {
+    return null
+  }
+  // Windows permits a `PATH` entry containing spaces to be quoted and strips
+  // the quotes itself before searching, so an entry left as written never
+  // matches a directory, and every library living there is reported missing.
+  const searchPath = [
+    dirname(artifactPath),
+    join(process.env.SystemRoot || 'C:\\Windows', 'System32'),
+    ...(process.env.PATH || '').split(';'),
+  ].map((directory) => directory.replace(/"/g, '').trim())
+  const missing = []
+  const seen = new Set()
+  for (const name of parsed.names) {
+    // One library draws several descriptors when the objects importing from
+    // it spell its name differently -- `kernel32.dll` and `KERNEL32.dll` both
+    // appear in these artifacts.
+    const key = name.toLowerCase()
+    if (seen.has(key) || __napiIsApiSet(name)) {
+      continue
+    }
+    seen.add(key)
+    if (
+      !searchPath.some(
+        (directory) => directory !== '' && existsSync(join(directory, name)),
+      )
+    ) {
+      missing.push(name)
+    }
+  }
+  return { arch: __napiMachineArch[parsed.machine], missing }
+}
+
+// Explain a failure of the native chain on Windows. Without this, such a
+// failure reaches the user as the generic message thrown below, which sends
+// them looking for a file that is present and blames npm, which has no part
+// in installing an extension from the Marketplace.
+const __napiDiagnoseWindowsLoadFailure = (
+  // Every error the native chain recorded.
+  errors,
+  // A message naming the cause, or `null` where nothing beyond the recorded
+  // errors can be said.
+) => {
+  if (process.platform !== 'win32') {
+    return null
+  }
+  try {
+    // `require` reports an artifact which Windows refused to load as
+    // `ERR_DLOPEN_FAILED` and one which is absent as `MODULE_NOT_FOUND`, so
+    // this distinguishes a load which failed from an artifact which was
+    // never installed.
+    const dlopenError = errors.find(
+      (e) => e && typeof e === 'object' && e.code === 'ERR_DLOPEN_FAILED',
+    )
+    const directory = typeof __dirname === 'string' ? __dirname : '.'
+    const artifacts = readdirSync(directory).filter((entry) =>
+      entry.endsWith('.node'),
+    )
+    if (dlopenError === undefined) {
+      return artifacts.length === 0
+        ? `No native module for ${process.platform}-${process.arch} was installed with this extension: ${directory} holds none. Uninstall the CodeChat Editor extension, then install it again.`
+        : null
+    }
+    // A localized Windows writes this message in its own language, so take
+    // from it only the path, which is predictable, and fall back to the
+    // directory's sole artifact where even that cannot be read.
+    const message =
+      typeof dlopenError.message === 'string' ? dlopenError.message : ''
+    const messagePath = /[A-Za-z]:\\[^\r\n]*?\.node/.exec(message)
+    let artifactPath = messagePath === null ? null : messagePath[0]
+    if (artifactPath === null || !existsSync(artifactPath)) {
+      artifactPath =
+        artifacts.length === 1 ? join(directory, artifacts[0]) : null
+    }
+    if (artifactPath === null) {
+      return null
+    }
+    const parsed = __napiMissingImports(artifactPath)
+    if (parsed === null) {
+      return `${artifactPath} is installed, but does not parse as a Windows library, so Windows cannot load it. The file is most likely truncated or damaged: uninstall the CodeChat Editor extension, then install it again.`
+    }
+    const { arch, missing } = parsed
+    // An artifact built for another architecture is refused with the same
+    // `ERROR_MOD_NOT_FOUND` as one whose dependencies are absent, and its
+    // imports all resolve, so without this check it is blamed on security
+    // software below.
+    if (arch !== undefined && arch !== process.arch) {
+      return `${artifactPath} was built for ${arch}, but this VSCode runs as ${process.arch}, so Windows cannot load it. The wrong artifact was installed for this machine: uninstall the CodeChat Editor extension, then install it again.`
+    }
+    if (missing.length === 0) {
+      // Nothing here identifies the cause, so pass the Windows text on rather
+      // than replacing it. An addon built against another Node ABI is the one
+      // remaining cause this can name.
+      return `Windows refused to load ${artifactPath}, although the file is present, built for ${process.arch}, and every library it names was found. Windows reported: ${message.replace(/\s+/g, ' ').replace(/[\s.]+$/, '')}. Check whether security software has blocked or altered ${basename(artifactPath)}, and whether this addon was built for the Node ABI this VSCode uses (NODE_MODULE_VERSION ${process.versions.modules}).`
+    }
+    return (
+      `Windows cannot load ${artifactPath}: it needs ${missing.join(', ')}, which ${missing.length === 1 ? 'is' : 'are'} not installed on this machine. ` +
+      (missing.some(__napiIsRedistributableDll)
+        ? `Install the Microsoft Visual C++ Redistributable from ${__napiRedistributableUrl()}, then restart VSCode.`
+        : `Install the software providing ${missing.length === 1 ? 'it' : 'them'}, then restart VSCode.`)
+    )
+  } catch (e) {
+    // The diagnosis runs only once the load has already failed. A fault in it
+    // must not replace the failure it was meant to explain.
+    __dbg(`diagnosis failed: ${__dbgErrText(e)}`)
+    return null
+  }
 }
 
 __dbg('==== binding load starting ====')
@@ -892,10 +1180,18 @@ __dbg(
 )
 if (!nativeBinding) {
   if (loadErrors.length > 0) {
+    // Lead with a diagnosis of the Windows failure where one can be reached:
+    // it names the cause, while the message below names only the symptom.
+    const windowsDiagnosis = __napiDiagnoseWindowsLoadFailure(loadErrors)
+    if (windowsDiagnosis !== null) {
+      __dbg(`diagnosis: ${windowsDiagnosis}`)
+    }
     const error = new Error(
-      `Cannot find native binding. ` +
-        `npm has a bug related to optional dependencies (https://github.com/npm/cli/issues/4828). ` +
-        'Please try `npm i` again after removing both package-lock.json and node_modules directory.',
+      windowsDiagnosis === null
+        ? `Cannot find native binding. ` +
+          `npm has a bug related to optional dependencies (https://github.com/npm/cli/issues/4828). ` +
+          'Please try `npm i` again after removing both package-lock.json and node_modules directory.'
+        : windowsDiagnosis,
     )
     // assign instead of the `new Error(message, { cause })` options form,
     // which Node < 16.9 silently ignores
