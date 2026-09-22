@@ -23,3 +23,34 @@ TS_RS_EXPORT_DIR = { value = "client/src/rust-types", relative = true }
 # Set the extension for the imported files: import JavaScript (`.js`) files, per
 # TypeScript's convention.
 TS_RS_IMPORT_EXTENSION = "ts"
+
+# Windows C runtime linkage
+# -------------------------
+#
+# Link the Microsoft C runtime statically on Windows. The default, dynamic
+# linkage, makes every Windows artifact -- the Server executable and the
+# VSCode extension's `.node` addon alike -- import `VCRUNTIME140.dll`, which
+# Windows does not ship: it arrives only with the Visual C++ redistributable.
+# A machine without that redistributable therefore fails to load the addon
+# with `ERROR_MOD_NOT_FOUND`, which Windows reports against the addon's own
+# path, so the artifact which is present is accused of being missing (see the
+# diagnosis in `extensions/VSCode/src/index.js`). The UCRT half of the C
+# runtime, named by the `api-ms-win-crt-*` imports, is part of Windows itself
+# and needs no such treatment.
+#
+# Nothing crosses the C runtime boundary here. The addon talks to Node through
+# N-API, which passes no allocations, locales or `FILE*`s between the two, and
+# it embeds the whole Server rather than linking to a second Rust artifact --
+# so the usual hazard of a statically linked runtime inside a DLL does not
+# arise.
+#
+# This applies to the host triple as well as to a cross build, so Cargo hands
+# it to build scripts and proc macros too whenever `--target` is absent.
+#
+# The `cfg` form covers `i686` and `aarch64` alongside `x86_64` -- the three
+# MSVC triples the VSCode loader searches for -- so adding one of them to the
+# release targets in `dist-workspace.toml` cannot quietly reintroduce the
+# dependency. Cargo treats it exactly as it treats a triple, build scripts
+# included.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]
