@@ -24,8 +24,16 @@ Changelog
 
 * No changes.
 
-Version 0.2.5 -- 2026-Sep-21
-----------------------------
+Version 0.2.6-beta1 -- 2026-Sep-22
+----------------------------------
+
+* Fixed bug: the VSCode extension and the Server now run on Windows machines
+  which lack the Visual C++ redistributable.
+* A VSCode extension which cannot load the Server on Windows now names the
+  library it is missing, instead of reporting the Server itself as missing.
+
+Version 0.2.5-beta1 -- 2026-Sep-21
+----------------------------------
 
 * Improve diagnostics when first loading the CodeChat Editor Server in the
   VSCode extension.
