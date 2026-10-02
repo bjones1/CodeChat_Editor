@@ -1,8 +1,3 @@
-// TODO: Remove these once outdated-file scheduling is implemented. It will use
-// `root`, plus the hooks a file watcher or project scan needs -- `remove_file`
-// and `mark_unknown` -- which nothing calls yet.
-#![allow(unused_variables)]
-#![allow(unused)]
 // Copyright (C) 2026 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
@@ -32,10 +27,24 @@ use std::{
     mem,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    thread,
+    time::Duration,
 };
 
 // ### Third-party
+use ignore::WalkBuilder;
+use log::error;
+use lru::LruCache;
+use notify_debouncer_full::{
+    DebounceEventResult, Debouncer, RecommendedCache, new_debouncer,
+    notify::{
+        self,
+        EventKind::{Create, Modify, Remove},
+        RecommendedWatcher, RecursiveMode,
+    },
+};
 use rand::random;
+use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
 // ### Local
 //
@@ -47,7 +56,9 @@ use rand::random;
 /// directory containing its `toc.md`). The outer mutex guards the addition of
 /// newly-discovered projects; each inner mutex guards a single project's cache,
 /// so that work on one project doesn't block work on another.
-pub type CacheMap = Arc<Mutex<HashMap<PathBuf, Arc<Mutex<Cache>>>>>;
+pub type CacheMap = Arc<Mutex<LruCache<PathBuf, Arc<Mutex<Cache>>>>>;
+
+pub const LRU_ENTRIES_PER_CONNECTION: usize = 10;
 
 /// This defines the cache used to store all targets in a project.
 pub struct Cache {
@@ -57,10 +68,18 @@ pub struct Cache {
     /// Provide rapid access to a `Target`/gather element or `Fragment` by its
     /// id.
     pub(super) ids: HashMap<String, IdEntry>,
-    /// All files for which `FileEntry::status == FileStatus::Unknown`.
+    /// All files for which `FileEntry::status != FileStatus::UpToDate`.
     pub(super) pending_files: Vec<PathBuf>,
-    /// The root directory of this project.
+    /// The root directory of this project, or a specific file if this is a
+    /// single-file "project".
     pub(super) root: PathBuf,
+    /// Files found by the walker thread (see `walk_project`) or the watcher
+    /// (see `watch_project`). Dropping the cache drops this receiver, which
+    /// closes the channel and so stops both.
+    found_files: UnboundedReceiver<PathBuf>,
+    /// This project's watcher, or `None` for a single-file "project" or if the
+    /// watcher couldn't start. Dropping it stops the watch.
+    _watcher: Option<Debouncer<RecommendedWatcher, RecommendedCache>>,
     // TODO: search engine data storage. Search fields: target ID, contents,
     // file name. Perhaps [Tantivy](https://docs.rs/tantivy/latest/tantivy/)?
 }
@@ -267,20 +286,65 @@ pub(super) struct GatherBacklink<'a> {
     pub(super) target: &'a Target,
 }
 
+/// States of paths discovered by the watcher.
+pub(super) enum WatcherPathState {
+    CreatedOrModified(PathBuf),
+    Deleted(PathBuf),
+}
+
+/// Messages sent by the walker to the consumer task.
+pub(super) enum ConsumerPathState {
+    WatcherPathState(WatcherPathState),
+    WalkStarted(PathBuf),
+    WalkFinished
+}
+
 // Code
 // ----
 impl Cache {
+    /// Create an empty cache, then start a watcher and a walker thread which
+    /// report the project's files; `queue_found_files` collects what they find.
     #[must_use]
     pub fn new(
         // The root directory of this project, as a canonicalized absolute path;
-        // all cached files must live within it.
+        // all cached files must live within it. For a single-file "project",
+        // this is that file.
         root: PathBuf,
     ) -> Self {
+        let (found_tx, found_rx) = mpsc::unbounded_channel();
+        // Start watching before walking, so that a file created during the
+        // walk is reported by one or the other. A watcher failure isn't fatal:
+        // the cache still works, but won't learn of files which change after
+        // the walk. On Linux, this happens once the per-user inotify limits are
+        // reached, since each watcher uses its own inotify instance.
+        let _watcher = if root.is_dir() {
+            let watcher = watch_project(&root, found_tx.clone())
+                .inspect_err(|err| error!("Unable to watch {}: {err}", root.display()))
+                .ok();
+            // Start the walker next.
+            let walk_root = root.clone();
+            thread::spawn(move || walk_project(&walk_root, &found_tx));
+            watcher
+        } else {
+            None
+        };
         Cache {
             files: HashMap::new(),
             ids: HashMap::new(),
             pending_files: vec![],
             root,
+            found_files: found_rx,
+            _watcher,
+        }
+    }
+
+    /// Mark every file the walker has found so far, which the cache doesn't
+    /// already know of, as `Unknown`, queueing it for processing.
+    pub(super) fn queue_found_files(&mut self) {
+        while let Ok(path) = self.found_files.try_recv() {
+            if !self.files.contains_key(&path) {
+                self.mark_unknown(&path);
+            }
         }
     }
 
@@ -842,6 +906,88 @@ fn gathered_ids<'a>(
         .flat_map(|target| target.gather_ids.iter())
 }
 
+/// Watch `root` recursively, sending the path of every file created, modified,
+/// or removed within it to the cache. This runs on the debouncer's thread.
+fn watch_project(
+    // The project's root directory.
+    root: &Path,
+    // Where to send each file reported; the cache owns the receiving end.
+    found: UnboundedSender<PathBuf>,
+    // The running watcher; dropping it stops the watch.
+) -> notify::Result<Debouncer<RecommendedWatcher, RecommendedCache>> {
+    // The watcher only needs to learn of files added to or removed from the
+    // project. notify 8 has no `Config::with_event_kinds`, so the event handler
+    // must discard events which don't match this mask itself.
+    //
+    // TODO: pass this mask to `Config::with_event_kinds` once
+    // notify-debouncer-full depends on notify 9.
+    let mut debouncer = new_debouncer(
+        Duration::from_secs(2),
+        None,
+        move |result: DebounceEventResult| match result {
+            Ok(debounced_event_vec) => {
+                for debounced_event in debounced_event_vec {
+                    match debounced_event.event.kind {
+                        Create(_) | Modify(_) | Remove(_) => {
+                            for path in debounced_event.event.paths {
+                                if let Err(err) = found.send(path) {
+                                    // The only possible source of [error](https://docs.rs/tokio/latest/tokio/sync/mpsc/struct.Sender.html#errors) per the docs is a closed channel. This occurs when the cache is dropped, meaning the watcher should stop.
+                                    return;
+                                }
+                            }
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            // TODO: should we sent errors to the cache for better UI? Or ignore them, given they're files we couldn't watch, and therefore couldn't access anyway?
+            Err(err_vec) => {
+                for err in err_vec {
+                    error!("Error: {err}");
+                }
+            }
+        },
+    )?;
+    debouncer.watch(root, RecursiveMode::Recursive)?;
+    Ok(debouncer)
+}
+
+/// Send every file under `path` -- or `path` itself, if it's a file -- to the
+/// cache, stopping early once the cache is dropped. This runs on its own
+/// thread, spawned by `Cache::new`.
+///
+/// The walk applies the [ignore](https://docs.rs/ignore) crate's default
+/// filters, which are ripgrep's: it skips hidden files and directories (such as
+/// `.git`), anything excluded by an `.ignore` file, and -- only inside a git
+/// repository -- anything excluded by `.gitignore` or git's other exclude
+/// rules.
+fn walk_project(
+    // The file or directory to walk.
+    path: &Path,
+    // Where to send each file found; the cache owns the receiving end.
+    found: &UnboundedSender<PathBuf>,
+) {
+    // The walk reports an error (an unreadable directory, say) as an entry of
+    // its own, then continues; skip these.
+    for entry in WalkBuilder::new(path).build().flatten() {
+        // Check before every entry, not just when sending a file, so a walk
+        // through a large tree containing few files still stops promptly.
+        if found.is_closed() {
+            return;
+        }
+        // Symlinks aren't followed, so a symlink loop can't make this walk
+        // forever.
+        if entry
+            .file_type()
+            .is_some_and(|file_type| file_type.is_file())
+            && found.send(entry.into_path()).is_err()
+        {
+            // Just as the watcher, a send failure means the cache is dropped, so exit.
+            return;
+        }
+    }
+}
+
 impl Default for Cache {
     fn default() -> Self {
         Cache::new(PathBuf::new())
@@ -857,7 +1003,12 @@ mod tests {
         path::{Path, PathBuf},
     };
 
-    use super::{Cache, FileFacts, FileStatus, FragmentFact, IdResolution, IdState, TargetFact};
+    use test_utils::prep_test_dir;
+    use tokio::sync::mpsc;
+
+    use super::{
+        Cache, FileFacts, FileStatus, FragmentFact, IdResolution, IdState, TargetFact, walk_project,
+    };
 
     // ### Test helpers
     //
@@ -1448,5 +1599,38 @@ mod tests {
         assert!(outcome.outdated.is_empty());
         let outdated = cache.update_fragment_content(&a, "frag", "content".to_string());
         assert!(outdated.is_empty());
+    }
+
+    // ### Walker tests
+    //
+    // Verify that the walker finds every file in a nested tree except those
+    // which are hidden or excluded by an `.ignore` file, and that a single-file
+    // root yields just that file.
+    #[test]
+    fn test_walk_project() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let a = test_dir.join("a.md");
+        let b = test_dir.join("sub").join("b.py");
+        // Confirm that copying the fixture preserved the hidden files, so their
+        // absence from the walk below is the walker's doing.
+        assert!(test_dir.join(".ignore").is_file());
+        assert!(test_dir.join(".hidden").join("c.md").is_file());
+
+        // Walk synchronously, returning the sorted list of files found.
+        let walk = |path: &Path| {
+            let (found_tx, mut found_rx) = mpsc::unbounded_channel();
+            walk_project(path, &found_tx);
+            let mut found = vec![];
+            while let Ok(path) = found_rx.try_recv() {
+                found.push(path);
+            }
+            found.sort();
+            found
+        };
+        assert_eq!(walk(&test_dir), vec![a.clone(), b]);
+        assert_eq!(walk(&a), vec![a]);
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
     }
 }

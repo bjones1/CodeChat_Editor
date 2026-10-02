@@ -24,6 +24,7 @@ pub mod tests;
 // -------
 //
 // ### Standard library
+use core::num::NonZeroUsize;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -63,6 +64,7 @@ use log4rs::{
     self,
     config::{Deserializers, load_config_file},
 };
+use lru::LruCache;
 use mime::Mime;
 use mime_guess;
 use path_slash::PathBufExt;
@@ -86,7 +88,8 @@ use url::Url;
 // ### Local
 //use crate::capture::EventCapture;
 use crate::processing::{
-    CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString, cache::CacheMap,
+    CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString,
+    cache::{CacheMap, LRU_ENTRIES_PER_CONNECTION},
     find_path_to_toc, source_to_codechat_for_web_string,
 };
 
@@ -1688,7 +1691,9 @@ fn make_app_data_with_capture_spool(
         connection_id: Mutex::new(HashSet::new()),
         credentials,
         capture,
-        cache: Arc::new(Mutex::new(HashMap::new())),
+        cache: Arc::new(Mutex::new(LruCache::new(
+            NonZeroUsize::new(LRU_ENTRIES_PER_CONNECTION).unwrap(),
+        ))),
     })
 }
 

@@ -914,13 +914,8 @@ pub fn source_to_codechat_for_web(
         project_cache
     } else {
         // A non-project file uses a throwaway cache whose "project" is the
-        // file's directory: only references within this file resolve.
-        Arc::new(Mutex::new(Cache::new(
-            file_path
-                .parent()
-                .unwrap_or_else(|| Path::new(""))
-                .to_path_buf(),
-        )))
+        // file itself: only references within this file resolve.
+        Arc::new(Mutex::new(Cache::new(file_path.to_path_buf())))
     };
     let code_doc_block_arr;
     let codechat_for_web = CodeChatForWeb {
@@ -1285,8 +1280,7 @@ pub fn source_to_codechat_for_web_string(
         cache
             .lock()
             .unwrap()
-            .entry(root.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(Cache::new(root.clone()))))
+            .get_or_insert_ref(&root, || Arc::new(Mutex::new(Cache::new(root.clone()))))
             .clone()
     });
 

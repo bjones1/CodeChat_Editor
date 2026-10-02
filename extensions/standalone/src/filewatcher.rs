@@ -447,7 +447,7 @@ fn processing_task(
         let (watcher_tx, mut watcher_rx) = mpsc::channel(10);
         // Watch this file. Use the debouncer, to avoid multiple notifications
         // for the same file. This approach returns a result of either a working
-        // debouncer or any errors that occurred. The debouncer's scope needs
+        // debouncer or any errors that occurred. The debouncer's scope needs to
         // live as long as this connection does; dropping it early means losing
         // file change notifications.
         let Ok(mut debounced_watcher) = new_debouncer(
