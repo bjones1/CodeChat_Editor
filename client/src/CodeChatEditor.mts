@@ -263,13 +263,9 @@ const _openLp = async (
     //    changes due to re-translation, not due to updates to IDE content.
     // 2. If this is the full text, discard changes made in the Client since the
     //    last autosave, overwriting them with the provided update.
-    // 3. If this is a diff:
-    //    1. In document-only mode, we have a backup copy of the full text
-    //       before it was modified by the Client. Apply the diff to this,
-    //       overwriting changes made in the Client.
-    //    2. In normal mode, we don't have a backup copy of the full text.
-    //       Report an `OutOfSync` error, which causes the IDE to send the full
-    //       text which will then overwrite changes made in the Client.
+    // 3. If this is a diff, report an `OutOfSync` error, which causes the IDE
+    //    to send the full text which will then overwrite changes made in the
+    //    Client.
     if (getIsDirty() && isReTranslation) {
         consoleLog(`Ignoring re-translation because Client is dirty.`);
         return;
@@ -297,7 +293,18 @@ const _openLp = async (
         const source = codechatForWeb["source"];
         const codechatBody = document.getElementById("CodeChat-body");
         assert(codechatBody instanceof HTMLDivElement);
-        if (isDocOnly()) {
+        if (getIsDirty() && "Diff" in source) {
+            // Send an `OutOfSync` response, so that the IDE will send the full
+            // text to overwrite these changes with.
+            webSocketComm().sendResult(
+                // Pick a rarely-used ID, since we're not responding to a
+                // specific message.
+                0,
+                // There's not a version that matters. TODO: replace this with a
+                // more suitable error.
+                { OutOfSync: [0, 0] },
+            );
+        } else if (isDocOnly()) {
             // Per the
             // [docs](https://docs.mathjax.org/en/latest/web/typeset.html#updating-previously-typeset-content),
             // "If you modify the page to remove content that contains typeset
@@ -371,26 +378,13 @@ const _openLp = async (
             await mathJaxTypeset(codechatBody);
             scrollToLine(cursorPosition, scrollLine);
         } else {
-            if (getIsDirty() && "Diff" in source) {
-                // Send an `OutOfSync` response, so that the IDE will send the
-                // full text to overwrite these changes with.
-                webSocketComm().sendResult(
-                    // Pick a rarely-used ID, since we're not responding to a
-                    // specific message.
-                    0,
-                    // There's not a version that matters. TODO: replace this
-                    // with a more suitable error.
-                    { OutOfSync: [0, 0] },
-                );
-            } else {
-                await codeMirrorLoad(
-                    codechatBody,
-                    codechatForWeb,
-                    [],
-                    cursorPosition,
-                    scrollLine,
-                );
-            }
+            await codeMirrorLoad(
+                codechatBody,
+                codechatForWeb,
+                [],
+                cursorPosition,
+                scrollLine,
+            );
         }
     } finally {
         // Use a `finally` block to ensure the cleanup code always runs.

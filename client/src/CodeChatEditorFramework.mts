@@ -186,9 +186,18 @@ class WebSocketComm {
                                     this.version
                                 ) {
                                     if (currentUpdate.is_re_translation) {
+                                        // An edit from this Client, still in
+                                        // flight to the Server, supersedes
+                                        // this re-translation; the Server
+                                        // re-translates that edit when it
+                                        // arrives. Reply anyway: the Server
+                                        // reports an unanswered message as a
+                                        // timeout error, which the IDE then
+                                        // shows.
                                         consoleLog(
                                             `Ignoring out-of-sync re-translation update.`,
                                         );
+                                        this.sendResult(id);
                                     } else {
                                         reportError(
                                             `Out of sync: Client version ${this.version} !== incoming version ${contents.source.Diff.version}.`,
