@@ -941,9 +941,6 @@ impl TranslationTask {
                 {
                     self.version = new_version;
                 }
-                // The IDE just sent the full contents; we're sending full
-                // contents to the Client.
-                self.sent_full = true;
                 (
                     file_to_response(
                         &http_request,
@@ -1009,6 +1006,15 @@ impl TranslationTask {
                 message: EditorMessageContents::Update(update)
             }));
             self.id += MESSAGE_ID_INCREMENT;
+            // The Client now has the current file's full contents. Set this
+            // only here: results of other `LoadFile` requests, such as the
+            // TOC's, may arrive before the current file's and must not enable
+            // diffs against the previous file's contents. If these contents
+            // came from disk because the IDE lacks the file, diffs to the IDE
+            // are still safe: VSCode rejects any update to a document it
+            // doesn't have open, and the standalone file watcher, which never
+            // has the file, receives no diffs (see `allow_source_diffs`).
+            self.sent_full = true;
         }
         debug!("Sending HTTP response.");
         if let Err(err) = http_request.response_queue.send(simple_http_response) {

@@ -1493,8 +1493,8 @@ async fn test_vscode_ide_websocket10() {
         }
     );
 
-    // Fetch the current file, which is open in the IDE. (Only when the IDE
-    // supplies the current file's contents does the Server diff against them.)
+    // Fetch the current file, which the IDE doesn't have, so the Server reads
+    // it from disk.
     let test_dir_thread = test_dir.clone();
     let join_handle = thread::spawn(move || {
         assert_eq!(
@@ -1515,17 +1515,15 @@ async fn test_vscode_ide_websocket10() {
         &mut ws_ide,
         &EditorMessage {
             id: INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT,
-            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(Some((
-                fs::read_to_string(&file_path_temp).unwrap(),
-                1.0,
-            ))))),
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
         },
     )
     .await;
     join_handle.join().unwrap();
 
     // The cross-reference can't be resolved yet, since the TOC hasn't been
-    // translated.
+    // translated. Lacking a version from the IDE, the Server keeps its initial
+    // version.
     assert_eq!(
         read_message(&mut ws_client).await,
         EditorMessage {
@@ -1549,7 +1547,7 @@ async fn test_vscode_ide_websocket10() {
                             contents: r#"<p>See <xref contenteditable=false ref=foo><span class=cc-error>id "foo" not found</span></xref>."#.to_string(),
                         }],
                     }),
-                    version: 1.0,
+                    version: 0.0,
                 }),
             }),
         }
@@ -1629,9 +1627,9 @@ async fn test_vscode_ide_websocket10() {
                                 }],
                             }
                         )],
-                        version: 1.0,
+                        version: 0.0,
                     }),
-                    version: 1.0,
+                    version: 0.0,
                 }),
             }),
         }

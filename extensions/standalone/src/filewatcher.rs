@@ -786,8 +786,8 @@ mod tests {
     };
     use code_chat_editor::{
         processing::{
-            CodeChatForWeb, CodeMirror, CodeMirrorDiffable, SourceFileMetadata,
-            source_to_codechat_for_web,
+            CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata,
+            StringDiff, source_to_codechat_for_web,
         },
         webserver::{
             EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID,
@@ -1157,7 +1157,9 @@ mod tests {
         let mut s = fs::read_to_string(&file_path).unwrap();
         assert_eq!(s, "testing()");
 
-        // 8. Change this file and verify that this produces an update.
+        // 8. Change this file and verify that this produces an update. Since
+        //    the Client has the file's full text, this is a diff against the
+        //    contents and version it sent in step 7.
         //
         // Message ids: IDE - 1->2, Server - 3, Client - 7.
         s.push_str("123");
@@ -1187,9 +1189,14 @@ mod tests {
                         metadata: SourceFileMetadata {
                             mode: "python".to_string(),
                         },
-                        source: CodeMirrorDiffable::Plain(CodeMirror {
-                            doc: "testing()123".to_string(),
+                        source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                            doc: vec![StringDiff {
+                                from: 0,
+                                to: Some(9),
+                                insert: "testing()123".to_string(),
+                            }],
                             doc_blocks: vec![],
+                            version: 2.0,
                         }),
                         version: msg.1.contents.as_ref().unwrap().version,
                     }),
