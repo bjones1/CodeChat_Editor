@@ -415,6 +415,35 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Return the cache of the project containing a file, creating it if this
+/// project has none.
+pub fn project_cache(
+    // The map of project caches.
+    cache_map: &CacheMap,
+    // A file in the project.
+    file_path: &Path,
+    // The path to the project's TOC, relative to the directory containing
+    // `file_path`, as returned by `find_path_to_toc`.
+    path_to_toc: &Path,
+) -> Arc<Mutex<Cache>> {
+    // The project root is the directory containing `toc.md`. Canonicalize it
+    // so that every file in a project keys the same cache, and different
+    // projects key different caches.
+    let toc_path = file_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(path_to_toc);
+    let root = toc_path
+        .parent()
+        .map_or_else(PathBuf::new, Path::to_path_buf);
+    let root = canonicalize(&root).unwrap_or(root);
+    cache_map
+        .lock()
+        .unwrap()
+        .get_or_insert_ref(&root, || Arc::new(Mutex::new(Cache::new(root.clone()))))
+        .clone()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CodechatForWebToSourceError {
     #[error("invalid lexer {0}")]
@@ -1264,25 +1293,9 @@ pub fn source_to_codechat_for_web_string(
     // file by searching the current directory, then all its parents, for a file
     // named `toc.md`.
     let path_to_toc = find_path_to_toc(file_path);
-    let cache: Option<Arc<Mutex<Cache>>> = path_to_toc.as_ref().map(|path_to_toc| {
-        // The project root is the directory containing `toc.md`. `path_to_toc`
-        // is relative to the file's directory; canonicalize the combination so
-        // that every file in a project keys the same cache, and different
-        // projects key different caches.
-        let toc_path = file_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join(path_to_toc);
-        let root = toc_path
-            .parent()
-            .map_or_else(PathBuf::new, Path::to_path_buf);
-        let root = canonicalize(&root).unwrap_or(root);
-        cache
-            .lock()
-            .unwrap()
-            .get_or_insert_ref(&root, || Arc::new(Mutex::new(Cache::new(root.clone()))))
-            .clone()
-    });
+    let cache = path_to_toc
+        .as_ref()
+        .map(|path_to_toc| project_cache(cache, file_path, path_to_toc));
 
     Ok((
         match source_to_codechat_for_web(file_contents, file_path, version, is_toc, cache) {

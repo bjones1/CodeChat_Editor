@@ -59,7 +59,7 @@ use crate::{
 use crate::{
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
-        CodeMirrorDocBlockTransaction, SourceFileMetadata, StringDiff,
+        CodeMirrorDocBlockTransaction, CodeMirrorDocBlockUpdate, SourceFileMetadata, StringDiff,
     },
     webserver::{ResultOkTypes, UpdateMessageContents, drop_leading_slash},
 };
@@ -1436,6 +1436,221 @@ async fn test_vscode_ide_websocket9() {
             _ => panic!("Unexpected message."),
         }
     }
+
+    check_logger_errors(0);
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
+}
+
+/// Verify that the Server re-translates the current file when its project's
+/// cache reports it's outdated: the current file cross-references an id which
+/// only the TOC defines, so loading the TOC resolves the cross-reference.
+#[actix_web::test]
+async fn test_vscode_ide_websocket10() {
+    let connection_id = "test-connection-id10";
+    let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+    open_client(&mut ws_ide).await;
+
+    // Load the current file, following the protocol in
+    // `test_vscode_ide_websocket4`.
+    let file_path_temp = fs::canonicalize(test_dir.join("test.py")).unwrap();
+    let file_path = simplified(&file_path_temp);
+    let file_path_str = file_path.to_str().unwrap().to_string();
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::CurrentFile(
+                format!(
+                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    file_path.to_slash().unwrap()
+                ),
+                None,
+            ),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::CurrentFile(file_path_str.clone(), Some(true))
+        }
+    );
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+
+    // Fetch the current file, which is open in the IDE. (Only when the IDE
+    // supplies the current file's contents does the Server diff against them.)
+    let test_dir_thread = test_dir.clone();
+    let join_handle = thread::spawn(move || {
+        assert_eq!(
+            minreq::get(format!(
+                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/test.py",
+                test_dir_thread.to_slash().unwrap(),
+            ))
+            .send()
+            .unwrap()
+            .status_code,
+            200
+        );
+    });
+    let em = read_message(&mut ws_ide).await;
+    cast!(em.message, EditorMessageContents::LoadFile, a, b);
+    assert_eq!(em.id, INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT);
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(Some((
+                fs::read_to_string(&file_path_temp).unwrap(),
+                1.0,
+            ))))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap();
+
+    // The cross-reference can't be resolved yet, since the TOC hasn't been
+    // translated.
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "\n".to_string(),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 0,
+                            to: 1,
+                            indent: String::new(),
+                            delimiter: "#".to_string(),
+                            contents: r#"<p>See <xref contenteditable=false ref=foo><span class=cc-error>id "foo" not found</span></xref>."#.to_string(),
+                        }],
+                    }),
+                    version: 1.0,
+                }),
+            }),
+        }
+    );
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        }
+    );
+
+    // Fetch the TOC, which defines the id the current file cross-references.
+    let test_dir_thread = test_dir.clone();
+    let join_handle = thread::spawn(move || {
+        assert_eq!(
+            minreq::get(format!(
+                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/toc.md?mode=toc",
+                test_dir_thread.to_slash().unwrap()
+            ))
+            .send()
+            .unwrap()
+            .status_code,
+            200
+        );
+    });
+    let em = read_message(&mut ws_ide).await;
+    cast!(em.message, EditorMessageContents::LoadFile, a, b);
+    assert_eq!(em.id, INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT);
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap();
+
+    // Translating the TOC outdates the current file, which the Server
+    // re-translates, sending the Client the resolved cross-reference. The
+    // source is unchanged, so the version is too.
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: true,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![],
+                        doc_blocks: vec![CodeMirrorDocBlockTransaction::Update(
+                            CodeMirrorDocBlockUpdate {
+                                from: 0,
+                                from_new: None,
+                                to: None,
+                                indent: None,
+                                delimiter: None,
+                                contents: vec![StringDiff {
+                                    from: 0,
+                                    to: Some(97),
+                                    insert: "<p>See <xref contenteditable=false ref=foo><a href=toc.md#foo>Foo</a></xref>.".to_string(),
+                                }],
+                            }
+                        )],
+                        version: 1.0,
+                    }),
+                    version: 1.0,
+                }),
+            }),
+        }
+    );
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        }
+    );
 
     check_logger_errors(0);
     // Report any errors produced when removing the temporary directory.

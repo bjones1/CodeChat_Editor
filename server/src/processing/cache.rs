@@ -26,7 +26,7 @@ use std::{
     fs::Metadata,
     mem,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, PoisonError},
     thread,
     time::Duration,
 };
@@ -80,6 +80,9 @@ pub struct Cache {
     /// This project's watcher, or `None` for a single-file "project" or if the
     /// watcher couldn't start. Dropping it stops the watch.
     _watcher: Option<Debouncer<RecommendedWatcher, RecommendedCache>>,
+    /// The connections whose current file lies in this project, keyed by
+    /// connection id; each entry is owned by a `ConnectionRegistration`.
+    connections: HashMap<String, ConnectionView>,
     // TODO: search engine data storage. Search fields: target ID, contents,
     // file name. Perhaps [Tantivy](https://docs.rs/tantivy/latest/tantivy/)?
 }
@@ -247,7 +250,8 @@ pub(super) struct FragmentFact {
 pub(super) struct CommitOutcome {
     /// Files (other than the committed file) whose rendered output is
     /// invalidated by this commit; their status has already been set to
-    /// `Outdated`. The caller should schedule them for reprocessing.
+    /// `Outdated`, and each connection showing one of them has been notified.
+    /// The caller should schedule the rest for reprocessing.
     pub(super) outdated: HashSet<PathBuf>,
 }
 
@@ -299,6 +303,38 @@ pub(super) enum ConsumerPathState {
     WalkFinished
 }
 
+// ### Connections
+//
+// A connection's translation task owns its current file; the cache keeps only
+// a copy, refreshed by the task each time that file changes. See
+// `Connections` in the cache spec.
+/// One connection whose current file lies in this project.
+struct ConnectionView {
+    /// The file shown in the connection's Client, canonicalized to match the
+    /// paths the cache stores.
+    current_file: PathBuf,
+    /// Where to notify the connection. This is unbounded, since the cache lock
+    /// is held while sending.
+    notify_tx: UnboundedSender<CacheNotification>,
+}
+
+/// Notifications the cache sends to a registered connection.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CacheNotification {
+    /// A change elsewhere in the project outdated the rendered output of the
+    /// connection's current file, which the connection should re-translate.
+    CurrentFileOutdated,
+}
+
+/// Lists a connection in `Cache::connections` for as long as this value lives;
+/// dropping it removes the listing.
+pub struct ConnectionRegistration {
+    /// The cache the connection is listed in.
+    cache: Arc<Mutex<Cache>>,
+    /// The connection's key in `Cache::connections`.
+    connection_id: String,
+}
+
 // Code
 // ----
 impl Cache {
@@ -335,6 +371,7 @@ impl Cache {
             root,
             found_files: found_rx,
             _watcher,
+            connections: HashMap::new(),
         }
     }
 
@@ -599,9 +636,7 @@ impl Cache {
         // A file never outdates itself: its rendered output was just produced
         // from the state committed here.
         outdated.remove(path);
-        for outdated_path in &outdated {
-            self.set_status(outdated_path, FileStatus::Outdated);
-        }
+        self.mark_outdated(&outdated);
 
         CommitOutcome { outdated }
     }
@@ -708,8 +743,8 @@ impl Cache {
         id: &str,
         // The fragment's code/doc block content, rendered as HTML.
         content: String,
-        // The files (other than `path`) marked outdated by this change; their
-        // status has already been set to `Outdated`.
+        // The files (other than `path`) marked outdated by this change, as
+        // described by `CommitOutcome::outdated`.
     ) -> HashSet<PathBuf> {
         // Apply the new content first, so that no borrow of `self.files`
         // outlives the check; report whether it differed from the old content.
@@ -734,10 +769,32 @@ impl Cache {
         // Gather elements in the fragment's own file are updated by the caller
         // in the same processing pass.
         outdated.remove(path);
-        for outdated_path in &outdated {
+        self.mark_outdated(&outdated);
+        outdated
+    }
+
+    /// Mark files outdated, then notify each connection showing one of them.
+    /// The connection re-translates that file itself, from its IDE's contents,
+    /// which may be newer than the file on disk.
+    fn mark_outdated(
+        &mut self,
+        // The files to mark.
+        outdated: &HashSet<PathBuf>,
+    ) {
+        for outdated_path in outdated {
             self.set_status(outdated_path, FileStatus::Outdated);
         }
-        outdated
+        // TODO: also notify every connection when the project's TOC is outdated,
+        // once the Client supports a message to reload its TOC.
+        for connection in self.connections.values() {
+            if outdated.contains(&connection.current_file) {
+                // A send fails only once the connection's translation task has
+                // exited, leaving nothing to notify.
+                let _ = connection
+                    .notify_tx
+                    .send(CacheNotification::CurrentFileOutdated);
+            }
+        }
     }
 
     /// Look up an id, returning the target or fragment it names along with the
@@ -850,6 +907,48 @@ impl IdState {
             (Some((path, 1)), None) => IdState::Single(path.clone()),
             _ => IdState::Multiple(definitions),
         }
+    }
+}
+
+impl ConnectionRegistration {
+    /// List a connection in a project's cache. Drop any earlier registration of
+    /// this connection first: dropping it afterward would remove this listing,
+    /// since both share one key.
+    #[must_use]
+    pub fn new(
+        // The cache of the project containing `current_file`.
+        cache: Arc<Mutex<Cache>>,
+        // The connection's id, unique among all connections.
+        connection_id: String,
+        // The file shown in the connection's Client, as a canonicalized
+        // absolute path.
+        current_file: PathBuf,
+        // Where the cache sends this connection's notifications.
+        notify_tx: UnboundedSender<CacheNotification>,
+    ) -> Self {
+        cache.lock().unwrap().connections.insert(
+            connection_id.clone(),
+            ConnectionView {
+                current_file,
+                notify_tx,
+            },
+        );
+        ConnectionRegistration {
+            cache,
+            connection_id,
+        }
+    }
+}
+
+impl Drop for ConnectionRegistration {
+    fn drop(&mut self) {
+        // Tolerate a poisoned lock: this may run while unwinding from another
+        // panic, where a second panic aborts the process.
+        self.cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .connections
+            .remove(&self.connection_id);
     }
 }
 
@@ -1001,13 +1100,15 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         path::{Path, PathBuf},
+        sync::{Arc, Mutex},
     };
 
     use test_utils::prep_test_dir;
-    use tokio::sync::mpsc;
+    use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use super::{
-        Cache, FileFacts, FileStatus, FragmentFact, IdResolution, IdState, TargetFact, walk_project,
+        Cache, CacheNotification, ConnectionRegistration, FileFacts, FileStatus, FragmentFact,
+        IdResolution, IdState, TargetFact, walk_project,
     };
 
     // ### Test helpers
@@ -1599,6 +1700,51 @@ mod tests {
         assert!(outcome.outdated.is_empty());
         let outdated = cache.update_fragment_content(&a, "frag", "content".to_string());
         assert!(outdated.is_empty());
+    }
+
+    // ### Connection tests
+    //
+    // Verify that a registered connection is notified only when its current
+    // file is outdated, and not after its registration is dropped.
+    #[test]
+    fn test_connection_notification() {
+        let cache = Arc::new(Mutex::new(Cache::default()));
+        let a = PathBuf::from("a.md");
+        let b = PathBuf::from("b.md");
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&b, None, facts_xref("foo"));
+        let (notify_tx, mut notify_rx) = mpsc::unbounded_channel();
+        let registration =
+            ConnectionRegistration::new(cache.clone(), "conn".to_string(), b.clone(), notify_tx);
+
+        // Defining the id `b` references outdates `b`.
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&a, None, facts_target("foo", "Foo!"));
+        assert_eq!(
+            notify_rx.try_recv(),
+            Ok(CacheNotification::CurrentFileOutdated)
+        );
+        assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Empty));
+
+        // Recommitting `b` itself outdates nothing.
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&b, None, facts_xref("foo"));
+        assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Empty));
+
+        // Dropping the registration drops the cache's only sender.
+        drop(registration);
+        assert!(cache.lock().unwrap().connections.is_empty());
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&a, None, facts_target("foo", "Bar!"));
+        assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Disconnected));
     }
 
     // ### Walker tests

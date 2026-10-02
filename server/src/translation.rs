@@ -223,7 +223,7 @@ use regex::Regex;
 use tokio::{
     fs::File,
     select,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{self, Receiver, Sender, UnboundedReceiver, UnboundedSender},
 };
 
 // ### Local
@@ -233,8 +233,10 @@ use crate::{
     processing::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockVec, SourceFileMetadata, TranslationResultsString, UNICODE_CURSOR_MARKER,
-        byte_index_of, cache::CacheMap, codechat_for_web_to_source, diff_code_mirror_doc_blocks,
-        diff_str, doc_block_html_to_markdown, minify, remove_tinymce_data,
+        byte_index_of,
+        cache::{CacheMap, CacheNotification, ConnectionRegistration},
+        codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
+        doc_block_html_to_markdown, find_path_to_toc, minify, project_cache, remove_tinymce_data,
         source_to_codechat_for_web_string, transform_html,
     },
     queue_send, queue_send_func,
@@ -242,8 +244,9 @@ use crate::{
         CursorPosition, EditorMessage, EditorMessageContents, INITIAL_MESSAGE_ID,
         MESSAGE_ID_INCREMENT, ProcessingTaskHttpRequest, ProcessingTaskHttpRequestFlags,
         ResultErrTypes, ResultOkTypes, SimpleHttpResponse, SimpleHttpResponseError,
-        UpdateMessageContents, WebAppState, WebsocketQueues, file_to_response, log_capture_event,
-        path_to_url, send_response, try_canonicalize, try_read_as_text, url_to_path,
+        UpdateMessageContents, WebAppState, WebsocketQueues, canonicalize, file_to_response,
+        log_capture_event, path_to_url, send_response, try_canonicalize, try_read_as_text,
+        url_to_path,
     },
 };
 
@@ -394,6 +397,7 @@ pub fn create_translation_queues(
 struct TranslationTask {
     // These parameters are passed to us.
     app_state: WebAppState,
+    connection_id: String,
     connection_id_raw: String,
     prefix: &'static [&'static str],
     allow_source_diffs: bool,
@@ -405,8 +409,15 @@ struct TranslationTask {
     cache: CacheMap,
 
     // These parameters are internal state.
-    /// The file currently loaded in the Client.
+    /// The file currently loaded in the Client; change it only through
+    /// `set_current_file`.
     current_file: PathBuf,
+    /// Lists this connection with the cache of the project containing
+    /// `current_file`, if any.
+    cache_registration: Option<ConnectionRegistration>,
+    /// The channel on which that cache notifies this connection.
+    cache_notify_tx: UnboundedSender<CacheNotification>,
+    cache_notify_rx: UnboundedReceiver<CacheNotification>,
     /// A map of `LoadFile` requests sent to the IDE, awaiting its response.
     load_file_requests: HashMap<u64, ProcessingTaskHttpRequest>,
     /// The id for messages created by the server. Leave space for a server
@@ -477,9 +488,11 @@ pub async fn translation_task(
             .unwrap()
             .insert(connection_id.clone(), from_http_tx);
 
+        let (cache_notify_tx, cache_notify_rx) = mpsc::unbounded_channel();
         let mut continue_loop = true;
         let mut tt = TranslationTask {
             app_state: app_state.clone(),
+            connection_id: connection_id.clone(),
             connection_id_raw,
             prefix,
             allow_source_diffs,
@@ -490,6 +503,9 @@ pub async fn translation_task(
             from_http_rx,
             cache: app_state.cache.clone(),
             current_file: PathBuf::new(),
+            cache_registration: None,
+            cache_notify_tx,
+            cache_notify_rx,
             load_file_requests: HashMap::new(),
             id: INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT,
             source_code: String::new(),
@@ -557,14 +573,7 @@ pub async fn translation_task(
                                             path_to_url(&tt.prefix_str, Some(&tt.connection_id_raw), &clean_file_path), Some(true)
                                         )
                                     }));
-                                    // Store the canonicalized path, not the
-                                    // path the IDE sent: the comparisons
-                                    // against `current_file` below assume every
-                                    // path has one spelling.
-                                    tt.current_file = clean_file_path;
-                                    // Since this is a new file, mark it as
-                                    // unsent in full.
-                                    tt.sent_full = false;
+                                    tt.set_current_file(clean_file_path);
                                 }
                                 Err(err) => {
                                     error!("{err:?}");
@@ -680,10 +689,7 @@ pub async fn translation_task(
                                                 id: client_message.id,
                                                 message: EditorMessageContents::CurrentFile(file_path_string.to_string(), Some(is_text))
                                             }));
-                                            tt.current_file = file_path;
-                                            // Since this is a new file, the full text
-                                            // hasn't been sent yet.
-                                            tt.sent_full = false;
+                                            tt.set_current_file(file_path);
                                             Ok(())
                                         }
                                     }
@@ -695,6 +701,12 @@ pub async fn translation_task(
                             }
                         }
                     }
+                },
+
+                // Handle notifications from the cache of the current file's
+                // project.
+                Some(cache_notification) = tt.cache_notify_rx.recv() => match cache_notification {
+                    CacheNotification::CurrentFileOutdated => continue_loop = tt.re_translate_current_file().await,
                 },
 
                 else => break
@@ -1209,6 +1221,83 @@ impl TranslationTask {
         }
     }
 
+    /// Determine if a re-translation of the current file differs from the
+    /// Client's contents, `self.code_mirror_doc` / `self.code_mirror_doc_blocks`.
+    /// Note that strict HTML comparison fails, since TinyMCE modifies
+    /// whitespace and some characters; for example, `👨‍👦` becomes `👨&zwj;👦`
+    /// after processing by TinyMCE. Therefore, HTML processed by TinyMCE needs
+    /// to be normalized before it can be compared.
+    ///
+    /// 1. Document-only: HTML is stored in `.doc`; ignore `.doc_blocks`.
+    /// 2. Normal mode: HTML is stored in `.doc_blocks`; perform a binary
+    ///    compare of `.doc`, then an HTML comparison of `.doc_blocks`.
+    ///
+    /// It looks like comparing HTML is risky, since TinyMCE (or something)
+    /// store emojis differently. Perhaps we need to compare Markdown instead of
+    /// HTML? Or HTML after processing? The second seems easier.
+    fn re_translation_differs(
+        &self,
+        // The current file's metadata.
+        metadata: &SourceFileMetadata,
+        // The re-translation.
+        code_mirror_translated: &CodeMirror,
+    ) -> bool {
+        if metadata.mode == MARKDOWN_MODE {
+            !compare_html(&code_mirror_translated.doc, &self.code_mirror_doc)
+        } else {
+            code_mirror_translated.doc != self.code_mirror_doc
+                || !doc_blocks_compare(
+                    &code_mirror_translated.doc_blocks,
+                    self.code_mirror_doc_blocks.as_ref().unwrap(),
+                )
+        }
+    }
+
+    /// Send the Client a re-translation of the current file as a diff against
+    /// its contents, then record the result as the Client's contents. The
+    /// Client ignores a re-translation while its own edits are unsent (see
+    /// `setContent` in `CodeChatEditor.mts`) or in flight (see the `Update`
+    /// handler in `CodeChatEditorFramework.mts`); `client_update` re-translates
+    /// those edits once they arrive.
+    async fn send_re_translation(
+        &mut self,
+        // The current file's path, spelled as in earlier updates to the Client,
+        // which ignores an update for any other path.
+        file_path: String,
+        // The current file's metadata.
+        metadata: SourceFileMetadata,
+        // The version of the Client's contents which the diff applies to.
+        before_version: f64,
+        // The version of the Client's contents after applying the diff.
+        version: f64,
+        // The re-translation.
+        code_mirror_translated: CodeMirror,
+        // False if the Client's queue is closed.
+    ) -> bool {
+        let client_contents =
+            self.diff_code_mirror(metadata, before_version, version, &code_mirror_translated);
+        debug!(
+            "Sending re-translation update id = {} back to the Client.",
+            self.id
+        );
+        queue_send_func!(self.to_client_tx.send(EditorMessage {
+            id: self.id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path,
+                // Don't change the current position, since the Client editing
+                // position should be left undisturbed.
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: true,
+                contents: Some(client_contents),
+            })
+        }));
+        self.id += MESSAGE_ID_INCREMENT;
+        self.code_mirror_doc = code_mirror_translated.doc;
+        self.code_mirror_doc_blocks = Some(code_mirror_translated.doc_blocks);
+        true
+    }
+
     #[allow(clippy::too_many_lines)]
     async fn client_update(&mut self, client_message: EditorMessage) -> bool {
         let EditorMessageContents::Update(update_message_contents) = client_message.message else {
@@ -1251,7 +1340,12 @@ impl TranslationTask {
                             let mut cfw_version = cfw.version;
 
                             // Translate back to the Client to see if there are
-                            // any changes after this conversion.
+                            // any changes after this conversion, such as line
+                            // wrapping in doc blocks which changes line
+                            // numbering, creation of a new doc block from
+                            // previous code block text, insertion of math, or
+                            // updates from future document intelligence such as
+                            // renamed headings.
                             if let Ok(ccfws) = source_to_codechat_for_web_string(
                                 &new_source_code,
                                 &clean_file_path,
@@ -1262,88 +1356,29 @@ impl TranslationTask {
                                 && let CodeMirrorDiffable::Plain(code_mirror_translated) =
                                     ccfw.source
                                 && self.sent_full
+                                && self
+                                    .re_translation_differs(&cfw.metadata, &code_mirror_translated)
                             {
-                                // Determine if the re-translation includes
-                                // changes (such as line wrapping in doc blocks
-                                // which changes line numbering, creation of a
-                                // new doc block from previous code block text,
-                                // insertion of math, or updates from future
-                                // document intelligence such as renamed
-                                // headings, etc.). Note that strict HTML
-                                // comparison fails, since TinyMCE modifies
-                                // whitespace and some characters; for example,
-                                // `👨‍👦` becomes `👨&zwj;👦` after processing by
-                                // TinyMCE. Therefore, HTML processed by TinyMCE
-                                // needs to be normalized before it can be
-                                // compared.
-                                //
-                                // 1. Document-only: HTML is stored in `.doc`;
-                                //    ignore `.doc_blocks`.
-                                // 2. Normal mode: HTML is stored in
-                                //    `.doc_blocks`; perform a binary compare of
-                                //    `.doc`, then an HTML comparison of
-                                //    `.doc_blocks`.
-                                //
-                                // It looks like comparing HTML is risky, since
-                                // TinyMCE (or something) store emojis
-                                // differently. Perhaps we need to compare
-                                // Markdown instead of HTML? Or HTML after
-                                // processing? The second seems easier.
-                                let is_markdown_mode = cfw.metadata.mode == MARKDOWN_MODE;
-                                if (is_markdown_mode
-                                    && !compare_html(
-                                        &code_mirror_translated.doc,
-                                        &self.code_mirror_doc,
-                                    ))
-                                    || (!is_markdown_mode
-                                        && (code_mirror_translated.doc != self.code_mirror_doc
-                                            || !doc_blocks_compare(
-                                                &code_mirror_translated.doc_blocks,
-                                                self.code_mirror_doc_blocks.as_ref().unwrap(),
-                                            )))
-                                {
-                                    // Use a whole number to avoid encoding
-                                    // differences with fractional values.
-                                    // Precision loss from the u64 -> f64 cast
-                                    // is fine, since we just need a unique-ish
-                                    // version number.
-                                    cfw_version = {
-                                        #[allow(clippy::cast_precision_loss)]
-                                        let v = random::<u64>() as f64;
-                                        v
-                                    };
-                                    // The Client needs an update.
-                                    let client_contents = self.diff_code_mirror(
+                                // Use a whole number to avoid encoding
+                                // differences with fractional values. Precision
+                                // loss from the u64 -> f64 cast is fine, since
+                                // we just need a unique-ish version number.
+                                cfw_version = {
+                                    #[allow(clippy::cast_precision_loss)]
+                                    let v = random::<u64>() as f64;
+                                    v
+                                };
+                                if !self
+                                    .send_re_translation(
+                                        update_message_contents.file_path,
                                         cfw.metadata.clone(),
                                         cfw.version,
                                         cfw_version,
-                                        &code_mirror_translated,
-                                    );
-                                    debug!(
-                                        "Sending re-translation update id = {} back to the Client.",
-                                        self.id
-                                    );
-                                    queue_send_func!(self.to_client_tx.send(EditorMessage {
-                                        id: self.id,
-                                        message: EditorMessageContents::Update(
-                                            UpdateMessageContents {
-                                                file_path: update_message_contents.file_path,
-                                                // Don't change the current position, since
-                                                // the Client editing position should be
-                                                // left undisturbed.
-                                                cursor_position: None,
-                                                scroll_position: None,
-                                                is_re_translation: true,
-                                                contents: Some(client_contents),
-                                            }
-                                        )
-                                    }));
-                                    self.id += MESSAGE_ID_INCREMENT;
-                                    // Update with what was just sent to the
-                                    // client.
-                                    self.code_mirror_doc = code_mirror_translated.doc;
-                                    self.code_mirror_doc_blocks =
-                                        Some(code_mirror_translated.doc_blocks);
+                                        code_mirror_translated,
+                                    )
+                                    .await
+                                {
+                                    return false;
                                 }
                             }
                             // Correct EOL endings for use with the IDE.
@@ -1502,6 +1537,87 @@ impl TranslationTask {
             }
         }
 
+        true
+    }
+
+    /// Change the file loaded in the Client, moving this connection's cache
+    /// registration to the project containing the new file.
+    fn set_current_file(
+        &mut self,
+        // The new current file.
+        current_file: PathBuf,
+    ) {
+        // Store the canonicalized path: the comparisons against `current_file`
+        // assume every path has one spelling, which is also the spelling the
+        // cache uses. A path from the IDE is already canonical, but one from
+        // the Client may not be. As in hydration, fall back to the path as
+        // given if it doesn't exist on disk.
+        self.current_file = canonicalize(&current_file).unwrap_or(current_file);
+        // Since this is a new file, the full text hasn't been sent yet.
+        self.sent_full = false;
+        // Drop the old registration first; see `ConnectionRegistration::new`.
+        self.cache_registration = None;
+        self.cache_registration = find_path_to_toc(&self.current_file).map(|path_to_toc| {
+            ConnectionRegistration::new(
+                project_cache(&self.cache, &self.current_file, &path_to_toc),
+                self.connection_id.clone(),
+                self.current_file.clone(),
+                self.cache_notify_tx.clone(),
+            )
+        });
+    }
+
+    /// Re-translate the current file after its project's cache reports that
+    /// its rendered output is outdated -- because another connection changed a
+    /// target this file cross-references, for example -- then send any change
+    /// to the Client. The source is unchanged, so the IDE isn't updated.
+    async fn re_translate_current_file(
+        &mut self,
+        // False if the Client's queue is closed.
+    ) -> bool {
+        // One translation elsewhere may send several notifications, such as one
+        // per changed fragment; one re-translation covers them all.
+        while self.cache_notify_rx.try_recv().is_ok() {}
+        // Until the Client has the full text, there's nothing to diff against;
+        // the full text, once sent, is translated with the current cache.
+        if !self.sent_full {
+            return true;
+        }
+        // Translate the IDE's contents, which may be newer than the file on
+        // disk; see `ide_update` for the EOL handling.
+        match source_to_codechat_for_web_string(
+            &self.source_code.replace("\r\n", "\n"),
+            &self.current_file,
+            self.version,
+            false,
+            &self.cache,
+        ) {
+            Ok((TranslationResultsString::CodeChat(ccfw), _)) => {
+                let CodeMirrorDiffable::Plain(code_mirror_translated) = ccfw.source else {
+                    panic!("Unexpected diff value.");
+                };
+                if self.re_translation_differs(&ccfw.metadata, &code_mirror_translated) {
+                    // Keep the version: the source is unchanged, and the IDE,
+                    // which receives nothing, must still agree with the Client
+                    // on the version.
+                    return self
+                        .send_re_translation(
+                            self.current_file.to_str().expect("Since the path started as a string, assume it losslessly translates back to a string.").to_string(),
+                            ccfw.metadata,
+                            self.version,
+                            self.version,
+                            code_mirror_translated,
+                        )
+                        .await;
+                }
+            }
+            // Other file types have no content which depends on the cache.
+            Ok(_) => {}
+            Err(err) => error!(
+                "Unable to re-translate {}: {err}",
+                self.current_file.display()
+            ),
+        }
         true
     }
 }

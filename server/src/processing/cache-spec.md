@@ -315,12 +315,12 @@ keeps an
 for checking files in the `WatcherPathState`s received from the watcher.
 
 * If the path is a deleted file or directory and is not ignored by the walker,
-  it's sent directly to the consumer task. TODO: can the walker produce a valid
-  ignore decision on a deleted file/directory? Otherwise:
+  it's sent directly to the consumer task.
 * If the path refers to any of the walker's ignore files (per the
   [ignore docs](https://docs.rs/ignore/latest/ignore/struct.WalkBuilder.html),
-  this is `.gitignore`, `.git/info/exclude`, and `.ignore`), the path containing this file is re-walked. For simplicity, this occurs even outside a Git repository. TODO: also have the watcher monitor global ignore
-  files.
+  this is `.gitignore`, `.git/info/exclude`, and `.ignore`), the path containing
+  this file is re-walked. For simplicity, this occurs even outside a Git
+  repository. TODO: also have the watcher monitor global ignore files.
 * If the path is a file and is not ignored by the walker, it's sent to the
   consumer task.
 * If the path is a directory, it's walked; any files found are sent to the
@@ -337,29 +337,30 @@ aren't usable by the IDE.
 ### Consumer
 
 A consumer task reads paths from the walker channel. It holds a weak reference
-to the cache, and exits when this channel is closed. It is implemented as an
-async task to integrate with the processing pipeline while distributing the CPU
-time required to translate files.
+to the cache, and exits when this channel is closed or the weak reference can't
+be upgraded. It is implemented as an async task to integrate with the processing
+pipeline while distributing the CPU time required to translate files.
 
 * If the file exists, is translatable, and differs from its cached metadata, it
   translates the file to the CodeChatForWeb format in order to update the cache
   for that file. If the `SaveOnScan` option is enabled, it then translates the
   file back to source code and writes the result if there are any changes,
-  update the file's metadata in the cache after the write. This costs additional
-  CPU time and produces watcher events and may rewrite files open in the IDE,
-  motivates the choice of a user-selected option.
+  updating the file's metadata in the cache after the write. This costs
+  additional CPU time and produces watcher events and may rewrite files open in
+  the IDE, motivating the choice of a user-selected option.
 
   If processing a file marks any connection's current file or its TOC as
   outdated, the connection(s) are sent a message to retranslate the file/IDE
-  contents; otherwise, the file is added to the list of files to process. It
-  does not process the current file for any of its connections; these are
-  handled by each connection.
+  contents (see `Connections`); otherwise, the file is added to the list of
+  files to process. It does not process the current file for any of its
+  connections; these are handled by each connection.
 
 * If the path doesn't exist, search the cache for it; if found, remove it.
   Otherwise, assume the path was a directory. Search the cache for all files in
-  this directory, removing them. While storing files in hierarchical directories
-  would make directory operations faster, this is premature optimization. This
-  design choice is rejected before profiling the result.
+  this directory, removing them. <br>Problem: if a path doesn't exist, perhaps
+  it's not translatable. This would mean a lot of expensive directory searches
+  for regular files. Consider some sort of hierarchical filesystem mirror for
+  this case.
 
 * If this is a `WalkStarted`, put all files in the cache which this directory
   contains in a set. Remove files produced by the walk from this set. After
@@ -370,6 +371,31 @@ The cache doesn't track changes to images or multimedia files referenced by a
 source file, requiring the user to manually refresh the page when these files
 change.
 
+### Connections
+
+Each connection's translation task owns its current file. The cache keeps a
+copy for each connection whose current file lies in its project, keyed by
+connection id, along with a channel for notifying that connection. A
+`ConnectionRegistration` owns each entry: when the current file changes, the
+translation task drops its registration, removing the entry from the old
+project's cache, then registers with the new file's project; when the connection
+closes, dropping the registration removes the entry. Keeping this registry
+inside the cache means that checking whether a file is some connection's current
+file, and committing that file, happen under the same lock.
+
+Whenever a commit marks files outdated, the cache sends `CurrentFileOutdated` to
+each connection whose current file is among them. The connection re-translates
+its current file from the IDE's contents, which may be newer than the file on
+disk, then sends any change to the Client as a re-translation. Since the source
+is unchanged, the re-translation keeps the file's version, and the IDE isn't
+updated. The Client ignores a re-translation while its own edits are unsent or
+in flight; those edits are re-translated when they reach the Server.
+
+A registration holds a strong reference to its cache, so the cache outlives its
+LRU map entry while any connection views a file in its project. TODO: keep the
+LRU map from evicting a cache with registered connections; until then, the next
+translation in an evicted project creates a second cache for it.
+
 ### Shutdown
 
 Overall shutdown sequence:
@@ -377,7 +403,8 @@ Overall shutdown sequence:
 1. The LRU map drops a `Cache` and the upgraded Weak reference by the consumer
    task is dropped.
 2. The `Cache` drops the `_watcher` and the consumer task.
-3. When dropped, the `_watcher` closes its channel to the walker and exits.
+3. When dropped, the `_watcher` closes its channel to the walker, stops the
+   watcher, and exits.
 4. The walker responds to the closed watcher channel by closing its channel to
    the consumer and exits.
 5. The consumer task exits when either the walker channel closes or the weak
@@ -385,8 +412,6 @@ Overall shutdown sequence:
 
 TODO:
 
-* How to make each connection's current file visible to the cache?
-* How does the consumer task tell the Client to update the current file?
 * Does the consumer need to be async? Or can it be a plain thread?
 * Need a new message saying reload the TOC.
 
