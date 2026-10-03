@@ -172,6 +172,14 @@
 //! * If the current file's contents in the Client are edited, the Client sends
 //!   the IDE an `Update` with the revised contents.
 //!
+//! * If a change elsewhere in the project outdates the rendering of the current
+//!   file or of the project's TOC, the project's cache notifies the Server,
+//!   which re-renders it and sends any change to the Client: an `Update` for
+//!   the current file, or an `UpdateToc` for the TOC in the Client's sidebar.
+//!   The Client replies to each with a `Result`. Editing the TOC itself also
+//!   sends an `UpdateToc`. See `Connections` in the
+//!   [cache spec](processing/cache-spec.md).
+//!
 //! * When the PC goes to sleep then wakes up, the IDE client and the Editor
 //!   client both reconnect to the websocket URL containing their assigned ID.
 //!
@@ -215,6 +223,7 @@ use std::{
     collections::HashMap,
     ffi::OsStr,
     fmt::Debug,
+    iter,
     path::{Path, PathBuf},
     rc::Rc,
     sync::LazyLock,
@@ -248,7 +257,7 @@ use crate::{
     webserver::{
         CursorPosition, EditorMessage, EditorMessageContents, INITIAL_MESSAGE_ID,
         MESSAGE_ID_INCREMENT, ProcessingTaskHttpRequest, ProcessingTaskHttpRequestFlags,
-        ResultErrTypes, ResultOkTypes, SimpleHttpResponse, SimpleHttpResponseError,
+        ResultErrTypes, ResultOkTypes, ServedContents, SimpleHttpResponse, SimpleHttpResponseError,
         UpdateMessageContents, WebAppState, WebsocketQueues, canonicalize, file_to_response,
         log_capture_event, path_to_url, send_response, try_canonicalize, try_read_as_text,
         url_to_path,
@@ -397,6 +406,18 @@ pub fn create_translation_queues(
     })
 }
 
+/// The project TOC which the Client's sidebar shows, retained so that the
+/// sidebar can be updated when the TOC's rendering is outdated.
+struct SidebarToc {
+    /// The TOC's path, as requested by the sidebar.
+    path: PathBuf,
+    /// The TOC's text, from the IDE if it has the TOC open, otherwise from
+    /// disk.
+    source: String,
+    /// The HTML the sidebar shows, rendered from `source`.
+    html: String,
+}
+
 /// This holds the state used by the main loop of the translation task; this
 /// allows factoring out lengthy contents in the loop into subfunctions.
 struct TranslationTask {
@@ -423,6 +444,9 @@ struct TranslationTask {
     /// The channel on which that cache notifies this connection.
     cache_notify_tx: UnboundedSender<CacheNotification>,
     cache_notify_rx: UnboundedReceiver<CacheNotification>,
+    /// The TOC which the sidebar of the current file's page shows; `None`
+    /// until the sidebar loads it, or if the page has no sidebar.
+    sidebar_toc: Option<SidebarToc>,
     /// A map of `LoadFile` requests sent to the IDE, awaiting its response.
     load_file_requests: HashMap<u64, ProcessingTaskHttpRequest>,
     /// The id for messages created by the server. Leave space for a server
@@ -511,6 +535,7 @@ pub async fn translation_task(
             cache_registration: None,
             cache_notify_tx,
             cache_notify_rx,
+            sidebar_toc: None,
             load_file_requests: HashMap::new(),
             id: INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT,
             source_code: String::new(),
@@ -537,7 +562,8 @@ pub async fn translation_task(
                         EditorMessageContents::Opened(_) |
                         EditorMessageContents::OpenUrl(_) |
                         EditorMessageContents::LoadFile(..) |
-                        EditorMessageContents::ClientHtml(_) => {
+                        EditorMessageContents::ClientHtml(_) |
+                        EditorMessageContents::UpdateToc(_) => {
                             let err = ResultErrTypes::IdeIllegalMessage;
                             error!("{err:?}");
                             send_response(&tt.to_ide_tx, ide_message.id, Err(err)).await;
@@ -620,7 +646,8 @@ pub async fn translation_task(
                         EditorMessageContents::Opened(_) |
                         EditorMessageContents::LoadFile(..) |
                         EditorMessageContents::RequestClose |
-                        EditorMessageContents::ClientHtml(_) => {
+                        EditorMessageContents::ClientHtml(_) |
+                        EditorMessageContents::UpdateToc(_) => {
                             let err = ResultErrTypes::ClientIllegalMessage;
                             error!("{err:?}");
                             send_response(&tt.to_client_tx, client_message.id, Err(err)).await;
@@ -710,9 +737,7 @@ pub async fn translation_task(
 
                 // Handle notifications from the cache of the current file's
                 // project.
-                Some(cache_notification) = tt.cache_notify_rx.recv() => match cache_notification {
-                    CacheNotification::CurrentFileOutdated => continue_loop = tt.re_translate_current_file().await,
-                },
+                Some(cache_notification) = tt.cache_notify_rx.recv() => continue_loop = tt.cache_notified(cache_notification).await,
 
                 else => break
             }
@@ -937,7 +962,7 @@ impl TranslationTask {
         // determine if this is a PDF file. (TODO: look at the magic number also
         // -- "%PDF").
         let use_pdf_js = http_request.file_path.extension() == Some(OsStr::new("pdf"));
-        let ((simple_http_response, option_update), file_contents) = match file_contents_option {
+        let ((simple_http_response, served_contents), file_contents) = match file_contents_option {
             Some((file_contents, new_version)) => {
                 // Only pay attention to the version if this is an editable
                 // Client file.
@@ -992,34 +1017,54 @@ impl TranslationTask {
                 }
             }
         };
-        if let Some(update) = option_update {
-            let Some(ref tmp) = update.contents else {
-                panic!("Contents must always be provided.");
-            };
-            let CodeMirrorDiffable::Plain(ref plain) = tmp.source else {
-                panic!("Diff not supported.");
-            };
-            self.source_code = file_contents;
-            self.eol = find_eol_type(&self.source_code);
-            // We must clone here, since the original is placed in the TX queue.
-            self.code_mirror_doc.clone_from(&plain.doc);
-            self.code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
+        match served_contents {
+            Some(ServedContents::Client(update)) => {
+                let Some(ref tmp) = update.contents else {
+                    panic!("Contents must always be provided.");
+                };
+                let CodeMirrorDiffable::Plain(ref plain) = tmp.source else {
+                    panic!("Diff not supported.");
+                };
+                self.source_code = file_contents;
+                self.eol = find_eol_type(&self.source_code);
+                // We must clone here, since the original is placed in the TX
+                // queue.
+                self.code_mirror_doc.clone_from(&plain.doc);
+                self.code_mirror_doc_blocks = Some(plain.doc_blocks.clone());
 
-            debug!("Sending Update from LoadFile to Client, id = {}.", self.id);
-            queue_send_func!(self.to_client_tx.send(EditorMessage {
-                id: self.id,
-                message: EditorMessageContents::Update(update)
-            }));
-            self.id += MESSAGE_ID_INCREMENT;
-            // The Client now has the current file's full contents. Set this
-            // only here: results of other `LoadFile` requests, such as the
-            // TOC's, may arrive before the current file's and must not enable
-            // diffs against the previous file's contents. If these contents
-            // came from disk because the IDE lacks the file, diffs to the IDE
-            // are still safe: VSCode rejects any update to a document it
-            // doesn't have open, and the standalone file watcher, which never
-            // has the file, receives no diffs (see `allow_source_diffs`).
-            self.sent_full = true;
+                debug!("Sending Update from LoadFile to Client, id = {}.", self.id);
+                queue_send_func!(self.to_client_tx.send(EditorMessage {
+                    id: self.id,
+                    message: EditorMessageContents::Update(update)
+                }));
+                self.id += MESSAGE_ID_INCREMENT;
+                // The Client now has the current file's full contents. Set
+                // this only here: results of other `LoadFile` requests, such as
+                // the TOC's, may arrive before the current file's and must not
+                // enable diffs against the previous file's contents. If these
+                // contents came from disk because the IDE lacks the file, diffs
+                // to the IDE are still safe: VSCode rejects any update to a
+                // document it doesn't have open, and the standalone file
+                // watcher, which never has the file, receives no diffs (see
+                // `allow_source_diffs`).
+                self.sent_full = true;
+            }
+            // Record the TOC which the sidebar now shows, unless it's the TOC
+            // of another project -- requested by the sidebar of a page which
+            // the Client has since left.
+            Some(ServedContents::Toc(html))
+                if http_request
+                    .file_path
+                    .parent()
+                    .is_some_and(|project_root| self.current_file.starts_with(project_root)) =>
+            {
+                self.sidebar_toc = Some(SidebarToc {
+                    path: http_request.file_path.clone(),
+                    source: file_contents,
+                    html,
+                });
+            }
+            Some(ServedContents::Toc(_)) | None => {}
         }
         debug!("Sending HTTP response.");
         if let Err(err) = http_request.response_queue.send(simple_http_response) {
@@ -1132,6 +1177,9 @@ impl TranslationTask {
                                                 // Update to the version of the file just
                                                 // sent.
                                                 self.version = contents.version;
+                                                if !self.refresh_sidebar_if_toc_edited().await {
+                                                    return false;
+                                                }
                                                 Ok(ResultOkTypes::Void)
                                             }
                                             // TODO
@@ -1421,6 +1469,9 @@ impl TranslationTask {
                             };
                             self.version = cfw_version;
                             self.source_code = new_source_code_eol;
+                            if !self.refresh_sidebar_if_toc_edited().await {
+                                return false;
+                            }
                             new_cfw
                         }
                         Err(message) => {
@@ -1566,6 +1617,8 @@ impl TranslationTask {
         self.current_file = canonicalize(&current_file).unwrap_or(current_file);
         // Since this is a new file, the full text hasn't been sent yet.
         self.sent_full = false;
+        // Nor has its page's sidebar, if any, loaded the TOC.
+        self.sidebar_toc = None;
         // Drop the old registration first; see `ConnectionRegistration::new`.
         self.cache_registration = None;
         self.cache_registration = find_path_to_toc(&self.current_file).map(|path_to_toc| {
@@ -1578,6 +1631,34 @@ impl TranslationTask {
         });
     }
 
+    /// Respond to notifications from the cache of the current file's project.
+    /// One translation elsewhere may send several notifications, such as one
+    /// per changed fragment, so gather all those queued, then re-render each
+    /// kind of outdated content once.
+    async fn cache_notified(
+        &mut self,
+        // The notification which woke this task.
+        notification: CacheNotification,
+        // False if the Client's queue is closed.
+    ) -> bool {
+        let mut is_current_file_outdated = false;
+        let mut is_toc_outdated = false;
+        let queued = iter::from_fn(|| self.cache_notify_rx.try_recv().ok());
+        for notification in iter::once(notification).chain(queued) {
+            match notification {
+                CacheNotification::CurrentFileOutdated => is_current_file_outdated = true,
+                CacheNotification::TocOutdated => is_toc_outdated = true,
+            }
+        }
+        if is_current_file_outdated && !self.re_translate_current_file().await {
+            return false;
+        }
+        if is_toc_outdated && !self.refresh_sidebar_toc().await {
+            return false;
+        }
+        true
+    }
+
     /// Re-translate the current file after its project's cache reports that
     /// its rendered output is outdated -- because another connection changed a
     /// target this file cross-references, for example -- then send any change
@@ -1586,9 +1667,6 @@ impl TranslationTask {
         &mut self,
         // False if the Client's queue is closed.
     ) -> bool {
-        // One translation elsewhere may send several notifications, such as one
-        // per changed fragment; one re-translation covers them all.
-        while self.cache_notify_rx.try_recv().is_ok() {}
         // Until the Client has the full text, there's nothing to diff against;
         // the full text, once sent, is translated with the current cache.
         if !self.sent_full {
@@ -1630,6 +1708,64 @@ impl TranslationTask {
             ),
         }
         true
+    }
+
+    /// Re-render the TOC which the Client's sidebar shows, then send the Client
+    /// the result if it changed. The Client replaces the sidebar's contents in
+    /// place, which preserves its scroll position.
+    async fn refresh_sidebar_toc(
+        &mut self,
+        // False if the Client's queue is closed.
+    ) -> bool {
+        // Until the sidebar loads the TOC, there's nothing to refresh; loading
+        // it renders the TOC from the current cache.
+        let Some(sidebar_toc) = &mut self.sidebar_toc else {
+            return true;
+        };
+        let html = match source_to_codechat_for_web_string(
+            &sidebar_toc.source.replace("\r\n", "\n"),
+            &sidebar_toc.path,
+            // A TOC's HTML doesn't include a version.
+            0.0,
+            true,
+            &self.cache,
+        ) {
+            Ok((TranslationResultsString::Toc(html), _)) => html,
+            result => {
+                error!(
+                    "Unable to render the TOC {}: {result:?}",
+                    sidebar_toc.path.display()
+                );
+                return true;
+            }
+        };
+        if html == sidebar_toc.html {
+            return true;
+        }
+        sidebar_toc.html.clone_from(&html);
+        debug!("Sending TOC update id = {} to the Client.", self.id);
+        queue_send_func!(self.to_client_tx.send(EditorMessage {
+            id: self.id,
+            message: EditorMessageContents::UpdateToc(html),
+        }));
+        self.id += MESSAGE_ID_INCREMENT;
+        true
+    }
+
+    /// After an edit to the current file, refresh the Client's sidebar if that
+    /// file is the TOC it shows. The edit doesn't outdate the TOC in the cache:
+    /// a file's translation never outdates the file itself.
+    async fn refresh_sidebar_if_toc_edited(
+        &mut self,
+        // False if the Client's queue is closed.
+    ) -> bool {
+        match &mut self.sidebar_toc {
+            Some(sidebar_toc) if sidebar_toc.path == self.current_file => {
+                sidebar_toc.source.clone_from(&self.source_code);
+                self.refresh_sidebar_toc().await
+            }
+            _ => true,
+        }
     }
 }
 

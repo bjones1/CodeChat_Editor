@@ -300,7 +300,7 @@ pub(super) enum WatcherPathState {
 pub(super) enum ConsumerPathState {
     WatcherPathState(WatcherPathState),
     WalkStarted(PathBuf),
-    WalkFinished
+    WalkFinished,
 }
 
 // ### Connections
@@ -324,6 +324,10 @@ pub enum CacheNotification {
     /// A change elsewhere in the project outdated the rendered output of the
     /// connection's current file, which the connection should re-translate.
     CurrentFileOutdated,
+    /// A change elsewhere in the project outdated the rendered output of the
+    /// project's TOC, which every connection in the project shows in its
+    /// sidebar; the connection should re-render it.
+    TocOutdated,
 }
 
 /// Lists a connection in `Cache::connections` for as long as this value lives;
@@ -773,9 +777,10 @@ impl Cache {
         outdated
     }
 
-    /// Mark files outdated, then notify each connection showing one of them.
-    /// The connection re-translates that file itself, from its IDE's contents,
-    /// which may be newer than the file on disk.
+    /// Mark files outdated, then notify each connection showing one of them:
+    /// as its current file, or as the TOC in its sidebar, which every
+    /// connection in the project shows. The connection re-renders that file
+    /// itself, since the text it shows may be newer than the file on disk.
     fn mark_outdated(
         &mut self,
         // The files to mark.
@@ -784,15 +789,19 @@ impl Cache {
         for outdated_path in outdated {
             self.set_status(outdated_path, FileStatus::Outdated);
         }
-        // TODO: also notify every connection when the project's TOC is outdated,
-        // once the Client supports a message to reload its TOC.
+        // The project's root is the directory containing its TOC; see
+        // `find_path_to_toc`.
+        let is_toc_outdated = outdated.contains(&self.root.join("toc.md"));
         for connection in self.connections.values() {
+            // A send fails only once the connection's translation task has
+            // exited, leaving nothing to notify.
             if outdated.contains(&connection.current_file) {
-                // A send fails only once the connection's translation task has
-                // exited, leaving nothing to notify.
                 let _ = connection
                     .notify_tx
                     .send(CacheNotification::CurrentFileOutdated);
+            }
+            if is_toc_outdated {
+                let _ = connection.notify_tx.send(CacheNotification::TocOutdated);
             }
         }
     }
@@ -1745,6 +1754,69 @@ mod tests {
             .unwrap()
             .commit_file(&a, None, facts_target("foo", "Bar!"));
         assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Disconnected));
+    }
+
+    // Verify that outdating the TOC notifies every registered connection, since
+    // each shows the TOC in its sidebar, and that recommitting the TOC itself
+    // notifies none of them.
+    #[test]
+    fn test_toc_notification() {
+        let cache = Arc::new(Mutex::new(Cache::default()));
+        // The default cache's root is empty, so this is its TOC.
+        let toc = PathBuf::from("toc.md");
+        let a = PathBuf::from("a.md");
+        let b = PathBuf::from("b.md");
+        // The TOC cross-references a heading in `a`.
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&a, None, facts_target("foo", "Foo"));
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&toc, None, facts_xref("foo"));
+        // Register a connection whose current file is `current_file`, returning
+        // its registration and the receiver of its notifications.
+        let register = |connection_id: &str, current_file: &PathBuf| {
+            let (notify_tx, notify_rx) = mpsc::unbounded_channel();
+            let registration = ConnectionRegistration::new(
+                cache.clone(),
+                connection_id.to_string(),
+                current_file.clone(),
+                notify_tx,
+            );
+            (registration, notify_rx)
+        };
+        let (_definer, mut definer_rx) = register("definer", &a);
+        let (_bystander, mut bystander_rx) = register("bystander", &b);
+        let (_toc_viewer, mut toc_viewer_rx) = register("toc_viewer", &toc);
+
+        // Renaming the heading outdates the TOC. A connection whose current
+        // file is the TOC must re-translate it as well.
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&a, None, facts_target("foo", "Bar"));
+        for notify_rx in [&mut definer_rx, &mut bystander_rx] {
+            assert_eq!(notify_rx.try_recv(), Ok(CacheNotification::TocOutdated));
+            assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Empty));
+        }
+        assert_eq!(
+            toc_viewer_rx.try_recv(),
+            Ok(CacheNotification::CurrentFileOutdated)
+        );
+        assert_eq!(toc_viewer_rx.try_recv(), Ok(CacheNotification::TocOutdated));
+        assert_eq!(toc_viewer_rx.try_recv(), Err(TryRecvError::Empty));
+
+        // Every sidebar load translates, and therefore recommits, the TOC; this
+        // must not outdate the TOC again.
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&toc, None, facts_xref("foo"));
+        for notify_rx in [&mut definer_rx, &mut bystander_rx, &mut toc_viewer_rx] {
+            assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Empty));
+        }
     }
 
     // ### Walker tests

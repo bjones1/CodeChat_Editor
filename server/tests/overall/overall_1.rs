@@ -1110,6 +1110,100 @@ async fn test_client_updates_core(
     Ok(())
 }
 
+// ### TOC tests
+//
+// Verify that the sidebar shows the TOC the Server re-renders after a change
+// outdates it -- here, renaming a heading which the TOC cross-references -- and
+// that the sidebar updates in place rather than reloading.
+make_test!(test_toc_update, test_toc_update_core);
+
+// Some of the thirtyfour calls are marked as deprecated, though they aren't
+// marked that way in the Selenium docs.
+#[allow(deprecated)]
+async fn test_toc_update_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let server_id = perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.py",
+        Some(("# <h1 id=\"foo\">Foo</h1>\n".to_string(), 1.0)),
+        true,
+        6.0,
+    )
+    .await;
+
+    // The TOC shows the heading's text. Mark the sidebar's window, in order to
+    // detect a reload, which would replace it.
+    select_codechat_iframe(&driver).await;
+    let toc_iframe = driver
+        .query(By::Css("#CodeChat-sidebar"))
+        .first()
+        .await
+        .unwrap();
+    toc_iframe.enter_frame().await.unwrap();
+    let toc_link = driver
+        .query(By::Css(".CodeChat-TOC a"))
+        .first()
+        .await
+        .unwrap();
+    assert_eq!(toc_link.text().await.unwrap(), "Foo");
+    driver
+        .execute("window.unreloaded = true;", vec![])
+        .await
+        .unwrap();
+
+    // Rename the heading in the IDE. The Client acknowledges both the edit and
+    // the TOC update which the edit produces.
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            path_str,
+            Some(("# <h1 id=\"foo\">Bar</h1>\n".to_string(), 2.0)),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let mut expected_messages = ExpectedMessages::new();
+    for id in [ide_id, server_id] {
+        expected_messages.insert(
+            EditorMessage {
+                id,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            },
+            false,
+        );
+    }
+    expected_messages
+        .assert_all_messages(&codechat_server, TIMEOUT)
+        .await;
+
+    // The sidebar shows the new text, without having reloaded.
+    let toc_link = driver
+        .query(By::Css(".CodeChat-TOC a"))
+        .first()
+        .await
+        .unwrap();
+    assert_eq!(toc_link.text().await.unwrap(), "Bar");
+    assert_eq!(
+        driver
+            .execute("return window.unreloaded === true;", vec![])
+            .await
+            .unwrap()
+            .json()
+            .as_bool(),
+        Some(true)
+    );
+
+    assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
 // ### Raw file tests
 //
 // The browser itself renders a file which the Client can't edit, such as a

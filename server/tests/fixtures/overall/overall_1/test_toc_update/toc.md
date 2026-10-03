@@ -1,0 +1,1 @@
+* <xref ref="foo"></xref>

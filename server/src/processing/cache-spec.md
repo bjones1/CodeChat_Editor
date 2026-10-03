@@ -391,6 +391,29 @@ is unchanged, the re-translation keeps the file's version, and the IDE isn't
 updated. The Client ignores a re-translation while its own edits are unsent or
 in flight; those edits are re-translated when they reach the Server.
 
+Every connection in a project also shows the project's TOC in its Client's
+sidebar, so whenever a commit marks the TOC outdated, the cache sends
+`TocOutdated` to every connection in the project. The connection re-renders the
+TOC from the text its sidebar last loaded -- from the IDE if the IDE has the TOC
+open, otherwise from disk -- then, if the rendering changed, sends the new HTML
+to the Client in an `UpdateToc` message. The Client replaces the contents of its
+sidebar in place, which preserves the sidebar's scroll position along with the
+listener its page attached to intercept clicks on the TOC's links; reloading the
+sidebar would discard both.
+
+Committing the TOC itself doesn't outdate the TOC, since a commit never outdates
+its own file. This matters because each sidebar load translates, and therefore
+commits, the TOC: were that commit to outdate the TOC, each refresh would
+trigger another. Instead, edits to the TOC reach the sidebar in other ways:
+
+* When a connection's current file is the TOC, the connection refreshes its
+  sidebar after each edit to the TOC, whether made in the IDE or the Client.
+* TODO: once the consumer task exists, have it notify every connection in the
+  project when the TOC changes on disk. Since the TOC's text then differs from
+  the text the sidebar last loaded, this needs a notification other than
+  `TocOutdated`, prompting the connection to fetch the TOC's new text from its
+  IDE (with a `LoadFile`), falling back to disk, before re-rendering it.
+
 A registration holds a strong reference to its cache, so the cache outlives its
 LRU map entry while any connection views a file in its project. TODO: keep the
 LRU map from evicting a cache with registered connections; until then, the next
@@ -413,7 +436,6 @@ Overall shutdown sequence:
 TODO:
 
 * Does the consumer need to be async? Or can it be a plain thread?
-* Need a new message saying reload the TOC.
 
 <p><br></p>
 

@@ -1655,6 +1655,430 @@ async fn test_vscode_ide_websocket10() {
     temp_dir.close().unwrap();
 }
 
+/// Have the Client acknowledge a message from the Server, then verify that the
+/// Server forwards the acknowledgement to the IDE.
+async fn acknowledge<S: AsyncRead + AsyncWrite + Unpin>(
+    // The Client's websocket.
+    ws_client: &mut WebSocketStream<S>,
+    // The IDE's websocket.
+    ws_ide: &mut WebSocketStream<S>,
+    // The id of the message to acknowledge.
+    id: f64,
+) {
+    let result = EditorMessage {
+        id,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    };
+    send_message(ws_client, &result).await;
+    assert_eq!(read_message(ws_ide).await, result);
+}
+
+/// Fetch the TOC as the Client's sidebar does. The IDE reports that it doesn't
+/// have the TOC, so the Server reads it from disk.
+async fn fetch_sidebar_toc<S: AsyncRead + AsyncWrite + Unpin>(
+    // The IDE's websocket.
+    ws_ide: &mut WebSocketStream<S>,
+    // The connection whose Client fetches the TOC.
+    connection_id: &str,
+    // The directory containing the TOC.
+    test_dir: &Path,
+    // The id of the `LoadFile` message the Server sends to the IDE.
+    load_file_id: f64,
+    // The body of the response: the page showing the TOC.
+) -> String {
+    let url = format!(
+        "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/toc.md?mode=toc",
+        test_dir.to_slash().unwrap()
+    );
+    let join_handle = thread::spawn(move || {
+        let response = minreq::get(url).send().unwrap();
+        assert_eq!(response.status_code, 200);
+        response.as_str().unwrap().to_string()
+    });
+    let em = read_message(ws_ide).await;
+    let (_path, is_current) = cast!(
+        em.message,
+        EditorMessageContents::LoadFile,
+        path,
+        is_current
+    );
+    assert!(!is_current);
+    assert_eq!(em.id, load_file_id);
+    send_message(
+        ws_ide,
+        &EditorMessage {
+            id: load_file_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap()
+}
+
+/// Build an `Update` carrying the full text of a file, as the IDE sends it.
+fn ide_update(
+    // The file's path.
+    file_path: &str,
+    // The file's lexer.
+    mode: &str,
+    // The file's new text.
+    doc: &str,
+    // The file's new version.
+    version: f64,
+    // The `Update` message.
+) -> EditorMessageContents {
+    EditorMessageContents::Update(UpdateMessageContents {
+        file_path: file_path.to_string(),
+        cursor_position: None,
+        scroll_position: None,
+        is_re_translation: false,
+        contents: Some(CodeChatForWeb {
+            metadata: SourceFileMetadata {
+                mode: mode.to_string(),
+            },
+            source: CodeMirrorDiffable::Plain(CodeMirror {
+                doc: doc.to_string(),
+                doc_blocks: vec![],
+            }),
+            version,
+        }),
+    })
+}
+
+/// Verify that the Server refreshes the TOC in the Client's sidebar when its
+/// project's cache reports the TOC outdated: the TOC cross-references a heading
+/// in the current file, which the IDE then renames.
+#[actix_web::test]
+async fn test_vscode_ide_websocket11() {
+    let connection_id = "test-connection-id11";
+    let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+    open_client(&mut ws_ide).await;
+
+    // Load the current file, following the protocol in
+    // `test_vscode_ide_websocket10`.
+    let file_path_temp = fs::canonicalize(test_dir.join("test.py")).unwrap();
+    let file_path = simplified(&file_path_temp);
+    let file_path_str = file_path.to_str().unwrap().to_string();
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::CurrentFile(
+                format!(
+                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    file_path.to_slash().unwrap()
+                ),
+                None,
+            ),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::CurrentFile(file_path_str.clone(), Some(true))
+        }
+    );
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    let test_dir_thread = test_dir.clone();
+    let join_handle = thread::spawn(move || {
+        assert_eq!(
+            minreq::get(format!(
+                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/test.py",
+                test_dir_thread.to_slash().unwrap(),
+            ))
+            .send()
+            .unwrap()
+            .status_code,
+            200
+        );
+    });
+    let em = read_message(&mut ws_ide).await;
+    cast!(em.message, EditorMessageContents::LoadFile, a, b);
+    assert_eq!(em.id, INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT);
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap();
+    let em = read_message(&mut ws_client).await;
+    cast!(em.message, EditorMessageContents::Update);
+    assert_eq!(em.id, INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT);
+    acknowledge(
+        &mut ws_client,
+        &mut ws_ide,
+        INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
+    )
+    .await;
+
+    // The sidebar's TOC shows the heading's text.
+    let toc_page = fetch_sidebar_toc(
+        &mut ws_ide,
+        connection_id,
+        &test_dir,
+        INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
+    )
+    .await;
+    assert_contains!(toc_page, "<a href=test.py#foo>Foo</a>");
+
+    // Rename the heading in the IDE. The Client receives the edit...
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_IDE_MESSAGE_ID,
+            message: ide_update(&file_path_str, "python", "# <h1 id=\"foo\">Bar</h1>\n", 1.0),
+        },
+    )
+    .await;
+    let em = read_message(&mut ws_client).await;
+    cast!(em.message, EditorMessageContents::Update);
+    assert_eq!(em.id, INITIAL_IDE_MESSAGE_ID);
+    acknowledge(&mut ws_client, &mut ws_ide, INITIAL_IDE_MESSAGE_ID).await;
+
+    // ...then, since the edit outdated the TOC, the TOC's new rendering.
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::UpdateToc(
+                "<ul><li><xref contenteditable=false ref=foo><a href=test.py#foo>Bar</a></xref></ul>"
+                    .to_string()
+            ),
+        }
+    );
+    acknowledge(
+        &mut ws_client,
+        &mut ws_ide,
+        INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+    )
+    .await;
+
+    check_logger_errors(0);
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
+}
+
+/// Verify that editing the TOC, from either the IDE or the Client, refreshes
+/// the TOC in the Client's sidebar, unless the edit leaves its rendering
+/// unchanged.
+#[actix_web::test]
+async fn test_vscode_ide_websocket12() {
+    let connection_id = "test-connection-id12";
+    let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+    open_client(&mut ws_ide).await;
+
+    // Make the TOC the current file, following the protocol in
+    // `test_vscode_ide_websocket10`.
+    let file_path_temp = fs::canonicalize(test_dir.join("toc.md")).unwrap();
+    let file_path = simplified(&file_path_temp);
+    let file_path_str = file_path.to_str().unwrap().to_string();
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::CurrentFile(
+                format!(
+                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    file_path.to_slash().unwrap()
+                ),
+                None,
+            ),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_ide).await,
+        EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::CurrentFile(file_path_str.clone(), Some(true))
+        }
+    );
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    let test_dir_thread = test_dir.clone();
+    let join_handle = thread::spawn(move || {
+        assert_eq!(
+            minreq::get(format!(
+                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/toc.md",
+                test_dir_thread.to_slash().unwrap(),
+            ))
+            .send()
+            .unwrap()
+            .status_code,
+            200
+        );
+    });
+    let em = read_message(&mut ws_ide).await;
+    let (_path, is_current) = cast!(
+        em.message,
+        EditorMessageContents::LoadFile,
+        path,
+        is_current
+    );
+    assert!(is_current);
+    assert_eq!(em.id, INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT);
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_MESSAGE_ID + MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    join_handle.join().unwrap();
+    let em = read_message(&mut ws_client).await;
+    cast!(em.message, EditorMessageContents::Update);
+    assert_eq!(em.id, INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT);
+    acknowledge(
+        &mut ws_client,
+        &mut ws_ide,
+        INITIAL_MESSAGE_ID + 2.0 * MESSAGE_ID_INCREMENT,
+    )
+    .await;
+    let toc_page = fetch_sidebar_toc(
+        &mut ws_ide,
+        connection_id,
+        &test_dir,
+        INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
+    )
+    .await;
+    assert_contains!(toc_page, "<h1>Contents</h1>");
+
+    // Edit the TOC in the IDE. The Client receives the edit, then the sidebar's
+    // new rendering of it.
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_IDE_MESSAGE_ID,
+            message: ide_update(&file_path_str, "markdown", "# Contents\n\nMore\n", 1.0),
+        },
+    )
+    .await;
+    let em = read_message(&mut ws_client).await;
+    cast!(em.message, EditorMessageContents::Update);
+    assert_eq!(em.id, INITIAL_IDE_MESSAGE_ID);
+    acknowledge(&mut ws_client, &mut ws_ide, INITIAL_IDE_MESSAGE_ID).await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::UpdateToc("<h1>Contents</h1><p>More".to_string()),
+        }
+    );
+    acknowledge(
+        &mut ws_client,
+        &mut ws_ide,
+        INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+    )
+    .await;
+
+    // An edit which doesn't change the TOC's rendering doesn't refresh the
+    // sidebar; otherwise, an `UpdateToc` would precede the one checked below.
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_IDE_MESSAGE_ID + MESSAGE_ID_INCREMENT,
+            message: ide_update(&file_path_str, "markdown", "# Contents\n\nMore\n\n", 2.0),
+        },
+    )
+    .await;
+    let em = read_message(&mut ws_client).await;
+    cast!(em.message, EditorMessageContents::Update);
+    assert_eq!(em.id, INITIAL_IDE_MESSAGE_ID + MESSAGE_ID_INCREMENT);
+    acknowledge(
+        &mut ws_client,
+        &mut ws_ide,
+        INITIAL_IDE_MESSAGE_ID + MESSAGE_ID_INCREMENT,
+    )
+    .await;
+
+    // Edit the TOC in the Client. The sidebar receives the new rendering, while
+    // the IDE receives the edit.
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID + MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "markdown".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "<h1>Contents</h1><p>More and more</p>".to_string(),
+                        doc_blocks: vec![],
+                    }),
+                    version: 3.0,
+                }),
+            }),
+        },
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: INITIAL_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::UpdateToc(
+                "<h1>Contents</h1><p>More and more".to_string()
+            ),
+        }
+    );
+    let em = read_message(&mut ws_ide).await;
+    cast!(em.message, EditorMessageContents::Update);
+    assert_eq!(em.id, INITIAL_CLIENT_MESSAGE_ID + MESSAGE_ID_INCREMENT);
+    let result = EditorMessage {
+        id: INITIAL_CLIENT_MESSAGE_ID + MESSAGE_ID_INCREMENT,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    };
+    send_message(&mut ws_ide, &result).await;
+    assert_eq!(read_message(&mut ws_client).await, result);
+    acknowledge(
+        &mut ws_client,
+        &mut ws_ide,
+        INITIAL_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT,
+    )
+    .await;
+
+    check_logger_errors(0);
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
+}
+
 #[test]
 fn test_find_eoltypes() {
     assert_eq!(

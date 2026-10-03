@@ -156,6 +156,17 @@ pub enum SimpleHttpResponse {
     Bin(PathBuf),
 }
 
+/// What a page served by `file_to_response` shows, which the processing task
+/// tracks in order to update that page later.
+#[derive(Debug)]
+pub enum ServedContents {
+    /// The page is a Client, which this `Update` populates with the file's
+    /// contents.
+    Client(UpdateMessageContents),
+    /// The page is the TOC shown in a sidebar, which consists of this HTML.
+    Toc(String),
+}
+
 // List all the possible errors when responding to an HTTP request. See
 // [The definitive guide to error handling in Rust](https://www.howtocodeit.com/articles/the-definitive-guide-to-rust-error-handling).
 #[derive(Debug, thiserror::Error)]
@@ -240,6 +251,10 @@ pub enum EditorMessageContents {
     /// HTML for the CodeChat Editor Client to display in its built-in browser.
     /// Valid destinations: IDE.
     ClientHtml(String),
+    /// Replace the contents of the TOC in the Client's sidebar with the
+    /// provided HTML, the TOC re-rendered after a change which outdated it.
+    /// Valid destinations: Client.
+    UpdateToc(String),
     /// Sent when the IDE or Client websocket was closed, indicating that the
     /// unclosed websocket should be closed as well. Therefore, this message
     /// will never be received by the IDE or Client. Valid destinations: Server.
@@ -935,9 +950,9 @@ pub async fn file_to_response(
     // The response to send back to the HTTP endpoint.
     SimpleHttpResponse,
     // If the response is a Client, also return the appropriate `Update` data to
-    // populate the Client with the parsed `file_contents`. In all other cases,
-    // return None.
-    Option<UpdateMessageContents>,
+    // populate the Client with the parsed `file_contents`; if it's a TOC, also
+    // return the TOC's HTML. In all other cases, return None.
+    Option<ServedContents>,
 ) {
     // Use a lossy conversion, since this is UI display, not filesystem access.
     let file_path = &http_request.file_path;
@@ -1105,7 +1120,7 @@ pub async fn file_to_response(
                         </body>
                     </html>"#,
                 )),
-                None,
+                Some(ServedContents::Toc(html)),
             );
         }
     };
@@ -1177,13 +1192,13 @@ pub async fn file_to_response(
         )),
         // If this file is editable and is the main file, send an `Update`. The
         // `simple_http_response` contains the Client.
-        Some(UpdateMessageContents {
+        Some(ServedContents::Client(UpdateMessageContents {
             file_path: file_path.to_string(),
             cursor_position: None,
             scroll_position: None,
             is_re_translation: false,
             contents: Some(codechat_for_web),
-        }),
+        })),
     )
 }
 
@@ -1396,6 +1411,7 @@ pub fn client_websocket<S: BuildHasher + 'static>(
                                                 // Check for an invalid message.
                                                 EditorMessageContents::LoadFile(..) |
                                                 EditorMessageContents::ClientHtml(_) |
+                                                EditorMessageContents::UpdateToc(_) |
                                                 EditorMessageContents::Closed => {
                                                     let err = ResultErrTypes::ClientIllegalMessage;
                                                     error!("{err}");

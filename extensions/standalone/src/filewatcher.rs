@@ -710,6 +710,7 @@ fn processing_task(
                         EditorMessageContents::OpenUrl(_) |
                         EditorMessageContents::Capture(_) |
                         EditorMessageContents::ClientHtml(_) |
+                        EditorMessageContents::UpdateToc(_) |
                         EditorMessageContents::RequestClose => {
                             let err = ResultErrTypes::ClientIllegalMessage;
                             error!("{err:?}");

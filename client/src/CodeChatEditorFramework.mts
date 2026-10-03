@@ -302,6 +302,17 @@ class WebSocketComm {
                     break;
                 }
 
+                case "UpdateToc": {
+                    const html = value as string;
+                    // Execute this after all other messages have been
+                    // processed.
+                    this.promise = this.promise.finally(() => {
+                        setSidebarToc(html);
+                        this.sendResult(id);
+                    });
+                    break;
+                }
+
                 case "Result": {
                     // If the result has the magic ID, then call a debug
                     // routine.
@@ -488,6 +499,40 @@ const setContent = async (
             cursorPosition,
             scrollLine,
         );
+    }
+};
+
+// Replace the contents of the TOC in the sidebar of the page in the
+// `rootIframe` -- the Client or the simple viewer. Replacing them in place,
+// rather than reloading the sidebar, preserves its scroll position, along with
+// the `navigate` listener which the page attached to the sidebar's window to
+// intercept clicks on the TOC's links.
+const setSidebarToc = (html: string) => {
+    const sidebarIframe = getPageIframe("CodeChat-sidebar");
+    // A page outside a project has no sidebar.
+    if (sidebarIframe === undefined) {
+        return;
+    }
+    const replaceToc = () => {
+        // Until the sidebar loads, its document is the initial `about:blank`
+        // or a partially-parsed TOC.
+        const tocDocument = sidebarIframe.contentDocument;
+        if (tocDocument === null || tocDocument.readyState === "loading") {
+            return false;
+        }
+        const toc = tocDocument.querySelector(".CodeChat-TOC");
+        if (toc === null) {
+            return false;
+        }
+        toc.innerHTML = html;
+        return true;
+    };
+    // The Server sends this only after serving the sidebar its TOC, so a
+    // sidebar which is still loading shows an older rendering; replace that
+    // once it loads. Waiting here instead would stall every message behind
+    // this one if the sidebar never finishes loading.
+    if (!replaceToc()) {
+        sidebarIframe.addEventListener("load", replaceToc, { once: true });
     }
 };
 
