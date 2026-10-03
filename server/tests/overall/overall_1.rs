@@ -26,7 +26,10 @@
 // -------
 //
 // ### Standard library
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
 
 // ### Third-party
 use dunce::canonicalize;
@@ -35,6 +38,7 @@ use pretty_assertions::assert_eq;
 use thirtyfour::{
     By, Key, WebDriver, WebElement, error::WebDriverError, prelude::ElementQueryable,
 };
+use tokio::time::sleep;
 
 // ### Local
 use crate::common::{
@@ -1104,4 +1108,208 @@ async fn test_client_updates_core(
     assert_no_more_messages(&codechat_server).await;
 
     Ok(())
+}
+
+// ### Raw file tests
+//
+// The browser itself renders a file which the Client can't edit, such as a
+// text file: in a project, it shows the file in the simple viewer's contents
+// iframe, beside the TOC; otherwise, the page itself shows the file. Verify
+// that an IDE edit to such a file reloads the document showing it, which
+// leaves the rest of the page in place and renders the file according to its
+// type, so that a text file keeps its line breaks.
+make_test!(test_simple_viewer_update, test_simple_viewer_update_core);
+
+async fn test_simple_viewer_update_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.txt")).unwrap();
+    let toc_path = canonicalize(test_dir.join("toc.md")).unwrap();
+    let mut server_id = load_raw_file(&codechat_server, &path, 6.0).await;
+    // The simple viewer requests the file's text, for its contents iframe, and
+    // the TOC, in either order.
+    let mut requested_paths = vec![];
+    for _ in 0..2 {
+        let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+        assert_eq!(msg.id, server_id);
+        let (requested_path, is_current) = cast!(
+            msg.message,
+            EditorMessageContents::LoadFile,
+            requested_path,
+            is_current
+        );
+        assert!(!is_current);
+        let contents = (requested_path == path).then(|| (RAW_TEXT.to_string(), 1.0));
+        codechat_server
+            .send_result_loadfile(server_id, contents)
+            .await
+            .unwrap();
+        server_id += MESSAGE_ID_INCREMENT;
+        requested_paths.push(requested_path);
+    }
+    requested_paths.sort();
+    let mut expected_paths = vec![path.clone(), toc_path];
+    expected_paths.sort();
+    assert_eq!(requested_paths, expected_paths);
+    assert!(wait_for_shown_text(&driver, RAW_TEXT).await);
+
+    // Reloading the contents iframe requests the file's text, though not as
+    // the current file, since the request is for the iframe's raw contents.
+    edit_raw_file(&codechat_server, &path, false, server_id).await;
+    assert!(wait_for_shown_text(&driver, EDITED_RAW_TEXT).await);
+
+    assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
+make_test!(test_raw_file_update, test_raw_file_update_core);
+
+async fn test_raw_file_update_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.txt")).unwrap();
+    let server_id = load_raw_file(&codechat_server, &path, 6.0).await;
+    assert!(!wait_for_shown_text(&driver, RAW_TEXT).await);
+
+    // Reloading the page requests the current file.
+    edit_raw_file(&codechat_server, &path, true, server_id).await;
+    assert!(!wait_for_shown_text(&driver, EDITED_RAW_TEXT).await);
+
+    assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
+// The text of the file in the raw file tests, before and after the IDE edits
+// it.
+const RAW_TEXT: &str = "First line\nSecond line\n";
+const EDITED_RAW_TEXT: &str = "Third line\nFourth line\n";
+
+// Make a file which the Client can't edit the current file. The IDE provides
+// its text, `RAW_TEXT`.
+async fn load_raw_file(
+    codechat_server: &CodeChatEditorServerLog,
+    // The file to load.
+    path: &Path,
+    // The id of the `LoadFile` message the Server sends for this file.
+    server_id: f64,
+    // The id of the Server's next message.
+) -> f64 {
+    let current_file_id = codechat_server
+        .send_message_current_file(path.to_str().unwrap().to_string())
+        .await
+        .unwrap();
+    let mut expected_messages = ExpectedMessages::new();
+    expected_messages.insert(
+        EditorMessage {
+            id: current_file_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+        false,
+    );
+    expected_messages.insert(
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(path.to_path_buf(), true),
+        },
+        false,
+    );
+    expected_messages
+        .assert_all_messages(codechat_server, TIMEOUT)
+        .await;
+    codechat_server
+        .send_result_loadfile(server_id, Some((RAW_TEXT.to_string(), 1.0)))
+        .await
+        .unwrap();
+    server_id + MESSAGE_ID_INCREMENT
+}
+
+// Replace the text of a file which the Client can't edit with
+// `EDITED_RAW_TEXT`, as the IDE does when the user edits it. The Client
+// acknowledges the edit, then reloads the document showing the file, which
+// requests the file's text from the IDE.
+async fn edit_raw_file(
+    codechat_server: &CodeChatEditorServerLog,
+    // The file to edit.
+    path: &Path,
+    // True if the reload requests the file as the current file.
+    is_current: bool,
+    // The id of the `LoadFile` message which the reload produces.
+    server_id: f64,
+) {
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            path.to_str().unwrap().to_string(),
+            Some((EDITED_RAW_TEXT.to_string(), 2.0)),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    let mut expected_messages = ExpectedMessages::new();
+    expected_messages.insert(
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        },
+        false,
+    );
+    expected_messages.insert(
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::LoadFile(path.to_path_buf(), is_current),
+        },
+        false,
+    );
+    expected_messages
+        .assert_all_messages(codechat_server, TIMEOUT)
+        .await;
+    codechat_server
+        .send_result_loadfile(server_id, Some((EDITED_RAW_TEXT.to_string(), 2.0)))
+        .await
+        .unwrap();
+}
+
+// Return the text which the document showing a file the Client can't edit
+// displays -- the simple viewer's contents iframe, or else the page itself --
+// along with whether the page has a sidebar. This runs in the Framework's
+// document, which outlives the reloads of the documents it inspects.
+const SHOWN_FILE_JS: &str = r#"
+    const page = document.getElementById("CodeChat-iframe").contentDocument;
+    const contents = page.getElementById("CodeChat-contents");
+    const shown = contents === null ? page : contents.contentDocument;
+    return {
+        text: shown?.body?.innerText ?? null,
+        hasSidebar: page.getElementById("CodeChat-sidebar") !== null,
+    };
+"#;
+
+// Wait until the document showing a file which the Client can't edit displays
+// the provided text.
+#[allow(deprecated)]
+async fn wait_for_shown_text(
+    driver: &WebDriver,
+    // The text to wait for.
+    text: &str,
+    // True if the page shows a sidebar beside the file.
+) -> bool {
+    driver.enter_default_frame().await.unwrap();
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let script_ret = driver.execute(SHOWN_FILE_JS, vec![]).await.unwrap();
+        let shown = script_ret.json();
+        if shown["text"] == text {
+            return shown["hasSidebar"].as_bool().unwrap();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Timed out waiting for the text {text:?}; the page shows {shown}."
+        );
+        sleep(Duration::from_millis(100)).await;
+    }
 }

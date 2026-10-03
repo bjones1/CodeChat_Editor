@@ -448,8 +448,19 @@ class WebSocketComm {
 // otherwise, this is `undefined`.
 const getClient = () => rootIframe?.contentWindow?.CodeChatEditor;
 
-// Assign content to either the Client (if it's loaded) or the webpage (if not)
-// in the `rootIframe`.
+// Return the iframe with the given id in the page in the `rootIframe`, or
+// `undefined` if the page has none. The page belongs to the `rootIframe`'s
+// window, whose `HTMLIFrameElement` differs from this window's, so `instanceof`
+// can't identify the iframe.
+const getPageIframe = (id: string) => {
+    const element = rootIframe!.contentDocument?.getElementById(id);
+    return element?.tagName === "IFRAME"
+        ? (element as HTMLIFrameElement)
+        : undefined;
+};
+
+// Show the current file's new contents in the `rootIframe`: in the Client, if
+// it's loaded; otherwise, by reloading the document which shows the file.
 const setContent = async (
     contents: CodeChatForWeb,
     isReTranslation: boolean,
@@ -458,18 +469,18 @@ const setContent = async (
 ) => {
     const client = getClient();
     if (client === undefined) {
-        // See if this is the [simple viewer](#Client-simple-viewer). Otherwise,
-        // it's just the bare document to replace.
-        const contentsElement =
-            rootIframe!.contentDocument?.getElementById("CodeChat-contents");
-        const cw =
-            (contentsElement instanceof HTMLIFrameElement
-                ? contentsElement.contentWindow
-                : undefined) ?? rootIframe!.contentWindow!;
-        cw.document.open();
-        assert("Plain" in contents.source);
-        cw.document.write(contents.source.Plain.doc);
-        cw.document.close();
+        // The browser itself renders this file. The page shows it either in the
+        // contents iframe of the [simple viewer](#Client-simple-viewer) or,
+        // outside a project, as the page itself. Reload that document, rather
+        // than writing `contents` to it: the Server serves the IDE's latest
+        // contents, which the browser renders according to the file's type.
+        // Writing them instead would parse them as HTML, collapsing a text
+        // file's line breaks, and would throw for an XML document such as an
+        // SVG image, since only an HTML document supports `document.open`.
+        (
+            getPageIframe("CodeChat-contents")?.contentWindow ??
+            rootIframe!.contentWindow!
+        ).location.reload();
     } else {
         await rootIframe!.contentWindow!.CodeChatEditor.openLp(
             contents,

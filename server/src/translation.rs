@@ -160,6 +160,11 @@
 //!     Server ->> Client: Update(String: new Client contents)
 //!   else Main file is not editable
 //!     Server ->> Client: Update(String: new text contents)
+//!     note over Client: Reload the document showing the main file
+//!     Client ->> Server: HTTP request(URL of main file)
+//!     Server ->> IDE: LoadFile(String: path to main file)
+//!     IDE ->> Server: Response(LoadFile(String: file contents of main file))
+//!     Server ->> Client: HTTP response(contents of main file)
 //!   end
 //!   Client ->> IDE: Response(String: OK)
 //!   ```
