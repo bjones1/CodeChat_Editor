@@ -248,7 +248,7 @@ use crate::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockVec, SourceFileMetadata, TranslationResultsString, UNICODE_CURSOR_MARKER,
         byte_index_of,
-        cache::{CacheMap, CacheNotification, ConnectionRegistration},
+        cache::{CacheMap, CacheNotification, ConnectionRegistration, cache_map_capacity},
         codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
         doc_block_html_to_markdown, find_path_to_toc, minify, project_cache, remove_tinymce_data,
         source_to_codechat_for_web_string, transform_html,
@@ -489,6 +489,23 @@ struct TranslationTask {
     capture_context: CaptureContext,
 }
 
+/// Resize the map of project caches to suit the number of connections, each of
+/// which has a translation task listed in `processing_task_queue_tx`; see
+/// `cache_map_capacity`.
+fn resize_cache_map(
+    // The state holding the map and the list of translation tasks.
+    app_state: &WebAppState,
+) {
+    // Hold the list's lock while resizing, so that connections which start or
+    // stop at the same time can't apply their counts out of order.
+    let processing_task_queue_tx = app_state.processing_task_queue_tx.lock().unwrap();
+    app_state
+        .cache
+        .lock()
+        .unwrap()
+        .resize(cache_map_capacity(processing_task_queue_tx.len()));
+}
+
 /// This is the processing task for the Visual Studio Code IDE. It handles all
 /// the core logic to moving data between the IDE and the client.
 #[allow(clippy::too_many_arguments)]
@@ -516,6 +533,7 @@ pub async fn translation_task(
             .lock()
             .unwrap()
             .insert(connection_id.clone(), from_http_tx);
+        resize_cache_map(&app_state);
 
         let (cache_notify_tx, cache_notify_rx) = mpsc::unbounded_channel();
         let mut continue_loop = true;
@@ -754,6 +772,7 @@ pub async fn translation_task(
     {
         error!("Unable to remove connection ID {connection_id} from processing task queue.");
     }
+    resize_cache_map(&app_state);
     if app_state
         .client_queues
         .lock()

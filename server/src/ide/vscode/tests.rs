@@ -1442,9 +1442,11 @@ async fn test_vscode_ide_websocket9() {
     temp_dir.close().unwrap();
 }
 
-/// Verify that the Server re-translates the current file when its project's
-/// cache reports it's outdated: the current file cross-references an id which
-/// only the TOC defines, so loading the TOC resolves the cross-reference.
+/// Verify that the Server re-translates the current file when a change to
+/// another file on disk outdates it. The current file cross-references an id
+/// which no file defines until the test rewrites the TOC on disk to define it.
+/// The project's watcher reports this change, so its consumer re-translates the
+/// TOC, outdating the current file.
 #[actix_web::test]
 async fn test_vscode_ide_websocket10() {
     let connection_id = "test-connection-id10";
@@ -1521,9 +1523,8 @@ async fn test_vscode_ide_websocket10() {
     .await;
     join_handle.join().unwrap();
 
-    // The cross-reference can't be resolved yet, since the TOC hasn't been
-    // translated. Lacking a version from the IDE, the Server keeps its initial
-    // version.
+    // No file defines `foo` yet, so the cross-reference can't be resolved.
+    // Lacking a version from the IDE, the Server keeps its initial version.
     assert_eq!(
         read_message(&mut ws_client).await,
         EditorMessage {
@@ -1568,32 +1569,17 @@ async fn test_vscode_ide_websocket10() {
         }
     );
 
-    // Fetch the TOC, which defines the id the current file cross-references.
-    let test_dir_thread = test_dir.clone();
-    let join_handle = thread::spawn(move || {
-        assert_eq!(
-            minreq::get(format!(
-                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/toc.md?mode=toc",
-                test_dir_thread.to_slash().unwrap()
-            ))
-            .send()
-            .unwrap()
-            .status_code,
-            200
-        );
-    });
-    let em = read_message(&mut ws_ide).await;
-    cast!(em.message, EditorMessageContents::LoadFile, a, b);
-    assert_eq!(em.id, INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT);
-    send_message(
-        &mut ws_ide,
-        &EditorMessage {
-            id: INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
-            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
-        },
-    )
-    .await;
-    join_handle.join().unwrap();
+    // Define `foo` by rewriting the TOC on disk. After its debounce (2 s,
+    // checked every 0.5 s, so within `read_message`'s timeout), the watcher
+    // reports this change, so the consumer re-translates the TOC.
+    //
+    // The consumer's initial scan of the project may reach the TOC on either
+    // side of this write; either way, only one commit defines `foo`, outdating
+    // the current file once. A scan before the write finds no ids in the TOC.
+    // A scan after it commits the new TOC, which makes the watcher's report a
+    // no-op: the TOC's metadata then matches the cache's, so the consumer skips
+    // it.
+    fs::write(test_dir.join("toc.md"), "<h1 id=\"foo\">Foo</h1>\n").unwrap();
 
     // Translating the TOC outdates the current file, which the Server
     // re-translates, sending the Client the resolved cross-reference. The
@@ -1601,7 +1587,7 @@ async fn test_vscode_ide_websocket10() {
     assert_eq!(
         read_message(&mut ws_client).await,
         EditorMessage {
-            id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+            id: INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::Update(UpdateMessageContents {
                 file_path: file_path_str.clone(),
                 cursor_position: None,
@@ -1637,7 +1623,7 @@ async fn test_vscode_ide_websocket10() {
     send_message(
         &mut ws_client,
         &EditorMessage {
-            id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+            id: INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
         },
     )
@@ -1645,7 +1631,7 @@ async fn test_vscode_ide_websocket10() {
     assert_eq!(
         read_message(&mut ws_ide).await,
         EditorMessage {
-            id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+            id: INITIAL_MESSAGE_ID + 3.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
         }
     );

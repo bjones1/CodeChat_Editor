@@ -22,33 +22,38 @@
 //
 // ### Standard library
 use std::{
-    collections::{HashMap, HashSet},
-    fs::Metadata,
+    collections::{BTreeMap, HashMap, HashSet},
+    fs::{self, File, Metadata},
+    io::{self, Read},
     mem,
+    num::NonZeroUsize,
+    ops::Bound,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, PoisonError},
+    str,
+    sync::{
+        Arc, Mutex, PoisonError, Weak,
+        mpsc::{self, Receiver, SendError, Sender},
+    },
     thread,
     time::Duration,
 };
 
 // ### Third-party
-use ignore::WalkBuilder;
-use log::error;
+use ignore::{IncrementalIgnore, WalkBuilder};
+use log::warn;
 use lru::LruCache;
 use notify_debouncer_full::{
-    DebounceEventResult, Debouncer, RecommendedCache, new_debouncer,
+    DebounceEventResult, Debouncer, RecommendedCache, new_debouncer_opt,
     notify::{
-        self,
-        EventKind::{Create, Modify, Remove},
-        RecommendedWatcher, RecursiveMode,
+        self, Event, EventKind, RecommendedWatcher, RecursiveMode,
+        event::{ModifyKind, RenameMode},
     },
 };
 use rand::random;
-use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 
 // ### Local
-//
-// None.
+use super::{SourceToCodeChatForWebError, source_to_codechat_for_web};
 
 // Data structures
 // ---------------
@@ -58,27 +63,33 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 /// so that work on one project doesn't block work on another.
 pub type CacheMap = Arc<Mutex<LruCache<PathBuf, Arc<Mutex<Cache>>>>>;
 
+/// The number of project caches the `CacheMap` holds per connection; see
+/// `cache_map_capacity`.
 pub const LRU_ENTRIES_PER_CONNECTION: usize = 10;
 
 /// This defines the cache used to store all targets in a project.
 pub struct Cache {
-    /// Provide rapid access to a file by its absolute path; it must be within
-    /// the project's root directory. This owns all per-file data.
-    pub(super) files: HashMap<PathBuf, FileEntry>,
+    /// Provide rapid access to a file by its normalized, absolute path; it must be within
+    /// the project's root directory. This owns all per-file data. Paths order
+    /// component by component, so the files beneath a directory immediately
+    /// follow it in this map: finding them, as a deleted or re-walked directory
+    /// requires, is a range query rather than a search of every file.
+    pub(super) files: BTreeMap<PathBuf, FileEntry>,
     /// Provide rapid access to a `Target`/gather element or `Fragment` by its
     /// id.
     pub(super) ids: HashMap<String, IdEntry>,
-    /// All files for which `FileEntry::status != FileStatus::UpToDate`.
-    pub(super) pending_files: Vec<PathBuf>,
     /// The root directory of this project, or a specific file if this is a
     /// single-file "project".
     pub(super) root: PathBuf,
-    /// Files found by the walker thread (see `walk_project`) or the watcher
-    /// (see `watch_project`). Dropping the cache drops this receiver, which
-    /// closes the channel and so stops both.
-    found_files: UnboundedReceiver<PathBuf>,
-    /// This project's watcher, or `None` for a single-file "project" or if the
-    /// watcher couldn't start. Dropping it stops the watch.
+    /// Sends work to this project's consumer thread: the walker sends what it
+    /// finds through a clone of this sender, `mark_outdated` sends outdated
+    /// files, and dropping a `ConnectionRegistration` sends the file it showed.
+    /// `None` if there's no consumer -- a single-file "project", or a test.
+    consumer_tx: Option<Sender<ConsumerPathState>>,
+    /// This project's watcher, which the watcher/walker thread stores here once it
+    /// registers the watcher; `None` until then, if there's no consumer, or if
+    /// the watcher couldn't start. Dropping it stops the watch, which begins
+    /// the shutdown sequence described in the spec.
     _watcher: Option<Debouncer<RecommendedWatcher, RecommendedCache>>,
     /// The connections whose current file lies in this project, keyed by
     /// connection id; each entry is owned by a `ConnectionRegistration`.
@@ -92,13 +103,12 @@ pub struct Cache {
 /// `None`.
 #[derive(Default)]
 pub(super) struct FileEntry {
-    /// Metadata used to determine if this data represents the actual state of
-    /// the file; if the file is newer, then this file's status must be changed
-    /// to `Unknown`. `None` if the file doesn't exist or the metadata can't be
-    /// determined.
+    /// The file's metadata when its content was read, which tells the consumer
+    /// whether this data still represents the file: the consumer reprocesses a
+    /// file whose modification time or length differs. `None` if the file
+    /// doesn't exist or the metadata can't be determined.
     pub(super) metadata: Option<Metadata>,
-    /// The status of this file. Note that this overlaps with
-    /// `Cache::pending_files` and should be kept in sync with it.
+    /// The status of this file.
     pub(super) status: FileStatus,
     /// All targets on this page, keyed by id.
     pub(super) targets: HashMap<String, Target>,
@@ -147,8 +157,8 @@ pub(super) enum IdState {
 /// The status of a file from the cache's perspective.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) enum FileStatus {
-    /// The file's content is unknown -- either the file hasn't been processed,
-    /// or it's been modified since it was last processed.
+    /// The file hasn't been processed: an entry's state until its first
+    /// commit.
     #[default]
     Unknown,
     /// The file needs to be re-processed to update cross-references or gather
@@ -249,9 +259,10 @@ pub(super) struct FragmentFact {
 /// The result of committing one file's facts to the cache.
 pub(super) struct CommitOutcome {
     /// Files (other than the committed file) whose rendered output is
-    /// invalidated by this commit; their status has already been set to
-    /// `Outdated`, and each connection showing one of them has been notified.
-    /// The caller should schedule the rest for reprocessing.
+    /// invalidated by this commit. Their status has already been set to
+    /// `Outdated`, and each has been passed on to be re-rendered: to the
+    /// connections showing it, or else to the consumer; see
+    /// `Cache::mark_outdated`.
     pub(super) outdated: HashSet<PathBuf>,
 }
 
@@ -290,17 +301,41 @@ pub(super) struct GatherBacklink<'a> {
     pub(super) target: &'a Target,
 }
 
-/// States of paths discovered by the watcher.
+// ### Watcher, walker, and consumer
+//
+// The watcher reports changed paths to the walker, which forwards those its
+// ignore files don't exclude -- and the files found by walking each directory
+// reported -- to the consumer, which applies them to the cache. See `Cache,
+// watcher, and walker` in the spec.
+/// A path reported by the watcher. A rename is reported as the deletion of its
+/// old path followed by the creation of its new one.
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum WatcherPathState {
+    /// A file which was created or modified, or a directory which was created.
     CreatedOrModified(PathBuf),
+    /// A file or directory which was deleted.
     Deleted(PathBuf),
 }
 
-/// Messages sent by the walker to the consumer task.
+/// Messages sent to the consumer.
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum ConsumerPathState {
+    /// A path from the walker: a file a walk found, or a path the watcher
+    /// reported.
     WatcherPathState(WatcherPathState),
+    /// The walker is about to walk this directory. Every file the walk finds
+    /// arrives before the matching `WalkFinished`.
     WalkStarted(PathBuf),
+    /// The walk announced by the preceding `WalkStarted` is complete.
     WalkFinished,
+    /// A file which a connection stopped showing; see
+    /// `ConnectionRegistration::drop`. A walk in progress didn't find this
+    /// file, so unlike the files it does find, this can't keep the walk from
+    /// forgetting it.
+    Released(PathBuf),
+    /// A commit outdated the rendered output of this file, whose content is
+    /// unchanged; see `Cache::mark_outdated`.
+    Outdated(PathBuf),
 }
 
 // ### Connections
@@ -328,65 +363,83 @@ pub enum CacheNotification {
     /// project's TOC, which every connection in the project shows in its
     /// sidebar; the connection should re-render it.
     TocOutdated,
+    /// The contents of the TOC changed; the connection should re-load then re-render it. (Since the IDE is editing the current file, changes made to it are superseded by the IDE content, so that a `CurrentFileChanged` message is meaningless.
+    TocChanged,
 }
 
 /// Lists a connection in `Cache::connections` for as long as this value lives;
 /// dropping it removes the listing.
 pub struct ConnectionRegistration {
     /// The cache the connection is listed in.
-    cache: Arc<Mutex<Cache>>,
+    cache: Weak<Mutex<Cache>>,
     /// The connection's key in `Cache::connections`.
     connection_id: String,
 }
 
 // Code
 // ----
+/// The capacity of the `CacheMap` when the Server has the given number of
+/// connections; `translation_task` applies this as connections come and go.
+/// Per the spec, this balances the memory the caches consume against the time
+/// needed to load the cache of a project which isn't cached.
+#[must_use]
+pub fn cache_map_capacity(
+    // The number of connections, $n$.
+    connections: usize,
+    // $n c + 1$, where $c$ is `LRU_ENTRIES_PER_CONNECTION`.
+) -> NonZeroUsize {
+    NonZeroUsize::MIN.saturating_add(connections.saturating_mul(LRU_ENTRIES_PER_CONNECTION))
+}
+
 impl Cache {
-    /// Create an empty cache, then start a watcher and a walker thread which
-    /// report the project's files; `queue_found_files` collects what they find.
+    /// Create an empty cache with no consumer to keep it current: the cache of
+    /// a single-file "project", which consists only of that file, or of a
+    /// test. A project's cache comes from `Cache::new_project`.
     #[must_use]
     pub fn new(
         // The root directory of this project, as a canonicalized absolute path;
         // all cached files must live within it. For a single-file "project",
         // this is that file.
         root: PathBuf,
+        // The empty cache.
     ) -> Self {
-        let (found_tx, found_rx) = mpsc::unbounded_channel();
-        // Start watching before walking, so that a file created during the
-        // walk is reported by one or the other. A watcher failure isn't fatal:
-        // the cache still works, but won't learn of files which change after
-        // the walk. On Linux, this happens once the per-user inotify limits are
-        // reached, since each watcher uses its own inotify instance.
-        let _watcher = if root.is_dir() {
-            let watcher = watch_project(&root, found_tx.clone())
-                .inspect_err(|err| error!("Unable to watch {}: {err}", root.display()))
-                .ok();
-            // Start the walker next.
-            let walk_root = root.clone();
-            thread::spawn(move || walk_project(&walk_root, &found_tx));
-            watcher
-        } else {
-            None
-        };
         Cache {
-            files: HashMap::new(),
+            files: BTreeMap::new(),
             ids: HashMap::new(),
-            pending_files: vec![],
             root,
-            found_files: found_rx,
-            _watcher,
+            consumer_tx: None,
+            _watcher: None,
             connections: HashMap::new(),
         }
     }
 
-    /// Mark every file the walker has found so far, which the cache doesn't
-    /// already know of, as `Unknown`, queueing it for processing.
-    pub(super) fn queue_found_files(&mut self) {
-        while let Ok(path) = self.found_files.try_recv() {
-            if !self.files.contains_key(&path) {
-                self.mark_unknown(&path);
-            }
-        }
+    /// Create the cache of a project, then start the threads which keep it
+    /// current: a watcher thread, which registers a watcher to report changes
+    /// to the project's files, then becomes the walker, which filters those
+    /// reports through the project's ignore files; and a consumer, which
+    /// applies the walker's results to the cache. The walker's first task is a
+    /// walk of the entire project, so that the consumer brings every file in it
+    /// into the cache. See `Cache, watcher, and walker` in the spec.
+    #[must_use]
+    pub fn new_project(
+        // The project's root directory, as a canonicalized absolute path; all
+        // cached files must live within it.
+        root: PathBuf,
+        // The cache, shared with the threads which keep it current.
+    ) -> Arc<Mutex<Self>> {
+        let (consumer_tx, consumer_rx) = mpsc::channel();
+        let walker_consumer_tx = consumer_tx.clone();
+        let cache = Arc::new(Mutex::new(Cache {
+            consumer_tx: Some(consumer_tx),
+            ..Cache::new(root.clone())
+        }));
+        // Give these threads only weak references, so that they don't keep the
+        // cache alive; see `Shutdown` in the spec.
+        let weak_cache = Arc::downgrade(&cache);
+        thread::spawn(move || consume(&weak_cache, &consumer_rx));
+        let weak_cache = Arc::downgrade(&cache);
+        thread::spawn(move || watch_then_walk(&weak_cache, root, walker_consumer_tx));
+        cache
     }
 
     /// Apply the facts collected from one file's DOM walk to the cache in a
@@ -621,7 +674,7 @@ impl Cache {
         entry.fragments = new_fragments;
         entry.gathers = new_gathers;
         entry.xrefs = facts.xrefs.into_iter().map(|id| Xref { id }).collect();
-        self.set_status(path, FileStatus::UpToDate);
+        entry.status = FileStatus::UpToDate;
 
         // ### Link the new version's outgoing references
         //
@@ -658,45 +711,7 @@ impl Cache {
     ) -> CommitOutcome {
         let outcome = self.commit_file(path, None, FileFacts::default());
         self.files.remove(path);
-        self.pending_files.retain(|pending| pending != path);
         outcome
-    }
-
-    /// Record that a file's cached content no longer reflects the file
-    /// itself -- it's been written or modified since it was last processed --
-    /// which queues it in `pending_files` for reprocessing. This is how an id
-    /// auto-assigned during hydration reaches the cache: the assignment is only
-    /// in the file until the file is saved, re-read, and committed.
-    pub(super) fn mark_unknown(
-        &mut self,
-        // The file whose content is now unknown.
-        path: &Path,
-    ) {
-        self.files.entry(path.to_path_buf()).or_default();
-        self.set_status(path, FileStatus::Unknown);
-    }
-
-    /// Set a file's status, keeping `pending_files` -- which holds exactly the
-    /// files whose status is `Unknown` -- in sync with it.
-    fn set_status(
-        &mut self,
-        // The file whose status changed; nothing happens if the cache has no
-        // entry for it.
-        path: &Path,
-        // Its new status.
-        status: FileStatus,
-    ) {
-        let Some(entry) = self.files.get_mut(path) else {
-            return;
-        };
-        let unknown = status == FileStatus::Unknown;
-        entry.status = status;
-        let queued = self.pending_files.iter().any(|pending| pending == path);
-        if unknown && !queued {
-            self.pending_files.push(path.to_path_buf());
-        } else if !unknown && queued {
-            self.pending_files.retain(|pending| pending != path);
-        }
     }
 
     /// Generate an id for an element which requests one (`id="*"`). The result
@@ -777,21 +792,40 @@ impl Cache {
         outdated
     }
 
-    /// Mark files outdated, then notify each connection showing one of them:
-    /// as its current file, or as the TOC in its sidebar, which every
-    /// connection in the project shows. The connection re-renders that file
-    /// itself, since the text it shows may be newer than the file on disk.
+    /// Mark files outdated, then see that each is re-rendered. A connection
+    /// re-renders a file it shows -- its current file, or the TOC in its
+    /// sidebar, which every connection in the project shows -- since the text
+    /// it shows may be newer than the file on disk; the consumer reprocesses
+    /// the rest from disk.
     fn mark_outdated(
         &mut self,
         // The files to mark.
         outdated: &HashSet<PathBuf>,
     ) {
-        for outdated_path in outdated {
-            self.set_status(outdated_path, FileStatus::Outdated);
+        for path in outdated {
+            if let Some(entry) = self.files.get_mut(path) {
+                entry.status = FileStatus::Outdated;
+            }
         }
-        // The project's root is the directory containing its TOC; see
-        // `find_path_to_toc`.
-        let is_toc_outdated = outdated.contains(&self.root.join("toc.md"));
+        self.notify_connections(outdated);
+        if let Some(consumer_tx) = &self.consumer_tx {
+            for path in outdated.iter().filter(|path| !self.is_shown(path)) {
+                // A send fails only once the consumer has exited, when this
+                // cache is being dropped and so needs no more updates.
+                let _ = consumer_tx.send(ConsumerPathState::Outdated(path.clone()));
+            }
+        }
+    }
+
+    /// Notify each connection showing one of these files -- as its current
+    /// file, or as the TOC in its sidebar -- so that the connection re-renders
+    /// the file.
+    fn notify_connections(
+        &self,
+        // The files whose rendered output is outdated.
+        outdated: &HashSet<PathBuf>,
+    ) {
+        let is_toc_outdated = outdated.contains(&self.toc_path());
         for connection in self.connections.values() {
             // A send fails only once the connection's translation task has
             // exited, leaving nothing to notify.
@@ -803,6 +837,69 @@ impl Cache {
             if is_toc_outdated {
                 let _ = connection.notify_tx.send(CacheNotification::TocOutdated);
             }
+        }
+    }
+
+    /// The project's TOC: the project's root is the directory containing it;
+    /// see `find_path_to_toc`.
+    fn toc_path(
+        &self,
+        // The TOC's path.
+    ) -> PathBuf {
+        self.root.join("toc.md")
+    }
+
+    /// Report whether a connection shows this file, which makes the connection
+    /// responsible for re-rendering it: it's a connection's current file, or
+    /// it's the TOC, which every connection's sidebar shows.
+    fn is_shown(
+        &self,
+        // The file to check.
+        path: &Path,
+        // True if a connection shows the file.
+    ) -> bool {
+        self.is_current_file(path) || (!self.connections.is_empty() && path == self.toc_path())
+    }
+
+    /// Report whether this file is some connection's current file.
+    fn is_current_file(
+        &self,
+        // The file to check.
+        path: &Path,
+        // True if it's some connection's current file.
+    ) -> bool {
+        self.connections
+            .values()
+            .any(|connection| connection.current_file == path)
+    }
+
+    /// Iterate over the cached files beneath a directory, which immediately
+    /// follow the directory itself in `files`.
+    fn files_beneath<'a>(
+        &'a self,
+        // The directory.
+        dir: &'a Path,
+        // The cached files beneath it, at any depth.
+    ) -> impl Iterator<Item = &'a PathBuf> {
+        self.files
+            .range::<Path, _>((Bound::Excluded(dir), Bound::Unbounded))
+            .map(|(path, _)| path)
+            .take_while(move |path| path.starts_with(dir))
+    }
+
+    /// Forget a file which no longer exists, or which the walker now ignores
+    /// -- unless a connection shows it. The connection's IDE may still hold the
+    /// file's text, so instead have the connection re-translate that text,
+    /// which keeps the file in the cache.
+    fn forget_file(
+        &mut self,
+        // The file to forget.
+        path: &Path,
+    ) {
+        if self.is_shown(path) {
+            self.notify_connections(&HashSet::from([path.to_path_buf()]));
+        } else if self.files.contains_key(path) {
+            self.remove_file(path);
         }
     }
 
@@ -953,11 +1050,21 @@ impl Drop for ConnectionRegistration {
     fn drop(&mut self) {
         // Tolerate a poisoned lock: this may run while unwinding from another
         // panic, where a second panic aborts the process.
-        self.cache
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .connections
-            .remove(&self.connection_id);
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(connection) = cache.connections.remove(&self.connection_id) else {
+            return;
+        };
+        // The consumer leaves a connection's current file to that connection,
+        // so it may have skipped a change to this file on disk, or its
+        // deletion. Once no connection shows the file, have the consumer check
+        // the file against the disk. If the file on disk is unchanged, what
+        // the connection committed from its IDE's text stays in the cache,
+        // since the IDE may still hold that text.
+        if !cache.is_current_file(&connection.current_file)
+            && let Some(consumer_tx) = &cache.consumer_tx
+        {
+            let _ = consumer_tx.send(ConsumerPathState::Released(connection.current_file));
+        }
     }
 }
 
@@ -1014,86 +1121,606 @@ fn gathered_ids<'a>(
         .flat_map(|target| target.gather_ids.iter())
 }
 
-/// Watch `root` recursively, sending the path of every file created, modified,
-/// or removed within it to the cache. This runs on the debouncer's thread.
+// ### Watcher
+/// The watcher thread: register a watcher for the project and give it to the
+/// cache, then become the walker, starting with a walk of the entire project.
+/// Registering the watcher can take a while -- on some platforms, it visits
+/// every file in the project -- so this runs on its own thread, spawned by
+/// `Cache::new_project`, rather than delaying the translation which created the
+/// cache.
+fn watch_then_walk(
+    // The cache which owns the watcher.
+    cache: &Weak<Mutex<Cache>>,
+    // The project's root directory.
+    root: PathBuf,
+    // Where the walker sends what it finds.
+    consumer_tx: Sender<ConsumerPathState>,
+) {
+    let (walker_tx, walker_rx) = mpsc::channel();
+    // Start watching before walking, so that a file created during the walk is
+    // reported by one or the other. A watcher failure isn't fatal: the cache
+    // still works, but won't learn of files which change after the walk. On
+    // Linux, this happens once the per-user inotify limits are reached, since
+    // each watcher uses its own inotify instance.
+    //
+    // TODO: inform the user of this failure, as the spec requires, once the
+    // Server can show the user a warning.
+    let watcher = watch_project(&root, walker_tx.clone())
+        .inspect_err(|err| warn!("Unable to watch {}: {err}", root.display()))
+        .ok();
+    // The cache owns the watcher, so that dropping the cache stops the watch. A
+    // cache which is already gone leaves nothing to walk for; returning drops
+    // the watcher, stopping the watch.
+    let Some(cache) = cache.upgrade() else {
+        return;
+    };
+    // The field's leading underscore marks it as held only for what dropping
+    // it does; this is the one place which sets it.
+    #[allow(clippy::used_underscore_binding)]
+    {
+        cache.lock().unwrap()._watcher = watcher;
+    }
+    drop(cache);
+    // Give the walker its first task, then drop this sender. Only the watcher
+    // holds another, so if it failed, the walker exits after this walk. The
+    // send can't fail, since `walker_rx` is alive.
+    let _ = walker_tx.send(WatcherPathState::CreatedOrModified(root.clone()));
+    drop(walker_tx);
+    Walker::new(root, consumer_tx).run(&walker_rx);
+}
+
+/// Watch `root` recursively, sending the walker each path created, modified,
+/// or deleted within it. The event handler runs on the debouncer's thread.
 fn watch_project(
     // The project's root directory.
     root: &Path,
-    // Where to send each file reported; the cache owns the receiving end.
-    found: UnboundedSender<PathBuf>,
+    // Where to send each path reported; the walker owns the receiving end.
+    walker_tx: Sender<WatcherPathState>,
     // The running watcher; dropping it stops the watch.
 ) -> notify::Result<Debouncer<RecommendedWatcher, RecommendedCache>> {
-    // The watcher only needs to learn of files added to or removed from the
-    // project. notify 8 has no `Config::with_event_kinds`, so the event handler
-    // must discard events which don't match this mask itself.
+    let handler_root = root.to_path_buf();
+    // The watcher only needs to learn of files added to, removed from, or
+    // modified in the project. notify 8 has no `Config::with_event_kinds`, so
+    // `watcher_path_states` must discard the events which don't matter.
     //
-    // TODO: pass this mask to `Config::with_event_kinds` once
+    // TODO: pass the kinds which matter to `Config::with_event_kinds` once
     // notify-debouncer-full depends on notify 9.
-    let mut debouncer = new_debouncer(
+    let mut debouncer = new_debouncer_opt::<_, RecommendedWatcher, RecommendedCache>(
         Duration::from_secs(2),
         None,
         move |result: DebounceEventResult| match result {
-            Ok(debounced_event_vec) => {
-                for debounced_event in debounced_event_vec {
-                    match debounced_event.event.kind {
-                        Create(_) | Modify(_) | Remove(_) => {
-                            for path in debounced_event.event.paths {
-                                if let Err(err) = found.send(path) {
-                                    // The only possible source of [error](https://docs.rs/tokio/latest/tokio/sync/mpsc/struct.Sender.html#errors) per the docs is a closed channel. This occurs when the cache is dropped, meaning the watcher should stop.
-                                    return;
-                                }
-                            }
-                        }
-                        _ => (),
+            Ok(debounced_events) => {
+                for path_state in debounced_events
+                    .iter()
+                    .flat_map(|debounced_event| watcher_path_states(debounced_event, &handler_root))
+                {
+                    // A send fails only once the walker has exited, when the
+                    // cache is being dropped -- along with this watcher.
+                    if walker_tx.send(path_state).is_err() {
+                        return;
                     }
                 }
             }
-            // TODO: should we sent errors to the cache for better UI? Or ignore them, given they're files we couldn't watch, and therefore couldn't access anyway?
-            Err(err_vec) => {
-                for err in err_vec {
-                    error!("Error: {err}");
+            // A path which can't be watched isn't usable by the IDE either, so
+            // per the spec, report this only to the log.
+            Err(errors) => {
+                for err in errors {
+                    warn!("Unable to watch {}: {err}", handler_root.display());
                 }
             }
         },
+        RecommendedCache::new(),
+        // Per the spec, symlinks aren't followed, since a file reached through
+        // one would be cached twice. The walker skips a symlink the watcher
+        // reports; this keeps the watcher from reporting the files beneath a
+        // symlinked directory, which on some platforms it would otherwise
+        // watch.
+        notify::Config::default().with_follow_symlinks(false),
     )?;
     debouncer.watch(root, RecursiveMode::Recursive)?;
     Ok(debouncer)
 }
 
-/// Send every file under `path` -- or `path` itself, if it's a file -- to the
-/// cache, stopping early once the cache is dropped. This runs on its own
-/// thread, spawned by `Cache::new`.
-///
-/// The walk applies the [ignore](https://docs.rs/ignore) crate's default
-/// filters, which are ripgrep's: it skips hidden files and directories (such as
-/// `.git`), anything excluded by an `.ignore` file, and -- only inside a git
-/// repository -- anything excluded by `.gitignore` or git's other exclude
-/// rules.
-fn walk_project(
-    // The file or directory to walk.
-    path: &Path,
-    // Where to send each file found; the cache owns the receiving end.
-    found: &UnboundedSender<PathBuf>,
+/// Translate one watcher event into the paths it reports to the walker: per
+/// the spec, the files created, modified, or deleted, and the directories
+/// created or deleted.
+fn watcher_path_states(
+    // The event to translate.
+    event: &Event,
+    // The project's root directory, which is re-walked if the watcher lost
+    // events.
+    root: &Path,
+    // The paths to report, in order.
+) -> Vec<WatcherPathState> {
+    use WatcherPathState::{CreatedOrModified, Deleted};
+
+    if event.need_rescan() {
+        return vec![CreatedOrModified(root.to_path_buf())];
+    }
+    let mut paths = event.paths.iter().cloned();
+    match event.kind {
+        // The debouncer stitches the two halves of a rename into one event,
+        // listing the path renamed from, then the path renamed to, when it can
+        // match them; otherwise, it passes each half through on its own, as a
+        // deletion or a creation.
+        EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => paths
+            .next()
+            .map(Deleted)
+            .into_iter()
+            .chain(paths.map(CreatedOrModified))
+            .collect(),
+        EventKind::Create(_) | EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
+            paths.map(CreatedOrModified).collect()
+        }
+        EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
+            paths.map(Deleted).collect()
+        }
+        // The platform couldn't tell which half of a rename this is, so ask
+        // the filesystem.
+        EventKind::Modify(ModifyKind::Name(_)) => paths
+            .map(|path| {
+                if path.exists() {
+                    CreatedOrModified(path)
+                } else {
+                    Deleted(path)
+                }
+            })
+            .collect(),
+        // A directory is modified whenever its contents change, which are
+        // reported in their own right, so skip directories here.
+        EventKind::Modify(_) | EventKind::Any => paths
+            .filter(|path| !path.is_dir())
+            .map(CreatedOrModified)
+            .collect(),
+        EventKind::Access(_) | EventKind::Other => vec![],
+    }
+}
+
+// ### Walker
+/// The walker, which filters the paths the watcher reports through the
+/// project's ignore files and walks each directory reported, sending the
+/// results to the consumer. See `Walker` in the spec.
+struct Walker {
+    /// The project's root directory.
+    root: PathBuf,
+    /// Decides whether a path the watcher reports is ignored, without walking
+    /// the project. It keeps the ignore files it reads, so it must be rebuilt
+    /// when one of them changes.
+    ignore: IncrementalIgnore,
+    /// Where to send the files found.
+    consumer_tx: Sender<ConsumerPathState>,
+}
+
+impl Walker {
+    /// Create the walker for a project.
+    fn new(
+        // The project's root directory.
+        root: PathBuf,
+        // Where to send the files found.
+        consumer_tx: Sender<ConsumerPathState>,
+        // The walker, which reads the project's ignore files only as it needs
+        // them.
+    ) -> Self {
+        Walker {
+            ignore: build_ignore(&root),
+            root,
+            consumer_tx,
+        }
+    }
+
+    /// Process each path the watcher sends, until the walker's channel closes
+    /// -- when the cache is dropped, which drops the watcher, or after the
+    /// first walk if the watcher couldn't start -- or the consumer exits,
+    /// closing its own channel. This runs on the watcher thread; see
+    /// `watch_then_walk`.
+    fn run(
+        mut self,
+        // The paths the watcher sends.
+        walker_rx: &Receiver<WatcherPathState>,
+    ) {
+        while let Ok(path_state) = walker_rx.recv() {
+            if self.process(path_state).is_err() {
+                return;
+            }
+        }
+    }
+
+    /// Process one path the watcher sent, sending the results to the consumer.
+    fn process(
+        &mut self,
+        // The path to process.
+        path_state: WatcherPathState,
+        // An error once the consumer has exited.
+    ) -> Result<(), SendError<ConsumerPathState>> {
+        let (WatcherPathState::CreatedOrModified(path) | WatcherPathState::Deleted(path)) =
+            &path_state;
+        // An ignore file is hidden, which makes it ignored itself, so look for
+        // one first.
+        if let Some(dir) = self.rewalk_dir(path) {
+            return self.walk(&dir);
+        }
+        if let WatcherPathState::CreatedOrModified(path) = &path_state
+            && let Ok(metadata) = fs::symlink_metadata(path)
+        {
+            // Per the spec, symlinks aren't walked, since a file reached
+            // through one would be cached twice.
+            if metadata.is_dir() {
+                return self.walk(path);
+            }
+            if metadata.is_symlink() {
+                return Ok(());
+            }
+        }
+        // Nothing says whether a deleted path was a file or a directory.
+        // Checking it as a file errs toward sending it to the consumer, which
+        // costs only a search of the cache for files which aren't there.
+        if self.is_ignored(path, false) {
+            Ok(())
+        } else {
+            self.consumer_tx
+                .send(ConsumerPathState::WatcherPathState(path_state))
+        }
+    }
+
+    /// If `path` is one of the ignore files which the walk obeys, return the
+    /// directory to re-walk, which reloads the ignore files: the directory an
+    /// `.ignore` or `.gitignore` governs, or the entire project for
+    /// `.git/info/exclude`. A file with an ignore file's name prompts this even
+    /// where Git wouldn't read it -- outside a repository, for example -- which
+    /// costs only an unneeded walk.
+    fn rewalk_dir(
+        &self,
+        // The path to check.
+        path: &Path,
+        // The directory to re-walk, or `None` if this isn't an ignore file.
+    ) -> Option<PathBuf> {
+        let dir = path.parent()?;
+        match path.file_name()?.to_str()? {
+            ".ignore" | ".gitignore" => Some(dir.to_path_buf()),
+            "exclude" if dir.ends_with(Path::new(".git").join("info")) => Some(self.root.clone()),
+            _ => None,
+        }
+    }
+
+    /// Report whether the walk skips this path: it's hidden or excluded by an
+    /// ignore file, or it lies within a directory which is.
+    fn is_ignored(
+        &mut self,
+        // The path to check.
+        path: &Path,
+        // True if the path is a directory, which some ignore rules match
+        // specifically.
+        is_dir: bool,
+        // True if the walk skips the path.
+    ) -> bool {
+        // The matcher takes paths relative to the project's root; anything
+        // outside the project is ignored.
+        path.strip_prefix(&self.root)
+            .ok()
+            .is_none_or(|relative| self.ignore.matched(relative, is_dir).is_ignore())
+    }
+
+    /// Walk a directory, sending the consumer each file found, preceded by a
+    /// `WalkStarted` and followed by a `WalkFinished`.
+    fn walk(
+        &mut self,
+        // The directory to walk.
+        dir: &Path,
+        // An error once the consumer has exited.
+    ) -> Result<(), SendError<ConsumerPathState>> {
+        // A walk never filters its own starting point, so skip an ignored
+        // directory here. This includes a directory whose ignore file changed:
+        // the walk never enters that directory, so the change can't matter,
+        // which spares a reload for each such file a package manager creates,
+        // say.
+        if self.is_ignored(dir, true) {
+            return Ok(());
+        }
+        // The walk reads the ignore files afresh, so rebuild the matcher to
+        // agree with it. The ignore files may have changed without the watcher
+        // reporting it: the debouncer drops the events within a deleted
+        // directory, for example, including the deletion of an ignore file
+        // there.
+        self.ignore = build_ignore(&self.root);
+        self.consumer_tx
+            .send(ConsumerPathState::WalkStarted(dir.to_path_buf()))?;
+        // The walk reports an error (an unreadable directory, say) as an entry
+        // of its own, then continues. Skip these, since a file the walk can't
+        // read isn't usable by the IDE either. Symlinks aren't followed, so a
+        // symlink loop can't make the walk run forever.
+        for entry in WalkBuilder::new(dir).build().flatten() {
+            if entry
+                .file_type()
+                .is_some_and(|file_type| file_type.is_file())
+            {
+                self.consumer_tx.send(ConsumerPathState::WatcherPathState(
+                    WatcherPathState::CreatedOrModified(entry.into_path()),
+                ))?;
+            }
+        }
+        self.consumer_tx.send(ConsumerPathState::WalkFinished)
+    }
+}
+
+/// Build the matcher which decides whether a path the watcher reports is
+/// ignored. It applies the same filters as every walk: the
+/// [ignore](https://docs.rs/ignore) crate's defaults, which are ripgrep's. These
+/// skip hidden files and directories (such as `.git`), anything excluded by an
+/// `.ignore` file, and -- only inside a Git repository -- anything excluded by
+/// `.gitignore` or Git's other exclude rules.
+fn build_ignore(
+    // The project's root directory, to which the matcher's paths are relative.
+    root: &Path,
+    // The matcher, which reads the ignore files only as it needs them.
+) -> IncrementalIgnore {
+    WalkBuilder::new(root)
+        .build_matchers()
+        .pop()
+        .expect("A builder given one path builds one matcher.")
+}
+
+// ### Consumer
+/// Apply each message sent to the consumer, until the channel closes or the
+/// cache is dropped. This runs on its own thread, spawned by
+/// `Cache::new_project`.
+fn consume(
+    // The cache to update. This is upgraded only while applying a message, so
+    // that the consumer doesn't keep a dropped cache alive while it waits for
+    // the next one.
+    cache: &Weak<Mutex<Cache>>,
+    // The messages to apply.
+    consumer_rx: &Receiver<ConsumerPathState>,
 ) {
-    // The walk reports an error (an unreadable directory, say) as an entry of
-    // its own, then continues; skip these.
-    for entry in WalkBuilder::new(path).build().flatten() {
-        // Check before every entry, not just when sending a file, so a walk
-        // through a large tree containing few files still stops promptly.
-        if found.is_closed() {
+    let mut consumer = Consumer::default();
+    while let Ok(message) = consumer_rx.recv() {
+        let Some(cache) = cache.upgrade() else {
+            return;
+        };
+        consumer.apply(&cache, message);
+    }
+}
+
+/// The consumer's state between messages.
+#[derive(Default)]
+struct Consumer {
+    /// While a walk is in progress, the cached files beneath the directory
+    /// being walked which the walk hasn't found; `None` otherwise.
+    unwalked: Option<HashSet<PathBuf>>,
+}
+
+impl Consumer {
+    /// Apply one message to the cache.
+    fn apply(
+        &mut self,
+        // The cache to update.
+        cache: &Arc<Mutex<Cache>>,
+        // The message to apply.
+        message: ConsumerPathState,
+    ) {
+        match message {
+            // The walker walks one directory at a time, so this replaces only
+            // the state of a walk which never finished; lacking its
+            // `WalkFinished`, the files it didn't find can't be presumed gone.
+            ConsumerPathState::WalkStarted(dir) => {
+                self.unwalked = Some(cache.lock().unwrap().files_beneath(&dir).cloned().collect());
+            }
+            // A cached file which the walk didn't find no longer exists, or is
+            // now ignored. Release the lock between files, so that forgetting
+            // many doesn't hold up translations.
+            ConsumerPathState::WalkFinished => {
+                if let Some(unwalked) = self.unwalked.take() {
+                    for path in unwalked {
+                        cache.lock().unwrap().forget_file(&path);
+                    }
+                }
+            }
+            ConsumerPathState::WatcherPathState(WatcherPathState::CreatedOrModified(path)) => {
+                if let Some(unwalked) = &mut self.unwalked {
+                    unwalked.remove(&path);
+                }
+                scan_file(cache, &path, false);
+            }
+            // Per the spec, only a path which no longer exists is forgotten.
+            // One which exists again by the time this is applied -- recreated
+            // by a version control checkout, say, or by an editor which saves
+            // by renaming a new file over the old one -- is scanned instead.
+            ConsumerPathState::WatcherPathState(WatcherPathState::Deleted(path)) => {
+                match fs::symlink_metadata(&path) {
+                    Ok(metadata) if !metadata.is_symlink() => scan_file(cache, &path, false),
+                    _ => forget_path(cache, &path),
+                }
+            }
+            ConsumerPathState::Released(path) => scan_file(cache, &path, false),
+            ConsumerPathState::Outdated(path) => scan_file(cache, &path, true),
+        }
+    }
+}
+
+/// Forget a path which no longer exists. Nothing says whether it was a file or
+/// a directory, so if the cache has no file at this path, assume it was a
+/// directory and forget every cached file beneath it. The lock is released
+/// between files, so that forgetting a large directory doesn't hold up
+/// translations.
+fn forget_path(
+    // The cache to update.
+    cache: &Mutex<Cache>,
+    // The path which no longer exists.
+    path: &Path,
+) {
+    let paths: Vec<PathBuf> = {
+        let cache = cache.lock().unwrap();
+        if cache.files.contains_key(path) {
+            vec![path.to_path_buf()]
+        } else {
+            cache.files_beneath(path).cloned().collect()
+        }
+    };
+    for path in paths {
+        cache.lock().unwrap().forget_file(&path);
+    }
+}
+
+/// The outcome of the consumer's translation of a file.
+enum ScanOutcome {
+    /// The translation committed the file's facts to the cache.
+    Translated,
+    /// The file isn't text, or no lexer recognizes it, so nothing was
+    /// committed.
+    Untranslatable,
+    /// The translation failed, perhaps after committing the file's facts.
+    Failed,
+}
+
+/// Bring the cache's record of a file up to date with the file on disk by
+/// translating the file to the CodeChatForWeb format, which commits its facts
+/// to the cache. Per the spec, a connection's current file is skipped: the
+/// connection keeps it up to date, from text which may be newer than the file
+/// on disk.
+fn scan_file(
+    // The cache to update.
+    cache: &Arc<Mutex<Cache>>,
+    // The file to scan.
+    path: &Path,
+    // True if a commit outdated the file, whose content is unchanged; it's
+    // scanned unless it's been reprocessed since. False if the file itself may
+    // have changed; it's scanned unless its cached metadata's modification
+    // time and length match the file's.
+    is_outdated: bool,
+) {
+    // Perform I/O before locking the cache, so that the lock isn't held during
+    // it.
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => metadata,
+        // The file no longer exists -- or a directory has replaced it, which
+        // the walker reports separately.
+        _ => {
+            cache.lock().unwrap().forget_file(path);
             return;
         }
-        // Symlinks aren't followed, so a symlink loop can't make this walk
-        // forever.
-        if entry
-            .file_type()
-            .is_some_and(|file_type| file_type.is_file())
-            && found.send(entry.into_path()).is_err()
-        {
-            // Just as the watcher, a send failure means the cache is dropped, so exit.
+    };
+    {
+        let cache = cache.lock().unwrap();
+        if cache.is_current_file(path) {
+            return;
+        }
+        let entry = cache.files.get(path);
+        let is_up_to_date = if is_outdated {
+            entry.is_none_or(|entry| entry.status != FileStatus::Outdated)
+        } else {
+            entry.is_some_and(|entry| {
+                entry.status == FileStatus::UpToDate
+                    && entry
+                        .metadata
+                        .as_ref()
+                        .is_some_and(|cached| is_unmodified(cached, &metadata))
+            })
+        };
+        if is_up_to_date {
             return;
         }
     }
+    // A file which can't be read -- another program may have it locked, for
+    // example -- leaves the cache as it is; the watcher reports the file again
+    // once it changes.
+    let Ok(contents) = read_text(path) else {
+        return;
+    };
+    // The lexer requires Unix-style line endings.
+    //
+    // TODO: once the Server has user-selected options, implement the spec's
+    // `SaveOnScan` option here: translate the result back to source, then
+    // write any changes to the file and update its cached metadata.
+    let outcome = match contents.map(|contents| {
+        source_to_codechat_for_web(
+            &contents.replace("\r\n", "\n"),
+            path,
+            0.0,
+            false,
+            Some(cache.clone()),
+        )
+    }) {
+        Some(Ok(_)) => ScanOutcome::Translated,
+        None
+        | Some(Err(
+            SourceToCodeChatForWebError::NoLexer | SourceToCodeChatForWebError::UnknownLexer(_),
+        )) => ScanOutcome::Untranslatable,
+        Some(Err(err)) => {
+            warn!("Unable to scan {}: {err}", path.display());
+            ScanOutcome::Failed
+        }
+    };
+    let mut cache = cache.lock().unwrap();
+    if cache.is_current_file(path) {
+        // A connection made this file its current file during the translation,
+        // which may then have committed the file's content on disk over the
+        // content the connection shows, which may be newer. Have the
+        // connection re-translate its content to restore it.
+        cache.notify_connections(&HashSet::from([path.to_path_buf()]));
+        return;
+    }
+    match outcome {
+        // The translation's commit recorded the file's metadata as of the
+        // commit, which follows the reading of its text. A write in between
+        // would leave the cache describing the old text with the new metadata,
+        // so the consumer would skip the watcher's report of that write.
+        // Record the metadata read before the text instead, which any such
+        // write changes.
+        ScanOutcome::Translated => {
+            if let Some(entry) = cache.files.get_mut(path) {
+                entry.metadata = Some(metadata);
+            }
+        }
+        // A file which can't be translated defines nothing. Committing it as
+        // such withdraws whatever it defined before it stopped being
+        // translatable, and records its metadata, so that later walks skip it
+        // until it changes rather than reading it again.
+        ScanOutcome::Untranslatable => {
+            cache.commit_file(path, Some(metadata), FileFacts::default());
+        }
+        // Leave the cache as it is: without metadata matching the file, the
+        // next walk tries again.
+        ScanOutcome::Failed => {}
+    }
+}
+
+/// Read a file as text. The walker sends the consumer every file in the
+/// project, including any large media files, so a file is read in full only
+/// once its first block proves to be text.
+fn read_text(
+    // The file to read.
+    path: &Path,
+    // Its contents; `None` if it isn't UTF-8, which most likely makes it a
+    // binary file.
+) -> io::Result<Option<String>> {
+    // The size of the block checked before reading the rest of the file.
+    const FIRST_BLOCK_LEN: u64 = 8192;
+    let mut file = File::open(path)?;
+    let mut bytes = Vec::new();
+    file.by_ref()
+        .take(FIRST_BLOCK_LEN)
+        .read_to_end(&mut bytes)?;
+    // A character may straddle the end of the block, leaving an incomplete
+    // sequence there, for which `error_len` returns `None`.
+    if let Err(err) = str::from_utf8(&bytes)
+        && err.error_len().is_some()
+    {
+        return Ok(None);
+    }
+    file.read_to_end(&mut bytes)?;
+    Ok(String::from_utf8(bytes).ok())
+}
+
+/// Report whether two snapshots of a file's metadata agree on its modification
+/// time and length, which the consumer takes to mean that the file's contents
+/// are unchanged.
+fn is_unmodified(
+    // The metadata cached when the file was last processed.
+    cached: &Metadata,
+    // The file's metadata now.
+    current: &Metadata,
+    // True if the modification times and lengths match.
+) -> bool {
+    cached.len() == current.len() && cached.modified().ok() == current.modified().ok()
 }
 
 impl Default for Cache {
@@ -1108,17 +1735,29 @@ impl Default for Cache {
 mod tests {
     use std::{
         collections::{HashMap, HashSet},
+        fs,
         path::{Path, PathBuf},
-        sync::{Arc, Mutex},
+        sync::{
+            Arc, Mutex,
+            mpsc::{self as std_mpsc, Receiver},
+        },
+        thread::sleep,
+        time::{Duration, Instant},
     };
 
+    use notify_debouncer_full::notify::{
+        Event, EventKind,
+        event::{AccessKind, CreateKind, DataChange, Flag, ModifyKind, RemoveKind, RenameMode},
+    };
     use test_utils::prep_test_dir;
     use tokio::sync::mpsc::{self, error::TryRecvError};
 
     use super::{
-        Cache, CacheNotification, ConnectionRegistration, FileFacts, FileStatus, FragmentFact,
-        IdResolution, IdState, TargetFact, walk_project,
+        Cache, CacheNotification, ConnectionRegistration, Consumer, ConsumerPathState, FileFacts,
+        FileStatus, FragmentFact, IdResolution, IdState, LRU_ENTRIES_PER_CONNECTION, TargetFact,
+        Walker, WatcherPathState, cache_map_capacity, watcher_path_states,
     };
+    use crate::webserver::canonicalize;
 
     // ### Test helpers
     //
@@ -1196,6 +1835,36 @@ mod tests {
     // Build the expected set of outdated files.
     fn paths(paths: &[&PathBuf]) -> HashSet<PathBuf> {
         paths.iter().map(|path| (*path).clone()).collect()
+    }
+
+    // Collect every message sent so far on a channel.
+    fn drain<T>(rx: &Receiver<T>) -> Vec<T> {
+        rx.try_iter().collect()
+    }
+
+    // Build the message the walker sends the consumer for a file.
+    fn found(path: &Path) -> ConsumerPathState {
+        ConsumerPathState::WatcherPathState(WatcherPathState::CreatedOrModified(path.to_path_buf()))
+    }
+
+    // Register a connection whose current file is `current_file`, returning its
+    // registration and the receiver of its notifications.
+    fn register(
+        cache: &Arc<Mutex<Cache>>,
+        connection_id: &str,
+        current_file: &Path,
+    ) -> (
+        ConnectionRegistration,
+        mpsc::UnboundedReceiver<CacheNotification>,
+    ) {
+        let (notify_tx, notify_rx) = mpsc::unbounded_channel();
+        let registration = ConnectionRegistration::new(
+            cache.clone(),
+            connection_id.to_string(),
+            current_file.to_path_buf(),
+            notify_tx,
+        );
+        (registration, notify_rx)
     }
 
     // ### Cross-reference tests
@@ -1336,28 +2005,6 @@ mod tests {
         assert!(cache.files.is_empty());
     }
 
-    // Verify that `pending_files` holds exactly those files whose status is
-    // `Unknown`.
-    #[test]
-    fn test_pending_files() {
-        let mut cache = Cache::default();
-        let a = PathBuf::from("a.md");
-        cache.commit_file(&a, None, facts_target("foo", "Foo!"));
-        assert!(cache.pending_files.is_empty());
-
-        // A file written or modified since it was processed is queued for
-        // reprocessing, and queued only once.
-        cache.mark_unknown(&a);
-        cache.mark_unknown(&a);
-        assert_eq!(*status(&cache, &a), FileStatus::Unknown);
-        assert_eq!(cache.pending_files, vec![a.clone()]);
-
-        // Reprocessing it dequeues it.
-        cache.commit_file(&a, None, facts_target("foo", "Foo!"));
-        assert_eq!(*status(&cache, &a), FileStatus::UpToDate);
-        assert!(cache.pending_files.is_empty());
-    }
-
     // Verify that an auto-assigned id is 10 characters drawn from
     // `[A-Za-z0-9_-]` and collides neither with a cached id nor with another id
     // assigned in the same pass.
@@ -1379,6 +2026,26 @@ mod tests {
             assert!(!cache.ids.contains_key(&id));
             assert!(assigned.insert(id));
         }
+    }
+
+    // Verify that the files beneath a directory are found, at any depth, and
+    // that no file merely sharing a prefix of the directory's name is.
+    #[test]
+    fn test_files_beneath() {
+        let mut cache = Cache::default();
+        let beneath = [PathBuf::from("a/b/c.md"), PathBuf::from("a/b/d/e.md")];
+        let not_beneath = [
+            PathBuf::from("a/b"),
+            PathBuf::from("a/b.md"),
+            PathBuf::from("a/bc/f.md"),
+            PathBuf::from("g.md"),
+        ];
+        for path in beneath.iter().chain(not_beneath.iter()) {
+            cache.commit_file(path, None, FileFacts::default());
+        }
+        let found: Vec<&PathBuf> = cache.files_beneath(Path::new("a/b")).collect();
+        assert_eq!(found, beneath.iter().collect::<Vec<_>>());
+        assert_eq!(cache.files_beneath(Path::new("h")).count(), 0);
     }
 
     // ### Duplicate id tests
@@ -1724,9 +2391,7 @@ mod tests {
             .lock()
             .unwrap()
             .commit_file(&b, None, facts_xref("foo"));
-        let (notify_tx, mut notify_rx) = mpsc::unbounded_channel();
-        let registration =
-            ConnectionRegistration::new(cache.clone(), "conn".to_string(), b.clone(), notify_tx);
+        let (registration, mut notify_rx) = register(&cache, "conn", &b);
 
         // Defining the id `b` references outdates `b`.
         cache
@@ -1775,21 +2440,9 @@ mod tests {
             .lock()
             .unwrap()
             .commit_file(&toc, None, facts_xref("foo"));
-        // Register a connection whose current file is `current_file`, returning
-        // its registration and the receiver of its notifications.
-        let register = |connection_id: &str, current_file: &PathBuf| {
-            let (notify_tx, notify_rx) = mpsc::unbounded_channel();
-            let registration = ConnectionRegistration::new(
-                cache.clone(),
-                connection_id.to_string(),
-                current_file.clone(),
-                notify_tx,
-            );
-            (registration, notify_rx)
-        };
-        let (_definer, mut definer_rx) = register("definer", &a);
-        let (_bystander, mut bystander_rx) = register("bystander", &b);
-        let (_toc_viewer, mut toc_viewer_rx) = register("toc_viewer", &toc);
+        let (_definer, mut definer_rx) = register(&cache, "definer", &a);
+        let (_bystander, mut bystander_rx) = register(&cache, "bystander", &b);
+        let (_toc_viewer, mut toc_viewer_rx) = register(&cache, "toc_viewer", &toc);
 
         // Renaming the heading outdates the TOC. A connection whose current
         // file is the TOC must re-translate it as well.
@@ -1819,35 +2472,553 @@ mod tests {
         }
     }
 
+    // Verify that an outdated file goes to the consumer unless a connection
+    // shows it, as its current file or as the TOC; a connection re-renders
+    // those itself.
+    #[test]
+    fn test_outdated_files_go_to_consumer() {
+        let cache = Arc::new(Mutex::new(Cache::default()));
+        let (consumer_tx, consumer_rx) = std_mpsc::channel();
+        cache.lock().unwrap().consumer_tx = Some(consumer_tx);
+        let toc = PathBuf::from("toc.md");
+        let a = PathBuf::from("a.md");
+        let b = PathBuf::from("b.md");
+        let c = PathBuf::from("c.md");
+        for referrer in [&toc, &b, &c] {
+            cache
+                .lock()
+                .unwrap()
+                .commit_file(referrer, None, facts_xref("foo"));
+        }
+
+        // With no connections, the consumer reprocesses every outdated file,
+        // the TOC included.
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&a, None, facts_target("foo", "Foo"));
+        let mut sent = drain(&consumer_rx);
+        sent.sort_by_key(|message| format!("{message:?}"));
+        assert_eq!(
+            sent,
+            vec![
+                ConsumerPathState::Outdated(b.clone()),
+                ConsumerPathState::Outdated(c.clone()),
+                ConsumerPathState::Outdated(toc.clone()),
+            ]
+        );
+
+        // A connection showing `c` re-renders `c` and the TOC; the consumer
+        // reprocesses only `b`.
+        let (_registration, mut notify_rx) = register(&cache, "conn", &c);
+        cache
+            .lock()
+            .unwrap()
+            .commit_file(&a, None, facts_target("foo", "Bar"));
+        assert_eq!(drain(&consumer_rx), vec![ConsumerPathState::Outdated(b)]);
+        let mut notifications = vec![notify_rx.try_recv().unwrap(), notify_rx.try_recv().unwrap()];
+        notifications.sort_by_key(|notification| format!("{notification:?}"));
+        assert_eq!(
+            notifications,
+            vec![
+                CacheNotification::CurrentFileOutdated,
+                CacheNotification::TocOutdated
+            ]
+        );
+    }
+
+    // Verify that the `CacheMap` holds `LRU_ENTRIES_PER_CONNECTION` caches per
+    // connection, plus one.
+    #[test]
+    fn test_cache_map_capacity() {
+        assert_eq!(cache_map_capacity(0).get(), 1);
+        assert_eq!(
+            cache_map_capacity(3).get(),
+            3 * LRU_ENTRIES_PER_CONNECTION + 1
+        );
+    }
+
+    // ### Watcher tests
+    //
+    // Verify that watcher events become the paths the walker receives: renames
+    // become a deletion then a creation, a modified directory is skipped, and
+    // lost events request a walk of the entire project.
+    #[test]
+    fn test_watcher_path_states() {
+        use WatcherPathState::{CreatedOrModified, Deleted};
+
+        let (temp_dir, root) = prep_test_dir!();
+        let file = root.join("file.md");
+        fs::write(&file, "").unwrap();
+        let missing = root.join("missing.md");
+        let translate = |kind: EventKind, event_paths: &[&PathBuf]| {
+            let event = event_paths.iter().fold(Event::new(kind), |event, path| {
+                event.add_path((*path).clone())
+            });
+            watcher_path_states(&event, &root)
+        };
+
+        assert_eq!(
+            translate(EventKind::Create(CreateKind::File), &[&file]),
+            vec![CreatedOrModified(file.clone())]
+        );
+        assert_eq!(
+            translate(EventKind::Remove(RemoveKind::Any), &[&missing]),
+            vec![Deleted(missing.clone())]
+        );
+        assert_eq!(
+            translate(
+                EventKind::Modify(ModifyKind::Name(RenameMode::Both)),
+                &[&missing, &file]
+            ),
+            vec![Deleted(missing.clone()), CreatedOrModified(file.clone())]
+        );
+        assert_eq!(
+            translate(
+                EventKind::Modify(ModifyKind::Name(RenameMode::From)),
+                &[&missing]
+            ),
+            vec![Deleted(missing.clone())]
+        );
+        assert_eq!(
+            translate(
+                EventKind::Modify(ModifyKind::Name(RenameMode::To)),
+                &[&file]
+            ),
+            vec![CreatedOrModified(file.clone())]
+        );
+        // An unclassified rename is resolved by checking for the path.
+        assert_eq!(
+            translate(
+                EventKind::Modify(ModifyKind::Name(RenameMode::Any)),
+                &[&file, &missing]
+            ),
+            vec![CreatedOrModified(file.clone()), Deleted(missing.clone())]
+        );
+        assert_eq!(
+            translate(
+                EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+                &[&file, &root]
+            ),
+            vec![CreatedOrModified(file.clone())]
+        );
+        assert_eq!(
+            translate(EventKind::Access(AccessKind::Any), &[&file]),
+            vec![]
+        );
+        let rescan = Event::new(EventKind::Other).set_flag(Flag::Rescan);
+        assert_eq!(
+            watcher_path_states(&rescan, &root),
+            vec![CreatedOrModified(root.clone())]
+        );
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
     // ### Walker tests
     //
-    // Verify that the walker finds every file in a nested tree except those
-    // which are hidden or excluded by an `.ignore` file, and that a single-file
-    // root yields just that file.
+    // Verify that the walker forwards only those paths its ignore files don't
+    // exclude, walks each directory reported, and re-walks after an ignore file
+    // changes. The fixture holds hidden files, and files excluded by an
+    // `.ignore` file.
     #[test]
     fn test_walk_project() {
         let (temp_dir, test_dir) = prep_test_dir!();
-        let a = test_dir.join("a.md");
-        let b = test_dir.join("sub").join("b.py");
+        let root = canonicalize(&test_dir).unwrap();
+        let a = root.join("a.md");
+        let ignored = root.join("ignored.md");
+        let b = root.join("sub").join("b.py");
+        let sub_ignored = root.join("sub").join("ignored.md");
         // Confirm that copying the fixture preserved the hidden files, so their
         // absence from the walk below is the walker's doing.
-        assert!(test_dir.join(".ignore").is_file());
-        assert!(test_dir.join(".hidden").join("c.md").is_file());
+        assert!(root.join(".ignore").is_file());
+        assert!(root.join(".hidden").join("c.md").is_file());
 
-        // Walk synchronously, returning the sorted list of files found.
-        let walk = |path: &Path| {
-            let (found_tx, mut found_rx) = mpsc::unbounded_channel();
-            walk_project(path, &found_tx);
-            let mut found = vec![];
-            while let Ok(path) = found_rx.try_recv() {
-                found.push(path);
+        let (consumer_tx, consumer_rx) = std_mpsc::channel();
+        let mut walker = Walker::new(root.clone(), consumer_tx);
+        // Process one path from the watcher, returning everything the walker
+        // sends the consumer as a result. The order in which a walk finds files
+        // varies by platform, so sort the files found.
+        let mut process = |path_state: WatcherPathState| {
+            walker.process(path_state).unwrap();
+            let mut sent = drain(&consumer_rx);
+            if let [
+                ConsumerPathState::WalkStarted(_),
+                files @ ..,
+                ConsumerPathState::WalkFinished,
+            ] = sent.as_mut_slice()
+            {
+                files.sort_by_key(|message| format!("{message:?}"));
             }
-            found.sort();
-            found
+            sent
         };
-        assert_eq!(walk(&test_dir), vec![a.clone(), b]);
-        assert_eq!(walk(&a), vec![a]);
+        // The messages a walk of `dir` which finds `files` sends.
+        let walk = |dir: &PathBuf, files: &[&PathBuf]| {
+            let mut sent = vec![ConsumerPathState::WalkStarted(dir.clone())];
+            let mut files: Vec<&PathBuf> = files.to_vec();
+            files.sort();
+            sent.extend(files.into_iter().map(|file| found(file)));
+            sent.push(ConsumerPathState::WalkFinished);
+            sent
+        };
 
+        // The initial walk skips hidden and ignored files.
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(root.clone())),
+            walk(&root, &[&a, &b])
+        );
+
+        // A modified file is forwarded, unless it's ignored or hidden.
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(a.clone())),
+            vec![found(&a)]
+        );
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(ignored.clone())),
+            vec![]
+        );
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(
+                root.join(".hidden").join("c.md")
+            )),
+            vec![]
+        );
+
+        // Likewise for a deleted path.
+        let gone = root.join("gone.md");
+        assert_eq!(
+            process(WatcherPathState::Deleted(gone.clone())),
+            vec![ConsumerPathState::WatcherPathState(
+                WatcherPathState::Deleted(gone)
+            )]
+        );
+        assert_eq!(process(WatcherPathState::Deleted(ignored.clone())), vec![]);
+
+        // A created directory is walked, unless it's hidden.
+        let new_dir = root.join("new_dir");
+        let d = new_dir.join("d.md");
+        let new_dir_ignored = new_dir.join("ignored.md");
+        fs::create_dir(&new_dir).unwrap();
+        fs::write(&d, "# d.md").unwrap();
+        fs::write(&new_dir_ignored, "# Ignored.").unwrap();
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(new_dir.clone())),
+            walk(&new_dir, &[&d])
+        );
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(root.join(".hidden"))),
+            vec![]
+        );
+
+        // An ignore file inside an ignored directory can't change what the
+        // walk finds, so it prompts no walk.
+        let hidden_ignore = root.join(".hidden").join(".ignore");
+        fs::write(&hidden_ignore, "c.md\n").unwrap();
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(hidden_ignore)),
+            vec![]
+        );
+
+        // Changing an `.ignore` file reloads the ignore files, then re-walks
+        // the directory it governs.
+        fs::write(root.join(".ignore"), "a.md\n").unwrap();
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(root.join(".ignore"))),
+            walk(&root, &[&ignored, &b, &sub_ignored, &d, &new_dir_ignored])
+        );
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(a.clone())),
+            vec![]
+        );
+
+        // Git's ignore files apply only within a repository.
+        fs::create_dir_all(root.join(".git").join("info")).unwrap();
+        fs::write(new_dir.join(".gitignore"), "d.md\n").unwrap();
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(
+                new_dir.join(".gitignore")
+            )),
+            walk(&new_dir, &[&new_dir_ignored])
+        );
+        // A change to `.git/info/exclude` re-walks the entire project.
+        let exclude = root.join(".git").join("info").join("exclude");
+        fs::write(&exclude, "b.py\n").unwrap();
+        assert_eq!(
+            process(WatcherPathState::CreatedOrModified(exclude)),
+            walk(&root, &[&ignored, &sub_ignored, &new_dir_ignored])
+        );
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    // ### Consumer tests
+    //
+    // Verify that the consumer scans the files the walker sends into the cache,
+    // rescanning one only when it's changed or outdated, and leaves a
+    // connection's current file to that connection.
+    #[test]
+    fn test_consumer_scans() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let root = canonicalize(&test_dir).unwrap();
+        let a = root.join("a.md");
+        let b = root.join("b.md");
+        fs::write(&a, "<h1 id=\"foo\">Foo</h1>\n").unwrap();
+        fs::write(&b, "See <xref ref=\"foo\"></xref>.\n").unwrap();
+        let cache = Arc::new(Mutex::new(Cache::new(root.clone())));
+        let (consumer_tx, consumer_rx) = std_mpsc::channel();
+        cache.lock().unwrap().consumer_tx = Some(consumer_tx);
+        let mut consumer = Consumer::default();
+        let inner_html = |cache: &Arc<Mutex<Cache>>| {
+            cache.lock().unwrap().files[&a].targets["foo"]
+                .inner_html
+                .clone()
+        };
+
+        consumer.apply(&cache, found(&a));
+        consumer.apply(&cache, found(&b));
+        assert_eq!(inner_html(&cache), "Foo");
+        assert_eq!(*dependents(&cache.lock().unwrap(), "foo"), paths(&[&b]));
+        assert_eq!(*status(&cache.lock().unwrap(), &b), FileStatus::UpToDate);
+
+        // An unmodified file isn't rescanned. To observe this, alter its cached
+        // target, which a rescan would restore.
+        cache
+            .lock()
+            .unwrap()
+            .files
+            .get_mut(&a)
+            .unwrap()
+            .targets
+            .get_mut("foo")
+            .unwrap()
+            .inner_html = "Stale".to_string();
+        consumer.apply(&cache, found(&a));
+        assert_eq!(inner_html(&cache), "Stale");
+
+        // A modified file is rescanned, which outdates the file referencing it;
+        // the consumer is sent that file.
+        fs::write(&a, "<h1 id=\"foo\">Foo bar</h1>\n").unwrap();
+        consumer.apply(&cache, found(&a));
+        assert_eq!(inner_html(&cache), "Foo bar");
+        assert_eq!(*status(&cache.lock().unwrap(), &b), FileStatus::Outdated);
+        assert_eq!(
+            drain(&consumer_rx),
+            vec![ConsumerPathState::Outdated(b.clone())]
+        );
+        // Scanning the outdated file brings it up to date; a second request,
+        // as when several commits outdate one file, is skipped. To observe
+        // this, discard its cached metadata, which a rescan would restore.
+        consumer.apply(&cache, ConsumerPathState::Outdated(b.clone()));
+        assert_eq!(*status(&cache.lock().unwrap(), &b), FileStatus::UpToDate);
+        cache.lock().unwrap().files.get_mut(&b).unwrap().metadata = None;
+        consumer.apply(&cache, ConsumerPathState::Outdated(b.clone()));
+        assert!(cache.lock().unwrap().files[&b].metadata.is_none());
+
+        // A connection's current file isn't scanned...
+        let (registration, mut notify_rx) = register(&cache, "conn", &a);
+        fs::write(&a, "<h1 id=\"foo\">Foo baz</h1>\n").unwrap();
+        consumer.apply(&cache, found(&a));
+        assert_eq!(inner_html(&cache), "Foo bar");
+        // ...nor forgotten when it's deleted: the connection's IDE may still
+        // hold its text, so the connection is told to re-translate it.
+        fs::remove_file(&a).unwrap();
+        consumer.apply(
+            &cache,
+            ConsumerPathState::WatcherPathState(WatcherPathState::Deleted(a.clone())),
+        );
+        assert!(cache.lock().unwrap().files.contains_key(&a));
+        assert_eq!(
+            notify_rx.try_recv(),
+            Ok(CacheNotification::CurrentFileOutdated)
+        );
+        // Once no connection shows the file, the consumer is asked to check
+        // it; this finds it gone, so it's forgotten, which outdates the file
+        // referencing it.
+        drop(registration);
+        assert_eq!(
+            drain(&consumer_rx),
+            vec![ConsumerPathState::Released(a.clone())]
+        );
+        consumer.apply(&cache, ConsumerPathState::Released(a.clone()));
+        assert!(!cache.lock().unwrap().files.contains_key(&a));
+        assert_eq!(
+            drain(&consumer_rx),
+            vec![ConsumerPathState::Outdated(b.clone())]
+        );
+
+        // A file which isn't text, or which no lexer recognizes, defines
+        // nothing; it's cached as such, so that it isn't read again until it
+        // changes. One with a lexer directive is translated, whatever its
+        // extension.
+        let binary = root.join("binary.md");
+        let unknown = root.join("unknown.xyz");
+        let directive = root.join("directive.xyz");
+        fs::write(&binary, [0xff, 0xfe, 0x00]).unwrap();
+        fs::write(&unknown, "<h1 id=\"unknown\">Unknown</h1>\n").unwrap();
+        fs::write(
+            &directive,
+            "# CodeChat Editor lexer: python\n# <h1 id=\"directive\">Directive</h1>\n",
+        )
+        .unwrap();
+        for path in [&binary, &unknown, &directive] {
+            consumer.apply(&cache, found(path));
+        }
+        {
+            let cache_guard = cache.lock().unwrap();
+            for path in [&binary, &unknown] {
+                assert!(cache_guard.files[path].targets.is_empty());
+                assert_eq!(*status(&cache_guard, path), FileStatus::UpToDate);
+            }
+            assert!(matches!(
+                cache_guard.resolve_id("unknown"),
+                IdResolution::Missing
+            ));
+            assert!(matches!(
+                cache_guard.resolve_id("directive"),
+                IdResolution::Target { .. }
+            ));
+        }
+        // A file which stops being translatable withdraws its definitions.
+        fs::write(&directive, "# <h1 id=\"directive\">Directive</h1>\n").unwrap();
+        consumer.apply(&cache, found(&directive));
+        assert!(matches!(
+            cache.lock().unwrap().resolve_id("directive"),
+            IdResolution::Missing
+        ));
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    // Verify that the consumer forgets deleted files and directories, and the
+    // cached files a walk doesn't find.
+    #[test]
+    fn test_consumer_forgets() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let root = canonicalize(&test_dir).unwrap();
+        let sub = root.join("sub");
+        fs::create_dir(&sub).unwrap();
+        let a = root.join("a.md");
+        let b = sub.join("b.md");
+        let c = sub.join("c.md");
+        let d = sub.join("d.md");
+        for path in [&a, &b, &c, &d] {
+            fs::write(path, "# Text\n").unwrap();
+        }
+        let cache = Arc::new(Mutex::new(Cache::new(root.clone())));
+        let mut consumer = Consumer::default();
+        for path in [&a, &b, &c, &d] {
+            consumer.apply(&cache, found(path));
+        }
+        let cached = |cache: &Arc<Mutex<Cache>>| {
+            cache
+                .lock()
+                .unwrap()
+                .files
+                .keys()
+                .cloned()
+                .collect::<Vec<PathBuf>>()
+        };
+        assert_eq!(
+            cached(&cache),
+            vec![a.clone(), b.clone(), c.clone(), d.clone()]
+        );
+
+        // A walk which doesn't find a cached file means it no longer exists.
+        // Files outside the directory walked are unaffected.
+        fs::remove_file(&c).unwrap();
+        consumer.apply(&cache, ConsumerPathState::WalkStarted(sub.clone()));
+        consumer.apply(&cache, found(&b));
+        consumer.apply(&cache, found(&d));
+        consumer.apply(&cache, ConsumerPathState::WalkFinished);
+        assert_eq!(cached(&cache), vec![a.clone(), b.clone(), d.clone()]);
+
+        // A file a connection stopped showing during a walk wasn't found by
+        // that walk, so the walk still forgets it -- as it should if, say, the
+        // walk skipped the file as ignored.
+        consumer.apply(&cache, ConsumerPathState::WalkStarted(sub.clone()));
+        consumer.apply(&cache, found(&b));
+        consumer.apply(&cache, ConsumerPathState::Released(d.clone()));
+        consumer.apply(&cache, ConsumerPathState::WalkFinished);
+        assert_eq!(cached(&cache), vec![a.clone(), b.clone()]);
+
+        // A deletion reported for a path which exists again, as after a
+        // version control checkout, rescans the file rather than forgetting
+        // it.
+        fs::write(&a, "<h1 id=\"recreated\">Recreated</h1>\n").unwrap();
+        consumer.apply(
+            &cache,
+            ConsumerPathState::WatcherPathState(WatcherPathState::Deleted(a.clone())),
+        );
+        assert_eq!(cached(&cache), vec![a.clone(), b.clone()]);
+        assert!(matches!(
+            cache.lock().unwrap().resolve_id("recreated"),
+            IdResolution::Target { .. }
+        ));
+
+        // A deleted directory takes its files with it.
+        fs::remove_dir_all(&sub).unwrap();
+        consumer.apply(
+            &cache,
+            ConsumerPathState::WatcherPathState(WatcherPathState::Deleted(sub)),
+        );
+        assert_eq!(cached(&cache), vec![a.clone()]);
+
+        // As does a deleted file.
+        fs::remove_file(&a).unwrap();
+        consumer.apply(
+            &cache,
+            ConsumerPathState::WatcherPathState(WatcherPathState::Deleted(a)),
+        );
+        assert!(cached(&cache).is_empty());
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    // Verify the whole pipeline: a project's cache learns of its files through
+    // the initial walk, then of files created and deleted afterward through
+    // the watcher.
+    #[test]
+    fn test_new_project() {
+        // Wait for `condition` to hold, since the threads which maintain the
+        // cache run on their own schedule. The watcher debounces events for 2
+        // seconds, which this timeout comfortably exceeds.
+        fn wait_for(condition: impl Fn() -> bool) {
+            let start = Instant::now();
+            while !condition() {
+                assert!(
+                    start.elapsed() < Duration::from_secs(30),
+                    "timed out waiting for the cache"
+                );
+                sleep(Duration::from_millis(50));
+            }
+        }
+
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let root = canonicalize(&test_dir).unwrap();
+        let a = root.join("a.md");
+        let b = root.join("b.md");
+        fs::write(&a, "<h1 id=\"foo\">Foo</h1>\n").unwrap();
+        let cache = Cache::new_project(root.clone());
+        let is_cached = |path: &Path| cache.lock().unwrap().files.contains_key(path);
+
+        wait_for(|| is_cached(&a));
+        fs::write(&b, "See <xref ref=\"foo\"></xref>.\n").unwrap();
+        wait_for(|| is_cached(&b));
+        assert_eq!(*dependents(&cache.lock().unwrap(), "foo"), paths(&[&b]));
+        fs::remove_file(&a).unwrap();
+        wait_for(|| !is_cached(&a));
+        assert!(matches!(
+            cache.lock().unwrap().resolve_id("foo"),
+            IdResolution::Missing
+        ));
+
+        // Dropping the cache stops its watcher, so that the temporary directory
+        // can be removed.
+        drop(cache);
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();
     }

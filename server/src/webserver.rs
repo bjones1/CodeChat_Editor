@@ -24,7 +24,6 @@ pub mod tests;
 // -------
 //
 // ### Standard library
-use core::num::NonZeroUsize;
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
@@ -89,7 +88,7 @@ use url::Url;
 //use crate::capture::EventCapture;
 use crate::processing::{
     CodeChatForWeb, SourceToCodeChatForWebError, TranslationResultsString,
-    cache::{CacheMap, LRU_ENTRIES_PER_CONNECTION},
+    cache::{CacheMap, cache_map_capacity},
     find_path_to_toc, source_to_codechat_for_web_string,
 };
 
@@ -1707,9 +1706,9 @@ fn make_app_data_with_capture_spool(
         connection_id: Mutex::new(HashSet::new()),
         credentials,
         capture,
-        cache: Arc::new(Mutex::new(LruCache::new(
-            NonZeroUsize::new(LRU_ENTRIES_PER_CONNECTION).unwrap(),
-        ))),
+        // There are no connections yet; `translation_task` resizes this as
+        // they come and go.
+        cache: Arc::new(Mutex::new(LruCache::new(cache_map_capacity(0)))),
     })
 }
 

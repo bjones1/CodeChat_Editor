@@ -415,8 +415,8 @@ pub fn find_path_to_toc(file_path: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Return the cache of the project containing a file, creating it if this
-/// project has none.
+/// Return the cache of the project containing a file, creating it -- and the
+/// threads which keep it current -- if this project has none.
 pub fn project_cache(
     // The map of project caches.
     cache_map: &CacheMap,
@@ -440,7 +440,7 @@ pub fn project_cache(
     cache_map
         .lock()
         .unwrap()
-        .get_or_insert_ref(&root, || Arc::new(Mutex::new(Cache::new(root.clone()))))
+        .get_or_insert_ref(&root, || Cache::new_project(root.clone()))
         .clone()
 }
 
@@ -1497,10 +1497,13 @@ fn hydrate_dom(
     let dom = html_to_dom(html, None)?;
     // Read the file's metadata and canonicalize its path before taking the
     // cache lock, so that no I/O happens while the lock is held. The metadata
-    // captures the state of the file whose content is being processed; the
-    // canonicalization satisfies the cache's requirement that all paths are
-    // canonicalized and absolute. (Canonicalization fails for files which don't
-    // exist on disk -- such as tests -- in which case the path is used as-is.)
+    // captures the state of the file whose content is being processed (the
+    // cache's consumer, which read that content from the file itself, replaces
+    // this with the metadata it read beforehand; see `scan_file` in
+    // `cache.rs`); the canonicalization satisfies the cache's requirement that
+    // all paths are canonicalized and absolute. (Canonicalization fails for
+    // files which don't exist on disk -- such as tests -- in which case the
+    // path is used as-is.)
     let metadata = file.metadata().ok();
     let path = canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
     // ### Assign requested ids
@@ -1539,10 +1542,10 @@ fn hydrate_dom(
     // diffs them against the file's previous state: added, deleted, and
     // modified targets and fragments mark the files which depend on them as
     // outdated, this file is linked to every id it references, and duplicate
-    // ids are recorded.
+    // ids are recorded. The commit also sees that each outdated file is
+    // re-rendered; see `Cache::mark_outdated`.
     let mut cache_guard = cache.lock().unwrap();
-    // TODO: schedule reprocessing for each file in `commit.outdated`.
-    let _commit = cache_guard.commit_file(
+    cache_guard.commit_file(
         &walk_context.path,
         metadata,
         mem::take(&mut walk_context.facts),
@@ -1718,9 +1721,7 @@ fn store_fragment_contents(
             // `error` set during the walk.
             error_html("fragments are not allowed in Markdown documents")
         };
-        // TODO: schedule reprocessing for each outdated file returned here.
-        let _outdated =
-            cache_guard.update_fragment_content(&walk_context.path, &fragment.id, content);
+        cache_guard.update_fragment_content(&walk_context.path, &fragment.id, content);
     }
 }
 
@@ -2207,7 +2208,7 @@ struct WalkContext {
 struct FragmentHydration {
     /// The fragment's DOM node.
     node: Rc<Node>,
-    /// The fragment's id.
+    /// The fragment's id; empty if it has none.
     id: String,
     /// The index of the fragment's first code/doc block; see
     /// `FragmentFact::doc_block_start_index`.
@@ -2216,13 +2217,14 @@ struct FragmentHydration {
     /// number of blocks in the document; see
     /// `FragmentFact::code_doc_block_end_index`.
     end: usize,
-    /// When set, the fragment is in an error state detected during the walk
-    /// (fragment in a Markdown document, or an unparsable `following`
-    /// attribute): the message replaces both the hydrated tag content and the
-    /// cached fragment content.
+    /// When set, the fragment is in an error state detected during the walk (a
+    /// missing or invalid id, a fragment in a Markdown document, or an
+    /// unparsable `following` attribute): the message replaces both the
+    /// hydrated tag content and the cached fragment content.
     error: Option<String>,
     /// False when the fragment wasn't recorded in `FileFacts` (its id is
-    /// invalid), so no content may be stored for it.
+    /// missing, invalid, or auto-assigned during this pass), so no content may
+    /// be stored for it.
     cached: bool,
 }
 
@@ -2302,11 +2304,10 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                     walk_context.xrefs.push((ref_id, child.clone()));
                 }
             } else if tag_name == "fragment" {
-                // A fragment; without an id it's meaningless, so it's ignored.
-                // Its content can't be determined yet -- doc blocks aren't
-                // finalized during the walk -- so the caller stores it later
-                // via `Cache::update_fragment_content`.
-                if let Some(id) = id {
+                // A fragment. Its content can't be determined yet -- doc blocks
+                // aren't finalized during the walk -- so the caller stores it
+                // later via `Cache::update_fragment_content`.
+                if let Some(id) = id.filter(|id| !id.is_empty()) {
                     // The `following` attribute selects how many code/doc
                     // blocks after the current doc block the fragment encloses;
                     // the default is 1.
@@ -2359,6 +2360,18 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                         end: walk_context.doc_block_index + following,
                         error,
                         cached,
+                    });
+                } else {
+                    // A fragment without an id: display an error requesting the
+                    // missing id, per the spec in `cache.rs`. Lacking an id, it
+                    // can't be cached.
+                    walk_context.fragments.push(FragmentHydration {
+                        node: child.clone(),
+                        id: String::new(),
+                        start: walk_context.doc_block_index,
+                        end: walk_context.doc_block_index,
+                        error: Some("a fragment requires an \"id\" attribute".to_string()),
+                        cached: false,
                     });
                 }
             } else if let Some(id) = id

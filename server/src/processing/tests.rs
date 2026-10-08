@@ -1977,6 +1977,62 @@ fn test_hydrate_fragment_in_markdown() {
     );
 }
 
+// Verify that a fragment without an id -- whether its `id` attribute is missing
+// or empty -- hydrates to an error message requesting the id. Dehydration
+// removes the message, so saving the hydrated result writes back a bare
+// `<fragment></fragment>`. Since a fragment is cached under its id, the cache
+// records nothing for one which lacks an id.
+#[test]
+fn test_hydrate_fragment_without_id() {
+    // Both cases produce the same output. Hydration sees the empty `id`, which
+    // it must treat as missing rather than as an invalid id; the minifier then
+    // discards the empty attribute as redundant, so the Client never receives
+    // it and saving can't restore it.
+    for fragment in ["<fragment></fragment>", "<fragment id=\"\"></fragment>"] {
+        let cache = Arc::new(Mutex::new(Cache::default()));
+        let translation = source_to_codechat_for_web(
+            &format!("# {fragment}Doc.\nx = 1\n"),
+            Path::new("foo.py"),
+            0.0,
+            false,
+            Some(cache.clone()),
+        )
+        .unwrap();
+        assert_eq!(
+            translation,
+            build_codechat_for_web(
+                "python",
+                "\nx = 1\n",
+                vec![build_codemirror_doc_block(
+                    0,
+                    1,
+                    "",
+                    "#",
+                    "<p><fragment contenteditable=false><span class=cc-error>a fragment requires an \"id\" attribute</span></fragment>Doc."
+                )]
+            ),
+            "hydrating {fragment}"
+        );
+        assert_eq!(
+            codechat_for_web_to_source(&translation).unwrap(),
+            "# <fragment></fragment>Doc.\nx = 1\n",
+            "saving {fragment}"
+        );
+        // The commit recorded the file, but neither a fragment in it nor any
+        // id.
+        let cache_guard = cache.lock().unwrap();
+        assert_eq!(cache_guard.files.len(), 1, "caching {fragment}");
+        assert!(
+            cache_guard
+                .files
+                .values()
+                .all(|file_entry| file_entry.fragments.is_empty()),
+            "caching {fragment}"
+        );
+        assert!(cache_guard.ids.is_empty(), "caching {fragment}");
+    }
+}
+
 // Verify auto-assignment of ids: `id="*"` is replaced by a generated, valid CSS
 // identifier which is *not* recorded in the cache, and which the cache picks up
 // only once the file carrying it is written and processed again.
