@@ -330,7 +330,7 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r"<CodeChatEditor-fence>
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
     "</code></pre>\n<CodeChatEditor-separator>$1</CodeChatEditor-separator>\n";
 // The value of an `id` attribute which requests that the cache assign an id;
-// see `Auto-assignment of ids` in `cache.rs`.
+// see `Auto-assignment of ids` in the cache spec.
 const AUTO_ID: &str = "*";
 // The column at which to word wrap doc blocks.
 const WORD_WRAP_COLUMN: usize = 80;
@@ -426,9 +426,9 @@ pub fn project_cache(
     // `file_path`, as returned by `find_path_to_toc`.
     path_to_toc: &Path,
 ) -> Arc<Mutex<Cache>> {
-    // The project root is the directory containing `toc.md`. Canonicalize it
-    // so that every file in a project keys the same cache, and different
-    // projects key different caches.
+    // The project root is the directory containing `toc.md`. Canonicalize it so
+    // that every file in a project keys the same cache, and different projects
+    // key different caches.
     let toc_path = file_path
         .parent()
         .unwrap_or_else(|| Path::new("."))
@@ -940,8 +940,8 @@ pub fn source_to_codechat_for_web(
     let cache = if let Some(project_cache) = cache {
         project_cache
     } else {
-        // A non-project file uses a throwaway cache whose "project" is the
-        // file itself: only references within this file resolve.
+        // A non-project file uses a throwaway cache whose "project" is the file
+        // itself: only references within this file resolve.
         Arc::new(Mutex::new(Cache::new(file_path.to_path_buf())))
     };
     let code_doc_block_arr;
@@ -1219,7 +1219,7 @@ static CLEAN_TARGET_HTML: LazyLock<Builder> = LazyLock::new(|| {
     b
 });
 
-// Clean HTML for storage as a `Fragment`'s content, per the spec in `cache.rs`:
+// Clean HTML for storage as a `Fragment`'s content, per the cache spec:
 // like `AMMONIA_OPTIONS`, but `id` and `data-gather` attributes are stripped
 // (they aren't in any allowlist) to prevent duplicate ids when the content is
 // rendered in a gather list, and `<fragment>` elements are removed *along with
@@ -1446,28 +1446,33 @@ fn get_dom_body(document: &Rc<Node>) -> Rc<Node> {
     document.children.borrow()[0].children.borrow()[1].clone()
 }
 
-// HTML produced from Markdown needs additional processing, termed hydration:
-//
-// * Transform math, Mermaid, GraphViz, etc. nodes.
-// * Hydrate cross-references, fragments, and gather elements from the project
-//   cache.
-// * (Eventually) record document structure information.
-// * (Eventually) fill in autocomplete fields.
-//
-// Hydration is layered (see the `Design` section in `cache.rs`); the layers
-// which depend on fragment contents (gather lists) can only run after doc
-// blocks are finalized, so hydration is split into phases:
-//
-// 1. `hydrate_dom`: collect facts from the DOM, commit them to the cache, then
-//    patch `<xref>` contents and `<fragment>` backlinks.
-// 2. `store_fragment_contents`: once each doc block's hydrated HTML is known,
-//    store each fragment's content in the cache.
-// 3. `hydrate_gathers`: insert each gather element's list of fragment contents,
-//    now all present in the cache.
-//
-// This function runs all three phases for a Markdown document, where phase 2
-// needs no doc block data (fragments aren't allowed in Markdown documents, so
-// every fragment's content is an error message).
+/// <h3 id="cc-HfGbqqRaWs">hydrate_html</h3>
+///
+/// HTML produced from Markdown needs additional processing, termed hydration:
+///
+/// * Transform math, Mermaid, GraphViz, etc. nodes.
+/// * Hydrate cross-references, fragments, and gather elements from the project
+///   cache.
+/// * (Eventually) record document structure information.
+/// * (Eventually) fill in autocomplete fields.
+///
+/// Hydration is layered (see <xref ref="cc-P-g5o100jN"></xref>); the layers
+/// which depend on fragment contents (gather lists) can only run after doc
+/// blocks are finalized, so hydration is split into phases:
+///
+/// 1. `hydrate_dom`: collect facts from the DOM, commit them to the cache, then
+///    patch `<xref>` contents and `<fragment>` backlinks.
+/// 2. `store_fragment_contents`: once each doc block's hydrated HTML is known,
+///    store each fragment's content in the cache.
+/// 3. `hydrate_gathers`: insert each gather element's list of fragment contents,
+///    now all present in the cache.
+///
+/// Phases 1 and 2 update the cache, and each update may outdate other files;
+/// `Cache::mark_outdated` sees that every outdated file is re-rendered.
+///
+/// This function runs all three phases for a Markdown document, where phase 2
+/// needs no doc block data (fragments aren't allowed in Markdown documents, so
+/// every fragment's content is an error message).
 fn hydrate_html(html: &str, file: &Path, cache: &Arc<Mutex<Cache>>) -> io::Result<String> {
     let (dom, walk_context) = hydrate_dom(html, file, cache, true)?;
     store_fragment_contents(&walk_context, None, cache);
@@ -1495,13 +1500,12 @@ fn hydrate_dom(
     let dom = html_to_dom(html, None)?;
     // Stamp the file and canonicalize its path before taking the cache lock, so
     // that no I/O happens while the lock is held. The stamp captures the state
-    // of the file whose content is being processed (the cache's consumer,
-    // which read that content from the file itself, replaces this with the
-    // stamp it took beforehand; see `scan_file` in `cache.rs`); the
-    // canonicalization satisfies the cache's requirement that all paths are
-    // canonicalized and absolute. (Canonicalization fails for files which
-    // don't exist on disk -- such as tests -- in which case the path is used
-    // as-is.)
+    // of the file whose content is being processed (the cache's consumer, which
+    // read that content from the file itself, replaces this with the stamp it
+    // took beforehand; see `scan_file` in `cache.rs`); the canonicalization
+    // satisfies the cache's requirement that all paths are canonicalized and
+    // absolute. (Canonicalization fails for files which don't exist on disk --
+    // such as tests -- in which case the path is used as-is.)
     let stamp = file.metadata().ok().as_ref().map(FileStamp::new);
     let path = canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
     // ### Assign requested ids
@@ -1509,7 +1513,7 @@ fn hydrate_dom(
     // Replace each `id="*"` with a freshly generated id before facts are
     // collected, so that everything downstream sees a real id. These ids reach
     // the Client but are deliberately kept out of the cache until this file is
-    // written and re-read; see `Auto-assignment of ids` in `cache.rs`.
+    // written and re-read; see `Auto-assignment of ids` in the cache spec.
     let mut auto_ids: HashSet<String> = HashSet::new();
     {
         let cache_guard = cache.lock().unwrap();
@@ -1520,7 +1524,8 @@ fn hydrate_dom(
     // Walk the DOM, collecting all cacheable facts -- targets,
     // cross-references, fragments, and gather elements -- without touching the
     // cache. This keeps the non-`Send` DOM types out of the cache and off its
-    // critical section; see the design discussion in `cache.rs`.
+    // critical section. The walk skips the content the cache generates (see
+    // `hydrating_walk_node`), so hydration never feeds back into the facts.
     let mut walk_context = WalkContext {
         facts: FileFacts::default(),
         path,
@@ -1591,9 +1596,9 @@ fn hydrate_dom(
 }
 
 /// Replace every `id="*"` -- a request that the cache assign an id -- with a
-/// freshly generated one, recording the ids assigned. Per the spec in
-/// `cache.rs`, these ids are placed in the HTML but not recorded in the cache;
-/// the fact collection walk uses the recorded set to skip them.
+/// freshly generated one, recording the ids assigned. Per the cache spec, these
+/// ids are placed in the HTML but not recorded in the cache; the fact
+/// collection walk uses the recorded set to skip them.
 fn assign_auto_ids(
     // The node whose descendants are scanned.
     node: &Rc<Node>,
@@ -1724,19 +1729,19 @@ fn store_fragment_contents(
 }
 
 /// Render one fragment's content: the hydrated HTML of the code/doc blocks it
-/// encloses, cleaned per the spec in `cache.rs`. Per that spec, the rendering
+/// encloses, cleaned per the cache spec. Per that spec, the rendering
 /// reproduces the layout of the source it came from: each doc block carries the
-/// indent it had there, each line of a code block and the first line of each doc
-/// block are preceded by their line numbers, and equal indents in the source
-/// line up in the rendering.
+/// indent it had there, each line of a code block and the first line of each
+/// doc block are preceded by their line numbers, and equal indents in the
+/// source line up in the rendering.
 ///
 /// ### Why a doc block's indent and a code block are `<pre>`s
 ///
 /// The whitespace in those two *is* the layout, so everything which rewrites
-/// this HTML on its way to the screen must be told to leave it alone -- and both
-/// TinyMCE and the minifier key whitespace sensitivity on the tag name, with no
-/// class- or selector-based equivalent. (`CodeChat-doc-indent` needs no such
-/// treatment: the Client builds it outside the TinyMCE editable region, so
+/// this HTML on its way to the screen must be told to leave it alone -- and
+/// both TinyMCE and the minifier key whitespace sensitivity on the tag name,
+/// with no class- or selector-based equivalent. (`CodeChat-doc-indent` needs no
+/// such treatment: the Client builds it outside the TinyMCE editable region, so
 /// nothing rewrites it.) Of the tag names both tools treat as
 /// whitespace-sensitive by default, `pre` is the one which fits, and each tool
 /// extends that treatment to everything nested inside it, covering the line
@@ -1817,8 +1822,8 @@ fn render_fragment_content(
                     // to line up with the code around it. Only the doc block's
                     // first line is numbered -- the block's remaining source
                     // lines have no fixed correspondence to the lines its
-                    // rendered contents occupy, since the comment delimiters are
-                    // gone and the text reflows.
+                    // rendered contents occupy, since the comment delimiters
+                    // are gone and the text reflows.
                     content.push_str(
                         "<pre class=\"cc-fragment-indent\"><span class=\"cc-line-number\">",
                     );
@@ -2361,7 +2366,7 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                     });
                 } else {
                     // A fragment without an id: display an error requesting the
-                    // missing id, per the spec in `cache.rs`. Lacking an id, it
+                    // missing id, per the cache spec. Lacking an id, it
                     // can't be cached.
                     walk_context.fragments.push(FragmentHydration {
                         node: child.clone(),
@@ -2398,7 +2403,7 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                             id,
                             // Clean the inner HTML for storage; note that it's
                             // captured before any hydration of descendants, per
-                            // the spec in `cache.rs`.
+                            // the cache spec.
                             inner_html: CLEAN_TARGET_HTML
                                 .clean(&node_inner_html(child)?)
                                 .to_string(),
@@ -2421,7 +2426,7 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                 }
             } else if get_attr_value(child, "data-gather").is_some() {
                 // `data-gather` on an element without an id: display an error
-                // requesting the missing id, per the spec in `cache.rs`.
+                // requesting the missing id, per the cache spec.
                 walk_context.gathers_error.push((
                     child.clone(),
                     "a gather element requires an \"id\" attribute".to_string(),

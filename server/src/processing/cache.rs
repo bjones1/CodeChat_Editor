@@ -13,8 +13,8 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-//! `cache.rs` -- Keep a cache used to store all targets in a project
-//! =================================================================
+//! `cache.rs` -- Cache all targets and fragments in a project
+//! ==========================================================
 //!
 //! See the [cache spec](cache-spec.md).
 // Imports
@@ -76,13 +76,14 @@ pub type ProjectCaches = LruCache<PathBuf, Arc<Mutex<Cache>>>;
 /// `cache_map_capacity`.
 pub const LRU_ENTRIES_PER_CONNECTION: usize = 10;
 
-/// This defines the cache used to store all targets in a project.
+/// This defines the cache used to store all targets and fragments in a project.
 pub struct Cache {
-    /// Provide rapid access to a file by its normalized, absolute path; it must be within
-    /// the project's root directory. This owns all per-file data. Paths order
-    /// component by component, so the files beneath a directory immediately
-    /// follow it in this map: finding them, as a deleted or re-walked directory
-    /// requires, is a range query rather than a search of every file.
+    /// Provide rapid access to a file by its normalized, absolute path; it must
+    /// be within the project's root directory. This owns all per-file data.
+    /// Paths order component by component, so the files beneath a directory
+    /// immediately follow it in this map: finding them, as a deleted or
+    /// re-walked directory requires, is a range query rather than a search of
+    /// every file.
     pub(super) files: BTreeMap<PathBuf, FileEntry>,
     /// Provide rapid access to a `Target`/gather element or `Fragment` by its
     /// id.
@@ -95,9 +96,9 @@ pub struct Cache {
     /// files, and dropping a `ConnectionRegistration` sends the file it showed.
     /// `None` if there's no consumer -- a single-file "project", or a test.
     consumer_tx: Option<Sender<ConsumerPathState>>,
-    /// This project's watcher, which the watcher/walker thread stores here once it
-    /// registers the watcher; `None` until then, if there's no consumer, or if
-    /// the watcher couldn't start. Dropping it stops the watch, which begins
+    /// This project's watcher, which the watcher/walker thread stores here once
+    /// it registers the watcher; `None` until then, if there's no consumer, or
+    /// if the watcher couldn't start. Dropping it stops the watch, which begins
     /// the shutdown sequence described in the spec.
     _watcher: Option<Debouncer<RecommendedWatcher, RecommendedCache>>,
     /// The connections whose current file lies in this project, keyed by
@@ -132,8 +133,8 @@ pub(super) struct FileEntry {
 }
 
 /// How long after a file's modification time a stamp of it must be taken for
-/// that time to be trusted; see `FileStamp::is_racy`. This spans FAT's
-/// 2-second timestamp resolution plus some clock skew on network shares.
+/// that time to be trusted; see `FileStamp::is_racy`. This spans FAT's 2-second
+/// timestamp resolution plus some clock skew on network shares.
 const RACY_WINDOW: Duration = Duration::from_secs(3);
 
 /// A snapshot of a file's metadata, taken immediately before its contents are
@@ -159,10 +160,10 @@ pub(super) struct FileStamp {
 /// supplies the fields Git compares. On Windows, the change time and the file
 /// index which would stand in for Unix's change time and inode are available
 /// only in nightly Rust, leaving just the length and modification time. The
-/// creation time can't take their place: NTFS caches a file's creation time
-/// for a short period after the file is deleted or renamed away, then gives it
-/// to a new file which takes that name -- precisely what an editor does when
-/// it saves by writing a temporary file, then renaming it over the original.
+/// creation time can't take their place: NTFS caches a file's creation time for
+/// a short period after the file is deleted or renamed away, then gives it to a
+/// new file which takes that name -- precisely what an editor does when it
+/// saves by writing a temporary file, then renaming it over the original.
 /// Windows calls this file system tunneling; see the remarks in
 /// [`FileSystemInfo.CreationTime`](https://learn.microsoft.com/en-us/dotnet/api/system.io.filesysteminfo.creationtime#remarks)
 /// and Raymond Chen's
@@ -172,16 +173,16 @@ struct StatData {
     len: u64,
     /// The modification time; `None` if the platform doesn't report one. Two
     /// `None`s compare equal, which would report every same-length edit as no
-    /// change, so `FileStamp::new` marks a stamp without a modification time
-    /// as racy, which keeps it from ever matching. Compare these times only
-    /// for equality, never order:
+    /// change, so `FileStamp::new` marks a stamp without a modification time as
+    /// racy, which keeps it from ever matching. Compare these times only for
+    /// equality, never order:
     /// [`SystemTime`](https://doc.rust-lang.org/std/time/struct.SystemTime.html)
     /// isn't monotonic, so a file saved after another may carry an earlier
     /// time.
     modified: Option<SystemTime>,
-    /// The change time as (seconds, nanoseconds). Unlike the modification
-    /// time, which `touch -d`, `cp -p`, `rsync -t`, and archive extraction set
-    /// to arbitrary values, no program can set it.
+    /// The change time as (seconds, nanoseconds). Unlike the modification time,
+    /// which `touch -d`, `cp -p`, `rsync -t`, and archive extraction set to
+    /// arbitrary values, no program can set it.
     #[cfg(unix)]
     ctime: (i64, i64),
     /// The device and inode numbers, which change when an editor saves by
@@ -199,7 +200,8 @@ pub(super) struct IdEntry {
     pub(super) state: IdState,
     /// Every file whose rendered output depends on this id. Note that this does
     /// *not* capture the reverse dependency of a `Fragment` on the gather
-    /// elements which list it; see `Design` and `commit_file`.
+    /// elements which list it; see <xref ref="cc-P-g5o100jN"></xref> and
+    /// `commit_file`.
     pub(super) dependents: HashSet<PathBuf>,
 }
 
@@ -224,8 +226,7 @@ pub(super) enum IdState {
 /// The status of a file from the cache's perspective.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) enum FileStatus {
-    /// The file hasn't been processed: an entry's state until its first
-    /// commit.
+    /// The file hasn't been processed: an entry's state until its first commit.
     #[default]
     Unknown,
     /// The file needs to be re-processed to update cross-references or gather
@@ -235,11 +236,11 @@ pub(super) enum FileStatus {
     UpToDate,
 }
 
-/// Contains all information about a target. A target is any HTML element with
-/// an id; the id (which should be globally unique within the project; duplicate
-/// ids are flagged as errors) is the key of `FileEntry::targets`, and the
-/// containing file is the entry holding this value, so neither is duplicated
-/// here.
+/// Contains all information about a target: any HTML element with an id other
+/// than a `<fragment>`, which is a `Fragment` instead. The id (which should be
+/// globally unique within the project; duplicate ids are flagged as errors) is
+/// the key of `FileEntry::targets`, and the containing file is the entry
+/// holding this value, so neither is duplicated here.
 pub(super) struct Target {
     /// The inner HTML of this element.
     pub(super) inner_html: String,
@@ -372,8 +373,8 @@ pub(super) struct GatherBacklink<'a> {
 //
 // The watcher reports changed paths to the walker, which forwards those its
 // ignore files don't exclude -- and the files found by walking each directory
-// reported -- to the consumer, which applies them to the cache. See `Cache,
-// watcher, and walker` in the spec.
+// reported -- to the consumer, which applies them to the cache. See `Cache
+// population and maintenance` in the spec.
 /// A path reported by the watcher. A rename is reported as the deletion of its
 /// old path followed by the creation of its new one.
 #[derive(Debug, PartialEq, Eq)]
@@ -406,9 +407,9 @@ pub(super) enum ConsumerPathState {
 
 // ### Connections
 //
-// A connection's translation task owns its current file; the cache keeps only
-// a copy, refreshed by the task each time that file changes. See
-// `Connections` in the cache spec.
+// A connection's translation task owns its current file; the cache keeps only a
+// copy, refreshed by the task each time that file changes. See `Connections` in
+// the cache spec.
 /// One connection whose current file lies in this project.
 struct ConnectionView {
     /// The file shown in the connection's Client, canonicalized to match the
@@ -450,14 +451,17 @@ pub struct ConnectionRegistration {
 // Code
 // ----
 /// The capacity of the `CacheMap` when the Server has the given number of
-/// connections; `translation_task` applies this as connections come and go.
-/// Per the spec, this balances the memory the caches consume against the time
+/// connections; `translation_task` applies this as connections come and go. Per
+/// the spec, this balances the memory the caches consume against the time
 /// needed to load the cache of a project which isn't cached.
 #[must_use]
 pub fn cache_map_capacity(
-    // The number of connections, $n$.
+    // The number of connections,
+    // <span class="math math-inline mceNonEditable">\\(n\\)</span>.
     connections: usize,
-    // $n c + 1$, where $c$ is `LRU_ENTRIES_PER_CONNECTION`.
+    // <span class="math math-inline mceNonEditable">\\(n c + 1\\)</span>, where
+    // <span class="math math-inline mceNonEditable">\\(c\\)</span> is
+    // `LRU_ENTRIES_PER_CONNECTION`.
 ) -> NonZeroUsize {
     NonZeroUsize::MIN.saturating_add(connections.saturating_mul(LRU_ENTRIES_PER_CONNECTION))
 }
@@ -535,8 +539,8 @@ fn evict_unconnected(
 
 impl Cache {
     /// Create an empty cache with no consumer to keep it current: the cache of
-    /// a single-file "project", which consists only of that file, or of a
-    /// test. A project's cache comes from `Cache::new_project`.
+    /// a single-file "project", which consists only of that file, or of a test.
+    /// A project's cache comes from `Cache::new_project`.
     #[must_use]
     pub fn new(
         // The root directory of this project, as a canonicalized absolute path;
@@ -561,7 +565,7 @@ impl Cache {
     /// reports through the project's ignore files; and a consumer, which
     /// applies the walker's results to the cache. The walker's first task is a
     /// walk of the entire project, so that the consumer brings every file in it
-    /// into the cache. See `Cache, watcher, and walker` in the spec.
+    /// into the cache. See `Cache population and maintenance` in the spec.
     #[must_use]
     pub fn new_project(
         // The project's root directory, as a canonicalized absolute path; all
@@ -584,8 +588,11 @@ impl Cache {
         cache
     }
 
-    /// Apply the facts collected from one file's DOM walk to the cache in a
-    /// single transaction. This satisfies several requirements:
+    /// <h3 id="cc-MtbstS0OHd">commit_file</h3>
+    ///
+    /// Apply the facts collected
+    /// from one file's DOM walk to the cache in a single transaction. This
+    /// satisfies several requirements:
     ///
     /// * Determine if any files containing cross-references need to be rebuilt
     ///   due to changes in the `Target`s in this file: any target which was
@@ -624,7 +631,7 @@ impl Cache {
     /// * Otherwise only the symmetric difference is affected: the fragments
     ///   which gained or lost this backlink.
     ///
-    /// See the `Design` section for why this doesn't cycle back.
+    /// See <xref ref="cc-P-g5o100jN"></xref> for why this doesn't cycle back.
     #[allow(clippy::too_many_lines)]
     pub(super) fn commit_file(
         &mut self,
@@ -934,6 +941,8 @@ impl Cache {
         outdated
     }
 
+    /// <h3 id="cc-MxbstS0OHd">mark_outdated</h3>
+    ///
     /// Mark files outdated, then see that each is re-rendered. A connection
     /// re-renders a file it shows -- its current file, or the TOC in its
     /// sidebar, which every connection in the project shows -- since the text
@@ -962,9 +971,9 @@ impl Cache {
         }
     }
 
-    /// Notify each connection whose current file is one of these files, so
-    /// that the connection re-translates it. Several connections may share a
-    /// current file, if it's being edited in each simultaneously.
+    /// Notify each connection whose current file is one of these files, so that
+    /// the connection re-translates it. Several connections may share a current
+    /// file, if it's being edited in each simultaneously.
     fn notify_current_file_outdated(
         &self,
         // The files whose rendered output is outdated.
@@ -1043,8 +1052,8 @@ impl Cache {
             .take_while(move |path| path.starts_with(dir))
     }
 
-    /// Forget a file which no longer exists, or which the walker now ignores
-    /// -- unless a connection shows it. The connection's IDE may still hold the
+    /// Forget a file which no longer exists, or which the walker now ignores --
+    /// unless a connection shows it. The connection's IDE may still hold the
     /// file's text, so instead have the connection re-translate that text,
     /// which keeps the file in the cache; for the TOC, every connection
     /// re-loads it.
@@ -1178,7 +1187,7 @@ impl IdState {
 
 impl FileStamp {
     pub(super) fn new(
-        // The file's metadata, read immediately before its contents.
+        // The file's metadata, which this converts to a `FileStamp`.
         metadata: &Metadata,
     ) -> Self {
         let modified = metadata.modified().ok();
@@ -1260,9 +1269,9 @@ impl Drop for ConnectionRegistration {
         // The consumer leaves a connection's current file to that connection,
         // so it may have skipped a change to this file on disk, or its
         // deletion. Once no connection shows the file, have the consumer check
-        // the file against the disk. If the file on disk is unchanged, what
-        // the connection committed from its IDE's text stays in the cache,
-        // since the IDE may still hold that text.
+        // the file against the disk. If the file on disk is unchanged, what the
+        // connection committed from its IDE's text stays in the cache, since
+        // the IDE may still hold that text.
         if !cache.is_current_file(&connection.current_file)
             && let Some(consumer_tx) = &cache.consumer_tx
         {
@@ -1354,8 +1363,8 @@ fn watch_then_walk(
     let Some(cache) = cache.upgrade() else {
         return;
     };
-    // The field's leading underscore marks it as held only for what dropping
-    // it does; this is the one place which sets it.
+    // The field's leading underscore marks it as held only for what dropping it
+    // does; this is the one place which sets it.
     #[allow(clippy::used_underscore_binding)]
     {
         cache.lock().unwrap()._watcher = watcher;
@@ -1369,8 +1378,8 @@ fn watch_then_walk(
     Walker::new(root, consumer_tx).run(&walker_rx);
 }
 
-/// Watch `root` recursively, sending the walker each path created, modified,
-/// or deleted within it. The event handler runs on the debouncer's thread.
+/// Watch `root` recursively, sending the walker each path created, modified, or
+/// deleted within it. The event handler runs on the debouncer's thread.
 fn watch_project(
     // The project's root directory.
     root: &Path,
@@ -1421,9 +1430,9 @@ fn watch_project(
     Ok(debouncer)
 }
 
-/// Translate one watcher event into the paths it reports to the walker: per
-/// the spec, the files created, modified, or deleted, and the directories
-/// created or deleted.
+/// Translate one watcher event into the paths it reports to the walker: per the
+/// spec, the files created, modified, or deleted, and the directories created
+/// or deleted.
 fn watcher_path_states(
     // The event to translate.
     event: &Event,
@@ -1455,8 +1464,8 @@ fn watcher_path_states(
         EventKind::Remove(_) | EventKind::Modify(ModifyKind::Name(RenameMode::From)) => {
             paths.map(Deleted).collect()
         }
-        // The platform couldn't tell which half of a rename this is, so ask
-        // the filesystem.
+        // The platform couldn't tell which half of a rename this is, so ask the
+        // filesystem.
         EventKind::Modify(ModifyKind::Name(_)) => paths
             .map(|path| {
                 if path.exists() {
@@ -1508,9 +1517,9 @@ impl Walker {
         }
     }
 
-    /// Process each path the watcher sends, until the walker's channel closes
-    /// -- when the cache is dropped, which drops the watcher, or after the
-    /// first walk if the watcher couldn't start -- or the consumer exits,
+    /// Process each path the watcher sends, until the walker's channel
+    /// closes -- when the cache is dropped, which drops the watcher, or after
+    /// the first walk if the watcher couldn't start -- or the consumer exits,
     /// closing its own channel. This runs on the watcher thread; see
     /// `watch_then_walk`.
     fn run(
@@ -1644,10 +1653,10 @@ impl Walker {
 
 /// Build the matcher which decides whether a path the watcher reports is
 /// ignored. It applies the same filters as every walk: the
-/// [ignore](https://docs.rs/ignore) crate's defaults, which are ripgrep's. These
-/// skip hidden files and directories (such as `.git`), anything excluded by an
-/// `.ignore` file, and -- only inside a Git repository -- anything excluded by
-/// `.gitignore` or Git's other exclude rules.
+/// [ignore](https://docs.rs/ignore) crate's defaults, which are ripgrep's.
+/// These skip hidden files and directories (such as `.git`), anything excluded
+/// by an `.ignore` file, and -- only inside a Git repository -- anything
+/// excluded by `.gitignore` or Git's other exclude rules.
 fn build_ignore(
     // The project's root directory, to which the matcher's paths are relative.
     root: &Path,
@@ -1796,9 +1805,9 @@ fn scan_file(
             return;
         }
     };
-    // True if the TOC's text differs from the text the cache last read, which
-    // a connection's sidebar may still show. When the cache has no record of
-    // the TOC, no sidebar can show it: loading it in a sidebar records it.
+    // True if the TOC's text differs from the text the cache last read, which a
+    // connection's sidebar may still show. When the cache has no record of the
+    // TOC, no sidebar can show it: loading it in a sidebar records it.
     let is_toc_changed;
     {
         let cache = cache.lock().unwrap();
@@ -1834,8 +1843,8 @@ fn scan_file(
     // The lexer requires Unix-style line endings.
     //
     // TODO: once the Server has user-selected options, implement the spec's
-    // `SaveOnScan` option here: translate the result back to source, then
-    // write any changes to the file and update its cached stamp.
+    // `SaveOnScan` option here: translate the result back to source, then write
+    // any changes to the file and update its cached stamp.
     let outcome = match contents.map(|contents| {
         source_to_codechat_for_web(
             &contents.replace("\r\n", "\n"),
@@ -1859,17 +1868,17 @@ fn scan_file(
     if cache.is_current_file(path) {
         // A connection made this file its current file during the translation,
         // which may then have committed the file's content on disk over the
-        // content the connection shows, which may be newer. Have the
-        // connection re-translate its content to restore it.
+        // content the connection shows, which may be newer. Have the connection
+        // re-translate its content to restore it.
         cache.notify_current_file_outdated(&HashSet::from([path.to_path_buf()]));
     } else {
         match outcome {
-            // The translation's commit recorded a stamp taken as of the
-            // commit, which follows the reading of its text. A write in
-            // between would leave the cache describing the old text with the
-            // new stamp, so the consumer would skip the watcher's report of
-            // that write. Record the stamp taken before the text was read
-            // instead, which no such write leaves the file matching.
+            // The translation's commit recorded a stamp taken as of the commit,
+            // which follows the reading of its text. A write in between would
+            // leave the cache describing the old text with the new stamp, so
+            // the consumer would skip the watcher's report of that write.
+            // Record the stamp taken before the text was read instead, which no
+            // such write leaves the file matching.
             ScanOutcome::Translated => {
                 if let Some(entry) = cache.files.get_mut(path) {
                     entry.stamp = Some(stamp);
@@ -2980,8 +2989,8 @@ mod tests {
             vec![]
         );
 
-        // An ignore file inside an ignored directory can't change what the
-        // walk finds, so it prompts no walk.
+        // An ignore file inside an ignored directory can't change what the walk
+        // finds, so it prompts no walk.
         let hidden_ignore = root.join(".hidden").join(".ignore");
         fs::write(&hidden_ignore, "c.md\n").unwrap();
         assert_eq!(
@@ -3150,8 +3159,8 @@ mod tests {
             notify_rx.try_recv(),
             Ok(CacheNotification::CurrentFileOutdated)
         );
-        // Once no connection shows the file, the consumer is asked to check
-        // it; this finds it gone, so it's forgotten, which outdates the file
+        // Once no connection shows the file, the consumer is asked to check it;
+        // this finds it gone, so it's forgotten, which outdates the file
         // referencing it.
         drop(registration);
         assert_eq!(
@@ -3176,7 +3185,8 @@ mod tests {
         fs::write(&unknown, "<h1 id=\"unknown\">Unknown</h1>\n").unwrap();
         fs::write(
             &directive,
-            "# CodeChat Editor lexer: python\n# <h1 id=\"directive\">Directive</h1>\n",
+            // Split this so the lexer doesn't get set for this file.
+            concat!("# CodeChat Editor ", "lexer: python\n# <h1 id=\"directive\">Directive</h1>\n"),
         )
         .unwrap();
         for path in [&binary, &unknown, &directive] {
@@ -3329,9 +3339,8 @@ mod tests {
         consumer.apply(&cache, ConsumerPathState::WalkFinished);
         assert_eq!(cached(&cache), vec![a.clone(), b.clone()]);
 
-        // A deletion reported for a path which exists again, as after a
-        // version control checkout, rescans the file rather than forgetting
-        // it.
+        // A deletion reported for a path which exists again, as after a version
+        // control checkout, rescans the file rather than forgetting it.
         fs::write(&a, "<h1 id=\"recreated\">Recreated</h1>\n").unwrap();
         consumer.apply(
             &cache,
@@ -3364,8 +3373,8 @@ mod tests {
     }
 
     // Verify the whole pipeline: a project's cache learns of its files through
-    // the initial walk, then of files created and deleted afterward through
-    // the watcher.
+    // the initial walk, then of files created and deleted afterward through the
+    // watcher.
     #[test]
     fn test_new_project() {
         // Wait for `condition` to hold, since the threads which maintain the
