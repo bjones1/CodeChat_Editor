@@ -21,6 +21,8 @@
 // -------
 //
 // ### Standard library
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs::{self, File, Metadata},
@@ -35,7 +37,7 @@ use std::{
         mpsc::{self, Receiver, SendError, Sender},
     },
     thread,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 // ### Third-party
@@ -110,11 +112,10 @@ pub struct Cache {
 /// `None`.
 #[derive(Default)]
 pub(super) struct FileEntry {
-    /// The file's metadata when its content was read, which tells the consumer
-    /// whether this data still represents the file: the consumer reprocesses a
-    /// file whose modification time or length differs. `None` if the file
-    /// doesn't exist or the metadata can't be determined.
-    pub(super) metadata: Option<Metadata>,
+    /// The file's stamp, taken when its content was read; the consumer
+    /// reprocesses the file when it no longer matches. `None` if the file
+    /// doesn't exist or its metadata can't be determined.
+    pub(super) stamp: Option<FileStamp>,
     /// The status of this file.
     pub(super) status: FileStatus,
     /// All targets on this page, keyed by id.
@@ -128,6 +129,65 @@ pub(super) struct FileEntry {
     /// `gather_ids` is non-empty), maintained so that the gather elements
     /// referencing a given fragment can be found without scanning every target.
     pub(super) gathers: Vec<String>,
+}
+
+/// How long after a file's modification time a stamp of it must be taken for
+/// that time to be trusted; see `FileStamp::is_racy`. This spans FAT's
+/// 2-second timestamp resolution plus some clock skew on network shares.
+const RACY_WINDOW: Duration = Duration::from_secs(3);
+
+/// A snapshot of a file's metadata, taken immediately before its contents are
+/// read, which tells the consumer whether the cache still represents the file
+/// without reading it again. Git's index stores the same snapshot of each
+/// tracked file for the same purpose; see
+/// [Use of index and Racy Git problem](https://github.com/git/git/blob/master/Documentation/technical/racy-git.adoc).
+pub(super) struct FileStamp {
+    /// The metadata compared against a later snapshot.
+    stat: StatData,
+    /// True if the file was modified within `RACY_WINDOW` of this snapshot. A
+    /// file's timestamp advances only every few milliseconds -- every 2
+    /// seconds, on FAT -- so a write which follows this snapshot within the
+    /// same tick, without changing the file's length, changes its contents
+    /// while leaving its metadata unchanged. A racy stamp therefore never
+    /// matches, forcing the file to be read again; the stamp taken then is
+    /// trustworthy once the file's last write is old enough. Git calls such
+    /// entries "racily clean".
+    is_racy: bool,
+}
+
+/// The parts of a file's metadata which change when its contents do. Unix
+/// supplies the fields Git compares. On Windows, the change time and the file
+/// index which would stand in for Unix's change time and inode are available
+/// only in nightly Rust, leaving just the length and modification time. The
+/// creation time can't take their place: NTFS caches a file's creation time
+/// for a short period after the file is deleted or renamed away, then gives it
+/// to a new file which takes that name -- precisely what an editor does when
+/// it saves by writing a temporary file, then renaming it over the original.
+/// Windows calls this file system tunneling; see the remarks in
+/// [`FileSystemInfo.CreationTime`](https://learn.microsoft.com/en-us/dotnet/api/system.io.filesysteminfo.creationtime#remarks)
+/// and Raymond Chen's
+/// [The apocryphal history of file system tunnelling](https://devblogs.microsoft.com/oldnewthing/20050715-14/?p=34923).
+#[derive(PartialEq, Eq)]
+struct StatData {
+    len: u64,
+    /// The modification time; `None` if the platform doesn't report one. Two
+    /// `None`s compare equal, which would report every same-length edit as no
+    /// change, so `FileStamp::new` marks a stamp without a modification time
+    /// as racy, which keeps it from ever matching. Compare these times only
+    /// for equality, never order:
+    /// [`SystemTime`](https://doc.rust-lang.org/std/time/struct.SystemTime.html)
+    /// isn't monotonic, so a file saved after another may carry an earlier
+    /// time.
+    modified: Option<SystemTime>,
+    /// The change time as (seconds, nanoseconds). Unlike the modification
+    /// time, which `touch -d`, `cp -p`, `rsync -t`, and archive extraction set
+    /// to arbitrary values, no program can set it.
+    #[cfg(unix)]
+    ctime: (i64, i64),
+    /// The device and inode numbers, which change when an editor saves by
+    /// renaming a new file over the old one.
+    #[cfg(unix)]
+    dev_ino: (u64, u64),
 }
 
 /// Everything the cache knows about one id: where (if anywhere) it's defined,
@@ -335,14 +395,13 @@ pub(super) enum ConsumerPathState {
     WalkStarted(PathBuf),
     /// The walk announced by the preceding `WalkStarted` is complete.
     WalkFinished,
-    /// A file which a connection stopped showing; see
-    /// `ConnectionRegistration::drop`. A walk in progress didn't find this
-    /// file, so unlike the files it does find, this can't keep the walk from
-    /// forgetting it.
-    Released(PathBuf),
-    /// A commit outdated the rendered output of this file, whose content is
-    /// unchanged; see `Cache::mark_outdated`.
-    Outdated(PathBuf),
+    /// A request to bring a file the cache already has up to date: a commit
+    /// outdated its rendered output (see `Cache::mark_outdated`), or a
+    /// connection stopped showing it (see `ConnectionRegistration::drop`).
+    /// Unlike a path from the walker, this is no evidence that the file isn't
+    /// ignored, so it can't keep a walk in progress from forgetting the file,
+    /// and is moot once the cache has forgotten it.
+    Rescan(PathBuf),
 }
 
 // ### Connections
@@ -571,10 +630,10 @@ impl Cache {
         &mut self,
         // The file whose facts these are.
         path: &Path,
-        // The file's metadata, captured when its content was read; `None` if
-        // unavailable. Read this *before* locking the cache, so no I/O happens
-        // while the lock is held.
-        metadata: Option<Metadata>,
+        // The file's stamp, taken when its content was read; `None` if its
+        // metadata is unavailable. Take this *before* locking the cache, so no
+        // I/O happens while the lock is held.
+        stamp: Option<FileStamp>,
         // The facts collected from the file's DOM.
         facts: FileFacts,
         // The outcome: outdated files. Reprocessing these outdated files may
@@ -752,7 +811,7 @@ impl Cache {
         // file is written and re-read (see `Auto-assignment of ids`), at which
         // point they arrive here like any other id.
         let entry = self.files.get_mut(path).expect("entry was created above");
-        entry.metadata = metadata;
+        entry.stamp = stamp;
         entry.targets = new_targets;
         entry.fragments = new_fragments;
         entry.gathers = new_gathers;
@@ -898,7 +957,7 @@ impl Cache {
             for path in outdated.iter().filter(|path| !self.is_shown(path)) {
                 // A send fails only once the consumer has exited, when this
                 // cache is being dropped and so needs no more updates.
-                let _ = consumer_tx.send(ConsumerPathState::Outdated(path.clone()));
+                let _ = consumer_tx.send(ConsumerPathState::Rescan(path.clone()));
             }
         }
     }
@@ -1117,6 +1176,44 @@ impl IdState {
     }
 }
 
+impl FileStamp {
+    pub(super) fn new(
+        // The file's metadata, read immediately before its contents.
+        metadata: &Metadata,
+    ) -> Self {
+        let modified = metadata.modified().ok();
+        // A modification time in the future -- from clock skew between this
+        // machine and a network share, for example -- is racy as well.
+        let is_racy = modified.is_none_or(|modified| {
+            !SystemTime::now()
+                .duration_since(modified)
+                .is_ok_and(|age| age >= RACY_WINDOW)
+        });
+        FileStamp {
+            stat: StatData {
+                len: metadata.len(),
+                modified,
+                #[cfg(unix)]
+                ctime: (metadata.ctime(), metadata.ctime_nsec()),
+                #[cfg(unix)]
+                dev_ino: (metadata.dev(), metadata.ino()),
+            },
+            is_racy,
+        }
+    }
+
+    /// Report whether the file's contents are unchanged since this stamp was
+    /// taken.
+    fn is_unmodified(
+        &self,
+        // A stamp taken from the file now.
+        current: &FileStamp,
+        // True if the contents are unchanged; false if they may have changed.
+    ) -> bool {
+        !self.is_racy && self.stat == current.stat
+    }
+}
+
 impl ConnectionRegistration {
     /// List a connection in a project's cache. Drop any earlier registration of
     /// this connection first: dropping it afterward would remove this listing,
@@ -1169,7 +1266,7 @@ impl Drop for ConnectionRegistration {
         if !cache.is_current_file(&connection.current_file)
             && let Some(consumer_tx) = &cache.consumer_tx
         {
-            let _ = consumer_tx.send(ConsumerPathState::Released(connection.current_file));
+            let _ = consumer_tx.send(ConsumerPathState::Rescan(connection.current_file));
         }
     }
 }
@@ -1621,7 +1718,7 @@ impl Consumer {
                 if let Some(unwalked) = &mut self.unwalked {
                     unwalked.remove(&path);
                 }
-                scan_file(cache, &path, false);
+                scan_file(cache, &path, true);
             }
             // Per the spec, only a path which no longer exists is forgotten.
             // One which exists again by the time this is applied -- recreated
@@ -1629,12 +1726,11 @@ impl Consumer {
             // by renaming a new file over the old one -- is scanned instead.
             ConsumerPathState::WatcherPathState(WatcherPathState::Deleted(path)) => {
                 match fs::symlink_metadata(&path) {
-                    Ok(metadata) if !metadata.is_symlink() => scan_file(cache, &path, false),
+                    Ok(metadata) if !metadata.is_symlink() => scan_file(cache, &path, true),
                     _ => forget_path(cache, &path),
                 }
             }
-            ConsumerPathState::Released(path) => scan_file(cache, &path, false),
-            ConsumerPathState::Outdated(path) => scan_file(cache, &path, true),
+            ConsumerPathState::Rescan(path) => scan_file(cache, &path, false),
         }
     }
 }
@@ -1683,16 +1779,16 @@ fn scan_file(
     cache: &Arc<Mutex<Cache>>,
     // The file to scan.
     path: &Path,
-    // True if a commit outdated the file, whose content is unchanged; it's
-    // always scanned, unless the cache has since forgotten it. False if the
-    // file itself may have changed; it's scanned unless its cached metadata's
-    // modification time and length match the file's.
-    is_outdated: bool,
+    // True if the walker sent this file, which therefore passed its ignore
+    // rules; only such a file is scanned when the cache doesn't have it. A
+    // rescan of a file the cache has since forgotten -- one a walk found
+    // ignored, say -- is moot.
+    is_from_walker: bool,
 ) {
     // Perform I/O before locking the cache, so that the lock isn't held during
     // it.
-    let metadata = match fs::metadata(path) {
-        Ok(metadata) if metadata.is_file() => metadata,
+    let stamp = match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => FileStamp::new(&metadata),
         // The file no longer exists -- or a directory has replaced it, which
         // the walker reports separately.
         _ => {
@@ -1708,8 +1804,8 @@ fn scan_file(
         let cache = cache.lock().unwrap();
         let entry = cache.files.get(path);
         let is_modified = entry
-            .and_then(|entry| entry.metadata.as_ref())
-            .is_none_or(|cached| !is_unmodified(cached, &metadata));
+            .and_then(|entry| entry.stamp.as_ref())
+            .is_none_or(|cached| !cached.is_unmodified(&stamp));
         is_toc_changed = is_modified && entry.is_some() && path == cache.toc_path();
         if cache.is_current_file(path) {
             // The connections' sidebars show the TOC from their own IDE's text
@@ -1719,12 +1815,13 @@ fn scan_file(
             }
             return;
         }
-        let is_up_to_date = if is_outdated {
-            entry.is_none()
-        } else {
-            !is_modified && entry.is_some_and(|entry| entry.status == FileStatus::UpToDate)
+        // A cached file needs scanning if it changed, or if a commit outdated
+        // it, which its status records.
+        let is_skipped = match entry {
+            None => !is_from_walker,
+            Some(entry) => !is_modified && entry.status == FileStatus::UpToDate,
         };
-        if is_up_to_date {
+        if is_skipped {
             return;
         }
     }
@@ -1738,7 +1835,7 @@ fn scan_file(
     //
     // TODO: once the Server has user-selected options, implement the spec's
     // `SaveOnScan` option here: translate the result back to source, then
-    // write any changes to the file and update its cached metadata.
+    // write any changes to the file and update its cached stamp.
     let outcome = match contents.map(|contents| {
         source_to_codechat_for_web(
             &contents.replace("\r\n", "\n"),
@@ -1767,26 +1864,26 @@ fn scan_file(
         cache.notify_current_file_outdated(&HashSet::from([path.to_path_buf()]));
     } else {
         match outcome {
-            // The translation's commit recorded the file's metadata as of the
+            // The translation's commit recorded a stamp taken as of the
             // commit, which follows the reading of its text. A write in
             // between would leave the cache describing the old text with the
-            // new metadata, so the consumer would skip the watcher's report of
-            // that write. Record the metadata read before the text instead,
-            // which any such write changes.
+            // new stamp, so the consumer would skip the watcher's report of
+            // that write. Record the stamp taken before the text was read
+            // instead, which no such write leaves the file matching.
             ScanOutcome::Translated => {
                 if let Some(entry) = cache.files.get_mut(path) {
-                    entry.metadata = Some(metadata);
+                    entry.stamp = Some(stamp);
                 }
             }
             // A file which can't be translated defines nothing. Committing it
             // as such withdraws whatever it defined before it stopped being
-            // translatable, and records its metadata, so that later walks skip
-            // it until it changes rather than reading it again.
+            // translatable, and records its stamp, so that later walks skip it
+            // until it changes rather than reading it again.
             ScanOutcome::Untranslatable => {
-                cache.commit_file(path, Some(metadata), FileFacts::default());
+                cache.commit_file(path, Some(stamp), FileFacts::default());
             }
-            // Leave the cache as it is: without metadata matching the file,
-            // the next walk tries again.
+            // Leave the cache as it is: without a stamp matching the file, the
+            // next walk tries again.
             ScanOutcome::Failed => {}
         }
     }
@@ -1822,19 +1919,6 @@ fn read_text(
     Ok(String::from_utf8(bytes).ok())
 }
 
-/// Report whether two snapshots of a file's metadata agree on its modification
-/// time and length, which the consumer takes to mean that the file's contents
-/// are unchanged.
-fn is_unmodified(
-    // The metadata cached when the file was last processed.
-    cached: &Metadata,
-    // The file's metadata now.
-    current: &Metadata,
-    // True if the modification times and lengths match.
-) -> bool {
-    cached.len() == current.len() && cached.modified().ok() == current.modified().ok()
-}
-
 impl Default for Cache {
     fn default() -> Self {
         Cache::new(PathBuf::new())
@@ -1855,7 +1939,7 @@ mod tests {
             mpsc::{self as std_mpsc, Receiver},
         },
         thread::sleep,
-        time::{Duration, Instant},
+        time::{Duration, Instant, SystemTime},
     };
 
     use notify_debouncer_full::notify::{
@@ -1867,9 +1951,9 @@ mod tests {
 
     use super::{
         Cache, CacheNotification, ConnectionRegistration, Consumer, ConsumerPathState, FileFacts,
-        FileStatus, FragmentFact, IdResolution, IdState, LRU_ENTRIES_PER_CONNECTION, ProjectCaches,
-        TargetFact, Walker, WatcherPathState, cache_map_capacity, get_or_insert_cache,
-        set_cache_map_capacity, watcher_path_states,
+        FileStamp, FileStatus, FragmentFact, IdResolution, IdState, LRU_ENTRIES_PER_CONNECTION,
+        ProjectCaches, RACY_WINDOW, TargetFact, Walker, WatcherPathState, cache_map_capacity,
+        get_or_insert_cache, set_cache_map_capacity, watcher_path_states,
     };
     use crate::webserver::canonicalize;
 
@@ -1979,6 +2063,21 @@ mod tests {
             notify_tx,
         );
         (registration, notify_rx)
+    }
+
+    fn set_modified(path: &Path, modified: SystemTime) {
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+    }
+
+    // Move a file's modification time back past `RACY_WINDOW`, as for a file
+    // which wasn't just written, so that a stamp taken of it can match.
+    fn backdate(path: &Path) {
+        set_modified(path, SystemTime::now() - 2 * RACY_WINDOW);
     }
 
     // ### Cross-reference tests
@@ -2624,9 +2723,9 @@ mod tests {
         assert_eq!(
             sent,
             vec![
-                ConsumerPathState::Outdated(b.clone()),
-                ConsumerPathState::Outdated(c.clone()),
-                ConsumerPathState::Outdated(toc.clone()),
+                ConsumerPathState::Rescan(b.clone()),
+                ConsumerPathState::Rescan(c.clone()),
+                ConsumerPathState::Rescan(toc.clone()),
             ]
         );
 
@@ -2637,7 +2736,7 @@ mod tests {
             .lock()
             .unwrap()
             .commit_file(&a, None, facts_target("foo", "Bar"));
-        assert_eq!(drain(&consumer_rx), vec![ConsumerPathState::Outdated(b)]);
+        assert_eq!(drain(&consumer_rx), vec![ConsumerPathState::Rescan(b)]);
         let mut notifications = vec![notify_rx.try_recv().unwrap(), notify_rx.try_recv().unwrap()];
         notifications.sort_by_key(|notification| format!("{notification:?}"));
         assert_eq!(
@@ -2923,6 +3022,40 @@ mod tests {
         temp_dir.close().unwrap();
     }
 
+    // ### File stamp tests
+    //
+    // Verify that a stamp taken soon after its file was written never matches,
+    // while a stamp of an older file matches until the file changes.
+    #[test]
+    fn test_file_stamp() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let path = test_dir.join("a.md");
+        let stamp = |path: &Path| FileStamp::new(&fs::metadata(path).unwrap());
+
+        // Simulate a second write in the same timestamp tick as the first,
+        // which leaves the length and modification time unchanged.
+        fs::write(&path, "one").unwrap();
+        let racy = stamp(&path);
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path, "two").unwrap();
+        set_modified(&path, modified);
+        let current = stamp(&path);
+        // Only the racy rule tells these apart on Windows; on Unix, the write
+        // also changes the change time.
+        #[cfg(not(unix))]
+        assert!(racy.stat == current.stat);
+        assert!(!racy.is_unmodified(&current));
+
+        backdate(&path);
+        let trusted = stamp(&path);
+        assert!(trusted.is_unmodified(&stamp(&path)));
+        fs::write(&path, "three").unwrap();
+        assert!(!trusted.is_unmodified(&stamp(&path)));
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
     // ### Consumer tests
     //
     // Verify that the consumer scans the files the walker sends into the cache,
@@ -2936,6 +3069,8 @@ mod tests {
         let b = root.join("b.md");
         fs::write(&a, "<h1 id=\"foo\">Foo</h1>\n").unwrap();
         fs::write(&b, "See <xref ref=\"foo\"></xref>.\n").unwrap();
+        backdate(&a);
+        backdate(&b);
         let cache = Arc::new(Mutex::new(Cache::new(root.clone())));
         let (consumer_tx, consumer_rx) = std_mpsc::channel();
         cache.lock().unwrap().consumer_tx = Some(consumer_tx);
@@ -2975,20 +3110,27 @@ mod tests {
         assert_eq!(*status(&cache.lock().unwrap(), &b), FileStatus::Outdated);
         assert_eq!(
             drain(&consumer_rx),
-            vec![ConsumerPathState::Outdated(b.clone())]
+            vec![ConsumerPathState::Rescan(b.clone())]
         );
-        // Scanning the outdated file brings it up to date. A second request,
-        // as when several commits outdate one file, is scanned too. To observe
-        // this, discard its cached metadata, which a rescan restores.
-        consumer.apply(&cache, ConsumerPathState::Outdated(b.clone()));
+        // Scanning the outdated file brings it up to date, so a second request,
+        // as when several commits outdate one file, isn't scanned. To observe
+        // this, discard its cached cross-references, which a rescan restores.
+        consumer.apply(&cache, ConsumerPathState::Rescan(b.clone()));
         assert_eq!(*status(&cache.lock().unwrap(), &b), FileStatus::UpToDate);
-        cache.lock().unwrap().files.get_mut(&b).unwrap().metadata = None;
-        consumer.apply(&cache, ConsumerPathState::Outdated(b.clone()));
-        assert!(cache.lock().unwrap().files[&b].metadata.is_some());
+        cache
+            .lock()
+            .unwrap()
+            .files
+            .get_mut(&b)
+            .unwrap()
+            .xrefs
+            .clear();
+        consumer.apply(&cache, ConsumerPathState::Rescan(b.clone()));
+        assert!(cache.lock().unwrap().files[&b].xrefs.is_empty());
         // A request for a file the cache has since forgotten is moot.
         let forgotten = root.join("forgotten.md");
         fs::write(&forgotten, "# Forgotten\n").unwrap();
-        consumer.apply(&cache, ConsumerPathState::Outdated(forgotten.clone()));
+        consumer.apply(&cache, ConsumerPathState::Rescan(forgotten.clone()));
         assert!(!cache.lock().unwrap().files.contains_key(&forgotten));
 
         // A connection's current file isn't scanned...
@@ -3014,13 +3156,13 @@ mod tests {
         drop(registration);
         assert_eq!(
             drain(&consumer_rx),
-            vec![ConsumerPathState::Released(a.clone())]
+            vec![ConsumerPathState::Rescan(a.clone())]
         );
-        consumer.apply(&cache, ConsumerPathState::Released(a.clone()));
+        consumer.apply(&cache, ConsumerPathState::Rescan(a.clone()));
         assert!(!cache.lock().unwrap().files.contains_key(&a));
         assert_eq!(
             drain(&consumer_rx),
-            vec![ConsumerPathState::Outdated(b.clone())]
+            vec![ConsumerPathState::Rescan(b.clone())]
         );
 
         // A file which isn't text, or which no lexer recognizes, defines
@@ -3095,6 +3237,7 @@ mod tests {
 
         // A changed TOC is scanned, then reported; an unchanged one isn't.
         fs::write(&toc, "<h1 id=\"contents\">Contents</h1>\n").unwrap();
+        backdate(&toc);
         consumer.apply(&cache, found(&toc));
         assert!(is_target(&cache, "contents"));
         assert_eq!(notify_rx.try_recv(), Ok(CacheNotification::TocChanged));
@@ -3182,7 +3325,7 @@ mod tests {
         // walk skipped the file as ignored.
         consumer.apply(&cache, ConsumerPathState::WalkStarted(sub.clone()));
         consumer.apply(&cache, found(&b));
-        consumer.apply(&cache, ConsumerPathState::Released(d.clone()));
+        consumer.apply(&cache, ConsumerPathState::Rescan(d.clone()));
         consumer.apply(&cache, ConsumerPathState::WalkFinished);
         assert_eq!(cached(&cache), vec![a.clone(), b.clone()]);
 

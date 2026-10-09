@@ -79,7 +79,7 @@ use crate::{
         CodeDocBlock, DocBlock, LEXERS, LanguageLexerCompiled, source_lexer,
         supported_languages::MARKDOWN_MODE,
     },
-    processing::cache::{FileFacts, FragmentFact, IdResolution, TargetFact},
+    processing::cache::{FileFacts, FileStamp, FragmentFact, IdResolution, TargetFact},
     webserver::canonicalize,
 };
 use cache::{Cache, CacheMap, get_or_insert_cache};
@@ -1493,16 +1493,16 @@ fn hydrate_dom(
     // The parsed, patched DOM plus the walk results needed by later phases.
 ) -> io::Result<(Rc<Node>, WalkContext)> {
     let dom = html_to_dom(html, None)?;
-    // Read the file's metadata and canonicalize its path before taking the
-    // cache lock, so that no I/O happens while the lock is held. The metadata
-    // captures the state of the file whose content is being processed (the
-    // cache's consumer, which read that content from the file itself, replaces
-    // this with the metadata it read beforehand; see `scan_file` in
-    // `cache.rs`); the canonicalization satisfies the cache's requirement that
-    // all paths are canonicalized and absolute. (Canonicalization fails for
-    // files which don't exist on disk -- such as tests -- in which case the
-    // path is used as-is.)
-    let metadata = file.metadata().ok();
+    // Stamp the file and canonicalize its path before taking the cache lock, so
+    // that no I/O happens while the lock is held. The stamp captures the state
+    // of the file whose content is being processed (the cache's consumer,
+    // which read that content from the file itself, replaces this with the
+    // stamp it took beforehand; see `scan_file` in `cache.rs`); the
+    // canonicalization satisfies the cache's requirement that all paths are
+    // canonicalized and absolute. (Canonicalization fails for files which
+    // don't exist on disk -- such as tests -- in which case the path is used
+    // as-is.)
+    let stamp = file.metadata().ok().as_ref().map(FileStamp::new);
     let path = canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
     // ### Assign requested ids
     //
@@ -1545,7 +1545,7 @@ fn hydrate_dom(
     let mut cache_guard = cache.lock().unwrap();
     cache_guard.commit_file(
         &walk_context.path,
-        metadata,
+        stamp,
         mem::take(&mut walk_context.facts),
     );
     // ### Patch cross-references
