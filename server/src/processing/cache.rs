@@ -60,8 +60,15 @@ use super::{SourceToCodeChatForWebError, source_to_codechat_for_web};
 /// The set of all project caches, keyed by each project's root directory (the
 /// directory containing its `toc.md`). The outer mutex guards the addition of
 /// newly-discovered projects; each inner mutex guards a single project's cache,
-/// so that work on one project doesn't block work on another.
-pub type CacheMap = Arc<Mutex<LruCache<PathBuf, Arc<Mutex<Cache>>>>>;
+/// so that work on one project doesn't block work on another. When both are
+/// needed, lock the outer mutex first.
+pub type CacheMap = Arc<Mutex<ProjectCaches>>;
+
+/// The contents of a `CacheMap`. Insert into and resize it only through
+/// `get_or_insert_cache` and `set_cache_map_capacity`, which evict the least
+/// recently used cache when full -- but never a cache in which a connection is
+/// registered.
+pub type ProjectCaches = LruCache<PathBuf, Arc<Mutex<Cache>>>;
 
 /// The number of project caches the `CacheMap` holds per connection; see
 /// `cache_map_capacity`.
@@ -354,7 +361,7 @@ struct ConnectionView {
 }
 
 /// Notifications the cache sends to a registered connection.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CacheNotification {
     /// A change elsewhere in the project outdated the rendered output of the
     /// connection's current file, which the connection should re-translate.
@@ -363,14 +370,19 @@ pub enum CacheNotification {
     /// project's TOC, which every connection in the project shows in its
     /// sidebar; the connection should re-render it.
     TocOutdated,
-    /// The contents of the TOC changed; the connection should re-load then re-render it. (Since the IDE is editing the current file, changes made to it are superseded by the IDE content, so that a `CurrentFileChanged` message is meaningless.
+    /// The contents of the TOC changed on disk, or the TOC was deleted; the
+    /// connection should re-load then re-render it. (Since the IDE is editing
+    /// the current file, changes made to it on disk are superseded by the IDE
+    /// content, so that a `CurrentFileChanged` message is meaningless.)
     TocChanged,
 }
 
 /// Lists a connection in `Cache::connections` for as long as this value lives;
 /// dropping it removes the listing.
 pub struct ConnectionRegistration {
-    /// The cache the connection is listed in.
+    /// The cache the connection is listed in. This is weak, so that only the
+    /// `CacheMap` keeps a cache alive; the map in turn never evicts a cache
+    /// while a connection is listed in it.
     cache: Weak<Mutex<Cache>>,
     /// The connection's key in `Cache::connections`.
     connection_id: String,
@@ -389,6 +401,77 @@ pub fn cache_map_capacity(
     // $n c + 1$, where $c$ is `LRU_ENTRIES_PER_CONNECTION`.
 ) -> NonZeroUsize {
     NonZeroUsize::MIN.saturating_add(connections.saturating_mul(LRU_ENTRIES_PER_CONNECTION))
+}
+
+/// Return the cache of the project rooted at `root`, first creating it if the
+/// `CacheMap` has none.
+pub fn get_or_insert_cache(
+    // The contents of the locked `CacheMap`.
+    caches: &mut ProjectCaches,
+    // The project's root directory, as a canonicalized absolute path.
+    root: &Path,
+    // Creates the project's cache, if the map has none.
+    create: impl FnOnce() -> Arc<Mutex<Cache>>,
+    // The project's cache.
+) -> Arc<Mutex<Cache>> {
+    if let Some(cache) = caches.get(root) {
+        return cache.clone();
+    }
+    // Inserting into a full map evicts its least recently used cache, even one
+    // with connections, so make room first.
+    evict_unconnected(caches, caches.cap().get() - 1);
+    if caches.len() == caches.cap().get() {
+        caches.resize(caches.cap().saturating_add(1));
+    }
+    let cache = create();
+    caches.put(root.to_path_buf(), cache.clone());
+    cache
+}
+
+/// Set the capacity of the `CacheMap`; `translation_task` applies
+/// `cache_map_capacity` as connections come and go.
+pub fn set_cache_map_capacity(
+    // The contents of the locked `CacheMap`.
+    caches: &mut ProjectCaches,
+    // The new capacity.
+    capacity: NonZeroUsize,
+) {
+    evict_unconnected(caches, capacity.get());
+    // Shrinking the map evicts its least recently used caches, even those with
+    // connections, so keep room for any which remain.
+    caches.resize(capacity.max(NonZeroUsize::new(caches.len()).unwrap_or(capacity)));
+}
+
+/// Evict the least recently used caches in which no connection is registered,
+/// until the `CacheMap` holds no more than `capacity` caches. Per the spec, a
+/// cache with connections is never evicted: a `ConnectionRegistration` holds
+/// only a weak reference to its cache, so evicting the cache would drop it
+/// while its connections still depend on it. Since a connection registers with
+/// at most one cache, and the map's capacity exceeds the number of connections
+/// (see `cache_map_capacity`), this normally leaves the map within `capacity`.
+fn evict_unconnected(
+    // The contents of the locked `CacheMap`.
+    caches: &mut ProjectCaches,
+    // The number of caches to keep, if possible.
+    capacity: usize,
+) {
+    let excess = caches.len().saturating_sub(capacity);
+    let evicted: Vec<PathBuf> = caches
+        .iter()
+        .rev()
+        .filter(|(_, cache)| {
+            cache
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .connections
+                .is_empty()
+        })
+        .map(|(root, _)| root.clone())
+        .take(excess)
+        .collect();
+    for root in evicted {
+        caches.pop(&root);
+    }
 }
 
 impl Cache {
@@ -807,7 +890,10 @@ impl Cache {
                 entry.status = FileStatus::Outdated;
             }
         }
-        self.notify_connections(outdated);
+        self.notify_current_file_outdated(outdated);
+        if outdated.contains(&self.toc_path()) {
+            self.notify_toc(CacheNotification::TocOutdated);
+        }
         if let Some(consumer_tx) = &self.consumer_tx {
             for path in outdated.iter().filter(|path| !self.is_shown(path)) {
                 // A send fails only once the consumer has exited, when this
@@ -817,26 +903,37 @@ impl Cache {
         }
     }
 
-    /// Notify each connection showing one of these files -- as its current
-    /// file, or as the TOC in its sidebar -- so that the connection re-renders
-    /// the file.
-    fn notify_connections(
+    /// Notify each connection whose current file is one of these files, so
+    /// that the connection re-translates it. Several connections may share a
+    /// current file, if it's being edited in each simultaneously.
+    fn notify_current_file_outdated(
         &self,
         // The files whose rendered output is outdated.
         outdated: &HashSet<PathBuf>,
     ) {
-        let is_toc_outdated = outdated.contains(&self.toc_path());
         for connection in self.connections.values() {
-            // A send fails only once the connection's translation task has
-            // exited, leaving nothing to notify.
             if outdated.contains(&connection.current_file) {
+                // A send fails only once the connection's translation task has
+                // exited, leaving nothing to notify.
                 let _ = connection
                     .notify_tx
                     .send(CacheNotification::CurrentFileOutdated);
             }
-            if is_toc_outdated {
-                let _ = connection.notify_tx.send(CacheNotification::TocOutdated);
-            }
+        }
+    }
+
+    /// Notify every connection about the TOC, which every connection in the
+    /// project shows in its sidebar.
+    fn notify_toc(
+        &self,
+        // `TocOutdated` if only the TOC's rendering is outdated; `TocChanged`
+        // if its text changed.
+        notification: CacheNotification,
+    ) {
+        for connection in self.connections.values() {
+            // A send fails only once the connection's translation task has
+            // exited, leaving nothing to notify.
+            let _ = connection.notify_tx.send(notification);
         }
     }
 
@@ -890,14 +987,18 @@ impl Cache {
     /// Forget a file which no longer exists, or which the walker now ignores
     /// -- unless a connection shows it. The connection's IDE may still hold the
     /// file's text, so instead have the connection re-translate that text,
-    /// which keeps the file in the cache.
+    /// which keeps the file in the cache; for the TOC, every connection
+    /// re-loads it.
     fn forget_file(
         &mut self,
         // The file to forget.
         path: &Path,
     ) {
         if self.is_shown(path) {
-            self.notify_connections(&HashSet::from([path.to_path_buf()]));
+            self.notify_current_file_outdated(&HashSet::from([path.to_path_buf()]));
+            if path == self.toc_path() {
+                self.notify_toc(CacheNotification::TocChanged);
+            }
         } else if self.files.contains_key(path) {
             self.remove_file(path);
         }
@@ -1023,7 +1124,7 @@ impl ConnectionRegistration {
     #[must_use]
     pub fn new(
         // The cache of the project containing `current_file`.
-        cache: Arc<Mutex<Cache>>,
+        cache: &Arc<Mutex<Cache>>,
         // The connection's id, unique among all connections.
         connection_id: String,
         // The file shown in the connection's Client, as a canonicalized
@@ -1040,7 +1141,7 @@ impl ConnectionRegistration {
             },
         );
         ConnectionRegistration {
-            cache,
+            cache: Arc::downgrade(cache),
             connection_id,
         }
     }
@@ -1048,9 +1149,14 @@ impl ConnectionRegistration {
 
 impl Drop for ConnectionRegistration {
     fn drop(&mut self) {
+        // The `CacheMap` keeps a cache with connections alive, so this fails
+        // only once the map itself is gone, taking the listing with it.
+        let Some(cache) = self.cache.upgrade() else {
+            return;
+        };
         // Tolerate a poisoned lock: this may run while unwinding from another
         // panic, where a second panic aborts the process.
-        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut cache = cache.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(connection) = cache.connections.remove(&self.connection_id) else {
             return;
         };
@@ -1142,9 +1248,6 @@ fn watch_then_walk(
     // still works, but won't learn of files which change after the walk. On
     // Linux, this happens once the per-user inotify limits are reached, since
     // each watcher uses its own inotify instance.
-    //
-    // TODO: inform the user of this failure, as the spec requires, once the
-    // Server can show the user a warning.
     let watcher = watch_project(&root, walker_tx.clone())
         .inspect_err(|err| warn!("Unable to watch {}: {err}", root.display()))
         .ok();
@@ -1202,7 +1305,7 @@ fn watch_project(
                 }
             }
             // A path which can't be watched isn't usable by the IDE either, so
-            // per the spec, report this only to the log.
+            // report this only to the log.
             Err(errors) => {
                 for err in errors {
                     warn!("Unable to watch {}: {err}", handler_root.display());
@@ -1573,18 +1676,17 @@ enum ScanOutcome {
 
 /// Bring the cache's record of a file up to date with the file on disk by
 /// translating the file to the CodeChatForWeb format, which commits its facts
-/// to the cache. Per the spec, a connection's current file is skipped: the
-/// connection keeps it up to date, from text which may be newer than the file
-/// on disk.
+/// to the cache. A connection's current file is skipped: the connection keeps
+/// it up to date from its IDE's text, which supersedes the file on disk.
 fn scan_file(
     // The cache to update.
     cache: &Arc<Mutex<Cache>>,
     // The file to scan.
     path: &Path,
     // True if a commit outdated the file, whose content is unchanged; it's
-    // scanned unless it's been reprocessed since. False if the file itself may
-    // have changed; it's scanned unless its cached metadata's modification
-    // time and length match the file's.
+    // always scanned, unless the cache has since forgotten it. False if the
+    // file itself may have changed; it's scanned unless its cached metadata's
+    // modification time and length match the file's.
     is_outdated: bool,
 ) {
     // Perform I/O before locking the cache, so that the lock isn't held during
@@ -1598,22 +1700,29 @@ fn scan_file(
             return;
         }
     };
+    // True if the TOC's text differs from the text the cache last read, which
+    // a connection's sidebar may still show. When the cache has no record of
+    // the TOC, no sidebar can show it: loading it in a sidebar records it.
+    let is_toc_changed;
     {
         let cache = cache.lock().unwrap();
+        let entry = cache.files.get(path);
+        let is_modified = entry
+            .and_then(|entry| entry.metadata.as_ref())
+            .is_none_or(|cached| !is_unmodified(cached, &metadata));
+        is_toc_changed = is_modified && entry.is_some() && path == cache.toc_path();
         if cache.is_current_file(path) {
+            // The connections' sidebars show the TOC from their own IDE's text
+            // or from disk, so each must still re-load it.
+            if is_toc_changed {
+                cache.notify_toc(CacheNotification::TocChanged);
+            }
             return;
         }
-        let entry = cache.files.get(path);
         let is_up_to_date = if is_outdated {
-            entry.is_none_or(|entry| entry.status != FileStatus::Outdated)
+            entry.is_none()
         } else {
-            entry.is_some_and(|entry| {
-                entry.status == FileStatus::UpToDate
-                    && entry
-                        .metadata
-                        .as_ref()
-                        .is_some_and(|cached| is_unmodified(cached, &metadata))
-            })
+            !is_modified && entry.is_some_and(|entry| entry.status == FileStatus::UpToDate)
         };
         if is_up_to_date {
             return;
@@ -1655,31 +1764,34 @@ fn scan_file(
         // which may then have committed the file's content on disk over the
         // content the connection shows, which may be newer. Have the
         // connection re-translate its content to restore it.
-        cache.notify_connections(&HashSet::from([path.to_path_buf()]));
-        return;
-    }
-    match outcome {
-        // The translation's commit recorded the file's metadata as of the
-        // commit, which follows the reading of its text. A write in between
-        // would leave the cache describing the old text with the new metadata,
-        // so the consumer would skip the watcher's report of that write.
-        // Record the metadata read before the text instead, which any such
-        // write changes.
-        ScanOutcome::Translated => {
-            if let Some(entry) = cache.files.get_mut(path) {
-                entry.metadata = Some(metadata);
+        cache.notify_current_file_outdated(&HashSet::from([path.to_path_buf()]));
+    } else {
+        match outcome {
+            // The translation's commit recorded the file's metadata as of the
+            // commit, which follows the reading of its text. A write in
+            // between would leave the cache describing the old text with the
+            // new metadata, so the consumer would skip the watcher's report of
+            // that write. Record the metadata read before the text instead,
+            // which any such write changes.
+            ScanOutcome::Translated => {
+                if let Some(entry) = cache.files.get_mut(path) {
+                    entry.metadata = Some(metadata);
+                }
             }
+            // A file which can't be translated defines nothing. Committing it
+            // as such withdraws whatever it defined before it stopped being
+            // translatable, and records its metadata, so that later walks skip
+            // it until it changes rather than reading it again.
+            ScanOutcome::Untranslatable => {
+                cache.commit_file(path, Some(metadata), FileFacts::default());
+            }
+            // Leave the cache as it is: without metadata matching the file,
+            // the next walk tries again.
+            ScanOutcome::Failed => {}
         }
-        // A file which can't be translated defines nothing. Committing it as
-        // such withdraws whatever it defined before it stopped being
-        // translatable, and records its metadata, so that later walks skip it
-        // until it changes rather than reading it again.
-        ScanOutcome::Untranslatable => {
-            cache.commit_file(path, Some(metadata), FileFacts::default());
-        }
-        // Leave the cache as it is: without metadata matching the file, the
-        // next walk tries again.
-        ScanOutcome::Failed => {}
+    }
+    if is_toc_changed {
+        cache.notify_toc(CacheNotification::TocChanged);
     }
 }
 
@@ -1736,6 +1848,7 @@ mod tests {
     use std::{
         collections::{HashMap, HashSet},
         fs,
+        num::NonZeroUsize,
         path::{Path, PathBuf},
         sync::{
             Arc, Mutex,
@@ -1754,8 +1867,9 @@ mod tests {
 
     use super::{
         Cache, CacheNotification, ConnectionRegistration, Consumer, ConsumerPathState, FileFacts,
-        FileStatus, FragmentFact, IdResolution, IdState, LRU_ENTRIES_PER_CONNECTION, TargetFact,
-        Walker, WatcherPathState, cache_map_capacity, watcher_path_states,
+        FileStatus, FragmentFact, IdResolution, IdState, LRU_ENTRIES_PER_CONNECTION, ProjectCaches,
+        TargetFact, Walker, WatcherPathState, cache_map_capacity, get_or_insert_cache,
+        set_cache_map_capacity, watcher_path_states,
     };
     use crate::webserver::canonicalize;
 
@@ -1859,7 +1973,7 @@ mod tests {
     ) {
         let (notify_tx, notify_rx) = mpsc::unbounded_channel();
         let registration = ConnectionRegistration::new(
-            cache.clone(),
+            cache,
             connection_id.to_string(),
             current_file.to_path_buf(),
             notify_tx,
@@ -2419,6 +2533,14 @@ mod tests {
             .unwrap()
             .commit_file(&a, None, facts_target("foo", "Bar!"));
         assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Disconnected));
+
+        // A registration doesn't keep its cache alive, and outlives it
+        // harmlessly.
+        let (registration, _notify_rx) = register(&cache, "conn", &b);
+        let weak_cache = Arc::downgrade(&cache);
+        drop(cache);
+        assert!(weak_cache.upgrade().is_none());
+        drop(registration);
     }
 
     // Verify that outdating the TOC notifies every registered connection, since
@@ -2536,6 +2658,54 @@ mod tests {
             cache_map_capacity(3).get(),
             3 * LRU_ENTRIES_PER_CONNECTION + 1
         );
+    }
+
+    // Verify that the `CacheMap` evicts its least recently used caches, except
+    // for those in which a connection is registered.
+    #[test]
+    fn test_cache_map_eviction() {
+        let a = PathBuf::from("a");
+        let b = PathBuf::from("b");
+        let c = PathBuf::from("c");
+        let d = PathBuf::from("d");
+        let mut caches = ProjectCaches::new(NonZeroUsize::new(3).unwrap());
+        let insert = |caches: &mut ProjectCaches, root: &PathBuf| {
+            get_or_insert_cache(caches, root, || {
+                Arc::new(Mutex::new(Cache::new(root.clone())))
+            })
+        };
+        let roots = |caches: &ProjectCaches| {
+            let mut roots: Vec<PathBuf> = caches.iter().map(|(root, _)| root.clone()).collect();
+            roots.sort();
+            roots
+        };
+        let cache_a = insert(&mut caches, &a);
+        insert(&mut caches, &b);
+        insert(&mut caches, &c);
+        // Getting an existing cache returns it, rather than a new one.
+        assert!(Arc::ptr_eq(&insert(&mut caches, &a), &cache_a));
+
+        // A connection in the least recently used cache keeps it from being
+        // evicted, so the next least recently used is evicted instead.
+        let (_registration, _notify_rx) = register(&cache_a, "conn", &a.join("x.md"));
+        insert(&mut caches, &b);
+        insert(&mut caches, &c);
+        insert(&mut caches, &d);
+        assert_eq!(roots(&caches), vec![a.clone(), c.clone(), d.clone()]);
+
+        // Shrinking the map likewise keeps the cache with a connection.
+        set_cache_map_capacity(&mut caches, NonZeroUsize::MIN);
+        assert_eq!(roots(&caches), vec![a.clone()]);
+        assert_eq!(caches.cap(), NonZeroUsize::MIN);
+
+        // When only caches with connections remain, the map grows rather than
+        // evict one.
+        let cache_d = insert(&mut caches, &d);
+        let (_registration, _notify_rx) = register(&cache_d, "conn2", &d.join("x.md"));
+        set_cache_map_capacity(&mut caches, NonZeroUsize::MIN);
+        assert_eq!(roots(&caches), vec![a.clone(), d.clone()]);
+        insert(&mut caches, &b);
+        assert_eq!(roots(&caches), vec![a, b, d]);
     }
 
     // ### Watcher tests
@@ -2807,14 +2977,19 @@ mod tests {
             drain(&consumer_rx),
             vec![ConsumerPathState::Outdated(b.clone())]
         );
-        // Scanning the outdated file brings it up to date; a second request,
-        // as when several commits outdate one file, is skipped. To observe
-        // this, discard its cached metadata, which a rescan would restore.
+        // Scanning the outdated file brings it up to date. A second request,
+        // as when several commits outdate one file, is scanned too. To observe
+        // this, discard its cached metadata, which a rescan restores.
         consumer.apply(&cache, ConsumerPathState::Outdated(b.clone()));
         assert_eq!(*status(&cache.lock().unwrap(), &b), FileStatus::UpToDate);
         cache.lock().unwrap().files.get_mut(&b).unwrap().metadata = None;
         consumer.apply(&cache, ConsumerPathState::Outdated(b.clone()));
-        assert!(cache.lock().unwrap().files[&b].metadata.is_none());
+        assert!(cache.lock().unwrap().files[&b].metadata.is_some());
+        // A request for a file the cache has since forgotten is moot.
+        let forgotten = root.join("forgotten.md");
+        fs::write(&forgotten, "# Forgotten\n").unwrap();
+        consumer.apply(&cache, ConsumerPathState::Outdated(forgotten.clone()));
+        assert!(!cache.lock().unwrap().files.contains_key(&forgotten));
 
         // A connection's current file isn't scanned...
         let (registration, mut notify_rx) = register(&cache, "conn", &a);
@@ -2887,6 +3062,73 @@ mod tests {
             cache.lock().unwrap().resolve_id("directive"),
             IdResolution::Missing
         ));
+
+        // Report any errors produced when removing the temporary directory.
+        temp_dir.close().unwrap();
+    }
+
+    // Verify that the consumer tells every connection to re-load the TOC when
+    // its text changes on disk -- even when the TOC is a connection's current
+    // file, which the consumer leaves to that connection -- and when it's
+    // deleted.
+    #[test]
+    fn test_consumer_toc_changed() {
+        let (temp_dir, test_dir) = prep_test_dir!();
+        let root = canonicalize(&test_dir).unwrap();
+        let toc = root.join("toc.md");
+        let a = root.join("a.md");
+        fs::write(&toc, "# Contents\n").unwrap();
+        let cache = Arc::new(Mutex::new(Cache::new(root.clone())));
+        let mut consumer = Consumer::default();
+        let (_registration, mut notify_rx) = register(&cache, "conn", &a);
+        let is_target = |cache: &Arc<Mutex<Cache>>, id: &str| {
+            matches!(
+                cache.lock().unwrap().resolve_id(id),
+                IdResolution::Target { .. }
+            )
+        };
+
+        // No sidebar can show a TOC the cache has no record of, since loading
+        // the TOC in a sidebar records it, so its first scan is not a change.
+        consumer.apply(&cache, found(&toc));
+        assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Empty));
+
+        // A changed TOC is scanned, then reported; an unchanged one isn't.
+        fs::write(&toc, "<h1 id=\"contents\">Contents</h1>\n").unwrap();
+        consumer.apply(&cache, found(&toc));
+        assert!(is_target(&cache, "contents"));
+        assert_eq!(notify_rx.try_recv(), Ok(CacheNotification::TocChanged));
+        assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Empty));
+        consumer.apply(&cache, found(&toc));
+        assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Empty));
+
+        // When the TOC is a connection's current file, the change isn't
+        // scanned, but is still reported to every connection.
+        let (_toc_registration, mut toc_notify_rx) = register(&cache, "toc_conn", &toc);
+        fs::write(&toc, "<h1 id=\"changed\">Contents</h1>\n").unwrap();
+        consumer.apply(&cache, found(&toc));
+        assert!(is_target(&cache, "contents"));
+        for notify_rx in [&mut notify_rx, &mut toc_notify_rx] {
+            assert_eq!(notify_rx.try_recv(), Ok(CacheNotification::TocChanged));
+            assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Empty));
+        }
+
+        // Deleting the TOC is reported as a change, too. The connection whose
+        // current file it is keeps the TOC in the cache by re-translating it.
+        fs::remove_file(&toc).unwrap();
+        consumer.apply(
+            &cache,
+            ConsumerPathState::WatcherPathState(WatcherPathState::Deleted(toc.clone())),
+        );
+        assert!(cache.lock().unwrap().files.contains_key(&toc));
+        assert_eq!(notify_rx.try_recv(), Ok(CacheNotification::TocChanged));
+        assert_eq!(notify_rx.try_recv(), Err(TryRecvError::Empty));
+        assert_eq!(
+            toc_notify_rx.try_recv(),
+            Ok(CacheNotification::CurrentFileOutdated)
+        );
+        assert_eq!(toc_notify_rx.try_recv(), Ok(CacheNotification::TocChanged));
+        assert_eq!(toc_notify_rx.try_recv(), Err(TryRecvError::Empty));
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();

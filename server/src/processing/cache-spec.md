@@ -91,10 +91,10 @@ Details:
   exclusion is what keeps a gather element and the fragments it lists from
   outdating each other forever. The HTML rendering of a fragment reproduces the
   layout of the source it came from: each doc block includes its indent, each
-  line of a code block or doc block is preceded by that line's number, and the
-  two are aligned -- a doc block and a line of code indented equally in the
-  source begin in the same column, with the line numbers in a gutter of their
-  own to the left of both.
+  line of a code block or the first line of a doc block is preceded by that
+  line's number, and the two are aligned -- a doc block and a line of code
+  indented equally in the source begin in the same column, with the line numbers
+  in a gutter of their own to the left of both.
 * The backlinks a `<fragment>` hydrates to are derived from the gather elements
   which list it: for each such element, its containing file, its `id`, and its
   inner HTML (the link text). A fragment's rendered output therefore depends on
@@ -357,9 +357,15 @@ A consumer reads paths from the receiver paired to the `Cache::consumer_tx`
 channel. It holds a weak reference to the cache, and exits when this channel is
 closed or the weak reference can't be upgraded. It is implemented as a thread.
 
-* For a `WatcherPathState`: if the file exists and differs from its cached
-  metadata's modification time and length, perform the following steps. For an
-  `Outdated`, always perform the following steps:
+* If the file exists and differs from its cached metadata's modification time
+  and length or if the file's status is `Outdated`:
+
+  * If the file is the current file for any of the cache's connection, ignore
+    it. This is handled by the standard IDE to Client translation mechanism.
+
+  * If the file is the TOC, send `TocChanged` or `TocOutdated` to all
+    connections. The file will be translated and updated in the cache when that
+    message is processed.
 
   * If not translatable, the file is still added to the cache, to prevent
     reprocessing if the directory is re-walked.
@@ -372,16 +378,15 @@ closed or the weak reference can't be upgraded. It is implemented as a thread.
     and may rewrite files open in the IDE, motivating the choice of a
     user-selected option.
 
-    If processing a file marks any connection's current file or its TOC as
-    outdated or deleted, the connection(s) are sent a `CurrentFileOutdated`
-    and/or `TocOutdated`/`TocChanged` message(s) to retranslate the file/IDE
-    contents; otherwise, the `Outdated(file)` message is sent to itself via the
-    consumer TX channel for processing. Note that `TocOutdated`/`TocChanged`
-    messages are sent to all the cache's connections, since they share the same
-    project, while `CurrentFileOutdated` is only sent to multiple connections is
-    it being simultaneously edited. If the TOC is the current file, both
-    messages are sent. `TocChanged` is sent if the TOC was changed, while
-    `TocOutdated` is sent when the TOC is only outdated.
+    Translating the file produces zero or more outdated files. For each outdated
+    file, mark its status as `Outdated` then:
+
+    1. If the outdated file is the project TOC, then send `TocOutdated` to all
+       connections.
+    2. If the outdated file is the current file for one or more connections,
+       then send `CurrentFileOutdated` to those connections.
+    3. If neither 1 or 2 is true, the `Outdated(file)` message is sent to itself
+       via the consumer TX channel for later processing.
 * If the path doesn't exist, search the cache for it; if found, remove it.
   Otherwise, assume the path was a directory. Search the cache for all files in
   this directory, removing them.
@@ -414,11 +419,11 @@ trigger another. Instead, edits to the TOC reach the sidebar in other ways:
 
 * When a connection's current file is the TOC, the connection refreshes its
   sidebar after each edit to the TOC, whether made in the IDE or the Client.
-* TODO: once the consumer thread exists, have it notify every connection in the
-  project when the TOC changes on disk. Since the TOC's text then differs from
-  the text the sidebar last loaded, this needs a notification other than
-  `TocOutdated`, prompting the connection to fetch the TOC's new text from its
-  IDE (with a `LoadFile`), falling back to disk, before re-rendering it.
+* When the TOC changes on disk, the consumer sends `TocChanged` to every
+  connection in the project. Since the TOC's text then differs from the text the
+  sidebar last loaded, this prompts the connection to fetch the TOC's new text
+  from its IDE (with a `LoadFile`), falling back to disk, before re-rendering
+  it.
 
 ### Shutdown
 

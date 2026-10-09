@@ -1,1 +1,1 @@
-<h1 id="foo">Foo</h1>
+<h1>Contents</h1>

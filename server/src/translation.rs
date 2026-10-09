@@ -248,7 +248,10 @@ use crate::{
         CodeChatForWeb, CodeMirror, CodeMirrorDiff, CodeMirrorDiffable, CodeMirrorDocBlock,
         CodeMirrorDocBlockVec, SourceFileMetadata, TranslationResultsString, UNICODE_CURSOR_MARKER,
         byte_index_of,
-        cache::{CacheMap, CacheNotification, ConnectionRegistration, cache_map_capacity},
+        cache::{
+            CacheMap, CacheNotification, ConnectionRegistration, cache_map_capacity,
+            set_cache_map_capacity,
+        },
         codechat_for_web_to_source, diff_code_mirror_doc_blocks, diff_str,
         doc_block_html_to_markdown, find_path_to_toc, minify, project_cache, remove_tinymce_data,
         source_to_codechat_for_web_string, transform_html,
@@ -418,6 +421,16 @@ struct SidebarToc {
     html: String,
 }
 
+/// The purpose of a `LoadFile` request sent to the IDE, which determines how
+/// its response is handled.
+enum LoadFileRequest {
+    /// Serve the file to the Client, which requested it over HTTP.
+    Http(ProcessingTaskHttpRequest),
+    /// Re-load the TOC at this path, which the sidebar shows, after the cache
+    /// reported that the TOC changed; see `reload_sidebar_toc`.
+    SidebarToc(PathBuf),
+}
+
 /// This holds the state used by the main loop of the translation task; this
 /// allows factoring out lengthy contents in the loop into subfunctions.
 struct TranslationTask {
@@ -448,7 +461,7 @@ struct TranslationTask {
     /// until the sidebar loads it, or if the page has no sidebar.
     sidebar_toc: Option<SidebarToc>,
     /// A map of `LoadFile` requests sent to the IDE, awaiting its response.
-    load_file_requests: HashMap<u64, ProcessingTaskHttpRequest>,
+    load_file_requests: HashMap<u64, LoadFileRequest>,
     /// The id for messages created by the server. Leave space for a server
     /// message during the init phase.
     id: f64,
@@ -499,11 +512,10 @@ fn resize_cache_map(
     // Hold the list's lock while resizing, so that connections which start or
     // stop at the same time can't apply their counts out of order.
     let processing_task_queue_tx = app_state.processing_task_queue_tx.lock().unwrap();
-    app_state
-        .cache
-        .lock()
-        .unwrap()
-        .resize(cache_map_capacity(processing_task_queue_tx.len()));
+    set_cache_map_capacity(
+        &mut app_state.cache.lock().unwrap(),
+        cache_map_capacity(processing_task_queue_tx.len()),
+    );
 }
 
 /// This is the processing task for the Visual Studio Code IDE. It handles all
@@ -652,7 +664,7 @@ pub async fn translation_task(
                     }));
                     // Store the ID and request, which are needed to send a
                     // response when the `LoadFile` result is received.
-                    tt.load_file_requests.insert(tt.id.to_bits(), http_request);
+                    tt.load_file_requests.insert(tt.id.to_bits(), LoadFileRequest::Http(http_request));
                     tt.id += MESSAGE_ID_INCREMENT;
                 }
 
@@ -950,10 +962,11 @@ impl TranslationTask {
             queue_send_func!(self.to_client_tx.send(ide_message));
             return true;
         }
-        // Ensure there's an HTTP request for this `LoadFile` result.
-        let Some(http_request) = self.load_file_requests.remove(&ide_message.id.to_bits()) else {
+        // Ensure there's a request for this `LoadFile` result.
+        let Some(load_file_request) = self.load_file_requests.remove(&ide_message.id.to_bits())
+        else {
             error!(
-                "Error: no HTTP request found for LoadFile result ID {}.",
+                "Error: no request found for LoadFile result ID {}.",
                 ide_message.id
             );
             return true;
@@ -975,6 +988,17 @@ impl TranslationTask {
                 ResultOkTypes::Void => panic!("LoadFile result should not be void."),
                 ResultOkTypes::LoadFile(file_contents) => file_contents,
             },
+        };
+        let http_request = match load_file_request {
+            LoadFileRequest::Http(http_request) => http_request,
+            LoadFileRequest::SidebarToc(toc_path) => {
+                return self
+                    .reload_sidebar_toc(
+                        toc_path,
+                        file_contents_option.map(|(file_contents, _version)| file_contents),
+                    )
+                    .await;
+            }
         };
 
         // Process the file contents. Since VSCode doesn't have a PDF viewer,
@@ -1642,7 +1666,7 @@ impl TranslationTask {
         self.cache_registration = None;
         self.cache_registration = find_path_to_toc(&self.current_file).map(|path_to_toc| {
             ConnectionRegistration::new(
-                project_cache(&self.cache, &self.current_file, &path_to_toc),
+                &project_cache(&self.cache, &self.current_file, &path_to_toc),
                 self.connection_id.clone(),
                 self.current_file.clone(),
                 self.cache_notify_tx.clone(),
@@ -1662,15 +1686,22 @@ impl TranslationTask {
     ) -> bool {
         let mut is_current_file_outdated = false;
         let mut is_toc_outdated = false;
+        let mut is_toc_changed = false;
         let queued = iter::from_fn(|| self.cache_notify_rx.try_recv().ok());
         for notification in iter::once(notification).chain(queued) {
             match notification {
                 CacheNotification::CurrentFileOutdated => is_current_file_outdated = true,
                 CacheNotification::TocOutdated => is_toc_outdated = true,
+                CacheNotification::TocChanged => is_toc_changed = true,
             }
         }
         if is_current_file_outdated && !self.re_translate_current_file().await {
             return false;
+        }
+        // Re-loading the TOC re-renders it, which also renders anew a TOC whose
+        // rendering is outdated.
+        if is_toc_changed {
+            return self.request_sidebar_toc().await;
         }
         if is_toc_outdated && !self.refresh_sidebar_toc().await {
             return false;
@@ -1769,6 +1800,72 @@ impl TranslationTask {
         }));
         self.id += MESSAGE_ID_INCREMENT;
         true
+    }
+
+    /// Ask the IDE for the text of the TOC which the Client's sidebar shows,
+    /// after the project's cache reports that this text changed on disk. The
+    /// IDE's text, if it has the TOC open, supersedes the text on disk, as when
+    /// the sidebar first loaded the TOC. `reload_sidebar_toc` handles the IDE's
+    /// response.
+    async fn request_sidebar_toc(
+        &mut self,
+        // False if the IDE's queue is closed.
+    ) -> bool {
+        // Until the sidebar loads the TOC, there's nothing to re-load; loading
+        // it reads the TOC's current text.
+        let Some(sidebar_toc) = &self.sidebar_toc else {
+            return true;
+        };
+        let toc_path = sidebar_toc.path.clone();
+        debug!(
+            "Sending LoadFile id = {} to reload the sidebar's TOC.",
+            self.id
+        );
+        queue_send_func!(self.to_ide_tx.send(EditorMessage {
+            id: self.id,
+            // As when the sidebar loaded it, the TOC isn't loaded as the file to
+            // edit, so it isn't assigned a version.
+            message: EditorMessageContents::LoadFile(toc_path.clone(), false),
+        }));
+        self.load_file_requests
+            .insert(self.id.to_bits(), LoadFileRequest::SidebarToc(toc_path));
+        self.id += MESSAGE_ID_INCREMENT;
+        true
+    }
+
+    /// Re-render the TOC which the Client's sidebar shows from its re-loaded
+    /// text, then send the Client the result if it changed.
+    async fn reload_sidebar_toc(
+        &mut self,
+        // The TOC re-loaded.
+        toc_path: PathBuf,
+        // The TOC's text from the IDE; `None` if the IDE doesn't have the TOC
+        // open, in which case its text is read from disk.
+        ide_text: Option<String>,
+        // False if the Client's queue is closed.
+    ) -> bool {
+        let text = match ide_text {
+            Some(text) => Some(text),
+            None => match File::open(&toc_path).await {
+                Ok(mut file) => try_read_as_text(&mut file).await,
+                Err(_) => None,
+            },
+        };
+        // While the IDE responded, the Client may have left the page whose
+        // sidebar showed this TOC.
+        let Some(sidebar_toc) = self
+            .sidebar_toc
+            .as_mut()
+            .filter(|sidebar_toc| sidebar_toc.path == toc_path)
+        else {
+            return true;
+        };
+        // A TOC which can't be read -- since it was deleted, say -- keeps its
+        // last text, but may still need rendering anew.
+        if let Some(text) = text {
+            sidebar_toc.source = text;
+        }
+        self.refresh_sidebar_toc().await
     }
 
     /// After an edit to the current file, refresh the Client's sidebar if that

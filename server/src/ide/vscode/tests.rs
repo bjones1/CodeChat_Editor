@@ -1732,8 +1732,9 @@ fn ide_update(
 }
 
 /// Verify that the Server refreshes the TOC in the Client's sidebar when its
-/// project's cache reports the TOC outdated: the TOC cross-references a heading
-/// in the current file, which the IDE then renames.
+/// project's cache reports the TOC outdated -- the TOC cross-references a
+/// heading in the current file, which the IDE then renames -- or changed on
+/// disk.
 #[actix_web::test]
 async fn test_vscode_ide_websocket11() {
     let connection_id = "test-connection-id11";
@@ -1855,6 +1856,49 @@ async fn test_vscode_ide_websocket11() {
         &mut ws_client,
         &mut ws_ide,
         INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
+    )
+    .await;
+
+    // Change the TOC on disk. Once the cache's watcher reports this, the Server
+    // re-loads the TOC, asking the IDE for it first...
+    fs::write(
+        test_dir.join("toc.md"),
+        "* <xref ref=\"foo\"></xref>\n* More\n",
+    )
+    .unwrap();
+    let em = read_message(&mut ws_ide).await;
+    let (path, is_current) = cast!(
+        em.message,
+        EditorMessageContents::LoadFile,
+        path,
+        is_current
+    );
+    assert_eq!(path.file_name().unwrap(), "toc.md");
+    assert!(!is_current);
+    assert_eq!(em.id, INITIAL_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT);
+    send_message(
+        &mut ws_ide,
+        &EditorMessage {
+            id: INITIAL_MESSAGE_ID + 5.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::LoadFile(None))),
+        },
+    )
+    .await;
+    // ...then, since the IDE doesn't have it, from disk.
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: INITIAL_MESSAGE_ID + 6.0 * MESSAGE_ID_INCREMENT,
+            message: EditorMessageContents::UpdateToc(
+                "<ul><li><xref contenteditable=false ref=foo><a href=test.py#foo>Bar</a></xref><li>More</ul>"
+                    .to_string()
+            ),
+        }
+    );
+    acknowledge(
+        &mut ws_client,
+        &mut ws_ide,
+        INITIAL_MESSAGE_ID + 6.0 * MESSAGE_ID_INCREMENT,
     )
     .await;
 

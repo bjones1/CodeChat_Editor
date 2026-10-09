@@ -82,7 +82,7 @@ use crate::{
     processing::cache::{FileFacts, FragmentFact, IdResolution, TargetFact},
     webserver::canonicalize,
 };
-use cache::{Cache, CacheMap};
+use cache::{Cache, CacheMap, get_or_insert_cache};
 
 // Data structures
 // ---------------
@@ -437,11 +437,9 @@ pub fn project_cache(
         .parent()
         .map_or_else(PathBuf::new, Path::to_path_buf);
     let root = canonicalize(&root).unwrap_or(root);
-    cache_map
-        .lock()
-        .unwrap()
-        .get_or_insert_ref(&root, || Cache::new_project(root.clone()))
-        .clone()
+    get_or_insert_cache(&mut cache_map.lock().unwrap(), &root, || {
+        Cache::new_project(root.clone())
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
