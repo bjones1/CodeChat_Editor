@@ -24,6 +24,12 @@ Changelog
 
 * No changes.
 
+Version 0.3.0 -- 2026-Oct-09
+----------------------------
+
+* Full cache implementation -- cache scans all files in project and watches for
+  changes.
+
 Version 0.2.6-beta1 -- 2026-Sep-22
 ----------------------------------
 
