@@ -115,7 +115,8 @@ pub struct Cache {
 pub(super) struct FileEntry {
     /// The file's stamp, taken when its content was read; the consumer
     /// reprocesses the file when it no longer matches. `None` if the file
-    /// doesn't exist or its metadata can't be determined.
+    /// doesn't exist, its metadata can't be determined, or the consumer's
+    /// last translation of it failed.
     pub(super) stamp: Option<FileStamp>,
     /// The status of this file.
     pub(super) status: FileStatus,
@@ -253,7 +254,7 @@ pub(super) struct Target {
     /// to find the corresponding Target (the anchor is the id), then use this
     /// field to identify the line on which that id resides in order to scroll
     /// to the appropriate location in the document.
-    pub(super) line: usize,
+    pub(super) _line: usize,
 }
 
 /// This defines a cross reference to a `Target`.
@@ -272,7 +273,7 @@ pub(super) struct Fragment {
     /// stores the result via `Cache::update_fragment_content`.
     pub(super) content: String,
     /// The line number of this `Fragment` in its file; see `Target::line`.
-    pub(super) line: usize,
+    pub(super) _line: usize,
 }
 
 // ### Facts
@@ -302,7 +303,7 @@ pub(super) struct TargetFact {
     /// The index of the doc block which contains this `Target` in the vec of
     /// `CodeDocBlock`s for this file. This is pass-local -- the cache doesn't
     /// store it -- but the caller needs it to place hydrated content.
-    pub(super) doc_block_index: usize,
+    pub(super) _doc_block_index: usize,
     /// The ids listed by this element's `data-gather` attribute; empty if this
     /// isn't a gather element.
     pub(super) gather_ids: Vec<String>,
@@ -317,10 +318,10 @@ pub(super) struct FragmentFact {
     pub(super) line: usize,
     /// The index of the first doc block of this `Fragment` in the vec of
     /// `CodeDocBlock`s for this file.
-    pub(super) doc_block_start_index: usize,
+    pub(super) _doc_block_start_index: usize,
     /// The index of the last code/doc block of this `Fragment` in the vec of
     /// `CodeDocBlock`s for this file.
-    pub(super) code_doc_block_end_index: usize,
+    pub(super) _code_doc_block_end_index: usize,
 }
 
 // ### Commit results
@@ -331,6 +332,7 @@ pub(super) struct CommitOutcome {
     /// `Outdated`, and each has been passed on to be re-rendered: to the
     /// connections showing it, or else to the consumer; see
     /// `Cache::mark_outdated`.
+    #[cfg(test)]
     pub(super) outdated: HashSet<PathBuf>,
 }
 
@@ -354,6 +356,9 @@ pub(super) enum IdResolution<'a> {
     /// The id is defined more than once: a map from each defining file to the
     /// number of definitions it contains. Carrying the counts lets the caller
     /// report a duplicate within a single file.
+    ///
+    /// TODO: this is currently unused.
+    #[allow(dead_code)]
     Multiple(&'a HashMap<PathBuf, u32>),
 }
 
@@ -701,7 +706,7 @@ impl Cache {
                 Target {
                     inner_html: fact.inner_html,
                     gather_ids: fact.gather_ids,
-                    line: fact.line,
+                    _line: fact.line,
                 },
             );
         }
@@ -722,7 +727,7 @@ impl Cache {
                 fact.id,
                 Fragment {
                     content,
-                    line: fact.line,
+                    _line: fact.line,
                 },
             );
         }
@@ -748,6 +753,9 @@ impl Cache {
             .chain(old_fragments.keys())
             .chain(new_counts.keys())
             .collect();
+        // The ids this commit left without any definition, which are forgotten
+        // below unless something references them.
+        let mut undefined_ids: Vec<String> = Vec::new();
         for id in affected_ids {
             let id_entry = self.ids.entry(id.clone()).or_default();
             let mut definitions = id_entry.state.definitions();
@@ -759,6 +767,9 @@ impl Cache {
             if id_entry.state != new_state {
                 id_entry.state = new_state;
                 outdated.extend(id_entry.dependents.iter().cloned());
+            }
+            if id_entry.state == IdState::Missing {
+                undefined_ids.push(id.clone());
             }
         }
 
@@ -837,6 +848,14 @@ impl Cache {
                 .insert(path.to_path_buf());
         }
 
+        // ### Forget unused ids
+        //
+        // Only now, with this file's references linked, is it known which of
+        // the ids it stopped defining nothing references.
+        for id in &undefined_ids {
+            self.remove_if_unused(id);
+        }
+
         // ### Mark outdated files
         //
         // A file never outdates itself: its rendered output was just produced
@@ -844,7 +863,10 @@ impl Cache {
         outdated.remove(path);
         self.mark_outdated(&outdated);
 
-        CommitOutcome { outdated }
+        CommitOutcome {
+            #[cfg(test)]
+            outdated,
+        }
     }
 
     /// Remove everything the cache knows about a file -- when the file is
@@ -1150,12 +1172,22 @@ impl Cache {
     ) {
         if let Some(id_entry) = self.ids.get_mut(id) {
             id_entry.dependents.remove(referrer);
-            // An id which nothing defines and nothing references carries no
-            // information; drop it rather than accumulating an entry for every
-            // id ever mistyped.
-            if id_entry.state == IdState::Missing && id_entry.dependents.is_empty() {
-                self.ids.remove(id);
-            }
+        }
+        self.remove_if_unused(id);
+    }
+
+    /// Forget an id which nothing defines and nothing references. Its entry
+    /// carries no information, so keeping it would accumulate an entry for
+    /// every id ever mistyped, deleted, or renamed.
+    fn remove_if_unused(
+        &mut self,
+        // The id to check.
+        id: &str,
+    ) {
+        if self.ids.get(id).is_some_and(|id_entry| {
+            id_entry.state == IdState::Missing && id_entry.dependents.is_empty()
+        }) {
+            self.ids.remove(id);
         }
     }
 }
@@ -1891,9 +1923,15 @@ fn scan_file(
             ScanOutcome::Untranslatable => {
                 cache.commit_file(path, Some(stamp), FileFacts::default());
             }
-            // Leave the cache as it is: without a stamp matching the file, the
-            // next walk tries again.
-            ScanOutcome::Failed => {}
+            // The translation may have failed after committing the file's
+            // facts, along with a stamp which matches the file; discard that
+            // stamp, so that the next walk tries again rather than skipping a
+            // file whose processing never finished.
+            ScanOutcome::Failed => {
+                if let Some(entry) = cache.files.get_mut(path) {
+                    entry.stamp = None;
+                }
+            }
         }
     }
     if is_toc_changed {
@@ -1974,7 +2012,7 @@ mod tests {
             id: id.to_string(),
             inner_html: inner_html.to_string(),
             line: 0,
-            doc_block_index: 0,
+            _doc_block_index: 0,
             gather_ids: vec![],
         }
     }
@@ -1992,8 +2030,8 @@ mod tests {
         FragmentFact {
             id: id.to_string(),
             line: 0,
-            doc_block_start_index: 0,
-            code_doc_block_end_index: 1,
+            _doc_block_start_index: 0,
+            _code_doc_block_end_index: 1,
         }
     }
 
@@ -2199,6 +2237,42 @@ mod tests {
         assert!(cache.ids.contains_key("nobody"));
         cache.commit_file(&b, None, FileFacts::default());
         assert!(!cache.ids.contains_key("nobody"));
+    }
+
+    // Verify that an id a file stops defining is forgotten once nothing
+    // references it -- but not while anything does, including the file which
+    // stopped defining it.
+    #[test]
+    fn test_undefined_id_forgotten() {
+        let mut cache = Cache::default();
+        let a = PathBuf::from("a.py");
+
+        // A target which nothing references is forgotten once deleted...
+        cache.commit_file(&a, None, facts_target("foo", "Foo!"));
+        cache.commit_file(&a, None, FileFacts::default());
+        assert!(!cache.ids.contains_key("foo"));
+
+        // ...as is a fragment in a file which is removed.
+        cache.commit_file(&a, None, facts_fragment("frag"));
+        cache.remove_file(&a);
+        assert!(cache.ids.is_empty());
+
+        // A file which references its own target keeps the id after deleting
+        // the target, until the reference goes too.
+        cache.commit_file(
+            &a,
+            None,
+            FileFacts {
+                targets: vec![target_fact("foo", "Foo!")],
+                xrefs: vec!["foo".to_string()],
+                ..Default::default()
+            },
+        );
+        cache.commit_file(&a, None, facts_xref("foo"));
+        assert!(matches!(cache.resolve_id("foo"), IdResolution::Missing));
+        assert_eq!(*dependents(&cache, "foo"), paths(&[&a]));
+        cache.commit_file(&a, None, FileFacts::default());
+        assert!(!cache.ids.contains_key("foo"));
     }
 
     // ### File lifecycle tests
@@ -3186,7 +3260,10 @@ mod tests {
         fs::write(
             &directive,
             // Split this so the lexer doesn't get set for this file.
-            concat!("# CodeChat Editor ", "lexer: python\n# <h1 id=\"directive\">Directive</h1>\n"),
+            concat!(
+                "# CodeChat Editor ",
+                "lexer: python\n# <h1 id=\"directive\">Directive</h1>\n"
+            ),
         )
         .unwrap();
         for path in [&binary, &unknown, &directive] {
@@ -3364,9 +3441,9 @@ mod tests {
         fs::remove_file(&a).unwrap();
         consumer.apply(
             &cache,
-            ConsumerPathState::WatcherPathState(WatcherPathState::Deleted(a)),
+            ConsumerPathState::WatcherPathState(WatcherPathState::Deleted(a.clone())),
         );
-        assert!(cached(&cache).is_empty());
+        assert_eq!(cached(&cache), Vec::<PathBuf>::new());
 
         // Report any errors produced when removing the temporary directory.
         temp_dir.close().unwrap();

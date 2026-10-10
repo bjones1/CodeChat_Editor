@@ -704,7 +704,7 @@ pub fn source_lexer(
     let mut append_code_doc_block = |indent: &str, delimiter: &str, contents: &str| {
         // Don't append empty entries.
         if delimiter.is_empty() && contents.is_empty() {
-            assert!(indent.is_empty());
+            assert_eq!(indent, "");
             return;
         }
         // Define a line as any characters up to an including a newline. If the

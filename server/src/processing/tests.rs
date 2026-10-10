@@ -50,10 +50,10 @@ use crate::{
         CodeDocBlockVecToSourceError, CodeMirrorDiffable, CodeMirrorDocBlockDelete,
         CodeMirrorDocBlockTransaction, CodeMirrorDocBlockUpdate, CodechatForWebToSourceError,
         HtmlToMarkdownWrapped, SourceToCodeChatForWebError, UNICODE_CURSOR_MARKER, byte_index_of,
-        cache::Cache, code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks,
-        codechat_for_web_to_source, dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str,
-        doc_block_html_to_markdown, html_to_dom, hydrate_html, is_css_identifier, markdown_to_html,
-        source_to_codechat_for_web,
+        cache::{Cache, FileStatus},
+        code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
+        dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str, doc_block_html_to_markdown,
+        html_to_dom, hydrate_html, is_css_identifier, markdown_to_html, source_to_codechat_for_web,
     },
 };
 use test_utils::{cast, prep_test_dir, test_utils::stringit};
@@ -1808,6 +1808,67 @@ fn test_hydrate_xref_missing() {
     );
 }
 
+// Verify that a cross-reference lacking a `ref` attribute hydrates to an error
+// message.
+#[test]
+fn test_hydrate_xref_without_ref() {
+    assert_eq!(
+        source_to_codechat_for_web(
+            "// See <xref></xref>.",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
+        Ok(build_codechat_for_web(
+            "javascript",
+            "\n",
+            vec![build_codemirror_doc_block(
+                0,
+                1,
+                "",
+                "//",
+                "<p>See <xref contenteditable=false><span class=cc-error>a cross-reference requires a \"ref\" attribute</span></xref>."
+            )]
+        ))
+    );
+}
+
+// Verify that a cross-reference with an `id` attribute hydrates to an error
+// message, even when the id requests auto-assignment.
+#[test]
+fn test_hydrate_xref_with_id() {
+    assert_eq!(
+        source_to_codechat_for_web(
+            "// <h1 id=\"t\">Title</h1>\nlet x = 1;\n// See <xref id=\"x\" ref=\"t\"></xref> and <xref id=\"*\" ref=\"t\"></xref>.",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        ),
+        Ok(build_codechat_for_web(
+            "javascript",
+            "\nlet x = 1;\n\n",
+            vec![
+                build_codemirror_doc_block(0, 1, "", "//", "<h1 id=t>Title</h1>"),
+                build_codemirror_doc_block(
+                    12,
+                    13,
+                    "",
+                    "//",
+                    concat!(
+                        "<p>See ",
+                        "<xref contenteditable=false id=x ref=t><span class=cc-error>a cross-reference may not have an \"id\" attribute</span></xref>",
+                        " and ",
+                        "<xref contenteditable=false id=* ref=t><span class=cc-error>a cross-reference may not have an \"id\" attribute</span></xref>",
+                        "."
+                    )
+                )
+            ]
+        ))
+    );
+}
+
 // Verify that a gather element and the fragment it lists hydrate in a single
 // pass over their common file: the gather element receives the fragment's
 // contents (the fragment's doc block plus the following code block), and the
@@ -1956,6 +2017,76 @@ fn test_hydrate_xref_cross_file() {
         code_mirror.doc_blocks[0].contents,
         "<p>See <xref contenteditable=false ref=t><a href=a.js#t>New title</a></xref>"
     );
+}
+
+// Verify that a cross-reference within a gathered fragment links from the
+// gathering file, not from the fragment's file: here the target shares the
+// fragment's file, where the link is just `#t`, while the gathering file lies
+// in another directory. A cross-reference which hydrated to an error keeps it,
+// even one whose error -- an `id` -- the gathered content no longer shows.
+#[test]
+fn test_hydrate_gathered_xref() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    source_to_codechat_for_web(
+        "// <h1 id=\"t\">Title</h1>\nlet a = 1;\n// <fragment id=\"frag\"></fragment>See <xref ref=\"t\"></xref> and <xref id=\"x\" ref=\"t\"></xref>.\nlet b = 2;",
+        Path::new("b.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    let translation = source_to_codechat_for_web(
+        "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>",
+        Path::new("sub/a.js"),
+        0.0,
+        false,
+        Some(cache),
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[0].contents,
+        concat!(
+            "<h3 class=cc-gather data-gather=frag id=gath>Gathered</h3>",
+            "<div class=cc-gather-items contenteditable=false>",
+            "<p class=cc-gather-item-link>From <a href=../b.js#frag>../b.js</a>:",
+            "<div class=cc-fragment-doc>",
+            "<pre class=cc-fragment-indent><span class=cc-line-number>3</span></pre>",
+            "<div class=cc-fragment-doc-contents>",
+            "<p>See <xref contenteditable=false ref=t><a href=../b.js#t>Title</a></xref>",
+            " and <xref contenteditable=false ref=t><span class=cc-error>a cross-reference may not have an \"id\" attribute</span></xref>.",
+            "</div></div>",
+            "<pre class=cc-fragment-code><span class=cc-line-number>4</span>let b = 2;</pre>",
+            "</div>"
+        )
+    );
+}
+
+// Verify that, of two fragments sharing an id in one file, the first in
+// document order supplies the cached content, and that re-processing the file
+// unchanged doesn't outdate the file gathering that id.
+#[test]
+fn test_duplicate_fragment_in_one_file() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translate = |source: &str, path: &str| {
+        source_to_codechat_for_web(source, Path::new(path), 0.0, false, Some(cache.clone()))
+            .unwrap();
+    };
+    let gathering = "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>";
+    let fragments = "// <fragment id=\"frag\"></fragment>First.\nlet a = 1;\n// <fragment id=\"frag\"></fragment>Second.\nlet b = 2;";
+    translate(gathering, "a.js");
+    translate(fragments, "b.js");
+    // Storing the fragment's content outdated the gathering file; bring it up
+    // to date, then re-process the fragments' file.
+    translate(gathering, "a.js");
+    translate(fragments, "b.js");
+
+    let cache = cache.lock().unwrap();
+    assert_eq!(cache.files[Path::new("a.js")].status, FileStatus::UpToDate);
+    let content = &cache.files[Path::new("b.js")].fragments["frag"].content;
+    assert!(content.contains("First.") && !content.contains("Second."));
 }
 
 // Verify that a fragment in a Markdown document is an error.

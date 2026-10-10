@@ -1557,10 +1557,8 @@ fn hydrate_dom(
     //
     // Layer 2: each `<xref>`'s content depends only on its target's inner HTML,
     // which the commit just placed in the cache.
-    for (id, node) in &walk_context.xrefs {
-        set_attr(node, "contenteditable", "false");
-        let children = xref_content(&cache_guard, id, &walk_context.path)?;
-        set_element_children(node, children);
+    for node in &walk_context.xrefs {
+        hydrate_xref(&cache_guard, node, &walk_context.path)?;
     }
     // ### Patch fragment backlinks
     //
@@ -1628,23 +1626,86 @@ fn assign_auto_ids(
     }
 }
 
+/// Hydrate one `<xref>`: mark it non-editable, then replace its contents with a
+/// link to its target or an error message.
+fn hydrate_xref(
+    // The cache, already locked by the caller.
+    cache: &Cache,
+    // The `<xref>` element.
+    node: &Rc<Node>,
+    // The canonicalized path of the file the `<xref>` is rendered in, from
+    // which its link leads.
+    path: &Path,
+    // An error only if the target's stored inner HTML can't be parsed.
+) -> io::Result<()> {
+    set_attr(node, "contenteditable", "false");
+    let children = xref_content(cache, node, path)?;
+    set_element_children(node, children);
+    Ok(())
+}
+
+/// Re-hydrate every `<xref>` within the given nodes, at any depth, which
+/// hydrated to a link; see `hydrate_gathers` for why gathered content needs
+/// this. Only a link depends on the file it's rendered in, so one which
+/// hydrated to an error message is left as it is. This matters for an `<xref>`
+/// with an `id`: cleaning a fragment's content strips every `id`, so only the
+/// fragment's own file can detect that error.
+fn hydrate_xrefs_within(
+    // The cache, already locked by the caller.
+    cache: &Cache,
+    // The nodes to search.
+    nodes: &[Rc<Node>],
+    // The canonicalized path of the file these nodes are rendered in.
+    path: &Path,
+    // An error only if a target's stored inner HTML can't be parsed.
+) -> io::Result<()> {
+    for node in nodes {
+        if get_node_tag_name(node) == Some("xref") {
+            let is_error = node
+                .children
+                .borrow()
+                .iter()
+                .any(|child| has_class(child, "cc-error"));
+            if !is_error {
+                hydrate_xref(cache, node, path)?;
+            }
+        } else {
+            hydrate_xrefs_within(cache, &node.children.borrow(), path)?;
+        }
+    }
+    Ok(())
+}
+
 /// The content of one hydrated `<xref>`: a link to its target, or an error
 /// message.
 fn xref_content(
     // The cache, already locked by the caller.
     cache: &Cache,
-    // The id the cross-reference names.
-    id: &str,
-    // The canonicalized path of the file containing the cross-reference.
+    // The `<xref>` element.
+    node: &Rc<Node>,
+    // The canonicalized path of the file the cross-reference is rendered in.
     path: &Path,
     // The nodes to place inside the `<xref>` element.
 ) -> io::Result<Vec<Rc<Node>>> {
-    if !is_css_identifier(id) {
+    // An `<xref>` is never a target, so an `id` on it -- even `id="*"`, which
+    // `assign_auto_ids` leaves alone -- would mislead its reader into thinking
+    // it can be referenced.
+    if get_attr_value(node, "id").is_some() {
+        return Ok(vec![error_span(
+            "a cross-reference may not have an \"id\" attribute",
+        )]);
+    }
+    let Some(id) = get_attr_value(node, "ref") else {
+        return Ok(vec![error_span(
+            "a cross-reference requires a \"ref\" attribute",
+        )]);
+    };
+    if !is_css_identifier(&id) {
         return Ok(vec![error_span(&format!(
             "\"{id}\" is not a valid CSS identifier"
         ))]);
     }
-    Ok(match cache.resolve_id(id) {
+    Ok(match cache.resolve_id(&id) {
         IdResolution::Target {
             path: target_path,
             target,
@@ -1711,8 +1772,14 @@ fn store_fragment_contents(
     cache: &Arc<Mutex<Cache>>,
 ) {
     let mut cache_guard = cache.lock().unwrap();
+    // The ids whose content this pass has stored. Duplicates within this file
+    // share one entry in the cache, which holds the first in document order
+    // (see `Cache::commit_file`); storing each duplicate's content in turn
+    // would instead change that entry twice per pass, outdating every file
+    // which gathers the id each time this file is processed.
+    let mut stored_ids: HashSet<&str> = HashSet::new();
     for fragment in &walk_context.fragments {
-        if !fragment.cached {
+        if !fragment.cached || !stored_ids.insert(&fragment.id) {
             continue;
         }
         let content = if let Some(message) = &fragment.error {
@@ -1923,7 +1990,17 @@ fn hydrate_gathers(
                             new_text(":"),
                         ],
                     ));
-                    items.extend(parse_html_fragment(&fragment.content)?);
+                    // The fragment's content was hydrated in the fragment's
+                    // file, so each cross-reference within it links from
+                    // there; re-hydrate them to link from this file instead.
+                    // This file needn't depend on their targets: the
+                    // fragment's stored content embeds everything about a
+                    // target which this re-hydration reads, so any change to
+                    // a target which alters it also changes that content,
+                    // which outdates this file.
+                    let content = parse_html_fragment(&fragment.content)?;
+                    hydrate_xrefs_within(&cache_guard, &content, &walk_context.path)?;
+                    items.extend(content);
                 }
                 IdResolution::Target { .. } => items.push(error_span(&format!(
                     "id \"{id}\" names a target, not a fragment"
@@ -2186,9 +2263,9 @@ struct WalkContext {
     /// These are excluded from `facts`: they belong to the cache only after the
     /// file carrying them is written and re-read.
     auto_ids: HashSet<String>,
-    /// Each cross-reference found: its destination id and its `<xref>` node,
-    /// kept so the generated contents can be patched after the cache commit.
-    xrefs: Vec<(String, Rc<Node>)>,
+    /// Each cross-reference's `<xref>` node, kept so the generated contents
+    /// can be patched after the cache commit.
+    xrefs: Vec<Rc<Node>>,
     /// Each fragment found, with everything the later hydration phases need.
     fragments: Vec<FragmentHydration>,
     /// DOM for all gather elements, i.e. targets with a non-empty
@@ -2300,12 +2377,13 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
             } else if tag_name == "xref" {
                 // A cross reference: record the referenced id as a fact, and
                 // keep the node so its generated contents can be filled in
-                // after the cache commit. Note that this element doesn't allow
-                // an `id` attribute, so it's never a target.
+                // after the cache commit -- with an error message, if it lacks
+                // a `ref`. Note that this element is never a target; an `id`
+                // attribute on it is an error, reported by `xref_content`.
                 if let Some(ref_id) = get_attr_value(child, "ref") {
-                    walk_context.facts.xrefs.push(ref_id.clone());
-                    walk_context.xrefs.push((ref_id, child.clone()));
+                    walk_context.facts.xrefs.push(ref_id);
                 }
+                walk_context.xrefs.push(child.clone());
             } else if tag_name == "fragment" {
                 // A fragment. Its content can't be determined yet -- doc blocks
                 // aren't finalized during the walk -- so the caller stores it
@@ -2350,8 +2428,8 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                         walk_context.facts.fragments.push(FragmentFact {
                             id: id.clone(),
                             line: 0,
-                            doc_block_start_index: walk_context.doc_block_index,
-                            code_doc_block_end_index: walk_context
+                            _doc_block_start_index: walk_context.doc_block_index,
+                            _code_doc_block_end_index: walk_context
                                 .doc_block_index
                                 .saturating_add(following),
                         });
@@ -2411,7 +2489,7 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                             // pulldown-cmark HTML writer preserves them; see
                             // the TODO in `cache.rs`.
                             line: 0,
-                            doc_block_index: walk_context.doc_block_index,
+                            _doc_block_index: walk_context.doc_block_index,
                             gather_ids,
                         });
                     }
