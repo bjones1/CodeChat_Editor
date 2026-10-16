@@ -16,8 +16,7 @@ You should have received a copy of the GNU General Public License along with the
 CodeChat Editor. If not, see
 [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 
-Implementation
-==============
+# <span id="cc-ATacxUYcqc">Implementation</span>
 
 ### System architecture
 
@@ -78,15 +77,13 @@ same capture event shape to the local CodeChat server through the existing
 NAPI-RS bridge. The server hashes raw local file paths, removes any raw path
 fields from event data before local persistence, writes every event to a durable
 `capture-spool` FIFO directory under VS Code's global extension storage, and
-uploads batches to
-`POST /v1/capture/events` using
-`Authorization: Bearer <token>`. CodeChat does not read database credentials
-from disk and does not connect directly to PostgreSQL; the database schema under
-`server/scripts/` documents the server-side table used by CaptureWebService.
-The previous local JSON database-secret configuration path is intentionally
-removed; any database writer role or password must remain server-side in the
-CaptureWebService deployment.
-The service endpoint is read only from the user/application-level
+uploads batches to `POST /v1/capture/events` using `Authorization: Bearer
+<token>`. CodeChat does not read database credentials from disk and does not
+connect directly to PostgreSQL; the database schema under `server/scripts/`
+documents the server-side table used by CaptureWebService. The previous local
+JSON database-secret configuration path is intentionally removed; any database
+writer role or password must remain server-side in the CaptureWebService
+deployment. The service endpoint is read only from the user/application-level
 `CodeChatEditor.Capture.ServiceBaseUrl` setting; workspace values are ignored so
 a repository cannot redirect a stored token. Bearer-token requests require
 HTTPS, with `http://localhost` and `http://127.0.0.1` allowed only for local
@@ -119,8 +116,7 @@ The verified extension-generated event stream includes `session_start`,
 contract tests submit representative well-formed event batches for optional
 study/debug/build event types through the same public HTTPS API.
 
-<a id="an-implementation"></a>Architecture
-------------------------------------------
+## <a id="an-implementation"></a>Architecture
 
 Overall, the code is something like this:
 
@@ -144,8 +140,8 @@ files. Therefore, the overall strategy is:
   which implement custom tags which only need local information. For example, a
   GraphViz custom tag renders graphs based on a description of the graph inside
   the tag. Likewise, MathJax interprets anything in matching math delimiters
-  (<span class="math math-inline mceNonEditable">...</span>, for example), then
-  transforms it back to text before saving.
+  (`<span class="math math-inline mceNonEditable">...</span>`, for example),
+  then transforms it back to text before saving.
 * On save, the client sends its text back to the server, which de-transforms
   custom tags which depend on information from other pages. If de-transforms
   disagree with the provided text, then re-load the updated text after the save
@@ -362,12 +358,6 @@ Future work
     `h1::before {` `counter-reset: var(--section-counter-reset);` `content:
     var(--section-counter-content);` `}`
 
-#### Example of non-editable text
-
-<div class="CodeChat-toc mceNonEditable" data-codechat-path="static/css/CodeChatEditor.css" data-codechat-depth="">
-<p>asdf</p>
-</div>
-
 ### Numbering
 
 On a page, the local TOC numbering comes only from heading tags. The CSS (which
@@ -399,8 +389,7 @@ with descriptions of each setting.
 * Tabs vs spaces; newline type
 * Substitutions
 
-<a id="core-developmnt-priorities"></a>Core development priorities
-------------------------------------------------------------------
+## <a id="core-developmnt-priorities"></a>Core development priorities
 
 1. Bug fixes
 2. Book support

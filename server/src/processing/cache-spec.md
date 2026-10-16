@@ -17,15 +17,14 @@ do not.
 
 The cache reflects data read directly from disk/IDE; content edited in the
 Client does not update the cache until it's written to disk/IDE, at which point
-the cache must re-process the file. Since the Client is designed around
-an autosave principle which updates disk/IDE regularly, there's little gap
-between the two.
+the cache must re-process the file. Since the Client is designed around an
+autosave principle which updates disk/IDE regularly, there's little gap between
+the two.
 
 The cache hydrates data to the Client; the dehydration routes are responsible
 for removing all cache hydration artifacts.
 
-Cross references
-----------------
+## <span id="cc-HZyE2Bv-eI">Cross references</span>
 
 A `<xref ref="id"></xref>` is a cross reference to a `Target` or a gather
 element. The `ref` attribute specifies the destination as an id; the cache then
@@ -36,9 +35,9 @@ is only present in the Client.
 
 Details:
 
-* This element allows no attribute except for `ref`. Since an `<xref>` is
-  never a `Target`, an `id` attribute on it -- including `id="*"` -- would
-  mislead, so it replaces the contents with an error message.
+* This element allows no attribute except for `ref`. Since an `<xref>` is never
+  a `Target`, an `id` attribute on it -- including `id="*"` -- would mislead, so
+  it replaces the contents with an error message.
 
 * The inner HTML is always taken before cache hydration, to prevent circular
   dependencies (see also <xref ref="cc-P-g5o100jN"></xref>):
@@ -63,8 +62,7 @@ Details:
 * Cross references to fragments are not allowed; this would create circular
   dependencies (see <xref ref="cc-P-g5o100jN"></xref>).
 
-Fragments and gather elements
------------------------------
+## <span id="cc-gKXTXIZnFm">Fragments and gather elements</span>
 
 A gather element such as `<h3 id="bar" data-gather="id1 id2...">Bazzy
 things</h3>` is a `Target` with the `data-gather` attribute. It becomes a list
@@ -93,18 +91,18 @@ Details:
   contents will be replaced by an error message.
 * Fragments store an HTML rendering of the code and doc blocks they contain,
   excluding the content produced by hydrating the `<fragment>` tags, to avoid
-  duplication and circular dependencies. Cross-references in this rendering
-  are hydrated in the fragment's file, so their links lead from there; a
-  gather element re-hydrates each which hydrated to a link so that it leads
-  from the gather element's file instead. An error message reads the same
-  anywhere, so it's kept as is. See layer 4 under
-  <xref ref="cc-P-g5o100jN"></xref>: this exclusion is what keeps a gather
-  element and the fragments it lists from outdating each other forever. The HTML
-  rendering of a fragment reproduces the layout of the source it came from: each
-  doc block includes its indent, each line of a code block or the first line of
-  a doc block is preceded by that line's number, and the two are aligned -- a
-  doc block and a line of code indented equally in the source begin in the same
-  column, with the line numbers in a gutter of their own to the left of both.
+  duplication and circular dependencies. Cross-references in this rendering are
+  hydrated in the fragment's file, so their links lead from there; a gather
+  element re-hydrates each which hydrated to a link so that it leads from the
+  gather element's file instead. An error message reads the same anywhere, so
+  it's kept as is. See layer 4 under <xref ref="cc-P-g5o100jN"></xref>: this
+  exclusion is what keeps a gather element and the fragments it lists from
+  outdating each other forever. The HTML rendering of a fragment reproduces the
+  layout of the source it came from: each doc block includes its indent, each
+  line of a code block or the first line of a doc block is preceded by that
+  line's number, and the two are aligned -- a doc block and a line of code
+  indented equally in the source begin in the same column, with the line numbers
+  in a gutter of their own to the left of both.
 * The backlinks a `<fragment>` hydrates to are derived from the gather elements
   which list it: for each such element, its containing file, its `id`, and its
   inner HTML (the link text). A fragment's rendered output therefore depends on
@@ -199,9 +197,10 @@ lower-numbered layers:
    fragment it lists would outdate one another forever.
 5. Gather-list hydration depends on layers 1 and 3. It also re-hydrates each
    `<xref>` within a fragment's content (layer 2) which hydrated to a link, so
-   that it links from the gathering file. That needs no dependency of its own: everything about a target which
-   this reads is embedded in the fragment's content, so any change to it also
-   changes that content, which outdates the gathering file.
+   that it links from the gathering file. That needs no dependency of its own:
+   everything about a target which this reads is embedded in the fragment's
+   content, so any change to it also changes that content, which outdates the
+   gathering file.
 
 Only layers 1 and 3 are cached, and layer 3 depends only on layer 1 through
 layer 2. So a change travels at most two steps (C → B → A), which matches the
@@ -228,8 +227,8 @@ differences is:
 
 A gather element's `gather_ids` are absent from this list because no dependent
 reads them: a cross-reference to a gather element renders only its inner HTML.
-The fragments a gather element lists do depend on them, through the reverse
-edge described below.
+The fragments a gather element lists do depend on them, through the reverse edge
+described below.
 
 This also makes indirection (gather A includes fragment B, whose content
 cross-references target C) work without extra machinery: a change to C outdates
@@ -394,11 +393,10 @@ timestamp tick could leave this metadata unchanged (Git's "racy clean" problem).
 * If the file exists and doesn't match its cached stamp or if the file's status
   is `Outdated`:
 
-  * If the file is the TOC and doesn't match its cached stamp, send
-    `TocChanged` to all connections once the processing below is done, even if
-    it ignores the file: each connection's sidebar renders the TOC from the
-    text it last loaded, which it must therefore re-load (see `Connections`
-    below).
+  * If the file is the TOC and doesn't match its cached stamp, send `TocChanged`
+    to all connections once the processing below is done, even if it ignores the
+    file: each connection's sidebar renders the TOC from the text it last
+    loaded, which it must therefore re-load (see `Connections` below).
 
   * If the file is the current file for any of the cache's connections, ignore
     it. This is handled by the standard IDE to Client translation mechanism.
@@ -476,7 +474,23 @@ Overall shutdown sequence:
 4. The consumer thread exits when either its consumer rx channel closes or the
    weak pointer fails to upgrade.
 
-TODO:
+## <span id="cc-srNQxJ2znz">Links in hydrated content</span>
+
+Some content, such as math, cross-references, fragments, and gather lists (see
+<xref ref="cc-HZyE2Bv-eI"></xref> and <xref ref="cc-gKXTXIZnFm"></xref>), sits
+inside an element marked `contenteditable=false`. TinyMCE's link plugin offers
+no context menu items for non-editable content, so a right click (mouse) or long
+press (touch) on one of these links is ignored. Therefore, when the user
+performs either of these actions, the Client must show the TinyMCE context menu,
+whose only item, "Open link", follows the link exactly as a Ctrl+click does.
+TinyMCE's link plugin already provides the other ways to follow these links, so
+the Client doesn't implement them:
+
+* Ctrl+click (Cmd+click on macOS) follows the clicked link.
+* Alt+Enter, with the non-editable element selected, follows its first link.
+
+TODO
+----
 
 * `SaveOnScan` and search functionality are not implemented yet. This is future
   work.

@@ -26,16 +26,23 @@
 // -------
 //
 // ### Standard library
-use std::{fmt::Write, path::PathBuf, time::Duration};
+use std::{
+    fmt::Write,
+    fs,
+    path::{Path, PathBuf},
+    time::{Duration, Instant},
+};
 
 // ### Third-party
 use dunce::canonicalize;
+use indoc::indoc;
 use pretty_assertions::assert_eq;
 use thirtyfour::{
     By, Key, WebDriver,
     error::WebDriverError,
     prelude::{ElementQueryable, ElementWaitable},
 };
+use tokio::time::sleep;
 
 // ### Local
 use crate::common::{
@@ -827,4 +834,542 @@ async fn test_named_anchor_round_trip_core(
     assert_no_more_messages(&codechat_server).await;
 
     Ok(())
+}
+
+// ### Links in non-editable content
+//
+// A right click on a link in non-editable content shows a context menu whose
+// only item, "Open link", follows that link. See `addNonEditableLinkMenu` in
+// [tinymce-config.mts](../../../client/src/tinymce-config.mts) and `Links in
+// hydrated content` in [cache-spec.md](../../src/processing/cache-spec.md).
+make_test!(
+    test_open_non_editable_link,
+    test_open_non_editable_link_core
+);
+
+// In a Markdown document, using a stand-in for the content the cache hydrates.
+async fn test_open_non_editable_link_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.md",
+        Some((
+            "<div contenteditable=\"false\"><a href=\"other.md\">Other</a></div>\n".to_string(),
+            0.0,
+        )),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    open_link_from_context_menu(&driver, &format!("{DOC_BLOCK_CSS} a")).await?;
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.md")).await;
+
+    Ok(())
+}
+
+// In a source file, unlike a Markdown document, a doc block becomes a TinyMCE
+// editor only once it's focused (see `DocBlockPlugin` in
+// [CodeMirror-integration.mts](../../../client/src/CodeMirror-integration.mts)),
+// and the cache, not the test, supplies the non-editable content. This test
+// right-clicks a link in a doc block which isn't yet an editor.
+make_test!(
+    test_open_non_editable_link_py_unfocused,
+    test_open_non_editable_link_py_unfocused_core,
+    ignore = "a right click doesn't make a doc block a TinyMCE editor, so TinyMCE never shows its context menu"
+);
+
+async fn test_open_non_editable_link_py_unfocused_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let link_css = "fragment#test-fragment a";
+    let mut client_id = load_link_project(&codechat_server, &driver, &test_dir, link_css).await?;
+    open_link_from_context_menu(&driver, link_css).await?;
+    assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.py")).await;
+
+    Ok(())
+}
+
+// Each of the remaining tests clicks into the doc block holding a link, then
+// follows that link: a link in math, a cross-reference, a fragment's backlinks,
+// or a gather list, leading either to `other.py` or elsewhere in `test.py`.
+make_test!(
+    test_open_non_editable_link_py_math,
+    test_open_non_editable_link_py_math_core,
+    ignore =
+        "MathJax's own context menu handles a right click on math, so TinyMCE never shows its menu"
+);
+
+async fn test_open_non_editable_link_py_math_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    follow_link_project_link(
+        codechat_server,
+        driver,
+        test_dir,
+        "mjx-container a",
+        LinkDestination::OtherFile,
+    )
+    .await
+}
+
+make_test!(
+    test_open_non_editable_link_py_xref,
+    test_open_non_editable_link_py_xref_core
+);
+
+async fn test_open_non_editable_link_py_xref_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    follow_link_project_link(
+        codechat_server,
+        driver,
+        test_dir,
+        "xref[ref='other-target'] a",
+        LinkDestination::OtherFile,
+    )
+    .await
+}
+
+make_test!(
+    test_open_non_editable_link_py_xref_same_file,
+    test_open_non_editable_link_py_xref_same_file_core,
+    ignore = "the Client doesn't follow a link to an id elsewhere in the current file"
+);
+
+async fn test_open_non_editable_link_py_xref_same_file_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    follow_link_project_link(
+        codechat_server,
+        driver,
+        test_dir,
+        "xref[ref='test-target'] a",
+        LinkDestination::ThisFile("test-target"),
+    )
+    .await
+}
+
+make_test!(
+    test_open_non_editable_link_py_fragment,
+    test_open_non_editable_link_py_fragment_core
+);
+
+async fn test_open_non_editable_link_py_fragment_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    follow_link_project_link(
+        codechat_server,
+        driver,
+        test_dir,
+        "fragment#test-fragment a",
+        LinkDestination::OtherFile,
+    )
+    .await
+}
+
+make_test!(
+    test_open_non_editable_link_py_fragment_same_file,
+    test_open_non_editable_link_py_fragment_same_file_core,
+    ignore = "the Client doesn't follow a link to an id elsewhere in the current file"
+);
+
+async fn test_open_non_editable_link_py_fragment_same_file_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    follow_link_project_link(
+        codechat_server,
+        driver,
+        test_dir,
+        "fragment#test-near-fragment a",
+        LinkDestination::ThisFile("test-far-gather"),
+    )
+    .await
+}
+
+make_test!(
+    test_open_non_editable_link_py_gather,
+    test_open_non_editable_link_py_gather_core
+);
+
+async fn test_open_non_editable_link_py_gather_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    follow_link_project_link(
+        codechat_server,
+        driver,
+        test_dir,
+        ".cc-gather-items a[href$='#other-fragment']",
+        LinkDestination::OtherFile,
+    )
+    .await
+}
+
+make_test!(
+    test_open_non_editable_link_py_gather_same_file,
+    test_open_non_editable_link_py_gather_same_file_core,
+    ignore = "the Client doesn't follow a link to an id elsewhere in the current file"
+);
+
+async fn test_open_non_editable_link_py_gather_same_file_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    follow_link_project_link(
+        codechat_server,
+        driver,
+        test_dir,
+        ".cc-gather-items a[href$='#test-far-fragment']",
+        LinkDestination::ThisFile("test-far-fragment"),
+    )
+    .await
+}
+
+// #### Support for these tests
+//
+// Where following a link should lead.
+enum LinkDestination {
+    // The Client asks the IDE to open `other.py`.
+    OtherFile,
+    // The Client scrolls the element with this id, in the current file, into
+    // view.
+    ThisFile(&'static str),
+}
+
+// How long the Client must stay silent before the tests above consider the
+// Server's re-translations of the current file finished.
+const SETTLE_TIME: Duration = Duration::from_secs(1);
+
+// How often the tests above re-check the Client while waiting for it.
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+// The other file in the project `write_link_project` creates, holding a target
+// of each kind which `test.py` links to.
+const LINK_PROJECT_OTHER_PY: &str = indoc!(
+    r#"
+    # <h2 id="other-target">Other target</h2>
+    a = 1
+    # <h2 id="other-gather" data-gather="test-fragment">Other gather</h2>
+    b = 2
+    # <fragment id="other-fragment"></fragment>A fragment gathered by `test.py`.
+    c = 3
+    "#
+);
+
+// Create a project in `test_dir` whose `test.py` contains a link of each kind
+// which the cache hydrates. Every link sits near the start of `test.py`, within
+// the first screen, while every target in `test.py` itself follows 100 lines of
+// filler, so that following a link to one of them must scroll.
+fn write_link_project(
+    // The directory to create the project in.
+    test_dir: &Path,
+) {
+    let mut test_py = indoc!(
+        r#"
+        # Links to `other.py`: the cross-reference <xref ref="other-target"></xref>
+        # and the math $\href{other.py}{\text{Other}}$.
+        a = 1
+        # <fragment id="test-fragment"></fragment>A fragment gathered by `other.py`.
+        b = 2
+        # <fragment id="test-near-fragment"></fragment>A fragment gathered at the
+        # end of this file.
+        c = 3
+        # <h2 id="test-gather" data-gather="other-fragment test-far-fragment">Gathered</h2>
+        d = 4
+        # A link to the end of this file: the cross-reference
+        # <xref ref="test-target"></xref>.
+        e = 5
+        "#
+    )
+    .to_string();
+    for i in 0..100 {
+        let _ = writeln!(test_py, "filler_{i} = {i}");
+    }
+    test_py.push_str(indoc!(
+        r#"
+        # <h2 id="test-target">Test target</h2>
+        f = 6
+        # <fragment id="test-far-fragment"></fragment>A fragment gathered at the
+        # start of this file.
+        g = 7
+        # <h2 id="test-far-gather" data-gather="test-near-fragment">Far gather</h2>
+        h = 8
+        "#
+    ));
+    // A `toc.md` makes this directory a project, so that the cache resolves ids
+    // across its files.
+    fs::write(test_dir.join("toc.md"), "Contents\n").unwrap();
+    fs::write(test_dir.join("other.py"), LINK_PROJECT_OTHER_PY).unwrap();
+    fs::write(test_dir.join("test.py"), test_py).unwrap();
+}
+
+// Create the project `write_link_project` describes, then show its `test.py`
+// in the Client.
+async fn load_link_project(
+    codechat_server: &CodeChatEditorServerLog,
+    driver: &WebDriver,
+    test_dir: &Path,
+    // CSS selecting the link the test will follow.
+    link_css: &str,
+    // The id of the next message the Client sends.
+) -> Result<f64, WebDriverError> {
+    write_link_project(test_dir);
+    let test_py = canonicalize(test_dir.join("test.py")).unwrap();
+    codechat_server
+        .send_message_current_file(test_py.to_str().unwrap().to_string())
+        .await
+        .unwrap();
+
+    // The Server translates `test.py` at once, while a walk of the project
+    // brings `other.py` into the cache in the background; the content hydrated
+    // from `other.py` then arrives in re-translations of `test.py` (see `Cache
+    // population and maintenance` in
+    // [cache-spec.md](../../src/processing/cache-spec.md)). These interleave
+    // unpredictably with the Server's requests to load `test.py` and the TOC,
+    // which `perform_loadfile` expects in a fixed order, so answer requests
+    // as they come instead.
+    //
+    // The Client's page can't finish loading until the requests for `test.py`
+    // and the TOC are answered, and WebDriver waits for it to finish before
+    // entering its iframe; answer those first.
+    let mut unrequested = vec![test_py, canonicalize(test_dir.join("toc.md")).unwrap()];
+    while !unrequested.is_empty() {
+        let msg = codechat_server
+            .get_message_timeout(TIMEOUT)
+            .await
+            .unwrap_or_else(|| panic!("The Server never requested {unrequested:?}."));
+        match &msg.message {
+            EditorMessageContents::LoadFile(path, _) => {
+                codechat_server
+                    .send_result_loadfile(msg.id, None)
+                    .await
+                    .unwrap();
+                unrequested.retain(|unrequested_path| unrequested_path != path);
+            }
+            EditorMessageContents::Result(Ok(ResultOkTypes::Void)) => {}
+            _ => panic!("Unexpected message: {msg:#?}"),
+        }
+    }
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(driver).await;
+
+    // Wait for the link, then for the re-translations to end, so that none
+    // replaces the link while it's in use.
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    let deadline = Instant::now() + TIMEOUT;
+    while !driver.query(By::Css(link_css)).nowait().exists().await? {
+        assert!(
+            Instant::now() < deadline,
+            "The link {link_css} never appeared."
+        );
+        assert_eq!(
+            next_unhandled_message(codechat_server, &mut client_id, POLL_INTERVAL).await,
+            None
+        );
+    }
+    assert_eq!(
+        next_unhandled_message(codechat_server, &mut client_id, SETTLE_TIME).await,
+        None
+    );
+    Ok(client_id)
+}
+
+// Open `test.py` from the project `write_link_project` creates, click into the
+// doc block holding the link `link_css` selects, follow that link, then check
+// that it leads to `destination`.
+async fn follow_link_project_link(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+    // CSS selecting the link to follow.
+    link_css: &str,
+    // Where the link should lead.
+    destination: LinkDestination,
+) -> Result<(), WebDriverError> {
+    let mut client_id = load_link_project(&codechat_server, &driver, &test_dir, link_css).await?;
+
+    // Clicking a doc block's top left corner lands on text which precedes
+    // every link in these doc blocks, so the click focuses the doc block
+    // without following anything. Focus moves the TinyMCE editor into the doc
+    // block, replacing its contents.
+    let doc_block = driver
+        .query(By::Css(format!(
+            ".CodeChat-CodeMirror .CodeChat-doc-contents:has({link_css})"
+        )))
+        .desc("the doc block holding the link to follow")
+        .first()
+        .await?;
+    click_element_top_left(&driver, &doc_block).await?;
+    let link_css = &format!("#TinyMCE-inst:not(.CodeChat-doc-hidden) {link_css}");
+
+    match destination {
+        LinkDestination::OtherFile => {
+            open_link_from_context_menu(&driver, link_css).await?;
+            assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.py"))
+                .await;
+        }
+        LinkDestination::ThisFile(id) => {
+            assert!(
+                !is_in_view(&driver, id).await,
+                "#{id} is in view before following the link to it."
+            );
+            open_link_from_context_menu(&driver, link_css).await?;
+            let deadline = Instant::now() + TIMEOUT;
+            while !is_in_view(&driver, id).await {
+                assert!(
+                    Instant::now() < deadline,
+                    "Following the link never scrolled #{id} into view."
+                );
+                sleep(POLL_INTERVAL).await;
+            }
+            // Following a link within the current file mustn't ask the IDE to
+            // open a file.
+            assert_eq!(
+                next_unhandled_message(&codechat_server, &mut client_id, SETTLE_TIME).await,
+                None
+            );
+        }
+    }
+
+    Ok(())
+}
+
+// Right-click the link `link_css` selects, then choose "Open link", which must
+// be the only item on the context menu.
+async fn open_link_from_context_menu(
+    driver: &WebDriver,
+    // CSS selecting the link to follow.
+    link_css: &str,
+) -> Result<(), WebDriverError> {
+    let link = driver
+        .query(By::Css(link_css))
+        .desc("the link to follow")
+        .first()
+        .await?;
+    driver
+        .action_chain()
+        .context_click_element(&link)
+        .perform()
+        .await?;
+    let menu_items = driver
+        .query(By::Css(".tox-menu [role='menuitem']"))
+        .desc("the items of TinyMCE's context menu")
+        .all_from_selector_required()
+        .await?;
+    assert_eq!(menu_items.len(), 1);
+    assert_eq!(menu_items[0].text().await?, "Open link");
+    menu_items[0].click().await?;
+    Ok(())
+}
+
+// Check that the Client's next request asks the IDE to open `file`.
+async fn assert_requests_file(
+    codechat_server: &CodeChatEditorServerLog,
+    // The id of the next message the Client sends; updated as messages
+    // arrive.
+    client_id: &mut f64,
+    // The file the Client should request.
+    file: &Path,
+) {
+    let path = canonicalize(file).unwrap();
+    let request = next_unhandled_message(codechat_server, client_id, TIMEOUT).await;
+    assert_eq!(
+        request,
+        Some(EditorMessage {
+            id: *client_id,
+            message: EditorMessageContents::CurrentFile(
+                path.to_str().unwrap().to_string(),
+                Some(true)
+            ),
+        })
+    );
+}
+
+// Return the next message the IDE receives, handling those which need no
+// attention from the tests above:
+//
+// * A successful result, such as the Client's acknowledgement of a
+//   re-translation from the Server.
+// * A request to load a file, answered as an IDE without that file open would,
+//   so that the Server reads it from disk.
+// * The Client's report of a new cursor or scroll position, which this
+//   acknowledges.
+async fn next_unhandled_message(
+    codechat_server: &CodeChatEditorServerLog,
+    // The id of the next message the Client sends; updated as messages
+    // arrive.
+    client_id: &mut f64,
+    // How long to wait for each message.
+    timeout: Duration,
+    // The message, or `None` if none arrives within `timeout`.
+) -> Option<EditorMessage> {
+    while let Some(msg) = codechat_server.get_message_timeout(timeout).await {
+        match &msg.message {
+            EditorMessageContents::Result(Ok(ResultOkTypes::Void)) => {}
+            EditorMessageContents::LoadFile(..) => {
+                codechat_server
+                    .send_result_loadfile(msg.id, None)
+                    .await
+                    .unwrap();
+            }
+            EditorMessageContents::Update(UpdateMessageContents { contents: None, .. }) => {
+                assert_eq!(msg.id, *client_id);
+                codechat_server.send_result(msg.id, None).await.unwrap();
+                *client_id += MESSAGE_ID_INCREMENT;
+            }
+            _ => return Some(msg),
+        }
+    }
+    None
+}
+
+// Report whether any of the element with the given id is visible in the
+// CodeMirror editor. CodeMirror renders only what's near its viewport, so an
+// element far from it isn't in the DOM.
+async fn is_in_view(
+    driver: &WebDriver,
+    // The element's id.
+    id: &str,
+) -> bool {
+    driver
+        .execute(
+            &format!(
+                "const element = document.getElementById('{id}');
+                if (element === null) return false;
+                const rect = element.getBoundingClientRect();
+                const scroller = document
+                    .querySelector('.CodeChat-CodeMirror .cm-scroller')
+                    .getBoundingClientRect();
+                return rect.bottom > scroller.top && rect.top < scroller.bottom;"
+            ),
+            Vec::new(),
+        )
+        .await
+        .unwrap()
+        .convert()
+        .unwrap()
 }
