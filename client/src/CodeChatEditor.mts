@@ -647,37 +647,48 @@ const onNavigate = (navigateEvent: NavigateEvent) => {
 // in a new tab).
 const onClick = (event: MouseEvent) => {
     // TinyMCE by default tries to open all links in a new tab. Look for and fix
-    // these.
+    // these. Skip a click another handler has already canceled, such as one on
+    // a link in a doc block which doesn't hold TinyMCE (see `Links in doc
+    // blocks` in `CodeMirror-integration.mts`).
     if (
+        !event.defaultPrevented &&
         event.target instanceof HTMLAnchorElement &&
-        event.target.target === "_blank"
+        event.target.target === "_blank" &&
+        followNewTabLink(event.target)
     ) {
-        // Get the URL from the link.
-        const url = event.target.href;
-
-        // If it's to a CodeChat Editor file, then load it as such.
-        if (event.target.origin === window.location.origin) {
-            // Ignore the "new tab" target, which doesn't make sense when there
-            // is a 1:1 relationship between the active IDE file and the file
-            // being edited in the CodeChat Editor. If two tabs are open, which
-            // is the current file for the IDE?
-            event.preventDefault();
-            saveThenNavigate(new URL(url));
-        } else {
-            // This is navigation to some external link. Let that proceed
-            // without interruption in a pure browser environment. However,
-            // VSCode will block navigation, since it's cross-origin (the root
-            // iframe has no URL, in contrast with the localhost URL of the
-            // CodeChat Editor Server). In this case, ask the Server to open the
-            // requested link.
-            if (window.location.pathname.startsWith("/vsc")) {
-                event.preventDefault();
-                parent.window.CodeChatEditorFramework.webSocketComm.sendMessage(
-                    { OpenUrl: url },
-                );
-            }
-        }
+        event.preventDefault();
     }
+};
+
+// Follow a link which the browser would open in a new tab.
+export const followNewTabLink = (
+    // The link to follow.
+    link: HTMLAnchorElement,
+    // True if this followed the link, so the caller must cancel the click
+    // which would otherwise open it in a new tab; false to leave that click to
+    // the browser.
+): boolean => {
+    // If it's to a CodeChat Editor file, then load it as such.
+    if (link.origin === window.location.origin) {
+        // Ignore the "new tab" target, which doesn't make sense when there is a
+        // 1:1 relationship between the active IDE file and the file being
+        // edited in the CodeChat Editor. If two tabs are open, which is the
+        // current file for the IDE?
+        saveThenNavigate(new URL(link.href));
+        return true;
+    }
+    // This is navigation to some external link. Let that proceed without
+    // interruption in a pure browser environment. However, VSCode will block
+    // navigation, since it's cross-origin (the root iframe has no URL, in
+    // contrast with the localhost URL of the CodeChat Editor Server). In this
+    // case, ask the Server to open the requested link.
+    if (window.location.pathname.startsWith("/vsc")) {
+        parent.window.CodeChatEditorFramework.webSocketComm.sendMessage({
+            OpenUrl: link.href,
+        });
+        return true;
+    }
+    return false;
 };
 
 // Save the current document, then navigate to the provided URL, which must be a

@@ -196,10 +196,6 @@ On save:
 * Save the file to disk.
 * If dirty, re-load the file.
 
-### Cache data format
-
-Documented elsewhere.
-
 ### IDE/editor integration
 
 The IDE extension client (IDE for short) and the CodeChat Editor Client (or
@@ -494,12 +490,39 @@ The CodeChat Editor client supports four modes:
   * Usual: the usual CodeMirror + TinyMCE editor
 * View:
   * For a ReadTheDocs / browsing experience: clicking on links navigates to them
-    immediately, instead of bringing up a context menu. Still use CodeMirror for
-    syntax highlighting, collapsing, etc.
+    immediately, instead of placing the cursor in them as Edit mode does. Still
+    use CodeMirror for syntax highlighting, collapsing, etc.
 * <a id="Client-simple-viewer"></a>Simple viewer:
   * For text or binary files that aren't supported by the editor. In project
     mode, this displays the TOC on the left and the file contents in the main
     area; otherwise, it's only the main area. See: \<gather here>.
+
+Link navigation
+---------------
+
+Note: this section is specification; all other sections are documentation.
+
+In Edit mode, a source file has one TinyMCE editor, which the Client moves into
+a doc block when that block gains focus; it stays there until another doc block
+gains focus. Since TinyMCE runs inline, nothing marks which block holds it, so
+links must behave alike in every doc block. In the block holding TinyMCE, a
+click or tap on a link places the cursor (or selects the link's non-editable
+element) without following it, while a Ctrl+click (Cmd+click on macOS) follows
+it. In any other doc block, the browser would follow the link on a plain click
+and open it in a new tab on a Ctrl+click. Instead, the Client makes a plain
+click or tap move TinyMCE into that block, placing the cursor where the click
+landed, or beside the link's non-editable element, since TinyMCE keeps the
+cursor out of non-editable content. A Ctrl+click follows the link through
+`followNewTabLink`, as TinyMCE's links do: a link to a CodeChat Editor file
+loads through `saveThenNavigate`, while an external link opens through the IDE
+in VSCode or in a new tab in a browser. Focusing a link from the keyboard, as
+the Tab key does, likewise moves TinyMCE into its block, placing the cursor at
+the link's start.
+
+TODO: a right click or long press on a link in a doc block which doesn't hold
+TinyMCE should show TinyMCE's context menu (see
+<xref ref="cc-srNQxJ2znz"></xref>). Remove this once
+`test_open_non_editable_link_py_unfocused` passes without its `ignore`.
 
 Misc
 ----

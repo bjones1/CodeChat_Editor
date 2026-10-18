@@ -38,7 +38,7 @@ use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 use thirtyfour::{
-    By, Key, WebDriver,
+    By, Key, WebDriver, WebElement,
     error::WebDriverError,
     prelude::{ElementQueryable, ElementWaitable},
 };
@@ -836,7 +836,9 @@ async fn test_named_anchor_round_trip_core(
     Ok(())
 }
 
-// ### Links in non-editable content
+// ### Links
+//
+// #### In non-editable content
 //
 // A right click on a link in non-editable content shows a context menu whose
 // only item, "Open link", follows that link. See `addNonEditableLinkMenu` in
@@ -884,7 +886,7 @@ async fn test_open_non_editable_link_core(
 make_test!(
     test_open_non_editable_link_py_unfocused,
     test_open_non_editable_link_py_unfocused_core,
-    ignore = "a right click doesn't make a doc block a TinyMCE editor, so TinyMCE never shows its context menu"
+    ignore = "a right click makes a doc block a TinyMCE editor only after the context menu event, so TinyMCE never shows its menu"
 );
 
 async fn test_open_non_editable_link_py_unfocused_core(
@@ -1048,6 +1050,143 @@ async fn test_open_non_editable_link_py_gather_same_file_core(
     .await
 }
 
+// #### In a doc block not holding TinyMCE
+//
+// Links in a doc block which isn't yet a TinyMCE editor act as they do in the
+// one which is: a plain click moves TinyMCE into the doc block without
+// following the link, while a Ctrl+click (Cmd+click on macOS) follows it. See
+// `Link navigation` in [implementation.md](../../../docs/implementation.md).
+make_test!(
+    test_click_link_py_unfocused,
+    test_click_link_py_unfocused_core
+);
+
+async fn test_click_link_py_unfocused_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let mut client_id =
+        click_unfocused_link(&codechat_server, &driver, &test_dir, PLAIN_LINK_CSS, &[]).await?;
+    let link =
+        assert_not_followed(&codechat_server, &driver, &mut client_id, PLAIN_LINK_CSS).await?;
+    // The cursor lands where the click did, in the link.
+    assert_cursor_in(&driver, &link).await
+}
+
+make_test!(
+    test_ctrl_click_link_py_unfocused,
+    test_ctrl_click_link_py_unfocused_core
+);
+
+async fn test_ctrl_click_link_py_unfocused_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let mut client_id = click_unfocused_link(
+        &codechat_server,
+        &driver,
+        &test_dir,
+        PLAIN_LINK_CSS,
+        &[FOLLOW_KEY],
+    )
+    .await?;
+    assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.py")).await;
+    Ok(())
+}
+
+// As in TinyMCE, a click holding both Ctrl and Alt, which AltGr reports on
+// Windows, doesn't follow the link.
+make_test!(
+    test_ctrl_alt_click_link_py_unfocused,
+    test_ctrl_alt_click_link_py_unfocused_core
+);
+
+async fn test_ctrl_alt_click_link_py_unfocused_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let mut client_id = click_unfocused_link(
+        &codechat_server,
+        &driver,
+        &test_dir,
+        PLAIN_LINK_CSS,
+        &[Key::Control, Key::Alt],
+    )
+    .await?;
+    assert_not_followed(&codechat_server, &driver, &mut client_id, PLAIN_LINK_CSS).await?;
+    Ok(())
+}
+
+// Focusing a link from the keyboard, as the Tab key does, likewise moves
+// TinyMCE into the doc block without following the link, placing the cursor at
+// the link's start.
+make_test!(
+    test_focus_link_py_unfocused,
+    test_focus_link_py_unfocused_core
+);
+
+async fn test_focus_link_py_unfocused_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let mut client_id =
+        load_link_project(&codechat_server, &driver, &test_dir, PLAIN_LINK_CSS).await?;
+    let link = query_unfocused_link(&driver, PLAIN_LINK_CSS).await?;
+    driver
+        .execute("arguments[0].focus();", vec![link.to_json()?])
+        .await?;
+    let link =
+        assert_not_followed(&codechat_server, &driver, &mut client_id, PLAIN_LINK_CSS).await?;
+    assert_cursor_in(&driver, &link).await
+}
+
+// The same, for a link in non-editable content. TinyMCE keeps the cursor out of
+// that content, placing it beside the content instead, so these tests don't
+// check where the cursor lands.
+make_test!(
+    test_click_non_editable_link_py_unfocused,
+    test_click_non_editable_link_py_unfocused_core
+);
+
+async fn test_click_non_editable_link_py_unfocused_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let link_css = "fragment#test-fragment a";
+    let mut client_id =
+        click_unfocused_link(&codechat_server, &driver, &test_dir, link_css, &[]).await?;
+    assert_not_followed(&codechat_server, &driver, &mut client_id, link_css).await?;
+    Ok(())
+}
+
+make_test!(
+    test_ctrl_click_non_editable_link_py_unfocused,
+    test_ctrl_click_non_editable_link_py_unfocused_core
+);
+
+async fn test_ctrl_click_non_editable_link_py_unfocused_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let link_css = "fragment#test-fragment a";
+    let mut client_id = click_unfocused_link(
+        &codechat_server,
+        &driver,
+        &test_dir,
+        link_css,
+        &[FOLLOW_KEY],
+    )
+    .await?;
+    assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.py")).await;
+    Ok(())
+}
+
 // #### Support for these tests
 //
 // Where following a link should lead.
@@ -1079,10 +1218,22 @@ const LINK_PROJECT_OTHER_PY: &str = indoc!(
     "#
 );
 
-// Create a project in `test_dir` whose `test.py` contains a link of each kind
-// which the cache hydrates. Every link sits near the start of `test.py`, within
-// the first screen, while every target in `test.py` itself follows 100 lines of
-// filler, so that following a link to one of them must scroll.
+// CSS selecting the plain link in the `test.py` which `write_link_project`
+// creates.
+const PLAIN_LINK_CSS: &str = "a[href='other.py']";
+
+// The key which, held during a click on a link, follows that link.
+const FOLLOW_KEY: Key = if cfg!(target_os = "macos") {
+    Key::Command
+} else {
+    Key::Control
+};
+
+// Create a project in `test_dir` whose `test.py` contains a plain link and a
+// link of each kind which the cache hydrates. Every link sits near the start of
+// `test.py`, within the first screen, while every target in `test.py` itself
+// follows 100 lines of filler, so that following a link to one of them must
+// scroll.
 fn write_link_project(
     // The directory to create the project in.
     test_dir: &Path,
@@ -1102,6 +1253,8 @@ fn write_link_project(
         # A link to the end of this file: the cross-reference
         # <xref ref="test-target"></xref>.
         e = 5
+        # A plain link to [the file other.py](other.py).
+        f = 6
         "#
     )
     .to_string();
@@ -1111,12 +1264,12 @@ fn write_link_project(
     test_py.push_str(indoc!(
         r#"
         # <h2 id="test-target">Test target</h2>
-        f = 6
+        g = 7
         # <fragment id="test-far-fragment"></fragment>A fragment gathered at the
         # start of this file.
-        g = 7
-        # <h2 id="test-far-gather" data-gather="test-near-fragment">Far gather</h2>
         h = 8
+        # <h2 id="test-far-gather" data-gather="test-near-fragment">Far gather</h2>
+        i = 9
         "#
     ));
     // A `toc.md` makes this directory a project, so that the cache resolves ids
@@ -1283,6 +1436,101 @@ async fn open_link_from_context_menu(
     assert_eq!(menu_items.len(), 1);
     assert_eq!(menu_items[0].text().await?, "Open link");
     menu_items[0].click().await?;
+    Ok(())
+}
+
+// Find the link `link_css` selects in a doc block which doesn't hold TinyMCE.
+// Once `load_link_project` returns, nothing has focused a doc block yet, so
+// none holds TinyMCE.
+async fn query_unfocused_link(
+    driver: &WebDriver,
+    // CSS selecting the link.
+    link_css: &str,
+    // The link.
+) -> Result<WebElement, WebDriverError> {
+    driver
+        .query(By::Css(format!(
+            ".CodeChat-CodeMirror .CodeChat-doc-contents:not(#TinyMCE-inst) {link_css}"
+        )))
+        .desc("the link, in a doc block not holding TinyMCE")
+        .first()
+        .await
+}
+
+// Open `test.py` from the project `write_link_project` creates, then click the
+// link `link_css` selects, in a doc block which doesn't hold TinyMCE.
+async fn click_unfocused_link(
+    codechat_server: &CodeChatEditorServerLog,
+    driver: &WebDriver,
+    test_dir: &Path,
+    // CSS selecting the link to click.
+    link_css: &str,
+    // The keys to hold during the click.
+    modifiers: &[Key],
+    // The id of the next message the Client sends.
+) -> Result<f64, WebDriverError> {
+    let client_id = load_link_project(codechat_server, driver, test_dir, link_css).await?;
+    let link = query_unfocused_link(driver, link_css).await?;
+    let mut actions = driver.action_chain();
+    for modifier in modifiers {
+        actions = actions.key_down(modifier.clone());
+    }
+    actions = actions.click_element(&link);
+    for modifier in modifiers.iter().rev() {
+        actions = actions.key_up(modifier.clone());
+    }
+    actions.perform().await?;
+    Ok(client_id)
+}
+
+// Check that clicking or focusing the link `link_css` selects moved TinyMCE
+// into the doc block holding that link without following the link.
+async fn assert_not_followed(
+    codechat_server: &CodeChatEditorServerLog,
+    driver: &WebDriver,
+    // The id of the next message the Client sends; updated as messages
+    // arrive.
+    client_id: &mut f64,
+    // CSS selecting the link.
+    link_css: &str,
+    // The link, now in the doc block holding TinyMCE.
+) -> Result<WebElement, WebDriverError> {
+    assert_eq!(
+        next_unhandled_message(codechat_server, client_id, SETTLE_TIME).await,
+        None
+    );
+    let link = driver
+        .query(By::Css(format!(
+            "#TinyMCE-inst:not(.CodeChat-doc-hidden) {link_css}"
+        )))
+        .desc("the link, in the doc block holding TinyMCE")
+        .first()
+        .await?;
+    let has_focus: bool = driver
+        .execute(
+            "return document.activeElement.id === 'TinyMCE-inst';",
+            Vec::new(),
+        )
+        .await?
+        .convert()?;
+    assert!(has_focus, "TinyMCE doesn't have the focus.");
+    Ok(link)
+}
+
+// Check that the cursor is in `link`.
+async fn assert_cursor_in(
+    driver: &WebDriver,
+    // The link which must hold the cursor.
+    link: &WebElement,
+) -> Result<(), WebDriverError> {
+    let has_cursor: bool = driver
+        .execute(
+            "return arguments[0].contains(document.getSelection().anchorNode);",
+            vec![link.to_json()?],
+        )
+        .await?
+        .convert()?;
+    assert!(has_cursor, "The cursor isn't in the link.");
     Ok(())
 }
 

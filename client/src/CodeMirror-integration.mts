@@ -85,6 +85,7 @@ import {
     tinymceInstance,
     tinymce,
     init,
+    followNewTabLink,
 } from "./CodeChatEditor.mjs";
 import {
     CodeChatForWeb,
@@ -834,6 +835,106 @@ const onDirty = (
     });
 };
 
+// Links in doc blocks
+// -------------------
+//
+// In the doc block holding TinyMCE, a plain click or tap on a link places the
+// cursor there, while a Ctrl+click (Cmd+click on macOS, where Ctrl+click opens
+// the context menu) follows it. The handlers below give links in every other
+// doc block the same behavior; otherwise, the browser follows a link on a plain
+// click and opens it in a new tab on a Ctrl+click. See `Link navigation` in
+// [implementation.md](../../docs/implementation.md).
+//
+// `codeMirrorLoad` adds these handlers to the element enclosing CodeMirror,
+// since `DocBlockWidget.ignoreEvent` hides mouse events in a doc block from the
+// handlers `DocBlockPlugin` defines.
+//
+// Return the link enclosing `target` if that link sits in a doc block which
+// doesn't hold TinyMCE.
+const linkOutsideTinymce = (
+    // The target of a mouse event.
+    target: EventTarget | null,
+    // The link, or `null` if there's none.
+): HTMLAnchorElement | null => {
+    const link = target instanceof Element ? target.closest("a[href]") : null;
+    return link instanceof HTMLAnchorElement &&
+        link.closest(`.CodeChat-doc-contents:not(#${TINYMCE_INST})`) !== null
+        ? link
+        : null;
+};
+
+// TinyMCE follows a clicked link when `tinymce.util.VK.metaKeyPressed` accepts
+// the click, so `isFollowClick` repeats that test: TinyMCE loads only once a doc
+// block gains the focus, too late for a click which arrives first. On macOS and
+// iOS, which TinyMCE recognizes from the user agent as below, the test requires
+// Cmd; elsewhere, it requires Ctrl without Alt, since AltGr, which types
+// characters on many Windows keyboard layouts, reports both.
+const isMacOsOrIos = /iphone|ipad|mac os x/.test(
+    navigator.userAgent.toLowerCase(),
+);
+
+const isFollowClick = (
+    // A mouse event on a link.
+    event: MouseEvent,
+    // True if the event asks to follow the link.
+): boolean => (isMacOsOrIos ? event.metaKey : event.ctrlKey && !event.altKey);
+
+// Chromium gives a pressed link the focus, and the `focusin` handler in
+// `DocBlockPlugin` then moves TinyMCE into the link's doc block. However,
+// Chromium leaves the cursor where it was when the pressed link isn't editable,
+// so a plain press places the cursor where the press landed, for that handler
+// to carry into TinyMCE. A Ctrl+press leaves the focus, and therefore TinyMCE,
+// where it is, so that the link is still in place when its click arrives.
+const onDocBlockLinkMousedown = (
+    // A press anywhere in CodeMirror.
+    event: MouseEvent,
+) => {
+    const link = linkOutsideTinymce(event.target);
+    if (link === null || event.button !== 0) {
+        return;
+    }
+    if (isFollowClick(event)) {
+        event.preventDefault();
+        return;
+    }
+    // Chromium added the standard `caretPositionFromPoint` only in version 128;
+    // older browsers provide only the non-standard `caretRangeFromPoint`.
+    const selection = window.getSelection();
+    if (typeof document.caretPositionFromPoint === "function") {
+        const caret = document.caretPositionFromPoint(
+            event.clientX,
+            event.clientY,
+        );
+        if (caret !== null) {
+            selection?.collapse(caret.offsetNode, caret.offset);
+        }
+    } else {
+        const caret = document.caretRangeFromPoint(
+            event.clientX,
+            event.clientY,
+        );
+        if (caret !== null) {
+            selection?.collapse(caret.startContainer, caret.startOffset);
+        }
+    }
+};
+
+// A plain click which arrives before TinyMCE has replaced the pressed link,
+// such as a tap's, lands on that link; cancel it. A Ctrl+click lands on the
+// link, which its press left in place; follow it.
+const onDocBlockLinkClick = (
+    // A click anywhere in CodeMirror.
+    event: MouseEvent,
+) => {
+    const link = linkOutsideTinymce(event.target);
+    if (link === null) {
+        return;
+    }
+    if (!isFollowClick(event) || followNewTabLink(link)) {
+        event.preventDefault();
+    }
+};
+
 // Keyboard navigation between code and doc blocks
 // -----------------------------------------------
 //
@@ -1195,10 +1296,12 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 );
                 indentDiv.addEventListener("input", onIndentInput);
 
-                // If the target is in the indent, not the contents, then the
-                // following code isn't needed.
+                // The focus lands on the contents div or, as when Chromium
+                // focuses a pressed link (see `onDocBlockLinkMousedown`), on an
+                // element inside it. If the target is in the indent instead,
+                // then the following code isn't needed.
                 if (
-                    !(eventTarget instanceof HTMLDivElement) ||
+                    !(eventTarget instanceof Element) ||
                     eventTarget.closest(".CodeChat-doc-contents") === null
                 ) {
                     return false;
@@ -1213,6 +1316,17 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 if (isTinymce) {
                     // Nothing to do.
                 } else {
+                    // Focus which reaches an element inside the contents from
+                    // the keyboard, such as a link reached with the Tab key,
+                    // leaves the selection where it was, perhaps in another doc
+                    // block; place the cursor at that element's start instead.
+                    const selection = window.getSelection();
+                    if (
+                        eventTarget !== contentsDiv &&
+                        !contentsDiv.contains(selection?.anchorNode ?? null)
+                    ) {
+                        selection?.collapse(eventTarget, 0);
+                    }
                     // Wait until the focus event completes; this causes the
                     // cursor position (the selection) to be set in the
                     // contenteditable div. Then, save that location.
@@ -1722,6 +1836,8 @@ export const codeMirrorLoad = async (
         );
         const codechatDiv = codechatBody.childNodes[0];
         assert(codechatDiv instanceof HTMLDivElement);
+        codechatDiv.addEventListener("mousedown", onDocBlockLinkMousedown);
+        codechatDiv.addEventListener("click", onDocBlockLinkClick);
         currentView = new EditorView({
             parent: codechatDiv,
             state,
