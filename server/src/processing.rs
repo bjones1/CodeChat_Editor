@@ -54,7 +54,7 @@ use dprint_plugin_markdown::{
     format_text,
 };
 use htmd::{
-    HtmlToMarkdown,
+    Conversion, HtmlToMarkdown,
     options::{BrStyle, LinkStyle, TranslationMode},
 };
 use html5ever::{
@@ -486,7 +486,8 @@ pub fn codechat_for_web_to_source(
             return Err(CodechatForWebToSourceError::DocBlocksNotAllowed);
         }
         // Translate the HTML document to Markdown.
-        let converter = HtmlToMarkdownWrapped::new();
+        let html_to_markdown = new_html_to_markdown();
+        let converter = HtmlToMarkdownWrapped::new(&html_to_markdown);
         let tree = html_to_dom(&code_mirror.doc, None)?;
         dehydrating_walk_node(&tree);
         return converter
@@ -581,9 +582,27 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     code_doc_block_arr
 }
 
-/// This converts HTML to Markdown then word wraps the result.
-struct HtmlToMarkdownWrapped {
-    html_to_markdown: HtmlToMarkdown,
+/// Build the HTML to Markdown converter which an [`HtmlToMarkdownWrapped`]
+/// borrows. A `Conversion` holds a reference to its converter, so the converter
+/// must outlive the wrapper rather than live inside it.
+fn new_html_to_markdown() -> HtmlToMarkdown {
+    // Most of the options don't need to be specified here, since the line
+    // wrapper will override them.
+    HtmlToMarkdown::builder()
+        .options(htmd::options::Options {
+            link_style: LinkStyle::Inlined,
+            translation_mode: TranslationMode::Faithful,
+            // Note that this is ignored in Faithful mode.
+            br_style: BrStyle::Backslash,
+            ..Default::default()
+        })
+        .build()
+}
+
+/// This converts a document, supplied as one or more DOM trees, from HTML to
+/// Markdown then word wraps the result.
+struct HtmlToMarkdownWrapped<'a> {
+    html_to_markdown_conversion: Conversion<'a>,
     word_wrap_config: Configuration,
 }
 
@@ -597,20 +616,13 @@ pub enum HtmlToMarkdownWrappedError {
     LineWidthOverflow(#[from] std::num::TryFromIntError),
 }
 
-impl HtmlToMarkdownWrapped {
-    fn new() -> Self {
+impl<'a> HtmlToMarkdownWrapped<'a> {
+    fn new(
+        // The converter, typically from `new_html_to_markdown`.
+        html_to_markdown: &'a HtmlToMarkdown,
+    ) -> Self {
         HtmlToMarkdownWrapped {
-            // Most of the options don't need to be specified here, since the
-            // line wrapper will override them.
-            html_to_markdown: HtmlToMarkdown::builder()
-                .options(htmd::options::Options {
-                    link_style: LinkStyle::Inlined,
-                    translation_mode: TranslationMode::Faithful,
-                    // Note that this is ignored in Faithful mode.
-                    br_style: BrStyle::Backslash,
-                    ..Default::default()
-                })
-                .build(),
+            html_to_markdown_conversion: html_to_markdown.start_conversion(),
             // TODO: numbered list formatting should be improved in the dprint
             // library.
             word_wrap_config: ConfigurationBuilder::new()
@@ -632,7 +644,7 @@ impl HtmlToMarkdownWrapped {
     /// Convert one item in a stream of HTML to markdown. The HTML must be start
     /// at the root, not continue a previous incomplete section of the DOM.
     fn next(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
-        let converted = self.html_to_markdown.tree_to_markdown(tree);
+        let converted = self.html_to_markdown_conversion.tree_to_markdown(tree);
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
                 // A return value of `None` means the text was unchanged or
@@ -643,16 +655,20 @@ impl HtmlToMarkdownWrapped {
         )
     }
 
-    fn last(&self) -> Result<String, HtmlToMarkdownWrappedError> {
-        let converted = self.html_to_markdown.finalize_conversion();
+    /// End the document, returning the Markdown placed at its end (such as
+    /// link reference definitions). This consumes the wrapper, since finishing
+    /// a `Conversion` consumes it.
+    fn last(self) -> Result<String, HtmlToMarkdownWrappedError> {
+        let converted = self.html_to_markdown_conversion.finish();
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
                 .unwrap_or(converted),
         )
     }
 
-    /// Convert HTML to markdown.
-    fn convert(&self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
+    /// Convert a document consisting of a single DOM tree from HTML to
+    /// markdown.
+    fn convert(self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
         let mut converted = self.next(tree)?;
         converted.push_str(&self.last()?);
         Ok(converted)
@@ -670,7 +686,8 @@ pub fn doc_block_html_to_markdown(
     // containing only one doc block.
     dom_location: Option<&(Vec<usize>, usize)>,
 ) -> Result<Vec<CodeDocBlock>, HtmlToMarkdownWrappedError> {
-    let mut converter = HtmlToMarkdownWrapped::new();
+    let html_to_markdown = new_html_to_markdown();
+    let mut converter = HtmlToMarkdownWrapped::new(&html_to_markdown);
     let mut last_doc_block_index = None;
     // Only perform marker insertions to a length 1 vec.
     assert!(dom_location.is_none() || code_doc_block_vec.len() == 1);

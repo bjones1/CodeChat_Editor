@@ -53,7 +53,8 @@ use crate::{
         cache::{Cache, FileStatus},
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
         dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str, doc_block_html_to_markdown,
-        html_to_dom, hydrate_html, is_css_identifier, markdown_to_html, source_to_codechat_for_web,
+        html_to_dom, hydrate_html, is_css_identifier, markdown_to_html, new_html_to_markdown,
+        source_to_codechat_for_web,
     },
 };
 use test_utils::{cast, prep_test_dir, test_utils::stringit};
@@ -2292,9 +2293,10 @@ fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
 
 #[test]
 fn test_dehydrate_html_1() {
-    let converter = HtmlToMarkdownWrapped::new();
+    // Each document needs its own conversion, since `convert` consumes it.
+    let html_to_markdown = new_html_to_markdown();
     assert_eq!(
-        converter
+        HtmlToMarkdownWrapped::new(&html_to_markdown)
             .convert(
                 &dehydrate_html(indoc!(
                     "
@@ -2317,7 +2319,7 @@ fn test_dehydrate_html_1() {
     );
 
     assert_eq!(
-        converter
+        HtmlToMarkdownWrapped::new(&html_to_markdown)
             .convert(
                 &dehydrate_html(indoc!(
                     "
@@ -2342,7 +2344,7 @@ fn test_dehydrate_html_1() {
     );
 
     assert_eq!(
-        converter
+        HtmlToMarkdownWrapped::new(&html_to_markdown)
             .convert(
                 &dehydrate_html(indoc!(
                     r#"
@@ -2367,7 +2369,7 @@ fn test_dehydrate_html_1() {
     );
 
     assert_eq!(
-        converter
+        HtmlToMarkdownWrapped::new(&html_to_markdown)
             .convert(
                 &dehydrate_html(indoc!(
                     "
@@ -2383,7 +2385,7 @@ fn test_dehydrate_html_1() {
     );
 
     assert_eq!(
-        converter
+        HtmlToMarkdownWrapped::new(&html_to_markdown)
             .convert(
                 &dehydrate_html(indoc!(
                     r#"
@@ -2428,7 +2430,7 @@ fn test_dehydrate_html_1() {
     // `<p><br></p>` by `dehydrating_walk_node`, preserving it as a
     // non-breaking space.
     assert_eq!(
-        converter
+        HtmlToMarkdownWrapped::new(&html_to_markdown)
             .convert(
                 &dehydrate_html(indoc!(
                     "
