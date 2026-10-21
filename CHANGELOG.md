@@ -24,6 +24,15 @@ Changelog
 
 * No changes.
 
+Version 0.3.1 -- 2026-Oct-20
+----------------------------
+
+* Support navigation of links in gather elements, fragments, and cross
+  references.
+* Clicking on a link activates the TinyMCE editor when the link's doc block is
+  pure HTML, instead of navigating to the link.
+* Improved HTML to Markdown conversion.
+
 Version 0.3.0 -- 2026-Oct-09
 ----------------------------
 

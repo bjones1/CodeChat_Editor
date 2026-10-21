@@ -62,7 +62,7 @@ imara-diff = { version = "0.2", features = [] }
 indoc = "2.0.5"
 log.workspace = true
 log4rs = "1.3"
-lru = "0.18.5"
+lru = "0.19"
 markup5ever_rcdom = "0.39"
 mime = "0.3.17"
 mime_guess = "2.0.5"
@@ -105,7 +105,7 @@ chrono = "0.4"
 futures = "0.3.31"
 predicates = "3.1.2"
 pretty_assertions = "1.4.1"
-thirtyfour = "0.37"
+thirtyfour = "0.38"
 tokio-tungstenite = "0.30"
 
 # Lints
