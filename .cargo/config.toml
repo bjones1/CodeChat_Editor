@@ -54,3 +54,6 @@ TS_RS_IMPORT_EXTENSION = "ts"
 # included.
 [target.'cfg(all(windows, target_env = "msvc"))']
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# Security
+# --------
