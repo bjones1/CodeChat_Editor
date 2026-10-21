@@ -39,8 +39,7 @@ use pretty_assertions::assert_eq;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
-    select,
-    time::sleep,
+    time::{sleep, timeout},
 };
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async,
@@ -70,6 +69,7 @@ use test_utils::{
 
 // Globals
 // -------
+//
 // Run a single webserver for all tests.
 static WEBSERVER_HANDLE: LazyLock<JoinHandle<Result<(), Error>>> = LazyLock::new(|| {
     thread::spawn(|| {
@@ -107,23 +107,29 @@ async fn send_message<S: AsyncRead + AsyncWrite + Unpin>(
 
 /// Read a message from a websocket.
 async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
+    // The websocket to read from.
     ws_stream: &mut WebSocketStream<S>,
+    // The message read.
 ) -> EditorMessage {
-    let now = SystemTime::now();
-    let msg_txt = loop {
-        let msg = select! {
-            data = ws_stream.next() => data.unwrap().unwrap(),
-            () = sleep(Duration::from_secs(6).checked_sub(now.elapsed().unwrap()).unwrap()) => panic!("Timeout waiting for message")
-        };
-        match msg {
-            Message::Close(_) => panic!("Unexpected close message."),
-            Message::Ping(_) => ws_stream.send(Message::Pong(vec![].into())).await.unwrap(),
-            Message::Pong(_) => panic!("Unexpected pong message."),
-            Message::Text(txt) => break txt,
-            Message::Binary(_) => panic!("Unexpected binary message."),
-            Message::Frame(_) => panic!("Unexpected frame message."),
+    let msg_txt = timeout(Duration::from_secs(6), async {
+        loop {
+            let msg = ws_stream
+                .next()
+                .await
+                .expect("The websocket ended without a close message.")
+                .unwrap_or_else(|err| panic!("Unable to read from the websocket: {err}"));
+            match msg {
+                Message::Close(_) => panic!("Unexpected close message."),
+                Message::Ping(data) => ws_stream.send(Message::Pong(data)).await.unwrap(),
+                Message::Pong(_) => panic!("Unexpected pong message."),
+                Message::Text(txt) => break txt,
+                Message::Binary(_) => panic!("Unexpected binary message."),
+                Message::Frame(_) => panic!("Unexpected frame message."),
+            }
         }
-    };
+    })
+    .await
+    .expect("Timeout waiting for message");
     serde_json::from_str(&msg_txt)
         .unwrap_or_else(|_| panic!("Unable to convert '{msg_txt}' to JSON."))
 }
@@ -225,8 +231,8 @@ async fn prep_test_core(
     (temp_dir, test_dir, ws_ide, ws_client)
 }
 
-/// This calls `prep_test_core` with the current function name. It must be a macro,
-/// so that it's called with the test function's name; calling it inside
+/// This calls `prep_test_core` with the current function name. It must be a
+/// macro, so that it's called with the test function's name; calling it inside
 /// `prep_test_core` would give the wrong name.
 macro_rules! prep_test {
     ($connection_id: ident) => {{
@@ -1410,7 +1416,7 @@ async fn test_vscode_ide_websocket5() {
     ws_client.close(None).await.unwrap();
     loop {
         match ws_ide.next().await.unwrap().unwrap() {
-            Message::Ping(_) => ws_ide.send(Message::Pong(vec![].into())).await.unwrap(),
+            Message::Ping(data) => ws_ide.send(Message::Pong(data)).await.unwrap(),
             Message::Close(_) => break,
             _ => panic!("Unexpected message."),
         }
@@ -1431,7 +1437,7 @@ async fn test_vscode_ide_websocket9() {
     ws_ide.close(None).await.unwrap();
     loop {
         match ws_client.next().await.unwrap().unwrap() {
-            Message::Ping(_) => ws_client.send(Message::Pong(vec![].into())).await.unwrap(),
+            Message::Ping(data) => ws_client.send(Message::Pong(data)).await.unwrap(),
             Message::Close(_) => break,
             _ => panic!("Unexpected message."),
         }
@@ -1575,8 +1581,8 @@ async fn test_vscode_ide_websocket10() {
     //
     // The consumer's initial scan of the project may reach the TOC on either
     // side of this write; either way, only one commit defines `foo`, outdating
-    // the current file once. A scan before the write finds no ids in the TOC.
-    // A scan after it commits the new TOC, which makes the watcher's report a
+    // the current file once. A scan before the write finds no ids in the TOC. A
+    // scan after it commits the new TOC, which makes the watcher's report a
     // no-op: the TOC's metadata then matches the cache's, so the consumer skips
     // it.
     fs::write(test_dir.join("toc.md"), "<h1 id=\"foo\">Foo</h1>\n").unwrap();

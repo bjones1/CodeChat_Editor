@@ -492,9 +492,18 @@ pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
     Duration::from_secs(15)
 };
 
-/// The time to wait for a pong from the websocket in response to a ping sent by
-/// this server.
-const WEBSOCKET_PING_DELAY: Duration = Duration::from_secs(2);
+/// How long a websocket may go without traffic before this server pings it,
+/// then how long to wait for the answering pong before closing the websocket.
+/// The unit tests in `ide/vscode/tests.rs` read one websocket of a pair while
+/// leaving the other unread, and tungstenite answers a ping only while its
+/// websocket is read. Waiting on the cache's watcher can leave a websocket
+/// unread for longer than twice the normal delay, so the unit tests use a delay
+/// which no wait approaches.
+const WEBSOCKET_PING_DELAY: Duration = if cfg!(test) {
+    Duration::from_secs(10)
+} else {
+    Duration::from_secs(2)
+};
 
 /// A few message IDs reserved for use during startup or for sending errors.
 pub const RESERVED_MESSAGE_ID: f64 = 0.0;
