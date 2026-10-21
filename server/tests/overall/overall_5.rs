@@ -841,7 +841,9 @@ async fn test_named_anchor_round_trip_core(
 // #### In non-editable content
 //
 // A right click on a link in non-editable content shows a context menu whose
-// only item, "Open link", follows that link. See `addNonEditableLinkMenu` in
+// only item, "Open link", follows that link. The keyboard opens the same menu
+// on a selected non-editable element, following its first link. See
+// `addNonEditableLinkMenu` in
 // [tinymce-config.mts](../../../client/src/tinymce-config.mts) and `Links in
 // hydrated content` in [cache-spec.md](../../src/processing/cache-spec.md).
 make_test!(
@@ -849,33 +851,25 @@ make_test!(
     test_open_non_editable_link_core
 );
 
-// In a Markdown document, using a stand-in for the content the cache hydrates.
 async fn test_open_non_editable_link_core(
     codechat_server: CodeChatEditorServerLog,
     driver: WebDriver,
     test_dir: PathBuf,
 ) -> Result<(), WebDriverError> {
-    perform_loadfile(
-        &codechat_server,
-        &test_dir,
-        "test.md",
-        Some((
-            "<div contenteditable=\"false\"><a href=\"other.md\">Other</a></div>\n".to_string(),
-            0.0,
-        )),
-        false,
-        6.0,
-    )
-    .await;
+    open_markdown_non_editable_link(codechat_server, driver, test_dir, MenuTrigger::Pointer).await
+}
 
-    // Target the iframe containing the Client.
-    select_codechat_iframe(&driver).await;
+make_test!(
+    test_open_non_editable_link_keyboard,
+    test_open_non_editable_link_keyboard_core
+);
 
-    open_link_from_context_menu(&driver, &format!("{DOC_BLOCK_CSS} a")).await?;
-    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
-    assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.md")).await;
-
-    Ok(())
+async fn test_open_non_editable_link_keyboard_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    open_markdown_non_editable_link(codechat_server, driver, test_dir, MenuTrigger::Keyboard).await
 }
 
 // In a source file, unlike a Markdown document, a doc block becomes a TinyMCE
@@ -896,7 +890,7 @@ async fn test_open_non_editable_link_py_unfocused_core(
 ) -> Result<(), WebDriverError> {
     let link_css = "fragment#test-fragment a";
     let mut client_id = load_link_project(&codechat_server, &driver, &test_dir, link_css).await?;
-    open_link_from_context_menu(&driver, link_css).await?;
+    open_link_from_context_menu(&driver, link_css, MenuTrigger::Pointer).await?;
     assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.py")).await;
 
     Ok(())
@@ -1189,6 +1183,14 @@ async fn test_ctrl_click_non_editable_link_py_unfocused_core(
 
 // #### Support for these tests
 //
+// How a test opens TinyMCE's context menu for a link.
+enum MenuTrigger {
+    // A right click on the link.
+    Pointer,
+    // The keyboard, with the non-editable element enclosing the link selected.
+    Keyboard,
+}
+
 // Where following a link should lead.
 enum LinkDestination {
     // The Client asks the IDE to open `other.py`.
@@ -1279,11 +1281,50 @@ fn write_link_project(
     fs::write(test_dir.join("test.py"), test_py).unwrap();
 }
 
+// In a Markdown document, using a stand-in for the content the cache hydrates,
+// open the context menu for a link in non-editable content, then follow the
+// link.
+async fn open_markdown_non_editable_link(
+    // The Server, through which the test plays the IDE.
+    codechat_server: CodeChatEditorServerLog,
+    // The browser showing the Client.
+    driver: WebDriver,
+    // The directory holding `test.md` and the `other.md` it links to.
+    test_dir: PathBuf,
+    // How to open the context menu.
+    trigger: MenuTrigger,
+) -> Result<(), WebDriverError> {
+    perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.md",
+        Some((
+            "<div contenteditable=\"false\"><a href=\"other.md\">Other</a></div>\n".to_string(),
+            0.0,
+        )),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    open_link_from_context_menu(&driver, &format!("{DOC_BLOCK_CSS} a"), trigger).await?;
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.md")).await;
+
+    Ok(())
+}
+
 // Create the project `write_link_project` describes, then show its `test.py`
 // in the Client.
 async fn load_link_project(
+    // The Server, through which the test plays the IDE.
     codechat_server: &CodeChatEditorServerLog,
+    // The browser showing the Client; this selects the Client's iframe.
     driver: &WebDriver,
+    // The directory in which to create the project.
     test_dir: &Path,
     // CSS selecting the link the test will follow.
     link_css: &str,
@@ -1355,8 +1396,11 @@ async fn load_link_project(
 // doc block holding the link `link_css` selects, follow that link, then check
 // that it leads to `destination`.
 async fn follow_link_project_link(
+    // The Server, through which the test plays the IDE.
     codechat_server: CodeChatEditorServerLog,
+    // The browser showing the Client.
     driver: WebDriver,
+    // The directory in which to create the project.
     test_dir: PathBuf,
     // CSS selecting the link to follow.
     link_css: &str,
@@ -1381,7 +1425,7 @@ async fn follow_link_project_link(
 
     match destination {
         LinkDestination::OtherFile => {
-            open_link_from_context_menu(&driver, link_css).await?;
+            open_link_from_context_menu(&driver, link_css, MenuTrigger::Pointer).await?;
             assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.py"))
                 .await;
         }
@@ -1390,7 +1434,7 @@ async fn follow_link_project_link(
                 !is_in_view(&driver, id).await,
                 "#{id} is in view before following the link to it."
             );
-            open_link_from_context_menu(&driver, link_css).await?;
+            open_link_from_context_menu(&driver, link_css, MenuTrigger::Pointer).await?;
             let deadline = Instant::now() + TIMEOUT;
             while !is_in_view(&driver, id).await {
                 assert!(
@@ -1411,23 +1455,46 @@ async fn follow_link_project_link(
     Ok(())
 }
 
-// Right-click the link `link_css` selects, then choose "Open link", which must
-// be the only item on the context menu.
+// Open TinyMCE's context menu for the link `link_css` selects, then choose
+// "Open link", which must be the only item on the menu.
 async fn open_link_from_context_menu(
+    // The browser, with the Client's iframe selected.
     driver: &WebDriver,
     // CSS selecting the link to follow.
     link_css: &str,
+    // How to open the context menu.
+    trigger: MenuTrigger,
 ) -> Result<(), WebDriverError> {
     let link = driver
         .query(By::Css(link_css))
         .desc("the link to follow")
         .first()
         .await?;
-    driver
-        .action_chain()
-        .context_click_element(&link)
-        .perform()
-        .await?;
+    match trigger {
+        MenuTrigger::Pointer => {
+            driver
+                .action_chain()
+                .context_click_element(&link)
+                .perform()
+                .await?;
+        }
+        // macOS has no keyboard shortcut which opens a context menu, so send
+        // the `contextmenu` event which such a shortcut produces elsewhere.
+        // TinyMCE treats this event as the keyboard's when its `button` isn't
+        // 2 (the right button), opening the menu on the selection.
+        MenuTrigger::Keyboard => {
+            driver
+                .execute(
+                    r#"const editor = tinymce.get(0);
+                    editor.selection.select(arguments[0].closest("[contenteditable='false']"));
+                    editor.getBody().dispatchEvent(
+                        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+                    );"#,
+                    vec![link.to_json()?],
+                )
+                .await?;
+        }
+    }
     let menu_items = driver
         .query(By::Css(".tox-menu [role='menuitem']"))
         .desc("the items of TinyMCE's context menu")
@@ -1443,6 +1510,7 @@ async fn open_link_from_context_menu(
 // Once `load_link_project` returns, nothing has focused a doc block yet, so
 // none holds TinyMCE.
 async fn query_unfocused_link(
+    // The browser, with the Client's iframe selected.
     driver: &WebDriver,
     // CSS selecting the link.
     link_css: &str,
@@ -1460,8 +1528,11 @@ async fn query_unfocused_link(
 // Open `test.py` from the project `write_link_project` creates, then click the
 // link `link_css` selects, in a doc block which doesn't hold TinyMCE.
 async fn click_unfocused_link(
+    // The Server, through which the test plays the IDE.
     codechat_server: &CodeChatEditorServerLog,
+    // The browser showing the Client.
     driver: &WebDriver,
+    // The directory in which to create the project.
     test_dir: &Path,
     // CSS selecting the link to click.
     link_css: &str,
@@ -1486,7 +1557,9 @@ async fn click_unfocused_link(
 // Check that clicking or focusing the link `link_css` selects moved TinyMCE
 // into the doc block holding that link without following the link.
 async fn assert_not_followed(
+    // The Server, through which the test plays the IDE.
     codechat_server: &CodeChatEditorServerLog,
+    // The browser, with the Client's iframe selected.
     driver: &WebDriver,
     // The id of the next message the Client sends; updated as messages
     // arrive.
@@ -1519,6 +1592,7 @@ async fn assert_not_followed(
 
 // Check that the cursor is in `link`.
 async fn assert_cursor_in(
+    // The browser, with the Client's iframe selected.
     driver: &WebDriver,
     // The link which must hold the cursor.
     link: &WebElement,
@@ -1536,6 +1610,7 @@ async fn assert_cursor_in(
 
 // Check that the Client's next request asks the IDE to open `file`.
 async fn assert_requests_file(
+    // The Server, through which the test plays the IDE.
     codechat_server: &CodeChatEditorServerLog,
     // The id of the next message the Client sends; updated as messages
     // arrive.
@@ -1567,6 +1642,7 @@ async fn assert_requests_file(
 // * The Client's report of a new cursor or scroll position, which this
 //   acknowledges.
 async fn next_unhandled_message(
+    // The Server, through which the test plays the IDE.
     codechat_server: &CodeChatEditorServerLog,
     // The id of the next message the Client sends; updated as messages
     // arrive.
@@ -1599,9 +1675,11 @@ async fn next_unhandled_message(
 // CodeMirror editor. CodeMirror renders only what's near its viewport, so an
 // element far from it isn't in the DOM.
 async fn is_in_view(
+    // The browser, with the Client's iframe selected.
     driver: &WebDriver,
     // The element's id.
     id: &str,
+    // True if any of the element is visible.
 ) -> bool {
     driver
         .execute(

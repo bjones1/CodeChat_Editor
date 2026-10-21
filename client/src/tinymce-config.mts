@@ -67,6 +67,9 @@ import "tinymce/plugins/visualchars/index.js";
 /// import './plugins/powerpaste/plugin';
 /// import './plugins/powerpaste/js/wordimport';
 
+// Import local code.
+import { followNewTabLink } from "./CodeChatEditor.mjs";
+
 // Initialize TinyMCE.
 export const init = async (
     // Provide additional editor options; note that the basic setup provided
@@ -219,35 +222,51 @@ const addNonEditableLinkMenu = (
             // An editable link already has the link plugin's menu.
             menuLink = editor.dom.isEditable(element)
                 ? null
-                : editor.dom.getParent<HTMLAnchorElement>(element, "a[href]");
+                : (editor.dom.getParent<HTMLAnchorElement>(
+                      element,
+                      "a[href]",
+                  ) ??
+                  // The keyboard opens the menu on a selected non-editable
+                  // element, which encloses its links instead of sitting in
+                  // one; take its first link, as Alt+Enter does.
+                  (element === editor.selection.getStart(true)
+                      ? element.querySelector<HTMLAnchorElement>("a[href]")
+                      : null));
             return menuLink === null ? "" : OPEN_NON_EDITABLE_LINK_ITEM;
         },
     });
 
-    // Follow the link exactly as a Ctrl+click does, by sending it one: the link
-    // plugin handles that click, but doesn't export the routine it uses to do
-    // so. The plugin checks for Cmd on macOS and iOS but Ctrl elsewhere, so the
-    // click holds both.
+    // Follow the link exactly as a Ctrl+click does. The link plugin doesn't
+    // export the routine it uses to do so, `gotoLink`, so this repeats it: a
+    // link to an id scrolls the element with that id in the editor into view,
+    // while any other link opens in a new tab, which `followNewTabLink`
+    // redirects when it can.
     editor.ui.registry.addMenuItem(OPEN_NON_EDITABLE_LINK_ITEM, {
         text: "Open link",
         icon: "new-tab",
         onAction: () => {
             // Content the IDE sent while the menu was open may have replaced
-            // the link. TinyMCE never sees a click on a link outside the
-            // editor, which leaves the browser to follow it, so skip it.
+            // the link; don't follow a link which is no longer shown.
             if (menuLink === null || !editor.getBody().contains(menuLink)) {
                 return;
             }
-            menuLink.dispatchEvent(
-                new MouseEvent("click", {
-                    bubbles: true,
-                    // TinyMCE cancels this click to keep the browser from
-                    // following the link as well.
-                    cancelable: true,
-                    ctrlKey: true,
-                    metaKey: true,
-                }),
-            );
+            // Like `gotoLink`, prefer the original `href` which TinyMCE keeps
+            // in `data-mce-href`.
+            const href =
+                menuLink.getAttribute("data-mce-href") ??
+                menuLink.getAttribute("href") ??
+                "";
+            if (href.startsWith("#")) {
+                const id = CSS.escape(href.slice(1));
+                const target = editor.dom.select(
+                    `[id="${id}"],[name="${id}"]`,
+                )[0];
+                if (target !== undefined) {
+                    editor.selection.scrollIntoView(target, true);
+                }
+            } else if (!followNewTabLink(menuLink)) {
+                window.open(menuLink.href, "_blank", "noopener,noreferrer");
+            }
         },
     });
 };

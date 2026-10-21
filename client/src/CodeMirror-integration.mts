@@ -864,11 +864,12 @@ const linkOutsideTinymce = (
 };
 
 // TinyMCE follows a clicked link when `tinymce.util.VK.metaKeyPressed` accepts
-// the click, so `isFollowClick` repeats that test: TinyMCE loads only once a doc
-// block gains the focus, too late for a click which arrives first. On macOS and
-// iOS, which TinyMCE recognizes from the user agent as below, the test requires
-// Cmd; elsewhere, it requires Ctrl without Alt, since AltGr, which types
-// characters on many Windows keyboard layouts, reports both.
+// the click, so `isFollowClick` applies that test. However, TinyMCE loads only
+// once a doc block gains the focus, too late for a click which arrives first;
+// until then, `isFollowClick` repeats the test. On macOS and iOS, which TinyMCE
+// recognizes from the user agent much as below, the test requires Cmd;
+// elsewhere, it requires Ctrl without Alt, since AltGr, which types characters
+// on many Windows keyboard layouts, reports both.
 const isMacOsOrIos = /iphone|ipad|mac os x/.test(
     navigator.userAgent.toLowerCase(),
 );
@@ -877,7 +878,9 @@ const isFollowClick = (
     // A mouse event on a link.
     event: MouseEvent,
     // True if the event asks to follow the link.
-): boolean => (isMacOsOrIos ? event.metaKey : event.ctrlKey && !event.altKey);
+): boolean =>
+    tinymce?.util.VK.metaKeyPressed(event) ??
+    (isMacOsOrIos ? event.metaKey : event.ctrlKey && !event.altKey);
 
 // Chromium gives a pressed link the focus, and the `focusin` handler in
 // `DocBlockPlugin` then moves TinyMCE into the link's doc block. However,
@@ -1297,12 +1300,16 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 indentDiv.addEventListener("input", onIndentInput);
 
                 // The focus lands on the contents div or, as when Chromium
-                // focuses a pressed link (see `onDocBlockLinkMousedown`), on an
-                // element inside it. If the target is in the indent instead,
-                // then the following code isn't needed.
+                // focuses a pressed link (see `onDocBlockLinkMousedown`), on a
+                // link inside it. Ignore focus anywhere else. The indent needs
+                // none of the following code, and other focusable elements in
+                // the contents, such as an embedded iframe or a `<summary>`,
+                // must not move TinyMCE here.
                 if (
                     !(eventTarget instanceof Element) ||
-                    eventTarget.closest(".CodeChat-doc-contents") === null
+                    !eventTarget.matches(
+                        ".CodeChat-doc-contents, .CodeChat-doc-contents a[href]",
+                    )
                 ) {
                     return false;
                 }
@@ -1316,10 +1323,10 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                 if (isTinymce) {
                     // Nothing to do.
                 } else {
-                    // Focus which reaches an element inside the contents from
-                    // the keyboard, such as a link reached with the Tab key,
-                    // leaves the selection where it was, perhaps in another doc
-                    // block; place the cursor at that element's start instead.
+                    // Focus which reaches a link from the keyboard, as with the
+                    // Tab key, leaves the selection where it was, perhaps in
+                    // another doc block; place the cursor at the link's start
+                    // instead.
                     const selection = window.getSelection();
                     if (
                         eventTarget !== contentsDiv &&
