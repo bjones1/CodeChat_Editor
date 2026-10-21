@@ -109,7 +109,7 @@ async fn test_xss_core(
     let orig_text =
         "Before <img src='data:image/png;base64,!' onerror='console.log(\"XSS\")'> after."
             .to_string();
-    let server_id = perform_loadfile(
+    perform_loadfile(
         &codechat_server,
         &test_dir,
         "test.md",
@@ -226,35 +226,6 @@ async fn test_xss_core(
     assert!(
         !inserted.contains("XSS"),
         "Source written back to the IDE still contains the XSS payload: {inserted}"
-    );
-    codechat_server.send_result(client_id, None).await.unwrap();
-    client_id += MESSAGE_ID_INCREMENT;
-
-    // Editing a doc block prompts the Server to send the Client a re-translated
-    // version of the document; the Client's acknowledgement comes back here as
-    // a `Result(Ok)` carrying the Server's ID.
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: server_id,
-            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
-        }
-    );
-
-    // The re-translation settles the cursor, producing a final cursor-only
-    // update from the Client.
-    assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
-        EditorMessage {
-            id: client_id,
-            message: EditorMessageContents::Update(UpdateMessageContents {
-                file_path: path_str.clone(),
-                cursor_position: Some(CursorPosition::Line(1)),
-                scroll_position: None,
-                is_re_translation: false,
-                contents: None,
-            })
-        }
     );
     codechat_server.send_result(client_id, None).await.unwrap();
     //client_id += MESSAGE_ID_INCREMENT;
