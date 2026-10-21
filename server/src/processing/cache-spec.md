@@ -482,9 +482,12 @@ inside an element marked `contenteditable=false`. TinyMCE's link plugin offers
 no context menu items for non-editable content, so a right click (mouse) or long
 press (touch) on one of these links is ignored. Therefore, when the user
 performs either of these actions, the Client must show the TinyMCE context menu,
-whose only item, "Open link", follows the link exactly as a Ctrl+click does.
-TinyMCE's link plugin already provides the other ways to follow these links, so
-the Client doesn't implement them:
+whose only item, "Open link", follows the link exactly as a Ctrl+click does. A
+right click or long press on non-editable content beside its links offers no
+"Open link". With a non-editable element selected, the keyboard's context menu
+shortcut (the Menu key, or Shift+F10) shows the same menu, which follows the
+element's first link, as Alt+Enter does. TinyMCE's link plugin already provides
+the other ways to follow these links, so the Client doesn't implement them:
 
 * Ctrl+click (Cmd+click on macOS) follows the clicked link.
 * Alt+Enter, with the non-editable element selected, follows its first link.

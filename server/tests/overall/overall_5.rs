@@ -37,6 +37,7 @@ use std::{
 use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
+use serde_json::json;
 use thirtyfour::{
     By, Key, WebDriver, WebElement,
     error::WebDriverError,
@@ -841,10 +842,10 @@ async fn test_named_anchor_round_trip_core(
 // #### In non-editable content
 //
 // A right click on a link in non-editable content shows a context menu whose
-// only item, "Open link", follows that link. The keyboard opens the same menu
-// on a selected non-editable element, following its first link. See
-// `addNonEditableLinkMenu` in
-// [tinymce-config.mts](../../../client/src/tinymce-config.mts) and `Links in
+// only item, "Open link", follows that link, while a right click beside the
+// link offers no "Open link". The keyboard opens the same menu on a selected
+// non-editable element, following its first link. See `addNonEditableLinkMenu`
+// in [tinymce-config.mts](../../../client/src/tinymce-config.mts) and `Links in
 // hydrated content` in [cache-spec.md](../../src/processing/cache-spec.md).
 make_test!(
     test_open_non_editable_link,
@@ -852,9 +853,13 @@ make_test!(
 );
 
 async fn test_open_non_editable_link_core(
+    // The Server, through which the test plays the IDE.
     codechat_server: CodeChatEditorServerLog,
+    // The browser showing the Client.
     driver: WebDriver,
+    // The directory holding `test.md` and the `other.md` it links to.
     test_dir: PathBuf,
+    // WebDriver's errors; failed checks panic instead.
 ) -> Result<(), WebDriverError> {
     open_markdown_non_editable_link(codechat_server, driver, test_dir, MenuTrigger::Pointer).await
 }
@@ -865,11 +870,61 @@ make_test!(
 );
 
 async fn test_open_non_editable_link_keyboard_core(
+    // The Server, through which the test plays the IDE.
     codechat_server: CodeChatEditorServerLog,
+    // The browser showing the Client.
     driver: WebDriver,
+    // The directory holding `test.md` and the `other.md` it links to.
     test_dir: PathBuf,
+    // WebDriver's errors; failed checks panic instead.
 ) -> Result<(), WebDriverError> {
     open_markdown_non_editable_link(codechat_server, driver, test_dir, MenuTrigger::Keyboard).await
+}
+
+make_test!(
+    test_open_non_editable_link_beside,
+    test_open_non_editable_link_beside_core
+);
+
+async fn test_open_non_editable_link_beside_core(
+    // The Server, through which the test plays the IDE.
+    codechat_server: CodeChatEditorServerLog,
+    // The browser showing the Client.
+    driver: WebDriver,
+    // The directory holding `test.md`.
+    test_dir: PathBuf,
+    // WebDriver's errors; failed checks panic instead.
+) -> Result<(), WebDriverError> {
+    load_markdown_non_editable_link(&codechat_server, &driver, &test_dir).await;
+
+    // Right-click the text preceding the link. Pressing a non-editable element
+    // selects it, leaving TinyMCE in the state in which the keyboard opens the
+    // menu, so this checks that the Client doesn't mistake this right click for
+    // the keyboard.
+    let non_editable = query_markdown_non_editable(&driver).await?;
+    let rect = non_editable.rect().await?;
+    driver
+        .action_chain()
+        .move_to_element_with_offset(
+            &non_editable,
+            (-rect.width / 2.0 + 8.0) as i64,
+            (-rect.height / 2.0 + 8.0) as i64,
+        )
+        .context_click()
+        .perform()
+        .await?;
+    // Give a menu time to appear, were the Client to show one.
+    sleep(SETTLE_TIME).await;
+    for menu_item in driver
+        .query(By::Css(".tox-menu [role='menuitem']"))
+        .nowait()
+        .all_from_selector()
+        .await?
+    {
+        assert_ne!(menu_item.text().await?, "Open link");
+    }
+
+    Ok(())
 }
 
 // In a source file, unlike a Markdown document, a doc block becomes a TinyMCE
@@ -1187,9 +1242,16 @@ async fn test_ctrl_click_non_editable_link_py_unfocused_core(
 enum MenuTrigger {
     // A right click on the link.
     Pointer,
-    // The keyboard, with the non-editable element enclosing the link selected.
+    // A click beside the link, which selects the non-editable element
+    // enclosing it, then the keyboard's context menu shortcut.
     Keyboard,
 }
+
+// The non-editable content which the Markdown tests above place in `test.md`,
+// as a stand-in for the content the cache hydrates. Text precedes the link, so
+// that a click at the content's top left lands beside the link.
+const MARKDOWN_NON_EDITABLE_LINK: &str =
+    "<div contenteditable=\"false\">See <a href=\"other.md\">Other</a></div>\n";
 
 // Where following a link should lead.
 enum LinkDestination {
@@ -1281,9 +1343,46 @@ fn write_link_project(
     fs::write(test_dir.join("test.py"), test_py).unwrap();
 }
 
-// In a Markdown document, using a stand-in for the content the cache hydrates,
-// open the context menu for a link in non-editable content, then follow the
-// link.
+// Show `test.md`, holding `MARKDOWN_NON_EDITABLE_LINK`, in the Client.
+async fn load_markdown_non_editable_link(
+    // The Server, through which the test plays the IDE.
+    codechat_server: &CodeChatEditorServerLog,
+    // The browser showing the Client; this selects the Client's iframe.
+    driver: &WebDriver,
+    // The directory holding `test.md`.
+    test_dir: &Path,
+) {
+    perform_loadfile(
+        codechat_server,
+        test_dir,
+        "test.md",
+        Some((MARKDOWN_NON_EDITABLE_LINK.to_string(), 0.0)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(driver).await;
+}
+
+// Find the non-editable element which `load_markdown_non_editable_link` shows.
+async fn query_markdown_non_editable(
+    // The browser, with the Client's iframe selected.
+    driver: &WebDriver,
+    // The non-editable element.
+) -> Result<WebElement, WebDriverError> {
+    driver
+        .query(By::Css(format!(
+            "{DOC_BLOCK_CSS} [contenteditable='false']"
+        )))
+        .desc("the non-editable element")
+        .first()
+        .await
+}
+
+// In a Markdown document, open the context menu for the link in
+// `MARKDOWN_NON_EDITABLE_LINK`, then follow the link.
 async fn open_markdown_non_editable_link(
     // The Server, through which the test plays the IDE.
     codechat_server: CodeChatEditorServerLog,
@@ -1293,23 +1392,9 @@ async fn open_markdown_non_editable_link(
     test_dir: PathBuf,
     // How to open the context menu.
     trigger: MenuTrigger,
+    // WebDriver's errors; failed checks panic instead.
 ) -> Result<(), WebDriverError> {
-    perform_loadfile(
-        &codechat_server,
-        &test_dir,
-        "test.md",
-        Some((
-            "<div contenteditable=\"false\"><a href=\"other.md\">Other</a></div>\n".to_string(),
-            0.0,
-        )),
-        false,
-        6.0,
-    )
-    .await;
-
-    // Target the iframe containing the Client.
-    select_codechat_iframe(&driver).await;
-
+    load_markdown_non_editable_link(&codechat_server, &driver, &test_dir).await;
     open_link_from_context_menu(&driver, &format!("{DOC_BLOCK_CSS} a"), trigger).await?;
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
     assert_requests_file(&codechat_server, &mut client_id, &test_dir.join("other.md")).await;
@@ -1464,6 +1549,7 @@ async fn open_link_from_context_menu(
     link_css: &str,
     // How to open the context menu.
     trigger: MenuTrigger,
+    // WebDriver's errors; failed checks panic instead.
 ) -> Result<(), WebDriverError> {
     let link = driver
         .query(By::Css(link_css))
@@ -1478,21 +1564,49 @@ async fn open_link_from_context_menu(
                 .perform()
                 .await?;
         }
-        // macOS has no keyboard shortcut which opens a context menu, so send
-        // the `contextmenu` event which such a shortcut produces elsewhere.
-        // TinyMCE treats this event as the keyboard's when its `button` isn't
-        // 2 (the right button), opening the menu on the selection.
         MenuTrigger::Keyboard => {
-            driver
-                .execute(
-                    r#"const editor = tinymce.get(0);
-                    editor.selection.select(arguments[0].closest("[contenteditable='false']"));
-                    editor.getBody().dispatchEvent(
-                        new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
-                    );"#,
-                    vec![link.to_json()?],
-                )
+            // Click the text preceding the link in the non-editable element
+            // enclosing it; the press selects that element.
+            let non_editable = link
+                .find(By::XPath("ancestor::*[@contenteditable='false'][1]"))
                 .await?;
+            click_element_top_left(driver, &non_editable).await?;
+            // macOS has no keyboard shortcut which opens a context menu, so
+            // there, send the `contextmenu` event which such a shortcut
+            // produces elsewhere. TinyMCE treats this event as the keyboard's
+            // when its `button` isn't 2 (the right button), opening the menu
+            // on the selection.
+            if cfg!(target_os = "macos") {
+                driver
+                    .execute(
+                        r#"tinymce.get(0).getBody().dispatchEvent(
+                            new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+                        );"#,
+                        vec![],
+                    )
+                    .await?;
+            } else {
+                // Press Shift+F10. Chrome doesn't open a context menu for
+                // WebDriver's key actions, but does for a `rawKeyDown` sent
+                // through the DevTools protocol's
+                // [Input.dispatchKeyEvent](https://chromedevtools.github.io/devtools-protocol/tot/Input/#method-dispatchKeyEvent).
+                let cdp = driver.cdp();
+                for event_type in ["rawKeyDown", "keyUp"] {
+                    cdp.send_raw(
+                        "Input.dispatchKeyEvent",
+                        json!({
+                            "type": event_type,
+                            // Shift.
+                            "modifiers": 8,
+                            // F10.
+                            "windowsVirtualKeyCode": 121,
+                            "key": "F10",
+                            "code": "F10",
+                        }),
+                    )
+                    .await?;
+                }
+            }
         }
     }
     let menu_items = driver

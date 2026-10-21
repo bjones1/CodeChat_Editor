@@ -212,11 +212,19 @@ const addNonEditableLinkMenu = (
 ) => {
     // The link which the context menu was most recently shown for.
     let menuLink: HTMLAnchorElement | null = null;
+    // The target of the event which most recently opened the context menu.
+    // TinyMCE's theme starts listening for these events only once the editor
+    // initializes, so this listener, added during setup, runs first.
+    let menuEventTarget: EventTarget | null = null;
+    editor.on("contextmenu longpress", (event) => {
+        menuEventTarget = event.target;
+    });
 
     editor.ui.registry.addContextMenu(NON_EDITABLE_LINK_MENU, {
         update: (
-            // The element right-clicked or long-pressed, or the start of the
-            // selection when the keyboard opens the menu.
+            // The element right-clicked or long-pressed, which is the target
+            // of the event opening the menu, or the start of the selection
+            // when TinyMCE judges that the keyboard opened the menu.
             element,
         ) => {
             // An editable link already has the link plugin's menu.
@@ -228,8 +236,9 @@ const addNonEditableLinkMenu = (
                   ) ??
                   // The keyboard opens the menu on a selected non-editable
                   // element, which encloses its links instead of sitting in
-                  // one; take its first link, as Alt+Enter does.
-                  (element === editor.selection.getStart(true)
+                  // one; take its first link, as Alt+Enter does. A right
+                  // click or long press beside the links offers nothing.
+                  (element !== menuEventTarget
                       ? element.querySelector<HTMLAnchorElement>("a[href]")
                       : null));
             return menuLink === null ? "" : OPEN_NON_EDITABLE_LINK_ITEM;
