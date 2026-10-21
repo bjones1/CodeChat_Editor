@@ -658,7 +658,10 @@ impl<'a> HtmlToMarkdownWrapped<'a> {
     /// End the document, returning the Markdown placed at its end (such as
     /// link reference definitions). This consumes the wrapper, since finishing
     /// a `Conversion` consumes it.
-    fn last(self) -> Result<String, HtmlToMarkdownWrappedError> {
+    fn last(
+        self,
+        // The word-wrapped Markdown which ends the document.
+    ) -> Result<String, HtmlToMarkdownWrappedError> {
         let converted = self.html_to_markdown_conversion.finish();
         Ok(
             format_text(&converted, &self.word_wrap_config, |_, _, _| Ok(None))?
@@ -668,7 +671,12 @@ impl<'a> HtmlToMarkdownWrapped<'a> {
 
     /// Convert a document consisting of a single DOM tree from HTML to
     /// markdown.
-    fn convert(self, tree: &Rc<Node>) -> Result<String, HtmlToMarkdownWrappedError> {
+    fn convert(
+        self,
+        // The DOM tree holding the entire document.
+        tree: &Rc<Node>,
+        // The document as word-wrapped Markdown.
+    ) -> Result<String, HtmlToMarkdownWrappedError> {
         let mut converted = self.next(tree)?;
         converted.push_str(&self.last()?);
         Ok(converted)
