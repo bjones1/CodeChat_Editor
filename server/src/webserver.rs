@@ -79,7 +79,7 @@ use tokio::{
         oneshot,
     },
     task::JoinHandle,
-    time::sleep,
+    time::{Instant, MissedTickBehavior, interval_at, sleep},
 };
 use ts_rs::TS;
 use url::Url;
@@ -492,13 +492,13 @@ pub const REPLY_TIMEOUT_MS: Duration = if cfg!(test) {
     Duration::from_secs(15)
 };
 
-/// How long a websocket may go without traffic before this server pings it,
-/// then how long to wait for the answering pong before closing the websocket.
-/// The unit tests in `ide/vscode/tests.rs` read one websocket of a pair while
-/// leaving the other unread, and tungstenite answers a ping only while its
-/// websocket is read. Waiting on the cache's watcher can leave a websocket
-/// unread for longer than twice the normal delay, so the unit tests use a delay
-/// which no wait approaches.
+/// How often this server pings each websocket, which is also how long it waits
+/// for the answering pong before closing the websocket. The unit tests in
+/// `ide/vscode/tests.rs` read one websocket of a pair while leaving the other
+/// unread, and tungstenite answers a ping only while its websocket is read.
+/// Waiting on the cache's watcher can leave a websocket unread for longer than
+/// twice the normal delay, so the unit tests use a delay which no wait
+/// approaches.
 const WEBSOCKET_PING_DELAY: Duration = if cfg!(test) {
     Duration::from_secs(10)
 } else {
@@ -1351,11 +1351,20 @@ pub fn client_websocket<S: BuildHasher + 'static>(
         let mut is_closing = false;
         // True if a ping was sent, but a matching pong wasn't yet received.
         let mut sent_ping = false;
+        // Ping on a fixed schedule, rather than after a quiet period, so that
+        // a steady stream of outgoing messages can't put off the ping, and
+        // with it the detection of a broken websocket, indefinitely. A send
+        // which stalls the loop past a tick mustn't produce a burst of
+        // catch-up ticks, which would close the websocket before its pong
+        // could arrive.
+        let mut ping_interval =
+            interval_at(Instant::now() + WEBSOCKET_PING_DELAY, WEBSOCKET_PING_DELAY);
+        ping_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         loop {
             select! {
                 // Send pings on a regular basis.
-                () = sleep(WEBSOCKET_PING_DELAY) => {
+                _ = ping_interval.tick() => {
                     if sent_ping {
                         // If we haven't received the answering pong, the
                         // websocket must be broken.
