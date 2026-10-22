@@ -24,7 +24,7 @@ Changelog
 
 * No changes.
 
-Version 0.3.1 -- 2026-Oct-20
+Version 0.3.1 -- 2026-Oct-21
 ----------------------------
 
 * Support navigation of links in gather elements, fragments, and cross
