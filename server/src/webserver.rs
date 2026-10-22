@@ -52,7 +52,7 @@ use actix_web::{
 };
 
 use actix_web_httpauth::{extractors::basic::BasicAuth, middleware::HttpAuthentication};
-use actix_ws::AggregatedMessage;
+use actix_ws::{AggregatedMessage, CloseCode, CloseReason};
 use bytes::Bytes;
 use dunce::simplified;
 use futures_util::StreamExt;
@@ -1349,6 +1349,9 @@ pub fn client_websocket<S: BuildHasher + 'static>(
         // otherwise, closing represents a network interruption (such as the
         // computer going to sleep).
         let mut is_closing = false;
+        // The status code and description which the Server's Close frame sends
+        // the websocket's client, if any.
+        let mut close_reason: Option<CloseReason> = None;
         // True if a ping was sent, but a matching pong wasn't yet received.
         let mut sent_ping = false;
         // Ping on a fixed schedule, rather than after a quiet period, so that
@@ -1363,23 +1366,13 @@ pub fn client_websocket<S: BuildHasher + 'static>(
 
         loop {
             select! {
-                // Send pings on a regular basis.
-                _ = ping_interval.tick() => {
-                    if sent_ping {
-                        // If we haven't received the answering pong, the
-                        // websocket must be broken.
-                        break;
-                    }
-                    // Send a ping to check that the websocket is still open.
-                    // For example, putting a PC to sleep then waking it breaks
-                    // the websocket, but the server doesn't detect this without
-                    // sending a ping (which then fails).
-                    if let Err(err) = session.ping(&Bytes::new()).await {
-                        error!("Unable to send ping: {err}");
-                        break;
-                    }
-                    sent_ping = true;
-                }
+                // Poll the branches in the order written, rather than at
+                // random. Reading the websocket comes first, so that a tick
+                // never judges the websocket broken while the answering pong
+                // waits unread, as it may after a send stalls the loop. The
+                // tick comes before outgoing messages, so that a steady stream
+                // of those can't put off the ping.
+                biased;
 
                 // Process a message received from the websocket.
                 Some(msg_wrapped) = aggregated_msg_stream.next() => {
@@ -1468,10 +1461,37 @@ pub fn client_websocket<S: BuildHasher + 'static>(
                                 }
                             }
                         }
+                        // A protocol error must
+                        // [fail the connection](https://www.rfc-editor.org/rfc/rfc6455#section-7.1.7),
+                        // sending a Close frame with an
+                        // [appropriate status code](https://www.rfc-editor.org/rfc/rfc6455#section-7.4.1).
+                        // The stream may also report the same error on every
+                        // poll, which, since this branch is polled first,
+                        // would starve the others.
                         Err(err) => {
                             error!("websocket receive error {err:?}");
+                            close_reason = Some(CloseCode::Protocol.into());
+                            break;
                         }
                     }
+                }
+
+                // Send pings on a regular basis.
+                _ = ping_interval.tick() => {
+                    if sent_ping {
+                        // If we haven't received the answering pong, the
+                        // websocket must be broken.
+                        break;
+                    }
+                    // Send a ping to check that the websocket is still open.
+                    // For example, putting a PC to sleep then waking it breaks
+                    // the websocket, but the server doesn't detect this without
+                    // sending a ping (which then fails).
+                    if let Err(err) = session.ping(&Bytes::new()).await {
+                        error!("Unable to send ping: {err}");
+                        break;
+                    }
+                    sent_ping = true;
                 }
 
                 // Forward a message from the processing task to the websocket.
@@ -1527,7 +1547,7 @@ pub fn client_websocket<S: BuildHasher + 'static>(
         }
 
         // Shut down the session, to stop any incoming messages.
-        if let Err(err) = session.close(None).await {
+        if let Err(err) = session.close(close_reason).await {
             error!("Unable to close session: {err}");
         }
 
