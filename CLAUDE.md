@@ -32,13 +32,41 @@ void foo();
 // since they are separated by a code block.
 ```
 
+### <span id="cc-sZ0Glsgjhu">Cross-references, gather elements, and fragments</span>
+
+To refer to text in another section of the current document or any file in this
+project:
+
+1. Assign a unique id for that section; in a code file, this must be placed in a
+   doc block. Any HTML element with an id can be the target of either a
+   hyperlink or a cross-reference.
+2. Refer to it using a hyperlink or cross-reference. For example, the following
+   syntax links directly to the `<span>` inside this section's heading:
+   `[Foo](#cc-sZ0Glsgjhu)` (link text is "Foo") / `<xref
+   ref="cc-sZ0Glsgjhu"></xref>` (link text comes from the cross-referenced span:
+   "Cross-references, gather elements, and fragments").
+
+When implementing a specification:
+
+1. Label each doc block preceding non-contiguous section of code of more than
+   three lines with a fragment: `<fragment id="some_unique_id1"></fragment>`.
+2. Gather these fragments in a subheading following the specification: `<h4
+   id="another_unique_id" data-gather="some_unique_id1 some_unique_id2
+   ...">Implementation of [title of this section]</h4>`.
+
+Each id must be unique throughout the entire project. To create an id:
+
+1. Randomly generate an id of the form `cc-[10 random ASCII letters or
+   numbers]`.
+2. grep the project to ensure this id is unique.
+
 Architecture
 ------------
 
-A Visual Studio Code extension in `extensions/VSCode` exchanges messages with
-the CodeChat Editor Server, located in `server/` (also termed the Server), which
-also exchanges messages with the CodeChat Editor Client (also termed the Client)
-located in `client/`.
+A Visual Studio Code extension in `extensions/VSCode` or the standalone server
+in `extensions/standalone` exchanges messages with the CodeChat Editor Server,
+located in `server/` (also termed the Server), which also exchanges messages
+with the CodeChat Editor Client (also termed the Client) located in `client/`.
 
 Project build
 -------------
@@ -139,6 +167,8 @@ Because comments become doc blocks, these mechanical rules apply:
 * Denote paragraphs using an empty comment (`//` or `///`), not an empty line.
 * A comment on the same line as code is never a doc block; it stays part of the
   code block.
+* When commenting out code, use `/*** ... */` to prevent the code from being
+  treated as a doc block.
 
 ### File structure
 
@@ -148,8 +178,8 @@ Source files follow this template (a few predate it; match it in new files):
 2. The GPL copyright and license block, copied verbatim from a neighboring file
    rather than retyped. In Rust it uses plain `//`, so it stays a doc block
    separate from the title which follows it.
-3. A single level-1 heading titling the file: the file name in a monospaced font
-   -- matching the file's actual name -- then `--`, then a short description.
+3. A single level-1 heading titling the file: the file name in backticks --
+   matching the file's actual name -- then `--`, then a short description.
 4. The file-level design narrative, if the file needs one.
 5. A `Modules` section, if the file has submodules, then an `Imports` section.
    In Rust its subsections are `### Standard library`, `### Third-party`, and
@@ -186,7 +216,7 @@ use std::collections::HashMap;
 
 ### TypeScript specifics
 
-* Use `//` tags instead of `/**` blocks.
+* Use `//` comments instead of `/**` blocks.
 * Document parameters as described above instead of using `@param` tags.
 
 ### Editing existing comments

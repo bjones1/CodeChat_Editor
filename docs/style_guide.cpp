@@ -27,9 +27,9 @@
 // CodeChat Editor. For basic use, see the [user manual](../README.md).
 //
 // The CodeChat Editor divides code into code blocks and documentation (doc)
-// blocks.​ These blocks are separated by newlines; comments on the same line as
-// code are not interpreted doc blocks.​ Doc blocks must have 1 space after the
-// comment delimiter.​ For example, this paragraph is a doc block;
+// blocks. These blocks are separated by newlines; comments on the same line as
+// code are not interpreted doc blocks. Doc blocks must have at least one space after the
+// comment delimiter. For example, this paragraph is a doc block;
 
 const char* CODE_BLOCK =
     "this is a code block."; // Comments here are NOT part of a doc block.
@@ -63,7 +63,7 @@ const char* CODE_BLOCK =
 // handle.
 //
 // **Phase 2 - writing.** As you write code, save links to helpful code
-// snippets, documentation, and ideas. ​Update the approach you sketched out as
+// snippets, documentation, and ideas. Update the approach you sketched out as
 // your learn what works (and doesn't) through the development process. Explain
 // any pieces of code that took significant development or debug time, or which
 // contain difficult to understand code.
