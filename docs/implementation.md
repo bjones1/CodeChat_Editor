@@ -261,7 +261,10 @@ The app needs build support because of complexity:
   to the VSCode extension, then a release published for that platform.
 
 So, this project contains Rust code to automate this process -- see the
-[builder](../builder/Cargo.toml).
+[builder](../builder/Cargo.toml). The `bt` script simplifies invoking the
+builder.
+
+### <span data-gather="" id="cc-1s8bUScadp">`bt` (build tool) script</span>
 
 Misc topics
 -----------
