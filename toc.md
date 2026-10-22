@@ -101,7 +101,7 @@ Implementation
     * [cli.rs](extensions/standalone/tests/cli.rs)
     * [Cargo.toml](extensions/standalone/Cargo.toml)
 * Development tools
-  * [CLAUDE.md](CLAUDE.md)
+  * [AGENTS.md](AGENTS.md)
   * Builder
     * [builder/Cargo.toml](builder/Cargo.toml)
     * [builder/src/main.rs](builder/src/main.rs)
