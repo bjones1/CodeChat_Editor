@@ -50,9 +50,11 @@ jobs:
       ##      builder
       ##      server
       ##      extensions/VSCode
+      # On Windows, GitHub Actions runs these commands in PowerShell, which runs
+      # `bt.ps1`; elsewhere, bash runs `bt`.
+      # <fragment id="cc-T3IsnVlz14"></fragment>
       - name: Run tests
         run: |
           rustup update
-          cd server
           ./bt install --dev
           ./bt full

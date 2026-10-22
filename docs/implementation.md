@@ -264,7 +264,7 @@ So, this project contains Rust code to automate this process -- see the
 [builder](../builder/Cargo.toml). The `bt` script simplifies invoking the
 builder.
 
-### <span data-gather="" id="cc-1s8bUScadp">`bt` (build tool) script</span>
+### <span data-gather="cc-T6v4Yb2tCo cc-MhYeYCCTxn cc-T3IsnVlz14 cc-ENVtePRoYi cc-ZTqrakWBqI" id="cc-1s8bUScadp">`bt` (build tool) script</span>
 
 Misc topics
 -----------

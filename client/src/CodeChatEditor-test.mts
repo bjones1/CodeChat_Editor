@@ -17,10 +17,10 @@
 // `CodeChatEditor-test.mts` -- Tests for the CodeChat Editor client
 // =================================================================
 //
-// To run tests, change to the `server/` directory then run `./bt client-build`
-// to build any changes to the Client, followed by `cargo test --test overall
-// test_client`. Or, add a `?test` parameter to any web page served by the
-// CodeChat Editor Server.
+// To run tests, run [`./bt client-build`](#cc-1s8bUScadp) from the root of the
+// project to build any changes to the Client, then run `cargo test --test
+// overall test_client` from the `server/` directory. Or, add a `?test`
+// parameter to any web page served by the CodeChat Editor Server.
 //
 // Imports
 // -------
@@ -227,9 +227,9 @@ window.CodeChatEditor_test = () => {
                     .querySelector(".cc-fragment-doc-contents")!
                     .getBoundingClientRect().left;
                 // ...and the code on the next line must begin in that same
-                // column: each line number fills a gutter of the same width, and
-                // the four spaces which follow the code's match the four the doc
-                // block is indented by.
+                // column: each line number fills a gutter of the same width,
+                // and the four spaces which follow the code's match the four
+                // the doc block is indented by.
                 const codeText = Array.from(code.childNodes).find(
                     (node) => node.nodeType === Node.TEXT_NODE,
                 ) as Text;

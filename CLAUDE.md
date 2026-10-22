@@ -37,19 +37,22 @@ void foo();
 To refer to text in another section of the current document or any file in this
 project:
 
-1. Assign a unique id for that section; in a code file, this must be placed in a
-   doc block. Any HTML element with an id can be the target of either a
-   hyperlink or a cross-reference.
+1. Assign a unique id for that section: `<span id="some_unique_id">section
+   title</span>`; in a code file, this must be placed in a doc block. Any HTML
+   element with an id can be the target of either a hyperlink or a
+   cross-reference.
 2. Refer to it using a hyperlink or cross-reference. For example, the following
    syntax links directly to the `<span>` inside this section's heading:
    `[Foo](#cc-sZ0Glsgjhu)` (link text is "Foo") / `<xref
    ref="cc-sZ0Glsgjhu"></xref>` (link text comes from the cross-referenced span:
-   "Cross-references, gather elements, and fragments").
+   "Cross-references, gather elements, and fragments"); the same syntax (a bare
+   id with no file) also links to any file in the project.
 
 When implementing a specification:
 
 1. Label each doc block preceding non-contiguous section of code of more than
-   three lines with a fragment: `<fragment id="some_unique_id1"></fragment>`.
+   three lines with a fragment placed at the end of the doc block: `<fragment
+   id="some_unique_id1"></fragment>`.
 2. Gather these fragments in a subheading following the specification: `<h4
    id="another_unique_id" data-gather="some_unique_id1 some_unique_id2
    ...">Implementation of [title of this section]</h4>`.
@@ -71,7 +74,8 @@ with the CodeChat Editor Client (also termed the Client) located in `client/`.
 Project build
 -------------
 
-All build commands must be executed from the `server/` directory.
+Execute these build commands, which run the [`bt`](#cc-1s8bUScadp) script, from
+the root of the project.
 
 * To build the entire project, execute `./bt build`.
 * To format and lint the entire project, execute `./bt flint`.

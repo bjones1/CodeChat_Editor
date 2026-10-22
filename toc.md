@@ -105,8 +105,8 @@ Implementation
   * Builder
     * [builder/Cargo.toml](builder/Cargo.toml)
     * [builder/src/main.rs](builder/src/main.rs)
-    * [server/bt](server/bt) - shortcut to run the build tool
-    * [server/bt.ps1](server/bt.ps1) - PowerShell shortcut to run the build tool
+    * [bt](bt) - shortcut to run the build tool
+    * [bt.ps1](bt.ps1) - PowerShell shortcut to run the build tool
   * Continuous integration
     * [check.yml](.github/workflows/check.yml)
     * [release.yml](.github/workflows/release.yml)
@@ -138,6 +138,7 @@ Implementation
     * [Cargo.toml](Cargo.toml) - workspace manifest
     * [config.toml](.cargo/config.toml) - for Rust code coverage
     * [dist-workspace.toml](dist-workspace.toml) - cargo-dist configuration
+    * [.ignore](.ignore) - show hidden directories to the CodeChat Editor
 
 Misc
 ====

@@ -144,12 +144,15 @@ jobs:
       - name: Install dependencies
         run: |
           ${{ matrix.packages_install }}
+      # dist generated this file; the `bt` calls in this step are hand-added,
+      # which `allow-dirty = ["ci"]` in `dist-workspace.toml` permits.
+      # <fragment id="cc-ENVtePRoYi" following="3"></fragment>
       - name: Build artifacts
         run: |
-          server/bt prerelease
+          ./bt prerelease
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
-          server/bt postrelease ${{ matrix.dist_args }} ${{ needs.plan.outputs.tag-flag }}
+          ./bt postrelease ${{ matrix.dist_args }} ${{ needs.plan.outputs.tag-flag }}
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build

@@ -35,10 +35,11 @@ This file is written by hand; only its evidence is generated. After changing
 anything which affects the rendered page, refresh the evidence and then edit the
 prose against it:
 
-1. Rebuild the Client if any of its TypeScript or CSS changed, by running `./bt
-   client-build` from `server/`. The tests serve the *bundle*, so a source-only
-   change stays invisible to them until it's rebuilt. This is the step which is
-   easy to forget and which silently yields stale findings.
+1. Rebuild the Client if any of its TypeScript or CSS changed, by running
+   [`./bt client-build`](#cc-1s8bUScadp) from the root of the project. The tests
+   serve the *bundle*, so a source-only change stays invisible to them until
+   it's rebuilt. This is the step which is easy to forget and which silently
+   yields stale findings.
 
 2. Run `cargo test --test overall a11y` from `server/`. Each scenario rewrites
    `server/target/a11y/<scenario>.json` -- the audit findings, the heading and

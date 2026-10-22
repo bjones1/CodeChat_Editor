@@ -16,11 +16,15 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
 #
-# # `bt` -- Shortcut to run the CodeChat Editor build tool
-
-# See [passing all command-line arguments](https://www.scivision.dev/powershell-pass-all-command-args/).
-$manifest_path = Join-Path -Path $PSScriptRoot -ChildPath ../builder/Cargo.toml
-echo $manifest_path
-cargo run --manifest-path=$manifest_path -- $args
+# `.ignore` -- Show hidden directories to the CodeChat Editor
+# ===========================================================
+#
+# The CodeChat Editor's project cache walks the project with the
+# [ignore](https://docs.rs/ignore) crate, which skips hidden files and
+# directories unless an ignore file whitelists them. These directories contain
+# fragments gathered elsewhere in the project, such as the calls to `bt`
+# gathered in `docs/implementation.md`. ripgrep honors this file as well.
+!.github/
+!.devcontainer/
 
 # CodeChat Editor lexer: python

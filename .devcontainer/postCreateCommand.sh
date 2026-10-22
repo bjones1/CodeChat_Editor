@@ -8,6 +8,6 @@ if [ -x /usr/local/bin/chrome ] && [ ! -e /usr/local/bin/google-chrome ]; then
     sudo ln -s /usr/local/bin/chrome /usr/local/bin/google-chrome
 fi
 
-cd server
+# <fragment id="cc-ZTqrakWBqI"></fragment>
 ./bt install --dev
 ./bt build

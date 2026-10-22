@@ -27,13 +27,13 @@ To build from source
    recommend the 64-bit toolset for Windows.
 3. [Install NPM](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
    (the Node.js package manager).
-4. In the `server/` directory:
+4. In the root directory of the project:
    1. Run `./bt install --dev`.
    2. Run `./bt build`.
-   3. Run `cargo run -- start ../README.md`.
+5. In the `server/` directory, run `cargo run -- start ../README.md`.
 
-Use `./bt` tool's options update all libraries (`update`), run all tests
-(`test`), and more.
+Use the [`bt`](#cc-1s8bUScadp) tool's options to update all libraries
+(`update`), run all tests (`test`), and more.
 
 <a id="vision"></a>Vision
 -------------------------
