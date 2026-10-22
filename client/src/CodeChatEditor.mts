@@ -646,49 +646,79 @@ const onNavigate = (navigateEvent: NavigateEvent) => {
 // specifically those that TinyMCE generates (since they're always set to open
 // in a new tab).
 const onClick = (event: MouseEvent) => {
-    // TinyMCE by default tries to open all links in a new tab. Look for and fix
-    // these. Skip a click another handler has already canceled, such as one on
-    // a link in a doc block which doesn't hold TinyMCE (see `Links in doc
-    // blocks` in `CodeMirror-integration.mts`).
+    // TinyMCE's link plugin follows a link by clicking a temporary link to the
+    // same URL, appended to the page outside any doc block, which opens in a
+    // new tab. Look for and fix these. Leave alone a link in a doc block, where
+    // a plain click places the cursor whatever the link's target; `Link
+    // navigation` in [implementation.md](../../docs/implementation.md) lists
+    // the gestures which follow such a link.
     if (
         !event.defaultPrevented &&
         event.target instanceof HTMLAnchorElement &&
         event.target.target === "_blank" &&
-        followNewTabLink(event.target)
+        event.target.closest(".CodeChat-doc-contents") === null &&
+        !isLeftToBrowser(event.target)
     ) {
         event.preventDefault();
+        followLink(event.target);
     }
 };
 
-// Follow a link which the browser would open in a new tab.
-export const followNewTabLink = (
+// VSCode shows the Client through the Server's `/vsc` endpoints; see
+// [vscode.rs](../../server/src/ide/vscode.rs).
+const isVsCode = () => window.location.pathname.startsWith("/vsc");
+
+// Return true if the browser, rather than `followLink`, should follow a click
+// on this link: an external link outside VSCode. The browser then opens the
+// link as the click's modifier keys ask, such as in a background tab on a
+// Ctrl+click.
+export const isLeftToBrowser = (
+    // The clicked link.
+    link: HTMLAnchorElement,
+    // True to leave the click to the browser.
+): boolean => link.origin !== window.location.origin && !isVsCode();
+
+// Follow a link. Every way of following a link in the Client ends here, except
+// a click which `isLeftToBrowser` leaves to the browser, so that links act
+// alike wherever they are; see `Link navigation` in
+// [implementation.md](../../docs/implementation.md).
+export const followLink = (
     // The link to follow.
     link: HTMLAnchorElement,
-    // True if this followed the link, so the caller must cancel the click
-    // which would otherwise open it in a new tab; false to leave that click to
-    // the browser.
-): boolean => {
-    // If it's to a CodeChat Editor file, then load it as such.
-    if (link.origin === window.location.origin) {
-        // Ignore the "new tab" target, which doesn't make sense when there is a
-        // 1:1 relationship between the active IDE file and the file being
-        // edited in the CodeChat Editor. If two tabs are open, which is the
-        // current file for the IDE?
+) => {
+    // TinyMCE keeps the `href` as written in `data-mce-href`.
+    const href =
+        link.getAttribute("data-mce-href") ?? link.getAttribute("href") ?? "";
+    if (href.startsWith("#")) {
+        // TODO: CodeMirror renders only the part of a file near its viewport,
+        // so this misses a target elsewhere in the file. Remove this once the
+        // `_same_file` tests in `server/tests/overall/overall_5.rs` pass
+        // without `ignore`.
+        const id = CSS.escape(href.slice(1));
+        document.querySelector(`[id="${id}"],[name="${id}"]`)?.scrollIntoView();
+    } else if (link.origin === window.location.origin) {
+        // This is a link to a CodeChat Editor file, so load it as such. Ignore
+        // the "new tab" target, which doesn't make sense when there is a 1:1
+        // relationship between the active IDE file and the file being edited
+        // in the CodeChat Editor. If two tabs are open, which is the current
+        // file for the IDE?
         saveThenNavigate(new URL(link.href));
-        return true;
-    }
-    // This is navigation to some external link. Let that proceed without
-    // interruption in a pure browser environment. However, VSCode will block
-    // navigation, since it's cross-origin (the root iframe has no URL, in
-    // contrast with the localhost URL of the CodeChat Editor Server). In this
-    // case, ask the Server to open the requested link.
-    if (window.location.pathname.startsWith("/vsc")) {
+    } else if (isVsCode()) {
+        // This is an external link, which VSCode will block, since it's
+        // cross-origin (the root iframe has no URL, in contrast with the
+        // localhost URL of the CodeChat Editor Server). Ask the Server to open
+        // it instead.
         parent.window.CodeChatEditorFramework.webSocketComm.sendMessage({
             OpenUrl: link.href,
         });
-        return true;
+    } else {
+        // This is an external link which the browser won't follow, so open it
+        // here. `isLeftToBrowser` leaves a click on such a link to the browser,
+        // but the browser follows no link in editable content, TinyMCE cancels
+        // a click in non-editable content, and neither Alt+Enter nor a context
+        // menu item is a click on the link.
+        window.open(link.href, "_blank", "noopener,noreferrer");
     }
-    return false;
 };
 
 // Save the current document, then navigate to the provided URL, which must be a

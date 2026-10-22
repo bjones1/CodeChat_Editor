@@ -68,7 +68,7 @@ import "tinymce/plugins/visualchars/index.js";
 /// import './plugins/powerpaste/js/wordimport';
 
 // Import local code.
-import { followNewTabLink } from "./CodeChatEditor.mjs";
+import { followLink } from "./CodeChatEditor.mjs";
 
 // Initialize TinyMCE.
 export const init = async (
@@ -160,8 +160,9 @@ export const init = async (
             // Setting the
             // [context menu](https://www.tiny.cloud/docs/tinymce/latest/contextmenu/#contextmenu)
             // replaces TinyMCE's default list, so this must also name the
-            // context menus of the plugins imported above.
-            contextmenu: `link image table ${NON_EDITABLE_LINK_MENU}`,
+            // context menus of the plugins imported above, except the link
+            // plugin's, which `LINK_MENU` replaces.
+            contextmenu: `${LINK_MENU} image table`,
         },
     );
 
@@ -183,7 +184,8 @@ export const init = async (
                 return () => changed.unbind();
             },
         });
-        addNonEditableLinkMenu(editor);
+        takeLinkGestures(editor);
+        addLinkMenu(editor);
     };
 
     // Use these combined options to
@@ -192,22 +194,105 @@ export const init = async (
     return await tinymce.init(combinedOptions);
 };
 
-// Links in non-editable content
-// -----------------------------
+// Following links
+// ---------------
 //
-// The Server hydrates cross-references, fragments, gather lists, and math as
-// non-editable content, but the context menu of TinyMCE's link plugin offers
-// nothing for a non-editable element; see <xref ref="cc-srNQxJ2znz"></xref>.
-// This context menu fills that gap with a single "Open link" item. TinyMCE
-// shows its context menus on a long press as well as a right click, so this
-// serves touch devices too.
+// The Client, rather than TinyMCE's link plugin, follows the links in the
+// editor, through `followLink`, so that they act like links everywhere else in
+// the Client; see `Link navigation` in
+// [implementation.md](../../docs/implementation.md). The plugin follows a link
+// on Ctrl+click (Cmd+click on macOS) and Alt+Enter through its own private
+// code, not through an item the Client could replace, so the handlers below
+// take these gestures before the plugin sees them; handlers added during setup
+// run before those the plugin adds when the editor initializes. The link
+// context menu below likewise replaces the plugin's.
 //
-// The names under which TinyMCE registers this context menu and its item.
-const NON_EDITABLE_LINK_MENU = "noneditablelink";
-const OPEN_NON_EDITABLE_LINK_ITEM = "opennoneditablelink";
+// Each link the code below finds is an HTML link, never an `a` element in
+// inline SVG, whose `href` isn't a URL: the Server's sanitizer removes inline
+// SVG (see `AMMONIA_OPTIONS` in
+// [processing.rs](../../server/src/processing.rs)), replacing the Client's copy
+// of any edit which added some.
+//
+// TODO: the "Open link" button of the plugin's quick link form, which the quick
+// toolbar's `quicklink` button opens, still follows a link to an id itself,
+// searching only the doc block holding TinyMCE. Route it through `followLink`
+// when fixing links to an id elsewhere in the current file (see the TODO in
+// `followLink`).
+const takeLinkGestures = (
+    // The editor whose links the Client follows.
+    editor: Editor,
+) => {
+    editor.on("click", (event) => {
+        const link =
+            event.target instanceof Element
+                ? event.target.closest<HTMLAnchorElement>("a[href]")
+                : null;
+        if (link !== null && tinymce.util.VK.metaKeyPressed(event)) {
+            // The plugin follows a clicked link even when an earlier handler
+            // canceled the click, so stop the plugin from seeing it.
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            followLink(link);
+        }
+    });
 
-const addNonEditableLinkMenu = (
-    // The editor whose context menu gains this item.
+    editor.on("keydown", (event) => {
+        if (
+            event.key === "Enter" &&
+            event.altKey &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.shiftKey
+        ) {
+            const link = selectedLink(editor);
+            if (link !== null) {
+                // The plugin ignores a canceled keydown.
+                event.preventDefault();
+                followLink(link);
+            }
+        }
+    });
+};
+
+// Return the link which the keyboard follows, through Alt+Enter or the context
+// menu: the link holding the start of the selection, or else the first link in
+// the selection. A selected non-editable element encloses its links instead of
+// sitting in one, so this is its first link.
+const selectedLink = (
+    // The editor holding the selection.
+    editor: Editor,
+    // The link, or `null` if there's none.
+): HTMLAnchorElement | null => {
+    const range = editor.selection.getRng();
+    return (
+        editor.dom.getParent<HTMLAnchorElement>(
+            editor.selection.getStart(true),
+            "a[href]",
+        ) ??
+        editor.dom
+            .select<HTMLAnchorElement>("a[href]", editor.selection.getNode())
+            .find((link) => range.intersectsNode(link)) ??
+        null
+    );
+};
+
+// ### The link context menu
+//
+// This replaces the link plugin's context menu, whose "Open link" follows a
+// link to an id itself, and which offers nothing for non-editable content. The
+// Server hydrates cross-references, fragments, gather lists, and math as
+// non-editable content; see <xref ref="cc-srNQxJ2znz"></xref>. This menu keeps
+// the plugin's items for editing an editable link, and adds its own "Open link"
+// for any link. TinyMCE shows its context menus on a long press as well as a
+// right click, so this serves touch devices too.
+//
+// The names under which TinyMCE registers this context menu and its "Open link"
+// item.
+const LINK_MENU = "codechatlink";
+const OPEN_LINK_ITEM = "codechatopenlink";
+
+const addLinkMenu = (
+    // The editor whose context menu this is.
     editor: Editor,
 ) => {
     // The link which the context menu was most recently shown for.
@@ -220,61 +305,43 @@ const addNonEditableLinkMenu = (
         menuEventTarget = event.target;
     });
 
-    editor.ui.registry.addContextMenu(NON_EDITABLE_LINK_MENU, {
+    editor.ui.registry.addContextMenu(LINK_MENU, {
         update: (
             // The element right-clicked or long-pressed, which is the target
             // of the event opening the menu, or the start of the selection
             // when TinyMCE judges that the keyboard opened the menu.
             element,
         ) => {
-            // An editable link already has the link plugin's menu.
-            menuLink = editor.dom.isEditable(element)
-                ? null
-                : (editor.dom.getParent<HTMLAnchorElement>(
-                      element,
-                      "a[href]",
-                  ) ??
-                  // The keyboard opens the menu on a selected non-editable
-                  // element, which encloses its links instead of sitting in
-                  // one; take its first link, as Alt+Enter does. A right
-                  // click or long press beside the links offers nothing.
-                  (element !== menuEventTarget
-                      ? element.querySelector<HTMLAnchorElement>("a[href]")
-                      : null));
-            return menuLink === null ? "" : OPEN_NON_EDITABLE_LINK_ITEM;
+            menuLink =
+                element === menuEventTarget
+                    ? // A right click or long press beside a link offers no
+                      // "Open link".
+                      editor.dom.getParent<HTMLAnchorElement>(
+                          element,
+                          "a[href]",
+                      )
+                    : selectedLink(editor);
+            // Offer the plugin's
+            // [menu items](https://www.tiny.cloud/docs/tinymce/latest/link/#menu-items)
+            // for editing a link only in editable content, as the plugin's
+            // own menu does.
+            if (editor.dom.isEditable(element)) {
+                return menuLink === null
+                    ? "link"
+                    : `link unlink ${OPEN_LINK_ITEM}`;
+            }
+            return menuLink === null ? "" : OPEN_LINK_ITEM;
         },
     });
 
-    // Follow the link exactly as a Ctrl+click does. The link plugin doesn't
-    // export the routine it uses to do so, `gotoLink`, so this repeats it: a
-    // link to an id scrolls the element with that id in the editor into view,
-    // while any other link opens in a new tab, which `followNewTabLink`
-    // redirects when it can.
-    editor.ui.registry.addMenuItem(OPEN_NON_EDITABLE_LINK_ITEM, {
+    editor.ui.registry.addMenuItem(OPEN_LINK_ITEM, {
         text: "Open link",
         icon: "new-tab",
         onAction: () => {
             // Content the IDE sent while the menu was open may have replaced
             // the link; don't follow a link which is no longer shown.
-            if (menuLink === null || !editor.getBody().contains(menuLink)) {
-                return;
-            }
-            // Like `gotoLink`, prefer the original `href` which TinyMCE keeps
-            // in `data-mce-href`.
-            const href =
-                menuLink.getAttribute("data-mce-href") ??
-                menuLink.getAttribute("href") ??
-                "";
-            if (href.startsWith("#")) {
-                const id = CSS.escape(href.slice(1));
-                const target = editor.dom.select(
-                    `[id="${id}"],[name="${id}"]`,
-                )[0];
-                if (target !== undefined) {
-                    editor.selection.scrollIntoView(target, true);
-                }
-            } else if (!followNewTabLink(menuLink)) {
-                window.open(menuLink.href, "_blank", "noopener,noreferrer");
+            if (menuLink !== null && editor.getBody().contains(menuLink)) {
+                followLink(menuLink);
             }
         },
     });

@@ -85,7 +85,8 @@ import {
     tinymceInstance,
     tinymce,
     init,
-    followNewTabLink,
+    followLink,
+    isLeftToBrowser,
 } from "./CodeChatEditor.mjs";
 import {
     CodeChatForWeb,
@@ -863,12 +864,14 @@ const linkOutsideTinymce = (
         : null;
 };
 
-// TinyMCE follows a clicked link when `tinymce.util.VK.metaKeyPressed` accepts
-// the click, so `isFollowClick` repeats that test: TinyMCE loads only once a doc
-// block gains the focus, too late for a click which arrives first. On macOS and
-// iOS, which TinyMCE recognizes from the user agent much as below, the test
-// requires Cmd; elsewhere, it requires Ctrl without Alt, since AltGr, which
-// types characters on many Windows keyboard layouts, reports both.
+// In the doc block holding TinyMCE, the Client follows a clicked link when
+// `tinymce.util.VK.metaKeyPressed` accepts the click (see `Following links` in
+// [tinymce-config.mts](tinymce-config.mts)), so `isFollowClick` repeats that
+// test: TinyMCE loads only once a doc block gains the focus, too late for a
+// click which arrives first. On macOS and iOS, which TinyMCE recognizes from the
+// user agent much as below, the test requires Cmd; elsewhere, it requires Ctrl
+// without Alt, since AltGr, which types characters on many Windows keyboard
+// layouts, reports both.
 const isMacOsOrIos = /iphone|ipad|mac os x/.test(
     navigator.userAgent.toLowerCase(),
 );
@@ -921,7 +924,8 @@ const onDocBlockLinkMousedown = (
 
 // A plain click which arrives before TinyMCE has replaced the pressed link,
 // such as a tap's, lands on that link; cancel it. A Ctrl+click lands on the
-// link, which its press left in place; follow it.
+// link, which its press left in place; follow it, unless that's left to the
+// browser.
 const onDocBlockLinkClick = (
     // A click anywhere in CodeMirror.
     event: MouseEvent,
@@ -930,8 +934,11 @@ const onDocBlockLinkClick = (
     if (link === null) {
         return;
     }
-    if (!isFollowClick(event) || followNewTabLink(link)) {
+    if (!isFollowClick(event)) {
         event.preventDefault();
+    } else if (!isLeftToBrowser(link)) {
+        event.preventDefault();
+        followLink(link);
     }
 };
 

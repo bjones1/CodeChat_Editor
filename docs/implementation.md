@@ -515,12 +515,31 @@ it. In any other doc block, the browser would follow the link on a plain click
 and open it in a new tab on a Ctrl+click. Instead, the Client makes a plain
 click or tap move TinyMCE into that block, placing the cursor where the click
 landed, or beside the link's non-editable element, since TinyMCE keeps the
-cursor out of non-editable content. A Ctrl+click follows the link through
-`followNewTabLink`, as TinyMCE's links do: a link to a CodeChat Editor file
-loads through `saveThenNavigate`, while an external link opens through the IDE
-in VSCode or in a new tab in a browser. Focusing a link from the keyboard, as
-the Tab key does, likewise moves TinyMCE into its block, placing the cursor at
-the link's start.
+cursor out of non-editable content. A Ctrl+click follows the link, as in the
+block holding TinyMCE. Focusing a link from the keyboard, as the Tab key does,
+likewise moves TinyMCE into its block, placing the cursor at the link's start.
+
+The Client, not TinyMCE's link plugin, follows every link, through `followLink`:
+a link to an id scrolls the element with that id into view, a link to a CodeChat
+Editor file loads through `saveThenNavigate`, and an external link opens through
+the IDE in VSCode or in a new tab in a browser. This covers a Ctrl+click in any
+doc block; Alt+Enter in the block holding TinyMCE, which follows the link
+holding the start of the selection, or else the first link in the selection; and
+the "Open link" item of the context menu for a link in the block holding
+TinyMCE, whether or not the link is editable (see
+<xref ref="cc-srNQxJ2znz"></xref>).
+
+The one exception is a Ctrl+click, in a browser, on an external link in a doc
+block which doesn't hold TinyMCE: the Client leaves that click to the browser,
+which opens the link as the click's modifier keys ask, such as in a background
+tab. The browser follows no link in editable content, and TinyMCE cancels a
+click in non-editable content, so in the block holding TinyMCE, `followLink`
+opens an external link in a new tab itself.
+
+TODO: the "Open link" button of the link plugin's quick link form, which the
+quick toolbar's link button opens, follows a link to an id itself, searching
+only the block holding TinyMCE. Route it through `followLink` once `followLink`
+finds an id anywhere in the current file (see the TODO in `followLink`).
 
 TODO: a right click or long press on a link in a doc block which doesn't hold
 TinyMCE should show TinyMCE's context menu (see
