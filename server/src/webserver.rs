@@ -764,6 +764,12 @@ pub fn get_client_framework(
                                     <div style='text-align:center;font-family:Trebuchet MS;'>
                                         <h1>The CodeChat Editor</h1>
                                         <p>Waiting for initial render. Switch the active source code window to begin.</p>
+                                        <p>Copyright (C) 2026 Bryan A. Jones.</p>
+                                        <p>
+                                            This program comes with ABSOLUTELY NO WARRANTY; for details see the <a href="https://github.com/bjones1/CodeChat_Editor/blob/main/LICENSE.md#15-disclaimer-of-warranty">license</a>.
+                                            This is free software, and you are welcome to redistribute it
+                                            under <a href="https://github.com/bjones1/CodeChat_Editor/blob/main/LICENSE.md">certain conditions</a>.
+                                        </p>
                                     </div>
                                 </div>
                             </body>
