@@ -1,10 +1,5 @@
-// <h1 id="cc-nNZ6Gs2uWD"><code>style_guide.cpp</code> - Literate programming using the CodeChat Editor</h1>
-//
-// This document, written as a C++ source file, primarily demonstrates the use
-// of the CodeChat Editor in literate programming. It should be viewed using the
-// CodeChat Editor.
-//
-// Copyright (C) 2026 Bryan A. Jones.
+// The CodeChat Editor, a word processor for software developers.<br>Copyright
+// (C) 2024-2026 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
 // software: you can redistribute it and/or modify it under the terms of the GNU
@@ -19,6 +14,12 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+//
+// <h1 id="cc-nNZ6Gs2uWD"><code>style_guide.cpp</code> - Literate programming using the CodeChat Editor</h1>
+//
+// This document, written as a C++ source file, primarily demonstrates the use
+// of the CodeChat Editor in literate programming. It should be viewed using the
+// CodeChat Editor.
 //
 // Introduction
 // ------------

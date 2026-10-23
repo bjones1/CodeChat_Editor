@@ -1,4 +1,5 @@
-// Copyright (C) 2026 Bryan A. Jones.
+// The CodeChat Editor, a word processor for software developers.<br>Copyright
+// (C) 2024-2026 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
 // software: you can redistribute it and/or modify it under the terms of the

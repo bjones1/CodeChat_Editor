@@ -1,7 +1,5 @@
-/* `package.json5` - JavaScript manifest
-   =====================================
-
-   Copyright (C) 2026 Bryan A. Jones.
+/* The CodeChat Editor, a word processor for software developers.<br>Copyright
+   (C) 2024-2026 Bryan A. Jones.
 
    This file is part of the CodeChat Editor.
 
@@ -19,11 +17,12 @@
    License along with the CodeChat Editor. If not, see
    [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
 
-   Notes
-   -----
+   `package.json5` - JavaScript manifest
+   =====================================
 
-   Use only block comments in this file. Multiple single-line comments get oddly
-   munged by `pnpm` per [this issue](https://github.com/pnpm/pnpm/issues/9838). */
+   Note: use only block comments in this file. Multiple single-line comments get
+   oddly munged by `pnpm` per
+   [this issue](https://github.com/pnpm/pnpm/issues/9838). */
 {
     author: 'Bryan A. Jones',
     categories: [

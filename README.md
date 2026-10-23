@@ -319,7 +319,8 @@ Contributions to the code are welcome and encouraged!
 License
 -------
 
-Copyright (C) 2026 Bryan A. Jones.
+The CodeChat Editor, a word processor for software developers.<br>Copyright (C)
+2024-2026 Bryan A. Jones.
 
 This file is part of the CodeChat Editor.
 

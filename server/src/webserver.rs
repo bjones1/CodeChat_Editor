@@ -1,4 +1,5 @@
-// Copyright (C) 2026 Bryan A. Jones.
+// The CodeChat Editor, a word processor for software developers.<br>Copyright
+// (C) 2024-2026 Bryan A. Jones.
 //
 // This file is part of the CodeChat Editor. The CodeChat Editor is free
 // software: you can redistribute it and/or modify it under the terms of the GNU
@@ -764,7 +765,10 @@ pub fn get_client_framework(
                                     <div style='text-align:center;font-family:Trebuchet MS;'>
                                         <h1>The CodeChat Editor</h1>
                                         <p>Waiting for initial render. Switch the active source code window to begin.</p>
-                                        <p>Copyright (C) 2026 Bryan A. Jones.</p>
+                                        <p>
+                                            The CodeChat Editor, a word processor for software developers.<br>
+                                            Copyright (C) 2024-2026 Bryan A. Jones.
+                                        </p>
                                         <p>
                                             This program comes with ABSOLUTELY NO WARRANTY; for details see the <a href="https://github.com/bjones1/CodeChat_Editor/blob/main/LICENSE.md#15-disclaimer-of-warranty">license</a>.
                                             This is free software, and you are welcome to redistribute it
