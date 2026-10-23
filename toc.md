@@ -35,7 +35,8 @@ Implementation
     * [Capture events schema](server/scripts/capture_events_schema.sql)
   * [ide.rs](server/src/ide.rs)
     * [vscode.rs](server/src/ide/vscode.rs)
-  * [translation.rs](server/src/translation.rs)
+  * <xref ref=cc-54Fu37JlfD></xref>
+  * <xref ref=cc-NA_6trJrnu></xref>
   * [processing.rs](server/src/processing.rs)
     * [Cache spec](server/src/processing/cache-spec.md)
     * [cache.rs](server/src/processing/cache.rs)
