@@ -14,7 +14,9 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [https://www.gnu.org/licenses](https://www.gnu.org/licenses).
-//! # <span id="cc-54Fu37JlfD">`translation.rs` -- translate messages between the IDE and the Client</span>
+//! <h1 id="cc-54Fu37JlfD">
+//!   <code>translation.rs</code> -- translate messages between the IDE and the Client
+//! </h1>
 //!
 //! See <xref ref="cc-NA_6trJrnu"></xref>.
 // Imports

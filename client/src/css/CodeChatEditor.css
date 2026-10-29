@@ -44,15 +44,13 @@
    content against the source it came from, and a theme which happened to style
    the elements it uses would break that alignment rather than restyle it.
    Nothing but that section belongs out here; anything a theme should be free to
-   restyle goes in
-   [CodeChatEditorBase.css](CodeChatEditorBase.css) instead.
+   restyle goes in [CodeChatEditorBase.css](CodeChatEditorBase.css) instead.
 
    Eventually, the theme will be a user-configurable setting. */
 @import url("themes/light.css") layer(app);
 @import url("CodeChatEditorBase.css") layer(app);
 
-/* <span id="gathered-fragments">Gathered fragment styling</span>
-   ---------------------------------------------------------
+/* <h1 id="gathered-fragments">Gathered fragment styling</h1>
 
    These rules are deliberately outside the layer the imports above go into; see
    [The cascade](cascade).
@@ -63,8 +61,8 @@
    [processing.rs](../../../server/src/processing.rs)). That rendering
    reproduces the layout of the source the fragment came from: each doc block
    carries the indent it had there, each line of a code block and the first line
-   of each doc block are preceded by that line's number, and equal indents in the
-   source line up:
+   of each doc block are preceded by that line's number, and equal indents in
+   the source line up:
 
    ```
    \<gutter> \<doc block indent> \<doc block contents>
@@ -89,12 +87,12 @@
      blocks it means to set apart.
    * The gutter is a `.cc-line-number` on both sides -- the first child of
      `.cc-fragment-indent` on the doc side, and the start of each line on the
-     code side -- so a single rule gives the two the same width. That width comes
-     from `--cc-gutter-width`, measured in `ch`: a custom property is substituted
-     before it's computed, so that width is a character width of the font of
-     whichever element uses it -- the same font in both, per the constraint
-     above (a `.cc-line-number` inherits the font of the `.cc-fragment-indent` or
-     `.cc-fragment-code` containing it). */
+     code side -- so a single rule gives the two the same width. That width
+     comes from `--cc-gutter-width`, measured in `ch`: a custom property is
+     substituted before it's computed, so that width is a character width of the
+     font of whichever element uses it -- the same font in both, per the
+     constraint above (a `.cc-line-number` inherits the font of the
+     `.cc-fragment-indent` or `.cc-fragment-code` containing it). */
 :root {
     /* The width of the line number gutter: room for a three-digit line number
        plus the space separating it from what follows. */
@@ -138,8 +136,8 @@
 /* <span id="cc-fragment-doc-contents">The contents of that doc block</span>,
    which the
    [rules in CodeChatEditorBase.css](CodeChatEditorBase.css#remove-space) trim
-   to the height of its text: a gathered doc block sits directly against the code
-   block above and below it, exactly as it does in the source. */
+   to the height of its text: a gathered doc block sits directly against the
+   code block above and below it, exactly as it does in the source. */
 .cc-fragment-doc-contents {
     flex-grow: 1;
 }
@@ -162,9 +160,9 @@
 }
 
 /* The line number which fills the gutter: one preceding each line of a code
-   block, and one preceding the indent of each doc block. Since this is generated
-   content rather than part of the source, it's excluded from what a selection
-   copies and dimmed to keep it from competing with the source itself. */
+   block, and one preceding the indent of each doc block. Since this is
+   generated content rather than part of the source, it's excluded from what a
+   selection copies and dimmed to keep it from competing with the source itself. */
 .cc-line-number {
     /* Right-align the number in the gutter, so that every line of code begins
        in the same column regardless of how many digits precede it. Use

@@ -18,5 +18,7 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 #
-# # `postStartCommand.sh` -- run after the container is started.
+# `postStartCommand.sh` -- run after the container is started.
+# ============================================================
+#
 # Currently, nothing needs to be done after the build completes.

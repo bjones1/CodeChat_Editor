@@ -17,7 +17,9 @@
 # the CodeChat Editor. If not, see
 # [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 #
-# # <span id="cc-XV0socAYxz">`Cargo.toml` -- Workspace manifest for the CodeChat Editor</span>
+# <h1 id="cc-XV0socAYxz">
+#   <code>Cargo.toml</code> -- Workspace manifest for the CodeChat Editor
+# </h1>
 #
 # Every Rust package in this repository except `builder` is a member of this one
 # workspace. Sharing one `target/` only avoids recompilation when the packages
@@ -33,12 +35,7 @@
 # executing while it drives the rest of the build, and Windows refuses to relink
 # a running executable.
 [workspace]
-members = [
-    "extensions/VSCode",
-    "extensions/standalone",
-    "server",
-    "test_utils",
-]
+members = ["extensions/VSCode", "extensions/standalone", "server", "test_utils"]
 exclude = [
     # `builder` is deliberately its own workspace; see the note above.
     "builder",

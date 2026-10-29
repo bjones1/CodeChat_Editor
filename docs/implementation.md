@@ -15,11 +15,12 @@ details.
 
 You should have received a copy of the GNU General Public License along with the
 CodeChat Editor. If not, see
-[http://www.gnu.org/licenses/](http://www.gnu.org/licenses/).
+[http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 
-# <span id="cc-ATacxUYcqc">Implementation</span>
+<h1 id="cc-ATacxUYcqc">Implementation</h1>
 
-### System architecture
+System architecture
+-------------------
 
 ```graphviz
 digraph {
@@ -117,7 +118,7 @@ The verified extension-generated event stream includes `session_start`,
 contract tests submit representative well-formed event batches for optional
 study/debug/build event types through the same public HTTPS API.
 
-## <a id="an-implementation"></a>Architecture
+<h2 id="an-implementation">Architecture</h2>
 
 Overall, the code is something like this:
 
@@ -265,7 +266,10 @@ So, this project contains Rust code to automate this process -- see the
 [builder](../builder/Cargo.toml). The `bt` script simplifies invoking the
 builder.
 
-### <span data-gather="cc-T6v4Yb2tCo cc-MhYeYCCTxn cc-T3IsnVlz14 cc-ENVtePRoYi cc-ZTqrakWBqI" id="cc-1s8bUScadp">`bt` (build tool) script</span>
+<h3
+  data-gather="cc-T6v4Yb2tCo cc-MhYeYCCTxn cc-T3IsnVlz14 cc-ENVtePRoYi cc-ZTqrakWBqI"
+  id="cc-1s8bUScadp"
+>`bt` (build tool) script</h3>
 
 Misc topics
 -----------

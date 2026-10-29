@@ -43,7 +43,7 @@ the two.
 The cache hydrates data to the Client; the dehydration routes are responsible
 for removing all cache hydration artifacts.
 
-## <span id="cc-HZyE2Bv-eI">Cross references</span>
+<h2 id="cc-HZyE2Bv-eI">Cross references</h2>
 
 A `<xref ref="id"></xref>` is a cross reference to a `Target` or a gather
 element. The `ref` attribute specifies the destination as an id; the cache then
@@ -81,7 +81,7 @@ Details:
 * Cross references to fragments are not allowed; this would create circular
   dependencies (see <xref ref="cc-P-g5o100jN"></xref>).
 
-## <span id="cc-gKXTXIZnFm">Fragments and gather elements</span>
+<h2 id="cc-gKXTXIZnFm">Fragments and gather elements</h2>
 
 A gather element such as `<h3 id="bar" data-gather="id1 id2...">Bazzy
 things</h3>` is a `Target` with the `data-gather` attribute. It becomes a list
@@ -493,7 +493,7 @@ Overall shutdown sequence:
 4. The consumer thread exits when either its consumer rx channel closes or the
    weak pointer fails to upgrade.
 
-## <span id="cc-srNQxJ2znz">Links in hydrated content</span>
+<h2 id="cc-srNQxJ2znz">Links in hydrated content</h2>
 
 Some content, such as math, cross-references, fragments, and gather lists (see
 <xref ref="cc-HZyE2Bv-eI"></xref> and <xref ref="cc-gKXTXIZnFm"></xref>), sits

@@ -54,21 +54,21 @@ void foo();
 // since they are separated by a code block.
 ```
 
-### <span id="cc-sZ0Glsgjhu">Cross-references, gather elements, and fragments</span>
+<h3 id="cc-sZ0Glsgjhu">Cross-references, gather elements, and fragments</h3>
 
 To refer to text in another section of the current document or any file in this
 project:
 
-1. Assign a unique id for that section: `<span id="some_unique_id">section
-   title</span>`; in a code file, this must be placed in a doc block. Any HTML
-   element with an id can be the target of either a hyperlink or a
-   cross-reference.
+1. Assign a unique id for that section: `<h3 id="some_unique_id">section
+   title</h3>` for a level-3 section; in a code file, this must be placed in a
+   doc block. Any HTML element with an id can be the target of either a
+   hyperlink or a cross-reference.
 2. Refer to it using a hyperlink or cross-reference. For example, the following
-   syntax links directly to the `<span>` inside this section's heading:
-   `[Foo](#cc-sZ0Glsgjhu)` (link text is "Foo") / `<xref
-   ref="cc-sZ0Glsgjhu"></xref>` (link text comes from the cross-referenced span:
-   "Cross-references, gather elements, and fragments"); the same syntax (a bare
-   id with no file) also links to any file in the project.
+   syntax links directly to this section's heading: `[Foo](#cc-sZ0Glsgjhu)`
+   (link text is "Foo") / `<xref ref="cc-sZ0Glsgjhu"></xref>` (link text comes
+   from the cross-referenced span: "Cross-references, gather elements, and
+   fragments"); the same syntax (a bare id with no file) also links to any file
+   in the project.
 
 When implementing a specification:
 
