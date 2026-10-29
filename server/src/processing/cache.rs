@@ -116,8 +116,8 @@ pub struct Cache {
 pub(super) struct FileEntry {
     /// The file's stamp, taken when its content was read; the consumer
     /// reprocesses the file when it no longer matches. `None` if the file
-    /// doesn't exist, its metadata can't be determined, or the consumer's
-    /// last translation of it failed.
+    /// doesn't exist, its metadata can't be determined, or the consumer's last
+    /// translation of it failed.
     pub(super) stamp: Option<FileStamp>,
     /// The status of this file.
     pub(super) status: FileStatus,
@@ -462,12 +462,9 @@ pub struct ConnectionRegistration {
 /// needed to load the cache of a project which isn't cached.
 #[must_use]
 pub fn cache_map_capacity(
-    // The number of connections,
-    // <span class="math math-inline mceNonEditable">\\(n\\)</span>.
+    // The number of connections, $n$.
     connections: usize,
-    // <span class="math math-inline mceNonEditable">\\(n c + 1\\)</span>, where
-    // <span class="math math-inline mceNonEditable">\\(c\\)</span> is
-    // `LRU_ENTRIES_PER_CONNECTION`.
+    // $nc + 1$, where $c$ is `LRU_ENTRIES_PER_CONNECTION`.
 ) -> NonZeroUsize {
     NonZeroUsize::MIN.saturating_add(connections.saturating_mul(LRU_ENTRIES_PER_CONNECTION))
 }
@@ -596,9 +593,8 @@ impl Cache {
 
     /// <h3 id="cc-MtbstS0OHd">commit_file</h3>
     ///
-    /// Apply the facts collected
-    /// from one file's DOM walk to the cache in a single transaction. This
-    /// satisfies several requirements:
+    /// Apply the facts collected from one file's DOM walk to the cache in a
+    /// single transaction. This satisfies several requirements:
     ///
     /// * Determine if any files containing cross-references need to be rebuilt
     ///   due to changes in the `Target`s in this file: any target which was
