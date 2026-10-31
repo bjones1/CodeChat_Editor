@@ -41,7 +41,7 @@
         "type": "git",
         "url": "https://github.com/bjones1/CodeChat_Editor"
     },
-    "version": "0.3.1",
+    "version": "0.3.2",
     "activationEvents": [
         "onCommand:extension.codeChatEditorActivate",
         "onCommand:extension.codeChatEditorDeactivate",
@@ -129,7 +129,7 @@
         "@vscode/vsce": "^4.1.0",
         "chalk": "^6.0.1",
         "esbuild": "^0.28.2",
-        "eslint": "^10.13.0",
+        "eslint": "^10.14.0",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-import": "^2.32.0",
         "eslint-plugin-node": "^11.1.0",
