@@ -25,6 +25,13 @@ Changelog
 
 * No changes.
 
+Version 0.3.2 -- 2026-Oct-31
+----------------------------
+
+* Fix math formula retranslations.
+* Add missing copyright notices, update copyright notices.
+* Correct namespace used for HTML generation.
+
 Version 0.3.1 -- 2026-Oct-21
 ----------------------------
 
