@@ -59,7 +59,7 @@ use htmd::{
     options::{BrStyle, LinkStyle, TranslationMode},
 };
 use html5ever::{
-    Attribute, LocalName, Namespace, ParseOpts, QualName, parse_document, serialize,
+    Attribute, LocalName, Namespace, ParseOpts, QualName, ns, parse_document, serialize,
     serialize::{SerializeOpts, TraversalScope},
     tendril::TendrilSink,
     tree_builder::TreeBuilderOpts,
@@ -583,7 +583,7 @@ fn code_mirror_to_code_doc_blocks(code_mirror: &CodeMirror) -> Vec<CodeDocBlock>
     code_doc_block_arr
 }
 
-/// Build the HTML to Markdown converter which an [`HtmlToMarkdownWrapped`]
+/// Build the HTML to Markdown converter which an \[`HtmlToMarkdownWrapped`\]
 /// borrows. A `Conversion` holds a reference to its converter, so the converter
 /// must outlive the wrapper rather than live inside it.
 fn new_html_to_markdown() -> HtmlToMarkdown {
@@ -656,9 +656,9 @@ impl<'a> HtmlToMarkdownWrapped<'a> {
         )
     }
 
-    /// End the document, returning the Markdown placed at its end (such as
-    /// link reference definitions). This consumes the wrapper, since finishing
-    /// a `Conversion` consumes it.
+    /// End the document, returning the Markdown placed at its end (such as link
+    /// reference definitions). This consumes the wrapper, since finishing a
+    /// `Conversion` consumes it.
     fn last(
         self,
         // The word-wrapped Markdown which ends the document.
@@ -1200,6 +1200,8 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     .add_allowed_classes("pre", &["cc-fragment-indent", "cc-fragment-code"])
     // The gather-items list is generated content, marked non-editable.
     .add_tag_attributes("div", &["contenteditable"])
+    // Math spans are marked non-editable.
+    .add_tag_attributes("span", &["contenteditable"])
     // `code` tags can have `class=language-*`. Since Ammonia doesn't support a
     // regex like this, just allow anything.
     .add_tag_attributes("code", &["class"])
@@ -1245,9 +1247,9 @@ static CLEAN_TARGET_HTML: LazyLock<Builder> = LazyLock::new(|| {
     b
 });
 
-// Clean HTML for storage as a `Fragment`'s content, per the cache spec:
-// like `AMMONIA_OPTIONS`, but `id` and `data-gather` attributes are stripped
-// (they aren't in any allowlist) to prevent duplicate ids when the content is
+// Clean HTML for storage as a `Fragment`'s content, per the cache spec: like
+// `AMMONIA_OPTIONS`, but `id` and `data-gather` attributes are stripped (they
+// aren't in any allowlist) to prevent duplicate ids when the content is
 // rendered in a gather list, and `<fragment>` elements are removed *along with
 // their contents* -- backlink hydration is excluded from fragment content (see
 // layer 4 in the `cache.rs` design), which is what keeps a gather element and
@@ -1490,8 +1492,8 @@ fn get_dom_body(document: &Rc<Node>) -> Rc<Node> {
 ///    patch `<xref>` contents and `<fragment>` backlinks.
 /// 2. `store_fragment_contents`: once each doc block's hydrated HTML is known,
 ///    store each fragment's content in the cache.
-/// 3. `hydrate_gathers`: insert each gather element's list of fragment contents,
-///    now all present in the cache.
+/// 3. `hydrate_gathers`: insert each gather element's list of fragment
+///    contents, now all present in the cache.
 ///
 /// Phases 1 and 2 update the cache, and each update may outdate other files;
 /// `Cache::mark_outdated` sees that every outdated file is re-rendered.
@@ -2017,13 +2019,13 @@ fn hydrate_gathers(
                         ],
                     ));
                     // The fragment's content was hydrated in the fragment's
-                    // file, so each cross-reference within it links from
-                    // there; re-hydrate them to link from this file instead.
-                    // This file needn't depend on their targets: the
-                    // fragment's stored content embeds everything about a
-                    // target which this re-hydration reads, so any change to
-                    // a target which alters it also changes that content,
-                    // which outdates this file.
+                    // file, so each cross-reference within it links from there;
+                    // re-hydrate them to link from this file instead. This file
+                    // needn't depend on their targets: the fragment's stored
+                    // content embeds everything about a target which this
+                    // re-hydration reads, so any change to a target which
+                    // alters it also changes that content, which outdates this
+                    // file.
                     let content = parse_html_fragment(&fragment.content)?;
                     hydrate_xrefs_within(&cache_guard, &content, &walk_context.path)?;
                     items.extend(content);
@@ -2126,7 +2128,7 @@ fn new_element(
     children: Vec<Rc<Node>>,
 ) -> Rc<Node> {
     let node = Node::new(NodeData::Element {
-        name: QualName::new(None, Namespace::from(""), LocalName::from(tag)),
+        name: QualName::new(None, ns!(html), LocalName::from(tag)),
         attrs: RefCell::new(
             attrs
                 .into_iter()
@@ -2289,8 +2291,8 @@ struct WalkContext {
     /// These are excluded from `facts`: they belong to the cache only after the
     /// file carrying them is written and re-read.
     auto_ids: HashSet<String>,
-    /// Each cross-reference's `<xref>` node, kept so the generated contents
-    /// can be patched after the cache commit.
+    /// Each cross-reference's `<xref>` node, kept so the generated contents can
+    /// be patched after the cache commit.
     xrefs: Vec<Rc<Node>>,
     /// Each fragment found, with everything the later hydration phases need.
     fragments: Vec<FragmentHydration>,
@@ -2371,7 +2373,7 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
             // Make the parent node a `element_name` node, with the child's
             // text.
             let wc_mermaid = Node::new(NodeData::Element {
-                name: QualName::new(None, Namespace::from(""), LocalName::from(*element_name)),
+                name: QualName::new(None, ns!(html), LocalName::from(*element_name)),
                 attrs: RefCell::new(vec![]),
                 template_contents: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
@@ -2470,8 +2472,8 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                     });
                 } else {
                     // A fragment without an id: display an error requesting the
-                    // missing id, per the cache spec. Lacking an id, it
-                    // can't be cached.
+                    // missing id, per the cache spec. Lacking an id, it can't
+                    // be cached.
                     walk_context.fragments.push(FragmentHydration {
                         node: child.clone(),
                         id: String::new(),
@@ -2586,7 +2588,7 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
             // When hydrating, there should only be a `class` attribute.
             if child_attrs_len == 1 {
                 match attr_value_str {
-                    "math math-inline" => Some(("\\(", "\\)", "math math-inline mceNonEditable")),
+                    "math math-inline" => Some((r"\(", r"\)", "math math-inline mceNonEditable")),
                     "math math-display" => Some(("$$", "$$", "math math-display mceNonEditable")),
                     _ => None,
                 }
@@ -2643,7 +2645,7 @@ fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
                 });
             }
             let span = Node::new(NodeData::Element {
-                name: QualName::new(None, Namespace::from(""), LocalName::from("span")),
+                name: QualName::new(None, ns!(html), LocalName::from("span")),
                 attrs: RefCell::new(attrs_vec),
                 template_contents: RefCell::new(None),
                 mathml_annotation_xml_integration_point: false,
@@ -2788,13 +2790,13 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                 // Create `<pre><code class="from language_name">text_child
                 // contents</code></pre>`.
                 let pre = Node::new(NodeData::Element {
-                    name: QualName::new(None, Namespace::from(""), LocalName::from("pre")),
+                    name: QualName::new(None, ns!(html), LocalName::from("pre")),
                     attrs: RefCell::new(vec![]),
                     template_contents: RefCell::new(None),
                     mathml_annotation_xml_integration_point: false,
                 });
                 let code = Node::new(NodeData::Element {
-                    name: QualName::new(None, Namespace::from(""), LocalName::from("code")),
+                    name: QualName::new(None, ns!(html), LocalName::from("code")),
                     attrs: RefCell::new(vec![Attribute {
                         name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
                         value: (*language_name).into(),
@@ -2851,7 +2853,7 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                 // Replace all `br` instances with a text node containing a
                 // newline, preserving the surrounding `pre`/`code` structure.
                 let new_code = Node::new(NodeData::Element {
-                    name: QualName::new(None, Namespace::from(""), LocalName::from("code")),
+                    name: QualName::new(None, ns!(html), LocalName::from("code")),
                     attrs: RefCell::new(code_attrs.clone()),
                     template_contents: RefCell::new(None),
                     mathml_annotation_xml_integration_point: false,
@@ -2871,7 +2873,7 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                     }
                 }
                 let new_pre = Node::new(NodeData::Element {
-                    name: QualName::new(None, Namespace::from(""), LocalName::from("pre")),
+                    name: QualName::new(None, ns!(html), LocalName::from("pre")),
                     attrs: RefCell::new(vec![]),
                     template_contents: RefCell::new(None),
                     mathml_annotation_xml_integration_point: false,
