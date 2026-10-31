@@ -384,7 +384,7 @@ fn patch_client_libs() -> io::Result<()> {
 
 fn run_install(dev: bool) -> io::Result<()> {
     if dev {
-        run_script("npm", &["install", "-g", "pnpm@latest-11"], ".", true)?;
+        run_script("npm", &["install", "-g", "pnpm"], ".", true)?;
     }
     // See [the client manifest](../../client/package.json5) for an explanation
     // of `--no-frozen-lockfile`.
