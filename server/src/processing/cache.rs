@@ -1825,7 +1825,7 @@ fn scan_file(
 ) {
     // Perform I/O before locking the cache, so that the lock isn't held during
     // it.
-    let stamp = match fs::metadata(path) {
+    let current_stamp = match fs::metadata(path) {
         Ok(metadata) if metadata.is_file() => FileStamp::new(&metadata),
         // The file no longer exists -- or a directory has replaced it, which
         // the walker reports separately.
@@ -1843,7 +1843,7 @@ fn scan_file(
         let entry = cache.files.get(path);
         let is_modified = entry
             .and_then(|entry| entry.stamp.as_ref())
-            .is_none_or(|cached| !cached.is_unmodified(&stamp));
+            .is_none_or(|cached| !cached.is_unmodified(&current_stamp));
         is_toc_changed = is_modified && entry.is_some() && path == cache.toc_path();
         if cache.is_current_file(path) {
             // The connections' sidebars show the TOC from their own IDE's text
@@ -1910,7 +1910,7 @@ fn scan_file(
             // such write leaves the file matching.
             ScanOutcome::Translated => {
                 if let Some(entry) = cache.files.get_mut(path) {
-                    entry.stamp = Some(stamp);
+                    entry.stamp = Some(current_stamp);
                 }
             }
             // A file which can't be translated defines nothing. Committing it
@@ -1918,7 +1918,7 @@ fn scan_file(
             // translatable, and records its stamp, so that later walks skip it
             // until it changes rather than reading it again.
             ScanOutcome::Untranslatable => {
-                cache.commit_file(path, Some(stamp), FileFacts::default());
+                cache.commit_file(path, Some(current_stamp), FileFacts::default());
             }
             // The translation may have failed after committing the file's
             // facts, along with a stamp which matches the file; discard that
