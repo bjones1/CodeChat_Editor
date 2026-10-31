@@ -770,9 +770,9 @@ pub fn get_client_framework(
                                             Copyright (C) 2024-2026 Bryan A. Jones.
                                         </p>
                                         <p>
-                                            This program comes with ABSOLUTELY NO WARRANTY; for details see the <a href="https://github.com/bjones1/CodeChat_Editor/blob/main/LICENSE.md#15-disclaimer-of-warranty">license</a>.
+                                            This program comes with ABSOLUTELY NO WARRANTY; for details see the <a href='https://github.com/bjones1/CodeChat_Editor/blob/main/LICENSE.md#15-disclaimer-of-warranty'>license</a>.
                                             This is free software, and you are welcome to redistribute it
-                                            under <a href="https://github.com/bjones1/CodeChat_Editor/blob/main/LICENSE.md">certain conditions</a>.
+                                            under <a href='https://github.com/bjones1/CodeChat_Editor/blob/main/LICENSE.md'>certain conditions</a>.
                                         </p>
                                     </div>
                                 </div>
