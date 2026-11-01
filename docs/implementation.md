@@ -269,7 +269,7 @@ builder.
 <h3
   data-gather="cc-T6v4Yb2tCo cc-MhYeYCCTxn cc-T3IsnVlz14 cc-ENVtePRoYi cc-ZTqrakWBqI"
   id="cc-1s8bUScadp"
->`bt` (build tool) script</h3>
+><code>bt</code> (build tool) script</h3>
 
 Misc topics
 -----------
