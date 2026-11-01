@@ -398,9 +398,9 @@ fn run_install(cargo_dist: bool) -> io::Result<()> {
         pwsh -Command "Set-ExecutionPolicy Unrestricted -Scope Process; iex (iwr 'https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.ps1').Content";
     }?;
     #[cfg(not(windows))]
-    // The original command had `'=https'`, but single quotes confused
-    // `cmd_lib` and aren't needed to quote this. Note that `//` in the URL
-    // is a comment in Rust, so it must be
+    // The original command had `'=https'`, but single quotes confused `cmd_lib`
+    // and aren't needed to quote this. Note that `//` in the URL is a comment
+    // in Rust, so it must be
     // [enclosed in quotes](https://github.com/rust-shell-script/rust_cmd_lib/issues/88).
     run_cmd! {
         curl -L --proto =https --tlsv1.2 -sSf "https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh" | bash;
@@ -415,9 +415,12 @@ fn run_install(cargo_dist: bool) -> io::Result<()> {
 
         )?;
         #[cfg(not(target_os = "macos"))]
+        // See
+        // [https://github.com/bjones1/CodeChat\_Editor/issues/157](https://github.com/bjones1/CodeChat_Editor/issues/157);
+        // remove this workaround when the upstream issues is fixed.
         run_cmd!(
             info "cargo binstall cargo-dist";
-            cargo binstall cargo-dist@${DIST_VERSION} --no-confirm;
+            cargo binstall cargo-dist@${DIST_VERSION} --no-confirm --git "https://github.com/axodotdev/cargo-dist";
         )?;
     }
 
