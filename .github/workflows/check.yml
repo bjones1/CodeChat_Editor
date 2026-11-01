@@ -52,10 +52,11 @@ jobs:
       ##      server
       ##      extensions/VSCode
       # On Windows, GitHub Actions runs these commands in PowerShell, which runs
-      # `bt.ps1`; elsewhere, bash runs `bt`.
+      # `bt.ps1`; elsewhere, bash runs `bt`. PowerShell, unlike bash, doesn't
+      # stop when a native command fails, so chain the steps with `&&`.
       # <fragment id="cc-T3IsnVlz14"></fragment>
       - name: Run tests
         run: |
           rustup update
-          ./bt install
-          ./bt full
+          # <fragment id="cc-Y8gI-nu0l_"></fragment>
+          ./bt install && ./bt full

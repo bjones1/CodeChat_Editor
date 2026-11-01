@@ -26,5 +26,8 @@
 $manifest_path = Join-Path -Path $PSScriptRoot -ChildPath builder/Cargo.toml
 echo $manifest_path
 cargo run --manifest-path=$manifest_path -- $args
+# A script's success, as seen by its caller's `&&`, doesn't reflect the exit
+# code of its last native command; pass it on explicitly.
+exit $LASTEXITCODE
 
 # CodeChat Editor lexer: python
