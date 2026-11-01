@@ -69,11 +69,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Install all dependencies.
-    Install {
-        /// True to install developer-only dependencies.
-        #[arg(short, long, default_value_t = false)]
-        dev: bool,
-    },
+    Install,
     /// Update all dependencies.
     Update,
     /// Run formatters and linters.
@@ -382,10 +378,8 @@ fn patch_client_libs() -> io::Result<()> {
     Ok(())
 }
 
-fn run_install(dev: bool) -> io::Result<()> {
-    if dev {
-        run_script("npm", &["install", "-g", "pnpm"], ".", true)?;
-    }
+fn run_install(cargo_dist: bool) -> io::Result<()> {
+    run_script("npm", &["install", "-g", "pnpm"], ".", true)?;
     // See [the client manifest](../../client/package.json5) for an explanation
     // of `--no-frozen-lockfile`.
     run_script("pnpm", &["install"], CLIENT_PATH, true)?;
@@ -397,22 +391,22 @@ fn run_install(dev: bool) -> io::Result<()> {
         info "Builder: cargo fetch";
         cargo fetch --manifest-path=$BUILDER_PATH/Cargo.toml;
     )?;
-    if dev {
-        // Install the cargo binstall binary, taken from the
-        // [docs](https://docs.rs/crate/cargo-binstall/1.15.5).
-        #[cfg(windows)]
-        run_cmd! {
-            pwsh -Command "Set-ExecutionPolicy Unrestricted -Scope Process; iex (iwr 'https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.ps1').Content";
-        }?;
-        #[cfg(not(windows))]
-        // The original command had `'=https'`, but single quotes confused
-        // `cmd_lib` and aren't needed to quote this. Note that `//` in the URL
-        // is a comment in Rust, so it must be
-        // [enclosed in quotes](https://github.com/rust-shell-script/rust_cmd_lib/issues/88).
-        run_cmd! {
-            curl -L --proto =https --tlsv1.2 -sSf "https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh" | bash;
-        }?;
+    // Install the cargo binstall binary, taken from the
+    // [docs](https://docs.rs/crate/cargo-binstall/1.15.5).
+    #[cfg(windows)]
+    run_cmd! {
+        pwsh -Command "Set-ExecutionPolicy Unrestricted -Scope Process; iex (iwr 'https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.ps1').Content";
+    }?;
+    #[cfg(not(windows))]
+    // The original command had `'=https'`, but single quotes confused
+    // `cmd_lib` and aren't needed to quote this. Note that `//` in the URL
+    // is a comment in Rust, so it must be
+    // [enclosed in quotes](https://github.com/rust-shell-script/rust_cmd_lib/issues/88).
+    run_cmd! {
+        curl -L --proto =https --tlsv1.2 -sSf "https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh" | bash;
+    }?;
 
+    if cargo_dist {
         // Installing `cargo-dist` using `cargo binstall` fails intermittently
         // on MacOS. Try another approach.
         #[cfg(target_os = "macos")]
@@ -425,25 +419,24 @@ fn run_install(dev: bool) -> io::Result<()> {
             info "cargo binstall cargo-dist";
             cargo binstall cargo-dist@${DIST_VERSION} --no-confirm;
         )?;
-
-        run_cmd!(
-            info "cargo binstall cargo-outdated";
-            cargo binstall cargo-outdated --no-confirm;
-            info "cargo binstall cargo-sort";
-            cargo binstall cargo-sort --no-confirm;
-            info "cargo binstall cargo-audit";
-            cargo binstall cargo-audit --no-confirm;
-            info "cargo binstall cargo-machete";
-            cargo binstall cargo-machete --no-confirm;
-            info "cargo binstall cargo-llvm-cov";
-            cargo binstall cargo-llvm-cov --no-confirm;
-            // Install the required llvm-tools component used by cargo-llvm-cov
-            // without prompting.
-            info "rustup component add llvm-tools-preview";
-            rustup component add llvm-tools-preview;
-        )?;
     }
-    Ok(())
+
+    run_cmd!(
+        info "cargo binstall cargo-outdated";
+        cargo binstall cargo-outdated --no-confirm;
+        info "cargo binstall cargo-sort";
+        cargo binstall cargo-sort --no-confirm;
+        info "cargo binstall cargo-audit";
+        cargo binstall cargo-audit --no-confirm;
+        info "cargo binstall cargo-machete";
+        cargo binstall cargo-machete --no-confirm;
+        info "cargo binstall cargo-llvm-cov";
+        cargo binstall cargo-llvm-cov --no-confirm;
+        // Install the required llvm-tools component used by cargo-llvm-cov
+        // without prompting.
+        info "rustup component add llvm-tools-preview";
+        rustup component add llvm-tools-preview;
+    )
 }
 
 fn run_update() -> io::Result<()> {
@@ -802,7 +795,7 @@ fn run_change_version(new_version: &String) -> io::Result<()> {
 fn run_prerelease() -> io::Result<()> {
     // Clean out all bundled files before the rebuild.
     remove_dir_all_if_exists(format!("{CLIENT_PATH}/static/bundled"))?;
-    run_install(true)?;
+    run_install(false)?;
     run_client_build(true, false)
 }
 
@@ -875,7 +868,7 @@ fn run_coverage() -> io::Result<()> {
 impl Cli {
     fn run(self) -> io::Result<()> {
         match &self.command {
-            Commands::Install { dev } => run_install(*dev),
+            Commands::Install => run_install(true),
             Commands::Update => run_update(),
             Commands::Flint { check } => run_format_and_lint(*check),
             Commands::Full => run_full(),
