@@ -29,5 +29,5 @@ if [ -x /usr/local/bin/chrome ] && [ ! -e /usr/local/bin/google-chrome ]; then
 fi
 
 # <fragment id="cc-ZTqrakWBqI"></fragment>
-./bt install --dev
+./bt install
 ./bt build
