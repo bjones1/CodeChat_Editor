@@ -57,5 +57,5 @@ jobs:
       - name: Run tests
         run: |
           rustup update
-          ./bt install --dev
+          ./bt install
           ./bt full
