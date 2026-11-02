@@ -61,10 +61,10 @@ project:
 
 1. Assign a unique id for that section: `<h3 id="some_unique_id">section
    title</h3>` for a level-3 section; in a code file, this must be placed in a
-   doc block. Any HTML element with an id can be the target of either a
-   hyperlink or a cross-reference.
-2. Refer to it using a hyperlink or cross-reference. For example, the following
-   syntax links directly to this section's heading: `[Foo](#cc-sZ0Glsgjhu)`
+   doc block. Any HTML element with an id can be the target of a
+   cross-reference.
+2. Refer to it using a cross-reference. For example, the following syntax links
+   directly to this section's heading: `<xref ref="cc-sZ0Glsgjhu">Foo</xref>`
    (link text is "Foo") / `<xref ref="cc-sZ0Glsgjhu"></xref>` (link text comes
    from the cross-referenced span: "Cross-references, gather elements, and
    fragments"); the same syntax (a bare id with no file) also links to any file
@@ -73,7 +73,7 @@ project:
 When implementing a specification:
 
 1. Label each doc block preceding non-contiguous section of code of more than
-   three lines with a fragment placed at the end of the doc block: `<fragment
+   three lines with a fragment placed at the end of the doc block: `<fragment
    id="some_unique_id1"></fragment>`.
 2. Gather these fragments in a subheading following the specification: `<h4
    id="another_unique_id" data-gather="some_unique_id1 some_unique_id2
@@ -81,7 +81,7 @@ When implementing a specification:
 
 Each id must be unique throughout the entire project. To create an id:
 
-1. Randomly generate an id of the form `cc-[10 random ASCII letters or
+1. Randomly generate an id of the form `cc-[10 random ASCII letters or
    numbers]`.
 2. grep the project to ensure this id is unique.
 

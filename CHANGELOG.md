@@ -23,7 +23,7 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
-* No changes.
+* Changed `<xref>` to support optional content.
 
 Version 0.3.2 -- 2026-Oct-31
 ----------------------------

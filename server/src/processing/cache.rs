@@ -258,7 +258,7 @@ pub(super) struct Target {
     pub(super) _line: usize,
 }
 
-/// This defines a cross reference to a `Target`.
+/// This defines a cross reference to a `Target` or a gather element.
 pub(super) struct Xref {
     /// The id cross-referenced.
     pub(super) id: String,

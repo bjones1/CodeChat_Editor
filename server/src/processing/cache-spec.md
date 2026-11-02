@@ -20,7 +20,7 @@ CodeChat Editor. If not, see
 Cache spec
 ==========
 
-The cache stores the location (file name and ID) and contents (inner HTML or
+The cache stores the location (file name and ID) and content (inner HTML or
 code/doc blocks for fragments) of targets and fragments. Targets are HTML
 elements (excluding `<fragment>`s and `<xref>`s) with an ID.
 
@@ -43,22 +43,67 @@ the two.
 The cache hydrates data to the Client; the dehydration routes are responsible
 for removing all cache hydration artifacts.
 
-<h2 id="cc-HZyE2Bv-eI">Cross references</h2>
+<h2 id="cc-HZyE2Bv-eI">Cross-references</h2>
 
-A `<xref ref="id"></xref>` is a cross reference to a `Target` or a gather
-element. The `ref` attribute specifies the destination as an id; the cache then
-hydrates the contents based on the location and contents of the target of the
-provided destination `id` to e.g. `<xref ref="id" contenteditable="false"><a
-href="../path/to/page#id">Inner HTML from target</a></xref>`; this hydrated form
-is only present in the Client.
+An `<xref ref="id">optional<br>content</xref>` is a cross-reference to a
+`Target` or a gather element whose id is `ref`. The cache hydrates it to a link
+to that target; the link's content is the optional content if provided, or the
+target's inner HTML otherwise: `<xref ref="id" contenteditable="false"
+data-content="optional&amp;lt;br&amp;gt;content"><a
+href="../path/to/page#id">optional<br>content</a></xref>`. This hydrated form is
+only present in the Client. Since the value of `data-content` is itself
+attribute-encoded (see below), its serialized form is encoded twice.
 
 Details:
 
-* This element allows no attribute except for `ref`. Since an `<xref>` is never
-  a `Target`, an `id` attribute on it -- including `id="*"` -- would mislead, so
-  it replaces the contents with an error message.
+* This element allows no attribute except for `ref`; all other attributes are
+  silently stripped during hydration. In particular, an `<xref>` is never a
+  `Target`, so an `id` attribute is stripped. While hydration temporarily adds
+  the `data-content` and `contenteditable` attributes, dehydration removes them.
 
-* The inner HTML is always taken before cache hydration, to prevent circular
+* The `<xref>` is marked `contenteditable="false"`; the optional content cannot
+  be edited in the Client.
+
+* The optional content is the
+  [permitted content for an `<a>`](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#technical_summary);
+  this content is <xref ref="cc-2dkkF9YJnL">cleaned</xref> during hydration to
+  ensure compliance, except as noted below for block-level content in a
+  paragraph. Cleaning strips `id` and `data-gather` attributes, removes
+  `<fragment>` elements, and unwraps nested `<xref>`, so the optional content
+  never defines a target, gather element, cross-reference, auto-assigned `id`,
+  or fragment. The cleaned content is then hydrated to support math.
+
+  * If the cleaned content, when serialized as HTML, contains at least one
+    non-[whitespace](https://developer.mozilla.org/en-US/docs/Glossary/Whitespace#in_html)
+    character, this content becomes the generated link content. This allows
+    visually empty content (for example, an empty `<span>`), but avoids defining
+    which HTML nodes count as non-empty. However, TinyMCE removes empty content
+    (such as an empty `<span>`), which causes constant re-translation messages,
+    an unfortunate cost for this design simplicity.
+
+  * Otherwise, the inner HTML from the target or gather element is used instead;
+    for gather elements, the gathered code/doc blocks are not used.
+* Note that cleaning can't correct block-level content in a paragraph, since the
+  HTML parser acts first. For example, `See <xref
+  ref="id"><div>text</div></xref> more.` parses as an `<xref>` with no optional
+  content, followed by a `<div>` and the text `more.`.
+
+* The optional content as parsed, but before hydration and cleaning, is always
+  stored (even when an error is produced) in the `data-content` attribute of the
+  `<xref>`, then restored during dehydration. Dehydration doesn't descend into
+  the restored content, which was not hydrated when saved.
+
+  * Any previous `data-content` value is overwritten during hydration, then
+    removed during dehydration.
+  * If `data-content` is missing during dehydration, the `<xref>` optional
+    content is empty.
+  * The value for `data-content` is attribute-encoded to avoid removal by
+    TinyMCE's sanitizer.
+  * Leading and trailing whitespace may be trimmed: when TinyMCE loads the
+    content, its XSS attribute sanitizer calls DOMPurify, which trims. The
+    Server preserves this whitespace.
+* When no optional content is provided, the link's content is the target's inner
+  HTML, which is always taken before cache hydration, to prevent circular
   dependencies (see also <xref ref="cc-P-g5o100jN"></xref>):
 
   ```html
@@ -69,45 +114,53 @@ Details:
   ```
 
   Including cache hydration would cause the inner HTML to be updated each time
-  the file is processed, outdating the other file.
+  the file is processed, outdating the other file. Math hydration depends on
+  nothing in the cache, so the inner HTML is hydrated like optional content each
+  time it's rendered, both here and in fragment backlinks (see
+  <xref ref="cc-gKXTXIZnFm"></xref>).
 
 * If the `ref` attribute is missing, the `id` referred to isn't found, refers to
-  a duplicate id, or is an invalid CSS identifier, the inner text is instead an
-  appropriate error message.
+  a duplicate id or a fragment, or is an invalid CSS identifier, the content is
+  instead an appropriate error message, replacing the displayed optional content
+  or the target's inner HTML.
 
-* If the cross reference is to a gather element, the text is the gather
-  element's inner HTML, not the gathered code/doc blocks.
+  * Cross-references to fragments are not allowed. Without optional content this
+    would create a circular dependency (see <xref ref="cc-P-g5o100jN"></xref>);
+    with it, there is none, but a single rule is simpler.
 
-* Cross references to fragments are not allowed; this would create circular
-  dependencies (see <xref ref="cc-P-g5o100jN"></xref>).
+<h3
+  data-gather="cc-49851a1jdJ cc-BHC6fJQ8bU cc-MwcxCRjY8b cc-FqIILGgnfo"
+  id="cc-oRzUk5hMXK"
+>Implementation of Cross-references</h3>
 
 <h2 id="cc-gKXTXIZnFm">Fragments and gather elements</h2>
 
 A gather element such as `<h3 id="bar" data-gather="id1 id2...">Bazzy
 things</h3>` is a `Target` with the `data-gather` attribute. It becomes a list
-of the contents of fragments it refers to after hydration by the cache. An
+of the content of fragments it refers to after hydration by the cache. An
 example fragment tag, after cache hydration: `<fragment id="id1"
 contenteditable="false">See <a href="path/to/gather#bar">Bazzy things</a>, <a
 href="path/to/another/gather#zap">Zappy things</a></fragment>`. A fragment's
-content by default includes the contents of the current doc block and the
-contents of the following code/doc block; fragments are not allowed in Markdown
-documents (in this case, the fragment contents consist of an error message).
-Fragments may include the `following` attribute to enclose a specific number of
-the following code/doc blocks; for example, `<fragment id="bar"
-following="3"></fragment>` includes the current doc block along with the next 3
-code/doc blocks; `following` must be a whole number.
+content by default includes the content of the current doc block and the content
+of the following code/doc block; fragments are not allowed in Markdown documents
+(in this case, the fragment content consists of an error message). Fragments may
+include the `following` attribute to enclose a specific number of the following
+code/doc blocks; for example, `<fragment id="bar" following="3"></fragment>`
+includes the current doc block along with the next 3 code/doc blocks;
+`following` must be a whole number.
 
 Details:
 
-* Fragment contents may not include a gather element; in this case, the gather
-  element list of contents will simply include an error message.
-* Fragments do support indirection: gather element A includes contents from
-  fragment B, which contains a cross reference to target C. Changes to target C
+* Fragment content may not include a gather element; in this case, the list in
+  each gather element which includes this fragment shows an error message
+  instead.
+* Fragments do support indirection: gather element A includes content from
+  fragment B, which contains a cross-reference to target C. Changes to target C
   make B and A outdated.
 * If a gather element refers to an `id` that is a `Target`, not a `Fragment`,
   the resulting output for this in the list of fragments is an error message.
 * If a gather element refers to an `id` that wasn't found or is a duplicate, its
-  contents will be replaced by an error message.
+  content will be replaced by an error message.
 * Fragments store an HTML rendering of the code and doc blocks they contain,
   excluding the content produced by hydrating the `<fragment>` tags, to avoid
   duplication and circular dependencies. Cross-references in this rendering are
@@ -164,21 +217,21 @@ Search (future work)
 --------------------
 
 The cache will support searching the (cleaned) inner HTML of all `Target`s and
-gather elements; search will not include `Fragment` contents.
+gather elements; search will not include `Fragment` content.
 
 Auto-assignment of ids
 ----------------------
 
 If `id="*"` on either a fragment, target, or gather element, the cache replaces
-this with a random autogenerated `id` placed in the resulting HTML contents, but
+this with a random autogenerated `id` placed in the resulting HTML content, but
 this new `id` is not yet recorded in the cache. It enters the cache only when
 source containing it is next translated: the Server translates each edit the
 Client saves back to the Client, to check for changes, which commits the edit;
 otherwise, the consumer reads the file once it's written to disk. This helps
-avoid cases where the cache and file contents become unsynchronized: if the `id`
+avoid cases where the cache and file content become unsynchronized: if the `id`
 is placed in the cache before the write and the write fails, or if the file is
 never written (it was being scanned, but not actively edited, so the file
-contents weren't written back).
+content wasn't written back).
 
 TODO: an `id="*"` typed in the IDE reaches the source only when the Client sends
 back the HTML containing its replacement, which it does only once the user edits
@@ -207,7 +260,7 @@ lower-numbered layers:
 
 1. `Target::inner_html` (including a gather element's) and `Target::gather_ids`
    are pure functions of the source (pre-hydration) -- they depend on nothing.
-2. `<xref>` hydration depends on layer 1 only.
+2. `<xref>` hydration depends on layer 1 and its optional content only.
 3. `Fragment::content` depends on the source plus layer 2.
 4. `<fragment>` backlink hydration depends on layer 1 only: it renders, for each
    gather element which lists this fragment, that element's containing file,
@@ -227,7 +280,7 @@ indirection example, ensuring that propagation terminates.
 
 Supporting cross-references, fragments, and gather elements requires the cache
 to track dependents of an id, so that files containing these dependencies can be
-marked `Outdated` (see below); these are sent to the `Cache::consumer_tx`
+marked `Outdated` (see below); these are sent to the `Cache::consumer_tx`
 channel for processing. Dependencies are tracked at file granularity, on the id
 rather than on the item defining it: `IdEntry::dependents` is the set of files
 whose rendered output depends on this id, by any means -- an `<xref ref="id">`
@@ -240,9 +293,11 @@ which would trigger outdating dependencies. The state which is checked for
 differences is:
 
 * Target/gather element: type (a target/gather element), path of the containing
-  file, id, IdState, and inner HTML.
+  file, id, IdState, and inner HTML. (A cross-reference with optional content
+  doesn't depend on the target's inner HTML; it is nonetheless outdated when
+  that HTML changes, for simplicity.)
 * Fragment: type (a fragment), path of the containing file, id, IdState, and
-  contents.
+  content.
 
 A gather element's `gather_ids` are absent from this list because no dependent
 reads them: a cross-reference to a gather element renders only its inner HTML.
@@ -269,7 +324,7 @@ outdated file, mark its status as `Outdated` (see
 ### Gather elements: the reverse edge
 
 `dependents` alone is not enough for gather elements, because the reference runs
-in both directions: a gather element renders the *contents* of each fragment it
+in both directions: a gather element renders the *content* of each fragment it
 lists, and each of those fragments renders a *backlink* to the gather element
 (see layer 4 above). The set of gather elements referencing a fragment is
 therefore not merely bookkeeping -- it is observable output in the fragment's
@@ -311,13 +366,25 @@ are reported as errors to the user.
 
 All file names (stored as `PathBuf`) must be canonicalized absolute paths.
 
-HTML stored as `Target` inner HTML or in `Fragment` contents requires cleaning:
+<h4 id="cc-2dkkF9YJnL">HTML cleaning</h4>
 
-* To avoid duplicate IDs, all `id` attributes should be stripped.
+HTML stored as cross-reference optional content, `Target` inner HTML, or as
+`Fragment` content requires cleaning:
+
+* To avoid duplicate IDs, all `id` attributes are stripped.
 * Note that images, URLs, etc. may not work if the referring path in their new
   location isn't valid; these simply aren't supported.
-* Inner HTML must allow only the
+* Cross-reference optional content and `Target` inner HTML must allow only the
   [permitted content for an `<a>` element](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#technical_summary).
+  In particular, it strips `<fragment>`s and unwraps `<xref>`s, replacing them
+  with cleaned optional content.
+* `Fragment` content must preserve the `data-content` attribute of each
+  `<xref>`, since a gather element re-hydrates the `<xref>` from it so that its
+  link leads from the gather element's file.
+
+<h5 data-gather="cc-3oEQyySkFc" id="cc-fSybbvuqQB">
+  Implementation of HTML cleaning
+</h5>
 
 Cache population and maintenance
 --------------------------------
@@ -369,8 +436,8 @@ approach means extraneous watcher events from ignored directories, such as
 
 The walker is based on the [ignore](https://docs.rs/ignore/latest/ignore/)
 crate, allowing users to exclude files from the project. After the initial
-traverse of the project, it keeps
-an [IncrementalIgnore](https://docs.rs/ignore/latest/ignore/struct.IncrementalIgnore.html)
+traverse of the project, it keeps an
+[IncrementalIgnore](https://docs.rs/ignore/latest/ignore/struct.IncrementalIgnore.html)
 for checking files in the `WatcherPathState`s received from the watcher.
 
 * If the path is a deleted file or directory and is not ignored by the walker,
@@ -405,7 +472,7 @@ closed or the weak reference can't be upgraded. It is implemented as a thread.
 
 The consumer decides whether a file changed by its stamp, as Git's index does: a
 snapshot of the file's length and modification time (plus its change time and
-inode on Unix), taken before its contents were read. A stamp taken within a few
+inode on Unix), taken before its content was read. A stamp taken within a few
 seconds of the file's last write never matches, since a later write in the same
 timestamp tick could leave this metadata unchanged (Git's "racy clean" problem).
 
