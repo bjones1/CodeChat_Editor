@@ -120,9 +120,10 @@ fn run_test(mode: &str, doc: &str, doc_blocks: Vec<CodeMirrorDocBlock>) -> Vec<C
 
 // ### Tests for `codechat_for_web_to_source`
 //
-// Since it just invokes `code_mirror_to_code_doc_blocks` and
-// `code_doc_block_vec_to_source`, both of which have their own set of tests, we
-// just need to do a bit of testing.
+// `code_mirror_to_code_doc_blocks`, `doc_block_html_to_markdown`, and
+// `code_doc_block_vec_to_source`, the stages it invokes, have their own sets of
+// tests. These tests therefore focus on what it adds: reporting errors and
+// supplying the newline which ends a doc block.
 #[test]
 fn test_codechat_for_web_to_source() {
     let codechat_for_web = build_codechat_for_web("python", "", vec![]);
@@ -138,10 +139,10 @@ fn test_codechat_for_web_to_source() {
     );
 }
 
-// Verify that saving an empty doc block keeps the newline which ends it; without
-// this newline, the next line of the file joins the comment. Markdown conversion
-// produces no HTML from each of these doc blocks. Only a doc block ending a file
-// which has no final newline may lack one.
+// Verify that saving a doc block keeps the newline which ends it; without this
+// newline, the next line of the file joins the comment. Word wrapping supplies
+// this newline for only some of these doc blocks. Only a comment with no text,
+// ending a file which has no final newline, lacks one.
 #[test]
 fn test_codechat_for_web_to_source_empty_doc_block() {
     for (source, saved) in [
@@ -159,8 +160,41 @@ fn test_codechat_for_web_to_source_empty_doc_block() {
             "//\n  // Next.\nlet a = 1;\n",
             "//\n  // Next.\nlet a = 1;\n",
         ),
-        // The end of a file which has no final newline.
+        // The end of a file which has no final newline. A comment with no text
+        // occupies no lines of the document, so saving adds no newline. The
+        // Unicode character verifies that the document's length is measured in
+        // UTF-16 code units.
         ("let a = 1;\n//", "let a = 1;\n//"),
+        ("//", "//"),
+        ("let σ = 1;\n//", "let σ = 1;\n//"),
+        ("let a = 1;\n// ", "let a = 1;\n//"),
+        ("let a = 1;\n/* */", "let a = 1;\n/* */"),
+        // The end of a file which has a final newline.
+        ("let a = 1;\n//\n", "let a = 1;\n//\n"),
+        ("//\n", "//\n"),
+        // A block comment, which must survive with its delimiters.
+        ("/* </div> */\nlet a = 1;\n", "/* */\nlet a = 1;\n"),
+        ("let a = 1;\n/* </div> */\n", "let a = 1;\n/* */\n"),
+        // A comment with text occupies one line of the document, even if the
+        // file has no final newline. Saving therefore adds this newline,
+        // whether or not its Markdown is empty.
+        ("let a = 1;\n/* </div> */", "let a = 1;\n/* */\n"),
+        ("let a = 1;\n// </div>", "let a = 1;\n//\n"),
+        ("let a = 1;\n// Test", "let a = 1;\n// Test\n"),
+        // Word wrapping returns these unchanged, with no final newline: this
+        // directive makes it skip the text, and zero-width characters give its
+        // output no printed width.
+        (
+            "// <!-- dprint-ignore-file -->\nlet a = 1;\n",
+            "// <!-- dprint-ignore-file -->\nlet a = 1;\n",
+        ),
+        ("// \u{200b}\nlet a = 1;\n", "// \u{200b}\nlet a = 1;\n"),
+        (
+            "/* \u{200b} */\nlet a = 1;\n",
+            "/* \u{200b} */\nlet a = 1;\n",
+        ),
+        ("// \u{200b}\n", "// \u{200b}\n"),
+        ("let a = 1;\n// \u{200b}", "let a = 1;\n// \u{200b}\n"),
     ] {
         let translation =
             source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
@@ -169,9 +203,9 @@ fn test_codechat_for_web_to_source_empty_doc_block() {
     }
 }
 
-// Narrow `test_codechat_for_web_to_source_empty_doc_block` to the save stage
-// which loses the newline, by checking each stage's output in order for a bare
-// delimiter followed by code.
+// Check each stage of saving a bare delimiter followed by code. The stages
+// don't supply the newline which ends this doc block;
+// `codechat_for_web_to_source` does this between stages 2 and 3.
 #[test]
 fn test_codechat_for_web_to_source_empty_doc_block_stages() {
     let llc = compile_lexers(get_language_lexer_vec());
@@ -193,8 +227,17 @@ fn test_codechat_for_web_to_source_empty_doc_block_stages() {
         ]
     );
 
-    // Stage 3, `code_doc_block_vec_to_source`, checked before stage 2 since it
-    // defines the input stage 2 must produce: a doc block containing only a
+    // Stage 2, `doc_block_html_to_markdown`: empty HTML produces empty
+    // Markdown.
+    assert_eq!(
+        doc_block_html_to_markdown(code_doc_block_vec_html, None).unwrap(),
+        vec![
+            build_doc_block("", "//", ""),
+            build_code_block("let a = 1;\n")
+        ]
+    );
+
+    // Stage 3, `code_doc_block_vec_to_source`: a doc block containing only a
     // newline saves correctly.
     assert_eq!(
         code_doc_block_vec_to_source(
@@ -208,15 +251,24 @@ fn test_codechat_for_web_to_source_empty_doc_block_stages() {
         "//\nlet a = 1;\n"
     );
 
-    // Stage 2, `doc_block_html_to_markdown`: converting to Markdown must supply
-    // this newline.
-    println!("{code_doc_block_vec_html:#?}");
+    // All stages together, with a newline in the document and without one.
     assert_eq!(
-        doc_block_html_to_markdown(code_doc_block_vec_html, None).unwrap(),
-        vec![
-            build_doc_block("", "//", "\n"),
-            build_code_block("let a = 1;\n")
-        ]
+        codechat_for_web_to_source(&build_codechat_for_web(
+            "javascript",
+            "\nlet a = 1;\n",
+            vec![build_codemirror_doc_block(0, 1, "", "//", "")],
+        ))
+        .unwrap(),
+        "//\nlet a = 1;\n"
+    );
+    assert_eq!(
+        codechat_for_web_to_source(&build_codechat_for_web(
+            "javascript",
+            "",
+            vec![build_codemirror_doc_block(0, 1, "", "//", "")],
+        ))
+        .unwrap(),
+        "//"
     );
 }
 

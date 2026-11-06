@@ -496,8 +496,30 @@ pub fn codechat_for_web_to_source(
             .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed);
     }
     let code_doc_block_vec_html = code_mirror_to_code_doc_blocks(code_mirror);
-    let code_doc_block_vec = doc_block_html_to_markdown(code_doc_block_vec_html, None)
+    let mut code_doc_block_vec = doc_block_html_to_markdown(code_doc_block_vec_html, None)
         .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed)?;
+    // Word wrapping normally supplies the newline ending a doc block, but not
+    // if its output has no printed width (empty Markdown or only zero-width
+    // characters) or if a `dprint-ignore-file` comment makes it skip the text.
+    // Without this newline, the next line of the file joins the comment. Supply
+    // it here rather than during Markdown conversion, since only the CodeMirror
+    // document shows whether this newline exists: the document holds it at the
+    // doc block's `from`, unless the doc block is a comment with no text ending
+    // a file with no final newline. In this case, `from` lies at the end of the
+    // document.
+    let doc_utf16_len = len_utf16(&code_mirror.doc);
+    let doc_blocks =
+        code_doc_block_vec
+            .iter_mut()
+            .filter_map(|code_doc_block| match code_doc_block {
+                CodeDocBlock::DocBlock(doc_block) => Some(doc_block),
+                CodeDocBlock::CodeBlock(_) => None,
+            });
+    for (doc_block, code_mirror_doc_block) in doc_blocks.zip(&code_mirror.doc_blocks) {
+        if !doc_block.contents.ends_with('\n') && code_mirror_doc_block.from < doc_utf16_len {
+            doc_block.contents.push('\n');
+        }
+    }
     code_doc_block_vec_to_source(&code_doc_block_vec, lexer)
         .map_err(CodechatForWebToSourceError::CannotTranslateCodeChat)
 }
@@ -820,6 +842,17 @@ fn code_doc_block_vec_to_source(
                             );
                         }
                     };
+
+                    // An empty comment has no lines to place the delimiters
+                    // around, so write it directly.
+                    if doc_block.contents.is_empty() || doc_block.contents == "\n" {
+                        append_doc_block(
+                            &doc_block.indent,
+                            &doc_block.delimiter,
+                            &format!("{block_comment_closing_delimiter}{}", doc_block.contents),
+                        );
+                        continue;
+                    }
 
                     // Then, split the contents into a series of lines. Build a
                     // properly-indented block comment around these lines.
