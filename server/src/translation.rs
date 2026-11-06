@@ -2018,4 +2018,30 @@ mod tests {
         }];
         assert!(doc_blocks_compare(&ide, &client), "{}", ide[0].contents);
     }
+
+    // Verify that a re-translation of a gather list holding a fragment's math
+    // matches the Client's copy, for the same reason as
+    // `test_compare_hydrated_xref_math`. Unlike the math in a cross-reference,
+    // which hydration renders in place, this math is stored in the fragment's
+    // content.
+    #[test]
+    fn test_compare_gathered_math() {
+        let translation = source_to_codechat_for_web(
+            "// <fragment id=\"f\"></fragment>Math $x^2$.\nlet a = 1;\n// <h3 id=\"g\" data-gather=\"f\">Gathered</h3>\n",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None,
+        )
+        .unwrap();
+        let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+            panic!("No diff!");
+        };
+        let ide = vec![code_mirror.doc_blocks[1].clone()];
+        let client = vec![CodeMirrorDocBlock {
+            contents: "<h3 id=\"g\" class=\"cc-gather\" data-gather=\"f\">Gathered</h3><div class=\"cc-gather-items\" contenteditable=\"false\"><p class=\"cc-gather-item-link\">From <a href=\"#f\" data-mce-href=\"#f\">foo.js</a>:</p><div class=\"cc-fragment-doc\"><pre class=\"cc-fragment-indent\"><span class=\"cc-line-number\">1</span></pre><div class=\"cc-fragment-doc-contents\"><p>Math <span class=\"math math-inline mceNonEditable\" contenteditable=\"false\">\\(x^2\\)</span>.</p></div></div><pre class=\"cc-fragment-code\"><span class=\"cc-line-number\">2</span>let a = 1;\n</pre></div>".to_string(),
+            ..ide[0].clone()
+        }];
+        assert!(doc_blocks_compare(&ide, &client), "{}", ide[0].contents);
+    }
 }

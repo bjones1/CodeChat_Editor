@@ -1277,7 +1277,9 @@ static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
 // <xref ref="cc-P-g5o100jN"></xref>), which is what keeps a gather element and
 // the fragments it lists from outdating each other forever. Each `<xref>` keeps
 // its `data-content`, from which a gather element re-hydrates its link; see
-// `hydrate_xrefs_within`.
+// `hydrate_xrefs_within`. Only a `contenteditable` of `false` is kept: a
+// hand-written `true` could make part of a non-editable gather list editable,
+// and dehydration discards edits made there.
 static CLEAN_FRAGMENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     b.add_tags(&["wc-mermaid", "graphviz-graph", "xref", "input", "iframe"])
@@ -1292,6 +1294,9 @@ static CLEAN_FRAGMENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
                 "cc-error",
             ],
         )
+        // Math spans are marked non-editable; see `hydrate_link_content` for
+        // why a gather list's copy must keep this.
+        .add_tag_attributes("span", &["contenteditable"])
         .add_tag_attributes("code", &["class"])
         .add_tag_attributes("input", &["type", "checked", "disabled"])
         .add_tag_attributes(
@@ -1299,6 +1304,9 @@ static CLEAN_FRAGMENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
             &["width", "height", "src", "allowfullscreen", "frameborder"],
         )
         .add_tag_attributes("xref", &["contenteditable", "data-content", "ref"])
+        .attribute_filter(|_element, attribute, value| {
+            (attribute != "contenteditable" || value == "false").then_some(value.into())
+        })
         .strip_comments(false)
         .link_rel(None);
     allow_phrasing_attributes(&mut b);

@@ -28,6 +28,7 @@ Changelog
   later doc blocks. The Client shows this error in a toast and keeps showing the
   last text which translated, ignoring edits made there until the error is
   fixed.
+* Fix retranslations of math in gather elements.
 
 Version 0.3.2 -- 2026-Oct-31
 ----------------------------

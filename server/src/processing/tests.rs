@@ -2163,6 +2163,37 @@ fn test_hydrate_gather_same_file() {
     assert_eq!(contents[2], "<p>End.");
 }
 
+// Verify that a gather list's copy of a fragment keeps the `contenteditable`
+// which marks math non-editable, but not a hand-written one, which would make
+// part of the non-editable list editable. The fragment's own doc block is
+// unchanged.
+#[test]
+fn test_hydrate_gather_contenteditable() {
+    let source = indoc!(
+        r#"
+        // <fragment id="f"></fragment><span contenteditable="true">a</span>
+        // <span contenteditable="">b</span> <span contenteditable="false">c</span>
+        // $x^2$
+        let a = 1;
+        // <h3 data-gather="f" id="g">Gathered</h3>
+        "#
+    );
+    let translation =
+        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+    assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[0].contents,
+        "<p><fragment contenteditable=false id=f>See <a href=#g>Gathered</a></fragment><span contenteditable=true>a</span> <span contenteditable>b</span> <span contenteditable=false>c</span> <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span>"
+    );
+    assert_eq!(
+        code_mirror.doc_blocks[1].contents,
+        "<h3 class=cc-gather data-gather=f id=g>Gathered</h3><div class=cc-gather-items contenteditable=false><p class=cc-gather-item-link>From <a href=#f>foo.js</a>:<div class=cc-fragment-doc><pre class=cc-fragment-indent><span class=cc-line-number>1</span></pre><div class=cc-fragment-doc-contents><p><span>a</span> <span>b</span> <span contenteditable=false>c</span> <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span></div></div><pre class=cc-fragment-code><span class=cc-line-number>4</span>let a = 1;\n</pre></div>"
+    );
+}
+
 // Verify that a rendered fragment preserves the layout of the source it came
 // from: each doc block keeps its indent, and each line of a code block and the
 // first line of each doc block are preceded by their line numbers in the source.
