@@ -490,7 +490,7 @@ pub fn codechat_for_web_to_source(
         let html_to_markdown = new_html_to_markdown();
         let converter = HtmlToMarkdownWrapped::new(&html_to_markdown);
         let tree = html_to_dom(&code_mirror.doc, None)?;
-        dehydrating_walk_node(&tree);
+        dehydrating_walk_node(&tree)?;
         return converter
             .convert(&tree)
             .map_err(CodechatForWebToSourceError::HtmlToMarkdownFailed);
@@ -704,7 +704,7 @@ pub fn doc_block_html_to_markdown(
         if let CodeDocBlock::DocBlock(doc_block) = code_doc_block {
             last_doc_block_index = Some(index);
             let tree = html_to_dom(&doc_block.contents, dom_location)?;
-            dehydrating_walk_node(&tree);
+            dehydrating_walk_node(&tree)?;
 
             // Calculate the total delimiter width: the delimiter width plus the
             // extra space after it. Special case: an empty delimiter means
@@ -1212,7 +1212,7 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
         "iframe",
         &["width", "height", "src", "allowfullscreen", "frameborder"],
     )
-    .add_tag_attributes("xref", &["contenteditable", "ref"])
+    .add_tag_attributes("xref", &["contenteditable", "data-content", "ref"])
     .add_tag_attributes("fragment", &["contenteditable", "id", "following"])
     // Keep HTML comments, which Ammonia strips by default.
     .strip_comments(false)
@@ -1220,44 +1220,58 @@ static AMMONIA_OPTIONS: LazyLock<Builder> = LazyLock::new(|| {
     // manually and it should not be stripped without some extra work (perhaps
     // adding custom attributes?).
     .link_rel(None);
+    allow_phrasing_attributes(&mut b);
     b
 });
 
-// Clean HTML for storage as a `Target`'s inner HTML, per the spec in
-// `cache.rs`: only the
+// Clean HTML which becomes the content of a hydrated link -- a `Target`'s inner
+// HTML, or a cross-reference's optional content -- per
+// <xref ref="cc-2dkkF9YJnL"></xref>: only the
 // [permitted content for an `<a>` element](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/a#technical_summary)
-// is allowed (phrasing content, excluding interactive content), since this HTML
-// becomes the text of a hydrated cross-reference link. Disallowed tags are
-// stripped but their text is kept; `id` attributes are stripped because they
-// aren't in the allowlist, preventing duplicate ids when the HTML is rendered
-// in a referencing file.
-static CLEAN_TARGET_HTML: LazyLock<Builder> = LazyLock::new(|| {
+// is allowed. This is a conservative subset of phrasing content which excludes
+// interactive content, along with media and other elements not useful in link
+// text. It also includes `<rp>` and `<rt>`, which aren't phrasing content but
+// are needed by `<ruby>`; Ammonia can't limit them to that parent, so a stray
+// one remains. Most disallowed tags are stripped but their content is kept,
+// which unwraps a nested `<xref>` to its own optional content. A `<fragment>`,
+// `<script>`, or `<style>` is removed along with its content; so is `<svg>` or
+// `<math>`, which Ammonia drops entirely since it's not in the HTML namespace.
+// `id` and `data-gather` attributes are stripped because they aren't in the
+// allowlist, so this HTML never defines a target or gather element, nor
+// duplicates an id when rendered in another file. `contenteditable` isn't in
+// the allowlist either: math hydration adds it after this cleaning, while a
+// hand-written one could make part of a non-editable `<xref>` editable, and
+// dehydration discards edits made there.
+// <fragment id="cc-3oEQyySkFc"></fragment>
+static CLEAN_LINK_CONTENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     b.tags(HashSet::from([
-        "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "dfn", "em", "i", "img", "kbd",
-        "mark", "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strong", "sub", "sup",
-        "time", "u", "var", "wbr",
+        "abbr", "b", "bdi", "bdo", "br", "cite", "code", "data", "del", "dfn", "em", "i", "img",
+        "ins", "kbd", "mark", "q", "rp", "rt", "ruby", "s", "samp", "small", "span", "strong",
+        "sub", "sup", "time", "u", "var", "wbr",
     ]))
-    // Keep hydrated math legible in link text.
-    .add_allowed_classes(
-        "span",
-        &["math", "math-inline", "math-display", "mceNonEditable"],
-    )
+    .add_clean_content_tags(&["fragment"])
+    // Keep the math which `hydrate_link_content` hydrates after cleaning.
+    .add_allowed_classes("span", &["math", "math-inline", "math-display"])
     .link_rel(None);
+    allow_phrasing_attributes(&mut b);
     b
 });
 
-// Clean HTML for storage as a `Fragment`'s content, per the cache spec: like
-// `AMMONIA_OPTIONS`, but `id` and `data-gather` attributes are stripped (they
-// aren't in any allowlist) to prevent duplicate ids when the content is
-// rendered in a gather list, and `<fragment>` elements are removed *along with
-// their contents* -- backlink hydration is excluded from fragment content (see
-// layer 4 in the `cache.rs` design), which is what keeps a gather element and
-// the fragments it lists from outdating each other forever.
+// Clean HTML for storage as a `Fragment`'s content, per
+// <xref ref="cc-2dkkF9YJnL"></xref>: like `AMMONIA_OPTIONS`, but `id` and
+// `data-gather` attributes are stripped (they aren't in any allowlist) to
+// prevent duplicate ids when the content is rendered in a gather list, and
+// `<fragment>` elements are removed *along with their contents* -- backlink
+// hydration is excluded from fragment content (see layer 4 under
+// <xref ref="cc-P-g5o100jN"></xref>), which is what keeps a gather element and
+// the fragments it lists from outdating each other forever. Each `<xref>` keeps
+// its `data-content`, from which a gather element re-hydrates its link; see
+// `hydrate_xrefs_within`.
 static CLEAN_FRAGMENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
     let mut b = Builder::default();
     b.add_tags(&["wc-mermaid", "graphviz-graph", "xref", "input", "iframe"])
-        .clean_content_tags(HashSet::from(["fragment"]))
+        .add_clean_content_tags(&["fragment"])
         .add_allowed_classes(
             "span",
             &[
@@ -1274,11 +1288,27 @@ static CLEAN_FRAGMENT_HTML: LazyLock<Builder> = LazyLock::new(|| {
             "iframe",
             &["width", "height", "src", "allowfullscreen", "frameborder"],
         )
-        .add_tag_attributes("xref", &["contenteditable", "ref"])
+        .add_tag_attributes("xref", &["contenteditable", "data-content", "ref"])
         .strip_comments(false)
         .link_rel(None);
+    allow_phrasing_attributes(&mut b);
     b
 });
+
+/// Allow the phrasing element attributes which Ammonia's defaults omit, in
+/// every cleaner: `minify` passes all hydrated HTML through `AMMONIA_OPTIONS`,
+/// which would otherwise remove what the other cleaners kept. The HTML standard
+/// requires `value` on `<data>`; without `datetime`, a `<time>`'s text must
+/// itself be a valid date or time.
+fn allow_phrasing_attributes(
+    // The cleaner to update.
+    builder: &mut Builder<'static>,
+) {
+    builder
+        .add_tag_attributes("bdi", &["dir"])
+        .add_tag_attributes("data", &["value"])
+        .add_tag_attributes("time", &["datetime"]);
+}
 
 /// A spec-compliant minifier.
 pub fn minify(html: &str) -> Result<String, FromUtf8Error> {
@@ -1583,10 +1613,10 @@ fn hydrate_dom(
     );
     // ### Patch cross-references
     //
-    // Layer 2: each `<xref>`'s content depends only on its target's inner HTML,
-    // which the commit just placed in the cache.
+    // Layer 2: each `<xref>`'s content depends only on its optional content and
+    // its target's inner HTML, which the commit just placed in the cache.
     for node in &walk_context.xrefs {
-        hydrate_xref(&cache_guard, node, &walk_context.path)?;
+        hydrate_source_xref(&cache_guard, node, &walk_context.path)?;
     }
     // ### Patch fragment backlinks
     //
@@ -1635,8 +1665,8 @@ fn assign_auto_ids(
     assigned: &mut HashSet<String>,
 ) {
     for child in node.children.borrow().iter() {
-        // An `<xref>` doesn't allow an `id`, so it gets no auto-assigned one
-        // either; a `<fragment>`, a target, and a gather element all do.
+        // Hydration strips an `<xref>`'s `id`, so it gets no auto-assigned one;
+        // a `<fragment>`, a target, and a gather element all do.
         if get_node_tag_name(child) != Some("xref")
             && get_attr_value(child, "id").as_deref() == Some(AUTO_ID)
         {
@@ -1644,8 +1674,8 @@ fn assign_auto_ids(
             set_attr(child, "id", &id);
             assigned.insert(id);
         }
-        // Skip content the cache generates, for the reason given in
-        // `hydrating_walk_node`.
+        // Skip the content `hydrating_walk_node` skips, for the reasons given
+        // there.
         let skip_descend = matches!(get_node_tag_name(child), Some("xref" | "fragment"))
             || is_gather_items_div(child);
         if !skip_descend {
@@ -1654,8 +1684,56 @@ fn assign_auto_ids(
     }
 }
 
-/// Hydrate one `<xref>`: mark it non-editable, then replace its contents with a
-/// link to its target or an error message.
+/// Hydrate one `<xref>` as it appears in the source, holding its optional
+/// content as parsed: save that content in `data-content`, overwriting any
+/// value there, and strip every attribute but `ref`, then hydrate the `<xref>`
+/// as `hydrate_xref` does. Dehydration restores the content from
+/// `data-content`; see <xref ref="cc-HZyE2Bv-eI"></xref>.
+///
+/// The saved content is attribute-encoded, so that the attribute's value holds
+/// no `<` or `>`. The `SAFE_FOR_XML` check in
+/// [DOMPurify](https://github.com/cure53/DOMPurify), which TinyMCE uses to
+/// sanitize attributes, removes an attribute whose value contains `-->` or a
+/// closing tag such as `</title`, either of which optional content may hold.
+/// `optional_content` decodes it.
+/// <fragment id="cc-BHC6fJQ8bU"></fragment>
+fn hydrate_source_xref(
+    // The cache, already locked by the caller.
+    cache: &Cache,
+    // The `<xref>` element.
+    node: &Rc<Node>,
+    // The canonicalized path of the file the `<xref>` is rendered in, from
+    // which its link leads.
+    path: &Path,
+    // An error only if the optional content can't be serialized, or the link's
+    // content can't be parsed.
+) -> io::Result<()> {
+    let optional_content = node_inner_html(node)?;
+    if let NodeData::Element { attrs, .. } = &node.data {
+        attrs.borrow_mut().retain(|attr| &*attr.name.local == "ref");
+    }
+    set_attr(
+        node,
+        "data-content",
+        &htmlize::escape_attribute(&optional_content),
+    );
+    hydrate_xref(cache, node, path)
+}
+
+/// The optional content of a hydrated `<xref>`, decoded from its
+/// `data-content` attribute; see `hydrate_source_xref`.
+fn optional_content(
+    // The hydrated `<xref>` element.
+    node: &Rc<Node>,
+    // The optional content as parsed, or `None` if `data-content` is missing.
+) -> Option<String> {
+    get_attr_value(node, "data-content")
+        .map(|encoded| htmlize::unescape_attribute(encoded).into_owned())
+}
+
+/// Hydrate one `<xref>` whose optional content is in its `data-content`
+/// attribute: mark it non-editable, then replace its contents with a link to
+/// its target or an error message.
 fn hydrate_xref(
     // The cache, already locked by the caller.
     cache: &Cache,
@@ -1664,7 +1742,7 @@ fn hydrate_xref(
     // The canonicalized path of the file the `<xref>` is rendered in, from
     // which its link leads.
     path: &Path,
-    // An error only if the target's stored inner HTML can't be parsed.
+    // An error only if the link's content can't be parsed.
 ) -> io::Result<()> {
     set_attr(node, "contenteditable", "false");
     let children = xref_content(cache, node, path)?;
@@ -1673,11 +1751,11 @@ fn hydrate_xref(
 }
 
 /// Re-hydrate every `<xref>` within the given nodes, at any depth, which
-/// hydrated to a link; see `hydrate_gathers` for why gathered content needs
-/// this. Only a link depends on the file it's rendered in, so one which
-/// hydrated to an error message is left as it is. This matters for an `<xref>`
-/// with an `id`: cleaning a fragment's content strips every `id`, so only the
-/// fragment's own file can detect that error.
+/// hydrated to a link -- from its `data-content`, which `CLEAN_FRAGMENT_HTML`
+/// keeps for this purpose. See `hydrate_gathers` for why gathered content needs
+/// this. Only a link depends on the file it's rendered in; an error message
+/// reads the same anywhere, so an `<xref>` which hydrated to one is left as it
+/// is.
 fn hydrate_xrefs_within(
     // The cache, already locked by the caller.
     cache: &Cache,
@@ -1685,7 +1763,7 @@ fn hydrate_xrefs_within(
     nodes: &[Rc<Node>],
     // The canonicalized path of the file these nodes are rendered in.
     path: &Path,
-    // An error only if a target's stored inner HTML can't be parsed.
+    // An error only if a link's content can't be parsed.
 ) -> io::Result<()> {
     for node in nodes {
         if get_node_tag_name(node) == Some("xref") {
@@ -1709,20 +1787,13 @@ fn hydrate_xrefs_within(
 fn xref_content(
     // The cache, already locked by the caller.
     cache: &Cache,
-    // The `<xref>` element.
+    // The `<xref>` element, whose optional content is in its `data-content`
+    // attribute.
     node: &Rc<Node>,
     // The canonicalized path of the file the cross-reference is rendered in.
     path: &Path,
     // The nodes to place inside the `<xref>` element.
 ) -> io::Result<Vec<Rc<Node>>> {
-    // An `<xref>` is never a target, so an `id` on it -- even `id="*"`, which
-    // `assign_auto_ids` leaves alone -- would mislead its reader into thinking
-    // it can be referenced.
-    if get_attr_value(node, "id").is_some() {
-        return Ok(vec![error_span(
-            "a cross-reference may not have an \"id\" attribute",
-        )]);
-    }
     let Some(id) = get_attr_value(node, "ref") else {
         return Ok(vec![error_span(
             "a cross-reference requires a \"ref\" attribute",
@@ -1739,10 +1810,20 @@ fn xref_content(
             target,
         } => {
             let href = format!("{}#{id}", relative_url(path, target_path));
+            // The link's content is the hydrated optional content, unless that
+            // is blank once serialized; then it's the target's hydrated inner
+            // HTML. ASCII whitespace is exactly what HTML considers whitespace.
+            let hydrated_content =
+                hydrate_link_content(&optional_content(node).unwrap_or_default())?;
+            let content = if hydrated_content.trim_ascii().is_empty() {
+                hydrate_link_content(&target.inner_html)?
+            } else {
+                hydrated_content
+            };
             vec![new_element(
                 "a",
                 vec![("href", href)],
-                parse_html_fragment(&target.inner_html)?,
+                parse_html_fragment(&content)?,
             )]
         }
         IdResolution::Fragment { .. } => vec![error_span(&format!(
@@ -1753,6 +1834,26 @@ fn xref_content(
             "id \"{id}\" is defined more than once"
         ))],
     })
+}
+
+/// Turn a cross-reference's optional content, or a target's inner HTML, into
+/// the content of a link, per <xref ref="cc-HZyE2Bv-eI"></xref>: clean it, then
+/// hydrate it so that its math renders. Cleaning strips a code block's `<pre>`
+/// and `language-*` class, so hydration never produces a Mermaid or GraphViz
+/// diagram here. The result must keep the `contenteditable` attribute which
+/// math hydration adds: TinyMCE adds it to anything with the `mceNonEditable`
+/// class, so without it the Client's copy of this link never matches a
+/// re-translation (see `compare_html` in `translation.rs`), sending the Client
+/// a re-translation after each save. A target's inner HTML is stored before
+/// hydration, so this runs each time it's rendered.
+fn hydrate_link_content(
+    // The optional content as parsed, or a target's stored inner HTML.
+    content: &str,
+    // The link's content.
+) -> io::Result<String> {
+    let dom = html_to_dom(&CLEAN_LINK_CONTENT_HTML.clean(content).to_string(), None)?;
+    hydrate_descendants(&dom);
+    dom_to_html(&dom)
 }
 
 /// The content of one hydrated `<fragment>`: a backlink to each gather element
@@ -1780,7 +1881,7 @@ fn fragment_backlinks(
         children.push(new_element(
             "a",
             vec![("href", href)],
-            parse_html_fragment(&backlink.target.inner_html)?,
+            parse_html_fragment(&hydrate_link_content(&backlink.target.inner_html)?)?,
         ));
     }
     Ok(children)
@@ -2340,57 +2441,7 @@ struct FragmentHydration {
 #[allow(clippy::too_many_lines)]
 fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Result<WalkContext> {
     for child in node.children.borrow_mut().iter_mut() {
-        let possible_replacement_child =
-        // Perform replacements of GraphViz and Mermaid graphs:
-        //
-        // Look for a `<pre>` tag
-        if get_node_tag_name(child) == Some("pre")
-            // with no attributes
-            && let NodeData::Element {
-                attrs: ref_child_attrs, ..
-            } = &child.data
-            && ref_child_attrs.borrow().is_empty()
-            // with one `<code>` child
-            && let code_children = child.children.borrow()
-            && code_children.len() == 1
-            && let code_child = code_children.iter().next().unwrap()
-            && get_node_tag_name(code_child) == Some("code")
-            // with only a `class=language-mermaid/graphviz` attribute
-            && let NodeData::Element {
-                attrs: ref_code_child_attrs, ..
-            } = &code_child.data
-            && let code_child_attrs = ref_code_child_attrs.borrow()
-            && code_child_attrs.len() == 1
-            && let Some(attr) = code_child_attrs.iter().next()
-            && *attr.name.local == *"class"
-            && let Some(element_name) = CODE_BLOCK_LANGUAGE_TO_CUSTOM_ELEMENT.get(&*attr.value)
-            // with only one Text child
-            && let text_children = &code_child.children.borrow()
-            && text_children.len() == 1
-            && let Some(text_child) = text_children.iter().next()
-            && let NodeData::Text { .. } = &text_child.data
-        {
-            // Make the parent node a `element_name` node, with the child's
-            // text.
-            let wc_mermaid = Node::new(NodeData::Element {
-                name: QualName::new(None, ns!(html), LocalName::from(*element_name)),
-                attrs: RefCell::new(vec![]),
-                template_contents: RefCell::new(None),
-                mathml_annotation_xml_integration_point: false,
-            });
-            wc_mermaid.children.borrow_mut().push(text_child.clone());
-            Some(wc_mermaid)
-        } else {
-            // See if this is a math node to replace; if not, this returns
-            // `None`.
-            replace_math_node(child, true)
-        };
-
-        // Replace the child if we found a replacement.
-        if let Some(replacement_child) = possible_replacement_child {
-            replacement_child.parent.set(Some(Rc::downgrade(node)));
-            *child = replacement_child;
-        }
+        hydrate_child(node, child);
 
         // Analyze this node for cacheable data.
         if let Some(tag_name) = get_node_tag_name(child) {
@@ -2404,10 +2455,10 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                 walk_context.doc_block_index = index;
             } else if tag_name == "xref" {
                 // A cross reference: record the referenced id as a fact, and
-                // keep the node so its generated contents can be filled in
-                // after the cache commit -- with an error message, if it lacks
-                // a `ref`. Note that this element is never a target; an `id`
-                // attribute on it is an error, reported by `xref_content`.
+                // keep the node so its contents can be hydrated after the cache
+                // commit -- to an error message, if it lacks a `ref`. Note that
+                // this element is never a target; hydration strips an `id`
+                // attribute from it. <fragment id="cc-49851a1jdJ"></fragment>
                 if let Some(ref_id) = get_attr_value(child, "ref") {
                     walk_context.facts.xrefs.push(ref_id);
                 }
@@ -2510,7 +2561,7 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                             // Clean the inner HTML for storage; note that it's
                             // captured before any hydration of descendants, per
                             // the cache spec.
-                            inner_html: CLEAN_TARGET_HTML
+                            inner_html: CLEAN_LINK_CONTENT_HTML
                                 .clean(&node_inner_html(child)?)
                                 .to_string(),
                             // Line numbers aren't available until the
@@ -2541,10 +2592,13 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
         }
 
         // Don't descend into elements whose contents the cache generates
-        // (`<xref>`, `<fragment>`, and hydrated gather lists): facts must never
-        // be collected from generated content. (Such content only appears here
-        // if hand-written source contains it; dehydration removes it from saved
-        // files.)
+        // (`<fragment>`s and hydrated gather lists): facts must never be
+        // collected from generated content. (Such content only appears here if
+        // hand-written source contains it; dehydration removes it from saved
+        // files.) Nor descend into an `<xref>`: its optional content never
+        // defines a target, gather element, cross-reference, or fragment, since
+        // cleaning strips each from the link it becomes; see
+        // <xref ref="cc-HZyE2Bv-eI"></xref>.
         let skip_descend = matches!(get_node_tag_name(child), Some("xref" | "fragment"))
             || is_gather_items_div(child);
         if !skip_descend {
@@ -2553,6 +2607,80 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
     }
 
     Ok(walk_context)
+}
+
+/// Hydrate each descendant of a node which hydration transforms: math,
+/// Mermaid, and GraphViz. Unlike `hydrating_walk_node`, this collects no facts,
+/// so it suits HTML which defines none.
+fn hydrate_descendants(
+    // The node whose descendants are hydrated.
+    node: &Rc<Node>,
+) {
+    for child in node.children.borrow_mut().iter_mut() {
+        hydrate_child(node, child);
+        hydrate_descendants(child);
+    }
+}
+
+/// Replace one child of a node with its hydrated form if hydration transforms
+/// it: a Mermaid or GraphViz code block, or math.
+fn hydrate_child(
+    // The child's parent.
+    node: &Rc<Node>,
+    // The child, which this replaces.
+    child: &mut Rc<Node>,
+) {
+    let possible_replacement_child =
+    // Perform replacements of GraphViz and Mermaid graphs:
+    //
+    // Look for a `<pre>` tag
+    if get_node_tag_name(child) == Some("pre")
+        // with no attributes
+        && let NodeData::Element {
+            attrs: ref_child_attrs, ..
+        } = &child.data
+        && ref_child_attrs.borrow().is_empty()
+        // with one `<code>` child
+        && let code_children = child.children.borrow()
+        && code_children.len() == 1
+        && let code_child = code_children.iter().next().unwrap()
+        && get_node_tag_name(code_child) == Some("code")
+        // with only a `class=language-mermaid/graphviz` attribute
+        && let NodeData::Element {
+            attrs: ref_code_child_attrs, ..
+        } = &code_child.data
+        && let code_child_attrs = ref_code_child_attrs.borrow()
+        && code_child_attrs.len() == 1
+        && let Some(attr) = code_child_attrs.iter().next()
+        && *attr.name.local == *"class"
+        && let Some(element_name) = CODE_BLOCK_LANGUAGE_TO_CUSTOM_ELEMENT.get(&*attr.value)
+        // with only one Text child
+        && let text_children = &code_child.children.borrow()
+        && text_children.len() == 1
+        && let Some(text_child) = text_children.iter().next()
+        && let NodeData::Text { .. } = &text_child.data
+    {
+        // Make the parent node a `element_name` node, with the child's
+        // text.
+        let wc_mermaid = Node::new(NodeData::Element {
+            name: QualName::new(None, ns!(html), LocalName::from(*element_name)),
+            attrs: RefCell::new(vec![]),
+            template_contents: RefCell::new(None),
+            mathml_annotation_xml_integration_point: false,
+        });
+        wc_mermaid.children.borrow_mut().push(text_child.clone());
+        Some(wc_mermaid)
+    } else {
+        // See if this is a math node to replace; if not, this returns
+        // `None`.
+        replace_math_node(child, true)
+    };
+
+    // Replace the child if we found a replacement.
+    if let Some(replacement_child) = possible_replacement_child {
+        replacement_child.parent.set(Some(Rc::downgrade(node)));
+        *child = replacement_child;
+    }
 }
 
 fn replace_math_node(child: &Rc<Node>, is_hydrate: bool) -> Option<Rc<Node>> {
@@ -2727,13 +2855,18 @@ pub fn remove_tinymce_data(
     Some(node.clone())
 }
 
-/// Walk a node, dehydrating it by removing TineMCE temporary attributes,
+/// Walk a node, dehydrating it by removing TinyMCE temporary attributes,
 /// changing math to pulldown-cmark's output, changing graphviz/Mermaid to
-/// fenced code blocks, and removing all cache-hydrated content (`<xref>` and
-/// `<fragment>` contents, gather lists, and the classes/attributes hydration
-/// adds), so that none of it is written back to source.
+/// fenced code blocks, and removing all cache-hydrated content (`<fragment>`
+/// contents, gather lists, the classes/attributes hydration adds, and each
+/// `<xref>`'s link, in place of which its optional content is restored), so
+/// that none of it is written back to source.
 #[allow(clippy::too_many_lines)]
-fn dehydrating_walk_node(node: &Rc<Node>) {
+fn dehydrating_walk_node(
+    // The node whose descendants are dehydrated.
+    node: &Rc<Node>,
+    // An error only if an `<xref>`'s saved optional content can't be parsed.
+) -> io::Result<()> {
     let mut index = 0;
     // Avoid a `while` loop, since accessing `node.children` requires a borrow
     // held for the body of the loop.
@@ -2755,11 +2888,25 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
                 node.children.borrow_mut().remove(index);
                 continue;
             }
-            // The contents of these elements are generated by the cache; the
-            // `contenteditable` attribute is added during hydration.
-            if matches!(get_node_tag_name(&child), Some("xref" | "fragment")) {
-                remove_attr(&child, "contenteditable");
-                child.children.borrow_mut().clear();
+            // Hydration adds the `contenteditable` attribute to both of these
+            // elements.
+            match get_node_tag_name(&child) {
+                // A `<fragment>`'s contents are generated by the cache.
+                Some("fragment") => {
+                    remove_attr(&child, "contenteditable");
+                    child.children.borrow_mut().clear();
+                }
+                // Hydration replaced an `<xref>`'s optional content with a link
+                // or an error message, saving that content in `data-content`;
+                // without it, the optional content is empty.
+                // <fragment id="cc-MwcxCRjY8b"></fragment>
+                Some("xref") => {
+                    remove_attr(&child, "contenteditable");
+                    let restored_content = optional_content(&child).unwrap_or_default();
+                    remove_attr(&child, "data-content");
+                    set_element_children(&child, parse_html_fragment(&restored_content)?);
+                }
+                _ => {}
             }
             // Hydration marks gather elements with this class.
             remove_class(&child, "cc-gather");
@@ -2893,12 +3040,19 @@ fn dehydrating_walk_node(node: &Rc<Node>) {
         };
         // `borrow_mut` is now dropped; safe to recurse. Recurse first so that
         // TinyMCE attributes on descendants (e.g. `data-mce-bogus` on a `<br>`)
-        // are removed before the `<p><br></p>` check below.
-        if let Some(child) = child_to_walk {
-            dehydrating_walk_node(&child);
+        // are removed before the `<p><br></p>` check below. Skip an `<xref>`:
+        // it now holds its optional content as it appeared in the source, which
+        // hydration never touched, so dehydrating it would only empty each
+        // nested `<xref>`, which lacks a `data-content`.
+        // <fragment id="cc-FqIILGgnfo"></fragment>
+        if let Some(child) = child_to_walk
+            && get_node_tag_name(&child) != Some("xref")
+        {
+            dehydrating_walk_node(&child)?;
         }
         index += 1;
     }
+    Ok(())
 }
 
 fn get_node_tag_name(node: &Rc<Node>) -> Option<&str> {

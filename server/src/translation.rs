@@ -1788,9 +1788,11 @@ fn debug_shorten<T: Debug>(val: T) -> String {
 // -----
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use crate::{
         capture::{CaptureContext, CaptureEventType, CaptureEventWire, capture_control_only},
-        processing::CodeMirrorDocBlock,
+        processing::{CodeMirrorDiffable, CodeMirrorDocBlock, source_to_codechat_for_web},
         translation::doc_blocks_compare,
     };
 
@@ -1927,5 +1929,33 @@ mod tests {
             contents: "<ol> <li> <ol> <li> 1 </ol> </li> </ol> </li>".to_string(),
         }];
         assert!(doc_blocks_compare(&ide, &client));
+    }
+
+    // Verify that a re-translation of a doc block holding hydrated
+    // cross-references and a fragment's backlink, all with math in their links,
+    // matches the Client's copy, so that a save doesn't send the Client a
+    // re-translation. The Client's HTML is the output of TinyMCE, given the
+    // re-translation and the schema options in `tinymce-config.mts`: it adds
+    // `contenteditable` to math and `data-mce-href` to links, and normalizes
+    // the quoting, while keeping the value of `data-content`.
+    #[test]
+    fn test_compare_hydrated_xref_math() {
+        let translation = source_to_codechat_for_web(
+            "// ### The $x^2$ value {#t data-gather=f}\nlet x = 1;\n// See <xref ref=\"t\"></xref> and <xref ref=\"t\">*y* $z$</xref>.<fragment id=\"f\"></fragment>\n",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None,
+        )
+        .unwrap();
+        let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+            panic!("No diff!");
+        };
+        let ide = vec![code_mirror.doc_blocks[1].clone()];
+        let client = vec![CodeMirrorDocBlock {
+            contents: r##"<p>See <xref contenteditable="false" data-content="" ref="t"><a href="#t" data-mce-href="#t">The <span class="math math-inline mceNonEditable" contenteditable="false">\(x^2\)</span> value</a></xref> and <xref data-content="&amp;lt;em&amp;gt;y&amp;lt;/em&amp;gt; &amp;lt;span class=&amp;quot;math math-inline&amp;quot;&amp;gt;z&amp;lt;/span&amp;gt;" contenteditable="false" ref="t"><a href="#t" data-mce-href="#t"><em>y</em> <span class="math math-inline mceNonEditable" contenteditable="false">\(z\)</span></a></xref>.<fragment contenteditable="false" id="f">See <a href="#t" data-mce-href="#t">The <span class="math math-inline mceNonEditable" contenteditable="false">\(x^2\)</span> value</a></fragment></p>"##.to_string(),
+            ..ide[0].clone()
+        }];
+        assert!(doc_blocks_compare(&ide, &client), "{}", ide[0].contents);
     }
 }

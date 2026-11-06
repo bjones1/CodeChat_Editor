@@ -838,6 +838,132 @@ async fn test_named_anchor_round_trip_core(
     Ok(())
 }
 
+make_test!(
+    test_xref_optional_content_round_trip,
+    test_xref_optional_content_round_trip_core
+);
+
+// Verify using TinyMCE what the Server's tests of optional content assume,
+// since they use hand-written copies of its output (see
+// `test_compare_hydrated_xref_math` in
+// [translation.rs](../../src/translation.rs)). TinyMCE must keep a
+// cross-reference's `data-content`, which isn't in the schema in
+// [tinymce-config.mts](../../../client/src/tinymce-config.mts), so that an edit
+// elsewhere in the doc block leaves the source of the optional content
+// unchanged. Its output must also match a re-translation; otherwise, the
+// Client's result for the re-translation the Server then sends fails this
+// test's last check.
+async fn test_xref_optional_content_round_trip_core(
+    // The Server, through which the test plays the IDE.
+    codechat_server: CodeChatEditorServerLog,
+    // The browser showing the Client.
+    driver: WebDriver,
+    // The directory in which to create `test.py`.
+    test_dir: PathBuf,
+    // WebDriver's errors; failed checks panic instead.
+) -> Result<(), WebDriverError> {
+    let orig_text = indoc!(
+        r#"
+        # <h1 id="t">Title</h1>
+        #
+        # See <xref ref="t">the *title* and $x^2$</xref>.
+        "#
+    )
+    .to_string();
+    let path = test_dir.join("test.py");
+    fs::write(&path, &orig_text).unwrap();
+    let path_str = canonicalize(&path).unwrap().to_str().unwrap().to_string();
+    let version = 0.0;
+    perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.py",
+        Some((orig_text, version)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // Move the TinyMCE editor into the doc block by clicking on its heading.
+    let doc_block_contents = driver
+        .query(By::Css(".CodeChat-doc"))
+        .first()
+        .await
+        .unwrap();
+    click_element_top_left(&driver, &doc_block_contents)
+        .await
+        .unwrap();
+    let cursor_update = || {
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(1)),
+            scroll_position: Some(1.0),
+            is_re_translation: false,
+            contents: None,
+        })
+    };
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: cursor_update(),
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Refind it, since it's now switched with a TinyMCE editor.
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
+    tinymce_contents.wait_until().clickable().await.unwrap();
+    driver
+        .query(By::Css("#TinyMCE-inst xref[data-content] a em"))
+        .desc("a cross-reference in TinyMCE, with its optional content")
+        .first()
+        .await
+        .unwrap();
+    tinymce_contents.send_keys("z").await.unwrap();
+
+    // Only the heading changes.
+    let msg = optional_message(&codechat_server, &mut client_id, cursor_update()).await;
+    let client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(24),
+                            insert: "# <h1 id=\"t\">zTitle</h1>\n".to_string(),
+                        }],
+                        doc_blocks: vec![],
+                        version,
+                    }),
+                    version: client_version,
+                }),
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+
+    assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
 // ### Links
 //
 // #### In non-editable content

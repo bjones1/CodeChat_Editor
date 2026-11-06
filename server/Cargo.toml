@@ -57,7 +57,7 @@ futures-util = "0.3.29"
 htmd = { git = "https://github.com/bjones1/htmd.git", branch = "dom-interface", version = "0.5" }
 # This must match the version of `markup5ever_rcdom`.
 html5ever = "0.39"
-htmlize = "1.0.6"
+htmlize = { version = "1.0.6", features = ["unescape"] }
 ignore = "0.4"
 imara-diff = { version = "0.2", features = [] }
 indoc = "2.0.5"

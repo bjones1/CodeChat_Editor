@@ -39,8 +39,8 @@ use regex::Regex;
 
 // ### Local
 use super::{
-    CodeChatForWeb, CodeMirror, CodeMirrorDocBlock, SourceFileMetadata, StringDiff,
-    find_path_to_toc,
+    AMMONIA_OPTIONS, CLEAN_FRAGMENT_HTML, CLEAN_LINK_CONTENT_HTML, CodeChatForWeb, CodeMirror,
+    CodeMirrorDocBlock, SourceFileMetadata, StringDiff, find_path_to_toc,
 };
 use crate::{
     lexer::{
@@ -1756,8 +1756,8 @@ fn test_hydrate_html_1() {
 
 // ### Cache hydration tests
 //
-// Verify that a cross-reference to a target in the same file hydrates to a link
-// whose text is the target's inner HTML.
+// Verify that a cross-reference without optional content to a target in the
+// same file hydrates to a link whose text is the target's inner HTML.
 #[test]
 fn test_hydrate_xref_same_file() {
     assert_eq!(
@@ -1778,7 +1778,7 @@ fn test_hydrate_xref_same_file() {
                     13,
                     "",
                     "//",
-                    "<p>See <xref contenteditable=false ref=a><a href=#a>Title</a></xref>"
+                    "<p>See <xref contenteditable=false data-content ref=a><a href=#a>Title</a></xref>"
                 )
             ]
         ))
@@ -1804,7 +1804,7 @@ fn test_hydrate_xref_missing() {
                 1,
                 "",
                 "//",
-                "<p>See <xref contenteditable=false ref=nope><span class=cc-error>id \"nope\" not found</span></xref>"
+                "<p>See <xref contenteditable=false data-content ref=nope><span class=cc-error>id \"nope\" not found</span></xref>"
             )]
         ))
     );
@@ -1830,25 +1830,30 @@ fn test_hydrate_xref_without_ref() {
                 1,
                 "",
                 "//",
-                "<p>See <xref contenteditable=false><span class=cc-error>a cross-reference requires a \"ref\" attribute</span></xref>."
+                "<p>See <xref contenteditable=false data-content><span class=cc-error>a cross-reference requires a \"ref\" attribute</span></xref>."
             )]
         ))
     );
 }
 
-// Verify that a cross-reference with an `id` attribute hydrates to an error
-// message, even when the id requests auto-assignment.
+// Verify that hydration strips every attribute of a cross-reference but `ref`
+// -- including an `id`, even one requesting auto-assignment, since a
+// cross-reference is never a target -- and overwrites any `data-content`, so
+// that saving the result writes back only the `ref`.
 #[test]
-fn test_hydrate_xref_with_id() {
+fn test_hydrate_xref_strips_attributes() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translation = source_to_codechat_for_web(
+        "// <h1 id=\"t\">Title</h1>\nlet x = 1;\n// See <xref id=\"x\" title=\"Tip\" data-content=\"Old\" ref=\"t\"></xref> and <xref id=\"*\" ref=\"t\"></xref>.\n",
+        Path::new("foo.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
     assert_eq!(
-        source_to_codechat_for_web(
-            "// <h1 id=\"t\">Title</h1>\nlet x = 1;\n// See <xref id=\"x\" ref=\"t\"></xref> and <xref id=\"*\" ref=\"t\"></xref>.",
-            Path::new("foo.js"),
-            0.0,
-            false,
-            None
-        ),
-        Ok(build_codechat_for_web(
+        translation,
+        build_codechat_for_web(
             "javascript",
             "\nlet x = 1;\n\n",
             vec![
@@ -1860,14 +1865,212 @@ fn test_hydrate_xref_with_id() {
                     "//",
                     concat!(
                         "<p>See ",
-                        "<xref contenteditable=false id=x ref=t><span class=cc-error>a cross-reference may not have an \"id\" attribute</span></xref>",
+                        "<xref contenteditable=false data-content ref=t><a href=#t>Title</a></xref>",
                         " and ",
-                        "<xref contenteditable=false id=* ref=t><span class=cc-error>a cross-reference may not have an \"id\" attribute</span></xref>",
+                        "<xref contenteditable=false data-content ref=t><a href=#t>Title</a></xref>",
                         "."
                     )
                 )
             ]
-        ))
+        )
+    );
+    // Neither `id` was cached.
+    assert_eq!(cache.lock().unwrap().ids.keys().collect::<Vec<_>>(), ["t"]);
+    assert_eq!(
+        codechat_for_web_to_source(&translation).unwrap(),
+        "// <h1 id=\"t\">Title</h1>\nlet x = 1;\n// See <xref ref=\"t\"></xref> and <xref ref=\"t\"></xref>.\n"
+    );
+}
+
+// Verify that a cross-reference's optional content, once cleaned and hydrated,
+// becomes the text of its link, while `data-content` holds that content as
+// parsed, attribute-encoded. Cleaning leaves only the permitted content of an
+// `<a>`: it unwraps a link and a nested cross-reference, strips `id` and
+// `data-gather`, and removes a fragment, so that the optional content defines
+// nothing. It keeps the attributes which give phrasing elements their meaning,
+// along with `<del>` and `<ins>`. Hydration renders math, but a hand-written
+// diagram unwraps to its source; this requires a tight list, since in a
+// paragraph the parser ends the cross-reference at the diagram (see
+// <xref ref="cc-HZyE2Bv-eI"></xref>). An element which renders nothing still
+// counts as content, but whitespace alone doesn't, leaving the target's inner
+// HTML as the link's text; since `<svg>` is removed along with its content, it
+// leaves only whitespace too. An error replaces the optional content.
+#[test]
+fn test_hydrate_xref_optional_content() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    let translation = source_to_codechat_for_web(
+        indoc!(
+            r#"
+            // <h1 id="t">Title</h1>
+            let x = 1;
+            // * <xref ref="t">The *title*</xref>
+            // * <xref ref="t"><a href="https://example.com">Link</a> <b id="b" data-gather="f">bold</b><fragment id="f"></fragment> <xref ref="u">nested</xref></xref>
+            // * <xref ref="t">The $x^2$ value</xref>
+            // * <xref ref="t"><pre><code class="language-mermaid">graph TD</code></pre></xref>
+            // * <xref ref="t"><wc-mermaid>graph LR</wc-mermaid></xref>
+            // * <xref ref="t"><data value="42">n</data> <time datetime="2026-11-04">today</time> <bdi dir="rtl">x</bdi> <del>old</del> <ins>new</ins></xref>
+            // * <xref ref="t"><svg><title>Hidden</title></svg></xref>
+            // * <xref ref="t"><span></span></xref>
+            // * <xref ref="t"> </xref>
+            // * <xref ref="nope">Missing</xref>
+            "#
+        ),
+        Path::new("foo.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[1].contents,
+        concat!(
+            "<ul>",
+            "<li><xref data-content=\"The &amp;lt;em&amp;gt;title&amp;lt;/em&amp;gt;\" contenteditable=false ref=t><a href=#t>The <em>title</em></a></xref>",
+            "<li><xref data-content=\"&amp;lt;a href=&amp;quot;https://example.com&amp;quot;&amp;gt;Link&amp;lt;/a&amp;gt; &amp;lt;b id=&amp;quot;b&amp;quot; data-gather=&amp;quot;f&amp;quot;&amp;gt;bold&amp;lt;/b&amp;gt;&amp;lt;fragment id=&amp;quot;f&amp;quot;&amp;gt;&amp;lt;/fragment&amp;gt; &amp;lt;xref ref=&amp;quot;u&amp;quot;&amp;gt;nested&amp;lt;/xref&amp;gt;\" contenteditable=false ref=t><a href=#t>Link <b>bold</b> nested</a></xref>",
+            "<li><xref data-content=\"The &amp;lt;span class=&amp;quot;math math-inline&amp;quot;&amp;gt;x^2&amp;lt;/span&amp;gt; value\" contenteditable=false ref=t><a href=#t>The <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span> value</a></xref>",
+            "<li><xref data-content=\"&amp;lt;pre&amp;gt;&amp;lt;code class=&amp;quot;language-mermaid&amp;quot;&amp;gt;graph TD&amp;lt;/code&amp;gt;&amp;lt;/pre&amp;gt;\" contenteditable=false ref=t><a href=#t><code>graph TD</code></a></xref>",
+            "<li><xref data-content=\"&amp;lt;wc-mermaid&amp;gt;graph LR&amp;lt;/wc-mermaid&amp;gt;\" contenteditable=false ref=t><a href=#t>graph LR</a></xref>",
+            "<li><xref data-content=\"&amp;lt;data value=&amp;quot;42&amp;quot;&amp;gt;n&amp;lt;/data&amp;gt; &amp;lt;time datetime=&amp;quot;2026-11-04&amp;quot;&amp;gt;today&amp;lt;/time&amp;gt; &amp;lt;bdi dir=&amp;quot;rtl&amp;quot;&amp;gt;x&amp;lt;/bdi&amp;gt; &amp;lt;del&amp;gt;old&amp;lt;/del&amp;gt; &amp;lt;ins&amp;gt;new&amp;lt;/ins&amp;gt;\" contenteditable=false ref=t><a href=#t><data value=42>n</data> <time datetime=2026-11-04>today</time> <bdi dir=rtl>x</bdi> <del>old</del> <ins>new</ins></a></xref>",
+            "<li><xref contenteditable=false data-content=&amp;lt;svg&amp;gt;&amp;lt;title&amp;gt;Hidden&amp;lt;/title&amp;gt;&amp;lt;/svg&amp;gt; ref=t><a href=#t>Title</a></xref>",
+            "<li><xref contenteditable=false data-content=&amp;lt;span&amp;gt;&amp;lt;/span&amp;gt; ref=t><a href=#t><span></span></a></xref>",
+            "<li><xref data-content=\" \" contenteditable=false ref=t><a href=#t>Title</a></xref>",
+            "<li><xref contenteditable=false data-content=Missing ref=nope><span class=cc-error>id \"nope\" not found</span></xref>",
+            "</ul>"
+        )
+    );
+    // Only the target and the cross-reference outside of optional content
+    // defined or referenced an id.
+    let cache = cache.lock().unwrap();
+    let mut ids: Vec<&String> = cache.ids.keys().collect();
+    ids.sort();
+    assert_eq!(ids, ["nope", "t"]);
+}
+
+// Verify that every cleaner keeps the attributes which give phrasing elements
+// their meaning; a cleaner lacking them would strip them from all later output.
+#[test]
+fn test_clean_keeps_phrasing_attributes() {
+    let html = concat!(
+        r#"<data value="42">n</data> <time datetime="2026-11-04">today</time> "#,
+        r#"<bdi dir="rtl">x</bdi>"#
+    );
+    for cleaner in [
+        &*AMMONIA_OPTIONS,
+        &*CLEAN_LINK_CONTENT_HTML,
+        &*CLEAN_FRAGMENT_HTML,
+    ] {
+        assert_eq!(cleaner.clean(html).to_string(), html);
+    }
+}
+
+// Verify that math in a target's inner HTML renders where that inner HTML is
+// used: in a cross-reference without optional content, and in a fragment's
+// backlink to the gather element listing it.
+#[test]
+fn test_hydrate_target_inner_html_math() {
+    let translation = source_to_codechat_for_web(
+        indoc!(
+            r#"
+            // ### The $x^2$ value {#t data-gather=f}
+            let x = 1;
+            // See <xref ref="t"></xref>.<fragment id="f"></fragment>
+            "#
+        ),
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[1].contents,
+        concat!(
+            "<p>See <xref contenteditable=false data-content ref=t><a href=#t>The <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span> value</a></xref>.",
+            "<fragment contenteditable=false id=f>See <a href=#t>The <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span> value</a></fragment>"
+        )
+    );
+}
+
+// Verify that cleaning removes `contenteditable` from optional content, which
+// would otherwise make part of a non-editable cross-reference editable, while
+// saving still restores that content.
+#[test]
+fn test_hydrate_xref_content_not_editable() {
+    let source = "// <h1 id=\"t\">Title</h1>\nlet x = 1;\n// <xref ref=\"t\"><span contenteditable=\"true\">x</span></xref>\n";
+    let translation =
+        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+    assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[1].contents,
+        "<p><xref data-content=\"&amp;lt;span contenteditable=&amp;quot;true&amp;quot;&amp;gt;x&amp;lt;/span&amp;gt;\" contenteditable=false ref=t><a href=#t><span>x</span></a></xref>"
+    );
+}
+
+// Verify that saving hydrated cross-references restores the optional content of
+// each -- including math, and a nested cross-reference, which was never
+// hydrated -- so that their source survives a round trip through the Client.
+#[test]
+fn test_xref_optional_content_round_trip() {
+    let source = indoc!(
+        r#"
+        // <h1 id="t">Title</h1>
+        let x = 1;
+        // See <xref ref="t">the *title*</xref>, <xref ref="t"></xref>,
+        // <xref ref="t">$x^2$ and <xref ref="t">more</xref></xref>, and
+        // <xref ref="nope">nothing</xref>.
+        "#
+    );
+    let translation =
+        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+    assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
+
+    // A Markdown document reaches dehydration by a separate path.
+    let source = "<h1 id=\"t\">Title</h1>\n\nSee <xref ref=\"t\">the *title*</xref> and <xref ref=\"t\"></xref>.\n";
+    let translation =
+        source_to_codechat_for_web(source, Path::new("foo.md"), 0.0, false, None).unwrap();
+    assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
+}
+
+// Verify that each kind of error replaces the content of the cross-reference's
+// link, but leaves its optional content in `data-content`, from which saving
+// restores it.
+#[test]
+fn test_hydrate_xref_error_keeps_optional_content() {
+    let source = indoc!(
+        r#"
+        // <h1 id="d">First</h1>
+        let x = 1;
+        // <h1 id="d">Second</h1>
+        let y = 1;
+        // <fragment id="f"></fragment><xref ref="d">*a*</xref> <xref ref="f">*b*</xref>
+        // <xref ref="nope">*c*</xref> <xref ref="1 2">*d*</xref> <xref>*e*</xref>
+        "#
+    );
+    let translation =
+        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+    assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[2].contents,
+        concat!(
+            "<p><fragment contenteditable=false id=f></fragment>",
+            "<xref contenteditable=false data-content=&amp;lt;em&amp;gt;a&amp;lt;/em&amp;gt; ref=d><span class=cc-error>id \"d\" is defined more than once</span></xref> ",
+            "<xref contenteditable=false data-content=&amp;lt;em&amp;gt;b&amp;lt;/em&amp;gt; ref=f><span class=cc-error>id \"f\" names a fragment; a cross-reference must name a target or gather element</span></xref> ",
+            "<xref contenteditable=false data-content=&amp;lt;em&amp;gt;c&amp;lt;/em&amp;gt; ref=nope><span class=cc-error>id \"nope\" not found</span></xref> ",
+            "<xref ref=\"1 2\" contenteditable=false data-content=&amp;lt;em&amp;gt;d&amp;lt;/em&amp;gt;><span class=cc-error>\"1 2\" is not a valid CSS identifier</span></xref> ",
+            "<xref contenteditable=false data-content=&amp;lt;em&amp;gt;e&amp;lt;/em&amp;gt;><span class=cc-error>a cross-reference requires a \"ref\" attribute</span></xref>"
+        )
     );
 }
 
@@ -1997,7 +2200,7 @@ fn test_hydrate_xref_cross_file() {
     };
     assert_eq!(
         code_mirror.doc_blocks[0].contents,
-        "<p>See <xref contenteditable=false ref=t><a href=a.js#t>Title</a></xref>"
+        "<p>See <xref contenteditable=false data-content ref=t><a href=a.js#t>Title</a></xref>"
     );
 
     // Change the target's inner HTML, then reprocess the referencing file: the
@@ -2017,20 +2220,21 @@ fn test_hydrate_xref_cross_file() {
     };
     assert_eq!(
         code_mirror.doc_blocks[0].contents,
-        "<p>See <xref contenteditable=false ref=t><a href=a.js#t>New title</a></xref>"
+        "<p>See <xref contenteditable=false data-content ref=t><a href=a.js#t>New title</a></xref>"
     );
 }
 
 // Verify that a cross-reference within a gathered fragment links from the
 // gathering file, not from the fragment's file: here the target shares the
 // fragment's file, where the link is just `#t`, while the gathering file lies
-// in another directory. A cross-reference which hydrated to an error keeps it,
-// even one whose error -- an `id` -- the gathered content no longer shows.
+// in another directory. Its optional content survives the cleaning of the
+// fragment's content, so it still supplies the link's text. A cross-reference
+// which hydrated to an error keeps it.
 #[test]
 fn test_hydrate_gathered_xref() {
     let cache = Arc::new(Mutex::new(Cache::default()));
     source_to_codechat_for_web(
-        "// <h1 id=\"t\">Title</h1>\nlet a = 1;\n// <fragment id=\"frag\"></fragment>See <xref ref=\"t\"></xref> and <xref id=\"x\" ref=\"t\"></xref>.\nlet b = 2;",
+        "// <h1 id=\"t\">Title</h1>\nlet a = 1;\n// <fragment id=\"frag\"></fragment>See <xref ref=\"t\"></xref>, <xref ref=\"t\">the title</xref>, and <xref ref=\"nope\"></xref>.\nlet b = 2;",
         Path::new("b.js"),
         0.0,
         false,
@@ -2057,8 +2261,52 @@ fn test_hydrate_gathered_xref() {
             "<div class=cc-fragment-doc>",
             "<pre class=cc-fragment-indent><span class=cc-line-number>3</span></pre>",
             "<div class=cc-fragment-doc-contents>",
-            "<p>See <xref contenteditable=false ref=t><a href=../b.js#t>Title</a></xref>",
-            " and <xref contenteditable=false ref=t><span class=cc-error>a cross-reference may not have an \"id\" attribute</span></xref>.",
+            "<p>See <xref contenteditable=false data-content ref=t><a href=../b.js#t>Title</a></xref>",
+            ", <xref data-content=\"the title\" contenteditable=false ref=t><a href=../b.js#t>the title</a></xref>",
+            ", and <xref contenteditable=false data-content ref=nope><span class=cc-error>id \"nope\" not found</span></xref>.",
+            "</div></div>",
+            "<pre class=cc-fragment-code><span class=cc-line-number>4</span>let b = 2;</pre>",
+            "</div>"
+        )
+    );
+}
+
+// Verify that optional content holding markup and math survives storage in a
+// fragment's content: the gathering file's re-hydrated link renders it, and its
+// `data-content` still holds that content as parsed.
+#[test]
+fn test_hydrate_gathered_xref_markup() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    source_to_codechat_for_web(
+        "// <h1 id=\"t\">Title</h1>\nlet a = 1;\n// <fragment id=\"frag\"></fragment><xref ref=\"t\">*the* $x^2$</xref>\nlet b = 2;",
+        Path::new("b.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    let translation = source_to_codechat_for_web(
+        "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>",
+        Path::new("sub/a.js"),
+        0.0,
+        false,
+        Some(cache),
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[0].contents,
+        concat!(
+            "<h3 class=cc-gather data-gather=frag id=gath>Gathered</h3>",
+            "<div class=cc-gather-items contenteditable=false>",
+            "<p class=cc-gather-item-link>From <a href=../b.js#frag>../b.js</a>:",
+            "<div class=cc-fragment-doc>",
+            "<pre class=cc-fragment-indent><span class=cc-line-number>3</span></pre>",
+            "<div class=cc-fragment-doc-contents>",
+            "<p><xref data-content=\"&amp;lt;em&amp;gt;the&amp;lt;/em&amp;gt; &amp;lt;span class=&amp;quot;math math-inline&amp;quot;&amp;gt;x^2&amp;lt;/span&amp;gt;\" contenteditable=false ref=t>",
+            "<a href=../b.js#t><em>the</em> <span class=\"math math-inline mceNonEditable\" contenteditable=false>\\(x^2\\)</span></a></xref>",
             "</div></div>",
             "<pre class=cc-fragment-code><span class=cc-line-number>4</span>let b = 2;</pre>",
             "</div>"
@@ -2219,14 +2467,18 @@ fn test_auto_assign_id() {
     };
     assert_eq!(
         code_mirror.doc_blocks[0].contents,
-        format!("<p>See <xref contenteditable=false ref={id}><a href=a.js#{id}>Title</a></xref>")
+        format!(
+            "<p>See <xref contenteditable=false data-content ref={id}><a href=a.js#{id}>Title</a></xref>"
+        )
     );
 }
 
 // Verify that dehydration removes all hydration artifacts, so that saving
-// hydrated content writes clean source: `<xref>` and `<fragment>` contents are
-// emptied, the gather list is removed, and the `cc-gather` class and
-// `contenteditable` attributes are dropped.
+// hydrated content writes clean source: each `<xref>`'s contents are replaced
+// by the optional content saved, attribute-encoded, in its `data-content`, or
+// emptied if it has none; `<fragment>` contents are emptied, the gather list is
+// removed, and the `cc-gather` class and the `contenteditable` and
+// `data-content` attributes are dropped.
 #[test]
 fn test_dehydrate_hydration_artifacts() {
     assert_eq!(
@@ -2241,12 +2493,12 @@ fn test_dehydrate_hydration_artifacts() {
                     "//",
                     // The gather list holds a rendered fragment: an indented,
                     // line-numbered doc block and a line-numbered code block.
-                    "<h3 id=\"gath\" data-gather=\"frag\" class=\"cc-gather\">Gathered</h3><div class=\"cc-gather-items\" contenteditable=\"false\"><div class=\"cc-fragment-doc\"><pre class=\"cc-fragment-indent\"><span class=\"cc-line-number\">3</span>  </pre><div class=\"cc-fragment-doc-contents\"><p>Doc.</p></div></div><pre class=\"cc-fragment-code\"><span class=\"cc-line-number\">4</span>let b = 2;\n</pre></div><p>See <xref ref=\"t\" contenteditable=\"false\"><a href=\"#t\">Title</a></xref> and <fragment id=\"frag\" contenteditable=\"false\">See <a href=\"#gath\">Gathered</a></fragment>too.</p>"
+                    "<h3 id=\"gath\" data-gather=\"frag\" class=\"cc-gather\">Gathered</h3><div class=\"cc-gather-items\" contenteditable=\"false\"><div class=\"cc-fragment-doc\"><pre class=\"cc-fragment-indent\"><span class=\"cc-line-number\">3</span>  </pre><div class=\"cc-fragment-doc-contents\"><p>Doc.</p></div></div><pre class=\"cc-fragment-code\"><span class=\"cc-line-number\">4</span>let b = 2;\n</pre></div><p>See <xref ref=\"t\" contenteditable=\"false\" data-content=\"\"><a href=\"#t\">Title</a></xref> and <fragment id=\"frag\" contenteditable=\"false\">See <a href=\"#gath\">Gathered</a></fragment>too.</p><p>Also <xref ref=\"t\" contenteditable=\"false\" data-content=\"the &amp;lt;em&amp;gt;title&amp;lt;/em&amp;gt;\"><a href=\"#t\">the <em>title</em></a></xref> and <xref ref=\"t\">dropped</xref>.</p>"
                 ),
             ]
         ))
         .unwrap(),
-        "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>\n//\n// See <xref ref=\"t\"></xref> and <fragment id=\"frag\"></fragment>too.\nlet b = 2;"
+        "// <h3 id=\"gath\" data-gather=\"frag\">Gathered</h3>\n//\n// See <xref ref=\"t\"></xref> and <fragment id=\"frag\"></fragment>too.\n//\n// Also <xref ref=\"t\">the *title*</xref> and <xref ref=\"t\"></xref>.\nlet b = 2;"
     );
 }
 
@@ -2288,7 +2540,7 @@ fn test_dehydrate_named_anchor() {
 
 fn dehydrate_html(html: &str) -> io::Result<Rc<Node>> {
     let tree = html_to_dom(html, None)?;
-    dehydrating_walk_node(&tree);
+    dehydrating_walk_node(&tree)?;
     Ok(tree)
 }
 

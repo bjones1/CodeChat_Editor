@@ -1552,7 +1552,7 @@ async fn test_vscode_ide_websocket10() {
                             to: 1,
                             indent: String::new(),
                             delimiter: "#".to_string(),
-                            contents: r#"<p>See <xref contenteditable=false ref=foo><span class=cc-error>id "foo" not found</span></xref>."#.to_string(),
+                            contents: r#"<p>See <xref contenteditable=false data-content ref=foo><span class=cc-error>id "foo" not found</span></xref>."#.to_string(),
                         }],
                     }),
                     version: 0.0,
@@ -1615,8 +1615,8 @@ async fn test_vscode_ide_websocket10() {
                                 delimiter: None,
                                 contents: vec![StringDiff {
                                     from: 0,
-                                    to: Some(97),
-                                    insert: "<p>See <xref contenteditable=false ref=foo><a href=toc.md#foo>Foo</a></xref>.".to_string(),
+                                    to: Some(110),
+                                    insert: "<p>See <xref contenteditable=false data-content ref=foo><a href=toc.md#foo>Foo</a></xref>.".to_string(),
                                 }],
                             }
                         )],
@@ -1854,7 +1854,7 @@ async fn test_vscode_ide_websocket11() {
         EditorMessage {
             id: INITIAL_MESSAGE_ID + 4.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::UpdateToc(
-                "<ul><li><xref contenteditable=false ref=foo><a href=test.py#foo>Bar</a></xref></ul>"
+                "<ul><li><xref contenteditable=false data-content ref=foo><a href=test.py#foo>Bar</a></xref></ul>"
                     .to_string()
             ),
         }
@@ -1897,7 +1897,7 @@ async fn test_vscode_ide_websocket11() {
         EditorMessage {
             id: INITIAL_MESSAGE_ID + 6.0 * MESSAGE_ID_INCREMENT,
             message: EditorMessageContents::UpdateToc(
-                "<ul><li><xref contenteditable=false ref=foo><a href=test.py#foo>Bar</a></xref><li>More</ul>"
+                "<ul><li><xref contenteditable=false data-content ref=foo><a href=test.py#foo>Bar</a></xref><li>More</ul>"
                     .to_string()
             ),
         }
