@@ -59,7 +59,7 @@ use htmd::{
     options::{BrStyle, LinkStyle, TranslationMode},
 };
 use html5ever::{
-    Attribute, LocalName, Namespace, ParseOpts, QualName, ns, parse_document, serialize,
+    Attribute, LocalName, Namespace, ParseOpts, QualName, ns, parse_fragment, serialize,
     serialize::{SerializeOpts, TraversalScope},
     tendril::TendrilSink,
     tree_builder::TreeBuilderOpts,
@@ -1401,13 +1401,15 @@ fn markdown_to_html(markdown: &str) -> String {
 // something that's unlike to appear in source code.
 pub const UNICODE_CURSOR_MARKER: char = '\u{E83B}';
 
-/// Use html5ever to parse a string containing HTML to a DOM tree.
+/// Use html5ever to parse a string containing HTML to a DOM tree. This HTML is
+/// the contents of a doc block or document, not a complete HTML document, so
+/// parse it as a fragment in the context of a `<body>` tag.
 fn html_to_dom(
     html: &str,
     // See the same parameter from `doc_block_html_to_markdown`.
     dom_location: Option<&(Vec<usize>, usize)>,
 ) -> io::Result<Rc<Node>> {
-    let dom = parse_document(
+    let dom = parse_fragment(
         RcDom::default(),
         ParseOpts {
             tree_builder: TreeBuilderOpts {
@@ -1416,6 +1418,9 @@ fn html_to_dom(
             },
             ..Default::default()
         },
+        QualName::new(None, ns!(html), LocalName::from("body")),
+        vec![],
+        true,
     )
     .from_utf8()
     .read_from(&mut html.as_bytes())?;
@@ -1427,7 +1432,7 @@ fn html_to_dom(
         // last index is the UTF-16 offset with the text contents to insert a
         // `UNICODE_CURSOR_MARKER` character. Any failures (index exceeds number
         // of nodes, etc.) use an approximation where possible.
-        let mut current_node = get_dom_body(&dom.document);
+        let mut current_node = get_dom_root(&dom.document);
         'outer: for &offset in dom_path {
             let next_node = {
                 let children = current_node.children.borrow();
@@ -1467,12 +1472,12 @@ pub fn transform_html<T: FnOnce(&Rc<Node>)>(html: &str, transform: T) -> io::Res
 pub fn dom_to_html(dom: &Rc<Node>) -> io::Result<String> {
     // Serialize the transformed DOM back to a string.
     let so = SerializeOpts {
-        // Don't include the body node in the output.
+        // Don't include the root node in the output.
         traversal_scope: TraversalScope::ChildrenOnly(None),
         ..Default::default()
     };
     let mut bytes = vec![];
-    serialize(&mut bytes, &SerializableHandle::from(get_dom_body(dom)), so)?;
+    serialize(&mut bytes, &SerializableHandle::from(get_dom_root(dom)), so)?;
     let html_out = String::from_utf8(bytes).map_err(io::Error::other)?;
 
     Ok(html_out)
@@ -1491,17 +1496,15 @@ fn node_inner_html(node: &Rc<Node>) -> io::Result<String> {
     String::from_utf8(bytes).map_err(io::Error::other)
 }
 
-/// Get the body element from a top-level DOM.
-fn get_dom_body(document: &Rc<Node>) -> Rc<Node> {
-    // HTML is:
-    //
-    // ```html
-    // <html>   <-- element 0
-    //  <head>...</head>
-    //  <body>...</body>  <-- element 1
-    // </html>
-    // ```
-    document.children.borrow()[0].children.borrow()[1].clone()
+/// Get the element containing the parsed HTML from a top-level DOM. A parsed
+/// fragment has no `<head>` or `<body>`; instead, its nodes are the direct
+/// children of a single root `<html>` element.
+fn get_dom_root(
+    // The document node of a DOM returned by `html_to_dom`.
+    document: &Rc<Node>,
+    // The root `<html>` element.
+) -> Rc<Node> {
+    document.children.borrow()[0].clone()
 }
 
 /// <h3 id="cc-HfGbqqRaWs">hydrate_html</h3>
@@ -2265,9 +2268,9 @@ fn set_element_children(node: &Rc<Node>, children: Vec<Rc<Node>>) {
 /// another DOM.
 fn parse_html_fragment(html: &str) -> io::Result<Vec<Rc<Node>>> {
     let dom = html_to_dom(html, None)?;
-    let body = get_dom_body(&dom);
-    let children: Vec<Rc<Node>> = body.children.borrow().clone();
-    body.children.borrow_mut().clear();
+    let root = get_dom_root(&dom);
+    let children: Vec<Rc<Node>> = root.children.borrow().clone();
+    root.children.borrow_mut().clear();
     for child in &children {
         child.parent.set(None);
     }

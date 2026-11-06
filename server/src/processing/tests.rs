@@ -1997,6 +1997,20 @@ fn test_hydrate_target_inner_html_math() {
     );
 }
 
+// Verify that a Markdown document may begin with a comment, which parsing
+// places before the document's first element.
+#[test]
+fn test_hydrate_markdown_leading_comment() {
+    let source = "<!-- c -->\n\nHeading\n=======\n";
+    let translation =
+        source_to_codechat_for_web(source, Path::new("foo.md"), 0.0, false, None).unwrap();
+    assert_eq!(codechat_for_web_to_source(&translation).unwrap(), source);
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(code_mirror.doc, "<!-- c --><h1>Heading</h1>");
+}
+
 // Verify that cleaning removes `contenteditable` from optional content, which
 // would otherwise make part of a non-editable cross-reference editable, while
 // saving still restores that content.
