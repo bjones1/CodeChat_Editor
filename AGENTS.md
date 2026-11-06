@@ -103,6 +103,11 @@ the root of the project.
 * To format and lint the entire project, execute `./bt flint`.
 * To run all tests, execute `./bt test`.
 
+### Testing
+
+Browser-based integration tests (see [overall.rs](server/tests/overall.rs)) run
+slowly. Use other, faster tests where possible.
+
 Commenting guide
 ----------------
 
@@ -150,10 +155,9 @@ consistent.
   fn set_contents(&mut self, contents: String);
   ```
 
-* Scale a comment's length to its altitude instead of aiming for uniform
-  brevity: file- and section-level comments carry the design narrative and may
-  run for dozens of lines (see `server/src/processing/cache.rs`), while a
-  comment on a single statement is a line or two.
+* Place specifications or long documentation for a file in an accompanying
+  Markdown file; see `server/src/processing/cache.rs` and
+  `server/src/processing/cache-spec.md`. Comments in source should be short.
 
 * In new work, mark deferred work with `TODO:` followed by both the task and the
   condition which will resolve it, so a later reader knows when it may be
@@ -206,7 +210,8 @@ Source files follow this template (a few predate it; match it in new files):
    separate from the title which follows it.
 3. A single level-1 heading titling the file: the file name in backticks --
    matching the file's actual name -- then `--`, then a short description.
-4. The file-level design narrative, if the file needs one.
+4. A short file-level design narrative or reference to additional content in the
+   related Markdown file, if the file needs one.
 5. A `Modules` section, if the file has submodules, then an `Imports` section.
    In Rust its subsections are `### Standard library`, `### Third-party`, and
    `### Local`; the Client and the VSCode extension use their own names, so

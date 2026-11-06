@@ -110,6 +110,12 @@ class LedBlinker {
     );
 };
 
+// Keep comments in source files short. Place specifications or long
+// documentation for a file in an accompanying Markdown file, and refer to it
+// following the file's title. For example, `cache.rs` refers to
+// `cache-spec.md`, which gives the <xref ref="cc-P-g5o100jN">design of the
+// cache</xref>.
+//
 // Use of mathematics
 // ------------------
 //
