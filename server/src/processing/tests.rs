@@ -2131,41 +2131,180 @@ fn test_hydrate_target_inner_html_math() {
     );
 }
 
-// Verify that a tag or comment which hides the separators of later doc blocks
-// produces an error, not a panic or empty doc blocks, which the next save would
-// write to the source. A paragraph's end closes an unclosed tag, so one there
-// hides nothing.
+// Verify that a tag or comment left open in a doc block closes where that doc
+// block ends, leaving the code and the later doc block intact, both when
+// translated and after a save.
 #[test]
 fn test_hydrate_unclosed_tag() {
-    for unclosed_tag in [
-        "<xref ref=\"t\">",
-        "<fragment id=\"f\">",
-        "<!-- note",
-        "<textarea>",
+    for (unclosed_tag, saved_doc_block) in [
+        ("<xref ref=\"t\">", "// <xref ref=\"t\"> </xref>"),
+        ("See <xref ref=\"t\">", "// See <xref ref=\"t\"></xref>"),
+        ("<fragment id=\"f\">", "// <fragment id=\"f\"></fragment>"),
+        ("<!-- note", "// <!-- note\n//\n// -->"),
+        ("<textarea>", "//"),
+        ("<title>", "//"),
+        ("<template>", "//"),
+        ("<table>", "// <table></table>"),
     ] {
-        assert_eq!(
-            source_to_codechat_for_web(
-                &format!("// {unclosed_tag}\nlet a = 1;\n// Next.\nlet b = 2;\n"),
-                Path::new("foo.js"),
-                0.0,
-                false,
-                None
-            ),
-            Err(SourceToCodeChatForWebError::ParseFailed(
-                "because an unclosed tag or comment hides later doc blocks".to_string()
-            ))
-        );
-    }
-    assert!(
-        source_to_codechat_for_web(
-            "// See <xref ref=\"t\">\nlet a = 1;\n// Next.\nlet b = 2;\n",
+        let translation = source_to_codechat_for_web(
+            &format!("// {unclosed_tag}\nlet a = 1;\n// Next.\nlet b = 2;\n"),
             Path::new("foo.js"),
             0.0,
             false,
-            None
+            None,
         )
-        .is_ok()
+        .unwrap();
+        assert_eq!(
+            codechat_for_web_to_source(&translation).unwrap(),
+            format!("{saved_doc_block}\nlet a = 1;\n// Next.\nlet b = 2;\n"),
+            "{unclosed_tag}"
+        );
+        let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+            panic!("No diff!");
+        };
+        assert_eq!(code_mirror.doc_blocks[1].contents, "<p>Next.");
+    }
+}
+
+/// Assert that prose following the given unclosed tag isn't silently lost:
+/// either translation reports an error, or a save keeps the prose.
+fn assert_unclosed_tag_keeps_prose(
+    // The tag left unclosed at the start of a doc block.
+    unclosed_tag: &str,
+) {
+    if let Ok(translation) = source_to_codechat_for_web(
+        &format!("// {unclosed_tag}\n//\n// Important prose.\nlet a = 1;\n// Next.\nlet b = 2;\n"),
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    ) {
+        let saved = codechat_for_web_to_source(&translation).unwrap();
+        assert!(
+            saved.contains("Important prose."),
+            "{unclosed_tag} saved as {saved:?}"
+        );
+    }
+}
+
+#[test]
+fn test_hydrate_unclosed_tag_keeps_prose() {
+    for unclosed_tag in [
+        "<xref ref=\"t\">",
+        "See <xref ref=\"t\">",
+        "<!-- note",
+        "<textarea>",
+        "<title>",
+        "<table>",
+    ] {
+        assert_unclosed_tag_keeps_prose(unclosed_tag);
+    }
+}
+
+// TODO: Move these tags to `test_hydrate_unclosed_tag_keeps_prose` and delete
+// this test once hydration keeps this prose or translation reports an error.
+#[test]
+#[ignore = "an unclosed <template>, <style>, or <script> silently erases the prose after it"]
+fn test_hydrate_unclosed_tag_keeps_prose_todo() {
+    for unclosed_tag in ["<template>", "<style>", "<script>"] {
+        assert_unclosed_tag_keeps_prose(unclosed_tag);
+    }
+}
+
+// Verify that an unclosed `<table>` stays in its doc block. Parsing all doc
+// blocks at once would move everything after it, including the separators, in
+// front of it, leaving this doc block empty.
+#[test]
+fn test_hydrate_unclosed_table() {
+    let translation = source_to_codechat_for_web(
+        "// <table>\n// <tr><td>x</td></tr>\nlet a = 1;\n// Later.\nlet b = 2;\n",
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[0].contents,
+        "<table><tbody><tr><td>x</table>"
     );
+    assert_eq!(code_mirror.doc_blocks[1].contents, "<p>Later.");
+}
+
+// Verify that a target following an unclosed `<xref>` stays in the cache. The
+// fact collection walk doesn't descend into an `<xref>`, so a target which it
+// absorbed would leave the cache, and the link below would be an error instead.
+#[test]
+fn test_hydrate_unclosed_xref_later_target() {
+    let translation = source_to_codechat_for_web(
+        "// <xref ref=\"t\">\nlet a = 1;\n// <h3 id=\"t\">Title</h3>\nlet b = 2;\n",
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert_eq!(
+        code_mirror.doc_blocks[0].contents,
+        "<xref data-content=\"\n\" contenteditable=false ref=t><a href=#t>Title</a></xref>"
+    );
+    assert_eq!(code_mirror.doc_blocks[1].contents, "<h3 id=t>Title</h3>");
+}
+
+// Verify that Markdown which hides the separators of later doc blocks produces
+// an error, not a panic or empty doc blocks, which the next save would write to
+// the source. The separator's closing fence is 23 characters long, so it can't
+// close the first of these. The others end an HTML block at the separator's
+// first `>`, exposing a fence which hides the next separator. In the last of
+// these, a later separator's fence closes it, leaving that separator visible.
+#[test]
+fn test_hydrate_hidden_separator() {
+    let long_fence = "`".repeat(24);
+    for source in [
+        format!("// {long_fence}\nlet a = 1;\n// Next.\nlet b = 2;\n"),
+        "// <!X\nlet a = 1;\n// Next.\nlet b = 2;\n".to_string(),
+        "// <!X\nlet a = 1;\n// Next.\nlet b = 2;\n// Last.\nlet c = 3;\n".to_string(),
+    ] {
+        assert_eq!(
+            source_to_codechat_for_web(&source, Path::new("foo.js"), 0.0, false, None),
+            Err(SourceToCodeChatForWebError::ParseFailed(
+                "because an unclosed code block or declaration hides later doc blocks".to_string()
+            )),
+            "{source}"
+        );
+    }
+}
+
+// Verify that a translation which fails on a hidden separator leaves the cache
+// alone. Otherwise, a target in a hidden doc block would leave the cache, so
+// links to it from other files would re-render as errors.
+#[test]
+fn test_hydrate_hidden_separator_keeps_cache() {
+    let cache = Arc::new(Mutex::new(Cache::default()));
+    source_to_codechat_for_web(
+        "// Intro.\nlet a = 1;\n// <h3 id=\"t\">Title</h3>\nlet b = 2;\n",
+        Path::new("foo.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap();
+    let long_fence = "`".repeat(24);
+    source_to_codechat_for_web(
+        &format!("// {long_fence}\nlet a = 1;\n// <h3 id=\"t\">Title</h3>\nlet b = 2;\n"),
+        Path::new("foo.js"),
+        0.0,
+        false,
+        Some(cache.clone()),
+    )
+    .unwrap_err();
+    assert_eq!(cache.lock().unwrap().ids.keys().collect::<Vec<_>>(), ["t"]);
 }
 
 // Verify that a `following` value too large to add to the doc block's index

@@ -268,10 +268,10 @@ static DOC_BLOCK_SEPARATOR_BROKEN_FENCE: LazyLock<Regex> = LazyLock::new(|| {
     .unwrap()
 });
 /// After converting Markdown to HTML, this can be used to split doc blocks
-/// apart. Since this is post hydration, the element names are normalized to
-/// lower case.
+/// apart. It ignores case since html5ever normalizes the element names to lower
+/// case, while the HTML it parses keeps the case of the separator string.
 static DOC_BLOCK_SEPARATOR_SPLIT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"<codechateditor-separator>\d+</codechateditor-separator>").unwrap()
+    Regex::new(r"(?i)<codechateditor-separator>\d+</codechateditor-separator>").unwrap()
 });
 /// Match a valid
 /// [CSS identifier](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/ident),
@@ -1077,9 +1077,16 @@ pub fn source_to_codechat_for_web(
                 .replace_all(&html, DOC_BLOCK_SEPARATOR_MENDED_FENCE);
             // 2. Remove good fences.
             let html = html.replace(DOC_BLOCK_SEPARATOR_REMOVE_FENCE, "");
-            // 3. Hydrate the cleaned HTML: commit this file's facts to the
-            //    cache, then patch cross-references and fragment backlinks.
-            let (dom, walk_context) = hydrate_dom(&html, file_path, &cache, false)
+            // 3. Parse the cleaned HTML, then hydrate it: commit this file's
+            //    facts to the cache, then patch cross-references and fragment
+            //    backlinks.
+            let doc_block_count = code_doc_block_arr
+                .iter()
+                .filter(|code_doc_block| matches!(code_doc_block, CodeDocBlock::DocBlock(_)))
+                .count();
+            let dom = doc_blocks_to_dom(&html, doc_block_count)
+                .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
+            let (dom, walk_context) = hydrate_dom(dom, file_path, &cache, false)
                 .map_err(|e| SourceToCodeChatForWebError::ParseFailed(e.to_string()))?;
             // 4. Serialize and split on the separator, giving each doc block's
             //    hydrated HTML -- the form in which fragment contents are
@@ -1091,14 +1098,13 @@ pub fn source_to_codechat_for_web(
             chunk_iter.next();
             // Pair the index of each doc block in `code_doc_block_arr` with its
             // hydrated HTML.
-            let mut doc_block_html: HashMap<usize, &str> = HashMap::new();
-            for (index, code_doc_block) in code_doc_block_arr.iter().enumerate() {
-                if matches!(code_doc_block, CodeDocBlock::DocBlock(_))
-                    && let Some(chunk) = chunk_iter.next()
-                {
-                    doc_block_html.insert(index, chunk);
-                }
-            }
+            let doc_block_html: HashMap<usize, &str> = code_doc_block_arr
+                .iter()
+                .enumerate()
+                .filter(|(_, code_doc_block)| matches!(code_doc_block, CodeDocBlock::DocBlock(_)))
+                .map(|(index, _)| index)
+                .zip(chunk_iter)
+                .collect();
             // 5. Store each fragment's content in the cache, which marks the
             //    files containing gather elements listing changed fragments as
             //    outdated.
@@ -1139,18 +1145,11 @@ pub fn source_to_codechat_for_web(
                             indent: doc_block.indent.clone(),
                             delimiter: doc_block.delimiter.clone(),
                             // Used the markdown-translated replacement for this
-                            // doc block, rather than the original string. An
-                            // unclosed tag or comment may hide the separators
-                            // of all later doc blocks, leaving no replacement
-                            // for them. Report this, since empty contents would
-                            // erase those doc blocks on the next save from the
-                            // Client.
-                            contents: minify(doc_block_contents_iter.next().ok_or_else(|| {
-                                SourceToCodeChatForWebError::ParseFailed(
-                                    "because an unclosed tag or comment hides later doc blocks"
-                                        .to_string(),
-                                )
-                            })?)?,
+                            // doc block, rather than the original string.
+                            // `doc_blocks_to_dom` checks that no separators are
+                            // missing and parses each to a top-level node,
+                            // which hydration keeps, so this can't fail.
+                            contents: minify(doc_block_contents_iter.next().unwrap())?,
                         });
                         // Append newlines to the document; the doc block will
                         // replace these in the editor. This keeps the line
@@ -1558,6 +1557,46 @@ fn get_dom_root(
     document.children.borrow()[0].clone()
 }
 
+/// Parse the HTML of all doc blocks to one DOM, parsing each doc block on its
+/// own, so that anything it leaves open closes where it ends. To html5ever, the
+/// blank line in a separator means nothing: in a single parse, an open tag or
+/// comment absorbs the separators and doc blocks after it, while an open
+/// `<table>` moves them in front of it. The Client likewise renders each doc
+/// block separately. Text before the first separator isn't a doc block.
+///
+/// Markdown conversion may still hide the separators of later doc blocks: a
+/// fenced code block opened by a fence longer than the separator's stays open,
+/// while `<!X` ends its HTML block at the separator's first `>`, exposing that
+/// separator's fences. Report this here, since hydration would otherwise commit
+/// the facts of the remaining doc blocks to the cache, dropping any targets the
+/// hidden doc blocks contain.
+fn doc_blocks_to_dom(
+    // The HTML of all doc blocks, with fences removed and each preceded by its
+    // separator.
+    html: &str,
+    // The number of doc blocks this HTML was produced from.
+    doc_block_count: usize,
+    // The DOM holding each separator followed by its doc block.
+) -> io::Result<Rc<Node>> {
+    let mut doc_block_bounds: Vec<usize> = DOC_BLOCK_SEPARATOR_SPLIT_REGEX
+        .find_iter(html)
+        .map(|separator| separator.start())
+        .collect();
+    if doc_block_bounds.len() != doc_block_count {
+        return Err(io::Error::other(
+            "because an unclosed code block or declaration hides later doc blocks",
+        ));
+    }
+    doc_block_bounds.push(html.len());
+    let mut children = Vec::new();
+    for bounds in doc_block_bounds.windows(2) {
+        children.extend(parse_html_fragment(&html[bounds[0]..bounds[1]])?);
+    }
+    let dom = html_to_dom("", None)?;
+    set_element_children(&get_dom_root(&dom), children);
+    Ok(dom)
+}
+
 /// <h3 id="cc-HfGbqqRaWs">hydrate_html</h3>
 ///
 /// HTML produced from Markdown needs additional processing, termed hydration:
@@ -1586,21 +1625,21 @@ fn get_dom_root(
 /// needs no doc block data (fragments aren't allowed in Markdown documents, so
 /// every fragment's content is an error message).
 fn hydrate_html(html: &str, file: &Path, cache: &Arc<Mutex<Cache>>) -> io::Result<String> {
-    let (dom, walk_context) = hydrate_dom(html, file, cache, true)?;
+    let (dom, walk_context) = hydrate_dom(html_to_dom(html, None)?, file, cache, true)?;
     store_fragment_contents(&walk_context, None, cache);
     hydrate_gathers(&walk_context, cache)?;
     dom_to_html(&dom)
 }
 
-/// Phase 1 of hydration: parse the HTML, walk the DOM (transforming
-/// math/Mermaid/GraphViz and collecting cacheable facts), commit the facts to
-/// the cache, then patch the content the commit makes available: each
-/// `<xref>`'s link and each `<fragment>`'s backlinks (or error messages).
-/// Gather lists are *not* inserted here; they depend on fragment contents,
-/// which aren't final until doc blocks are (see `hydrate_gathers`).
+/// Phase 1 of hydration: walk the DOM (transforming math/Mermaid/GraphViz and
+/// collecting cacheable facts), commit the facts to the cache, then patch the
+/// content the commit makes available: each `<xref>`'s link and each
+/// `<fragment>`'s backlinks (or error messages). Gather lists are *not*
+/// inserted here; they depend on fragment contents, which aren't final until
+/// doc blocks are (see `hydrate_gathers`).
 fn hydrate_dom(
-    // The HTML to hydrate.
-    html: &str,
+    // The parsed HTML to hydrate.
+    dom: Rc<Node>,
     // The file this HTML was produced from.
     file: &Path,
     // The cache for the project containing this file.
@@ -1609,7 +1648,6 @@ fn hydrate_dom(
     is_markdown: bool,
     // The parsed, patched DOM plus the walk results needed by later phases.
 ) -> io::Result<(Rc<Node>, WalkContext)> {
-    let dom = html_to_dom(html, None)?;
     // Stamp the file and canonicalize its path before taking the cache lock, so
     // that no I/O happens while the lock is held. The stamp captures the state
     // of the file whose content is being processed (the cache's consumer, which

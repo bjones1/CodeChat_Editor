@@ -918,12 +918,10 @@ async fn test_vscode_ide_websocket13() {
     let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
     open_client(&mut ws_ide).await;
 
-    // An unclosed comment hides the separator before the doc block following
-    // it.
-    let untranslatable = "# <!--\ncode\n# most";
-    let translation_error =
-        "unable to parse HTML because an unclosed tag or comment hides later doc blocks"
-            .to_string();
+    // A lexer directive naming an unknown lexer can't be translated. Obscure
+    // this, so that this file can be successfully lexed by the CodeChat Editor.
+    let untranslatable = concat!("# CodeChat Editor ", "lexer: nope\ncode\n# most");
+    let translation_error = "unknown lexer nope".to_string();
 
     // Set the current file, so subsequent `Update` messages can be translated.
     let file_path = test_dir.join("test.py");

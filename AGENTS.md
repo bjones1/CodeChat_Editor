@@ -177,11 +177,11 @@ rustdoc renders neither. Many existing signatures are not yet annotated this
 way; add annotations to signatures you touch rather than sweeping the tree:
 
 ```rust
-/// Phase 1 of hydration: parse the HTML, walk the DOM, then commit the
-/// collected facts to the cache.
+/// Phase 1 of hydration: walk the DOM, then commit the collected facts to the
+/// cache.
 fn hydrate_dom(
-    // The HTML to hydrate.
-    html: &str,
+    // The parsed HTML to hydrate.
+    dom: Rc<Node>,
     // The cache for the project containing this file.
     cache: &Arc<Mutex<Cache>>,
     // The parsed, patched DOM plus the walk results needed by later phases.

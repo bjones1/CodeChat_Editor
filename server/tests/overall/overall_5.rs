@@ -999,13 +999,17 @@ async fn test_untranslatable_source_toast_core(
     // Target the iframe containing the Client.
     select_codechat_iframe(&driver).await;
 
-    // An unclosed comment hides the separator before the doc block following
-    // it. Pausing twice while typing it sends two updates.
+    // A lexer directive naming an unknown lexer can't be translated. Pausing
+    // twice while typing it sends two updates. Obscure this, so that this file
+    // can be successfully lexed by the CodeChat Editor.
     for version in [1.0, 2.0] {
         let ide_id = codechat_server
             .send_message_update_plain(
                 path_str.clone(),
-                Some(("# <!--\ncode\n# more\n".to_string(), version)),
+                Some((
+                    concat!("# CodeChat Editor ", "lexer: nope\ncode\n# more\n").to_string(),
+                    version,
+                )),
                 None,
                 None,
             )
@@ -1029,7 +1033,7 @@ async fn test_untranslatable_source_toast_core(
         .unwrap();
     let toast_text = toast.text().await.unwrap();
     assert!(
-        toast_text.contains("an unclosed tag or comment hides later doc blocks"),
+        toast_text.contains("unknown lexer nope"),
         "Unexpected toast: {toast_text}"
     );
     // Give a second toast time to appear, if the Server sent one.

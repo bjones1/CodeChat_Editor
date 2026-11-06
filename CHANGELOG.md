@@ -24,10 +24,12 @@ Changelog
 -----------------------------------------------------------
 
 * Changed `<xref>` to support optional content.
-* Report an error instead of crashing when an unclosed tag or comment hides
-  later doc blocks. The Client shows this error in a toast and keeps showing the
-  last text which translated, ignoring edits made there until the error is
-  fixed.
+* Close an unclosed tag or comment at the end of its doc block, instead of
+  letting it hide or move later doc blocks.
+* Report an error instead of crashing when an unclosed code block or declaration
+  hides later doc blocks. The Client shows this error in a toast and keeps
+  showing the last text which translated, ignoring edits made there until the
+  error is fixed.
 * Fix retranslations of math in gather elements.
 
 Version 0.3.2 -- 2026-Oct-31
