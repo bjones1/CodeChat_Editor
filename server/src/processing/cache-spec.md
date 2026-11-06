@@ -180,6 +180,10 @@ Details:
   inner HTML (the link text). A fragment's rendered output therefore depends on
   the gather elements which reference it -- the reverse of the direction in
   which references are written; see <xref ref="cc-P-g5o100jN"></xref>.
+* No content is allowed in a `<fragment>`. Any content placed here is moved
+  after the fragment's closing tag. Otherwise, the next save would erase it;
+  this avoids data loss when a user first creates a fragment tag, but hasn't
+  closed it.
 * A `<fragment following="0">` is valid; it contains only the current doc block.
 * The `following` attribute is clamped if it would exceed the number of code/doc
   blocks in the document.
@@ -212,6 +216,10 @@ things</h3>`:
   (last item content)
 </div>
 ```
+
+<h3 data-gather="cc-St8Bme4paE" id="cc-sOVPXHcva8">
+  Implementation of Fragments and gather elements
+</h3>
 
 Search (future work)
 --------------------

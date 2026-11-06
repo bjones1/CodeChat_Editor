@@ -30,6 +30,8 @@ Changelog
   hides later doc blocks. The Client shows this error in a toast and keeps
   showing the last text which translated, ignoring edits made there until the
   error is fixed.
+* Keep anything inside a `<fragment>`, such as the text after a missing
+  `</fragment>`, instead of erasing it on the next save.
 * Fix retranslations of math in gather elements.
 
 Version 0.3.2 -- 2026-Oct-31

@@ -2192,6 +2192,7 @@ fn test_hydrate_unclosed_tag_keeps_prose() {
     for unclosed_tag in [
         "<xref ref=\"t\">",
         "See <xref ref=\"t\">",
+        "<fragment id=\"f\">",
         "<!-- note",
         "<textarea>",
         "<title>",
@@ -2209,6 +2210,80 @@ fn test_hydrate_unclosed_tag_keeps_prose_todo() {
     for unclosed_tag in ["<template>", "<style>", "<script>"] {
         assert_unclosed_tag_keeps_prose(unclosed_tag);
     }
+}
+
+// Verify that a save keeps anything written inside a `<fragment>` tag, moving
+// it to just after the tag, and that saving again changes nothing. This
+// includes a tag in an `<xref>`'s optional content, since dehydration walks
+// that as well.
+#[test]
+fn test_hydrate_fragment_content() {
+    for (file_name, source, saved) in [
+        // A missing end tag.
+        (
+            "foo.js",
+            "// <fragment id=\"f\">\n//\n// Important prose.\nlet a = 1;\n",
+            "// <fragment id=\"f\"></fragment>\n//\n// Important prose.\nlet a = 1;\n",
+        ),
+        (
+            "foo.md",
+            "<fragment id=\"f\">\n\nImportant prose.\n",
+            "<fragment id=\"f\"></fragment>\n\nImportant prose.\n",
+        ),
+        // Content in a closed tag.
+        (
+            "foo.js",
+            "// <fragment id=\"f\">text</fragment>\nlet a = 1;\n",
+            "// <fragment id=\"f\"></fragment>text\nlet a = 1;\n",
+        ),
+        // Nested tags.
+        (
+            "foo.js",
+            "// <fragment id=\"a\"><fragment id=\"b\">text</fragment></fragment>\nlet a = 1;\n",
+            "// <fragment id=\"a\"></fragment><fragment id=\"b\"></fragment>text\nlet a = 1;\n",
+        ),
+        // Optional content.
+        (
+            "foo.js",
+            "// <xref ref=\"t\"><fragment id=\"f\">text</fragment></xref>\nlet a = 1;\n",
+            "// <xref ref=\"t\"><fragment id=\"f\"></fragment>text</xref>\nlet a = 1;\n",
+        ),
+    ] {
+        let save = |source: &str| {
+            codechat_for_web_to_source(
+                &source_to_codechat_for_web(source, Path::new(file_name), 0.0, false, None)
+                    .unwrap(),
+            )
+            .unwrap()
+        };
+        assert_eq!(save(source), saved, "{source}");
+        assert_eq!(save(saved), saved, "{saved}");
+    }
+}
+
+// Verify that a target written inside a `<fragment>` tag is cached like any
+// other: the fact collection walk must see it, or the link below would be an
+// error instead.
+#[test]
+fn test_hydrate_fragment_content_target() {
+    let translation = source_to_codechat_for_web(
+        "// <fragment id=\"f\"><b id=\"t\">Title</b></fragment> <xref ref=\"t\"></xref>\nlet a = 1;\n",
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert!(
+        code_mirror.doc_blocks[0]
+            .contents
+            .contains("<a href=#t>Title</a>"),
+        "{}",
+        code_mirror.doc_blocks[0].contents
+    );
 }
 
 // Verify that an unclosed `<table>` stays in its doc block. Parsing all doc

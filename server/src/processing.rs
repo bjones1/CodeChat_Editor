@@ -1648,6 +1648,8 @@ fn hydrate_dom(
     is_markdown: bool,
     // The parsed, patched DOM plus the walk results needed by later phases.
 ) -> io::Result<(Rc<Node>, WalkContext)> {
+    // Everything below treats a `<fragment>` as empty, so this comes first.
+    hoist_fragment_content(&dom);
     // Stamp the file and canonicalize its path before taking the cache lock, so
     // that no I/O happens while the lock is held. The stamp captures the state
     // of the file whose content is being processed (the cache's consumer, which
@@ -1675,7 +1677,7 @@ fn hydrate_dom(
     // cross-references, fragments, and gather elements -- without touching the
     // cache. This keeps the non-`Send` DOM types out of the cache and off its
     // critical section. The walk skips the content the cache generates (see
-    // `hydrating_walk_node`), so hydration never feeds back into the facts.
+    // `walk_skips_descendants`), so hydration never feeds back into the facts.
     let mut walk_context = WalkContext {
         facts: FileFacts::default(),
         path,
@@ -1743,6 +1745,28 @@ fn hydrate_dom(
     Ok((dom, walk_context))
 }
 
+/// Move anything inside a `<fragment>` to just after it. Hydration replaces a
+/// fragment's children and dehydration empties it, so this content would
+/// otherwise be erased on the next save; a missing `</fragment>` causes this.
+/// <fragment id="cc-St8Bme4paE"></fragment>
+fn hoist_fragment_content(
+    // The node whose descendants are processed.
+    node: &Rc<Node>,
+) {
+    let mut children = Vec::new();
+    for child in node.children.take() {
+        hoist_fragment_content(&child);
+        let content = if get_node_tag_name(&child) == Some("fragment") {
+            child.children.take()
+        } else {
+            Vec::new()
+        };
+        children.push(child);
+        children.extend(content);
+    }
+    set_element_children(node, children);
+}
+
 /// Replace every `id="*"` -- a request that the cache assign an id -- with a
 /// freshly generated one, recording the ids assigned. Per the cache spec, these
 /// ids are placed in the HTML but not recorded in the cache; the fact
@@ -1766,11 +1790,7 @@ fn assign_auto_ids(
             set_attr(child, "id", &id);
             assigned.insert(id);
         }
-        // Skip the content `hydrating_walk_node` skips, for the reasons given
-        // there.
-        let skip_descend = matches!(get_node_tag_name(child), Some("xref" | "fragment"))
-            || is_gather_items_div(child);
-        if !skip_descend {
+        if !walk_skips_descendants(child) {
             assign_auto_ids(child, cache, assigned);
         }
     }
@@ -2444,6 +2464,21 @@ fn is_gather_items_div(node: &Rc<Node>) -> bool {
     get_node_tag_name(node) == Some("div") && has_class(node, "cc-gather-items")
 }
 
+/// Determine if a hydrating walk must not descend into a node. The cache
+/// generates the contents of a hydrated gather list, and facts must never be
+/// collected from generated content. (Such content only appears here if
+/// hand-written source contains it; dehydration removes it from saved files.)
+/// An `<xref>`'s optional content never defines a target, gather element,
+/// cross-reference, or fragment, since cleaning strips each from the link it
+/// becomes; see <xref ref="cc-HZyE2Bv-eI"></xref>.
+fn walk_skips_descendants(
+    // The node the walk just visited.
+    node: &Rc<Node>,
+    // True if the walk must not visit this node's descendants.
+) -> bool {
+    get_node_tag_name(node) == Some("xref") || is_gather_items_div(node)
+}
+
 // Get the value of an attribute on an element node.
 fn get_attr_value(node: &Rc<Node>, attr_name: &str) -> Option<String> {
     if let NodeData::Element { attrs, .. } = &node.data {
@@ -2682,17 +2717,7 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
             }
         }
 
-        // Don't descend into elements whose contents the cache generates
-        // (`<fragment>`s and hydrated gather lists): facts must never be
-        // collected from generated content. (Such content only appears here if
-        // hand-written source contains it; dehydration removes it from saved
-        // files.) Nor descend into an `<xref>`: its optional content never
-        // defines a target, gather element, cross-reference, or fragment, since
-        // cleaning strips each from the link it becomes; see
-        // <xref ref="cc-HZyE2Bv-eI"></xref>.
-        let skip_descend = matches!(get_node_tag_name(child), Some("xref" | "fragment"))
-            || is_gather_items_div(child);
-        if !skip_descend {
+        if !walk_skips_descendants(child) {
             walk_context = hydrating_walk_node(child, walk_context)?;
         }
     }
