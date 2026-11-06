@@ -24,6 +24,10 @@ Changelog
 -----------------------------------------------------------
 
 * Changed `<xref>` to support optional content.
+* Report an error instead of crashing when an unclosed tag or comment hides
+  later doc blocks. The Client shows this error in a toast and keeps showing the
+  last text which translated, ignoring edits made there until the error is
+  fixed.
 
 Version 0.3.2 -- 2026-Oct-31
 ----------------------------

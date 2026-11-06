@@ -964,6 +964,110 @@ async fn test_xref_optional_content_round_trip_core(
     Ok(())
 }
 
+make_test!(
+    test_untranslatable_source_toast,
+    test_untranslatable_source_toast_core
+);
+
+// When the IDE sends source which can't be translated, the Client shows one
+// toast, however many such updates arrive, and keeps showing the last source
+// which could be translated. See `ide_update` in
+// [translation.rs](../../src/translation.rs).
+async fn test_untranslatable_source_toast_core(
+    // The Server, through which the test plays the IDE.
+    codechat_server: CodeChatEditorServerLog,
+    // The browser showing the Client.
+    driver: WebDriver,
+    // The directory in which to create `test.py`.
+    test_dir: PathBuf,
+    // WebDriver's errors; failed checks panic instead.
+) -> Result<(), WebDriverError> {
+    let orig_text = "# Before.\n".to_string();
+    let path = test_dir.join("test.py");
+    fs::write(&path, &orig_text).unwrap();
+    let path_str = canonicalize(&path).unwrap().to_str().unwrap().to_string();
+    perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.py",
+        Some((orig_text, 0.0)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // An unclosed comment hides the separator before the doc block following
+    // it. Pausing twice while typing it sends two updates.
+    for version in [1.0, 2.0] {
+        let ide_id = codechat_server
+            .send_message_update_plain(
+                path_str.clone(),
+                Some(("# <!--\ncode\n# more\n".to_string(), version)),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+            EditorMessage {
+                id: ide_id,
+                message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+            }
+        );
+    }
+
+    let toast = driver
+        .query(By::Css(".toastify"))
+        .and_displayed()
+        .desc("the toast reporting the error")
+        .first()
+        .await
+        .unwrap();
+    let toast_text = toast.text().await.unwrap();
+    assert!(
+        toast_text.contains("an unclosed tag or comment hides later doc blocks"),
+        "Unexpected toast: {toast_text}"
+    );
+    // Give a second toast time to appear, if the Server sent one.
+    sleep(SETTLE_TIME).await;
+    assert_eq!(
+        driver.find_all(By::Css(".toastify")).await.unwrap().len(),
+        1
+    );
+
+    let doc_block_css = By::Css(".CodeChat-doc-contents");
+    let doc_block_text = driver
+        .query(doc_block_css.clone())
+        .first()
+        .await?
+        .text()
+        .await?;
+    assert_eq!(doc_block_text, "Before.");
+
+    // Once the source can be translated, the Client shows it.
+    let ide_id = codechat_server
+        .send_message_update_plain(path_str, Some(("# After.\n".to_string(), 3.0)), None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+        }
+    );
+    let doc_block_text = driver.query(doc_block_css).first().await?.text().await?;
+    assert_eq!(doc_block_text, "After.");
+
+    assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
 // ### Links
 //
 // #### In non-editable content

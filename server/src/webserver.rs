@@ -317,6 +317,8 @@ pub enum ResultErrTypes {
     CannotTranslateSource(String),
     #[error("unable to translate CodeChat to source: {0}")]
     CannotTranslateCodeChat(String),
+    #[error("ignoring this edit, since the IDE's newer text can't be translated: {0}")]
+    IgnoredClientEdit(String),
     #[error("TODO: support for updates with diffable sources")]
     TodoDiffSupport,
     #[error("TODO: support for binary files")]

@@ -809,6 +809,313 @@ async fn test_vscode_ide_websocket7() {
     temp_dir.close().unwrap();
 }
 
+/// Send an `Update` message from the IDE containing the given source code.
+async fn send_ide_update<S: AsyncRead + AsyncWrite + Unpin>(
+    // The websocket to send this on.
+    ws_ide: &mut WebSocketStream<S>,
+    // The id of this message.
+    id: f64,
+    // The file this message updates.
+    file_path: &str,
+    // The source code.
+    doc: &str,
+    // The version of this source code.
+    version: f64,
+) {
+    send_message(
+        ws_ide,
+        &EditorMessage {
+            id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path.to_string(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: doc.to_string(),
+                        doc_blocks: vec![],
+                    }),
+                    version,
+                }),
+            }),
+        },
+    )
+    .await;
+}
+
+/// Send the Client's edit of a Python file which replaces it with a single doc
+/// block containing "edited".
+async fn send_client_edit<S: AsyncRead + AsyncWrite + Unpin>(
+    // The websocket to send this on.
+    ws_client: &mut WebSocketStream<S>,
+    // The id of this message.
+    id: f64,
+    // The file this message updates.
+    file_path: &str,
+    // The version of the edited file.
+    version: f64,
+) {
+    send_message(
+        ws_client,
+        &EditorMessage {
+            id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path.to_string(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "\n".to_string(),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 0,
+                            to: 1,
+                            indent: String::new(),
+                            delimiter: "#".to_string(),
+                            contents: "<p>edited".to_string(),
+                        }],
+                    }),
+                    version,
+                }),
+            }),
+        },
+    )
+    .await;
+}
+
+/// Send a success response on one websocket, then check that the Server
+/// forwards it to the other.
+async fn send_and_check_result<S: AsyncRead + AsyncWrite + Unpin>(
+    // The websocket which sends the response.
+    ws_from: &mut WebSocketStream<S>,
+    // The websocket which receives the response.
+    ws_to: &mut WebSocketStream<S>,
+    // The id of the message this responds to.
+    id: f64,
+) {
+    let result = EditorMessage {
+        id,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    };
+    send_message(ws_from, &result).await;
+    assert_eq!(read_message(ws_to).await, result);
+}
+
+/// Verify that source from the IDE which can't be translated produces one error
+/// for the Client and leaves it on the last source which could be: the next
+/// update which translates is a diff against that source, and an edit from the
+/// Client doesn't replace the IDE's newer source.
+#[actix_web::test]
+async fn test_vscode_ide_websocket13() {
+    let connection_id = "test-connection-id13";
+    let (temp_dir, test_dir, mut ws_ide, mut ws_client) = prep_test!(connection_id).await;
+    open_client(&mut ws_ide).await;
+
+    // An unclosed comment hides the separator before the doc block following
+    // it.
+    let untranslatable = "# <!--\ncode\n# most";
+    let translation_error =
+        "unable to parse HTML because an unclosed tag or comment hides later doc blocks"
+            .to_string();
+
+    // Set the current file, so subsequent `Update` messages can be translated.
+    let file_path = test_dir.join("test.py");
+    let file_path_str = file_path.to_str().unwrap().to_string();
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: INITIAL_CLIENT_MESSAGE_ID,
+            message: EditorMessageContents::CurrentFile(
+                format!(
+                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    file_path.to_slash().unwrap(),
+                ),
+                None,
+            ),
+        },
+    )
+    .await;
+    let em = read_message(&mut ws_ide).await;
+    cast!(
+        em.message,
+        EditorMessageContents::CurrentFile,
+        file_name,
+        is_text
+    );
+    send_and_check_result(&mut ws_ide, &mut ws_client, INITIAL_CLIENT_MESSAGE_ID).await;
+
+    // Give the Client its first translation.
+    let mut ide_id = INITIAL_IDE_MESSAGE_ID;
+    send_ide_update(&mut ws_ide, ide_id, &file_path_str, "# more", 0.0).await;
+    let em = read_message(&mut ws_client).await;
+    cast!(em.message, EditorMessageContents::Update);
+    send_and_check_result(&mut ws_client, &mut ws_ide, ide_id).await;
+
+    // The Client, but not the IDE, learns of an update which can't be
+    // translated.
+    let ide_success = |id| EditorMessage {
+        id,
+        message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
+    };
+    let client_error = |id| EditorMessage {
+        id,
+        message: EditorMessageContents::Result(Err(ResultErrTypes::CannotTranslateSource(
+            translation_error.clone(),
+        ))),
+    };
+    ide_id += MESSAGE_ID_INCREMENT;
+    send_ide_update(&mut ws_ide, ide_id, &file_path_str, untranslatable, 1.0).await;
+    assert_eq!(read_message(&mut ws_ide).await, ide_success(ide_id));
+    assert_eq!(read_message(&mut ws_client).await, client_error(ide_id));
+
+    // The same error isn't reported to the Client again. If it were, then the
+    // next read from `ws_client` below would fail, since it would return this
+    // error.
+    ide_id += MESSAGE_ID_INCREMENT;
+    send_ide_update(&mut ws_ide, ide_id, &file_path_str, untranslatable, 1.5).await;
+    assert_eq!(read_message(&mut ws_ide).await, ide_success(ide_id));
+
+    // The next update which translates is a diff against the Client's version.
+    ide_id += MESSAGE_ID_INCREMENT;
+    send_ide_update(
+        &mut ws_ide,
+        ide_id,
+        &file_path_str,
+        "# more\ncode\n# most",
+        2.0,
+    )
+    .await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 1,
+                            to: None,
+                            insert: "code\n\n".to_string()
+                        }],
+                        doc_blocks: vec![CodeMirrorDocBlockTransaction::Add(CodeMirrorDocBlock {
+                            from: 6,
+                            to: 7,
+                            indent: String::new(),
+                            delimiter: "#".to_string(),
+                            contents: "<p>most".to_string(),
+                        })],
+                        version: 0.0,
+                    }),
+                    version: 2.0,
+                }),
+            }),
+        }
+    );
+    send_and_check_result(&mut ws_client, &mut ws_ide, ide_id).await;
+
+    // Fail again, so that the IDE holds source newer than the Client's. Since
+    // the last update translated, this reports the error to the Client again.
+    ide_id += MESSAGE_ID_INCREMENT;
+    send_ide_update(&mut ws_ide, ide_id, &file_path_str, untranslatable, 3.0).await;
+    assert_eq!(read_message(&mut ws_ide).await, ide_success(ide_id));
+    assert_eq!(read_message(&mut ws_client).await, client_error(ide_id));
+
+    // The Client can still report its cursor position ...
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID + MESSAGE_ID_INCREMENT;
+    send_message(
+        &mut ws_client,
+        &EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
+                contents: None,
+            }),
+        },
+    )
+    .await;
+    let em = read_message(&mut ws_ide).await;
+    assert_eq!(em.id, client_id);
+    cast!(em.message, EditorMessageContents::Update);
+    send_and_check_result(&mut ws_ide, &mut ws_client, client_id).await;
+
+    // ... but its edits are rejected. If one reached the IDE, then the next
+    // read from `ws_ide` below would fail, since it would return this edit.
+    client_id += MESSAGE_ID_INCREMENT;
+    send_client_edit(&mut ws_client, client_id, &file_path_str, 4.0).await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Result(Err(ResultErrTypes::IgnoredClientEdit(
+                translation_error.clone()
+            ))),
+        }
+    );
+
+    // The Client now holds text which the Server doesn't, so the next update
+    // which translates contains the full text.
+    ide_id += MESSAGE_ID_INCREMENT;
+    send_ide_update(&mut ws_ide, ide_id, &file_path_str, "# newest", 5.0).await;
+    assert_eq!(
+        read_message(&mut ws_client).await,
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: file_path_str.clone(),
+                cursor_position: None,
+                scroll_position: None,
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Plain(CodeMirror {
+                        doc: "\n".to_string(),
+                        doc_blocks: vec![CodeMirrorDocBlock {
+                            from: 0,
+                            to: 1,
+                            indent: String::new(),
+                            delimiter: "#".to_string(),
+                            contents: "<p>newest".to_string(),
+                        }],
+                    }),
+                    version: 5.0,
+                }),
+            }),
+        }
+    );
+    send_and_check_result(&mut ws_client, &mut ws_ide, ide_id).await;
+
+    // With the IDE's source translating again, edits from the Client reach it.
+    client_id += MESSAGE_ID_INCREMENT;
+    send_client_edit(&mut ws_client, client_id, &file_path_str, 6.0).await;
+    let em = read_message(&mut ws_ide).await;
+    assert_eq!(em.id, client_id);
+    cast!(em.message, EditorMessageContents::Update);
+    send_and_check_result(&mut ws_ide, &mut ws_client, client_id).await;
+
+    check_logger_errors(0);
+    // Report any errors produced when removing the temporary directory.
+    temp_dir.close().unwrap();
+}
+
 /// Send an `Update` message from the Client.
 #[actix_web::test]
 async fn test_vscode_ide_websocket6() {

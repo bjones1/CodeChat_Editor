@@ -300,6 +300,11 @@ struct TranslationTask {
     /// Has the full (non-diff) version of the current file been sent? Don't
     /// send diffs until this is sent.
     sent_full: bool,
+    /// The error from translating the IDE's latest text, if that failed. Until
+    /// the IDE sends text which translates, the Client keeps showing the last
+    /// text which did, and can't edit the IDE's newer text; see
+    /// `client_update`.
+    ide_translation_error: Option<String>,
     /// Most recent capture metadata supplied by the IDE. Server-generated
     /// capture events reuse this so translated write events retain the same
     /// participant/session identity as the extension events.
@@ -384,6 +389,7 @@ pub async fn translation_task(
             version: 0.0,
             // Don't send diffs until this is sent.
             sent_full: false,
+            ide_translation_error: None,
             capture_context: CaptureContext::default(),
         };
         while continue_loop {
@@ -895,6 +901,7 @@ impl TranslationTask {
                 // watcher, which never has the file, receives no diffs (see
                 // `allow_source_diffs`).
                 self.sent_full = true;
+                self.ide_translation_error = None;
             }
             // Record the TOC which the sidebar now shows, unless it's the TOC
             // of another project -- requested by the sidebar of a page which
@@ -963,10 +970,48 @@ impl TranslationTask {
                                     false,
                                     &self.cache,
                                 ) {
+                                    // This is often transient, such as a tag
+                                    // which the user is still typing. Leave
+                                    // this struct's copy of the source alone,
+                                    // so that the next update which translates
+                                    // diffs against what the Client still has.
+                                    //
+                                    // Report this only to the Client, whose
+                                    // text is now out of date, and which shows
+                                    // any error result as a toast (see `case
+                                    // "Result"` in
+                                    // `CodeChatEditorFramework.mts`). Report it
+                                    // only when it first appears, since the IDE
+                                    // sends an update on each pause in typing,
+                                    // and these toasts would otherwise pile up.
+                                    // The IDE must still receive a result; it
+                                    // reports an unanswered message as a
+                                    // timeout error, which VSCode shows in
+                                    // place of the Client.
                                     Err(err) => {
-                                        Err(ResultErrTypes::CannotTranslateSource(err.to_string()))
+                                        let err = err.to_string();
+                                        if self.ide_translation_error.as_ref() != Some(&err) {
+                                            let client_err =
+                                                ResultErrTypes::CannotTranslateSource(err.clone());
+                                            error!("{client_err:?}");
+                                            send_response(
+                                                &self.to_client_tx,
+                                                ide_message.id,
+                                                Err(client_err),
+                                            )
+                                            .await;
+                                        }
+                                        self.ide_translation_error = Some(err);
+                                        send_response(
+                                            &self.to_ide_tx,
+                                            ide_message.id,
+                                            Ok(ResultOkTypes::Void),
+                                        )
+                                        .await;
+                                        Ok(ResultOkTypes::Void)
                                     }
                                     Ok((translation_results_string, _path_to_toc)) => {
+                                        self.ide_translation_error = None;
                                         match translation_results_string {
                                             TranslationResultsString::CodeChat(ccfw) => {
                                                 // Send the new translated contents.
@@ -1080,8 +1125,9 @@ impl TranslationTask {
                 }
             }
         };
-        // If there's an error, then report it; otherwise, the message is passed
-        // to the Client, which will provide the result.
+        // If there's an error, then report it; otherwise, the result was
+        // already sent, or the message was passed to the Client, which will
+        // provide the result.
         if let Err(err) = &result {
             error!("{err:?}");
             send_response(&self.to_ide_tx, ide_message.id, result).await;
@@ -1209,6 +1255,19 @@ impl TranslationTask {
         let EditorMessageContents::Update(update_message_contents) = client_message.message else {
             panic!("Expected update message.");
         };
+        // The Client's text is older than the IDE's when the IDE's can't be
+        // translated. Forwarding this edit would replace the IDE's newer text
+        // with the Client's, so reject the edit instead. The Client then holds
+        // text this struct doesn't, so it needs the full text next.
+        if update_message_contents.contents.is_some()
+            && let Some(err) = &self.ide_translation_error
+        {
+            let err = ResultErrTypes::IgnoredClientEdit(err.clone());
+            error!("{err:?}");
+            self.sent_full = false;
+            send_response(&self.to_client_tx, client_message.id, Err(err)).await;
+            return true;
+        }
         debug!("Forwarding translation of it to the IDE.");
         match try_canonicalize(&update_message_contents.file_path) {
             Err(err) => {
@@ -1464,6 +1523,7 @@ impl TranslationTask {
         self.current_file = canonicalize(&current_file).unwrap_or(current_file);
         // Since this is a new file, the full text hasn't been sent yet.
         self.sent_full = false;
+        self.ide_translation_error = None;
         // Nor has its page's sidebar, if any, loaded the TOC.
         self.sidebar_toc = None;
         // Drop the old registration first; see `ConnectionRegistration::new`.

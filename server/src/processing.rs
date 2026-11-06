@@ -1106,8 +1106,18 @@ pub fn source_to_codechat_for_web(
                             indent: doc_block.indent.clone(),
                             delimiter: doc_block.delimiter.clone(),
                             // Used the markdown-translated replacement for this
-                            // doc block, rather than the original string.
-                            contents: minify(doc_block_contents_iter.next().unwrap())?,
+                            // doc block, rather than the original string. An
+                            // unclosed tag or comment may hide the separators
+                            // of all later doc blocks, leaving no replacement
+                            // for them. Report this, since empty contents would
+                            // erase those doc blocks on the next save from the
+                            // Client.
+                            contents: minify(doc_block_contents_iter.next().ok_or_else(|| {
+                                SourceToCodeChatForWebError::ParseFailed(
+                                    "because an unclosed tag or comment hides later doc blocks"
+                                        .to_string(),
+                                )
+                            })?)?,
                         });
                         // Append newlines to the document; the doc block will
                         // replace these in the editor. This keeps the line

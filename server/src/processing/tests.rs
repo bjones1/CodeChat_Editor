@@ -1997,6 +1997,43 @@ fn test_hydrate_target_inner_html_math() {
     );
 }
 
+// Verify that a tag or comment which hides the separators of later doc blocks
+// produces an error, not a panic or empty doc blocks, which the next save would
+// write to the source. A paragraph's end closes an unclosed tag, so one there
+// hides nothing.
+#[test]
+fn test_hydrate_unclosed_tag() {
+    for unclosed_tag in [
+        "<xref ref=\"t\">",
+        "<fragment id=\"f\">",
+        "<!-- note",
+        "<textarea>",
+    ] {
+        assert_eq!(
+            source_to_codechat_for_web(
+                &format!("// {unclosed_tag}\nlet a = 1;\n// Next.\nlet b = 2;\n"),
+                Path::new("foo.js"),
+                0.0,
+                false,
+                None
+            ),
+            Err(SourceToCodeChatForWebError::ParseFailed(
+                "because an unclosed tag or comment hides later doc blocks".to_string()
+            ))
+        );
+    }
+    assert!(
+        source_to_codechat_for_web(
+            "// See <xref ref=\"t\">\nlet a = 1;\n// Next.\nlet b = 2;\n",
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None
+        )
+        .is_ok()
+    );
+}
+
 // Verify that a Markdown document may begin with a comment, which parsing
 // places before the document's first element.
 #[test]
