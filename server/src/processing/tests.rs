@@ -138,6 +138,88 @@ fn test_codechat_for_web_to_source() {
     );
 }
 
+// Verify that saving an empty doc block keeps the newline which ends it; without
+// this newline, the next line of the file joins the comment. Markdown conversion
+// produces no HTML from each of these doc blocks. Only a doc block ending a file
+// which has no final newline may lack one.
+#[test]
+fn test_codechat_for_web_to_source_empty_doc_block() {
+    for (source, saved) in [
+        // A bare delimiter.
+        ("//\nlet a = 1;\n", "//\nlet a = 1;\n"),
+        // A closing tag with no matching opening tag.
+        ("// </div>\nlet a = 1;\n", "//\nlet a = 1;\n"),
+        // A link reference definition; saving inlines its URL into the link.
+        (
+            "// [Link][1]\nlet a = 1;\n// [1]: http://foo.org\nlet b = 2;\n",
+            "// [Link](http://foo.org)\nlet a = 1;\n//\nlet b = 2;\n",
+        ),
+        // A doc block with a different indent, instead of code.
+        (
+            "//\n  // Next.\nlet a = 1;\n",
+            "//\n  // Next.\nlet a = 1;\n",
+        ),
+        // The end of a file which has no final newline.
+        ("let a = 1;\n//", "let a = 1;\n//"),
+    ] {
+        let translation =
+            source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap();
+        println!("{translation:#?}");
+        assert_eq!(codechat_for_web_to_source(&translation).unwrap(), saved);
+    }
+}
+
+// Narrow `test_codechat_for_web_to_source_empty_doc_block` to the save stage
+// which loses the newline, by checking each stage's output in order for a bare
+// delimiter followed by code.
+#[test]
+fn test_codechat_for_web_to_source_empty_doc_block_stages() {
+    let llc = compile_lexers(get_language_lexer_vec());
+    let js_lexer = llc.map_mode_to_lexer.get(&stringit("javascript")).unwrap();
+
+    // Stage 1, `code_mirror_to_code_doc_blocks`: the doc block spans the newline
+    // in the CodeMirror document, so only that document, not the doc block's
+    // contents, holds this newline.
+    let code_doc_block_vec_html = run_test(
+        "javascript",
+        "\nlet a = 1;\n",
+        vec![build_codemirror_doc_block(0, 1, "", "//", "")],
+    );
+    assert_eq!(
+        code_doc_block_vec_html,
+        vec![
+            build_doc_block("", "//", ""),
+            build_code_block("let a = 1;\n")
+        ]
+    );
+
+    // Stage 3, `code_doc_block_vec_to_source`, checked before stage 2 since it
+    // defines the input stage 2 must produce: a doc block containing only a
+    // newline saves correctly.
+    assert_eq!(
+        code_doc_block_vec_to_source(
+            &[
+                build_doc_block("", "//", "\n"),
+                build_code_block("let a = 1;\n")
+            ],
+            js_lexer
+        )
+        .unwrap(),
+        "//\nlet a = 1;\n"
+    );
+
+    // Stage 2, `doc_block_html_to_markdown`: converting to Markdown must supply
+    // this newline.
+    println!("{code_doc_block_vec_html:#?}");
+    assert_eq!(
+        doc_block_html_to_markdown(code_doc_block_vec_html, None).unwrap(),
+        vec![
+            build_doc_block("", "//", "\n"),
+            build_code_block("let a = 1;\n")
+        ]
+    );
+}
+
 // ### Tests for `code_mirror_to_code_doc_blocks`
 #[test]
 fn test_codemirror_to_code_doc_blocks_py() {
