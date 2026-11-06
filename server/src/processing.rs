@@ -2557,21 +2557,20 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                         (following_error, true)
                     };
                     let cached = cached && !walk_context.auto_ids.contains(&id);
+                    let end = walk_context.doc_block_index.saturating_add(following);
                     if cached {
                         walk_context.facts.fragments.push(FragmentFact {
                             id: id.clone(),
                             line: 0,
                             _doc_block_start_index: walk_context.doc_block_index,
-                            _code_doc_block_end_index: walk_context
-                                .doc_block_index
-                                .saturating_add(following),
+                            _code_doc_block_end_index: end,
                         });
                     }
                     walk_context.fragments.push(FragmentHydration {
                         node: child.clone(),
                         id,
                         start: walk_context.doc_block_index,
-                        end: walk_context.doc_block_index + following,
+                        end,
                         error,
                         cached,
                     });

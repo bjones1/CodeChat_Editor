@@ -2168,6 +2168,36 @@ fn test_hydrate_unclosed_tag() {
     );
 }
 
+// Verify that a `following` value too large to add to the doc block's index
+// covers the rest of the file, instead of overflowing.
+#[test]
+fn test_hydrate_fragment_following_overflow() {
+    let translation = source_to_codechat_for_web(
+        &formatdoc!(
+            r#"
+            // <h3 id="gath" data-gather="frag">Gathered</h3>
+            let a = 1;
+            // <fragment id="frag" following="{}"></fragment>Doc.
+            let b = 2;
+            "#,
+            usize::MAX
+        ),
+        Path::new("foo.js"),
+        0.0,
+        false,
+        None,
+    )
+    .unwrap();
+    let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
+        panic!("No diff!");
+    };
+    assert!(
+        code_mirror.doc_blocks[0].contents.contains("let b = 2;"),
+        "{}",
+        code_mirror.doc_blocks[0].contents
+    );
+}
+
 // Verify that a Markdown document may begin with a comment, which parsing
 // places before the document's first element.
 #[test]
