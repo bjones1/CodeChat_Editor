@@ -54,8 +54,8 @@ use crate::{
         cache::{Cache, FileStatus},
         code_doc_block_vec_to_source, code_mirror_to_code_doc_blocks, codechat_for_web_to_source,
         dehydrating_walk_node, diff_code_mirror_doc_blocks, diff_str, doc_block_html_to_markdown,
-        html_to_dom, hydrate_html, is_css_identifier, markdown_to_html, new_html_to_markdown,
-        source_to_codechat_for_web,
+        dom_to_html, html_to_dom, hydrate_html, is_css_identifier, markdown_to_html,
+        new_html_to_markdown, nodes_to_dom, parse_doc_block, source_to_codechat_for_web,
     },
 };
 use test_utils::{cast, prep_test_dir, test_utils::stringit};
@@ -2141,9 +2141,6 @@ fn test_hydrate_unclosed_tag() {
         ("See <xref ref=\"t\">", "// See <xref ref=\"t\"></xref>"),
         ("<fragment id=\"f\">", "// <fragment id=\"f\"></fragment>"),
         ("<!-- note", "// <!-- note\n//\n// -->"),
-        ("<textarea>", "//"),
-        ("<title>", "//"),
-        ("<template>", "//"),
         ("<table>", "// <table></table>"),
     ] {
         let translation = source_to_codechat_for_web(
@@ -2166,49 +2163,147 @@ fn test_hydrate_unclosed_tag() {
     }
 }
 
-/// Assert that prose following the given unclosed tag isn't silently lost:
-/// either translation reports an error, or a save keeps the prose.
-fn assert_unclosed_tag_keeps_prose(
-    // The tag left unclosed at the start of a doc block.
-    unclosed_tag: &str,
-) {
-    if let Ok(translation) = source_to_codechat_for_web(
-        &format!("// {unclosed_tag}\n//\n// Important prose.\nlet a = 1;\n// Next.\nlet b = 2;\n"),
-        Path::new("foo.js"),
-        0.0,
-        false,
-        None,
-    ) {
-        let saved = codechat_for_web_to_source(&translation).unwrap();
-        assert!(
-            saved.contains("Important prose."),
-            "{unclosed_tag} saved as {saved:?}"
+// Verify the exact text saved for prose following a tag or comment left open.
+// An open `<xref>` absorbs the prose, while an open `<table>` moves it in front
+// of the table.
+#[test]
+fn test_hydrate_unclosed_tag_keeps_prose() {
+    for (unclosed_tag, saved_doc_block) in [
+        (
+            "<xref ref=\"t\">",
+            "// <xref ref=\"t\"><p>**Important** prose.</p></xref>",
+        ),
+        (
+            "See <xref ref=\"t\">",
+            "// See <xref ref=\"t\"></xref>\n//\n// **Important** prose.",
+        ),
+        (
+            "<fragment id=\"f\">",
+            "// <fragment id=\"f\"></fragment>\n//\n// **Important** prose.",
+        ),
+        (
+            "<!-- note",
+            "// <!-- note\n//\n// **Important** prose.\n// -->",
+        ),
+        ("<table>", "// **Important** prose.\n//\n// <table></table>"),
+    ] {
+        let translation = source_to_codechat_for_web(
+            &format!("// {unclosed_tag}\n//\n// **Important** prose.\nlet a = 1;\n"),
+            Path::new("foo.js"),
+            0.0,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            codechat_for_web_to_source(&translation).unwrap(),
+            format!("{saved_doc_block}\nlet a = 1;\n"),
+            "{unclosed_tag}"
         );
     }
 }
 
+// Verify that an unclosed tag which hides the text after it produces an error,
+// since a save would erase or corrupt that text. This covers an unterminated
+// attribute, `<template>`, and each raw text element.
 #[test]
-fn test_hydrate_unclosed_tag_keeps_prose() {
+fn test_hydrate_unclosed_tag_hides_text() {
     for unclosed_tag in [
-        "<xref ref=\"t\">",
-        "See <xref ref=\"t\">",
-        "<fragment id=\"f\">",
-        "<!-- note",
-        "<textarea>",
+        "<h3 id=\"",
+        "<div id=\"foo",
+        "<div class='x",
+        "<pre class=\"x",
+        "<table summary=\"x",
+        "<script src=\"x",
+        "<style media=\"x",
+        "<textarea name=\"x",
+        "<template>",
+        "<style>",
+        "<script>",
         "<title>",
-        "<table>",
+        "<xmp>",
+        "<noscript>",
+        "<noembed>",
+        "<noframes>",
+        "<plaintext>",
+        "<iframe>",
+        "<textarea>",
     ] {
-        assert_unclosed_tag_keeps_prose(unclosed_tag);
+        for (file_name, source) in [
+            (
+                "foo.js",
+                format!("// {unclosed_tag}\n//\n// Important prose.\nlet a = 1;\n"),
+            ),
+            ("foo.md", format!("{unclosed_tag}\n\nImportant prose.\n")),
+        ] {
+            assert_eq!(
+                source_to_codechat_for_web(&source, Path::new(file_name), 0.0, false, None),
+                Err(SourceToCodeChatForWebError::ParseFailed(
+                    "because an unclosed tag hides the text after it".to_string()
+                )),
+                "{source}"
+            );
+        }
     }
 }
 
-// TODO: Move these tags to `test_hydrate_unclosed_tag_keeps_prose` and delete
-// this test once hydration keeps this prose or translation reports an error.
+// Verify that a translation which fails on an unclosed tag leaves the cache
+// alone. Otherwise, the target it hides would leave the cache, so links to it
+// from other files would re-render as errors.
 #[test]
-#[ignore = "an unclosed <template>, <style>, or <script> silently erases the prose after it"]
-fn test_hydrate_unclosed_tag_keeps_prose_todo() {
-    for unclosed_tag in ["<template>", "<style>", "<script>"] {
-        assert_unclosed_tag_keeps_prose(unclosed_tag);
+fn test_hydrate_unclosed_tag_keeps_cache() {
+    for (file_name, source, unclosed_source) in [
+        (
+            "foo.js",
+            "// <h3 id=\"t\">Title</h3>\nlet a = 1;\n",
+            "// <style>\n// <h3 id=\"t\">Title</h3>\nlet a = 1;\n",
+        ),
+        (
+            "foo.md",
+            "<h3 id=\"t\">Title</h3>\n",
+            "<style>\n\n<h3 id=\"t\">Title</h3>\n",
+        ),
+    ] {
+        let cache = Arc::new(Mutex::new(Cache::default()));
+        source_to_codechat_for_web(
+            source,
+            Path::new(file_name),
+            0.0,
+            false,
+            Some(cache.clone()),
+        )
+        .unwrap();
+        source_to_codechat_for_web(
+            unclosed_source,
+            Path::new(file_name),
+            0.0,
+            false,
+            Some(cache.clone()),
+        )
+        .unwrap_err();
+        assert_eq!(cache.lock().unwrap().ids.keys().collect::<Vec<_>>(), ["t"]);
+    }
+}
+
+// Verify that the sentinel leaves no trace, wherever the parser places it: last
+// at the top level, inside an element or comment, or in front of a `<table>`.
+#[test]
+fn test_parse_doc_block_removes_sentinel() {
+    for html in [
+        "",
+        "<p>Text</p>\n",
+        "<p>Text",
+        "<p><b>x</p>",
+        "<xref ref=\"t\">",
+        "<!-- note",
+        "<table>",
+        "<table><tr><td>x",
+    ] {
+        assert_eq!(
+            dom_to_html(&nodes_to_dom(parse_doc_block(html).unwrap()).unwrap()).unwrap(),
+            dom_to_html(&html_to_dom(html, None).unwrap()).unwrap(),
+            "{html}"
+        );
     }
 }
 

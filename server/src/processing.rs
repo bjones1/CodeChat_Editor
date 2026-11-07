@@ -330,6 +330,9 @@ const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r"<CodeChatEditor-fence>
 // which it replaces here.
 const DOC_BLOCK_SEPARATOR_MENDED_FENCE: &str =
     "</code></pre>\n<CodeChatEditor-separator>$1</CodeChatEditor-separator>\n";
+// The element `parse_doc_block` appends to a doc block, to discover what an
+// unclosed tag does to the text after it.
+const DOC_BLOCK_SENTINEL: &str = "codechateditor-sentinel";
 // The value of an `id` attribute which requests that the cache assign an id;
 // see `Auto-assignment of ids` in the cache spec.
 const AUTO_ID: &str = "*";
@@ -1590,11 +1593,62 @@ fn doc_blocks_to_dom(
     doc_block_bounds.push(html.len());
     let mut children = Vec::new();
     for bounds in doc_block_bounds.windows(2) {
-        children.extend(parse_html_fragment(&html[bounds[0]..bounds[1]])?);
+        children.extend(parse_doc_block(&html[bounds[0]..bounds[1]])?);
     }
-    let dom = html_to_dom("", None)?;
-    set_element_children(&get_dom_root(&dom), children);
-    Ok(dom)
+    nodes_to_dom(children)
+}
+
+/// Parse one doc block or Markdown document, reporting an error if an unclosed
+/// tag would lose the text after it. html5ever gives no sign of this: it
+/// discards a tag still open at the end of its input (such as one with an
+/// unterminated attribute) along with everything that tag absorbed, while a raw
+/// text element or `<template>` holds the rest of the input in a form which a
+/// save erases or corrupts. So, parse this HTML followed by a sentinel element,
+/// then see what became of the sentinel. This runs before hydration commits any
+/// facts, so an error leaves the cache alone. It can't detect text absorbed by
+/// an attribute which a later quote closes, since the sentinel then survives.
+fn parse_doc_block(
+    // The HTML to parse.
+    html: &str,
+    // The parsed nodes, which contain no trace of the sentinel.
+) -> io::Result<Vec<Rc<Node>>> {
+    let mut nodes = parse_html_fragment(&format!(
+        "{html}<{DOC_BLOCK_SENTINEL}></{DOC_BLOCK_SENTINEL}>"
+    ))?;
+    // The sentinel is the last top-level node only if nothing was left open.
+    if nodes
+        .last()
+        .is_some_and(|node| get_node_tag_name(node) == Some(DOC_BLOCK_SENTINEL))
+    {
+        nodes.pop();
+        return Ok(nodes);
+    }
+    // The sentinel is inside an open element or comment, or in front of an open
+    // `<table>`. Anything before it survived, so what's open can safely close
+    // here. Reparse instead of removing the sentinel: a comment's contents are
+    // immutable, and after `<p><b>x</p>`, html5ever opens a new `<b>` around
+    // the sentinel, which would remain.
+    if nodes.iter().any(contains_sentinel) {
+        return parse_html_fragment(html);
+    }
+    Err(io::Error::other(
+        "because an unclosed tag hides the text after it",
+    ))
+}
+
+/// Report whether a tree holds the sentinel, as an element or in a comment.
+/// `<template>` contents aren't among a node's children, so this doesn't search
+/// them; `parse_doc_block` must report text hidden there.
+fn contains_sentinel(
+    // The root of the tree to search.
+    node: &Rc<Node>,
+    // True if this tree holds the sentinel.
+) -> bool {
+    let is_sentinel = match &node.data {
+        NodeData::Comment { contents } => contents.contains(DOC_BLOCK_SENTINEL),
+        _ => get_node_tag_name(node) == Some(DOC_BLOCK_SENTINEL),
+    };
+    is_sentinel || node.children.borrow().iter().any(contains_sentinel)
 }
 
 /// <h3 id="cc-HfGbqqRaWs">hydrate_html</h3>
@@ -1625,7 +1679,8 @@ fn doc_blocks_to_dom(
 /// needs no doc block data (fragments aren't allowed in Markdown documents, so
 /// every fragment's content is an error message).
 fn hydrate_html(html: &str, file: &Path, cache: &Arc<Mutex<Cache>>) -> io::Result<String> {
-    let (dom, walk_context) = hydrate_dom(html_to_dom(html, None)?, file, cache, true)?;
+    let dom = nodes_to_dom(parse_doc_block(html)?)?;
+    let (dom, walk_context) = hydrate_dom(dom, file, cache, true)?;
     store_fragment_contents(&walk_context, None, cache);
     hydrate_gathers(&walk_context, cache)?;
     dom_to_html(&dom)
@@ -2384,6 +2439,17 @@ fn parse_html_fragment(html: &str) -> io::Result<Vec<Rc<Node>>> {
         child.parent.set(None);
     }
     Ok(children)
+}
+
+/// Build a DOM from detached nodes, such as `parse_html_fragment` returns.
+fn nodes_to_dom(
+    // The nodes to place at the top level of the DOM.
+    nodes: Vec<Rc<Node>>,
+    // A DOM in the same form that `html_to_dom` returns.
+) -> io::Result<Rc<Node>> {
+    let dom = html_to_dom("", None)?;
+    set_element_children(&get_dom_root(&dom), nodes);
+    Ok(dom)
 }
 
 /// Insert `sibling` immediately after `node` in `node`'s parent.
