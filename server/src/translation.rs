@@ -970,12 +970,11 @@ impl TranslationTask {
                                     false,
                                     &self.cache,
                                 ) {
-                                    // This is often transient, such as a code
-                                    // block or declaration which the user is
-                                    // still typing. Leave this struct's copy of
-                                    // the source alone, so that the next update
-                                    // which translates diffs against what the
-                                    // Client still has.
+                                    // This is often transient, such as a tag
+                                    // which the user is still typing. Leave
+                                    // this struct's copy of the source alone,
+                                    // so that the next update which translates
+                                    // diffs against what the Client still has.
                                     //
                                     // Report this only to the Client, whose
                                     // text is now out of date, and which shows

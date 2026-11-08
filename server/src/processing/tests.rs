@@ -2131,29 +2131,35 @@ fn test_hydrate_target_inner_html_math() {
     );
 }
 
-// Verify that a tag or comment left open in a doc block closes where that doc
-// block ends, leaving the code and the later doc block intact, both when
-// translated and after a save.
+// Verify that a tag, comment, or declaration left open in a doc block closes
+// where that doc block ends, leaving the code and the later doc block intact,
+// both when translated and after a save, which closes a declaration as a
+// comment. Translating and saving the saved text must change nothing.
 #[test]
 fn test_hydrate_unclosed_tag() {
+    let translate = |source: &str| {
+        source_to_codechat_for_web(source, Path::new("foo.js"), 0.0, false, None).unwrap()
+    };
     for (unclosed_tag, saved_doc_block) in [
         ("<xref ref=\"t\">", "// <xref ref=\"t\"> </xref>"),
         ("See <xref ref=\"t\">", "// See <xref ref=\"t\"></xref>"),
         ("<fragment id=\"f\">", "// <fragment id=\"f\"></fragment>"),
         ("<!-- note", "// <!-- note\n//\n// -->"),
+        ("<!X", "// <!--X\n//\n// -->"),
         ("<table>", "// <table></table>"),
     ] {
-        let translation = source_to_codechat_for_web(
-            &format!("// {unclosed_tag}\nlet a = 1;\n// Next.\nlet b = 2;\n"),
-            Path::new("foo.js"),
-            0.0,
-            false,
-            None,
-        )
-        .unwrap();
+        let translation = translate(&format!(
+            "// {unclosed_tag}\nlet a = 1;\n// Next.\nlet b = 2;\n"
+        ));
+        let saved = format!("{saved_doc_block}\nlet a = 1;\n// Next.\nlet b = 2;\n");
         assert_eq!(
             codechat_for_web_to_source(&translation).unwrap(),
-            format!("{saved_doc_block}\nlet a = 1;\n// Next.\nlet b = 2;\n"),
+            saved,
+            "{unclosed_tag}"
+        );
+        assert_eq!(
+            codechat_for_web_to_source(&translate(&saved)).unwrap(),
+            saved,
             "{unclosed_tag}"
         );
         let CodeMirrorDiffable::Plain(code_mirror) = translation.source else {
@@ -2430,25 +2436,17 @@ fn test_hydrate_unclosed_xref_later_target() {
 // Verify that Markdown which hides the separators of later doc blocks produces
 // an error, not a panic or empty doc blocks, which the next save would write to
 // the source. The separator's closing fence is 23 characters long, so it can't
-// close the first of these. The others end an HTML block at the separator's
-// first `>`, exposing a fence which hides the next separator. In the last of
-// these, a later separator's fence closes it, leaving that separator visible.
+// close this one.
 #[test]
 fn test_hydrate_hidden_separator() {
     let long_fence = "`".repeat(24);
-    for source in [
-        format!("// {long_fence}\nlet a = 1;\n// Next.\nlet b = 2;\n"),
-        "// <!X\nlet a = 1;\n// Next.\nlet b = 2;\n".to_string(),
-        "// <!X\nlet a = 1;\n// Next.\nlet b = 2;\n// Last.\nlet c = 3;\n".to_string(),
-    ] {
-        assert_eq!(
-            source_to_codechat_for_web(&source, Path::new("foo.js"), 0.0, false, None),
-            Err(SourceToCodeChatForWebError::ParseFailed(
-                "because an unclosed code block or declaration hides later doc blocks".to_string()
-            )),
-            "{source}"
-        );
-    }
+    let source = format!("// {long_fence}\nlet a = 1;\n// Next.\nlet b = 2;\n");
+    assert_eq!(
+        source_to_codechat_for_web(&source, Path::new("foo.js"), 0.0, false, None),
+        Err(SourceToCodeChatForWebError::ParseFailed(
+            "because an unclosed code block hides later doc blocks".to_string()
+        ))
+    );
 }
 
 // Verify that a translation which fails on a hidden separator leaves the cache

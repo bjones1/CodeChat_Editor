@@ -24,13 +24,12 @@ Changelog
 -----------------------------------------------------------
 
 * Changed `<xref>` to support optional content.
-* Close an unclosed tag or comment at the end of its doc block, instead of
-  letting it hide or move later doc blocks.
-* Report an error instead of crashing when an unclosed code block or declaration
-  hides later doc blocks, and instead of erasing text when an unclosed tag hides
-  the text after it. The Client shows this error in a toast and keeps showing
-  the last text which translated, ignoring edits made there until the error is
-  fixed.
+* Close an unclosed tag, comment, or declaration at the end of its doc block,
+  instead of letting it hide or move later doc blocks.
+* Report an error instead of crashing when an unclosed code block hides later
+  doc blocks, and instead of erasing text when an unclosed tag hides the text
+  after it. The Client shows this error in a toast and keeps showing the last
+  text which translated, ignoring edits made there until the error is fixed.
 * Keep anything inside a `<fragment>`, such as the text after a missing
   `</fragment>`, instead of erasing it on the next save.
 * Fix retranslations of math in gather elements.

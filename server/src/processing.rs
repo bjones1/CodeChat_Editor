@@ -296,7 +296,11 @@ const DOC_BLOCK_SEPARATOR_STRING: &str = concat!(
     // the length of the opening code fence, which is hard to find. Since
     // CommonMark doesn't care if there are multiple HTML start conditions,
     // abuse this by not closing the fence until the very end of this string.
+    // The first fence line is doubled because a declaration (item 4) ends at
+    // the first `>`, which is the end of that line; the second line then begins
+    // the raw HTML block which hides everything else.
     r#"
+<CodeChatEditor-fence>
 <CodeChatEditor-fence>
 </pre></script></style></textarea>-->?>]]>
 "#,
@@ -318,6 +322,7 @@ const DOC_BLOCK_SEPARATOR_STRING: &str = concat!(
 // Correctly terminated fenced code blocks produce this, which can be removed
 // from the HTML produced by Markdown conversion.
 const DOC_BLOCK_SEPARATOR_REMOVE_FENCE: &str = r"<CodeChatEditor-fence>
+<CodeChatEditor-fence>
 </pre></script></style></textarea>-->?>]]>
 <CodeChatEditor-fence>
 ```````````````````````
@@ -1568,11 +1573,10 @@ fn get_dom_root(
 /// block separately. Text before the first separator isn't a doc block.
 ///
 /// Markdown conversion may still hide the separators of later doc blocks: a
-/// fenced code block opened by a fence longer than the separator's stays open,
-/// while `<!X` ends its HTML block at the separator's first `>`, exposing that
-/// separator's fences. Report this here, since hydration would otherwise commit
-/// the facts of the remaining doc blocks to the cache, dropping any targets the
-/// hidden doc blocks contain.
+/// fenced code block opened by a fence longer than the separator's stays open.
+/// Report this here, since hydration would otherwise commit the facts of the
+/// remaining doc blocks to the cache, dropping any targets the hidden doc
+/// blocks contain.
 fn doc_blocks_to_dom(
     // The HTML of all doc blocks, with fences removed and each preceded by its
     // separator.
@@ -1587,7 +1591,7 @@ fn doc_blocks_to_dom(
         .collect();
     if doc_block_bounds.len() != doc_block_count {
         return Err(io::Error::other(
-            "because an unclosed code block or declaration hides later doc blocks",
+            "because an unclosed code block hides later doc blocks",
         ));
     }
     doc_block_bounds.push(html.len());
