@@ -163,7 +163,7 @@ const CODECHAT_DOC_HIDDEN = "CodeChat-doc-hidden";
 // [StateField](https://codemirror.net/docs/ref/#state.StateField^define): the
 // state required to store all doc blocks. Conveniently, a
 // [DecorationSet](https://codemirror.net/docs/ref/#view.DecorationSet) is a
-// [RangeSet](https://codemirror.net/docs/ref/#state.RangeSet)<[Decoration](https://codemirror.net/docs/ref/#view.Decoration)\>,
+// [RangeSet](https://codemirror.net/docs/ref/#state.RangeSet)\<[Decoration](https://codemirror.net/docs/ref/#view.Decoration)\>,
 // each element of which contains the required range and the needed HTML in the
 // Decoration -- all the required state. Making it a DecorationSet provides an
 // easy way to store all doc blocks.
@@ -869,10 +869,10 @@ const linkOutsideTinymce = (
 // `tinymce.util.VK.metaKeyPressed` accepts the click (see `Following links` in
 // [tinymce-config.mts](tinymce-config.mts)), so `isFollowClick` repeats that
 // test: TinyMCE loads only once a doc block gains the focus, too late for a
-// click which arrives first. On macOS and iOS, which TinyMCE recognizes from the
-// user agent much as below, the test requires Cmd; elsewhere, it requires Ctrl
-// without Alt, since AltGr, which types characters on many Windows keyboard
-// layouts, reports both.
+// click which arrives first. On macOS and iOS, which TinyMCE recognizes from
+// the user agent much as below, the test requires Cmd; elsewhere, it requires
+// Ctrl without Alt, since AltGr, which types characters on many Windows
+// keyboard layouts, reports both.
 const isMacOsOrIos = /iphone|ipad|mac os x/.test(
     navigator.userAgent.toLowerCase(),
 );
@@ -1792,6 +1792,8 @@ export const codeMirrorLoad = async (
                 break;
 
             default:
+                // Load an arbitrary parser, since `parser` is required when
+                // creating the editor.
                 parser = (
                     await import("@codemirror/lang-javascript")
                 ).javascript();
