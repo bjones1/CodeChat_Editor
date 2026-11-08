@@ -2046,6 +2046,7 @@ fn test_hydrate_xref_optional_content() {
             // * <xref ref="t"><svg><title>Hidden</title></svg></xref>
             // * <xref ref="t"><span></span></xref>
             // * <xref ref="t"> </xref>
+            // * <xref ref="t"><!-- note --> </xref>
             // * <xref ref="nope">Missing</xref>
             "#
         ),
@@ -2071,6 +2072,7 @@ fn test_hydrate_xref_optional_content() {
             "<li><xref contenteditable=false data-content=&amp;lt;svg&amp;gt;&amp;lt;title&amp;gt;Hidden&amp;lt;/title&amp;gt;&amp;lt;/svg&amp;gt; ref=t><a href=#t>Title</a></xref>",
             "<li><xref contenteditable=false data-content=&amp;lt;span&amp;gt;&amp;lt;/span&amp;gt; ref=t><a href=#t><span></span></a></xref>",
             "<li><xref data-content=\" \" contenteditable=false ref=t><a href=#t>Title</a></xref>",
+            "<li><xref data-content=\"&amp;lt;!-- note --&amp;gt; \" contenteditable=false ref=t><a href=#t>Title</a></xref>",
             "<li><xref contenteditable=false data-content=Missing ref=nope><span class=cc-error>id \"nope\" not found</span></xref>",
             "</ul>"
         )

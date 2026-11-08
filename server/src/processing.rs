@@ -1982,20 +1982,19 @@ fn xref_content(
         } => {
             let href = format!("{}#{id}", relative_url(path, target_path));
             // The link's content is the hydrated optional content, unless that
-            // is blank once serialized; then it's the target's hydrated inner
-            // HTML. ASCII whitespace is exactly what HTML considers whitespace.
-            let hydrated_content =
-                hydrate_link_content(&optional_content(node).unwrap_or_default())?;
-            let content = if hydrated_content.trim_ascii().is_empty() {
-                hydrate_link_content(&target.inner_html)?
+            // is blank; then it's the target's hydrated inner HTML. Blank
+            // optional content hydrates to blank content, so it isn't hydrated.
+            // ASCII whitespace is exactly what HTML considers whitespace.
+            let optional_content = optional_content(node).unwrap_or_default();
+            let mut content = if optional_content.trim_ascii().is_empty() {
+                vec![]
             } else {
-                hydrated_content
+                hydrate_link_content(&optional_content)?
             };
-            vec![new_element(
-                "a",
-                vec![("href", href)],
-                parse_html_fragment(&content)?,
-            )]
+            if is_blank(&content) {
+                content = hydrate_link_content(&target.inner_html)?;
+            }
+            vec![new_element("a", vec![("href", href)], content)]
         }
         IdResolution::Fragment { .. } => vec![error_span(&format!(
             "id \"{id}\" names a fragment; a cross-reference must name a target or gather element"
@@ -2016,15 +2015,31 @@ fn xref_content(
 /// class, so without it the Client's copy of this link never matches a
 /// re-translation (see `compare_html` in `translation.rs`), sending the Client
 /// a re-translation after each save. A target's inner HTML is stored before
-/// hydration, so this runs each time it's rendered.
+/// hydration, so this runs each time it's rendered, while the caller holds the
+/// project's cache lock.
 fn hydrate_link_content(
     // The optional content as parsed, or a target's stored inner HTML.
     content: &str,
-    // The link's content.
-) -> io::Result<String> {
+    // The detached nodes of the link's content.
+) -> io::Result<Vec<Rc<Node>>> {
     let dom = html_to_dom(&CLEAN_LINK_CONTENT_HTML.clean(content).to_string(), None)?;
     hydrate_descendants(&dom);
-    dom_to_html(&dom)
+    Ok(take_dom_nodes(&dom))
+}
+
+/// Report whether a link's content is blank, which
+/// <xref ref="cc-HZyE2Bv-eI"></xref> defines as serializing to nothing but
+/// whitespace. Any node other than a text node serializes to markup, which
+/// isn't whitespace.
+fn is_blank(
+    // The link's content.
+    nodes: &[Rc<Node>],
+    // True if this content is blank.
+) -> bool {
+    nodes.iter().all(|node| match &node.data {
+        NodeData::Text { contents } => contents.borrow().trim_ascii().is_empty(),
+        _ => false,
+    })
 }
 
 /// The content of one hydrated `<fragment>`: a backlink to each gather element
@@ -2052,7 +2067,7 @@ fn fragment_backlinks(
         children.push(new_element(
             "a",
             vec![("href", href)],
-            parse_html_fragment(&hydrate_link_content(&backlink.target.inner_html)?)?,
+            hydrate_link_content(&backlink.target.inner_html)?,
         ));
     }
     Ok(children)
@@ -2435,14 +2450,21 @@ fn set_element_children(node: &Rc<Node>, children: Vec<Rc<Node>>) {
 /// Parse an HTML string into a list of detached nodes, ready to insert into
 /// another DOM.
 fn parse_html_fragment(html: &str) -> io::Result<Vec<Rc<Node>>> {
-    let dom = html_to_dom(html, None)?;
-    let root = get_dom_root(&dom);
-    let children: Vec<Rc<Node>> = root.children.borrow().clone();
-    root.children.borrow_mut().clear();
+    Ok(take_dom_nodes(&html_to_dom(html, None)?))
+}
+
+/// Remove the top-level nodes from a DOM, detaching them so that they're ready
+/// to insert into another DOM; this is the inverse of `nodes_to_dom`.
+fn take_dom_nodes(
+    // A DOM returned by `html_to_dom`.
+    dom: &Rc<Node>,
+    // The detached nodes.
+) -> Vec<Rc<Node>> {
+    let children = get_dom_root(dom).children.take();
     for child in &children {
         child.parent.set(None);
     }
-    Ok(children)
+    children
 }
 
 /// Build a DOM from detached nodes, such as `parse_html_fragment` returns.
