@@ -138,6 +138,7 @@ Implementation
   * Misc
     * [Cargo.toml](Cargo.toml) - workspace manifest
     * [config.toml](.cargo/config.toml) - for Rust code coverage
+    * [nextest.toml](.config/nextest.toml)
     * [dist-workspace.toml](dist-workspace.toml) - cargo-dist configuration
     * [.ignore](.ignore) - show hidden directories to the CodeChat Editor
 

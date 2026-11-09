@@ -21,20 +21,12 @@
 //! testing IDE to generate commands then observe results, along with a browser
 //! tester.
 //!
-//! A second challenge revolves around the lack of an async `Drop` trait: the
-//! web driver server should be started before any test, left running during all
-//! tests, then terminated as the test program exits. The web driver must be
-//! initialized before a test then stopped at the end of that test. Both are
-//! ideal for this missing Drop trait. As a workaround:
-//!
-//! * The web driver server relies on the C `atexit` call to stop the server.
-//!   However, when tests fail, this doesn't get called, leaving the server
-//!   running. This causes the server to fail to start on the next test run,
-//!   since it's still running. Therefore, errors when starting the web driver
-//!   server are ignored by design.
-//! * Tests are run in an async block, and any panics produced inside it are
-//!   caught using `catch_unwind()`. The driver is shut down before returning an
-//!   error due to the panic.
+//! Each test starts its own web driver server and browser session through
+//! `WebDriver::managed`. Rust lacks an async `Drop`, so a `WebDriver` dropped
+//! without first being quit falls back to a synchronous teardown that blocks
+//! the async executor. To always quit explicitly, the harness runs each test in
+//! an async block, catches any panic it produces using `catch_unwind()`, then
+//! quits the driver before returning the test's result or panic as an error.
 // Imports
 // -------
 //
@@ -253,8 +245,8 @@ pub const DOC_BLOCK_CSS: &str = "#CodeChat-body .CodeChat-doc-contents";
 
 // Time to wait for the Client's asynchronously-rendered content (see
 // `wait_for_stable_rect`) to settle. A doc block holding a Graphviz or Mermaid
-// diagram grows by hundreds of pixels when that diagram appears, and CI runs
-// three OS jobs whose `cargo test` threads each drive their own browser, so
+// diagram grows by hundreds of pixels when that diagram appears, and on CI
+// nextest runs the workspace's other tests alongside the browser tests, so
 // allow generously for a loaded runner.
 const RENDER_TIMEOUT: Duration = Duration::from_secs(20);
 
@@ -266,15 +258,12 @@ const RENDER_POLL_INTERVAL: Duration = Duration::from_millis(100);
 // require a third.
 const STABLE_RECT_SAMPLES: usize = 3;
 
-// Browser-backed tests share a single WebDriver endpoint. Safari on macOS CI is
-// unreliable with overlapping sessions, so serialize the harness.
-pub(crate) static WEB_DRIVER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
 // ### Test harness
 //
 // A test harness. It runs the webdriver, the Server, opens the Client, then
 // runs provided tests. After testing finishes, it cleans up (handling panics
-// properly).
+// properly). Tests using this harness must not run concurrently;
+// `.config/nextest.toml` runs them one at a time.
 pub async fn harness<
     F: FnOnce(CodeChatEditorServerLog, WebDriver, PathBuf) -> Fut,
     Fut: Future<Output = Result<(), WebDriverError>>,
@@ -283,7 +272,6 @@ pub async fn harness<
     // The output from calling `prep_test_dir!()`.
     prep_test_dir: (TempDir, PathBuf),
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let _webdriver_test_lock = WEB_DRIVER_TEST_LOCK.lock().await;
     // Send log events to the tracing subscriber, since the code currently uses
     // a log-based framework. As below, ignore re-initialization errors.
     let _ = LogTracer::init();

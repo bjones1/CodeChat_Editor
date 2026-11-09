@@ -1,0 +1,40 @@
+# The CodeChat Editor, a word processor for software developers.<br>Copyright
+# (C) 2024-2026 Bryan A. Jones.
+#
+# This file is part of the CodeChat Editor.
+#
+# The CodeChat Editor is free software: you can redistribute it and/or modify it
+# under the terms of the GNU General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option) any
+# later version.
+#
+# The CodeChat Editor is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# the CodeChat Editor. If not, see
+# [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
+#
+# `nextest.toml` -- a cargo-nextest configuration file
+# ====================================================
+#
+# See the [docs](https://nexte.st/docs/configuration/) for this file. nextest
+# reads it only from `.config/` in the workspace root.
+#
+# Browser-backed tests
+# --------------------
+#
+# The `overall` test binary (`server/tests/overall.rs`, which gathers the
+# `overall_*.rs` modules) drives a browser through WebDriver. Overlapping
+# WebDriver sessions are unreliable on macOS CI, so run these tests one at a
+# time. nextest runs each test in its own process; a
+# [test group](https://nexte.st/docs/configuration/test-groups/) limits how many
+# of those processes run at once, while other tests still run in parallel.
+[test-groups]
+web-driver = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "binary_id(codechat-editor-server::overall)"
+test-group = "web-driver"

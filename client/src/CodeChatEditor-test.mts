@@ -19,7 +19,7 @@
 // =================================================================
 //
 // To run tests, run [`./bt client-build`](#cc-1s8bUScadp) from the root of the
-// project to build any changes to the Client, then run `cargo test --test
+// project to build any changes to the Client, then run `cargo nextest run --test
 // overall test_client` from the `server/` directory. Or, add a `?test`
 // parameter to any web page served by the CodeChat Editor Server.
 //

@@ -20,9 +20,6 @@
 //! These are functional tests of the overall system, performed by attaching a
 //! testing IDE to generate commands then observe results, along with a browser
 //! tester.
-//!
-//! To run this test, execute `cargo test --test overall <optional_test_name>`
-//! in the `server/` directory.
 // Imports
 // -------
 //
