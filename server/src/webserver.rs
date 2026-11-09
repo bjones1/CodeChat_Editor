@@ -1805,8 +1805,7 @@ impl<A: RegisterRoutes, B: RegisterRoutes> RegisterRoutes for (A, B) {
 // standalone CLI's `start`/`stop` subcommands. The VSCode extension embeds the
 // server in-process and controls its lifecycle directly via
 // \[`crate::ide::CodeChatEditorServer::stop_server`\], so it doesn't need these
-// routes. This crate's own test harness (`ide::vscode::tests`) also registers
-// them, reusing `/ping` to detect when its shared test webserver has started.
+// routes.
 #[derive(Clone)]
 pub struct LifecycleRoutes;
 

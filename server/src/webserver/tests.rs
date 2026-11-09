@@ -34,7 +34,6 @@ use super::{path_to_url, request_path_to_file_path, try_canonicalize, url_to_pat
 // exercises it.
 #[cfg(windows)]
 use super::simplify;
-use crate::ide::vscode::tests::IP_PORT;
 use test_utils::{cast, prep_test_dir};
 
 // Tests
@@ -58,7 +57,7 @@ fn test_url_to_path() {
         cast!(
             url_to_path(
                 &format!(
-                    "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}path%20spaces/foo.py",
+                    "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{}path%20spaces/foo.py",
                     if cfg!(windows) { "C:/" } else { "" }
                 ),
                 PATH_PREFIX
@@ -79,7 +78,7 @@ fn test_url_to_path() {
         cast!(
             url_to_path(
                 &format!(
-                    "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{}foo%5Cbar.py",
+                    "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{}foo%5Cbar.py",
                     if cfg!(windows) { "C:/" } else { "" }
                 ),
                 PATH_PREFIX
@@ -98,7 +97,7 @@ fn test_url_to_path() {
     assert_eq!(
         url_to_path(
             &format!(
-                "http://127.0.0.1:{IP_PORT}/fw/fsc/dummy_connection_id/{test_dir_str}/test%20spaces.py"
+                "http://127.0.0.1:8080/fw/fsc/dummy_connection_id/{test_dir_str}/test%20spaces.py"
             ),
             PATH_PREFIX
         )
@@ -187,7 +186,7 @@ fn test_path_to_url_round_trip() {
         let url = path_to_url(URL_PREFIX, Some(CONNECTION_ID), &file_path);
         assert_eq!(
             cast!(
-                url_to_path(&format!("http://127.0.0.1:{IP_PORT}{url}"), PATH_PREFIX),
+                url_to_path(&format!("http://127.0.0.1:8080{url}"), PATH_PREFIX),
                 Ok
             ),
             file_path,

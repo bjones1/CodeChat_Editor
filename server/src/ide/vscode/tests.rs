@@ -21,12 +21,12 @@
 use std::{
     env,
     fs::{self, File},
-    io::{Error, Read},
+    io::Read,
     net::SocketAddr,
     path::{self, Path, PathBuf},
     sync::LazyLock,
-    thread::{self, JoinHandle},
-    time::{Duration, SystemTime},
+    thread,
+    time::Duration,
 };
 
 use assert_fs::TempDir;
@@ -54,7 +54,7 @@ use crate::webserver::{
 use crate::{
     ide::vscode::VscodeRoutes,
     translation::{EolType, find_eol_type},
-    webserver::{LifecycleRoutes, main, test_root_path},
+    webserver::{init_server, setup_server, test_root_path},
 };
 use crate::{
     processing::{
@@ -71,25 +71,28 @@ use test_utils::{
 // Globals
 // -------
 //
-// Run a single webserver for all tests.
-static WEBSERVER_HANDLE: LazyLock<JoinHandle<Result<(), Error>>> = LazyLock::new(|| {
+// Start a webserver shared by all tests in this process; this is the port it
+// listens on. Bind to an OS-assigned port, so these tests don't collide with
+// anything else holding a fixed port (a running CodeChat Editor, or another
+// test process under `cargo nextest`). The port is bound before this returns,
+// so the OS queues connections until the server begins accepting them; tests
+// needn't wait for it to start.
+static IP_PORT: LazyLock<u16> = LazyLock::new(|| {
+    init_server(&test_root_path(), log::LevelFilter::Debug).unwrap();
+    let (server, app_state) = setup_server(
+        // A port of 0 requests the OS to assign an open port.
+        &SocketAddr::new("127.0.0.1".parse().unwrap(), 0),
+        None,
+        VscodeRoutes,
+    )
+    .expect("Unable to start the test webserver.");
     thread::spawn(|| {
-        main(
-            &test_root_path(),
-            &SocketAddr::new("127.0.0.1".parse().unwrap(), IP_PORT),
-            None,
-            log::LevelFilter::Debug,
-            (VscodeRoutes, LifecycleRoutes),
-        )
-    })
+        actix_web::rt::System::new()
+            .block_on(server)
+            .expect("The test webserver failed.");
+    });
+    *app_state.port.lock().unwrap()
 });
-
-// Constants
-// ---------
-/// The default port on which the server listens for incoming connections.
-pub const IP_PORT: u16 = 8080;
-/// Allow slower CI runners enough time to start the shared test webserver.
-const WEBSERVER_START_TIMEOUT: Duration = Duration::from_secs(6);
 
 // Support functions
 // -----------------
@@ -138,10 +141,13 @@ async fn read_message<S: AsyncRead + AsyncWrite + Unpin>(
 type WebSocketStreamTcp = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 async fn connect_async_server(prefix: &str, connection_id: &str) -> WebSocketStreamTcp {
-    connect_async(format!("ws://127.0.0.1:{IP_PORT}{prefix}/{connection_id}"))
-        .await
-        .expect("Failed to connect")
-        .0
+    connect_async(format!(
+        "ws://127.0.0.1:{}{prefix}/{connection_id}",
+        *IP_PORT
+    ))
+    .await
+    .expect("Failed to connect")
+    .0
 }
 
 async fn connect_async_ide(connection_id: &str) -> WebSocketStreamTcp {
@@ -208,22 +214,6 @@ async fn prep_test_core(
 ) -> (TempDir, PathBuf, WebSocketStreamTcp, WebSocketStreamTcp) {
     configure_testing_logger();
     let (temp_dir, test_dir) = prep_test_dir_impl(test_full_name);
-    // Ensure the webserver is running.
-    let _ = &*WEBSERVER_HANDLE;
-    let now = SystemTime::now();
-    let mut started = false;
-    while now.elapsed().unwrap() < WEBSERVER_START_TIMEOUT {
-        if minreq::get(format!("http://127.0.0.1:{IP_PORT}/ping"))
-            .send()
-            .is_ok_and(|response| response.as_bytes() == b"pong")
-        {
-            started = true;
-            break;
-        }
-        sleep(Duration::from_millis(10)).await;
-    }
-
-    assert!(started, "Webserver failed to start.");
 
     // Connect to the VSCode IDE websocket.
     let ws_ide = connect_async_ide(connection_id).await;
@@ -253,7 +243,8 @@ async fn test_vscode_ide_websocket1() {
 
     // Start a second connection; verify that it fails.
     let err = connect_async(format!(
-        "ws://127.0.0.1:{IP_PORT}/vsc/ws-ide/{connection_id}",
+        "ws://127.0.0.1:{}/vsc/ws-ide/{connection_id}",
+        *IP_PORT,
     ))
     .await
     .expect_err("Should fail to connect");
@@ -351,7 +342,8 @@ async fn test_vscode_ide_websocket3() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{file_path_str_thread}",
+                "http://localhost:{}/vsc/fs/{connection_id}/{file_path_str_thread}",
+                *IP_PORT,
             ))
             .send()
             .unwrap()
@@ -414,7 +406,8 @@ async fn test_vscode_ide_websocket3a() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{file_path_str_thread}",
+                "http://localhost:{}/vsc/fs/{connection_id}/{file_path_str_thread}",
+                *IP_PORT,
             ))
             .send()
             .unwrap()
@@ -508,7 +501,8 @@ async fn test_vscode_ide_websocket8() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                "http://localhost:{}/vsc/fs/{connection_id}/{}",
+                *IP_PORT,
                 drop_leading_slash(&file_path_thread.to_slash().unwrap())
             ))
             .send()
@@ -617,7 +611,8 @@ async fn test_vscode_ide_websocket7() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{}/vsc/fs/{connection_id}/{}",
+                    *IP_PORT,
                     file_path.to_slash().unwrap(),
                 ),
                 None,
@@ -932,7 +927,8 @@ async fn test_vscode_ide_websocket13() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{}/vsc/fs/{connection_id}/{}",
+                    *IP_PORT,
                     file_path.to_slash().unwrap(),
                 ),
                 None,
@@ -1213,7 +1209,8 @@ async fn test_vscode_ide_websocket4() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{}/vsc/fs/{connection_id}/{}",
+                    *IP_PORT,
                     file_path.to_slash().unwrap()
                 ),
                 None,
@@ -1251,7 +1248,8 @@ async fn test_vscode_ide_websocket4() {
         // Get the file itself.
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/{}",
+                "http://localhost:{}/vsc/fs/{connection_id}/{}/{}",
+                *IP_PORT,
                 test_dir_thread.to_slash().unwrap(),
                 // On Windows, send incorrect case for this file; the server
                 // should correct it.
@@ -1344,7 +1342,8 @@ async fn test_vscode_ide_websocket4() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/toc.md",
+                "http://localhost:{}/vsc/fs/{connection_id}/{}/toc.md",
+                *IP_PORT,
                 test_dir_thread.to_slash().unwrap()
             ))
             .send()
@@ -1478,7 +1477,8 @@ async fn test_vscode_ide_websocket4a() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{}/vsc/fs/{connection_id}/{}",
+                    *IP_PORT,
                     file_path.to_slash().unwrap()
                 ),
                 None,
@@ -1521,7 +1521,8 @@ async fn test_vscode_ide_websocket4a() {
     let join_handle = thread::spawn(move || {
         // Read the file.
         let response = minreq::get(format!(
-            "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/{hw}",
+            "http://localhost:{}/vsc/fs/{connection_id}/{}/{hw}",
+            *IP_PORT,
             test_dir_thread.to_slash().unwrap(),
         ))
         .send()
@@ -1580,7 +1581,8 @@ async fn test_vscode_ide_websocket4b() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{}/vsc/fs/{connection_id}/{}",
+                    *IP_PORT,
                     file_path.to_slash().unwrap()
                 ),
                 None,
@@ -1623,7 +1625,8 @@ async fn test_vscode_ide_websocket4b() {
     let join_handle = thread::spawn(move || {
         // Read the file.
         let response = minreq::get(format!(
-            "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/{hw}",
+            "http://localhost:{}/vsc/fs/{connection_id}/{}/{hw}",
+            *IP_PORT,
             test_dir_thread.to_slash().unwrap(),
         ))
         .send()
@@ -1637,7 +1640,8 @@ async fn test_vscode_ide_websocket4b() {
 
         // Now, request the PDF as a raw file.
         let response = minreq::get(format!(
-            "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/{hw}?raw",
+            "http://localhost:{}/vsc/fs/{connection_id}/{}/{hw}?raw",
+            *IP_PORT,
             test_dir_thread.to_slash().unwrap(),
         ))
         .send()
@@ -1776,7 +1780,8 @@ async fn test_vscode_ide_websocket10() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{}/vsc/fs/{connection_id}/{}",
+                    *IP_PORT,
                     file_path.to_slash().unwrap()
                 ),
                 None,
@@ -1813,7 +1818,8 @@ async fn test_vscode_ide_websocket10() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/test.py",
+                "http://localhost:{}/vsc/fs/{connection_id}/{}/test.py",
+                *IP_PORT,
                 test_dir_thread.to_slash().unwrap(),
             ))
             .send()
@@ -1985,7 +1991,8 @@ async fn fetch_sidebar_toc<S: AsyncRead + AsyncWrite + Unpin>(
     // The body of the response: the page showing the TOC.
 ) -> String {
     let url = format!(
-        "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/toc.md?mode=toc",
+        "http://localhost:{}/vsc/fs/{connection_id}/{}/toc.md?mode=toc",
+        *IP_PORT,
         test_dir.to_slash().unwrap()
     );
     let join_handle = thread::spawn(move || {
@@ -2064,7 +2071,8 @@ async fn test_vscode_ide_websocket11() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{}/vsc/fs/{connection_id}/{}",
+                    *IP_PORT,
                     file_path.to_slash().unwrap()
                 ),
                 None,
@@ -2098,7 +2106,8 @@ async fn test_vscode_ide_websocket11() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/test.py",
+                "http://localhost:{}/vsc/fs/{connection_id}/{}/test.py",
+                *IP_PORT,
                 test_dir_thread.to_slash().unwrap(),
             ))
             .send()
@@ -2239,7 +2248,8 @@ async fn test_vscode_ide_websocket12() {
             id: INITIAL_CLIENT_MESSAGE_ID,
             message: EditorMessageContents::CurrentFile(
                 format!(
-                    "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}",
+                    "http://localhost:{}/vsc/fs/{connection_id}/{}",
+                    *IP_PORT,
                     file_path.to_slash().unwrap()
                 ),
                 None,
@@ -2273,7 +2283,8 @@ async fn test_vscode_ide_websocket12() {
     let join_handle = thread::spawn(move || {
         assert_eq!(
             minreq::get(format!(
-                "http://localhost:{IP_PORT}/vsc/fs/{connection_id}/{}/toc.md",
+                "http://localhost:{}/vsc/fs/{connection_id}/{}/toc.md",
+                *IP_PORT,
                 test_dir_thread.to_slash().unwrap(),
             ))
             .send()
