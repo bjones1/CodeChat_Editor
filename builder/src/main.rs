@@ -413,11 +413,8 @@ fn run_install(cargo_dist: bool) -> io::Result<()> {
 
         )?;
         #[cfg(not(target_os = "macos"))]
-        // See
-        // [https://github.com/bjones1/CodeChat\_Editor/issues/157](https://github.com/bjones1/CodeChat_Editor/issues/157);
-        // remove this workaround when the upstream issues is fixed.
         run_cmd!(
-            cargo binstall cargo-dist@${DIST_VERSION} --no-confirm --git "https://github.com/axodotdev/cargo-dist";
+            cargo binstall cargo-dist@${DIST_VERSION} --no-confirm;
         )?;
     }
 
