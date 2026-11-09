@@ -103,12 +103,6 @@ export const init = async (
             // [docs](https://www.tiny.cloud/docs/configure/editor-appearance/#fixed_toolbar_container).
             fixed_toolbar_container: "#CodeChat-menu",
             inline: true,
-            // When true, this still prevents hyperlinks to anchors on the
-            // current page from working correctly. There's an onClick handler
-            // that prevents links in the current page from working -- need to
-            // look into this. See also
-            // [a related GitHub issue](https://github.com/tinymce/tinymce/issues/3836).
-            //readonly: true  // Per the comment above, this is commented out.
             // Use relative URLs in hyperlinks.
             relative_urls: true,
             // Disable the
