@@ -16,8 +16,8 @@
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
 //
 // Relax a few pedantic Clippy lints for test code only; see the
-// `[lints.clippy]` section in `Cargo.toml` for the full-crate (production) lint
-// config.
+// `[workspace.lints.clippy]` section in `Cargo.toml` for the full-crate
+// (production) lint config.
 #![cfg_attr(
     test,
     allow(
