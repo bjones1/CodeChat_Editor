@@ -63,6 +63,7 @@ import {
 } from "@codemirror/view";
 import {
     ChangeDesc,
+    Compartment,
     EditorState,
     Extension,
     Prec,
@@ -79,6 +80,7 @@ import type { Editor, EditorEvent, Events } from "tinymce";
 
 // ### Local
 import {
+    getIsReadOnly,
     setIsDirty,
     startAutoUpdateTimer,
     saveSelection,
@@ -149,6 +151,9 @@ const exceptionSink = EditorView.exceptionSink.of((exception) => {
 
 const TINYMCE_INST = "TinyMCE-inst";
 const CODECHAT_DOC_HIDDEN = "CodeChat-doc-hidden";
+
+// Holds the `readOnly` facet, so that `setCodeMirrorReadOnly` can change it.
+const readOnlyCompartment = new Compartment();
 
 // Doc blocks in CodeMirror
 // ------------------------
@@ -706,16 +711,22 @@ const getContents = (element: Element): [HTMLDivElement, boolean] => {
 };
 
 // Allow only spaces and delete/backspaces when editing the indent of a doc
-// block. This is registered (see `DocBlockPlugin`'s `focusin` handler below) as
-// a `beforeinput` listener on a doc block's indent div. It's defined here, as a
-// single stable function reference, rather than as an inline arrow function
-// created inside the `focusin` handler: `addEventListener` only skips re-adding
-// a listener that's reference-equal to one already registered on the same
-// target, and `focusin` can fire repeatedly on the same (unchanged, and
-// therefore DOM-preserving -- see `DocBlockWidget.eq`) indent div, e.g. by
-// blurring then refocusing it. A fresh arrow function per `focusin` call would
-// defeat that dedup and accumulate listeners.
+// block, and nothing in a read-only Client, since neither CodeMirror nor
+// TinyMCE manages the indent. This is registered (see `DocBlockPlugin`'s
+// `focusin` handler below) as a `beforeinput` listener on a doc block's indent
+// div. It's defined here, as a single stable function reference, rather than
+// as an inline arrow function created inside the `focusin` handler:
+// `addEventListener` only skips re-adding a listener that's reference-equal to
+// one already registered on the same target, and `focusin` can fire repeatedly
+// on the same (unchanged, and therefore DOM-preserving -- see
+// `DocBlockWidget.eq`) indent div, e.g. by blurring then refocusing it. A fresh
+// arrow function per `focusin` call would defeat that dedup and accumulate
+// listeners.
 const onIndentBeforeinput = (event: InputEvent) => {
+    if (getIsReadOnly()) {
+        event.preventDefault();
+        return;
+    }
     // Only modify the behavior of inserts.
     if (event.data) {
         // Block any insert that's not an insert of spaces. TODO: need to
@@ -1826,6 +1837,9 @@ export const codeMirrorLoad = async (
                     }),
                     exceptionSink,
                     autosaveExtension,
+                    readOnlyCompartment.of(
+                        EditorState.readOnly.of(getIsReadOnly()),
+                    ),
                     // Make tab an indent per the
                     // [docs](https://codemirror.net/examples/tab/). TODO:
                     // document a way to escape the tab key per the same docs.
@@ -1979,6 +1993,18 @@ export const scrollToLine = (
         });
     }
 };
+
+// Make the code blocks read-only or editable. CodeMirror then ignores input and
+// disables its editing commands, but still moves the cursor.
+export const setCodeMirrorReadOnly = (
+    // True to make the code blocks read-only.
+    readOnly: boolean,
+) =>
+    currentView?.dispatch({
+        effects: readOnlyCompartment.reconfigure(
+            EditorState.readOnly.of(readOnly),
+        ),
+    });
 
 // Apply a `StringDiff` to the before string to produce the after string.
 export const applyDiffStr = (before: string, diffs: StringDiff[]) => {

@@ -58,6 +58,7 @@ import {
     mathJaxUnTypeset,
     scrollToLine as codemirrorScrollToLine,
     setCodeMirrorPositions,
+    setCodeMirrorReadOnly,
 } from "./CodeMirror-integration.mjs";
 import "./graphviz-webcomponent-setup.mjs";
 // This must be imported *after* the previous setup import, so it's placed here,
@@ -127,6 +128,7 @@ declare global {
                 scrollLine?: number,
             ) => void;
             showToast: (text: string) => void;
+            setReadOnly: (readOnly: boolean) => void;
             allow_navigation: boolean;
         };
         CodeChatEditor_test: unknown;
@@ -163,13 +165,40 @@ export const setIsDirty = (value: boolean = true) => {
 
 export const getIsDirty = () => isDirty;
 
+// True while the IDE holds text which the Server can't translate. The Client
+// still shows the last text which translated, and the Server rejects edits to
+// it, since they would replace the IDE's newer text (see `client_update` in
+// [translation.rs](../../server/src/translation.rs)). So, the Client is
+// read-only until the IDE's text translates.
+let isReadOnly = false;
+
+export const getIsReadOnly = () => isReadOnly;
+
+// Make the Client read-only or editable. The read-only modes of CodeMirror and
+// TinyMCE keep the cursor, so the user can still select, copy, and follow
+// links.
+const setReadOnly = (
+    // True to make the Client read-only.
+    readOnly: boolean,
+) => {
+    isReadOnly = readOnly;
+    setTinymceMode();
+    setCodeMirrorReadOnly(readOnly);
+};
+
+const setTinymceMode = () =>
+    tinymceInstance()?.mode.set(isReadOnly ? "readonly" : "design");
+
 // ### TinyMCE dynamic import
 //
 // TinyMCE is dynamically imported when `init` is called.
 export const init = async (options: RawEditorOptions) => {
     const tinymceConfig = await import("./tinymce-config.mjs");
     tinymce = tinymceConfig.tinymce;
-    return await tinymceConfig.init(options);
+    const editors = await tinymceConfig.init(options);
+    // The Client may have become read-only while TinyMCE loaded.
+    setTinymceMode();
+    return editors;
 };
 // The imported module is stored in this variable.
 export let tinymce: undefined | TinyMCE = undefined;
@@ -270,6 +299,12 @@ const _openLp = async (
     if (getIsDirty() && isReTranslation) {
         consoleLog(`Ignoring re-translation because Client is dirty.`);
         return;
+    }
+    // The Server sends an update which isn't a re-translation only when the
+    // IDE's text translates, ending the read-only state which began when the
+    // Framework received a `CannotTranslateSource` error.
+    if (!isReTranslation) {
+        setReadOnly(false);
     }
 
     try {
@@ -809,6 +844,7 @@ onDomContentLoaded(async () => {
         sendUpdate,
         scrollToLine,
         showToast,
+        setReadOnly,
         allow_navigation: false,
     };
 });

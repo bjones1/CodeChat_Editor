@@ -302,8 +302,7 @@ struct TranslationTask {
     sent_full: bool,
     /// The error from translating the IDE's latest text, if that failed. Until
     /// the IDE sends text which translates, the Client keeps showing the last
-    /// text which did, and can't edit the IDE's newer text; see
-    /// `client_update`.
+    /// text which did, read-only; see `client_update`.
     ide_translation_error: Option<String>,
     /// Most recent capture metadata supplied by the IDE. Server-generated
     /// capture events reuse this so translated write events retain the same
@@ -978,8 +977,10 @@ impl TranslationTask {
                                     //
                                     // Report this only to the Client, whose
                                     // text is now out of date, and which shows
-                                    // any error result as a toast (see `case
-                                    // "Result"` in
+                                    // any error result as a toast. On this
+                                    // error, the Client also becomes read-only
+                                    // until it receives an update which isn't a
+                                    // re-translation (see `case "Result"` in
                                     // `CodeChatEditorFramework.mts`). Report it
                                     // only when it first appears, since the IDE
                                     // sends an update on each pause in typing,
@@ -1257,8 +1258,10 @@ impl TranslationTask {
         };
         // The Client's text is older than the IDE's when the IDE's can't be
         // translated. Forwarding this edit would replace the IDE's newer text
-        // with the Client's, so reject the edit instead. The Client then holds
-        // text this struct doesn't, so it needs the full text next.
+        // with the Client's, so reject the edit instead. The Client becomes
+        // read-only once it learns of the error, so this rejects only an edit
+        // it sent before then. The Client then holds text this struct doesn't,
+        // so it needs the full text next.
         if update_message_contents.contents.is_some()
             && let Some(err) = &self.ide_translation_error
         {

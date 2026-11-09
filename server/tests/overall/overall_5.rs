@@ -971,7 +971,7 @@ make_test!(
 
 // When the IDE sends source which can't be translated, the Client shows one
 // toast, however many such updates arrive, and keeps showing the last source
-// which could be translated. See `ide_update` in
+// which could be translated, read-only. See `ide_update` in
 // [translation.rs](../../src/translation.rs).
 async fn test_untranslatable_source_toast_core(
     // The Server, through which the test plays the IDE.
@@ -1036,13 +1036,32 @@ async fn test_untranslatable_source_toast_core(
         toast_text.contains("unknown lexer nope"),
         "Unexpected toast: {toast_text}"
     );
-    // Give a second toast time to appear, if the Server sent one.
-    sleep(SETTLE_TIME).await;
+
+    // Typing in a code block, then in a doc block, changes neither. The only
+    // line of code is the blank line which follows the doc block.
+    let code_line_css = By::Css(".cm-line");
+    let code_line = driver.query(code_line_css.clone()).first().await?;
+    code_line.click().await?;
+    code_line.send_keys("y").await?;
+    let doc_block = driver.query(By::Css(".CodeChat-doc")).first().await?;
+    click_element_top_left(&driver, &doc_block).await?;
+    // Find TinyMCE once the click moves it into the doc block.
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await?;
+    tinymce_contents.wait_until().clickable().await?;
+    tinymce_contents.send_keys("z").await?;
+    // Only the cursor moves. This also gives a second toast time to appear, as
+    // it would if the Client sent an edit, which the Server rejects.
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        next_unhandled_message(&codechat_server, &mut client_id, SETTLE_TIME).await,
+        None
+    );
     assert_eq!(
         driver.find_all(By::Css(".toastify")).await.unwrap().len(),
         1
     );
-
+    let code_line_text = driver.query(code_line_css).first().await?.text().await?;
+    assert_eq!(code_line_text, "");
     let doc_block_css = By::Css(".CodeChat-doc-contents");
     let doc_block_text = driver
         .query(doc_block_css.clone())
@@ -1052,7 +1071,8 @@ async fn test_untranslatable_source_toast_core(
         .await?;
     assert_eq!(doc_block_text, "Before.");
 
-    // Once the source can be translated, the Client shows it.
+    // Once the source can be translated, the Client shows it, and its edits
+    // reach the IDE again.
     let ide_id = codechat_server
         .send_message_update_plain(path_str, Some(("# After.\n".to_string(), 3.0)), None, None)
         .await
@@ -1066,6 +1086,22 @@ async fn test_untranslatable_source_toast_core(
     );
     let doc_block_text = driver.query(doc_block_css).first().await?.text().await?;
     assert_eq!(doc_block_text, "After.");
+    tinymce_contents.send_keys("x").await?;
+    let msg = next_unhandled_message(&codechat_server, &mut client_id, TIMEOUT)
+        .await
+        .unwrap();
+    assert_eq!(msg.id, client_id);
+    assert!(
+        matches!(
+            &msg.message,
+            EditorMessageContents::Update(UpdateMessageContents {
+                contents: Some(_),
+                ..
+            })
+        ),
+        "Expected an edit: {msg:#?}"
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
 
     assert_no_more_messages(&codechat_server).await;
 

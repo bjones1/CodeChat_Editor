@@ -338,6 +338,21 @@ class WebSocketComm {
                             `Error in message ${id}: ${JSON.stringify(resultContents.Err)}.`,
                             resultContents.Err,
                         );
+                        // The Server sends this error when the IDE's text first
+                        // fails to translate (see `ide_update` in
+                        // [translation.rs](../../server/src/translation.rs)).
+                        // Queue this behind any update still being applied:
+                        // that update holds older text, so applying it would
+                        // otherwise end the read-only state.
+                        const err = resultContents.Err;
+                        if (
+                            typeof err === "object" &&
+                            "CannotTranslateSource" in err
+                        ) {
+                            this.promise = this.promise.finally(() =>
+                                getClient()?.setReadOnly(true),
+                            );
+                        }
                     }
                     break;
                 }
