@@ -386,9 +386,7 @@ fn run_install(cargo_dist: bool) -> io::Result<()> {
     patch_client_libs()?;
     run_script("pnpm", &["install"], VSCODE_PATH, true)?;
     run_cmd!(
-        info "cargo fetch";
         cargo fetch;
-        info "Builder: cargo fetch";
         cargo fetch --manifest-path=$BUILDER_PATH/Cargo.toml;
     )?;
     // Install the cargo binstall binary, taken from the
@@ -419,25 +417,14 @@ fn run_install(cargo_dist: bool) -> io::Result<()> {
         // [https://github.com/bjones1/CodeChat\_Editor/issues/157](https://github.com/bjones1/CodeChat_Editor/issues/157);
         // remove this workaround when the upstream issues is fixed.
         run_cmd!(
-            info "cargo binstall cargo-dist";
             cargo binstall cargo-dist@${DIST_VERSION} --no-confirm --git "https://github.com/axodotdev/cargo-dist";
         )?;
     }
 
     run_cmd!(
-        info "cargo binstall cargo-outdated";
-        cargo binstall cargo-outdated --no-confirm;
-        info "cargo binstall cargo-sort";
-        cargo binstall cargo-sort --no-confirm;
-        info "cargo binstall cargo-audit";
-        cargo binstall cargo-audit --no-confirm;
-        info "cargo binstall cargo-machete";
-        cargo binstall cargo-machete --no-confirm;
-        info "cargo binstall cargo-llvm-cov";
-        cargo binstall cargo-llvm-cov --no-confirm;
+        cargo binstall cargo-audit cargo-llvm-cov cargo-machete cargo-nextest cargo-outdated cargo-sort --no-confirm;
         // Install the required llvm-tools component used by cargo-llvm-cov
         // without prompting.
-        info "rustup component add llvm-tools-preview";
         rustup component add llvm-tools-preview;
     )
 }
@@ -447,16 +434,13 @@ fn run_update() -> io::Result<()> {
     patch_client_libs()?;
     run_script("pnpm", &["update"], VSCODE_PATH, true)?;
     run_cmd!(
-        info "cargo update";
         cargo update;
-        info "Builder: cargo update";
         cargo update --manifest-path=$BUILDER_PATH/Cargo.toml;
     )?;
     // Simply display outdated dependencies, but don't consider them an error.
     run_script("pnpm", &["outdated"], CLIENT_PATH, false)?;
     run_script("pnpm", &["outdated"], VSCODE_PATH, false)?;
     run_cmd!(
-        info "cargo outdated";
         cargo outdated --workspace;
     )?;
     // `cargo outdated` 0.19.0 joins a relative `--manifest-path` onto the
@@ -492,21 +476,15 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     // the workspace root cargo would discover, so from `server/` it checks only
     // `server/Cargo.toml`. Passing `..` aims it at the workspace root instead.
     run_cmd!(
-        info "cargo clippy and fmt";
         cargo clippy --workspace --all-targets --all-features -- $clippy_check_only;
         cargo fmt --all $check;
-        info "Builder: cargo clippy and fmt";
         cargo clippy --all-targets --all-features --manifest-path=$BUILDER_PATH/Cargo.toml -- $clippy_check_only;
         cargo fmt --all $check --manifest-path=$BUILDER_PATH/Cargo.toml;
 
-        info "cargo audit";
         cargo audit --file=../Cargo.lock --ignore $h2_advisory_ignore;
-        info "Builder: cargo audit";
         cargo audit --file=$BUILDER_PATH/Cargo.lock --no-fetch --ignore $h2_advisory_ignore;
 
-        info "cargo sort";
         cargo sort --workspace $check ..;
-        info "Builder: cargo sort";
         cargo sort $check $BUILDER_PATH;
     )?;
     // `cargo machete` recurses into subdirectories on its own, so a single
@@ -520,12 +498,10 @@ fn run_format_and_lint(check_only: bool) -> io::Result<()> {
     // its own arguments.
     if check_only {
         run_cmd!(
-            info "cargo machete";
             cargo-machete --with-metadata --skip-target-dir ..;
         )?;
     } else {
         run_cmd!(
-            info "cargo machete";
             cargo-machete --with-metadata --skip-target-dir --fix ..;
         )?;
     }
@@ -545,7 +521,6 @@ fn run_full() -> io::Result<()> {
     // Verify that compiling for release produces no errors.
     run_cmd!(
         cd ..;
-        info "dist build";
         dist build;
     )?;
     run_test()
@@ -557,10 +532,8 @@ fn run_test() -> io::Result<()> {
     // from, and its feature resolution matches the `cargo run` which started
     // that executable, so nothing here needs to relink the running binary.
     run_cmd!(
-        info "cargo test";
-        cargo test --workspace;
-        info "Builder: cargo test";
-        cargo test --manifest-path=$BUILDER_PATH/Cargo.toml;
+        cargo nextest run --workspace;
+        cargo nextest run --manifest-path=$BUILDER_PATH/Cargo.toml;
     )?;
     Ok(())
 }
@@ -579,9 +552,9 @@ fn run_until_fail() -> io::Result<()> {
         // Clear the screen so only the current iteration's output is visible.
         print!("\x1b[2J\x1b[H");
         println!("--- Iteration {iteration} ---");
-        // `run_cmd!` returns an error if `cargo test` exits non-zero, which
+        // `run_cmd!` returns an error if `cargo nextest` exits non-zero, which
         // breaks out of the loop -- the same behavior as the script.
-        run_cmd!(cargo test --test overall).map_err(|err| {
+        run_cmd!(cargo nextest run --test overall).map_err(|err| {
             io::Error::other(format!("Test failed on iteration {iteration}: {err}"))
         })?;
     }
@@ -592,7 +565,6 @@ fn run_build() -> io::Result<()> {
     // before it began executing, and rebuilding it here would have to relink
     // the running executable.
     run_cmd!(
-        info "cargo build";
         cargo build --workspace;
     )?;
     // Clean out all bundled files before the rebuild.
@@ -612,8 +584,7 @@ fn run_client_build(
 ) -> io::Result<()> {
     // Ensure the JavaScript data structures generated from Rust are up to date.
     run_cmd!(
-        info "cargo test export_bindings";
-        cargo test export_bindings;
+        cargo nextest run export_bindings;
     )?;
 
     let esbuild = PathBuf::from_slash("node_modules/.bin/esbuild");
@@ -737,8 +708,7 @@ fn run_extensions_build(
 
     // Ensure the JavaScript data structures generated from Rust are up to date.
     run_cmd!(
-        info "cargo test export_bindings";
-        cargo test export_bindings;
+        cargo nextest run export_bindings;
     )?;
 
     // The main build for the extension.
@@ -858,8 +828,7 @@ fn run_postrelease(target: &str, tag: &str) -> io::Result<()> {
 
 fn run_coverage() -> io::Result<()> {
     run_cmd!(
-        info "cargo llvm-cov --open";
-        cargo llvm-cov --open;
+        cargo llvm-cov nextest --open;
     )
 }
 
@@ -904,6 +873,18 @@ fn main() -> io::Result<()> {
     let root_path = canonicalize(root_path).unwrap();
     env::set_current_dir(root_path).unwrap();
 
+    // Replace cmd\_lib's built-in logger, which hides `debug` messages unless
+    // `RUST_LOG` says otherwise, with one which shows them unless `RUST_LOG`
+    // says otherwise. Match its format (see
+    // `cmd_lib::try_init_default_logger`), which omits the timestamp and
+    // target.
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug"))
+        .format_timestamp(None)
+        .format_target(false)
+        .init();
+
+    // Echo all commands as they're run, to make failures easy to debug.
+    cmd_lib::set_debug(true);
     let cli = Cli::parse();
     cli.run()?;
 

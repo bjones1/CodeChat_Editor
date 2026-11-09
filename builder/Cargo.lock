@@ -87,6 +87,7 @@ dependencies = [
  "cmd_lib",
  "current_platform",
  "dunce",
+ "env_logger",
  "path-slash",
  "regex",
 ]

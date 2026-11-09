@@ -42,6 +42,7 @@ clap = { version = "4", features = ["derive"] }
 cmd_lib = "2.0.0"
 current_platform = "0.2.0"
 dunce = "1.0.5"
+env_logger = "0.11.11"
 path-slash = "0.2.1"
 regex = "1.11.1"
 

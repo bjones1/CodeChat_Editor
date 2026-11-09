@@ -488,8 +488,8 @@ macro_rules! make_test {
     // WebDriver down cleanly), so the failure never becomes a live unwind --
     // meaning `#[should_panic]` can't detect it. `#[ignore]` is the
     // alternative: the test is skipped by default (so the suite stays green)
-    // but still compiles, and can be run explicitly with `cargo test --
-    // --ignored` to check whether the bug has been fixed yet.
+    // but still compiles, and can be run explicitly with `cargo nextest run
+    // --run-ignored only` to check whether the bug has been fixed yet.
     ($test_name: ident, $test_core_name: ident, ignore = $reason: literal) => {
         #[tokio::test]
         #[tracing::instrument]
