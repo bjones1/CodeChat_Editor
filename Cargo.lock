@@ -1119,9 +1119,9 @@ dependencies = [
 
 [[package]]
 name = "dprint-core"
-version = "0.69.1"
+version = "0.75.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67359cea061dd052fca921d3589a9ce59bc16fa23bfb9d06d5c669a1dbd23915"
+checksum = "41d1b3e059b1b7519ef780acfa054650c095c7a6550e48f5da3a6f3ade945f6b"
 dependencies = [
  "bumpalo",
  "hashbrown 0.15.5",
@@ -1143,8 +1143,9 @@ dependencies = [
 
 [[package]]
 name = "dprint-plugin-markdown"
-version = "0.23.3"
-source = "git+https://github.com/bjones1/dprint-plugin-markdown.git?branch=all-fixes#e5908d54a20e80835f36ca63abba9e6fd76e946a"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fcedde4897c3659559444971c1d6110f79635fe2a4521e811480023c05c8fb7"
 dependencies = [
  "dprint-core",
  "dprint-core-macros",
@@ -1529,7 +1530,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 [[package]]
 name = "htmd"
 version = "0.5.5"
-source = "git+https://github.com/bjones1/htmd.git?branch=dom-interface#2ee01b1603d596df48f8e00261dc10f87dd686e2"
+source = "git+https://github.com/bjones1/htmd.git?branch=dom-interface#8fd5a8bac5d8302910e2b26c0a50ff2922ee833f"
 dependencies = [
  "html5ever 0.39.0",
  "markup5ever_rcdom",
