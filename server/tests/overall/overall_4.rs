@@ -51,6 +51,10 @@ use code_chat_editor::{
 };
 use test_utils::prep_test_dir;
 
+// How long to wait for an update which the Client sends only sometimes. This
+// covers the Client's 300 ms autosave delay, with room for a loaded CI runner.
+const OPTIONAL_UPDATE_TIMEOUT: Duration = Duration::from_secs(2);
+
 // Wait for the autosave timer to report the current cursor position, and check
 // it against the expected code line.
 async fn assert_cursor_line(
@@ -621,8 +625,13 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
     );
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
-    // Sometimes, there's another message as well.
-    if let Some(msg) = codechat_server.get_message_timeout(TIMEOUT).await {
+    // Sometimes, there's another message as well. Usually there isn't, so wait
+    // only long enough for the Client's autosave timer (`autoUpdateTimeoutMs`
+    // in `shared.mts`) to send it.
+    if let Some(msg) = codechat_server
+        .get_message_timeout(OPTIONAL_UPDATE_TIMEOUT)
+        .await
+    {
         assert_eq!(
             msg,
             EditorMessage {

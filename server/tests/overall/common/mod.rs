@@ -320,8 +320,20 @@ pub async fn harness<
         caps.add_arg("--disable-gpu")?;
         caps.add_arg("--no-sandbox")?;
     }
-    // Start the webdriver.
-    let driver = WebDriver::managed(caps).await?;
+    // Start the webdriver. By default, the driver manager fetches
+    // Chrome-for-Testing metadata to pick a chromedriver matching the local
+    // Chrome, which costs 0.5 to 2 seconds per test, since nextest runs each
+    // test in its own process. Offline, it instead picks the newest cached
+    // chromedriver with the same major version. Fall back to fetching when the
+    // cache lacks one -- on the first run, or after Chrome's major version
+    // changes.
+    let driver = match WebDriver::managed(caps.clone()).offline().await {
+        Ok(driver) => driver,
+        Err(err) => {
+            warn!("Unable to start a cached chromedriver; downloading one instead: {err}");
+            WebDriver::managed(caps).await?
+        }
+    };
     let driver_clone = driver.clone();
 
     // Run the test inside an async, so we can shut down the driver before
