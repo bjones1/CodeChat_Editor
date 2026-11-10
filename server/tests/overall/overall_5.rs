@@ -885,8 +885,15 @@ async fn test_xref_optional_content_round_trip_core(
     select_codechat_iframe(&driver).await;
 
     // Move the TinyMCE editor into the doc block by clicking on its heading.
+    // Click its contents, not the enclosing `.CodeChat-doc`: the top left of
+    // that is covered by the empty indent, which is 1ch wide (see
+    // `.CodeChat-doc-indent:empty` in
+    // [CodeChatEditorBase.css](../../../client/src/css/CodeChatEditorBase.css)).
+    // Except for Consolas, which only Windows has, a 1ch indent is wide enough
+    // to take the click, which then neither moves TinyMCE nor sends a cursor
+    // update.
     let doc_block_contents = driver
-        .query(By::Css(".CodeChat-doc"))
+        .query(By::Css(".CodeChat-doc-contents"))
         .first()
         .await
         .unwrap();
@@ -922,7 +929,9 @@ async fn test_xref_optional_content_round_trip_core(
         .first()
         .await
         .unwrap();
-    tinymce_contents.send_keys("z").await.unwrap();
+    // Type at the start of the heading, since where the click places the caret
+    // depends on the font.
+    beginning_of_line(&tinymce_contents, "z").await.unwrap();
 
     // Only the heading changes.
     let msg = optional_message(&codechat_server, &mut client_id, cursor_update()).await;
@@ -1034,18 +1043,25 @@ async fn test_untranslatable_source_toast_core(
         "Unexpected toast: {toast_text}"
     );
 
-    // Typing in a code block, then in a doc block, changes neither. The only
-    // line of code is the blank line which follows the doc block.
-    let code_line_css = By::Css(".cm-line");
-    let code_line = driver.query(code_line_css.clone()).first().await?;
-    code_line.click().await?;
-    code_line.send_keys("y").await?;
-    let doc_block = driver.query(By::Css(".CodeChat-doc")).first().await?;
+    // Typing in a doc block, then in a code block, changes neither. The doc
+    // block comes first: typing in the read-only code block moves TinyMCE into
+    // the doc block, which would replace the contents div clicked below. Click
+    // the contents, for the reason given in
+    // `test_xref_optional_content_round_trip_core`.
+    let doc_block = driver
+        .query(By::Css(".CodeChat-doc-contents"))
+        .first()
+        .await?;
     click_element_top_left(&driver, &doc_block).await?;
     // Find TinyMCE once the click moves it into the doc block.
     let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await?;
     tinymce_contents.wait_until().clickable().await?;
     tinymce_contents.send_keys("z").await?;
+    // The only line of code is the blank line which follows the doc block.
+    let code_line_css = By::Css(".cm-line");
+    let code_line = driver.query(code_line_css.clone()).first().await?;
+    code_line.click().await?;
+    code_line.send_keys("y").await?;
     // Only the cursor moves. This also gives a second toast time to appear, as
     // it would if the Client sent an edit, which the Server rejects.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;

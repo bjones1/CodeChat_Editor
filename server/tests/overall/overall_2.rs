@@ -39,8 +39,8 @@ use thirtyfour::{
 // ### Local
 use crate::common::{
     CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages,
-    beginning_of_document, click_element_top_left, get_version, optional_message, perform_loadfile,
-    select_codechat_iframe,
+    beginning_of_document, beginning_of_line, click_element_top_left, get_version,
+    optional_message, perform_loadfile, select_codechat_iframe,
 };
 use crate::make_test;
 use code_chat_editor::{
@@ -207,35 +207,36 @@ async fn test_5_core(
     // Target the iframe containing the Client.
     select_codechat_iframe(&driver).await;
 
-    // Focus it.
+    // Focus it. Click its contents, not the enclosing `.CodeChat-doc`, whose
+    // top left is covered by the empty indent on most platforms; see
+    // `test_xref_optional_content_round_trip_core` in
+    // [overall\_5.rs](overall_5.rs).
     let doc_block_contents = driver
-        .query(By::Css(".CodeChat-doc"))
+        .query(By::Css(".CodeChat-doc-contents"))
         .first()
         .await
         .unwrap();
     click_element_top_left(&driver, &doc_block_contents)
         .await
         .unwrap();
-    // The click sometimes produces an updated cursor/scroll location after an
-    // autosave delay; absorb that message when it appears, then continue.
+    // The click produces an updated cursor/scroll location after an autosave
+    // delay.
     let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
-    if let Some(msg) = codechat_server.get_message_timeout(TIMEOUT).await {
-        assert_eq!(
-            msg,
-            EditorMessage {
-                id: client_id,
-                message: EditorMessageContents::Update(UpdateMessageContents {
-                    file_path: path_str.clone(),
-                    cursor_position: Some(CursorPosition::Line(1)),
-                    scroll_position: Some(1.0),
-                    is_re_translation: false,
-                    contents: None,
-                })
-            }
-        );
-        codechat_server.send_result(client_id, None).await.unwrap();
-        client_id += MESSAGE_ID_INCREMENT;
-    }
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
 
     // Refind it, since it's now switched with a TinyMCE editor.
     let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
@@ -243,8 +244,9 @@ async fn test_5_core(
     // switch from the doc block to the TinyMCE editor can leave the element
     // briefly present but not yet interactable.
     tinymce_contents.wait_until().clickable().await.unwrap();
-    // Make an edit.
-    tinymce_contents.send_keys("foo").await.unwrap();
+    // Make an edit at the start of the line, since where the click places the
+    // caret depends on the font.
+    beginning_of_line(&tinymce_contents, "foo").await.unwrap();
 
     // Verify the updated text.
     //
