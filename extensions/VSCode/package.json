@@ -41,7 +41,7 @@
         "type": "git",
         "url": "https://github.com/bjones1/CodeChat_Editor"
     },
-    "version": "0.3.2",
+    "version": "0.3.3",
     "activationEvents": [
         "onCommand:extension.codeChatEditorActivate",
         "onCommand:extension.codeChatEditorDeactivate",
@@ -118,7 +118,7 @@
         "@emnapi/core": "^1.11.3",
         "@emnapi/runtime": "^1.11.3",
         "@eslint/js": "^10.0.1",
-        "@napi-rs/cli": "^3.10.9",
+        "@napi-rs/cli": "^3.10.12",
         "@tybys/wasm-util": "^0.10.4",
         "@types/escape-html": "^1.0.4",
         "@types/node": "^26.6.6",
@@ -140,7 +140,7 @@
         "typescript-eslint": "^8.72.1"
     },
     "optionalDependencies": {
-        "bufferutil": "^4.1.0"
+        "bufferutil": "^4.2.0"
     },
     "scripts": {
         "compile": "cargo run --manifest-path=../../builder/Cargo.toml ext-build",

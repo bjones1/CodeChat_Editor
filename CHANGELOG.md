@@ -23,6 +23,9 @@ Changelog
 [Github master](https://github.com/bjones1/CodeChat_Editor)
 -----------------------------------------------------------
 
+Version 0.3.2 -- 2026-Nov-09
+----------------------------
+
 * Changed `<xref>` to support optional content.
 * Close an unclosed tag, comment, or declaration at the end of its doc block,
   instead of letting it hide or move later doc blocks.

@@ -144,7 +144,7 @@ static WORKSPACE_MANIFEST_PATH: &str = "../Cargo.toml";
 // second, explicit pass over it.
 static BUILDER_PATH: &str = "../builder";
 static NAPI_TARGET: &str = "NAPI_TARGET";
-static DIST_VERSION: &str = "0.33.1";
+static DIST_VERSION: &str = "0.34.0";
 
 // Code
 // ----
