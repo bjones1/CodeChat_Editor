@@ -27,14 +27,14 @@
 # --------------------
 #
 # The `overall` test binary (`server/tests/overall.rs`, which gathers the
-# `overall_*.rs` modules) drives a browser through WebDriver. Overlapping
-# WebDriver sessions are unreliable on macOS CI, so run these tests one at a
-# time. nextest runs each test in its own process; a
-# [test group](https://nexte.st/docs/configuration/test-groups/) limits how many
-# of those processes run at once, while other tests still run in parallel.
-[test-groups]
-web-driver = { max-threads = 1 }
-
+# `overall_*.rs` modules) drives a browser through WebDriver. Each test starts
+# its own browser, Server, and temporary directory, so these tests run in
+# parallel. A browser runs several busy processes, though, so a single thread
+# understates its load: with one thread per test, the median test ran over
+# twice as long, and the Client took nearly a minute to answer a message which
+# the Server times out after 15 s. Giving each test
+# [two threads](https://nexte.st/docs/configuration/threads-required/) halves
+# how many run at once, without lengthening the run.
 [[profile.default.overrides]]
 filter = "binary_id(codechat-editor-server::overall)"
-test-group = "web-driver"
+threads-required = 2

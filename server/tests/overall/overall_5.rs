@@ -46,8 +46,8 @@ use tokio::time::sleep;
 // ### Local
 use crate::common::{
     CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages, beginning_of_line,
-    click_element_top_left, end_of_line, get_version, optional_message, perform_loadfile,
-    select_codechat_iframe,
+    click_element_top_left, end_of_line, get_version, perform_loadfile, select_codechat_iframe,
+    skip_cursor_updates,
 };
 use crate::make_test;
 use code_chat_editor::{
@@ -131,6 +131,21 @@ async fn test_edit_preserves_cursor_scroll_in_large_doc_block_core(
         "Expected 100 paragraphs in the big doc block."
     );
     let middle_paragraph = &paragraphs[50];
+    // The click scrolls the paragraph into view. CodeMirror only estimates the
+    // big doc block's height until it measures the newly loaded document, on
+    // an animation frame which on a loaded machine may come after the click.
+    // When a measurement corrects the height of content above the viewport,
+    // CodeMirror keeps the line at the top of the viewport in place -- here, a
+    // line far below the paragraph, chosen from the estimate. So, wait for that
+    // measurement: CodeMirror requested it before the Client acknowledged the
+    // load, so it runs no later than the second frame from now.
+    driver
+        .execute_async(
+            "requestAnimationFrame(() => requestAnimationFrame(arguments[0]));",
+            Vec::new(),
+        )
+        .await
+        .unwrap();
     middle_paragraph.click().await.unwrap();
 
     // The click produces an updated cursor/scroll location after an autosave
@@ -160,22 +175,10 @@ async fn test_edit_preserves_cursor_scroll_in_large_doc_block_core(
     tinymce_contents.wait_until().clickable().await.unwrap();
     tinymce_contents.send_keys("x").await.unwrap();
 
-    // A cursor-only update (carrying no `contents`) may precede the text update
-    // carrying the edit; accept and skip any of those, then inspect the first
-    // update that does carry contents.
-    let msg = loop {
-        let msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-        assert_eq!(msg.id, client_id);
-        let is_cursor_only = matches!(
-            &msg.message,
-            EditorMessageContents::Update(UpdateMessageContents { contents: None, .. })
-        );
-        if !is_cursor_only {
-            break msg;
-        }
-        codechat_server.send_result(client_id, None).await.unwrap();
-        client_id += MESSAGE_ID_INCREMENT;
-    };
+    // Cursor-only updates may precede the text update carrying the edit; skip
+    // them, then inspect the first update that does carry contents.
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
+    assert_eq!(msg.id, client_id);
 
     let client_version = get_version(&msg);
     if let EditorMessageContents::Update(UpdateMessageContents {
@@ -778,20 +781,9 @@ async fn test_named_anchor_round_trip_core(
     let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
     body_content.send_keys("z").await.unwrap();
 
-    // A cursor-only update may precede the text update; accept it, then inspect
+    // Cursor-only updates may precede the text update; skip them, then inspect
     // the text update.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     // The click places the caret at the start of the heading, so the typed
     // character precedes the anchor. It lengthens the heading, so the underline
@@ -934,7 +926,7 @@ async fn test_xref_optional_content_round_trip_core(
     beginning_of_line(&tinymce_contents, "z").await.unwrap();
 
     // Only the heading changes.
-    let msg = optional_message(&codechat_server, &mut client_id, cursor_update()).await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -1087,11 +1079,19 @@ async fn test_untranslatable_source_toast_core(
     // Once the source can be translated, the Client shows it, and its edits
     // reach the IDE again.
     let ide_id = codechat_server
-        .send_message_update_plain(path_str, Some(("# After.\n".to_string(), 3.0)), None, None)
+        .send_message_update_plain(
+            path_str.clone(),
+            Some(("# After.\n".to_string(), 3.0)),
+            None,
+            None,
+        )
         .await
         .unwrap();
+    // On a loaded machine, a cursor update from the typing above may arrive
+    // only after `SETTLE_TIME`; skip it.
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: ide_id,
             message: EditorMessageContents::Result(Ok(ResultOkTypes::Void)),
@@ -1768,8 +1768,10 @@ const LINK_PROJECT_OTHER_PY: &str = indoc!(
 );
 
 // CSS selecting the plain link in the `test.py` which `write_link_project`
-// creates.
-const PLAIN_LINK_CSS: &str = "a[href='other.py']";
+// creates. The math link to the same file renders as `<a href="other.py">`
+// until MathJax's explorer, once it attaches speech to the math, renames that
+// `href` to `data-mjx-href`; exclude it, since it precedes the plain link.
+const PLAIN_LINK_CSS: &str = "a[href='other.py']:not(mjx-container a)";
 
 // The labels of the items on TinyMCE's context menu for a link in non-editable
 // content: only the Client's "Open link".

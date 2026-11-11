@@ -41,8 +41,8 @@ use tokio::time::sleep;
 // ### Local
 use crate::common::{
     CodeChatEditorServerLog, DOC_BLOCK_CSS, ExpectedMessages, TIMEOUT, assert_no_more_messages,
-    beginning_of_line, get_version, goto_line, optional_message, perform_loadfile,
-    select_codechat_iframe,
+    beginning_of_line, end_of_line, get_version, goto_line, optional_message, perform_loadfile,
+    select_codechat_iframe, skip_cursor_updates, type_text,
 };
 use crate::make_test;
 use code_chat_editor::{
@@ -128,24 +128,15 @@ async fn test_server_core(
     // Refind it, since it's now switched with a TinyMCE editor.
     let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
     // Make an edit.
-    tinymce_contents.send_keys("foo").await.unwrap();
+    type_text(&driver, &tinymce_contents, "", "foo")
+        .await
+        .unwrap();
 
     // Verify the updated text.
     //
     // Update the version from the value provided by the client, which varies
     // randomly.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -183,20 +174,14 @@ async fn test_server_core(
     // focused; see the inline `onmousedown` handler on
     // `.CodeChat-doc-indent` in `CodeMirror-integration.mts`, which makes it
     // editable on click.
+    // Type the spaces as one edit, so that they produce one update; type the
+    // digits one key at a time, as the indent rejects each.
     doc_block_indent.click().await.unwrap();
-    doc_block_indent.send_keys("  123").await.unwrap();
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    type_text(&driver, &doc_block_indent, "", "  ")
+        .await
+        .unwrap();
+    doc_block_indent.send_keys("123").await.unwrap();
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -254,10 +239,24 @@ async fn test_server_core(
     codechat_server.send_result(client_id, None).await.unwrap();
     client_id += MESSAGE_ID_INCREMENT;
 
-    // Moving left should move us back to the doc block.
+    // Moving left should move us back to the doc block. On a loaded machine,
+    // `Home`, which leaves the cursor on line 2, may produce its own update
+    // first; see `Cursor-navigation helpers` in `common/mod.rs`.
     beginning_of_line(&code_line, Key::Left).await.unwrap();
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(2)),
+            scroll_position: Some(1.0),
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
     assert_eq!(
-        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        msg,
         EditorMessage {
             id: client_id,
             message: EditorMessageContents::Update(UpdateMessageContents {
@@ -273,21 +272,11 @@ async fn test_server_core(
     client_id += MESSAGE_ID_INCREMENT;
 
     // Make an edit to the code. This should also produce a client diff.
-    code_line.send_keys("bar").await.unwrap();
+    type_text(&driver, &code_line, "", "bar").await.unwrap();
 
-    // Verify the updated text.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    // Verify the updated text. WebDriver focuses the code line before typing;
+    // on a loaded machine, that cursor movement may arrive as its own update.
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -416,23 +405,14 @@ async fn test_server_core(
         "<p>A <strong>markdown</strong> file.</p>"
     );
 
-    // Perform edits.
-    body_content.send_keys("foo ").await.unwrap();
+    // Perform an edit: a single key, which no autosave can split, at the end of
+    // the paragraph. Inserting text before "A" instead can turn the space
+    // following it into a non-breaking space.
+    end_of_line(&body_content, "f").await.unwrap();
     let md_path = canonicalize(test_dir.join("test.md")).unwrap();
     let md_path_str = md_path.to_str().unwrap().to_string();
     // Sometimes, a cursor update gets sent before the edit.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: md_path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &md_path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -452,7 +432,7 @@ async fn test_server_core(
                             from: 0,
                             to: Some(20),
                             insert: format!(
-                                "foo A **markdown** file.{}",
+                                "A **markdown** file.f{}",
                                 if cfg!(windows) { "\r\n" } else { "\n" }
                             ),
                         }],
@@ -883,8 +863,7 @@ async fn test_client_updates_core(
         .unwrap();
 
     // Add to the line, causing a word wrap.
-    doc_block_contents
-        .send_keys(Key::End + " testing")
+    type_text(&driver, &doc_block_contents, Key::End, " testing")
         .await
         .unwrap();
 
@@ -966,21 +945,12 @@ async fn test_client_updates_core(
     // Add an indented comment.
     let code_line_css = ".CodeChat-CodeMirror .cm-line";
     let code_line = driver.query(By::Css(code_line_css)).first().await.unwrap();
-    beginning_of_line(&code_line, "# ").await.unwrap();
+    type_text(&driver, &code_line, Key::Home, "# ")
+        .await
+        .unwrap();
     // This should edit the (new) third line of the file after word wrap: `def
     // foo():`.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let new_client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -1062,18 +1032,10 @@ async fn test_client_updates_core(
     let code_line = driver.query(By::Css(code_line_css)).first().await.unwrap();
     code_line.send_keys(" ").await.unwrap();
 
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    // WebDriver moves the focus from the doc block to the code line before
+    // typing; on a loaded machine, cursor updates from that move may precede
+    // the edit. Skip them.
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let new_client_version = get_version(&msg);
     assert_eq!(
         msg,

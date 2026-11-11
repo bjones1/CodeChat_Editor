@@ -35,8 +35,8 @@ use thirtyfour::{By, Key, WebDriver, error::WebDriverError, extensions::query::E
 // ### Local
 use crate::common::{
     CodeChatEditorServerLog, TIMEOUT, assert_no_more_messages, beginning_of_document,
-    beginning_of_line, click_element_top_left, get_version, optional_message, perform_loadfile,
-    select_codechat_iframe,
+    beginning_of_line, click_element_top_left, get_version, perform_loadfile,
+    select_codechat_iframe, skip_cursor_updates,
 };
 use crate::make_test;
 use code_chat_editor::{
@@ -233,18 +233,7 @@ async fn test_8_core(
     // paragraph), so this splits it into an empty paragraph followed by "2".
     tinymce_contents.send_keys(Key::Enter).await.unwrap();
 
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let mut version = 0.0;
     let client_version = get_version(&msg);
     assert_eq!(
@@ -308,26 +297,15 @@ async fn test_8_core(
     // ### Insert a newline between two existing paragraphs
     //
     // After the previous edit, the doc block contains three paragraphs (an
-    // empty one, "2", and "4"). Move up to the first (empty) paragraph
-    // (producing a cursor-only update), then start a new paragraph there.
-    // Wait for a re-translation as the lines change.
-    beginning_of_document(&tinymce_contents, "").await.unwrap();
-    tinymce_contents.send_keys(Key::Enter).await.unwrap();
+    // empty one, "2", and "4"). Move up to the first (empty) paragraph, then
+    // start a new paragraph there. Wait for a re-translation as the lines
+    // change.
+    beginning_of_document(&tinymce_contents, Key::Enter)
+        .await
+        .unwrap();
 
-    // The cursor move produces an optional cursor-only update before the
-    // re-translation arrives.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    // The cursor move may produce cursor-only updates before the edit arrives.
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -390,25 +368,16 @@ async fn test_8_core(
     // ### Insert a newline at the end of the document
     //
     // Move to the end of the last paragraph, then start a new paragraph there.
-    // Wait for a re-translation as the lines change.
+    // Wait for a re-translation as the lines change; as above, cursor-only
+    // updates may come first.
     tinymce_contents
-        .send_keys(Key::Down + Key::Down + Key::Down + Key::Down + Key::Down + Key::End)
+        .send_keys(
+            Key::Down + Key::Down + Key::Down + Key::Down + Key::Down + Key::End + Key::Enter,
+        )
         .await
         .unwrap();
-    tinymce_contents.send_keys(Key::Enter).await.unwrap();
 
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -560,18 +529,7 @@ async fn test_9_core(
     // Perform an edit
     tinymce_contents.send_keys("a").await.unwrap();
 
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let mut version = 0.0;
     let client_version = get_version(&msg);
     assert_eq!(

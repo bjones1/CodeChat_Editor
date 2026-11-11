@@ -40,7 +40,7 @@ use thirtyfour::{
 use crate::common::{
     CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages,
     beginning_of_document, beginning_of_line, click_element_top_left, get_version,
-    optional_message, perform_loadfile, select_codechat_iframe,
+    optional_message, perform_loadfile, select_codechat_iframe, skip_cursor_updates, type_text,
 };
 use crate::make_test;
 use code_chat_editor::{
@@ -252,18 +252,7 @@ async fn test_5_core(
     //
     // Update the version from the value provided by the client, which varies
     // randomly.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -310,23 +299,14 @@ async fn test_5_core(
     );
 
     // Make another edit, to push any corrupted text back.
-    tinymce_contents.send_keys("bar").await.unwrap();
+    type_text(&driver, &tinymce_contents, "", "bar")
+        .await
+        .unwrap();
     // Verify the updated text.
     //
     // Update the version from the value provided by the client, which varies
     // randomly. There may be a cursor update preceding it.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: Some(1.0),
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,
@@ -421,21 +401,9 @@ async fn test_6_core(
     // Perform edits at the beginning of the document. See
     // `overall_common::beginning_of_document` for why this can't just be a
     // plain OS-specific key combo on macOS.
-    beginning_of_document(&body_content, "").await.unwrap();
-    body_content.send_keys("a").await.unwrap();
-    // Sometimes, a cursor update gets sent before the edit.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    beginning_of_document(&body_content, "a").await.unwrap();
+    // Sometimes, cursor updates get sent before the edit.
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
     let client_version = get_version(&msg);
     assert_eq!(
         msg,

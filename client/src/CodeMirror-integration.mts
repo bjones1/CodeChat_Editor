@@ -111,6 +111,21 @@ let onDirtyScheduled = false;
 // This set when an `input` event occurs, which usually produces a duplicate
 // `Dirty` event which should be ignored.
 let ignoreTinyMceDirty = false;
+// The number of moves of TinyMCE into a doc block which the `focusin` handler
+// in `DocBlockPlugin` has scheduled but not finished.
+let pendingTinymceMoves = 0;
+// The number of edits to a doc block which `onDirty` has marked dirty but not
+// yet copied into CodeMirror, from which `codeMirrorSave` reads the document.
+let pendingDocBlockSaves = 0;
+
+// True while TinyMCE moves into a doc block, or while `onDirty` copies an edit
+// to a doc block into CodeMirror. Either way, the auto update holds off until
+// this ends, then restarts; otherwise, on a loaded machine, where either one
+// may outlast the auto update's delay, an update sent during a move sends the
+// same cursor position twice, since the move replaces the selection, while an
+// update sent before a copy sends the doc block's old contents.
+export const isDocBlockPending = () =>
+    pendingTinymceMoves > 0 || pendingDocBlockSaves > 0;
 
 // Options used when creating a `Decoration`.
 const decorationOptions = {
@@ -534,12 +549,22 @@ class DocBlockWidget extends WidgetType {
         // for all user input).
         window.MathJax?.typesetClear?.([contentsDiv]);
         if (isTinymce) {
+            const editor = tinymceInstance()!;
             // Save the cursor location before the update, then restore it
             // afterwards, if TinyMCE has focus.
-            const sel = tinymceInstance()!.hasFocus()
-                ? saveSelection()
-                : undefined;
-            tinymceInstance()!.setContent(this.contents);
+            const sel = editor.hasFocus() ? saveSelection() : undefined;
+            editor.setContent(this.contents);
+            // TinyMCE records content which differs from its last undo level
+            // on the next navigation key, blur, or save, marking itself dirty;
+            // the resulting `Dirty` event would send this unchanged content
+            // back as an edit. Record it now while ignoring that event, then
+            // mark TinyMCE clean, so that the next genuine change still
+            // produces a `Dirty` event.
+            const wasIgnoringDirty = ignoreTinyMceDirty;
+            ignoreTinyMceDirty = true;
+            editor.undoManager.add();
+            ignoreTinyMceDirty = wasIgnoringDirty;
+            editor.setDirty(false);
             if (sel !== undefined) {
                 restoreSelection(sel);
             }
@@ -792,60 +817,77 @@ const onDirty = (
     }
     setIsDirty();
     onDirtyScheduled = true;
+    // Hold the auto update until this edit reaches CodeMirror; see
+    // `isDocBlockPending`.
+    pendingDocBlockSaves++;
 
     // Only run this after typesetting is done, if MathJax is loaded; otherwise,
     // run this immediately.
     const whenReady =
         window.MathJax?.whenReady ?? (async (f: () => void) => f());
     whenReady(async () => {
-        onDirtyScheduled = false;
-        // Find the doc block parent div.
-        const target = eventTarget.closest(".CodeChat-doc")!;
-
-        // We can only get the position (the `from` value) for the doc block.
-        // Use this to find the `to` value for the doc block.
-        let from;
         try {
-            from = currentView.posAtDOM(target);
-        } catch (_e) {
-            console.error("Unable to get position from DOM.", target);
-            return;
+            await copyDocBlockToCodeMirror(eventTarget);
+        } finally {
+            pendingDocBlockSaves--;
+            startAutoUpdateTimer();
         }
-        // Send an update to the state field associated with this DOM element.
-        const indentDiv = target.childNodes[0];
-        assert(indentDiv instanceof HTMLDivElement);
-        const indent = indentDiv.innerHTML;
-        const delimiter = indentDiv.getAttribute("data-delimiter")!;
-        const [contentsDiv, isTinymce] = getContents(target);
-        // I'd like to extract this string, then untypeset only that string, not
-        // the actual div. But I don't know how.
-        mathJaxUnTypeset(contentsDiv);
-        // Use the raw format; see the implementation notes.
-        const contents = isTinymce
-            ? tinymceInstance()!.save({ format: "raw" })
-            : contentsDiv.innerHTML;
-        // The `save()` flushes any duplicate `Dirty` events. After this,
-        // following `Dirty` events are genuine.
-        ignoreTinyMceDirty = false;
-        await mathJaxTypeset(contentsDiv);
-        // When editing large doc blocks, they may be deleted then re-created by
-        // CodeMirror, which causes unexpected scrolling. To avoid this, save
-        // then restore the scroll after updating CodeMirror.
-        const currentScrollTop = currentView.scrollDOM.scrollTop;
-        currentView.dispatch({
-            effects: [
-                updateDocBlock.of({
-                    from,
-                    indent,
-                    delimiter,
-                    contents,
-                }),
-            ],
-        });
-        requestAnimationFrame(
-            () => (currentView.scrollDOM.scrollTop = currentScrollTop),
-        );
     });
+};
+
+// Copy the contents of the doc block holding `eventTarget` into CodeMirror; see
+// `onDirty`.
+const copyDocBlockToCodeMirror = async (
+    // The div that's dirty. It must be a child of the doc block div.
+    eventTarget: HTMLElement,
+) => {
+    onDirtyScheduled = false;
+    // Find the doc block parent div.
+    const target = eventTarget.closest(".CodeChat-doc")!;
+
+    // We can only get the position (the `from` value) for the doc block. Use
+    // this to find the `to` value for the doc block.
+    let from;
+    try {
+        from = currentView.posAtDOM(target);
+    } catch (_e) {
+        console.error("Unable to get position from DOM.", target);
+        return;
+    }
+    // Send an update to the state field associated with this DOM element.
+    const indentDiv = target.childNodes[0];
+    assert(indentDiv instanceof HTMLDivElement);
+    const indent = indentDiv.innerHTML;
+    const delimiter = indentDiv.getAttribute("data-delimiter")!;
+    const [contentsDiv, isTinymce] = getContents(target);
+    // I'd like to extract this string, then untypeset only that string, not the
+    // actual div. But I don't know how.
+    mathJaxUnTypeset(contentsDiv);
+    // Use the raw format; see the implementation notes.
+    const contents = isTinymce
+        ? tinymceInstance()!.save({ format: "raw" })
+        : contentsDiv.innerHTML;
+    // The `save()` flushes any duplicate `Dirty` events. After this, following
+    // `Dirty` events are genuine.
+    ignoreTinyMceDirty = false;
+    await mathJaxTypeset(contentsDiv);
+    // When editing large doc blocks, they may be deleted then re-created by
+    // CodeMirror, which causes unexpected scrolling. To avoid this, save then
+    // restore the scroll after updating CodeMirror.
+    const currentScrollTop = currentView.scrollDOM.scrollTop;
+    currentView.dispatch({
+        effects: [
+            updateDocBlock.of({
+                from,
+                indent,
+                delimiter,
+                contents,
+            }),
+        ],
+    });
+    requestAnimationFrame(
+        () => (currentView.scrollDOM.scrollTop = currentScrollTop),
+    );
 };
 
 // Links in doc blocks
@@ -1352,10 +1394,7 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                     ) {
                         selection?.collapse(eventTarget, 0);
                     }
-                    // Wait until the focus event completes; this causes the
-                    // cursor position (the selection) to be set in the
-                    // contenteditable div. Then, save that location.
-                    setTimeout(async () => {
+                    const moveTinymce = async () => {
                         // In case this node was modified during the timeout.
                         if (!contentsDiv.isConnected) {
                             return;
@@ -1575,6 +1614,17 @@ export const DocBlockPlugin = ViewPlugin.fromClass(
                         // Copy the selection over to TinyMCE by indexing the
                         // selection path to find the selected node.
                         restoreSelection(sel);
+                    };
+                    // Wait until the focus event completes; this causes the
+                    // cursor position (the selection) to be set in the
+                    // contenteditable div. Then, move TinyMCE, which saves
+                    // that location. See `isDocBlockPending`.
+                    pendingTinymceMoves++;
+                    setTimeout(() => {
+                        moveTinymce().finally(() => {
+                            pendingTinymceMoves--;
+                            startAutoUpdateTimer();
+                        });
                     }, 0);
                 }
                 return false;

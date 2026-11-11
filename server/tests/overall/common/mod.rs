@@ -33,14 +33,14 @@
 // ### Standard library
 use std::{
     collections::HashMap,
+    env,
     error::Error,
+    fs,
     panic::AssertUnwindSafe,
     path::{Path, PathBuf},
+    sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
-// Only used on Linux, to check whether CI is running this test.
-#[cfg(target_os = "linux")]
-use std::env;
 
 use assert_fs::TempDir;
 // ### Third-party
@@ -82,7 +82,8 @@ use test_utils::cast;
 // The wrapper exposes the same method names as `CodeChatEditorServer`, so test
 // bodies use it transparently.
 pub struct CodeChatEditorServerLog {
-    inner: CodeChatEditorServer,
+    // Shared with `harness`, which stops the Server once the test ends.
+    inner: Arc<CodeChatEditorServer>,
     // A `WebDriver` handle used only to read the browser log. `WebDriver` is
     // cheap to clone (it's an `Arc` internally), so a clone of the harness's
     // driver is stored here.
@@ -90,7 +91,13 @@ pub struct CodeChatEditorServerLog {
 }
 
 impl CodeChatEditorServerLog {
-    pub fn new(inner: CodeChatEditorServer, driver: WebDriver) -> CodeChatEditorServerLog {
+    pub fn new(
+        // The Server, shared with `harness`.
+        inner: Arc<CodeChatEditorServer>,
+        // A clone of the harness's driver, used only to read the browser log.
+        driver: WebDriver,
+        // The Server, wrapped so that each call also forwards the browser log.
+    ) -> CodeChatEditorServerLog {
         CodeChatEditorServerLog { inner, driver }
     }
 
@@ -262,8 +269,10 @@ const STABLE_RECT_SAMPLES: usize = 3;
 //
 // A test harness. It runs the webdriver, the Server, opens the Client, then
 // runs provided tests. After testing finishes, it cleans up (handling panics
-// properly). Tests using this harness must not run concurrently;
-// `.config/nextest.toml` runs them one at a time.
+// properly). Each test gets its own browser, Server, and temporary directory,
+// so nextest runs these tests in parallel; on a loaded machine, a test must
+// therefore tolerate extra cursor-only updates which an idle machine's
+// autosave delay would merge.
 pub async fn harness<
     F: FnOnce(CodeChatEditorServerLog, WebDriver, PathBuf) -> Fut,
     Fut: Future<Output = Result<(), WebDriverError>>,
@@ -334,7 +343,47 @@ pub async fn harness<
             WebDriver::managed(caps).await?
         }
     };
+    // The profile which chromedriver created for Chrome, which this harness
+    // removes once Chrome exits. chromedriver deletes the profile only after
+    // replying to the request which ends the session, but thirtyfour's
+    // `quit()` kills chromedriver as soon as that reply arrives, leaving the
+    // profile, about 15 MB per test. On Windows, under load, Chrome may also
+    // still hold files in the profile open once the session ends, which would
+    // defeat chromedriver's single attempt to delete it; this harness retries.
+    // Don't supply a profile with `--user-data-dir` instead: chromedriver then
+    // neither writes its default preferences to the profile nor opens a blank
+    // page first, and in a Chrome started that way, a script's `focus()` fires
+    // no focus events, failing `test_focus_link_py_unfocused`.
+    //
+    // chromedriver creates its profile in the temporary directory. Leave a
+    // profile anywhere else -- such as one supplied with `--user-data-dir`
+    // while debugging -- which may be one the developer wants to keep.
+    //
+    // TODO: remove this lookup, `is_in_temp_dir`, and the removal of
+    // `chrome_profile` below once a thirtyfour release shuts chromedriver down
+    // gracefully, so that chromedriver deletes the profile itself, and test
+    // runs on a loaded Windows machine no longer leave profiles behind.
+    let chrome_profile = driver
+        .handle()
+        .capabilities()
+        .get("chrome")
+        .and_then(|chrome| chrome.get("userDataDir"))
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .filter(|chrome_profile| {
+            let is_in_temp_dir = is_in_temp_dir(chrome_profile);
+            if !is_in_temp_dir {
+                warn!(
+                    "Not removing Chrome's profile {chrome_profile:?}, which isn't in the temporary directory."
+                );
+            }
+            is_in_temp_dir
+        });
     let driver_clone = driver.clone();
+    // The Server, once the test below starts it, so that the cleanup which
+    // follows can stop it.
+    let server = Arc::new(OnceLock::<Arc<CodeChatEditorServer>>::new());
+    let server_clone = server.clone();
 
     // Run the test inside an async, so we can shut down the driver before
     // returning an error. Mark the function as unwind safe. though I'm not
@@ -345,7 +394,9 @@ pub async fn harness<
         // Wrap the server so every call the test framework makes also drains
         // the browser's JavaScript console log (see `CodeChatEditorServerLog`).
         let codechat_server = CodeChatEditorServerLog::new(
-            CodeChatEditorServer::new().unwrap(),
+            server_clone
+                .get_or_init(|| Arc::new(CodeChatEditorServer::new().unwrap()))
+                .clone(),
             driver_clone.clone(),
         );
 
@@ -370,15 +421,7 @@ pub async fn harness<
 
         // Open the Client and send it a file to load.
         driver_clone.goto(address).await.unwrap();
-        let test_result = f(codechat_server, driver_clone.clone(), test_dir).await;
-
-        // Drain any JavaScript console output captured during the test and
-        // forward it to Rust logging, then propagate the test's result. Do this
-        // even when the test failed, since the console output often explains
-        // the failure.
-        forward_browser_logs(&driver_clone).await;
-
-        test_result?;
+        f(codechat_server, driver_clone.clone(), test_dir).await?;
         Ok(())
     })
     // Catch any panics/assertions, again to ensure the driver shuts down
@@ -386,15 +429,95 @@ pub async fn harness<
     .catch_unwind()
     .await;
 
-    // Always explicitly close the browser.
-    driver.quit().await?;
+    // Drain any JavaScript console output captured during the test and forward
+    // it to Rust logging. Do this even when the test failed or panicked, since
+    // the console output often explains the failure.
+    forward_browser_logs(&driver).await;
+    // Always explicitly close the browser. On a loaded machine, chromedriver has
+    // dropped the request to close it, though the browser closed; dropping the
+    // failed `WebDriver` then repeats the request. This says nothing about the
+    // code under test, so only warn.
+    if let Err(err) = driver.quit().await {
+        warn!("Unable to quit the browser: {err}");
+    }
+    // Then stop the Server, which keeps watching a project's directory after
+    // its last connection closes (see the LRU map of project caches in
+    // `cache-spec.md`), and re-reads that directory as files in it are
+    // deleted. Dropping the last reference to the Server drops its caches,
+    // which stops their watchers.
+    if let Some(server) = Arc::into_inner(server).and_then(OnceLock::into_inner) {
+        server.stop_server().await;
+    }
     // Report any errors produced when removing the temporary directory.
-    temp_dir.close()?;
+    remove_dir(temp_dir.into_persistent().path(), REMOVE_TEMP_DIR_TIMEOUT).await?;
+    // Chrome may still be exiting, holding its profile open, after the browser
+    // closes: under load, for over 10 s. Wait for it, but only warn if it
+    // outlasts the wait, since that says nothing about the code under test.
+    if let Some(chrome_profile) = chrome_profile
+        && let Err(err) = remove_dir(&chrome_profile, CHROME_EXIT_TIMEOUT).await
+    {
+        warn!("Unable to remove Chrome's profile: {err}");
+    }
 
     ret.unwrap_or_else(
         // Convert a panic to an error.
         |err| Err::<(), Box<dyn Error + Send + Sync>>(Box::from(format!("{err:#?}"))),
     )
+}
+
+// How long `remove_dir` keeps retrying to remove a test's temporary directory,
+// and Chrome's profile, and how long it waits between attempts.
+const REMOVE_TEMP_DIR_TIMEOUT: Duration = Duration::from_secs(10);
+const CHROME_EXIT_TIMEOUT: Duration = Duration::from_secs(60);
+const REMOVE_DIR_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Remove a directory, if it exists. On Windows, another process -- an
+/// antivirus scanner or the search indexer, inspecting files the test wrote, or
+/// a Chrome process still exiting, holding its profile -- may hold some of the
+/// files in it open, leaving their deletion pending. Removal then fails with
+/// `DirectoryNotEmpty`, with `NotFound` when a pending deletion completes
+/// mid-walk, or with a sharing violation; on a loaded machine, many tests'
+/// removals fail at once. So, retry until the directory is gone.
+async fn remove_dir(
+    // The directory to remove.
+    path: &Path,
+    // How long to keep retrying.
+    timeout: Duration,
+    // The last error from removing the directory, if it still exists once
+    // `timeout` expires.
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let start = Instant::now();
+    let mut is_retry = false;
+    while path.exists() {
+        let Err(err) = fs::remove_dir_all(path) else {
+            return Ok(());
+        };
+        if !is_retry {
+            warn!("Unable to remove {path:?}; retrying: {err}");
+            is_retry = true;
+        }
+        if start.elapsed() > timeout {
+            return Err(Box::new(err));
+        }
+        sleep(REMOVE_DIR_POLL_INTERVAL).await;
+    }
+    Ok(())
+}
+
+/// Report whether `path` is inside the system's temporary directory. Compare
+/// canonical paths, since the two may name the same directory differently: on
+/// Windows, `TEMP` may use 8.3 short names, such as `RUNNER~1` on GitHub's
+/// runners; on macOS, `/var` is a symlink to `/private/var`.
+fn is_in_temp_dir(
+    // The path to check, which must exist.
+    path: &Path,
+    // True if `path` is inside the temporary directory, but isn't that
+    // directory itself.
+) -> bool {
+    let (Ok(path), Ok(temp_dir)) = (canonicalize(path), canonicalize(env::temp_dir())) else {
+        return false;
+    };
+    path != temp_dir && path.starts_with(&temp_dir)
 }
 
 /// Decode a `BrowserLogEntry::message` produced by a `console.*` call.
@@ -547,12 +670,13 @@ pub async fn goto_line(
         .await
         .unwrap();
     // The cursor movement produces a cursor/scroll position update after an
-    // autosave delay. Sometimes, we get an update or two just before the
-    // movement; ignore those (up to 2 of them).
+    // autosave delay. Earlier cursor movements -- focusing the code line before
+    // typing, opening the dialog, or restoring the selection after a
+    // re-translation -- may each produce an update before it; the autosave
+    // delay merges these on an idle machine, but not on a loaded one. Ignore
+    // them.
     let mut msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-    let mut ignored = 0;
-    while ignored < 2
-        && msg.id == *client_id
+    while msg.id == *client_id
         && let EditorMessageContents::Update(update) = &msg.message
         && update.file_path == path_str
         && update.cursor_position != Some(CursorPosition::Line(line))
@@ -564,7 +688,6 @@ pub async fn goto_line(
         codechat_server.send_result(*client_id, None).await.unwrap();
         *client_id += MESSAGE_ID_INCREMENT;
         msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
-        ignored += 1;
     }
     assert_eq!(
         msg,
@@ -611,7 +734,9 @@ pub async fn goto_line(
 // navigation keys (rather than a separate `send_keys` call afterward): each
 // `send_keys` call can produce its own debounced cursor-update message, so
 // splitting one logical action into two calls can surface an extra, unwanted
-// intermediate update.
+// intermediate update. One call only makes this less likely: on a loaded
+// machine, WebDriver may deliver its keys further apart than the autosave
+// delay. Hence, a test waiting for an edit uses \[`skip_cursor_updates`\].
 
 // Move the cursor to the beginning of the current line, then send `keys_after`
 // (which may be empty). Plain `Home` (no modifier) is handled by the browser
@@ -650,7 +775,7 @@ pub async fn beginning_of_document(
     // Test fixtures used by this suite are well under this many lines;
     // repeating `Up` past the first line is a no-op, so an overshoot is
     // harmless. Sent as a single `send_keys` call, along with `keys_after`, so
-    // this produces one cursor update rather than one per repeated key.
+    // this usually produces one cursor update rather than one per repeated key.
     let keys: TypingData = repeated_key(&Key::Up, MAX_TEST_DOCUMENT_LINES) + keys_after;
     element.send_keys(keys).await
 }
@@ -684,6 +809,45 @@ fn repeated_key(key: &Key, count: u32) -> TypingData {
 // suite's fixtures, used by the macOS `Up`/`Down`-repeating workaround in
 // \[`beginning_of_document`\] and \[`end_of_document`\] above.
 const MAX_TEST_DOCUMENT_LINES: u32 = 100;
+
+// Typing
+// ------
+/// Type `text` into `element` as a single edit, after focusing `element` as
+/// `send_keys` does, then sending `keys_before` (which may be empty). Typed
+/// with `send_keys` instead, each character is a separate key press; on a
+/// loaded machine, WebDriver may deliver these further apart than the Client's
+/// autosave delay, splitting the edit across several updates.
+///
+/// This edits using `document.execCommand` rather than CDP's
+/// `Input.insertText`, which emulates an IME: TinyMCE skips the whitespace
+/// normalization it performs after each edit for input which is part of an IME
+/// composition.
+///
+/// Unlike typing, this may turn a space at the edge of the edited text node
+/// into a non-breaking space; check the result when editing near existing
+/// spaces.
+#[allow(dead_code)]
+#[tracing::instrument(skip(driver, element))]
+pub async fn type_text(
+    // The browser, with the frame holding `element` selected.
+    driver: &WebDriver,
+    // The element to type into.
+    element: &WebElement,
+    // Keys to send before typing, such as navigation keys.
+    keys_before: impl Into<TypingData> + std::fmt::Debug,
+    // The text to type.
+    text: &str,
+    // An error if WebDriver can't send the keys or run the edit.
+) -> Result<(), WebDriverError> {
+    element.send_keys(keys_before).await?;
+    driver
+        .execute(
+            "document.execCommand('insertText', false, arguments[0]);",
+            vec![text.into()],
+        )
+        .await?;
+    Ok(())
+}
 
 pub async fn perform_loadfile(
     codechat_server: &CodeChatEditorServerLog,
@@ -933,4 +1097,41 @@ pub async fn optional_message(
     } else {
         msg
     }
+}
+
+/// Wait for a message which isn't a cursor-only update from the Client,
+/// acknowledging any cursor-only updates which precede it; each must be for
+/// `path_str`. Use this before a message which the Client sends in response to
+/// an edit, since the clicks and keys leading up to that edit may produce
+/// cursor-only updates first. How many, and where they place the cursor,
+/// depends on how many of these events arrive within one autosave delay; on a
+/// loaded machine, WebDriver may deliver even the keys of a single `send_keys`
+/// call further apart than that.
+#[allow(dead_code)]
+#[tracing::instrument(skip(codechat_server, client_id))]
+pub async fn skip_cursor_updates(
+    // The Server, through which the test plays the IDE.
+    codechat_server: &CodeChatEditorServerLog,
+    // The id of the next message the Client sends; updated for each skipped
+    // update.
+    client_id: &mut f64,
+    // The file the Client is editing, which each skipped update must name.
+    path_str: &str,
+    // The first message which isn't a cursor-only update.
+) -> EditorMessage {
+    let mut msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    while let EditorMessageContents::Update(UpdateMessageContents {
+        file_path,
+        contents: None,
+        ..
+    }) = &msg.message
+    {
+        assert_eq!(msg.id, *client_id);
+        assert_eq!(file_path, path_str);
+        debug!("Skipped a cursor-only update.");
+        codechat_server.send_result(*client_id, None).await.unwrap();
+        *client_id += MESSAGE_ID_INCREMENT;
+        msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
+    }
+    msg
 }

@@ -39,7 +39,7 @@ use tokio::time::sleep;
 use crate::common::{
     CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages, beginning_of_line,
     click_element_top_left, end_of_line, optional_message, perform_loadfile,
-    select_codechat_iframe,
+    select_codechat_iframe, skip_cursor_updates,
 };
 use crate::make_test;
 use code_chat_editor::{
@@ -194,20 +194,9 @@ async fn test_xss_core(
     let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
     body_content.send_keys("z").await.unwrap();
 
-    // A cursor-only update may precede the text update; accept it, then inspect
+    // Cursor-only updates may precede the text update; skip them, then inspect
     // the text update.
-    let msg = optional_message(
-        &codechat_server,
-        &mut client_id,
-        EditorMessageContents::Update(UpdateMessageContents {
-            file_path: path_str.clone(),
-            cursor_position: Some(CursorPosition::Line(1)),
-            scroll_position: None,
-            is_re_translation: false,
-            contents: None,
-        }),
-    )
-    .await;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
 
     // The update must carry contents; pull the source out of the diff and
     // verify the malicious handler is gone.
@@ -457,7 +446,8 @@ async fn test_arrow_key_navigation_core(
     // direction has always worked. Click directly on code line "c" to give
     // CodeMirror real focus there (the doc block gap above left focus stuck in
     // doc block 2's TinyMCE instance), then press `Home` so the cursor sits at
-    // the exact line start `docBlockNavKeymap`'s `ArrowUp` handler looks for.
+    // the exact line start `docBlockNavKeymap`'s `ArrowUp` handler looks for,
+    // then `ArrowUp`.
     let c_line = driver
         .query(By::XPath("//*[contains(@class, 'cm-line')][text()='c']"))
         .first()
@@ -465,29 +455,42 @@ async fn test_arrow_key_navigation_core(
         .unwrap();
     click_element_top_left(&driver, &c_line).await.unwrap();
     assert_cursor_line(&codechat_server, &mut client_id, &path_str, 5).await;
-    beginning_of_line(&c_line, "").await.unwrap();
-    sleep(Duration::from_millis(400)).await;
-    while let Some(msg) = codechat_server
-        .get_message_timeout(Duration::from_millis(100))
-        .await
-    {
-        assert_eq!(msg.id, client_id);
-        codechat_server.send_result(client_id, None).await.unwrap();
-        client_id += MESSAGE_ID_INCREMENT;
-    }
-
-    driver
-        .action_chain()
-        .send_keys(Key::Up)
-        .perform()
-        .await
-        .unwrap();
+    // Press `Up` in the same call, so that both keys usually produce a single
+    // update; see `Cursor-navigation helpers` in `common/mod.rs`. On a loaded
+    // machine, `Home` may produce its own update first.
+    beginning_of_line(&c_line, Key::Up).await.unwrap();
+    let msg = optional_message(
+        &codechat_server,
+        &mut client_id,
+        EditorMessageContents::Update(UpdateMessageContents {
+            file_path: path_str.clone(),
+            cursor_position: Some(CursorPosition::Line(5)),
+            scroll_position: Some(1.0),
+            is_re_translation: false,
+            contents: None,
+        }),
+    )
+    .await;
     // The Client reports the doc block's cursor as a `DomLocation` (a DOM
     // coordinate), but the Server translates that into a plain `Line` before
     // forwarding to the IDE -- `DomLocation` is a Client/Server-only detail
     // (see the comment on `CursorPosition::DomLocation` in `webserver.rs`). Doc
     // block 2 (" # 4") translates to line 4.
-    assert_cursor_line(&codechat_server, &mut client_id, &path_str, 4).await;
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(4)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
 
     // ### Chaining `ArrowUp` between two consecutive doc blocks overshoots
     //

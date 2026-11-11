@@ -54,6 +54,7 @@ import {
     applyDiffStr,
     codeMirrorLoad,
     codeMirrorSave,
+    isDocBlockPending,
     mathJaxTypeset,
     mathJaxUnTypeset,
     scrollToLine as codemirrorScrollToLine,
@@ -627,6 +628,13 @@ export const startAutoUpdateTimer = () => {
     clearAutoUpdateTimer();
     // ...then start another timeout which updates the document when it expires.
     autoUpdateTimeoutId = window.setTimeout(() => {
+        // Hold this update while TinyMCE moves into a doc block, or while an
+        // edit to a doc block is on its way to CodeMirror; either one restarts
+        // this timer when it ends.
+        if (isDocBlockPending()) {
+            autoUpdateTimeoutId = null;
+            return;
+        }
         consoleLog("CodeChat Editor Client: auto updating.");
         sendUpdate();
     }, autoUpdateTimeoutMs);
