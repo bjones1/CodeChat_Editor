@@ -30,11 +30,22 @@
 # `overall_*.rs` modules) drives a browser through WebDriver. Each test starts
 # its own browser, Server, and temporary directory, so these tests run in
 # parallel. A browser runs several busy processes, though, so a single thread
-# understates its load: with one thread per test, the median test ran over
-# twice as long, and the Client took nearly a minute to answer a message which
-# the Server times out after 15 s. Giving each test
-# [two threads](https://nexte.st/docs/configuration/threads-required/) halves
-# how many run at once, without lengthening the run.
+# understates its load: with one thread per test, the median test ran over twice
+# as long, and the Client took nearly a minute to answer a message which the
+# Server times out after 15 s. Giving each test
+# [three threads](https://nexte.st/docs/configuration/threads-required/) halves
+# how many run at once, without lengthening the run. Based on the table below,
+# 3-4 threads is a good estimate for the requirements of these tests.
+#
+# Timings of `cargo nextest run --test overall` on a 22-thread Windows machine
+# for each value of `threads-required` (one run each; all 47 tests passed):
+#
+# | `threads-required` | Total run | Median test | Slowest test |
+# | ------------------ | --------- | ----------- | ------------ |
+# | 1                  | 88.1 s    | 38.1 s      | 48.7 s       |
+# | 2                  | 68.6 s    | 14.6 s      | 25.9 s       |
+# | 3                  | 66.0 s    | 8.8 s       | 21.5 s       |
+# | 4                  | 87.2 s    | 8.0 s       | 22.4 s       |
 [[profile.default.overrides]]
 filter = "binary_id(codechat-editor-server::overall)"
-threads-required = 2
+threads-required = 3
