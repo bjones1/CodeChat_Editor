@@ -246,6 +246,12 @@ impl ExpectedMessages {
 // and loadfile acknowledgements under matrix load.
 pub const TIMEOUT: Duration = Duration::from_secs(15);
 
+// How long `assert_only_cursor_updates` waits without a message before deciding
+// that the Client has nothing more to send. This must comfortably exceed the
+// Client's autosave delay (`autoUpdateTimeoutMs` in `client/src/shared.mts`),
+// since an unwanted edit arrives one delay after the event which produced it.
+const QUIET_PERIOD: Duration = Duration::from_secs(2);
+
 // The editable contents of a CodeChat Editor document -- a file translated
 // entirely to a single doc block, with no CodeMirror editor around it.
 pub const DOC_BLOCK_CSS: &str = "#CodeChat-body .CodeChat-doc-contents";
@@ -1134,4 +1140,35 @@ pub async fn skip_cursor_updates(
         msg = codechat_server.get_message_timeout(TIMEOUT).await.unwrap();
     }
     msg
+}
+
+/// Acknowledge cursor-only updates from the Client until none arrives for
+/// `QUIET_PERIOD`, panicking on any other message. Use this after an action
+/// which must not edit the document, such as moving the cursor, since an edit
+/// arrives as an update with contents.
+#[allow(dead_code)]
+#[tracing::instrument(skip(codechat_server, client_id))]
+pub async fn assert_only_cursor_updates(
+    // The Server, through which the test plays the IDE.
+    codechat_server: &CodeChatEditorServerLog,
+    // The id of the next message the Client sends; updated for each
+    // acknowledged update.
+    client_id: &mut f64,
+    // The file the Client is editing, which each update must name.
+    path_str: &str,
+) {
+    while let Some(msg) = codechat_server.get_message_timeout(QUIET_PERIOD).await {
+        let EditorMessageContents::Update(UpdateMessageContents {
+            file_path,
+            contents: None,
+            ..
+        }) = &msg.message
+        else {
+            panic!("Expected only cursor-only updates, but received: {msg:#?}");
+        };
+        assert_eq!(msg.id, *client_id);
+        assert_eq!(file_path, path_str);
+        codechat_server.send_result(*client_id, None).await.unwrap();
+        *client_id += MESSAGE_ID_INCREMENT;
+    }
 }

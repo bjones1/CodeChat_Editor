@@ -31,7 +31,7 @@ use dunce::canonicalize;
 use indoc::indoc;
 use pretty_assertions::assert_eq;
 use thirtyfour::{
-    By, WebDriver,
+    By, Key, WebDriver,
     error::WebDriverError,
     extensions::query::{ElementQueryable, ElementWaitable},
 };
@@ -39,8 +39,9 @@ use thirtyfour::{
 // ### Local
 use crate::common::{
     CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages,
-    beginning_of_document, beginning_of_line, click_element_top_left, get_version,
-    optional_message, perform_loadfile, select_codechat_iframe, skip_cursor_updates, type_text,
+    assert_only_cursor_updates, beginning_of_document, beginning_of_line, click_element_top_left,
+    get_version, optional_message, perform_loadfile, select_codechat_iframe, skip_cursor_updates,
+    type_text,
 };
 use crate::make_test;
 use code_chat_editor::{
@@ -340,6 +341,94 @@ async fn test_5_core(
     //client_id += MESSAGE_ID_INCREMENT;
 
     assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
+make_test!(test_ide_update_not_echoed, test_ide_update_not_echoed_core);
+
+// Verify that text the IDE sends to the doc block TinyMCE is editing isn't sent
+// back as an edit when the cursor moves afterwards. TinyMCE records content it
+// didn't produce as an undo level on the next navigation key, marking itself
+// dirty; see `updateDOM` in `CodeMirror-integration.mts`. Keep math out of this
+// doc block, since typesetting it also changes TinyMCE's content.
+async fn test_ide_update_not_echoed_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let _server_id = perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.py",
+        Some(("# Before.\n".to_string(), 0.0)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // Focus the doc block, which moves TinyMCE into it. As in `test_5_core`,
+    // click its contents rather than the enclosing `.CodeChat-doc`.
+    let doc_block_contents = driver
+        .query(By::Css(".CodeChat-doc-contents"))
+        .first()
+        .await
+        .unwrap();
+    click_element_top_left(&driver, &doc_block_contents)
+        .await
+        .unwrap();
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+    let tinymce_contents = driver.query(By::Id("TinyMCE-inst")).first().await.unwrap();
+    tinymce_contents.wait_until().clickable().await.unwrap();
+
+    // Replace the doc block's text from the IDE, then wait for TinyMCE to show
+    // it.
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            path_str.clone(),
+            Some(("# After.\n".to_string(), 1.0)),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    tinymce_contents
+        .wait_until()
+        .has_text("After.")
+        .await
+        .unwrap();
+
+    // Move the cursor without editing. Only the cursor's position should come
+    // back.
+    tinymce_contents.send_keys(Key::Right).await.unwrap();
+    assert_only_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
 
     Ok(())
 }

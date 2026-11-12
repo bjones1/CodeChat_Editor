@@ -37,13 +37,15 @@ use tokio::time::sleep;
 
 // ### Local
 use crate::common::{
-    CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages, beginning_of_line,
-    click_element_top_left, end_of_line, optional_message, perform_loadfile,
-    select_codechat_iframe, skip_cursor_updates,
+    CodeChatEditorServerLog, DOC_BLOCK_CSS, TIMEOUT, assert_no_more_messages,
+    assert_only_cursor_updates, beginning_of_line, click_element_top_left, end_of_line,
+    get_version, optional_message, perform_loadfile, select_codechat_iframe, skip_cursor_updates,
 };
 use crate::make_test;
 use code_chat_editor::{
-    processing::{CodeChatForWeb, CodeMirrorDiffable},
+    processing::{
+        CodeChatForWeb, CodeMirrorDiff, CodeMirrorDiffable, SourceFileMetadata, StringDiff,
+    },
     webserver::{
         CursorPosition, EditorMessage, EditorMessageContents, INITIAL_CLIENT_MESSAGE_ID,
         MESSAGE_ID_INCREMENT, ResultOkTypes, UpdateMessageContents,
@@ -693,6 +695,109 @@ async fn test_arrow_key_navigation_multiline_doc_block_core(
     );
 
     assert_no_more_messages(&codechat_server).await;
+
+    Ok(())
+}
+
+// A keyboard user who tabs into the code editor of a file which begins with a
+// doc block finds the cursor at the start of the document, which is also the
+// start of that doc block. Pressing Tab again indents the line holding it; see
+// `indentWithTab` in
+// [CodeMirror-integration.mts](../../../client/src/CodeMirror-integration.mts).
+// The indent must reach the IDE as an indented comment. See the bug recorded at
+// the end of [accessibility\_review.md](../../../docs/accessibility_review.md).
+make_test!(
+    test_indent_doc_block_at_file_start,
+    test_indent_doc_block_at_file_start_core,
+    ignore = "the Client places an indent inserted at a doc block's start inside that doc block, so translating it panics the Server"
+);
+
+async fn test_indent_doc_block_at_file_start_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.py")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    let ide_version = 0.0;
+    let server_id = perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.py",
+        Some(("# Doc block.\ncode()\n".to_string(), ide_version)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // Focus the code editor without moving its cursor from the start of the
+    // document, as tabbing into it does, then indent.
+    driver
+        .execute(
+            "document.querySelector('.CodeChat-CodeMirror .cm-content').focus();",
+            Vec::new(),
+        )
+        .await
+        .unwrap();
+    driver
+        .action_chain()
+        .send_keys(Key::Tab)
+        .perform()
+        .await
+        .unwrap();
+
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    let msg = skip_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
+    let client_version = get_version(&msg);
+    assert_eq!(
+        msg,
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: Some(1.0),
+                is_re_translation: false,
+                contents: Some(CodeChatForWeb {
+                    metadata: SourceFileMetadata {
+                        mode: "python".to_string(),
+                    },
+                    source: CodeMirrorDiffable::Diff(CodeMirrorDiff {
+                        doc: vec![StringDiff {
+                            from: 0,
+                            to: Some(13),
+                            insert: "  # Doc block.\n".to_string(),
+                        }],
+                        doc_blocks: vec![],
+                        version: ide_version,
+                    }),
+                    version: client_version,
+                }),
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // The indented comment is a doc block with that indent, so the Server sends
+    // the Client a re-translation, whose response comes back to the IDE.
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: server_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    let doc_block_indent = driver
+        .query(By::Css(".CodeChat-doc-indent"))
+        .first()
+        .await
+        .unwrap();
+    assert_eq!(doc_block_indent.inner_html().await.unwrap(), "  ");
+    assert_only_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
 
     Ok(())
 }
