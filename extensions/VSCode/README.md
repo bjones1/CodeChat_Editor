@@ -25,15 +25,9 @@ Running
 
 2. Open the
    [Visual Studio Code command palette](https://code.visualstudio.com/docs/getstarted/userinterface#_command-palette)
-   by pressing `Ctrl+Shift+P`. Type `CodeChat`, select "Enable the CodeChat
-   Editor", then press enter to run the extension. After a moment, the rendered
-   file should load. If it doesn't:
-
-   1. Open the Visual Studio Code settings for the CodeChat Editor by navigating
-      to `File` > `Preferences` > `Settings` then typing `CodeChat` in the
-      search box. Change the port from its default of 8080 to some other value.
-   2. Run the extension again (close the existing window, type `Ctrl+Shift+P`
-      then select Enable the CodeChat Editor).
+   by pressing `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac). Type
+   `CodeChat`, select "Enable the CodeChat Editor," then press enter to run the
+   extension.
 
 Study capture
 -------------
@@ -59,10 +53,9 @@ FIFO spool under VS Code's global extension storage before upload, so extension
 upgrades do not remove queued events. Events recorded offline after the token
 has been accepted and capture-enabled upload automatically when the matching
 service is reachable again. If the service endpoint changes, update the
-user-level
-`CodeChatEditor.Capture.ServiceBaseUrl` setting. Workspace values are ignored
-for this token-bearing endpoint. Token-bearing service requests must use HTTPS,
-except for localhost development endpoints.
+user-level `CodeChatEditor.Capture.ServiceBaseUrl` setting. Workspace values are
+ignored for this token-bearing endpoint. Token-bearing service requests must use
+HTTPS, except for localhost development endpoints.
 
 Developer builds must compile the bundled Rust server with `minreq`
 `https-rustls-probe` and `proxy` support. Capture HTTPS requests validate with
@@ -97,4 +90,3 @@ details.
 You should have received a [copy](LICENSE.html) of the GNU General Public
 License along with the CodeChat Editor. If not, see
 [https://www.gnu.org/licenses/](https://www.gnu.org/licenses/).
-
