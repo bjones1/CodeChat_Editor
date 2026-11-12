@@ -33,7 +33,6 @@ use std::{
     io,
     net::SocketAddr,
     path::{self, Component, MAIN_SEPARATOR_STR, Path, PathBuf, Prefix},
-    str::FromStr,
     string::FromUtf8Error,
     sync::{Arc, LazyLock, Mutex},
     time::Duration,
@@ -2004,8 +2003,6 @@ pub fn canonicalize(
 
 #[derive(Debug, thiserror::Error)]
 pub enum TryCanonicalizeError {
-    #[error("unable to parse {file_path} into file path: {error}")]
-    ParseFailure { file_path: String, error: String },
     #[error("unable to make file path absolute")]
     CannotAbsolute(#[from] io::Error),
 }
@@ -2017,34 +2014,29 @@ pub enum TryCanonicalizeError {
 //    actual file's naming (even though the filesystem is case-insensitive; this
 //    makes comparisons in the TypeScript simpler).
 pub fn try_canonicalize(file_path: &str) -> Result<PathBuf, TryCanonicalizeError> {
-    match PathBuf::from_str(file_path) {
-        Err(err) => Err(TryCanonicalizeError::ParseFailure {
-            file_path: file_path.to_string(),
-            error: err.to_string(),
-        }),
-        Ok(path_buf) => match canonicalize(&path_buf) {
-            Ok(p) => Ok(p),
-            // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
-            // fails if the path doesn't exist. For unsaved files, this is
-            // expected; in this case, we can't correct case based on the actual
-            // file's naming. If the path isn't already absolute, don't make it
-            // absolute, since a newly-created, unsaved file (in at least
-            // VSCode) doesn't have specific path/location in the filesystem;
-            // assuming a path by making it absolute causes the IDE to not
-            // recognize the file name with this assume absolute location. On
-            // the other hand, if the path is already absolute, then call
-            // `absolute` to clean up forward vs. backward slashes.
-            Err(_) => {
-                if path_buf.is_absolute() {
-                    match path::absolute(&path_buf) {
-                        Err(err) => Err(TryCanonicalizeError::CannotAbsolute(err)),
-                        Ok(p) => Ok(p),
-                    }
-                } else {
-                    Ok(path_buf)
+    let path_buf = PathBuf::from(file_path);
+    match canonicalize(&path_buf) {
+        Ok(p) => Ok(p),
+        // [Canonicalize](https://doc.rust-lang.org/stable/std/fs/fn.canonicalize.html#errors)
+        // fails if the path doesn't exist. For unsaved files, this is expected;
+        // in this case, we can't correct case based on the actual file's
+        // naming. If the path isn't already absolute, don't make it absolute,
+        // since a newly-created, unsaved file (in at least VSCode) doesn't have
+        // specific path/location in the filesystem; assuming a path by making
+        // it absolute causes the IDE to not recognize the file name with this
+        // assume absolute location. On the other hand, if the path is already
+        // absolute, then call `absolute` to clean up forward vs. backward
+        // slashes.
+        Err(_) => {
+            if path_buf.is_absolute() {
+                match path::absolute(&path_buf) {
+                    Err(err) => Err(TryCanonicalizeError::CannotAbsolute(err)),
+                    Ok(p) => Ok(p),
                 }
+            } else {
+                Ok(path_buf)
             }
-        },
+        }
     }
 }
 

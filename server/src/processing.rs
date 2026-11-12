@@ -2269,9 +2269,10 @@ fn hydrate_gathers(
     for node in &walk_context.gathers {
         add_class(node, "cc-gather");
         // Build the list of gathered items, in `data-gather` order.
-        let gather_ids: Vec<String> = get_attr_value(node, "data-gather")
-            .map(|gather_ids| gather_ids.split_whitespace().map(str::to_string).collect())
-            .unwrap_or_default();
+        let gather_ids: Vec<String> =
+            get_attr_value(node, "data-gather").map_or_default(|gather_ids| {
+                gather_ids.split_whitespace().map(str::to_string).collect()
+            });
         let mut items: Vec<Rc<Node>> = Vec::new();
         for id in &gather_ids {
             if !is_css_identifier(id) {
@@ -2759,9 +2760,10 @@ fn hydrating_walk_node(node: &Rc<Node>, mut walk_context: WalkContext) -> io::Re
                 // attribute makes that target a gather element; the two are one
                 // kind of cached item, since a gather element is also a valid
                 // cross-reference destination.
-                let gather_ids: Vec<String> = get_attr_value(child, "data-gather")
-                    .map(|gather_ids| gather_ids.split_whitespace().map(str::to_string).collect())
-                    .unwrap_or_default();
+                let gather_ids: Vec<String> =
+                    get_attr_value(child, "data-gather").map_or_default(|gather_ids| {
+                        gather_ids.split_whitespace().map(str::to_string).collect()
+                    });
                 if is_css_identifier(&id) {
                     if !gather_ids.is_empty() {
                         walk_context.gathers.push(child.clone());

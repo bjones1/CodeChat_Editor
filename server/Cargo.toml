@@ -85,12 +85,8 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
-test_utils.workspace = true
 thiserror = "2.0.12"
 tokio = { version = "1", features = ["full"] }
-tracing = "0.1.44"
-tracing-log = "0.2.0"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ts-rs = "12"
 url = "2.5.2"
 urlencoding = "2"
@@ -106,8 +102,12 @@ chrono = "0.4"
 futures = "0.3.31"
 predicates = "3.1.2"
 pretty_assertions = "1.4.1"
+test_utils.workspace = true
 thirtyfour = "0.38"
 tokio-tungstenite = "0.30"
+tracing = "0.1.44"
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Lints
 # -----
