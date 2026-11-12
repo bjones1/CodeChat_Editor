@@ -14,7 +14,11 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-//
+//! `lib.rs` -- Define library modules for the CodeChat Editor Server
+//! =================================================================
+//!
+//! TODO: Add the ability to use
+//! [plugins](https://zicklag.github.io/rust-tutorials/rust-plugins.html).
 // Relax a few pedantic Clippy lints for test code only; see the
 // `[workspace.lints.clippy]` section in `Cargo.toml` for the full-crate
 // (production) lint config.
@@ -26,11 +30,8 @@
         clippy::float_cmp
     )
 )]
-//! `lib.rs` -- Define library modules for the CodeChat Editor Server
-//! =================================================================
-//!
-//! TODO: Add the ability to use
-//! [plugins](https://zicklag.github.io/rust-tutorials/rust-plugins.html).
+// Modules
+// -------
 pub mod capture;
 pub mod ide;
 pub mod lexer;

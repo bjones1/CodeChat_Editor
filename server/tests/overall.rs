@@ -14,14 +14,6 @@
 // You should have received a copy of the GNU General Public License along with
 // the CodeChat Editor. If not, see
 // [http://www.gnu.org/licenses](http://www.gnu.org/licenses).
-//
-// This whole binary is test code, so relax the pedantic Clippy lints that
-// `Cargo.toml`'s `[lints.clippy]` enables for production code.
-#![allow(
-    clippy::too_many_lines,
-    clippy::cast_possible_truncation,
-    clippy::float_cmp
-)]
 //! `overall.rs` - test the overall system
 //! =======================================
 //!
@@ -32,6 +24,14 @@
 //! To run these tests, execute `cargo nextest run --test overall
 //! <optional_test_name>`; `.config/nextest.toml` runs them one at a time.
 //! `cargo test` ignores that file and runs them concurrently.
+// This whole binary is test code, so relax the pedantic Clippy lints that the
+// `[workspace.lints.clippy]` section in `Cargo.toml` enables for production
+// code.
+#![allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::float_cmp
+)]
 #[path = "overall/common/mod.rs"]
 mod common;
 #[path = "overall/overall_1.rs"]

@@ -81,7 +81,9 @@ const char* CODE_BLOCK =
 // the file; per the HTML spec, there should be
 // [only one level-1 heading](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Heading_Elements#avoid_using_multiple_h1_elements_on_one_page).
 // For source files, include the file name at the beginning of the title, in a
-// monospaced font.
+// monospaced font. Place the title before any code -- for example, before
+// Rust's crate-level attributes (`#![...]`) -- unless the language requires
+// that code to come first, such as the `#!` line of a shell script.
 //
 // Following the title, include additional heading levels;
 // [don't skip levels](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Heading_Elements#navigation),

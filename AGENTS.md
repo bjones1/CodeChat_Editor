@@ -204,14 +204,15 @@ Because comments become doc blocks, these mechanical rules apply:
 
 Source files follow this template (a few predate it; match it in new files):
 
-1. Crate-level attributes (Rust only).
-2. The GPL copyright and license block, copied verbatim from a neighboring file
+1. The GPL copyright and license block, copied verbatim from a neighboring file
    rather than retyped. In Rust it uses plain `//`, so it stays a doc block
    separate from the title which follows it.
-3. A single level-1 heading titling the file: the file name in backticks --
+2. A single level-1 heading titling the file: the file name in backticks --
    matching the file's actual name -- then `--`, then a short description.
-4. A short file-level design narrative or reference to additional content in the
+3. A short file-level design narrative or reference to additional content in the
    related Markdown file, if the file needs one.
+4. Crate-level attributes (Rust only). Rust accepts these after the title
+   because `//!` comments are themselves inner attributes.
 5. A `Modules` section, if the file has submodules, then an `Imports` section.
    In Rust its subsections are `### Standard library`, `### Third-party`, and
    `### Local`; the Client and the VSCode extension use their own names, so
