@@ -342,7 +342,12 @@ async fn dir_listing(web_path: &str, dir_path: &Path) -> HttpResponse {
 #[cfg_attr(coverage, coverage(off))]
 #[cfg(target_os = "windows")]
 pub fn get_logical_drive() -> Result<Vec<char>, std::io::Error> {
+    // The `windows` crate marks every Win32 call `unsafe`; `GetLogicalDrives`
+    // takes no arguments and has no preconditions, so this call is sound.
+    // <fragment id="cc-UwoLW_VkCv"></fragment>
+    #[allow(unsafe_code)]
     let bitmask = unsafe { GetLogicalDrives() };
+    // End of fragment.
     if bitmask == 0 {
         Err(std::io::Error::last_os_error())
     } else {

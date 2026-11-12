@@ -84,12 +84,23 @@ test_utils = { path = "test_utils" }
 # Members inherit these with `lints.workspace = true`, which replaces rather
 # than merges with a package's own `[lints]` table -- so this is the union of
 # what the packages allowed individually.
+#
+# ### Rust lints
 [workspace.lints.rust]
 # Avoid a lint about the `coverage` cfg set by `cargo llvm-cov` (see `bt
 # cover`).
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
-
-# A good article: https://emschwartz.me/your-clippy-config-should-be-stricter.
+# #### Unsafe
+# The VSCode extension and the standalone build have a few `unsafe` blocks.
+unsafe_code = "deny"
+# <h5 data-gather="cc-NazkHWc6FG cc-UwoLW_VkCv" id="cc-GMphTP7gsl">
+#   Unsafe config instances
+# </h5>
+#
+# ### Clippy lints
+#
+# A good article:
+# [Your Clippy Config Should Be Stricter](https://emschwartz.me/your-clippy-config-should-be-stricter).
 #
 # Docs on clippy: see `cargo clippy --help`, `cargo check --help` (the target
 # selection and feature selection flags seems to apply to clippy).

@@ -30,6 +30,9 @@
         clippy::float_cmp
     )
 )]
+// Cargo doesn't allow per-package overrides alongside `lints.workspace = true`,
+// hence this attribute. <fragment id="cc-NazkHWc6FG"></fragment>
+#![forbid(unsafe_code)]
 // Modules
 // -------
 pub mod capture;
