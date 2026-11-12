@@ -37,11 +37,11 @@ use code_chat_editor::{ide, webserver};
 #[napi]
 pub fn init_server(extension_base_path: String) -> Result<(), Error> {
     // `extension_base_path` is this extension's install directory. In a dev
-    // build, that's `extensions/VSCode/`, two directories below the
-    // repository root that `webserver::set_root_path` needs; in a packaged
-    // build, `client/static`, `log4rs.yml`, and `hashLocations.json` are
-    // copied alongside the extension (see `builder`'s `run_postrelease`), so
-    // the extension's own directory is already the root.
+    // build, that's `extensions/VSCode/`, two directories below the repository
+    // root that `webserver::set_root_path` needs; in a packaged build,
+    // `client/static`, `log4rs.yml`, and `hashLocations.json` are copied
+    // alongside the extension (see `builder`'s `run_postrelease`), so the
+    // extension's own directory is already the root.
     let base_path = PathBuf::from(extension_base_path);
     let base_path = if cfg!(debug_assertions) {
         base_path.join("../..")
