@@ -350,7 +350,7 @@ make_test!(test_ide_update_not_echoed, test_ide_update_not_echoed_core);
 // Verify that text the IDE sends to the doc block TinyMCE is editing isn't sent
 // back as an edit when the cursor moves afterwards. TinyMCE records content it
 // didn't produce as an undo level on the next navigation key, marking itself
-// dirty; see `updateDOM` in `CodeMirror-integration.mts`. Keep math out of this
+// dirty; see `setTinymceContent` in `CodeChatEditor.mts`. Keep math out of this
 // doc block, since typesetting it also changes TinyMCE's content.
 async fn test_ide_update_not_echoed_core(
     codechat_server: CodeChatEditorServerLog,
@@ -428,6 +428,83 @@ async fn test_ide_update_not_echoed_core(
     // Move the cursor without editing. Only the cursor's position should come
     // back.
     tinymce_contents.send_keys(Key::Right).await.unwrap();
+    assert_only_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
+
+    Ok(())
+}
+
+make_test!(
+    test_ide_update_not_echoed_doc_only,
+    test_ide_update_not_echoed_doc_only_core
+);
+
+// The same as `test_ide_update_not_echoed`, but for a CodeChat Editor document,
+// where TinyMCE edits the entire file.
+async fn test_ide_update_not_echoed_doc_only_core(
+    codechat_server: CodeChatEditorServerLog,
+    driver: WebDriver,
+    test_dir: PathBuf,
+) -> Result<(), WebDriverError> {
+    let path = canonicalize(test_dir.join("test.md")).unwrap();
+    let path_str = path.to_str().unwrap().to_string();
+    perform_loadfile(
+        &codechat_server,
+        &test_dir,
+        "test.md",
+        Some(("Before.\n".to_string(), 0.0)),
+        false,
+        6.0,
+    )
+    .await;
+
+    // Target the iframe containing the Client.
+    select_codechat_iframe(&driver).await;
+
+    // Place the cursor in the document.
+    let body_content = driver.query(By::Css(DOC_BLOCK_CSS)).first().await.unwrap();
+    click_element_top_left(&driver, &body_content)
+        .await
+        .unwrap();
+    let mut client_id = INITIAL_CLIENT_MESSAGE_ID;
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: client_id,
+            message: EditorMessageContents::Update(UpdateMessageContents {
+                file_path: path_str.clone(),
+                cursor_position: Some(CursorPosition::Line(1)),
+                scroll_position: None,
+                is_re_translation: false,
+                contents: None,
+            })
+        }
+    );
+    codechat_server.send_result(client_id, None).await.unwrap();
+    client_id += MESSAGE_ID_INCREMENT;
+
+    // Replace the document's text from the IDE, then wait for TinyMCE to show
+    // it.
+    let ide_id = codechat_server
+        .send_message_update_plain(
+            path_str.clone(),
+            Some(("After.\n".to_string(), 1.0)),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        codechat_server.get_message_timeout(TIMEOUT).await.unwrap(),
+        EditorMessage {
+            id: ide_id,
+            message: EditorMessageContents::Result(Ok(ResultOkTypes::Void))
+        }
+    );
+    body_content.wait_until().has_text("After.").await.unwrap();
+
+    // Move the cursor without editing. Only the cursor's position should come
+    // back.
+    body_content.send_keys(Key::Right).await.unwrap();
     assert_only_cursor_updates(&codechat_server, &mut client_id, &path_str).await;
 
     Ok(())

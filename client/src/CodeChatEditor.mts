@@ -398,19 +398,11 @@ const _openLp = async (
                 });
                 tinymceInstance()!.focus();
             } else {
-                // Save the cursor location before the update, then restore it
-                // afterwards, if TinyMCE has focus.
-                const sel = tinymceInstance()!.hasFocus()
-                    ? saveSelection()
-                    : undefined;
                 docContent =
                     "Plain" in source
                         ? source.Plain.doc
                         : applyDiffStr(docContent, source.Diff.doc);
-                tinymceInstance()!.setContent(docContent);
-                if (sel !== undefined) {
-                    restoreSelection(sel);
-                }
+                setTinymceContent(docContent);
             }
             await mathJaxTypeset(codechatBody);
             scrollToLine(cursorPosition, scrollLine);
@@ -596,6 +588,36 @@ export const restoreSelection = ({
             selectionNode,
             finalSelectionOffset,
         );
+    }
+};
+
+// Replace TinyMCE's contents with text from the IDE, keeping the cursor in
+// place if TinyMCE has focus. The doc-only mode and the doc block TinyMCE is
+// editing both use this, so that neither sends this text back to the IDE as an
+// edit.
+//
+// TODO: record the undo level after typesetting math, which changes TinyMCE's
+// content; until then, text containing math is still sent back. Remove this
+// once both callers typeset before recording the undo level.
+export const setTinymceContent = (
+    // The sanitized HTML to show.
+    contents: string,
+) => {
+    const editor = tinymceInstance()!;
+    const sel = editor.hasFocus() ? saveSelection() : undefined;
+    editor.setContent(contents);
+    // TinyMCE records content which differs from its last undo level on the
+    // next navigation key, blur, or save, marking itself dirty; the resulting
+    // `Dirty` event would send this unchanged content back as an edit. So,
+    // record it now. `setDirty(true)`, which `undoManager.add()` calls, fires
+    // `Dirty` only when TinyMCE was clean; mark it dirty without firing the
+    // event beforehand, then mark it clean, so that the next genuine change
+    // still produces a `Dirty` event.
+    editor.isNotDirty = false;
+    editor.undoManager.add();
+    editor.setDirty(false);
+    if (sel !== undefined) {
+        restoreSelection(sel);
     }
 };
 

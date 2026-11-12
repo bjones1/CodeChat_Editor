@@ -85,6 +85,7 @@ import {
     startAutoUpdateTimer,
     saveSelection,
     restoreSelection,
+    setTinymceContent,
     tinymceInstance,
     tinymce,
     init,
@@ -549,25 +550,7 @@ class DocBlockWidget extends WidgetType {
         // for all user input).
         window.MathJax?.typesetClear?.([contentsDiv]);
         if (isTinymce) {
-            const editor = tinymceInstance()!;
-            // Save the cursor location before the update, then restore it
-            // afterwards, if TinyMCE has focus.
-            const sel = editor.hasFocus() ? saveSelection() : undefined;
-            editor.setContent(this.contents);
-            // TinyMCE records content which differs from its last undo level
-            // on the next navigation key, blur, or save, marking itself dirty;
-            // the resulting `Dirty` event would send this unchanged content
-            // back as an edit. Record it now while ignoring that event, then
-            // mark TinyMCE clean, so that the next genuine change still
-            // produces a `Dirty` event.
-            const wasIgnoringDirty = ignoreTinyMceDirty;
-            ignoreTinyMceDirty = true;
-            editor.undoManager.add();
-            ignoreTinyMceDirty = wasIgnoringDirty;
-            editor.setDirty(false);
-            if (sel !== undefined) {
-                restoreSelection(sel);
-            }
+            setTinymceContent(this.contents);
         } else {
             contentsDiv.innerHTML = this.contents;
         }
