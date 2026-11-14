@@ -47,7 +47,7 @@ use std::{
     io::{self, Read},
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     ops::RangeInclusive,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::SystemTime,
 };
@@ -391,25 +391,24 @@ fn fix_addr(addr: &SocketAddr) -> SocketAddr {
 /// dist`-packaged build, this binary sits alongside `client/static`,
 /// `log4rs.yml`, and `hashLocations.json` (see the `include` list in
 /// `dist-workspace.toml`), so this program's own directory is already the root.
-/// In a dev build, this binary instead lives under the workspace's shared
-/// `target/` directory in the repository root, so walk back up to it.
+/// A dev build only runs from the repository it was built in, so use this
+/// crate's manifest directory, fixed at compile time, rather than the
+/// executable's location: Cargo places test binaries and the copies run by
+/// integration tests in layout-dependent subdirectories of `target/` (for
+/// example, `target/debug/build/<package>/<hash>/out/` since Cargo 1.100).
+// Returns the directory containing `client/static`, `log4rs.yml`, and
+// `hashLocations.json` (packaged build) or `client/` and `server/` (dev
+// build).
 fn root_path() -> PathBuf {
-    let exe_dir = env::current_exe()
+    if cfg!(debug_assertions) {
+        // `extensions/standalone/` -> the repository root.
+        return Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    }
+    env::current_exe()
         .expect("Unable to determine path to current executable.")
         .parent()
         .expect("Unable to find directory name containing the current executable.")
-        .to_path_buf();
-    if cfg!(not(debug_assertions)) {
-        return exe_dir;
-    }
-    // A test binary (from an inline `#[cfg(test)] mod test`) lives in an extra
-    // `deps` directory (e.g. `target/debug/deps/`) compared to a plain `cargo
-    // build`'s `target/debug/`.
-    if cfg!(test) {
-        exe_dir.join("../../..")
-    } else {
-        exe_dir.join("../..")
-    }
+        .to_path_buf()
 }
 
 #[cfg_attr(coverage, coverage(off))]

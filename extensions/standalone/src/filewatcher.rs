@@ -825,9 +825,8 @@ mod tests {
         WebsocketQueues,
         impl Service<Request, Response = ServiceResponse<BoxBody>, Error = actix_web::Error> + use<>,
     ) {
-        // Use this crate's own `root_path`, which locates the repo root from
-        // the workspace's shared `target/` directory, accounting for the extra
-        // `deps` level a test binary such as this one lives under.
+        // Use this crate's own `root_path`, which locates the repository root
+        // for a dev build.
         set_root_path(&crate::root_path()).unwrap();
         let app_data = make_app_data(None);
         let app =

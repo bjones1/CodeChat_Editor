@@ -585,28 +585,20 @@ pub fn set_root_path(
     Ok(())
 }
 
-// A `base_path` for this package's own test suites to pass to
-// `set_root_path`/`main` when they start a real webserver in-process
-// (`ide::vscode::tests` and the `tests/overall` integration tests). Not
-// `#[cfg(test)]`-gated: integration tests under `tests/` link this crate as a
-// normal (non-`--test`) dependency, so a `#[cfg(test)]` item wouldn't be
-// visible to them. All these test binaries are built under the workspace's
-// shared `target/debug/deps/...`, which sits directly in the repository root,
-// or one directory deeper still under `cargo llvm-cov`.
+/// A `base_path` for this package's own test suites to pass to
+/// `set_root_path`/`main` when they start a real webserver in-process
+/// (`ide::vscode::tests` and the `tests/overall` integration tests). Not
+/// `#[cfg(test)]`-gated: integration tests under `tests/` link this crate as a
+/// normal (non-`--test`) dependency, so a `#[cfg(test)]` item wouldn't be
+/// visible to them. This is derived from this crate's manifest directory at
+/// compile time, not from the test executable's location: where Cargo places
+/// test binaries varies (`target/debug/deps/` before Cargo 1.100;
+/// `target/debug/build/<package>/<hash>/out/` since; deeper still under `cargo
+/// llvm-cov`).
+// Returns the repository root, the parent of this crate's `server/` directory.
 #[must_use]
 pub fn test_root_path() -> PathBuf {
-    let exe_dir = env::current_exe()
-        .expect("Unable to determine path to current executable.")
-        .parent()
-        .expect("Unable to find directory name containing the current executable.")
-        .to_path_buf();
-    let exe_dir = if cfg!(coverage) {
-        exe_dir.join("..")
-    } else {
-        exe_dir
-    };
-    // `deps` -> `debug` -> `target` -> the repository root.
-    exe_dir.join("../../..")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
 // Webserver functionality
